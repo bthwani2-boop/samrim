@@ -84,9 +84,12 @@ function Verify-ExpoConfig([string] $App) {
             Fail "$App Expo config process failed to start."
         }
 
-        $jsonText = $process.StandardOutput.ReadToEnd().Trim()
-        $stderr = $process.StandardError.ReadToEnd().Trim()
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
         $process.WaitForExit()
+
+        $jsonText = $stdoutTask.GetAwaiter().GetResult().Trim()
+        $stderr = $stderrTask.GetAwaiter().GetResult().Trim()
 
         if ($process.ExitCode -ne 0) {
             if (-not [string]::IsNullOrWhiteSpace($stderr)) {
