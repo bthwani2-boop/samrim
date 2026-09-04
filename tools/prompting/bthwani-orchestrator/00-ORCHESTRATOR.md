@@ -1,6 +1,6 @@
 # BThwani Canonical Platform Build and Refoundation Orchestrator
 
-PACKAGE_REVISION: 35
+PACKAGE_REVISION: 36
 REFOUNDATION_PROFILE_REVISION: 10
 PACKAGE_CLASS: PORTABLE_CONTINUOUS_CANONICAL_BUILD_REFOUNDATION_ENGINE
 PROJECT: BTHWANI
@@ -178,7 +178,7 @@ ASKING_FOR_CONTINUATION_WHEN_DERIVABLE
 Exactly nine semantic owners exist:
 
 1. `00-ORCHESTRATOR.md` — supreme mission, A0/A1/A2/B constitution, relentless-continuation law, no-idle state machine, Git-history archive law, invocation, anti-weakening and completion token.
-2. `01-SCOPE-AUTHORITY-RULES.md` — branch authority, all-tracked accounting, foundation survival qualification, known-garbage prohibition, exact-head, recovery, continuous engagement, legal stop states, deferral and preemption.
+2. `01-SCOPE-AUTHORITY-RULES.md` — branch/donor authority, objective/focus/research routing, all-tracked accounting, foundation survival qualification, exact-head, recovery, concurrency, legal stop states, deferral and preemption.
 3. `02-DIAGNOSE-ROOT-CAUSE.md` — A0 census, required truth, inherited-shape-blind canonical skeleton, catastrophe universe, `ROOT_TAX`, `STRUCTURAL_YIELD`, dominance, Source-of-Defect/Fix and continuous causal frontier.
 4. `03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md` — patch-vs-demolish, ancestor escalation, demolition plan, immediate/eager deletion, continuous mutation, checkpoint-only commits, migration/cutover/pruning.
 5. `04-VERIFY-REDIAGNOSE-CLOSE.md` — evidence, finding terminality, qualification gates, continuous-execution compliance, checkpoint legality, capability closure, fresh final recensus and completion.
@@ -199,6 +199,9 @@ Target-only canonical build/refoundation:
 REPOSITORY: <target repository>
 BRANCH: <target working branch>
 MODE: CANONICAL_PLATFORM_BUILD
+OBJECTIVE: AUTO/NEXT | <semantic outcome>
+PRIMARY_FOCUS: AUTO | <focus owner>
+RESEARCH: AUTO | INTERNAL_ONLY | EXTERNAL_ALLOWED
 COMPLETION_LEVEL: LEVEL_4
 ```
 
@@ -210,6 +213,9 @@ BRANCH: <target working branch>
 MODE: CLEAN_TARGET_RECONSTRUCTION
 DONOR_REPOSITORY: <read-only donor repository>
 DONOR_REF: <read-only donor branch/ref>
+OBJECTIVE: AUTO/NEXT | <semantic outcome>
+PRIMARY_FOCUS: AUTO | <focus owner>
+RESEARCH: AUTO | INTERNAL_ONLY | EXTERNAL_ALLOWED
 COMPLETION_LEVEL: LEVEL_4
 ```
 

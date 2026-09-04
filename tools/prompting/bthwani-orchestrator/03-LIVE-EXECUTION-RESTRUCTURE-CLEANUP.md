@@ -431,3 +431,17 @@ REQUIRED_DONOR_TRUTH_IN_LOSER → EXTRACT_BEFORE_NON_IMPORT
 ```
 
 A donor container never earns target survival merely because required truth was found inside it.
+
+## 22. Minimum necessary complexity
+
+Root-correct reconstruction must not replace one bad topology with a more elaborate control plane.
+
+```text
+NEW ABSTRACTION/WRAPPER/PACKAGE/SERVICE/REGISTRY/ROUTER/GUARD
+→ PROVE UNIQUE RESPONSIBILITY OR UNIQUE ASSURANCE VALUE
+→ PROVE EXISTING OWNER/COMPILER/SCHEMA/TEST/RUNTIME CANNOT OWN IT BETTER
+→ PROVE CONSUMER/TRIGGER/MAINTENANCE OWNER
+→ PROVE NET COMPLEXITY DOES NOT INCREASE WITHOUT MATERIAL VALUE
+```
+
+Prefer deletion, direct ownership, generated lineage and existing language/platform guarantees over hand-maintained indirection. Temporary migration/control artifacts require an explicit retirement condition and must disappear after their function ends.

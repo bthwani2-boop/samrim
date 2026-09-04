@@ -379,3 +379,35 @@ CAPABILITY_OR_CLAIM
 ```
 
 If target head moves, classify the foreign delta, invalidate only affected evidence, re-pin and continue. Never discard concurrent work merely to restore a previous expected head.
+
+## 17. Objective and focus routing
+
+The campaign remains project-wide even when the current work has a narrower semantic objective.
+
+```text
+PROJECT_FRAME = FULL BTHWANI FIXED-POINT CAMPAIGN
+OBJECTIVE = CURRENT SEMANTIC OUTCOME / NEXT DERIVABLE ROOT
+PRIMARY_FOCUS = LENS PRIORITY, NOT SCOPE EXCLUSION
+EFFECTIVE_SCOPE = OBJECTIVE + COMPLETE AFFECTED CONE + HIGHER ROOTS + REQUIRED CONSUMERS
+```
+
+`OBJECTIVE=AUTO/NEXT` means derive the next highest executable frontier from current evidence. A named objective may prioritize a capability/root but cannot exclude a higher prerequisite, shared writer, contract/data/runtime effect, required surface, security/financial invariant or regression cone.
+
+`PRIMARY_FOCUS=AUTO` loads every materially relevant focus owner. A named focus only orders diagnostic attention; it never permits skipping another affected focus.
+
+## 18. Research mode routing
+
+```text
+RESEARCH=AUTO
+→ derive from target/donor first
+→ use external research only when a material technical/standard/provider fact cannot be resolved internally and external access is available
+
+RESEARCH=INTERNAL_ONLY
+→ target + donor current/history only
+→ unresolved external technical fact remains explicit proof limit/blocker when material
+
+RESEARCH=EXTERNAL_ALLOWED
+→ external primary/official sources may be used for technical/standard/provider facts
+```
+
+External research cannot create BThwani Product truth, override a current human Product decision, or justify adopting a dependency/provider without the applicable target/governance gate.

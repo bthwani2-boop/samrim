@@ -399,3 +399,28 @@ KNOWN_DUPLICATE_DURABLE_KNOWLEDGE_OWNERS=0
 ```
 
 When donor/history reveals valuable prior knowledge, revalidate it before promotion; age, detail and previous canonical labels do not grant authority.
+
+## 15. Engineering-governance and control-artifact admission
+
+Guards, scripts, CI workflows, registries, policies, routers, hooks, skills, agent instructions and generated status artifacts are engineering control-plane material. They must earn existence just like production code.
+
+Before creating or preserving one, prove:
+
+```text
+UNIQUE DURABLE INVARIANT/NEED
+CLEAR CONSUMER
+CLEAR TRIGGER/EXECUTION PATH
+CLEAR OWNER
+NO BETTER EXISTING OWNER/COMPILER/SCHEMA/TEST/RUNTIME MECHANISM
+NO DUPLICATE MANUAL SOURCE OF TRUTH
+FAILURE MODE IS FAIL-CLOSED WHEN CLAIM IS SAFETY/SECURITY CRITICAL
+RETIREMENT CONDITION IF TEMPORARY/CAMPAIGN-SPECIFIC
+```
+
+For existing control artifacts apply:
+
+```text
+KEEP | HARDEN | MERGE | REHOME | REPLACE_WITH_NATIVE_GUARANTEE | DELETE
+```
+
+Do not retain a guard because it is green, a registry because it is detailed, or a workflow because it is already wired. Measure before→after assurance and execution cost; a simplification that merely shifts cost/failure elsewhere is not an improvement.

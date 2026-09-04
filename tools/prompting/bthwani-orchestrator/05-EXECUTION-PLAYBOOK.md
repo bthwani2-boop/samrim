@@ -193,3 +193,18 @@ COMPLETED_UNIT → RE_PIN/RE_CENSUS/RE_RANK
 ```
 
 One integration authority reconciles all target head movement. No worker may force the shared branch back to its base SHA.
+
+## 14. Cross-objective non-regression
+
+Parallel or sequential work on one objective must not silently regress already proven capabilities/invariants that share an owner, contract, database, package, runtime or host.
+
+Before integration of a material shared-owner change:
+
+```text
+IDENTIFY PREVIOUSLY CLOSED/PROVEN CONSUMER CONES
+→ INVALIDATE ONLY AFFECTED PRIOR EVIDENCE
+→ RUN REQUIRED CROSS-OBJECTIVE REGRESSION
+→ INTEGRATE ONLY WHEN BOTH CURRENT OBJECTIVE AND PRESERVED INVARIANTS PASS
+```
+
+A faster local objective completion that shifts failure/cost/debt into another capability is not valid progress.
