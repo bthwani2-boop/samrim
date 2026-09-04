@@ -2,16 +2,16 @@ name: One-shot app-client runtime materialization
 
 on:
   push:
-    branches: [a]
+    branches:
+      - a
     paths:
-      - ".github/workflows/materialize-app-client-runtime-once.yml"
+      - .github/workflows/materialize-app-client-runtime-once.yml
 
 permissions:
   contents: write
 
 jobs:
   materialize:
-    if: ${{ github.event.head_commit.message != 'refactor(mobile): materialize app-client runtime equivalence' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout samrim
@@ -20,7 +20,7 @@ jobs:
           ref: a
           fetch-depth: 0
 
-      - name: Checkout read-only donor
+      - name: Checkout donor h
         uses: actions/checkout@v4
         with:
           repository: bthwani2-boop/bthwani-suite-next
@@ -28,524 +28,24 @@ jobs:
           path: .donor
           fetch-depth: 1
 
-      - name: Verify donor pin
-        shell: bash
-        run: |
-          set -euo pipefail
-          actual="$(git -C .donor rev-parse HEAD)"
-          expected="14c2ef2fd5a0ffadda00d307c9dea81d5cf49799"
-          test "$actual" = "$expected" || {
-            echo "Donor h moved: expected=$expected actual=$actual" >&2
-            exit 1
-          }
-
-      - name: Materialize app-client and runtime dependency cone
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > /tmp/materialize-client.mjs <<'NODE'
-          import fs from "node:fs";
-          import path from "node:path";
-
-          const root = process.cwd();
-          const donor = path.join(root, ".donor");
-          const donorApp = path.join(donor, "apps", "app-client", "runtime");
-          const targetApp = path.join(root, "apps", "app-client");
-          const donorDsh = path.join(donor, "services", "dsh");
-          const targetDsh = path.join(root, "services", "dsh");
-          const donorUi = path.join(donor, "shared", "ui-kit");
-          const targetUi = path.join(root, "packages", "design-system");
-          const donorData = path.join(donor, "shared", "data-runtime");
-          const targetData = path.join(root, "packages", "query-runtime");
-
-          const textExtensions = new Set([".ts",".tsx",".js",".jsx",".mjs",".cjs",".json",".md",".yaml",".yml",".css"]);
-
-          function ensureDir(p) {
-            fs.mkdirSync(p, { recursive: true });
-          }
-
-          function copyFile(src, dst) {
-            ensureDir(path.dirname(dst));
-            fs.copyFileSync(src, dst);
-          }
-
-          function copyDir(src, dst) {
-            fs.rmSync(dst, { recursive: true, force: true });
-            ensureDir(path.dirname(dst));
-            fs.cpSync(src, dst, { recursive: true });
-          }
-
-          function walkFiles(dir) {
-            if (!fs.existsSync(dir)) return [];
-            const out = [];
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-              const full = path.join(dir, entry.name);
-              if (entry.isDirectory()) out.push(...walkFiles(full));
-              else if (entry.isFile()) out.push(full);
-            }
-            return out;
-          }
-
-          function replaceInTree(dir, replacements) {
-            for (const file of walkFiles(dir)) {
-              if (!textExtensions.has(path.extname(file)) && ![".easignore",".gitignore",".env.example"].includes(path.basename(file))) continue;
-              let text;
-              try { text = fs.readFileSync(file, "utf8"); } catch { continue; }
-              let next = text;
-              for (const [from, to] of replacements) next = next.split(from).join(to);
-              if (next !== text) fs.writeFileSync(file, next, "utf8");
-            }
-          }
-
-          function readJson(p) {
-            return JSON.parse(fs.readFileSync(p, "utf8"));
-          }
-
-          function writeJson(p, value) {
-            ensureDir(path.dirname(p));
-            fs.writeFileSync(p, JSON.stringify(value, null, 2) + "\n", "utf8");
-          }
-
-          function moduleSpecifiers(text) {
-            const specs = new Set();
-            const patterns = [
-              /\bfrom\s*["']([^"']+)["']/g,
-              /\bimport\s*["']([^"']+)["']/g,
-              /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
-              /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
-            ];
-            for (const re of patterns) {
-              let m;
-              while ((m = re.exec(text)) !== null) specs.add(m[1]);
-            }
-            return [...specs];
-          }
-
-          const moduleExtensions = [".ts",".tsx",".js",".jsx",".mjs",".cjs",".json",".css"];
-
-          function resolveLocal(baseFile, specifier) {
-            const raw = path.resolve(path.dirname(baseFile), specifier);
-            const candidates = [raw];
-            for (const ext of moduleExtensions) candidates.push(raw + ext);
-            for (const ext of moduleExtensions) candidates.push(path.join(raw, "index" + ext));
-            for (const candidate of candidates) {
-              if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
-            }
-            return null;
-          }
-
-          function assertInside(child, parent, label) {
-            const rel = path.relative(parent, child);
-            if (rel.startsWith("..") || path.isAbsolute(rel)) {
-              throw new Error(label + " escaped its package root: " + child);
-            }
-          }
-
-          // 1. Materialize the deployable app host directly under apps/app-client.
-          const appEntries = [
-            "app",
-            "assets",
-            "src",
-            "tests",
-            ".easignore",
-            ".env.example",
-            ".gitignore",
-            "eas.json",
-            "fingerprint.config.js",
-            "index.js",
-            "package.json",
-            "project.json",
-            "tsconfig.json",
-          ];
-          for (const entry of appEntries) {
-            const src = path.join(donorApp, entry);
-            if (!fs.existsSync(src)) continue;
-            const dst = path.join(targetApp, entry);
-            if (fs.statSync(src).isDirectory()) copyDir(src, dst);
-            else copyFile(src, dst);
-          }
-
-          fs.writeFileSync(
-            path.join(targetApp, "app.config.ts"),
-            `import type { ExpoConfig } from "expo/config";
-          import { defineSamrimExpoApp } from "../../tools/mobile/define-samrim-expo-app.cjs";
-
-          const config = defineSamrimExpoApp("app-client");
-          type ExpoPlugin = NonNullable<ExpoConfig["plugins"]>[number];
-
-          const plugins = (config.plugins ?? []).map<ExpoPlugin>((plugin: ExpoPlugin) =>
-            plugin === "expo-video"
-              ? ["expo-video", { supportsPictureInPicture: true }]
-              : plugin,
-          );
-
-          const appConfig: ExpoConfig = { ...config, plugins };
-          export default appConfig;
-          `,
-            "utf8",
-          );
-
-          fs.writeFileSync(
-            path.join(targetApp, "metro.config.cjs"),
-            `const { createSamrimMetroConfig } = require("../../tools/mobile/metro.config.factory.cjs");
-          module.exports = createSamrimMetroConfig(__dirname);
-          `,
-            "utf8",
-          );
-
-          const appPkg = readJson(path.join(targetApp, "package.json"));
-          appPkg.name = "@bthwani/app-client";
-          appPkg.scripts = {
-            start: "expo start --dev-client --port 18101",
-            typecheck: "tsc --noEmit -p tsconfig.json",
-            test: "node --test tests/*.test.mjs",
-          };
-          const appDeps = { ...(appPkg.dependencies ?? {}) };
-          delete appDeps["@bthwani/core-identity"];
-          delete appDeps["@bthwani/data-runtime"];
-          delete appDeps["@bthwani/ui-kit"];
-          appDeps["@bthwani/identity"] = "workspace:*";
-          appDeps["@bthwani/query-runtime"] = "workspace:*";
-          appDeps["@bthwani/design-system"] = "workspace:*";
-          appPkg.dependencies = appDeps;
-          writeJson(path.join(targetApp, "package.json"), appPkg);
-
-          writeJson(path.join(targetApp, "project.json"), {
-            name: "app-client",
-            root: "apps/app-client",
-            sourceRoot: "apps/app-client",
-            projectType: "application",
-            implicitDependencies: ["identity", "dsh", "design-system"],
-            targets: {
-              serve: {
-                executor: "nx:run-commands",
-                options: { command: "pnpm client" },
-              },
-              typecheck: {
-                executor: "nx:run-commands",
-                options: { command: "pnpm --dir apps/app-client typecheck" },
-              },
-            },
-            tags: ["scope:app-client", "type:app"],
-          });
-
-          for (const p of ["tsconfig.json","fingerprint.config.js"]) {
-            const file = path.join(targetApp, p);
-            let text = fs.readFileSync(file, "utf8");
-            text = text
-              .split("../../../tsconfig.base.json").join("../../tsconfig.base.json")
-              .split("../../../node_modules/.pnpm").join("../../node_modules/.pnpm")
-              .split("../../../.tmp").join("../../.tmp")
-              .split("apps/app-client/runtime").join("apps/app-client");
-            fs.writeFileSync(file, text, "utf8");
-          }
-
-          // 2. Salvage the reusable UI implementation into the already-canonical
-          // design-system while preserving the new token/theme authority byte-for-byte.
-          const preserveRoot = path.join(root, ".materialize-preserve");
-          fs.rmSync(preserveRoot, { recursive: true, force: true });
-          ensureDir(preserveRoot);
-          copyDir(path.join(targetUi, "src", "tokens"), path.join(preserveRoot, "tokens"));
-          copyDir(path.join(targetUi, "src", "theme"), path.join(preserveRoot, "theme"));
-          copyDir(path.join(donorUi, "src"), path.join(targetUi, "src"));
-          copyDir(path.join(preserveRoot, "tokens"), path.join(targetUi, "src", "tokens"));
-          copyDir(path.join(preserveRoot, "theme"), path.join(targetUi, "src", "theme"));
-          fs.rmSync(preserveRoot, { recursive: true, force: true });
-
-          replaceInTree(targetUi, [
-            ["@bthwani/ui-kit", "@bthwani/design-system"],
-          ]);
-
-          const uiPkg = readJson(path.join(donorUi, "package.json"));
-          uiPkg.name = "@bthwani/design-system";
-          uiPkg.exports = {
-            ".": "./src/index.ts",
-            "./web": "./src/web.ts",
-            "./mobile": "./src/mobile.tsx",
-            "./tokens": "./src/tokens/index.ts",
-            "./theme": "./src/theme/index.ts",
-          };
-          uiPkg.scripts = { typecheck: "tsc --noEmit -p tsconfig.json" };
-          writeJson(path.join(targetUi, "package.json"), uiPkg);
-          writeJson(path.join(targetUi, "tsconfig.json"), {
-            extends: "../../tsconfig.base.json",
-            compilerOptions: { noEmit: true },
-            include: ["src/**/*.ts","src/**/*.tsx"],
-          });
-
-          // 3. Preserve the proven data/query runtime behavior under a target
-          // technical package. This is runtime-equivalence material, not product truth.
-          copyDir(path.join(donorData, "src"), path.join(targetData, "src"));
-          if (fs.existsSync(path.join(donorData, "tests"))) {
-            copyDir(path.join(donorData, "tests"), path.join(targetData, "tests"));
-          }
-          const dataPkg = readJson(path.join(donorData, "package.json"));
-          dataPkg.name = "@bthwani/query-runtime";
-          dataPkg.scripts = {
-            typecheck: "tsc --noEmit -p tsconfig.json",
-            test: "node --test tests/*.test.mjs",
-          };
-          writeJson(path.join(targetData, "package.json"), dataPkg);
-          copyFile(path.join(donorData, "tsconfig.json"), path.join(targetData, "tsconfig.json"));
-          fs.writeFileSync(
-            path.join(targetData, "README.md"),
-            "# Query Runtime\n\nTechnical runtime-equivalence owner for query lifecycle, connectivity, cache/durable adapters, mutation identity scoping, installation identity, and power policy required by the current mobile cutover. It owns no product/domain truth. Further decomposition remains a later structural closure obligation once all mobile consumers are cut over.\n",
-            "utf8",
-          );
-          writeJson(path.join(targetData, "project.json"), {
-            name: "query-runtime",
-            root: "packages/query-runtime",
-            sourceRoot: "packages/query-runtime/src",
-            projectType: "library",
-            targets: {
-              typecheck: {
-                executor: "nx:run-commands",
-                options: { command: "pnpm --dir packages/query-runtime typecheck" },
-              },
-            },
-            tags: ["scope:query-runtime", "type:package"],
-          });
-
-          // 4. Compute the exact DSH dependency closure reachable by app-client.
-          const dshPkgDonor = readJson(path.join(donorDsh, "package.json"));
-          const dshExports = dshPkgDonor.exports ?? {};
-          const queue = [];
-          const queued = new Set();
-          const copied = new Set();
-          const usedDshExportKeys = new Set();
-          const unexpectedInternal = new Set();
-
-          function enqueue(file) {
-            const normalized = path.resolve(file);
-            assertInside(normalized, donorDsh, "DSH dependency");
-            if (!queued.has(normalized)) {
-              queued.add(normalized);
-              queue.push(normalized);
-            }
-          }
-
-          function resolveDshSpecifier(specifier) {
-            const key = specifier === "@bthwani/dsh"
-              ? "."
-              : "." + specifier.slice("@bthwani/dsh".length);
-            const mapped = dshExports[key];
-            if (typeof mapped !== "string") {
-              throw new Error("DSH export is not declared for reachable import: " + specifier);
-            }
-            usedDshExportKeys.add(key);
-            const resolved = path.resolve(donorDsh, mapped);
-            if (!fs.existsSync(resolved)) {
-              throw new Error("Declared DSH export target is missing: " + specifier + " -> " + mapped);
-            }
-            return resolved;
-          }
-
-          const appSeedFiles = walkFiles(donorApp).filter((file) => {
-            const rel = path.relative(donorApp, file).split(path.sep).join("/");
-            if (rel.startsWith("tests/")) return false;
-            return [".ts",".tsx",".js",".jsx",".mjs",".cjs"].includes(path.extname(file));
-          });
-
-          for (const file of appSeedFiles) {
-            const text = fs.readFileSync(file, "utf8");
-            for (const spec of moduleSpecifiers(text)) {
-              if (spec === "@bthwani/dsh" || spec.startsWith("@bthwani/dsh/")) {
-                enqueue(resolveDshSpecifier(spec));
-              }
-            }
-          }
-
-          while (queue.length > 0) {
-            const file = queue.shift();
-            if (copied.has(file)) continue;
-            copied.add(file);
-
-            const rel = path.relative(donorDsh, file);
-            const dst = path.join(targetDsh, rel);
-            copyFile(file, dst);
-
-            if (![".ts",".tsx",".js",".jsx",".mjs",".cjs"].includes(path.extname(file))) continue;
-            const text = fs.readFileSync(file, "utf8");
-            for (const spec of moduleSpecifiers(text)) {
-              if (spec.startsWith(".")) {
-                const resolved = resolveLocal(file, spec);
-                if (!resolved) {
-                  throw new Error("Unresolved relative DSH import: " + path.relative(donorDsh, file) + " -> " + spec);
-                }
-                enqueue(resolved);
-                continue;
-              }
-              if (spec === "@bthwani/dsh" || spec.startsWith("@bthwani/dsh/")) {
-                enqueue(resolveDshSpecifier(spec));
-                continue;
-              }
-              if (
-                spec === "@bthwani/core-identity" ||
-                spec.startsWith("@bthwani/core-identity/") ||
-                spec === "@bthwani/data-runtime" ||
-                spec.startsWith("@bthwani/data-runtime/") ||
-                spec === "@bthwani/ui-kit" ||
-                spec.startsWith("@bthwani/ui-kit/")
-              ) {
-                continue;
-              }
-              if (spec.startsWith("@bthwani/")) unexpectedInternal.add(spec);
-            }
-          }
-
-          if (unexpectedInternal.size > 0) {
-            throw new Error(
-              "Reachable Client DSH closure needs additional internal owners: " +
-              [...unexpectedInternal].sort().join(", "),
-            );
-          }
-
-          replaceInTree(targetDsh, [
-            ["@bthwani/core-identity", "@bthwani/identity"],
-            ["@bthwani/data-runtime", "@bthwani/query-runtime"],
-            ["@bthwani/ui-kit", "@bthwani/design-system"],
-          ]);
-
-          const selectedDshExports = {};
-          for (const key of [...usedDshExportKeys].sort()) selectedDshExports[key] = dshExports[key];
-
-          const dshPkg = {
-            name: "@bthwani/dsh",
-            type: "module",
-            description: "BThwani DSH service workspace - app-client runtime closure materialized during clean-target reconstruction.",
-            version: "0.0.0",
-            private: true,
-            scripts: {
-              typecheck: "tsc -p tsconfig.json --noEmit",
-            },
-            peerDependencies: {
-              react: "19.2.3",
-            },
-            dependencies: {
-              "@bthwani/identity": "workspace:*",
-              "@bthwani/query-runtime": "workspace:*",
-              "@bthwani/design-system": "workspace:*",
-              "@tanstack/react-query": "5.90.2",
-              "react-native": "0.86.2",
-              "react-native-safe-area-context": "~5.7.0",
-              "react-native-svg": "15.15.4",
-            },
-            devDependencies: {
-              "@types/node": "24.10.1",
-              "@types/react": "19.2.17",
-              react: "19.2.3",
-              typescript: "6.0.2",
-            },
-            exports: selectedDshExports,
-          };
-          writeJson(path.join(targetDsh, "package.json"), dshPkg);
-
-          // A focused TS config avoids declaring app/control-panel trees that
-          // are intentionally not imported during this client cutover.
-          writeJson(path.join(targetDsh, "tsconfig.json"), {
-            extends: "../../tsconfig.base.json",
-            compilerOptions: {
-              noEmit: true,
-              allowImportingTsExtensions: true,
-              moduleResolution: "Bundler",
-              lib: ["ES2022","DOM"],
-              strict: true,
-              esModuleInterop: true,
-              skipLibCheck: true,
-              jsx: "react-native",
-            },
-            include: [
-              "frontend/**/*.ts",
-              "frontend/**/*.tsx",
-              "clients/**/*.ts",
-            ],
-            exclude: ["node_modules","dist"],
-          });
-
-          // 5. Rewrite target app imports and path residue.
-          replaceInTree(targetApp, [
-            ["@bthwani/core-identity", "@bthwani/identity"],
-            ["@bthwani/data-runtime", "@bthwani/query-runtime"],
-            ["@bthwani/ui-kit", "@bthwani/design-system"],
-            ["apps/app-client/runtime", "apps/app-client"],
-            ["../../../tools/mobile", "../../tools/mobile"],
-          ]);
-
-          // 6. Negative-space and deployable-identity checks.
-          const forbidden = [
-            "@bthwani/core-identity",
-            "@bthwani/data-runtime",
-            "@bthwani/ui-kit",
-            "apps/app-client/runtime",
-          ];
-          for (const scanRoot of [targetApp, targetUi, targetData, targetDsh]) {
-            for (const file of walkFiles(scanRoot)) {
-              if (!textExtensions.has(path.extname(file)) && ![".easignore",".gitignore",".env.example"].includes(path.basename(file))) continue;
-              let text;
-              try { text = fs.readFileSync(file, "utf8"); } catch { continue; }
-              for (const token of forbidden) {
-                if (text.includes(token)) {
-                  throw new Error("Forbidden losing authority/path remains in " + path.relative(root, file) + ": " + token);
-                }
-              }
-            }
-          }
-
-          for (const losingRoot of ["core","shared"]) {
-            if (fs.existsSync(path.join(root, losingRoot))) {
-              throw new Error("Forbidden top-level target root exists: " + losingRoot);
-            }
-          }
-
-          const mobileConfig = readJson(path.join(targetApp, "mobile.config.json"));
-          const expectedIdentity = {
-            slug: "app-client-next",
-            scheme: "bthwani-client-next",
-            owner: "bthwani1",
-            version: "0.3.0",
-            androidPackage: "com.bthwani.client.next",
-            iosBundleIdentifier: "com.bthwani.client.next",
-            projectId: "abec897b-1f5f-409d-8286-607a5a6b69e2",
-          };
-          for (const [key, expected] of Object.entries(expectedIdentity)) {
-            if (mobileConfig[key] !== expected) {
-              throw new Error("App-client deployable identity drift: " + key + " expected=" + expected + " actual=" + mobileConfig[key]);
-            }
-          }
-
-          const report = {
-            donorHead: "14c2ef2fd5a0ffadda00d307c9dea81d5cf49799",
-            app: "app-client",
-            targetRoot: "apps/app-client",
-            preservedDevelopmentBuild: true,
-            nativeIdentity: expectedIdentity,
-            dshFilesMaterialized: copied.size,
-            dshExports: [...usedDshExportKeys].sort(),
-            canonicalImports: [
-              "@bthwani/identity",
-              "@bthwani/design-system",
-              "@bthwani/query-runtime",
-              "@bthwani/dsh",
-            ],
-            forbiddenTargetRoots: ["core","shared"],
-            easBuildExecuted: false,
-            expoPrebuildExecuted: false,
-          };
-          ensureDir(path.join(root, "docs", "evidence"));
-          fs.writeFileSync(
-            path.join(root, "docs", "evidence", "app-client-runtime-equivalence.json"),
-            JSON.stringify(report, null, 2) + "\n",
-            "utf8",
-          );
-          console.log(JSON.stringify(report, null, 2));
-          NODE
-          node /tmp/materialize-client.mjs
-          rm -rf .donor
-
-      - name: Install canonical workspace and lockfile
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "24.17.0"
+          node-version: 24.17.0
+
+      - name: Verify donor and materializer
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C .donor rev-parse HEAD)" = "14c2ef2fd5a0ffadda00d307c9dea81d5cf49799"
+          node --check tools/migration/materialize-app-client-runtime.mjs
+
+      - name: Materialize app-client runtime equivalence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/migration/materialize-app-client-runtime.mjs
+          rm -rf .donor
 
       - name: Activate pnpm
         shell: bash
@@ -553,7 +53,7 @@ jobs:
           set -euo pipefail
           corepack enable
           corepack prepare pnpm@10.34.0 --activate
-          pnpm --version
+          test "$(pnpm --version)" = "10.34.0"
 
       - name: Generate lockfile and install
         shell: bash
@@ -562,58 +62,40 @@ jobs:
           pnpm install --lockfile-only
           pnpm install --frozen-lockfile
 
-      - name: Materialize Identity generated TypeScript client
+      - name: Generate Identity client
         shell: bash
         run: |
           set -euo pipefail
           pnpm --dir services/identity openapi:generate
 
-      - name: Verify mobile config
+      - name: Verify app-owned Expo identity
         shell: bash
         run: |
           set -euo pipefail
           pnpm mobile:verify-config
-          pnpm --dir apps/app-client exec expo config --type public --json > /tmp/app-client-expo-config.json
-          node - <<'NODE'
-          const fs = require("node:fs");
-          const cfg = JSON.parse(fs.readFileSync("/tmp/app-client-expo-config.json","utf8"));
-          const expected = {
-            slug: "app-client-next",
-            scheme: "bthwani-client-next",
-            owner: "bthwani1",
-            version: "0.3.0",
-            androidPackage: "com.bthwani.client.next",
-            iosBundleIdentifier: "com.bthwani.client.next",
-            projectId: "abec897b-1f5f-409d-8286-607a5a6b69e2",
-          };
-          if (cfg.slug !== expected.slug) throw new Error("slug drift");
-          if (cfg.scheme !== expected.scheme) throw new Error("scheme drift");
-          if (cfg.owner !== expected.owner) throw new Error("owner drift");
-          if (cfg.version !== expected.version) throw new Error("version drift");
-          if (cfg.android?.package !== expected.androidPackage) throw new Error("android package drift");
-          if (cfg.ios?.bundleIdentifier !== expected.iosBundleIdentifier) throw new Error("iOS bundle drift");
-          if (cfg.extra?.eas?.projectId !== expected.projectId) throw new Error("EAS projectId drift");
-          console.log("APP_CLIENT_EXPO_IDENTITY=PASS");
-          NODE
+          pnpm --dir apps/app-client exec expo config --type public --json > /tmp/app-client-config.json
+          node -e "const c=require('/tmp/app-client-config.json');if(c.slug!=='app-client-next'||c.scheme!=='bthwani-client-next'||c.owner!=='bthwani1'||c.version!=='0.3.0'||c.android?.package!=='com.bthwani.client.next'||c.ios?.bundleIdentifier!=='com.bthwani.client.next'||c.extra?.eas?.projectId!=='abec897b-1f5f-409d-8286-607a5a6b69e2')process.exit(7);console.log('APP_CLIENT_EXPO_IDENTITY=PASS')"
 
-      - name: Verify Android JavaScript bundle without native build
+      - name: Verify Android JavaScript bundle
         shell: bash
         run: |
           set -euo pipefail
           rm -rf /tmp/app-client-export
           pnpm --dir apps/app-client exec expo export --platform android --output-dir /tmp/app-client-export
           test -d /tmp/app-client-export
-          echo "APP_CLIENT_ANDROID_JS_BUNDLE=PASS"
-          echo "NO_EAS_BUILD=PASS"
-          echo "NO_EXPO_PREBUILD=PASS"
+          echo APP_CLIENT_ANDROID_JS_BUNDLE=PASS
+          echo NO_EAS_BUILD=PASS
+          echo NO_EXPO_PREBUILD=PASS
 
-      - name: Verify no losing target roots or package identities
+      - name: Verify negative space
         shell: bash
         run: |
           set -euo pipefail
           test ! -d core
           test ! -d shared
-          ! git grep -n -e '@bthwani/core-identity' -e '@bthwani/data-runtime' -e '@bthwani/ui-kit' -- apps/app-client services/dsh packages/design-system packages/query-runtime
+          if git grep -n -e '@bthwani/core-identity' -e '@bthwani/data-runtime' -e '@bthwani/ui-kit' -- apps/app-client services/dsh packages/design-system packages/query-runtime; then
+            exit 8
+          fi
           git diff --check
 
       - name: Commit runtime equivalence
@@ -622,8 +104,7 @@ jobs:
           set -euo pipefail
           git config user.name "bthwani2-boop"
           git config user.email "242864241+bthwani2-boop@users.noreply.github.com"
-          git add apps/app-client services/dsh services/identity/clients/generated packages/design-system packages/query-runtime tools/mobile package.json pnpm-lock.yaml docs/evidence/app-client-runtime-equivalence.json
-          git status --short
+          git add apps/app-client services/dsh services/identity/clients/generated packages/design-system packages/query-runtime package.json pnpm-lock.yaml docs/evidence/app-client-runtime-equivalence.json
           git commit -m "refactor(mobile): materialize app-client runtime equivalence"
           git pull --rebase origin a
           git push origin HEAD:a
