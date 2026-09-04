@@ -73,7 +73,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary; states: loading, empty, ready, pending, approved, rejected, superseded, reconciling, retryable_failure, failed_terminal, forbidden, conflict, error; actions: request, approve, reject, request rollback, recover failed-terminal intent by supersede-and-replace, read audit, read diagnostics, navigate to sovereign partner/workforce owner surface.
 - `backend` — required; actors: operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary; states: not_started, pending, reconciling, retryable_failure, failed_terminal, applied, forbidden, conflict; actions: enforce exact permissions, enforce maker-checker and beneficiary separation, fence by canonical role version, delegate Identity/Workforce/Partner mutations to their owners, finalize only after canonical owner readback, return redacted audit and diagnostics.
 - `database` — required; actors: operator-role-maker, operator-role-checker, operator-auditor; states: versioned, append_only_audit, immutable_failed_terminal_intent, auditable; actions: persist requests and decisions, enforce one fresh replacement per superseded terminal failure, retain immutable source decision history, reject audit update/delete outside explicit maintenance authority.
-- `shared` — required; actors: operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary; states: loading, ready, forbidden, conflict, error; actions: map canonical administration state, coordinate mutation/readback, avoid local role or approval truth.
+- technical presentation binding — required implementation evidence; actors: operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary; states: loading, ready, forbidden, conflict, error; actions: map canonical administration state, coordinate mutation/readback, avoid local role or approval truth.
 - `app-client` — excluded; states: not_affected_directly; exclusion reason: Consumes authorization outcomes but does not own administration controls..
 - `app-partner` — excluded; states: not_affected_directly; exclusion reason: Partner lifecycle/authorization outcomes are consumed through sovereign owners; administration does not become partner lifecycle truth..
 - `app-captain` — excluded; states: not_affected_directly; exclusion reason: Captain credential/workforce truth remains with Workforce and is only affected indirectly by authorized outcomes..
@@ -144,6 +144,9 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 }
 ```
 
+**Primary success measure.** governed administration decisions finalized only after independent approval and canonical owner readback.
+**Guardrail measures.** self/beneficiary approval; broad-role bypass; mutable audit history; duplicate terminal-failure replacement; sensitive data leakage.
+
 ### CAPTAIN_DISPATCH — إسناد الكابتن والتوزيع
 
 **Problem.** A ready BThwani-delivery order needs one governed dispatch offer/assignment truth with eligibility, capacity, timeout, captain decision, cancellation/reassignment and cross-surface readback that cannot fork under retry or concurrency.
@@ -200,7 +203,10 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `app-client` — required; actors: client; states: loading, tracking_waiting_assignment, tracking_assigned, tracking_in_progress, offline, error; actions: read customer-safe tracking state, refresh.
 - `backend` — required; actors: operator, captain, client, system; states: ready_for_pickup, offered, assigned, expired, rejected, picked_up, conflict, forbidden; actions: authorize, evaluate eligibility/capacity, create one offer, accept or reject, expire, reassign when legal, audit, return canonical readback.
 - `database` — required; actors: system; states: transactional, idempotent, single_active_assignment, capacity_guarded, audited; actions: enforce uniqueness, lock concurrent assignment, persist offer deadline and decision, retain decision history.
-- `shared` — required; actors: operator, captain, client; states: loading, ready, expired, conflict, forbidden, offline, error; actions: map canonical state, coordinate mutation/readback, avoid local eligibility or assignment truth.
+- technical presentation binding — required implementation evidence; actors: operator, captain, client; states: loading, ready, expired, conflict, forbidden, offline, error; actions: map canonical state, coordinate mutation/readback, avoid local eligibility or assignment truth.
+
+**Primary success measure.** eligible dispatch attempts resolving to one concurrency-safe assignment or explicit timeout/decline with canonical cross-surface readback.
+**Guardrail measures.** concurrent active assignments; expired offer accepted; ineligible captain assigned; stale-version decision; dispatch-created financial truth.
 
 ### IDENTITY_ACTIVATION_SESSIONS
 
@@ -259,7 +265,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: operator; states: loading, authenticated, forbidden, not_found, failure; actions: authenticate and use authorized actor administration.
 - `backend` — required; actors: workforce-service, operator, customer, partner, captain, field; states: healthy, degraded, not_ready, authorized, forbidden, conflict; actions: enforce trust boundaries and persist Identity-owned truth.
 - `database` — required; actors: workforce-service, operator, customer, partner, captain, field; states: transactional, isolated, audited, migration_governed; actions: store sovereign actor, activation, session, and lifecycle truth.
-- `shared` — required; actors: workforce-service, operator, customer, partner, captain, field; states: typed, bound, fail_closed; actions: consume generated Identity contracts without parallel auth truth.
+- technical presentation binding — required implementation evidence; actors: workforce-service, operator, customer, partner, captain, field; states: typed, bound, fail_closed; actions: consume generated Identity contracts without parallel auth truth.
 
 ### MAPS_SERVICE_AREA_ADDRESS_PRIVACY — الخرائط ومناطق الخدمة وخصوصية العناوين
 
@@ -315,11 +321,14 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: authorized_operator; states: loading, ready, empty, provider_unavailable, provider_not_configured, provider_uncertain, conflict, forbidden, error; actions: read provider health, manage service areas, manage privacy policy, read privacy-safe queue/audit status.
 - `backend` — required; actors: authenticated_client, authorized_operator, privacy_worker; states: authorized, forbidden, invalid_provider_result, serviceable, unserviceable, conflict, idempotent_replay; actions: normalize provider result, resolve active service area, validate address ownership/geofence, validate polygons, enforce version/idempotency, schedule privacy work, return redacted readback.
 - `database` — required; actors: authorized_operator, privacy_worker; states: transactional, versioned, geospatially_constrained, retention_governed, privacy_audited; actions: enforce service-area geometry/invariants, persist address/service-area truth, queue due anonymization, support retry-safe SKIP LOCKED processing, exclude raw PII from privacy-audit projection.
-- `shared` — required; actors: authenticated_client, authorized_operator; states: loading, ready, unserviceable, forbidden, offline, error; actions: map canonical map/address/serviceability state, avoid local geofence/provider truth.
+- technical presentation binding — required implementation evidence; actors: authenticated_client, authorized_operator; states: loading, ready, unserviceable, forbidden, offline, error; actions: map canonical map/address/serviceability state, avoid local geofence/provider truth.
 - `providers` — required; actors: authenticated_client, authorized_operator; states: healthy, unavailable, not_configured, uncertain_result; actions: resolve governed external map/search/reverse-geocoding data through the provider boundary.
 - `app-partner` — excluded; states: not_affected; exclusion reason: No partner-owned client address/geofence mutation is part of this capability..
 - `app-captain` — excluded; states: not_affected; exclusion reason: Captain navigation consumes later delivery-location projections and does not own client-address truth..
 - `app-field` — excluded; states: not_affected; exclusion reason: Field onboarding/assignments do not own client delivery-address truth..
+
+**Primary success measure.** owned address/serviceability decisions producing consistent privacy-safe canonical readback across commerce surfaces.
+**Guardrail measures.** cross-customer address access; client-authoritative serviceability; stale geometry decision; precise-location overexposure; provider result treated as domain truth.
 
 ### ORDER_CREATION — إنشاء الطلب وحقيقة الطلب
 
@@ -373,7 +382,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: operator; states: loading, ready, not_found, forbidden, error; actions: read authorized order truth.
 - `backend` — required; actors: client, partner, operator, system; states: authorized, forbidden, invalid_checkout, conflict, idempotent_replay, created; actions: authorize, validate checkout, persist order snapshot, persist required event/outbox, return canonical readback.
 - `database` — required; actors: system; states: transactional, idempotent, snapshot_persisted, auditable; actions: enforce one order per canonical checkout/idempotency identity, persist immutable required snapshot, atomically retain required operational event/outbox state.
-- `shared` — required; actors: client, partner, operator; states: loading, success, forbidden, conflict, offline, error; actions: map canonical contract state, coordinate readback, avoid local order/payment authority.
+- technical presentation binding — required implementation evidence; actors: client, partner, operator; states: loading, success, forbidden, conflict, offline, error; actions: map canonical contract state, coordinate readback, avoid local order/payment authority.
 - `app-captain` — excluded; states: not_affected; exclusion reason: Captain enters later dispatch/fulfillment journeys, not order creation..
 - `app-field` — excluded; states: not_affected; exclusion reason: Field workforce does not own order creation/truth under the current model..
 
@@ -390,6 +399,9 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
   ]
 }
 ```
+
+**Primary success measure.** eligible confirmed checkout intents producing exactly one canonical order with immutable accepted snapshots and owner-side readback.
+**Guardrail measures.** duplicate order per checkout; order from blocked/expired checkout; snapshot repricing/rebinding; DSH financial write; success without persisted readback.
 
 ### PARTNER_FLEET_CONNECTION
 
@@ -452,7 +464,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `app-partner` — required; actors: partner-operator; states: loading, ready, empty, error, pending, redeemed, revoked, expired, version-conflict; actions: issue code, list authoritative connection lifecycle, revoke pending code, reload authoritative state.
 - `app-captain` — required; actors: captain; states: loading, empty, active, suspended, error, expired, ineligible, already-bound, version-conflict; actions: redeem code, list memberships across stores, disconnect one membership, refresh.
 - `control-panel` — required; actors: control-panel-operator; states: loading, empty, ready, error, redacted; actions: read redacted store fleet snapshot, retry readback.
-- `shared` — required; actors: partner-operator, captain, control-panel-operator; states: loading, success, error, conflict; actions: call sovereign DSH routes, carry optimistic versions, remove superseded pending projections, avoid local fleet truth.
+- technical presentation binding — required implementation evidence; actors: partner-operator, captain, control-panel-operator; states: loading, success, error, conflict; actions: call sovereign DSH routes, carry optimistic versions, remove superseded pending projections, avoid local fleet truth.
 - `backend` — required; actors: partner-operator, captain, control-panel-operator; states: pending, redeemed, revoked, expired, active, suspended, version-conflict, forbidden; actions: enforce role and store scope, enforce active-store eligibility, hash code, lock mutations, audit lifecycle actions, notify partner and captain, return redacted operator readback.
 - `database` — required; actors: partner-operator, captain, control-panel-operator; states: transactional, versioned, audited, trusted-context-scoped, single-use, store-scoped-multi-membership; actions: store digest only, enforce one pending code, persist and audit expiry, prevent duplicate identity binding inside one store, permit governed multi-store membership, retain lifecycle audit and notifications.
 
@@ -523,7 +535,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: control-operator; states: loading, empty, ready, forbidden, conflict, readiness-blocked, error; actions: review evidence, link eligible unowned store, apply allowed transition, read audit.
 - `backend` — required; actors: field-agent, partner-owner, control-operator, client; states: authorized, trusted-context-required, not-found, forbidden, conflict, readiness-blocked, idempotent-replay, service-unavailable; actions: authenticate, derive trusted context, authorize, validate, persist, audit, handoff to WLT, read back.
 - `database` — required; actors: control-operator; states: trusted-context-scoped, business-scope-isolated, consistent, conflict-rejected, single-active-payout, audit-retained; actions: enforce trusted-context scope, enforce Partner/Store ownership, enforce version, enforce idempotency, retain audit.
-- `shared` — required; actors: field-agent, partner-owner, control-operator; states: loading, ready, offline, forbidden, conflict, partial, error; actions: map contracts, coordinate mutations, normalize readback, present recovery actions.
+- technical presentation binding — required implementation evidence; actors: field-agent, partner-owner, control-operator; states: loading, ready, offline, forbidden, conflict, partial, error; actions: map contracts, coordinate mutations, normalize readback, present recovery actions.
 
 ### PLATFORM_CHANGE_SETS
 
@@ -539,7 +551,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Primary actors.** platform_operator, platform_approver, projection_reader.
 
-**Canonical ownership.** Platform Control.
+**Canonical ownership.** Platform Control semantic control-plane responsibility. Independent deployment as `services/platform-control` requires separate executable service-admission proof.
 
 **Material deployable surfaces.** control-panel.
 
@@ -574,7 +586,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: platform_operator, platform_approver; states: loading, empty, ready, blocked, error; actions: create, validate, submit, approve, reject, apply, rollback.
 - `backend` — required; actors: platform_operator, platform_approver; states: draft, validated, submitted, approved, rejected, applied, rolled_back, failed; actions: authorize, validate_preconditions, persist_transition, audit_transition.
 - `database` — required; actors: platform_operator, platform_approver; states: transaction_open, committed, rolled_back; actions: reserve_target, enforce_sensitive_boundary, persist_audit, enforce_version.
-- `shared` — required; actors: platform_operator, platform_approver; states: loading, ready, blocked, error; actions: map_contract, orchestrate_readback, map_errors.
+- technical presentation binding — required implementation evidence; actors: platform_operator, platform_approver; states: loading, ready, blocked, error; actions: map_contract, orchestrate_readback, map_errors.
 
 ### PLATFORM_SOVEREIGN_CONTROL_PLANE
 
@@ -589,7 +601,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Primary actors.** platform-governor, platform-operator, platform-approver, platform-applier, platform-rollout-manager, platform-auditor, customer, partner, captain, field-agent.
 
-**Canonical ownership.** Platform Control; domain and WLT truths remain at their owners.
+**Canonical ownership.** Platform Control semantic control-plane responsibility; domain and WLT truths remain at their owners. Independent deployment as `services/platform-control` remains conditional on executable service-admission proof.
 
 **Material deployable surfaces.** control-panel.
 
@@ -635,7 +647,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Surface semantics**
 - `control-panel` — required; actors: platform-governor, platform-operator, platform-approver, platform-applier, platform-rollout-manager, platform-auditor; states: loading, success, partial-read, permission-denied, unavailable, draft, validated, submitted, approved, rejected, applied, rolled_back, running, paused, completed, aborted, health-gate-failed, version-conflict; actions: read live posture, operate authorized changes, operate authorized rollouts.
-- `shared` — required; actors: platform-governor, platform-operator, platform-approver, platform-applier, platform-rollout-manager, platform-auditor; states: idle, loading, success, error, restricted-resource, unavailable-resource, mutation-loading, mutation-success, mutation-error; actions: aggregate authorized reads, invoke contract operations, read back affected state.
+- technical presentation binding — required implementation evidence; actors: platform-governor, platform-operator, platform-approver, platform-applier, platform-rollout-manager, platform-auditor; states: idle, loading, success, error, restricted-resource, unavailable-resource, mutation-loading, mutation-success, mutation-error; actions: aggregate authorized reads, invoke contract operations, read back affected state.
 - `backend` — required; actors: platform-governor, platform-operator, platform-approver, platform-applier, platform-rollout-manager, platform-auditor; states: OPERATIONAL, PARTIALLY_BOUND, FIX_REQUIRED, draft, validated, submitted, approved, rejected, applied, rolled_back, running, paused, completed, aborted, failed; actions: enforce permissions and separated duties, evaluate health gates, enforce revisions, persist atomically, audit and read back, restore baselines.
 - `database` — required; actors: platform-operator, platform-approver, platform-applier, platform-rollout-manager, platform-auditor; states: persistent, transactional, revisioned, audited, health-gated, progressive, rollback-capable; actions: store workflows, capture baselines, reject stale operations, prevent concurrent active rollout.
 - `app-client` — excluded; actors: customer; states: excluded; exclusion reason: Consumes effective outcomes only and cannot access sovereign controls..
@@ -656,7 +668,9 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Primary actors.** client, partner, captain, field, operator.
 
-**Canonical ownership.** WLT financial truth; DSH application facade; Identity trust context.
+**Canonical ownership.** This is a durable read-access capability with no financial writer of its own: WLT owns financial truth, DSH owns the application-facing projection/facade, and Identity owns trust context.
+
+**Responsibility classification.** DERIVED_PROJECTION_READ_MODEL with durable multi-surface outcome; never a financial mutation authority.
 
 **Material deployable surfaces.** app-client, app-partner, app-captain, app-field, control-panel.
 
@@ -719,6 +733,8 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Canonical ownership.** WLT financial truth; DSH provides operational evidence.
 
+**Boundary/non-overlap.** SETTLEMENTS_COMMISSIONS owns earning/commission calculation, policy-version application and settlement/commission lifecycle. WLT_MONEY_MOVEMENT_SETTLEMENT owns common wallet/ledger money movement, Cash-In/COD/payout execution and reconciliation primitives; the same financial fact may not be independently mutable in both capability implementations.
+
 **Material deployable surfaces.** app-partner, app-captain, app-field, control-panel.
 
 **Business invariants**
@@ -765,7 +781,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: finance_operator; states: loading, empty, success, draft, active, inactive, pending, confirmed, settled, rejected, reversed, forbidden, conflict, offline, error; actions: create policy version, initiate settlement, confirm, settle, reject, reverse, adjust, inspect audit.
 - `backend` — required; actors: finance_operator, dsh_service, wlt_service; states: authorized, forbidden, invalid, conflict, pending, confirmed, settled, rejected, reversed; actions: authenticate, validate evidence, calculate, enforce idempotency, post ledger, audit, read back.
 - `database` — required; actors: wlt_service; states: versioned, immutable, idempotent, balanced, auditable, trusted-context-scoped; actions: enforce uniqueness, retain evidence, retain reasoned adjustment, prevent negative amount, retain policy version.
-- `shared` — required; actors: partner, captain, field, finance_operator; states: idle, loading, empty, success, forbidden, conflict, offline, partial, error; actions: map canonical states, classify errors, disable duplicate actions, refresh canonical readback.
+- technical presentation binding — required implementation evidence; actors: partner, captain, field, finance_operator; states: idle, loading, empty, success, forbidden, conflict, offline, partial, error; actions: map canonical states, classify errors, disable duplicate actions, refresh canonical readback.
 
 ### SPECIAL_REQUESTS
 
@@ -827,7 +843,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `app-field` — excluded; states: not_affected; exclusion reason: Field workforce does not own these special requests under the current model..
 - `backend` — required; actors: client, operator, captain; states: authorized, forbidden, not_found, conflict, idempotent_replay, information_pending, information_responded, wlt_unavailable, dispatch_not_ready, exception_open, exception_resolved; actions: validate ownership, enforce stage transition, persist information exchange, create and read payment session, create assignment, read dispatch evidence, resolve eligible exception, return canonical readback.
 - `database` — required; actors: client, operator, captain; states: transactional, context_scoped, versioned, audited, idempotent; actions: persist request truth, persist information rounds, enforce constraints, record workflow timestamps, link WLT dispatch proof and exception references.
-- `shared` — required; actors: client, operator, captain; states: loading, empty, success, offline, forbidden, conflict, error; actions: classify error, bind generated contract, coordinate information exchange, enforce quote stage, refresh canonical request execution and financial readback, map captain service type.
+- technical presentation binding — required implementation evidence; actors: client, operator, captain; states: loading, empty, success, offline, forbidden, conflict, error; actions: classify error, bind generated contract, coordinate information exchange, enforce quote stage, refresh canonical request execution and financial readback, map captain service type.
 
 ### STORE_CAPTAIN_HANDOFF — العهدة الثنائية من المتجر إلى الكابتن
 
@@ -890,7 +906,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `app-client` — required; states: loading, pre_pickup, picked_up, in_delivery, offline, error; actions: read truthful order tracking consequence.
 - `backend` — required; actors: partner, captain, operator, system; states: awaiting_partner, partner_confirmed, completed, superseded, exception_open, exception_resolved, forbidden, conflict; actions: authorize store/captain scope, enforce active assignment, persist dual confirmation, enforce idempotency/payload consistency, create/read/resolve exception, return canonical readback.
 - `database` — required; actors: system, operator; states: transactional, assignment_bound, idempotent, audited, exception_governed; actions: persist handoff attempt, prevent competing executable attempt, retain actor/time/version, persist exception/correlation, enforce supersession.
-- `shared` — required; actors: partner, captain, operator; states: loading, ready, blocked, completed, superseded, offline, error; actions: map canonical handoff/exception state, avoid local custody/exception truth.
+- technical presentation binding — required implementation evidence; actors: partner, captain, operator; states: loading, ready, blocked, completed, superseded, offline, error; actions: map canonical handoff/exception state, avoid local custody/exception truth.
 - `app-field` — excluded; states: not_affected; exclusion reason: Field workforce has no custody role after store readiness under the current model..
 
 **Additional durable semantic model**
@@ -907,6 +923,9 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
   }
 }
 ```
+
+**Primary success measure.** eligible custody handoffs completing once with attributable proof and consistent partner/captain/order readback.
+**Guardrail measures.** double custody; stale/version-invalid handoff; missing required proof; unauthorized actor transition; financial mutation hidden inside custody flow.
 
 ### SUPPORT_INCIDENTS_ORDER_RESCUE
 
@@ -964,7 +983,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: operator; states: loading, empty, error, open, investigating, action_required, resolved, closed, conflict; actions: reply, transition ticket, transition incident, open rescue case, resolve rescue case, read audit.
 - `backend` — required; actors: client, partner, captain, operator; states: authorized, forbidden, conflict, not_found, idempotent_replay; actions: validate ownership, enforce transition, write event, return readback.
 - `database` — required; actors: operator; states: transactional, constrained, audited, idempotent; actions: persist support truth, persist incident truth, persist rescue truth, append audit event.
-- `shared` — required; actors: client, partner, captain, operator; states: loading, empty, success, error, offline, conflict; actions: map contract, preserve mutation identity, refresh readback, classify error.
+- technical presentation binding — required implementation evidence; actors: client, partner, captain, operator; states: loading, empty, success, error, offline, conflict; actions: map contract, preserve mutation identity, refresh readback, classify error.
 
 ### WLT_MONEY_MOVEMENT_SETTLEMENT
 
@@ -980,6 +999,8 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 **Primary actors.** client, captain, partner, field, finance-operator, system.
 
 **Canonical ownership.** WLT financial truth; DSH application facade; Identity trust context.
+
+**Boundary/non-overlap.** WLT_MONEY_MOVEMENT_SETTLEMENT owns common wallet/ledger movement, Cash-In/COD, payout execution and reconciliation. Commission/settlement calculation policy and its evidence-derived lifecycle remain in SETTLEMENTS_COMMISSIONS; shared ledger primitives do not create two writers for the same posting.
 
 **Material deployable surfaces.** app-client, app-captain, app-partner, app-field, control-panel.
 
@@ -1048,7 +1069,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: finance-operator; states: loading, ready, blocked, needs_action, awaiting_approval, awaiting_execution, awaiting_evidence, awaiting_verification, awaiting_reconciliation, exception, closed, forbidden, error; actions: inspect server-calculated truth, initiate governed destination provision or change, verify or approve when authorized, prepare, approve or reject when authorized, freeze batch, record execution, verify independently, reconcile, resolve exception, close day when gates pass.
 - `backend` — required; actors: client, captain, partner, field, finance-operator, system; states: authenticated, authorized, idempotent, reserved, held, approved, frozen, executed, evidenced, verified, reconciled, completed, unknown_external_result, blocked, exception; actions: derive trusted financial purpose, derive monetary effects from canonical events and policy, resolve payout amount and current verified destination, enforce policy, lock or reserve atomically, post ledger, normalize provider evidence, hold payout, freeze immutable batch, record external execution, reconcile, audit, fail closed.
 - `database` — required; actors: system, finance-operator; states: balanced, append_only, versioned, immutable_when_frozen, reconcilable, auditable, operator_context_isolated; actions: enforce uniqueness, enforce balance invariants, preserve history, reject contradictory replay, prevent in-place mutation of approved or frozen financial facts, preserve destination version provenance.
-- `shared` — required; actors: client, captain, partner, field, finance-operator; states: contract_aligned, capability_driven, no_local_truth; actions: render server-owned state, submit non-authoritative user intent, refresh canonical readback.
+- technical presentation binding — required implementation evidence; actors: client, captain, partner, field, finance-operator; states: contract_aligned, capability_driven, no_local_truth; actions: render server-owned state, submit non-authoritative user intent, refresh canonical readback.
 
 ### ZONES_SLA_CAPACITY_DELIVERY_MODES
 
@@ -1156,6 +1177,24 @@ The following envelopes close responsibilities proven material by the donor/curr
 - privacy/marketing consent is enforced by downstream consumers rather than copied into parallel stores;
 - app-client loading/empty/success/conflict/forbidden/offline/error states are truthful.
 
+**Target state.** One versioned DSH profile/preferences readback owns non-authentication customer profile, locale/currency preference and communication consent with privacy-safe scoped mutation.
+**Primary success measure.** successful versioned owner-side profile/preference updates with canonical readback across required customer surfaces.
+**Guardrail measures.** stale-version overwrite; Identity profile duplication; consent inferred from provider delivery; cross-customer read/write; unsupported locale/currency accepted.
+**Business invariants**
+- authentication/session facts remain Identity-owned;
+- profile/preferences are customer-scoped and versioned;
+- locale/currency/consent values are validated server-side;
+- delivery success/failure never fabricates consent.
+**Actor responsibility envelope**
+- `customer` — reads/updates only delegated own profile/preferences; forbidden: mutate authentication/privileged status or another customer.
+- `operator` — reads/changes only explicitly authorized support fields with audit; forbidden: bypass privacy/scope.
+- `DSH profile system` — canonical writer/readback for this capability.
+**Surface semantics**
+- `app-client` — required for owned profile/preferences and truthful conflict/offline/error recovery.
+- `control-panel` — conditional authorized support only.
+- `backend` and `database` — required scoped/versioned owner enforcement.
+- technical presentation binding — implementation evidence only; no local profile truth.
+
 ### PARTNER_TEAM_MEMBERSHIP
 
 **Problem.** Store-scoped partner team membership must have a real lifecycle and audit without becoming Identity permission truth or being conflated with captain identity/affiliation.
@@ -1190,41 +1229,80 @@ Resend-invite preserves `invited`; ended membership is not silently reused as ac
 
 **Acceptance expectations.** every mutation is scoped, versioned, correlated/idempotent where retryable, audited from→to, and read back from DSH canonical membership.
 
-### CATALOG_APPROVAL_PUBLICATION
+**Target state.** One DSH partner-team membership lifecycle owns store-scoped operational membership while Identity remains authentication/permission/session authority.
+**Primary success measure.** invited members reaching a correct scoped active/suspended/ended state with matching Identity authorization readback.
+**Guardrail measures.** cross-store membership access; active membership without valid Identity binding; stale-version mutation; duplicate invite; local role authority in app.
+**Business invariants**
+- membership scope is explicit per partner/store;
+- membership lifecycle and Identity permission/session facts remain separate owners;
+- invite/activate/suspend/end transitions are versioned and auditable;
+- no membership grants broader store scope than recorded.
+**Actor responsibility envelope**
+- `partner manager` — manages authorized team scope; forbidden: self-grant unauthorized stores/permissions.
+- `member` — accepts/uses only granted scope; forbidden: infer broader access from role label.
+- `Identity` — owns auth/session/permission binding; does not own DSH membership lifecycle.
+**Surface semantics**
+- `app-partner` and `control-panel` — required where membership management/readback is exposed.
+- `backend` and `database` — required canonical membership/version/audit enforcement.
+- technical presentation binding — implementation evidence only.
 
-**Problem.** Catalog/store content cannot become customer-visible through disconnected partner, field, marketing or UI flags.
+### CENTRAL_CATALOG — الكتالوج المركزي والاعتماد والنشر
 
-**Required outcome.** Content moves through one auditable DSH approval/publication chain before client visibility, with explicit needs-fix/rejection recovery.
+**Problem.** Taxonomy, master-product identity, governed attributes, store assortment, proposals, digital-asset references and customer publication can diverge when partner, field, marketing, search or UI layers keep independent catalog meaning.
+**Target state.** One DSH Central Catalog capability owns canonical catalog identity and lifecycle; approval/publication is a named workflow inside that owner, while search/discovery and object storage remain derived/technical consumers.
+**Primary success measure.** percentage of catalog and assortment mutations that complete through one versioned owner lifecycle and produce consistent owner-side and customer-visible readback.
+**Guardrail measures.** duplicate taxonomy/master-product identities; illegal lifecycle transitions; client-visible ineligible records; stale-version writes; parallel publication flags; search-index publication authority; orphaned business asset references.
 
-**Primary actors.** partner submitter/reviewer, field submitter, marketing reviewer, catalog owner/operator, customer as read-only consumer.
+**Required outcome.** Canonical category/taxonomy, master-product identity, governed attributes/relationships, store assortment/proposals and publication eligibility are versioned, auditable and owned by DSH Central Catalog, with customer visibility derived only after every applicable catalog/store/serviceability gate passes.
 
-**Canonical ownership.** DSH catalog/store approval and publication truth; search/discovery is derived.
+**Primary actors.** catalog operator, partner submitter/reviewer, field submitter, marketing reviewer, store operator, customer as read-only consumer.
 
-**Material surfaces.** app-partner, app-field when submitting evidence, control-panel review/marketing/catalog operations, app-client read-only discovery.
+**Canonical ownership.** DSH Central Catalog capability. Catalog approval/publication is a subcapability/workflow of Central Catalog; search/discovery is derived; binary object storage is a technical adapter.
 
-**Durable stage model.**
-```text
-partner-submitted | field-submitted
-→ partner-review
-→ partner-approved
-→ marketing-review
-→ marketing-approved
-→ catalog-adopted
-→ client-visible
-```
-At applicable stages, `needs-fix` and `rejected` are legal governed outcomes; needs-fix may return only to an allowed submission/review stage.
+**Material deployable surfaces.** app-partner, app-field where evidence/proposals are submitted, control-panel, app-client read-only discovery.
 
-**Forbidden/negative invariants.**
-- no client-visible state before canonical approval/publication gates;
-- no store/search/local flag bypasses the stage owner;
-- no illegal stage jump;
-- no mutation outside trusted operator/owner scope;
-- no derived search index becomes publication authority.
+**Business invariants**
+- Category/taxonomy and master-product identity have one canonical DSH owner.
+- Governed attributes, option/rule relationships and master-product relationships are versioned and validated by the catalog owner.
+- Store assortment and product proposals reference canonical catalog identity rather than forking product/category meaning.
+- Approval/publication is part of the catalog lifecycle and cannot be bypassed by search, store-local flags, marketing presentation or client state.
+- Digital-asset business references and canonical-image selection belong to the catalog/business owner; object storage owns bytes/transport only.
+- Every material mutation is scoped, version-fenced, attributable and auditable.
 
-**Failure/recovery.** invalid transition, missing/invalid owner/entity/source, rejected/needs-fix, stale derived index, dependency unavailable; correction re-enters only through a legal owner transition.
+**Durable lifecycle semantics.**
+- taxonomy/node lifecycle may include active, merged and deprecated states when the governed object supports them;
+- master-product review uses draft, pending_review, approved, rejected and archived;
+- proposal/review flow may progress through catalog-draft, partner-proposed, partner-review, marketing-review, catalog-adopted, catalog-approved and client-visible, with needs-fix/rejected legal branches;
+- store-assortment publication uses governed draft/submitted/approved/client_visible/rejected/hidden style states with pause/resume/retire only through legal owner transitions.
 
-**Acceptance expectations.** every transition is validated and audited; list/get/search visibility derives from the same canonical publication/serviceability truth.
+**Forbidden/negative invariants**
+- no duplicate mutable category/master-product authority;
+- no client-visible record before applicable approval/publication/serviceability gates;
+- no illegal stage jump or stale-version mutation;
+- no partner/field/marketing/search/UI layer independently publishes canonical catalog truth;
+- no search/index result becomes eligibility or mutation authority;
+- no object/bucket URL becomes business ownership truth;
+- no deletion/merge loses required relationship, audit or active-assortment semantics.
 
+**Failure/recovery.** invalid transition, stale version, duplicate identity, unresolved relationship, rejected/needs-fix proposal, invalid assortment state, asset-reference failure, derived-index lag or dependency outage; recovery rereads the canonical catalog owner, applies a legal versioned correction and rebuilds derived consumers.
+
+**Acceptance expectations.** taxonomy/master products/attributes/relationships and assortment/proposal state have one owner; approval/publication readback is consistent across operator/partner/customer surfaces; append-only audit is retained; derived search can be rebuilt; customer visibility disappears when owner eligibility is revoked without editing the index as source truth.
+
+**Actor responsibility envelope**
+- `catalog operator` — governs taxonomy, master products, relationships, approval/publication and audit; forbidden: bypass version/review gates or make search/object storage authoritative.
+- `partner submitter/reviewer` — proposes or reviews authorized store/catalog material within scope; forbidden: mutate global taxonomy/master identity without granted catalog authority or self-publish through local flags.
+- `field submitter` — supplies assigned evidence/proposals; forbidden: approve its own evidence when separation is required.
+- `marketing reviewer` — reviews presentation/publication stage where Product requires it; forbidden: create catalog identity or bypass catalog owner.
+- `customer` — reads only customer-visible catalog/store material; forbidden: observe private review/evidence state.
+
+**Surface semantics**
+- `app-partner` — required where partner catalog/assortment proposals exist; states include loading, draft, submitted, needs_fix, approved, rejected, hidden, conflict, offline and error.
+- `app-field` — required where field evidence/proposals are part of the governed workflow; states include assigned, draft, submitted, needs_fix, forbidden, offline and error.
+- `control-panel` — required for authorized catalog/review/publication operations and audit.
+- `app-client` — required read-only customer visibility derived from canonical eligibility.
+- `backend` — required owner enforcement for identity, lifecycle, version, scope, audit and publication gates.
+- `database` — required canonical persistence for versioned catalog identities/relationships/workflow/audit.
+- technical presentation binding — implementation evidence only; maps canonical contracts/readback and owns no catalog truth.
 ### PROMOTIONS_COUPONS_FUNDING
 
 **Problem.** Promotion/coupon eligibility and financial funding effects can diverge or double-apply across DSH, checkout and WLT.
@@ -1263,6 +1341,23 @@ committed → reversed
 
 **Acceptance expectations.** accepted transaction snapshot is reproducible, funding source/amount is conserved, WLT postings are balanced/idempotent, refund/reversal uses the governed original funding lineage.
 
+**Target state.** DSH commercial eligibility and WLT funding reservation/posting/reversal remain one correlated cross-owner flow with no duplicated discount or money effect.
+**Primary success measure.** eligible promotion applications whose accepted transaction and WLT funding lineage reconcile exactly once.
+**Guardrail measures.** duplicate application; stale/expired promotion accepted; double reservation/commit; client-authoritative discount; unreconciled funding reversal.
+**Business invariants**
+- DSH owns terms/eligibility/lifecycle and WLT owns monetary reservation/posting;
+- accepted transaction preserves promotion version/funding lineage;
+- each logical funding identity has one legal reservation→terminal path;
+- refund/reversal references the original governed funding effect.
+**Actor responsibility envelope**
+- `marketing/operator` — governs terms/eligibility within permission; forbidden: post ledger truth or self-approve when separation applies.
+- `customer` — supplies intent/code only; forbidden: supply authoritative amount/eligibility.
+- `WLT system` — owns funding financial state and balanced effects.
+**Surface semantics**
+- `control-panel`, `app-client`, and conditional `app-partner` — canonical eligibility/readback only.
+- `backend` and `database` — required DSH lifecycle plus correlated WLT boundary.
+- technical presentation binding — implementation evidence only.
+
 ### RATINGS_REVIEWS_TRUST
 
 **Problem.** Ratings must be tied to proven eligible interactions and cannot be fabricated, duplicated or used as authorization truth.
@@ -1292,6 +1387,23 @@ committed → reversed
 **Failure/recovery.** not eligible, source/target not found, invalid score/data, edit window passed, idempotency conflict, moderation dispute; canonical reread resolves retry state.
 
 **Acceptance expectations.** moderation/fraud/dispute metadata is attributable; aggregates derive only from canonical active records; customer/partner/operator readbacks agree.
+
+**Target state.** One DSH trust capability owns eligible rating/review records, edit/moderation/dispute lifecycle and rebuildable aggregates.
+**Primary success measure.** eligible interactions producing one canonical rating/review with attributable moderation and consistent derived aggregate readback.
+**Guardrail measures.** ineligible rating; duplicate logical rating; cross-actor spoofing; aggregate direct edit; moderation without audit.
+**Business invariants**
+- rating requires a canonical eligible source interaction/target;
+- logical duplicate retry is idempotent;
+- moderation and edit-window rules are server-owned;
+- aggregates/search projections are rebuildable derivatives.
+**Actor responsibility envelope**
+- `customer/partner author` — submits only eligible attributed feedback; forbidden: spoof source/target or edit aggregate truth.
+- `moderator/operator` — applies authorized moderation/dispute action with audit.
+- `rated actor` — receives only permitted response/dispute/readback rights.
+**Surface semantics**
+- `app-client`, `app-partner`, `control-panel` — required where submission/moderation/readback applies.
+- `backend` and `database` — required canonical eligibility, record, moderation and audit.
+- technical presentation binding — implementation evidence only.
 
 ### NOTIFICATIONS_COMMUNICATIONS
 
@@ -1324,6 +1436,25 @@ committed → reversed
 
 **Acceptance expectations.** actor can list/read owned inbox and update allowed preferences; delivery has correlation/dedupe/audit; required native routing and degraded states are truthful.
 
+**Target state.** DSH Notifications owns actor inbox, preferences/topic configuration and delivery-attempt lifecycle while source domains own business-event meaning, adapters own channel execution and app hosts own native route translation.
+**Primary success measure.** eligible notification intents producing at-most-once governed inbox/delivery effects with correct preference and canonical readback.
+**Guardrail measures.** source mutation repeated by delivery retry; consent bypass; duplicate inbox/delivery effect; cross-actor inbox access; provider result treated as source-domain truth.
+**Business invariants**
+- originating domain event remains canonical business meaning;
+- DSH Notifications is the concrete owner/writer for inbox/preferences/topic/delivery records;
+- channel adapters are replaceable and never business owners;
+- app route strings are host translation, not durable domain meaning.
+**Actor responsibility envelope**
+- `recipient actor` — reads own inbox and changes allowed preferences; forbidden: access another actor or disable mandatory governed topics.
+- `source domain` — emits canonical semantic intent/event; forbidden: depend on provider result as business mutation truth unless explicitly governed.
+- `DSH Notifications` — owns inbox/preferences/delivery correlation/dedupe/readback.
+- `channel adapter/app host` — executes transport/native routing only.
+**Surface semantics**
+- all applicable actor apps — required when they expose inbox/preferences/native navigation.
+- `control-panel` — conditional topic/config/diagnostics within permission.
+- `backend` and `database` — required DSH notification owner persistence/dedupe/preferences.
+- technical presentation binding — implementation evidence only.
+
 ### ANALYTICS_OPERATIONAL_READ_MODELS
 
 **Problem.** Dashboards can silently turn stale/partial projections into transactional or financial truth.
@@ -1348,6 +1479,22 @@ committed → reversed
 **Failure/recovery.** lag, no data, incomplete ingestion, source mismatch, unauthorized dimension/drilldown; reconcile/rebuild from canonical sources.
 
 **Acceptance expectations.** read model can be rebuilt, freshness is observable, source mismatch is surfaced, and operator actions navigate to canonical owner rather than mutating analytics storage.
+
+**Target state.** A DSH operational-analytics projection owner builds authorized rebuildable read models with explicit provenance/freshness while each metric fact remains owned by its source domain.
+**Primary success measure.** authorized metrics whose source owner/window/freshness are explicit and reproducible from canonical sources.
+**Guardrail measures.** stale metric used to authorize mutation; financial metric not sourced from WLT; missing data rendered as zero; cross-scope drilldown leakage; non-rebuildable projection.
+**Business invariants**
+- DSH Analytics owns projection build/read lifecycle, not source transactional facts;
+- every metric names source owner/time basis/unit/freshness;
+- WLT remains source for authoritative financial facts;
+- projections are rebuildable and never mutation/authorization writers.
+**Actor responsibility envelope**
+- `operator/stakeholder reader` — reads only authorized scoped metrics and follows owner drilldown; forbidden: mutate source through analytics storage.
+- `projection builder` — ingests canonical facts with provenance/freshness; forbidden: invent missing truth.
+**Surface semantics**
+- `control-panel` and explicitly authorized stakeholder summaries — required where operational analytics is offered.
+- `backend` and projection storage — required derived owner/readback/rebuild path.
+- technical presentation binding — implementation evidence only.
 
 ### WLT_PRICING_QUOTES
 
@@ -1374,6 +1521,23 @@ committed → reversed
 
 **Acceptance expectations.** quote arithmetic conserves totals, evidence provenance is verifiable, and checkout/order snapshot preserves the accepted commercial/financial basis.
 
+**Target state.** One WLT quote lifecycle computes bounded currency-consistent totals from authenticated DSH evidence and exposes versioned readback without becoming a ledger posting by itself.
+**Primary success measure.** quotes reproducible from accepted source evidence/cart version with conserved totals.
+**Guardrail measures.** client-authoritative price; overflow/unbounded quantity; mismatched currency/product; stale evidence accepted; quote posted to ledger without owning transition.
+**Business invariants**
+- authoritative item/commercial evidence comes from canonical DSH owners;
+- WLT alone computes authoritative quote allocation/financial arithmetic;
+- quote is correlated to cart/evidence version and currency;
+- quote is non-posting until a payment/checkout owner authorizes money movement.
+**Actor responsibility envelope**
+- `customer` — requests/reads quote through checkout; forbidden: author amounts.
+- `DSH` — supplies authenticated commercial evidence; forbidden: duplicate WLT arithmetic.
+- `WLT` — computes/version-bounds quote and canonical readback.
+**Surface semantics**
+- `app-client` via DSH checkout readback and authorized diagnostics.
+- `backend` and `database` — required WLT quote computation/evidence/version state.
+- technical presentation binding — implementation evidence only.
+
 ### WLT_CAPTAIN_COLLATERAL
 
 **Problem.** Captain collateral/exposure can be confused with available balance, COD capacity or debt and be released while obligations remain.
@@ -1398,6 +1562,23 @@ committed → reversed
 **Failure/recovery.** policy disabled, invalid input/source, position not found, insufficient/restricted state, conflicting obligations; canonical WLT reread/reconciliation determines next legal action.
 
 **Acceptance expectations.** wallet summary distinguishes available/pending/held/COD/collateral/debt; release is atomic/auditable and preserves ledger/source lineage.
+
+**Target state.** WLT owns versioned collateral policy and positions with explicit backing source, exposure constraints and atomic release eligibility.
+**Primary success measure.** collateral positions whose backing, active/released state and release eligibility reconcile to wallet/ledger obligations.
+**Guardrail measures.** unbacked collateral; release with pending/held/COD/debt obligations; direct balance edit; released position reused; DSH collateral writer.
+**Business invariants**
+- every position references eligible captured WLT funding/ledger evidence;
+- collateral is distinct from available, pending, held, COD reserve and debt;
+- release is atomic, versioned and blocked by current obligations/minimum policy;
+- DSH consumes eligibility/readback only.
+**Actor responsibility envelope**
+- `captain` — reads own collateral/exposure; forbidden: mutate balance or release eligibility directly.
+- `finance operator` — applies authorized policy/release actions with audit; forbidden: bypass obligations.
+- `WLT` — sole collateral/wallet/ledger writer.
+**Surface semantics**
+- `app-captain`, `control-panel`, and dispatch integration readback when applicable.
+- `backend` and `database` — required WLT policy/position/ledger lineage.
+- technical presentation binding — implementation evidence only.
 
 ### WLT_PROVIDER_PENALTIES
 
@@ -1424,5 +1605,187 @@ committed → reversed
 **Failure/recovery.** wallet unavailable, policy disabled/invalid, debt state conflict, duplicate/idempotency conflict, reversal state drift; reconcile live wallet/debt before any new financial mutation.
 
 **Acceptance expectations.** original and reversal postings balance, debt/wallet split is reproducible, audit/source lineage is preserved and affected readback is consistent.
+
+**Target state.** WLT owns versioned captain/field monetary-penalty policy, posting/debt split and state-safe reversal from trusted source evidence.
+**Primary success measure.** penalty/reversal operations with exact source lineage and balanced reproducible wallet/debt/ledger effects.
+**Guardrail measures.** direct balance decrement; duplicate posting; unsupported actor; reasonless penalty; reversal after incompatible debt/state drift; DSH/Workforce ledger write.
+**Business invariants**
+- penalty policy is versioned and actor/type/currency/reason scoped;
+- one logical mutation identity yields one financial effect;
+- wallet-applied and debt portions are balanced and auditable;
+- reversal is permitted only against compatible live debt/state or after explicit reconciliation.
+**Actor responsibility envelope**
+- `operator/system` — initiates only authorized evidence-backed penalty/reversal intent; forbidden: arbitrary balance edit.
+- `captain/field actor` — reads bounded affected financial outcome; forbidden: mutate policy/posting.
+- `WLT` — sole penalty/debt/wallet/ledger writer and reconciler.
+**Surface semantics**
+- `control-panel` and bounded `app-captain`/`app-field` readback where applicable.
+- `backend` and `database` — required WLT policy/posting/debt/reversal lineage.
+- technical presentation binding — implementation evidence only.
+
+### CART_CHECKOUT
+
+**Problem.** Cart mutation, checkout validation and WLT handoff can diverge when item price, serviceability, address, fulfillment, quote or idempotency state is recomputed independently across client/order/payment layers.
+**Target state.** DSH owns one versioned cart and checkout-intent lifecycle whose accepted evidence is server-derived, concurrency-safe and financially gated by WLT quote/session references before Order Creation can begin.
+**Primary success measure.** eligible checkout intents reaching one canonical ready/confirmed result without duplicate cart mutation, stale pricing or ambiguous financial handoff.
+**Guardrail measures.** client-authoritative price count; duplicate logical cart mutation; stale-version acceptance; checkout-ready after serviceability denial; duplicate WLT session/reference; order creation from blocked/expired checkout.
+
+**Required outcome.** A customer can build one owned store cart, receive canonical current pricing/serviceability/fulfillment validation, and progress through one checkout intent to a confirmed/eligible handoff for Order Creation without duplicating money or operational truth.
+
+**Primary actors.** customer, DSH cart/checkout system, WLT pricing/payment system, authorized operator for diagnostics.
+
+**Canonical ownership.** DSH owns cart and checkout operational truth; canonical catalog/store/address/serviceability owners provide evidence; WLT owns authoritative financial quote/payment-session truth; Order Creation begins only after the governed checkout eligibility boundary.
+
+**Material deployable surfaces.** app-client and authorized control-panel diagnostics when operationally required.
+
+**Business invariants**
+- one active logical cart is scoped to the authenticated customer/store/current commerce flow;
+- item product identity, quantity bounds, unit-price/currency evidence and assortment eligibility come from canonical server owners, never client totals;
+- cart mutation is versioned and idempotent; the same mutation identity cannot represent a different payload;
+- fulfillment mode must be one currently allowed by DSH policy, including bthwani_delivery, partner_delivery or client_pickup where eligible;
+- non-empty checkout cannot be financially ready without the required current WLT quote/payment evidence;
+- checkout intent snapshots the governed address/serviceability/fulfillment/commercial evidence needed for downstream Order Creation;
+- validation does not silently mutate unrelated owner state.
+
+**Durable state semantics.**
+- cart is active until explicitly abandoned/cleared by the governed lifecycle;
+- checkout intent progresses through draft, validating, ready or blocked, confirming, then confirmed, cancelled or expired;
+- ready/confirmed is invalidated by materially stale cart/address/serviceability/quote evidence according to current contract/version rules.
+
+**Forbidden/negative invariants**
+- no client-supplied price, fee, discount, currency or eligibility becomes authoritative;
+- no stale cart version mutates current state;
+- no blocked/expired checkout creates an order;
+- no duplicate WLT session or financial effect from retry;
+- no DSH cart/checkout row becomes WLT financial truth;
+- no cached discovery/serviceability result authorizes checkout after canonical denial.
+
+**Failure/recovery.** stale version, item/assortment invalidation, address/serviceability denial, disabled fulfillment mode, quote unavailable/stale, WLT timeout/unknown, idempotency conflict or checkout expiry; reread canonical owners, preserve the original logical operation identity and reconcile ambiguous WLT outcomes before retry.
+
+**Acceptance expectations.** cart totals are reproducible from authoritative evidence; checkout readiness reports exact blocking reasons; canonical readback survives retry/restart; confirmed checkout carries the immutable evidence required by Order Creation; no duplicate order/payment effect is possible from a replayed intent.
+
+**Actor responsibility envelope**
+- `customer` — mutates only the owned cart, selects allowed fulfillment/address intent and confirms checkout; forbidden: supply authoritative money/eligibility, select another actor/cart or bypass blockers.
+- `DSH cart/checkout system` — validates owner evidence, versions/idempotency, snapshots checkout evidence and orchestrates WLT references; forbidden: post ledger truth or fabricate WLT success.
+- `WLT system` — produces authoritative quote/payment-session facts and reconciles unknown financial outcomes; forbidden: own DSH cart/order operational lifecycle.
+- `operator` — reads scoped diagnostics/recovery state only through governed interfaces.
+
+**Surface semantics**
+- `app-client` — required; states include empty, active, validating, ready, blocked, confirming, confirmed, expired, conflict, offline, partial and error; actions include add/update/remove, select allowed fulfillment/address, refresh/requote, confirm and resume.
+- `control-panel` — conditional diagnostics only; no normal customer mutation authority.
+- `backend` — required canonical cart/checkout owner and cross-service orchestration.
+- `database` — required version/idempotency/snapshot persistence and audit where applicable.
+- technical presentation binding — implementation evidence only; maps contract state and canonical readback without local commerce truth.
+
+### FIELD_OPERATIONS_ASSIGNMENT_READINESS
+
+**Problem.** Field assignments, visits, readiness checks and escalations can become disconnected from Workforce eligibility and Partner/Store onboarding, creating unowned task state or evidence that can be bypassed.
+**Target state.** DSH owns one scoped operational assignment/visit/readiness lifecycle while Workforce owns person/engagement eligibility and Partner/Store capabilities consume verified field evidence.
+**Primary success measure.** assigned field work reaching a governed completed or escalated owner-side result with attributable evidence and zero cross-scope task access.
+**Guardrail measures.** unauthorized assignment reads/writes; in-progress reassignment without handoff; completed visit with missing required/critical evidence; unresolved blocking escalation at completion; stale-version transition.
+
+**Required outcome.** Authorized field actors receive scoped assignments, perform versioned visits/checklists with location/evidence where required, escalate blockers and produce canonical DSH readiness evidence consumed by onboarding/store operations without becoming Workforce truth.
+
+**Primary actors.** field worker, field operations operator/supervisor, partner/store reviewer, Workforce system as eligibility provider.
+
+**Canonical ownership.** DSH field-operations capability owns assignments, visits, readiness checks, escalation and operational evidence; Workforce owns workforce person/engagement/eligibility; Partner/Store owners consume the resulting evidence.
+
+**Material deployable surfaces.** app-field, control-panel, app-partner readback where the partner journey requires it.
+
+**Business invariants**
+- every assignment has trusted operator/business scope, field actor, task identity, priority/SLA and version;
+- assignment lifecycle is versioned; reassignment of in-progress work requires explicit handoff;
+- visit/readiness policy identifies required and critical checklist items and evidence requirements;
+- visit completion is blocked while required checks/evidence or blocking escalations remain unresolved;
+- location/geofence evidence is validated when the policy requires it and never grants authorization by itself;
+- Workforce eligibility is consumed, not copied as DSH workforce truth.
+
+**Durable state semantics.**
+- assignment: assigned → in_progress → draft_linked or cancelled where legal;
+- visit: in_progress → complete or escalated;
+- check: pending → passed or failed;
+- escalation: open → acknowledged → resolved or escalated_further.
+
+**Forbidden/negative invariants**
+- no cross-scope assignment/visit access;
+- no in-progress reassignment without governed handoff;
+- no completion with missing required/critical evidence;
+- no direct Workforce status mutation from field operations;
+- no field evidence silently publishes/activates Partner/Store state without owner review;
+- no stale-version transition.
+
+**Failure/recovery.** actor ineligible, assignment conflict, overdue/SLA breach, GPS/geofence evidence unavailable, required check failed, evidence missing, escalation open or dependency unavailable; preserve draft/evidence, escalate through governed state and resume from canonical readback.
+
+**Acceptance expectations.** operator and field views agree on assignment/visit version; required evidence gates are enforced server-side; onboarding/store consumers reference canonical field evidence; audit/correlation is attributable and cross-scope leakage is absent.
+
+**Actor responsibility envelope**
+- `field worker` — performs only assigned/authorized work and captures governed evidence; forbidden: self-assign privileged work, approve owner decisions or alter Workforce truth.
+- `field operations operator/supervisor` — creates/reassigns/cancels scoped work and resolves/escalates according to permission; forbidden: bypass handoff/evidence/version rules.
+- `partner/store reviewer` — consumes verified field evidence for owner decisions; forbidden: mutate field history to force readiness.
+- `Workforce system` — supplies current eligibility/engagement facts; does not own DSH operational assignments.
+
+**Surface semantics**
+- `app-field` — required; states include assigned, in_progress, offline_draft, blocked, escalated, complete, conflict, forbidden and error.
+- `control-panel` — required for authorized assignment/readiness/escalation operations and audit.
+- `app-partner` — conditional readback of owner-relevant readiness evidence.
+- `backend` — required canonical operational state/authorization/version/evidence enforcement.
+- `database` — required scoped assignment/visit/check/escalation persistence and audit.
+- technical presentation binding — implementation evidence only; maps canonical state without local task truth.
+
+### MARKETING_CAMPAIGNS_LOYALTY
+
+**Problem.** Campaign targeting, placements, loyalty/subscription programs and commercial entitlements can drift into UI flags, coupon logic or financial truth when their lifecycle and owner are not explicit.
+**Target state.** One DSH marketing/commercial-program capability owns campaign/audience/placement and non-financial loyalty/subscription eligibility semantics; coupon funding remains with PROMOTIONS_COUPONS_FUNDING and monetary billing/posting remains WLT-owned.
+**Primary success measure.** governed campaign/program decisions producing consistent eligible presentation/entitlement readback across required surfaces.
+**Guardrail measures.** self-approved policy activation; two active exclusive earning policies; client-visible ineligible campaign; financial amount authored by marketing; archived/paused program granting new entitlement; audience/scope leakage.
+
+**Required outcome.** Authorized operators can govern campaigns, audiences, placements, loyalty earning policy, subscription/commercial-program eligibility and entitlement presentation without creating parallel catalog, coupon-funding, wallet or ledger truth.
+
+**Primary actors.** marketing operator/maker, independent approver where required, customer, partner, DSH system, WLT system for monetary consequences.
+
+**Canonical ownership.** DSH marketing/commercial-program capability owns campaign/audience/placement and non-financial program eligibility/entitlement semantics; WLT owns authoritative monetary charging/funding/posting; Central Catalog owns catalog identity/publication; notification adapters only deliver selected communications.
+
+**Material deployable surfaces.** control-panel, app-client, app-partner where a program is offered, and checkout/readback when eligibility changes commerce.
+
+**Business invariants**
+- campaign lifecycle is versioned and scoped to a governed audience/placement;
+- campaign activation validates the target is otherwise eligible for client visibility;
+- active commercial/loyalty policy terms are immutable; changes use a new version;
+- maker/checker separation applies where required, including no self-approval of governed policy activation;
+- exclusive active policy classes allow at most one active governing policy when Product defines exclusivity;
+- loyalty points/entitlement bounds are server-owned and cannot be supplied authoritatively by clients;
+- subscription/commercial entitlement does not create a new tenant/platform instance.
+
+**Durable lifecycle semantics.**
+- campaign: draft → active → paused/completed/cancelled as legal, with cancelled/completed terminal;
+- commercial program/loyalty policy: draft → active → paused → archived according to governed transitions;
+- entitlement/subscription state is versioned and references its source program/policy and WLT financial reference when money is involved.
+
+**Forbidden/negative invariants**
+- no campaign/marketing flag publishes an ineligible catalog/store object;
+- no client or UI owns audience eligibility or points/benefit arithmetic;
+- no marketing capability posts wallet/ledger truth;
+- no promotion/coupon funding lifecycle is duplicated here;
+- no archived/paused program grants new entitlement contrary to policy;
+- no self-approval where independent approval is required.
+
+**Failure/recovery.** invalid audience/target, stale version, approval conflict, paused/archived policy, entitlement mismatch, WLT billing/funding unavailable or derived delivery/index lag; reread canonical program and financial owners and resume only through legal transitions.
+
+**Acceptance expectations.** campaign/program versions and approval lineage are auditable; eligible surfaces converge on owner readback; financial consequences reconcile to WLT; catalog visibility still depends on Central Catalog/serviceability; communication delivery failure does not rewrite program truth.
+
+**Actor responsibility envelope**
+- `marketing operator/maker` — drafts campaigns/program policies and governed targeting; forbidden: self-approve when separation applies, publish ineligible catalog or author financial ledger truth.
+- `approver` — independently approves/rejects governed program/policy changes within exact scope.
+- `customer` — consumes eligible campaign/loyalty/subscription benefits and readback; forbidden: author eligibility/points/price.
+- `partner` — consumes/participates only when the program scope permits; forbidden: override audience/funding rules.
+- `WLT system` — owns monetary charge/funding/posting consequences only.
+
+**Surface semantics**
+- `control-panel` — required for campaign/program lifecycle, targeting, approval and audit.
+- `app-client` — required where customer campaigns/loyalty/subscriptions are offered; shows canonical eligibility and degraded/no-data states.
+- `app-partner` — conditional where partner programs/offers require participation or readback.
+- `backend` — required canonical marketing/program eligibility and lifecycle enforcement.
+- `database` — required versioned campaign/program/entitlement state and audit.
+- technical presentation binding — implementation evidence only; maps canonical program state without local eligibility truth.
 
 These capabilities and read models must map to journeys and exact current implementation only through evidence. Generic media/object-storage and search/index mechanisms remain explicitly non-sovereign unless a future Product/System decision proves an independent lifecycle/owner.

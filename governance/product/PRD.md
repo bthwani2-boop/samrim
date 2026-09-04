@@ -61,9 +61,9 @@ Every durable fact has exactly one authoritative owner.
 
 - Identity owns actors, credentials, authentication, sessions, activation, roles/permissions, and trusted identity context.
 - Workforce owns employment/workforce profiles, status, supervisor/shift/affiliation and workforce-specific evidence.
-- DSH owns commerce, stores, catalog consumption, checkout/order operational truth, partner operational state, dispatch, delivery, serviceability, special requests, support/rescue, and application-facing bounded projections defined by current contracts.
+- DSH owns commerce, Central Catalog, cart/checkout/order operational truth, stores/partner operations, field operational assignments/readiness, marketing/commercial-program eligibility, dispatch/delivery, serviceability, notifications/inbox delivery state, special requests, support/rescue, and DSH-owned derived operational projections defined by current contracts.
 - WLT exclusively owns authoritative financial truth: wallet, ledger, payment, refund, settlement, payout, commission, reconciliation, and provider financial mutation.
-- Platform Control owns platform-wide governed configuration/rollout state assigned to it by current contracts.
+- Platform Control is the semantic owner for explicitly admitted cross-platform governed configuration/change/rollout facts. Whether that responsibility is deployed as an independent `services/platform-control` service is an architecture/runtime admission decision that must be proven from executable evidence rather than assumed by Governance.
 - External technical integrations are owned by the consuming semantic capability through explicit ports/adapters. Platform Control may own governed cross-platform integration enablement/configuration where explicitly assigned; secret values remain in approved runtime secret storage. A generic provider service/name does not become a business domain.
 - Media/object-storage behavior belongs to the bounded context/capability that owns the business object; reusable storage primitives/adapters remain technical infrastructure rather than a second business owner.
 
@@ -73,7 +73,7 @@ A consumer may keep a cache or projection only when the owner contract permits i
 
 ### Central catalog
 
-Canonical category, product, taxonomy, visibility, and commercial catalog identity must come from the central catalog owner. No application may maintain a competing runtime catalog, hardcoded category list, demo product authority, or surface-local publication truth.
+DSH Central Catalog owns canonical category/taxonomy, master-product identity, governed attributes/relationships, store assortment/proposals and catalog approval/publication eligibility. Approval/publication is a named workflow inside Central Catalog, not a second sovereign owner. No application, search index, marketing layer or store-local flag may maintain a competing runtime catalog, hardcoded category list, demo product authority or publication truth.
 
 ### Discovery and serviceability
 
@@ -85,9 +85,13 @@ One partner may own/manage multiple stores according to current contracts. A sto
 
 Partner commercial model is governed platform state and uses one of `COMMISSION`, `SUBSCRIPTION`, `HYBRID`, or `OPERATOR_MANAGED`; billing/commercial classification does not alter platform isolation or create duplicate partner/store truth.
 
-### Checkout and orders
+### Cart and checkout
 
-Checkout validates canonical cart/item snapshots, owned address, serviceability, fulfillment mode, promotion/commercial eligibility, and required WLT references. One canonical checkout/idempotency scope creates at most one order. Order commercial/address/item snapshots required by the contract are immutable after creation except through an explicit legal transition.
+DSH Cart/Checkout owns the customer's versioned active cart and checkout-intent operational lifecycle. Item price/currency and assortment evidence are server-owned; address, serviceability and fulfillment mode are owner-validated; WLT owns authoritative financial quote/payment-session facts. Checkout progresses only through legal versioned/idempotent states, and a blocked/expired/financially ambiguous checkout cannot create an order.
+
+### Order creation
+
+ORDER_CREATION begins only after the governed checkout eligibility boundary. One canonical checkout/idempotency scope creates at most one order. Order commercial/address/item snapshots required by the contract are immutable after creation except through an explicit legal transition.
 
 ### Fulfillment and dispatch
 
@@ -98,6 +102,14 @@ The current operational fulfillment-policy modes are `bthwani_delivery`, `partne
 - `client_pickup` keeps delivery dispatch out of the order while preserving governed readiness/handoff semantics required by the applicable contract.
 
 Dispatch, assignment, custody/handoff, delivery progression, proof, cancellation/reassignment, and delivery exceptions remain DSH operational truth. Workforce eligibility may be consumed from Workforce but must not become a parallel assignment owner. Financial effects caused by fulfillment remain WLT truth.
+
+### Field operations, assignment and readiness
+
+DSH owns field operational assignment, visit/checklist, readiness evidence and escalation lifecycle. Workforce supplies person/engagement/eligibility facts but does not own DSH task state. In-progress reassignment requires governed handoff, required/critical evidence gates completion, and Partner/Store owners consume verified field evidence without mutating field history.
+
+### Marketing, campaigns and loyalty
+
+DSH owns campaign/audience/placement and non-financial loyalty/subscription/commercial-program eligibility. Campaign and program policies are versioned and auditable, with maker/checker separation where required. Central Catalog remains publication/catalog identity owner, PROMOTIONS_COUPONS_FUNDING owns coupon/promotion funding semantics, WLT owns authoritative monetary charging/posting, and notification adapters only deliver selected communications.
 
 ### Financial access
 
@@ -141,7 +153,7 @@ Partner/store team membership is explicit, store-scoped, auditable and lifecycle
 
 ### Catalog approval and publication
 
-Customer visibility requires canonical DSH catalog/store approval, publication and serviceability gates. Partner, field, marketing, search and UI layers cannot independently publish content. Needs-fix/rejection/review transitions remain auditable and owner-controlled.
+Catalog approval/publication is a named Central Catalog subcapability. Customer visibility requires canonical DSH catalog/store approval, publication and serviceability gates. Partner, field, marketing, search and UI layers cannot independently publish content. Needs-fix/rejection/review transitions remain auditable and owner-controlled.
 
 ### Ratings and reviews
 

@@ -141,29 +141,6 @@ OR SPECIAL-REQUEST CAPABILITY WHEN GOVERNED
 → CUSTOMER/OPERATOR READBACK
 ```
 
-## Capability-to-journey coverage
-
-| Capability | Journey coverage |
-|---|---|
-| ADMINISTRATION_ROLES_APPROVALS_AUDIT | J7 |
-| CAPTAIN_DISPATCH | J1, J3 |
-| IDENTITY_ACTIVATION_SESSIONS | J2, J3, J4, J7 |
-| MAPS_SERVICE_AREA_ADDRESS_PRIVACY | J1, J9 |
-| ORDER_CREATION | J1 |
-| PARTNER_FLEET_CONNECTION | J2, J3 |
-| PARTNER_ONBOARDING_STORE_PUBLICATION | J2 |
-| PLATFORM_CHANGE_SETS | J7 |
-| PLATFORM_SOVEREIGN_CONTROL_PLANE | J7 |
-| REPRESENTATIVE_WALLETS_REFERENCE_FINANCE | J3, J4, J5, J6 |
-| SETTLEMENTS_COMMISSIONS | J2, J6 |
-| SPECIAL_REQUESTS | J9 |
-| STORE_CAPTAIN_HANDOFF | J1, J3 |
-| SUPPORT_INCIDENTS_ORDER_RESCUE | J1, J8 |
-| WLT_MONEY_MOVEMENT_SETTLEMENT | J5, J6 |
-| ZONES_SLA_CAPACITY_DELIVERY_MODES | J1, J2, J9 |
-
-Every durable capability must map to at least one journey or explicitly prove that it is a pure platform/system capability whose consumer/outcome model is independently complete.
-
 ## Journey closure law
 
 A journey is not closed because each capability compiles independently. Cross-owner handoffs, user/system actions, failure semantics and final readback must be proven together.
@@ -244,13 +221,58 @@ CANONICAL DOMAIN SOURCES
 
 Analytics never becomes a transactional writer or authorization owner.
 
-## Extended capability-to-journey coverage
+## Journey-step responsibility classification law
+
+Every material step named in J1–J15 must resolve to exactly one disposition:
+
+```text
+DURABLE_CAPABILITY
+SUBCAPABILITY_OF_NAMED_OWNER
+DURABLE_POLICY
+TECHNICAL_MECHANISM_OWNED_ELSEWHERE
+DERIVED_PROJECTION_READ_MODEL
+EXPLICIT_NON_GOAL
+```
+
+A capability→journey row alone is not completeness proof. Closure additionally requires the reverse direction:
+
+```text
+ALL_MATERIAL_JOURNEY_STEPS_CLASSIFIED=PASS
+UNOWNED_MATERIAL_JOURNEY_STEPS=0
+UNCLASSIFIED_MATERIAL_RESPONSIBILITIES=0
+```
+
+Key durable dispositions in the current model:
+- CENTRAL CATALOG / APPROVAL / PUBLICATION → CENTRAL_CATALOG; approval/publication is a named subcapability/workflow.
+- CART / CHECKOUT → CART_CHECKOUT; ORDER CREATION begins after the governed checkout eligibility boundary.
+- ASSIGNED FIELD TASK / VISIT / READINESS / ESCALATION → FIELD_OPERATIONS_ASSIGNMENT_READINESS.
+- CAMPAIGN / AUDIENCE / PLACEMENT / LOYALTY / NON-FINANCIAL COMMERCIAL PROGRAM ELIGIBILITY → MARKETING_CAMPAIGNS_LOYALTY.
+- MEDIA BYTE STORAGE → TECHNICAL_MECHANISM_OWNED_ELSEWHERE; business association remains with the owning capability.
+- SEARCH / ANALYTICS INDEXING → DERIVED_PROJECTION_READ_MODEL; source domains remain mutation/eligibility owners.
+
+## Capability-to-journey coverage
 
 | Capability | Journey coverage |
 |---|---|
+| ADMINISTRATION_ROLES_APPROVALS_AUDIT | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| CAPTAIN_DISPATCH | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| IDENTITY_ACTIVATION_SESSIONS | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| MAPS_SERVICE_AREA_ADDRESS_PRIVACY | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| ORDER_CREATION | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| PARTNER_FLEET_CONNECTION | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| PARTNER_ONBOARDING_STORE_PUBLICATION | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| PLATFORM_CHANGE_SETS | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| PLATFORM_SOVEREIGN_CONTROL_PLANE | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| REPRESENTATIVE_WALLETS_REFERENCE_FINANCE | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| SETTLEMENTS_COMMISSIONS | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| SPECIAL_REQUESTS | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| STORE_CAPTAIN_HANDOFF | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| SUPPORT_INCIDENTS_ORDER_RESCUE | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| WLT_MONEY_MOVEMENT_SETTLEMENT | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| ZONES_SLA_CAPACITY_DELIVERY_MODES | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
 | CUSTOMER_PROFILE_PREFERENCES | J1, J8, J11 where consent affects communication |
 | PARTNER_TEAM_MEMBERSHIP | J2, J14 |
-| CATALOG_APPROVAL_PUBLICATION | J1, J2, J10, J13 when media evidence/assets are required |
+| CENTRAL_CATALOG | J1, J2, J10, J13 when media evidence/assets are required |
 | PROMOTIONS_COUPONS_FUNDING | J1, J5, J10 |
 | RATINGS_REVIEWS_TRUST | J1, J12 |
 | NOTIFICATIONS_COMMUNICATIONS | J1-J15 where a governed delivery/inbox result is required |
@@ -258,5 +280,8 @@ Analytics never becomes a transactional writer or authorization owner.
 | WLT_PRICING_QUOTES | J1, J5, J9 |
 | WLT_CAPTAIN_COLLATERAL | J3, J5, J6 |
 | WLT_PROVIDER_PENALTIES | J3, J4, J6, J8 |
+| CART_CHECKOUT | J1, J5, J9 |
+| FIELD_OPERATIONS_ASSIGNMENT_READINESS | J2, J4 |
+| MARKETING_CAMPAIGNS_LOYALTY | J1, J2, J10, J11 when campaign communication is required |
 
 Generic media/object-storage and search/index mechanisms are not listed as sovereign capabilities. J13 is a cross-capability journey owned by the applicable business capability plus technical storage adapter; search/discovery steps in J1/J10 remain derived from canonical source owners.

@@ -54,7 +54,7 @@ The primary operating market is Sana'a, Yemen. City/zone/serviceability is gover
 - Workforce — workforce profile, engagement, eligibility and workforce evidence.
 - DSH — commerce, catalog consumption, partner/store operations, checkout/order, serviceability, dispatch/delivery, special requests, support/rescue and other operational truth assigned by Product.
 - WLT — wallet, ledger, payment, refund, commission, payout, settlement and reconciliation authority.
-- Platform Control — explicitly assigned platform-wide governed configuration/change/rollout control-plane truth.
+- Platform Control — admitted semantic control-plane responsibility for explicitly assigned platform-wide governed configuration/change/rollout facts; independent deployable-service admission remains conditional on executable lifecycle/persistence/API/runtime evidence.
 
 External vendors and technical mechanisms are integrations/adapters, not business-domain owners.
 
