@@ -37,9 +37,6 @@ $Ports = @{
     'app-field' = 18104
 }
 
-$env:BTHWANI_IDENTITY_API_HOST_PORT = '18082'
-$env:IDENTITY_API_BASE_URL = 'http://127.0.0.1:18082'
-
 $Args = @(
     '--dir', $AppRoot,
     'exec', 'expo', 'start',
