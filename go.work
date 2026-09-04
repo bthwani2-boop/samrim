@@ -1,8 +1,8 @@
 go 1.27.1
 
 use (
-	./services/identity/backend
-	./services/workforce/backend
 	./services/dsh/backend
+	./services/identity/backend
 	./services/wlt/backend
+	./services/workforce/backend
 )
