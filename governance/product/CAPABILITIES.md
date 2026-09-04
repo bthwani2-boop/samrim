@@ -537,56 +537,6 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `database` — required; actors: control-operator; states: trusted-context-scoped, business-scope-isolated, consistent, conflict-rejected, single-active-payout, audit-retained; actions: enforce trusted-context scope, enforce Partner/Store ownership, enforce version, enforce idempotency, retain audit.
 - technical presentation binding — required implementation evidence; actors: field-agent, partner-owner, control-operator; states: loading, ready, offline, forbidden, conflict, partial, error; actions: map contracts, coordinate mutations, normalize readback, present recovery actions.
 
-### PLATFORM_CHANGE_SETS
-
-**Problem.** Platform configuration changes need one governed maker-checker workflow with explicit validation, conflict detection, audit, apply, and rollback boundaries.
-**Problem frequency.** occasional
-**Problem severity.** high
-**Target state.** The governed lifecycle prevents unauthorized, stale, conflicting, or sensitive platform mutations and provides auditable rollback.
-**Primary success measure.** unreviewed_platform_mutations
-**Guardrail measures.** stale_change_set_applications; sensitive_values_captured; rollback_without_reason
-**Observation window.** Per governed mutation
-
-**Required outcome.** Every platform configuration mutation follows one contract-bound, maker-checker, auditable, conflict-safe lifecycle with explicit rollback evidence.
-
-**Primary actors.** platform_operator, platform_approver, projection_reader.
-
-**Canonical ownership.** Platform Control semantic control-plane responsibility. Independent deployment as `services/platform-control` requires separate executable service-admission proof.
-
-**Material deployable surfaces.** control-panel.
-
-**Business invariants**
-- A change set has one proposer and an independent approver.
-- Apply uses the validated revision and precondition snapshot.
-- Rollback records a mandatory reason and restores only governed non-sensitive state.
-- Every transition is persisted and auditable.
-
-**Forbidden/negative invariants**
-- No actor approves or rejects its own change set.
-- No stale or conflicting change set is applied.
-- No secret or credential value is stored in a change set.
-- No existing sensitive target value is snapshotted.
-- No rollback occurs without a reason.
-
-**Acceptance expectations**
-- The OpenAPI contract is the canonical source for generated client types.
-- Maker-checker separation prevents self-approval and self-rejection.
-- Validation and apply reject stale or conflicting target revisions.
-- Sensitive and confidential values never enter snapshots or proposed values.
-- Rollback requires a reason and produces auditable readback.
-
-**Named failure classes:** manual_generated_type_drift, self_approval_allowed, stale_change_applied, sensitive_value_persisted, rollback_without_reason, runtime_readback_missing.
-
-**Actor responsibility envelope**
-- `platform_operator` — Creates, validates, submits, applies, and rolls back governed platform change sets within granted scope.; permitted: create_change_set, validate_change_set, submit_change_set, apply_approved_change_set, rollback_applied_change_set; forbidden: approve_or_reject_own_change_set, apply_stale_or_conflicting_change_set, rollback_without_reason, store_secret_or_credential_values_in_change_sets, snapshot_existing_sensitive_target_values.
-- `platform_approver` — Independently approves or rejects submitted platform change sets.; permitted: approve_change_set, reject_change_set; forbidden: approve_or_reject_own_change_set, apply_stale_or_conflicting_change_set, rollback_without_reason, store_secret_or_credential_values_in_change_sets, snapshot_existing_sensitive_target_values.
-- `projection_reader` — Reads only explicitly authorized outcomes projected by the platform owner.; permitted: read_authorized_projection; forbidden: approve_or_reject_own_change_set, apply_stale_or_conflicting_change_set, rollback_without_reason, store_secret_or_credential_values_in_change_sets, snapshot_existing_sensitive_target_values.
-
-**Surface semantics**
-- `control-panel` — required; actors: platform_operator, platform_approver; states: loading, empty, ready, blocked, error; actions: create, validate, submit, approve, reject, apply, rollback.
-- `backend` — required; actors: platform_operator, platform_approver; states: draft, validated, submitted, approved, rejected, applied, rolled_back, failed; actions: authorize, validate_preconditions, persist_transition, audit_transition.
-- `database` — required; actors: platform_operator, platform_approver; states: transaction_open, committed, rolled_back; actions: reserve_target, enforce_sensitive_boundary, persist_audit, enforce_version.
-- technical presentation binding — required implementation evidence; actors: platform_operator, platform_approver; states: loading, ready, blocked, error; actions: map_contract, orchestrate_readback, map_errors.
 
 ### PLATFORM_SOVEREIGN_CONTROL_PLANE
 
@@ -602,6 +552,16 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 **Primary actors.** platform-governor, platform-operator, platform-approver, platform-applier, platform-rollout-manager, platform-auditor, customer, partner, captain, field-agent.
 
 **Canonical ownership.** Platform Control semantic control-plane responsibility; domain and WLT truths remain at their owners. Independent deployment as `services/platform-control` remains conditional on executable service-admission proof.
+
+
+**Named subcapability — governed change sets.** Change sets are an internal workflow of this capability, not a second durable capability owner.
+- lifecycle: `draft → validated → submitted → approved | rejected → applied → rolled_back | failed` as legal for the current owner state machine;
+- proposer and approver are independent; an actor cannot approve/reject its own change;
+- apply is version/precondition-fenced against the validated target revision/snapshot;
+- secrets/credential values and existing sensitive target values are excluded from proposed values and rollback snapshots;
+- rollback requires a reason, preserves audit/history, and cannot overwrite a newer revision.
+
+**Boundary/non-overlap.** Platform-wide change-set, feature-flag, rollout, health-gate and rollback semantics are all subcapabilities of this one Platform Control semantic responsibility. No parallel `PLATFORM_CHANGE_SETS` Product owner exists.
 
 **Material deployable surfaces.** control-panel.
 
@@ -631,7 +591,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - Every transition is audited.
 - Routine and financial operations stay outside Platform.
 
-**Named failure classes:** static truth, unauthorized data, role overlap, nontransactional mutation, stale overwrite, health gate bypass, enabled rollout baseline, missing audit, false health.
+**Named failure classes:** static truth, unauthorized data, role overlap, nontransactional mutation, stale overwrite, stale_change_set, sensitive_change_capture, rollback_without_reason, health gate bypass, enabled rollout baseline, missing audit, false health.
 
 **Actor responsibility envelope**
 - `platform-governor` — Reads complete posture and governs platform control-plane authority.; permitted: read authorized posture; forbidden: bypass workflows, perform routine domain operations.
@@ -733,7 +693,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Canonical ownership.** WLT financial truth; DSH provides operational evidence.
 
-**Boundary/non-overlap.** SETTLEMENTS_COMMISSIONS owns earning/commission calculation, policy-version application and settlement/commission lifecycle. WLT_MONEY_MOVEMENT_SETTLEMENT owns common wallet/ledger money movement, Cash-In/COD/payout execution and reconciliation primitives; the same financial fact may not be independently mutable in both capability implementations.
+**Boundary/non-overlap.** SETTLEMENTS_COMMISSIONS owns earning/commission calculation, policy-version application and settlement/commission lifecycle. WLT_MONEY_MOVEMENT_PAYOUT_RECONCILIATION owns common wallet/ledger money movement, Cash-In/COD/payout execution and reconciliation primitives; the same financial fact may not be independently mutable in both capability implementations.
 
 **Material deployable surfaces.** app-partner, app-captain, app-field, control-panel.
 
@@ -985,7 +945,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `database` — required; actors: operator; states: transactional, constrained, audited, idempotent; actions: persist support truth, persist incident truth, persist rescue truth, append audit event.
 - technical presentation binding — required implementation evidence; actors: client, partner, captain, operator; states: loading, empty, success, error, offline, conflict; actions: map contract, preserve mutation identity, refresh readback, classify error.
 
-### WLT_MONEY_MOVEMENT_SETTLEMENT
+### WLT_MONEY_MOVEMENT_PAYOUT_RECONCILIATION
 
 **Problem.** BThwani needs one governed financial capability that preserves WLT-owned internal wallet truth while safely connecting official-wallet Cash-In, captain COD exposure, stakeholder earnings and governed external settlements without duplicate money movement, parallel ledgers, unverifiable completion, beneficiary-controlled payout master data or manual authoritative financial arithmetic.
 **Problem frequency.** continuous
@@ -1000,7 +960,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Canonical ownership.** WLT financial truth; DSH application facade; Identity trust context.
 
-**Boundary/non-overlap.** WLT_MONEY_MOVEMENT_SETTLEMENT owns common wallet/ledger movement, Cash-In/COD, payout execution and reconciliation. Commission/settlement calculation policy and its evidence-derived lifecycle remain in SETTLEMENTS_COMMISSIONS; shared ledger primitives do not create two writers for the same posting.
+**Boundary/non-overlap.** WLT_MONEY_MOVEMENT_PAYOUT_RECONCILIATION owns common wallet/ledger movement, Cash-In/COD, payout execution and reconciliation. Commission/settlement calculation policy and its evidence-derived lifecycle remain in SETTLEMENTS_COMMISSIONS; shared ledger primitives do not create two writers for the same posting.
 
 **Material deployable surfaces.** app-client, app-captain, app-partner, app-field, control-panel.
 

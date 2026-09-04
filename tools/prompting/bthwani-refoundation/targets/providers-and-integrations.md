@@ -26,10 +26,12 @@ audit
 aggregated health/posture view
 ```
 
-Canonical candidate:
+Executable placement is conditional:
 
 ```text
-services/platform-control/backend/internal/external-integrations/
+PLATFORM_CONTROL_SEMANTIC_OWNER/external-integrations
+→ services/platform-control/backend/internal/external-integrations/ only if independent service admission passes
+→ otherwise rehome to the executable control-plane owner proven by current architecture
 ```
 
 Choose a more precise name if census proves a narrower responsibility.

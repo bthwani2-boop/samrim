@@ -137,7 +137,7 @@ Every promotion has stable identity/version, eligibility, scope, validity window
 
 ### Platform variables and provider health
 
-Cross-surface platform variables have a canonical server-side owner, type/schema, validation, version, audit/reason, rollout and readback semantics. Provider health comes from current runtime/provider evidence; a configured endpoint or `enabled=true` flag is not health evidence. Secrets never become product configuration or client-visible variables.
+Cross-surface platform variables have a canonical server-side owner, type/schema, validation, version, audit/reason, rollout and readback semantics. Governed change sets are a subcapability of the Platform Control semantic control plane, not a separate Product owner. Provider health comes from current runtime/provider evidence; a configured endpoint or `enabled=true` flag is not health evidence. Secrets never become product configuration or client-visible variables.
 
 ### Operational analytics
 

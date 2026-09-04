@@ -26,6 +26,8 @@ for (const id of ["CENTRAL_CATALOG","CART_CHECKOUT","FIELD_OPERATIONS_ASSIGNMENT
   if (!ids.includes(id)) failures.push("missing required responsibility capability: " + id);
 }
 if (ids.includes("CATALOG_APPROVAL_PUBLICATION")) failures.push("CATALOG_APPROVAL_PUBLICATION remains a parallel durable capability");
+if (ids.includes("PLATFORM_CHANGE_SETS")) failures.push("PLATFORM_CHANGE_SETS remains a parallel durable capability");
+if (ids.includes("WLT_MONEY_MOVEMENT_SETTLEMENT")) failures.push("ambiguous legacy WLT_MONEY_MOVEMENT_SETTLEMENT capability name remains");
 
 const checks = [
   ["Problem", (b) => b.includes("**Problem.")],
