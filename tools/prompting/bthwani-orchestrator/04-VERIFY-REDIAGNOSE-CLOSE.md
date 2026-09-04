@@ -201,6 +201,18 @@ STRUCTURAL_YIELD_REALIZED_OR_VARIANCE_EXPLAINED
 
 ### 7.1 Semantic capability closure sub-gate
 
+When a capability declares independent semantic axes (for example actor/role/context/scope), closure must falsify accidental collapse across those axes. Disjoint happy-path fixtures are insufficient.
+
+```text
+INDEPENDENT_SEMANTIC_AXES_NOT_COLLAPSED=PASS
+SAME_ENTITY_MULTI_ROLE_OR_MULTI_SCOPE_INTERACTION_PROOF=PASS_WHERE_APPLICABLE
+SCOPED_DISABLE_REVOCATION_DOES_NOT_AFFECT_UNRELATED_SCOPE=PASS_WHERE_APPLICABLE
+ADVERSARIAL_MATRIX_USES_SHARED_ENTITY_COMBINATIONS_NOT_ONLY_DISJOINT_FIXTURES=PASS
+NO_GENERIC_GRANT_TENANT_CONTEXT_ABSTRACTION_WITHOUT_CURRENT_ADMISSION_PROOF=PASS
+GREEN_TESTS_THAT_MISS_DECLARED_AXIS_INTERACTIONS=CLOSURE_INSUFFICIENT
+```
+
+
 When the execution unit is a material semantic capability, every applicable claim below must pass before closure:
 
 ```text
