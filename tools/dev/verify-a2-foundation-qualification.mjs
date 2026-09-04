@@ -30,6 +30,41 @@ function exactSet(label, actualValues, expectedValues) {
 
 const mobileApps = ["app-client", "app-partner", "app-captain", "app-field"];
 
+function verifyManifestEntrypoints(manifestPath) {
+  const absoluteManifest = path.join(repoRoot, manifestPath);
+  const manifest = JSON.parse(fs.readFileSync(absoluteManifest, "utf8"));
+  const manifestDir = path.dirname(absoluteManifest);
+
+  for (const field of ["main", "types", "module"]) {
+    const value = manifest[field];
+    if (typeof value !== "string" || value.trim().length === 0) continue;
+
+    const target = path.resolve(manifestDir, value);
+    if (!fs.existsSync(target)) {
+      fail(manifestPath + " has stale " + field + " entrypoint: " + value);
+    }
+  }
+
+  if (typeof manifest.bin === "string") {
+    const target = path.resolve(manifestDir, manifest.bin);
+    if (!fs.existsSync(target)) {
+      fail(manifestPath + " has stale bin entrypoint: " + manifest.bin);
+    }
+  } else if (manifest.bin && typeof manifest.bin === "object") {
+    for (const [name, value] of Object.entries(manifest.bin)) {
+      if (typeof value !== "string") continue;
+      const target = path.resolve(manifestDir, value);
+      if (!fs.existsSync(target)) {
+        fail(manifestPath + " has stale bin entrypoint " + name + ": " + value);
+      }
+    }
+  }
+}
+
+for (const manifestPath of tracked.filter((item) => /(^|\/)package\.json$/.test(item))) {
+  verifyManifestEntrypoints(manifestPath);
+}
+
 for (const app of mobileApps) {
   const appRoot = "apps/" + app + "/";
   const routeFiles = tracked
