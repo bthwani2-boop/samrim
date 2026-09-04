@@ -112,7 +112,7 @@ Explicitly disposition every plausible layer:
 apps
 service frontend
 service backend/domain
-database/schema/migrations/seeds/backfills
+durable-data schema evolution: database, migrations, seeds, backfills
 contracts/events/generated clients
 packages
 runtime/config/infra
@@ -132,12 +132,12 @@ Each is marked AFFECTED, NOT_AFFECTED_WITH_PROOF, FORBIDDEN_OWNER or REQUIRED_MI
 Before destructive treatment or closure:
 
 ```text
-UNACCOUNTED_REQUIRED_ACTOR_OR_JOURNEY=0
+BTHWANI_CENSUS_ACTOR_JOURNEY_COVERAGE=PASS
 UNACCOUNTED_APP_OR_SURFACE_CONSUMER=0
 UNACCOUNTED_MATERIAL_ACTION=0
 UNACCOUNTED_REQUIRED_OWNER/WRITER=0
 UNACCOUNTED_FAILURE_UNKNOWN_RECOVERY=0
-UNACCOUNTED_OPERATOR_CORRELATION_WHEN_REQUIRED=0
+BTHWANI_CENSUS_OPERATOR_CORRELATION=PASS_WHEN_REQUIRED
 REQUIRED_VALUE_STRANDED_IN_LOSER=0
 MATERIAL_UNKNOWN_THAT_CAN_CHANGE_OWNERSHIP_OR_DELETION_SAFETY=0
 ```

@@ -33,7 +33,7 @@ Apps are deployable hosts/composition owners: routes, navigation, shell/tabs, de
 
 ```text
 WHERE_IT_APPEARS != WHO_OWNS_IT
-APP_HOST != BUSINESS_CAPABILITY_OWNER
+BTHWANI_APP_HOST_COMPOSES_CAPABILITIES_WITHOUT_OWNING_BUSINESS_TRUTH
 ```
 
 ## Design system

@@ -70,7 +70,7 @@ Internal consumers under atomic repository control cut over together where feasi
 
 A compatibility layer for independently deployed/external consumers requires explicit owner, scope, real version combination, telemetry/migration condition and deletion trigger.
 
-`COMPATIBILITY_JUST_IN_CASE = FORBIDDEN`.
+Compatibility follows the general bounded-window/deletion law from the orchestrator; speculative compatibility without a proven consumer/window is not admitted here.
 
 ## Deployable identity
 
