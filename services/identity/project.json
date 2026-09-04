@@ -13,7 +13,7 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "go test ./... && node ../tests/contract-guard.test.mjs",
+        "command": "go test ./... && node ../../../tools/dev/generate-identity-types.mjs --check && node ../tests/contract-guard.test.mjs",
         "cwd": "services/identity/backend"
       }
     },
@@ -28,6 +28,12 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/run-go-service.ps1 -Service identity"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --noEmit -p services/identity/tsconfig.json"
       }
     }
   },
