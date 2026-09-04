@@ -121,6 +121,10 @@ jobs:
         shell: bash
         run: pnpm run repository:verify-structure
 
+      - name: Verify tracked-artifact structural hygiene
+        shell: bash
+        run: pnpm run repository:verify-hygiene
+
       - name: Verify docs command parity
         shell: bash
         run: node tools/dev/verify-doc-command-parity.mjs
