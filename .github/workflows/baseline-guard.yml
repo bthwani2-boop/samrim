@@ -225,3 +225,97 @@ jobs:
             echo "::error::Foundation developer tooling mutated repository state"
             exit 1
           fi
+
+runtime:
+    name: foundation-runtime
+    needs: baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Build and start Foundation runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation up -d --build
+
+      - name: Verify Foundation runtime composition
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          verify_json_endpoint() {
+            local service="$1"
+            local uri="$2"
+            local body
+            body="$(curl --fail --silent --show-error --max-time 5 "$uri")" || return 1
+            jq -e --arg service "$service" '.service == $service and .status == "ok"' <<<"$body" >/dev/null
+          }
+
+          for attempt in $(seq 1 60); do
+            ok=1
+
+            docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation exec -T postgres pg_isready -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
+            curl --fail --silent --show-error --max-time 5 http://127.0.0.1:59000/minio/health/live >/dev/null || ok=0
+            curl --fail --silent --show-error --max-time 5 http://127.0.0.1:58026/ >/dev/null || ok=0
+            (echo >/dev/tcp/127.0.0.1/58025) >/dev/null 2>&1 || ok=0
+
+            verify_json_endpoint identity http://127.0.0.1:18082/identity/health || ok=0
+            verify_json_endpoint identity http://127.0.0.1:18082/identity/readiness || ok=0
+            verify_json_endpoint workforce http://127.0.0.1:18086/workforce/health || ok=0
+            verify_json_endpoint workforce http://127.0.0.1:18086/workforce/readiness || ok=0
+            verify_json_endpoint dsh http://127.0.0.1:58080/dsh/health || ok=0
+            verify_json_endpoint dsh http://127.0.0.1:58080/dsh/readiness || ok=0
+            verify_json_endpoint wlt http://127.0.0.1:18083/wlt/health || ok=0
+            verify_json_endpoint wlt http://127.0.0.1:18083/wlt/readiness || ok=0
+
+            if [[ "$ok" -eq 1 ]]; then
+              echo "FOUNDATION_RUNTIME_ENDPOINTS=PASS"
+              break
+            fi
+
+            if [[ "$attempt" -eq 60 ]]; then
+              echo "::error::Foundation runtime did not become ready"
+              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation ps
+              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation logs --tail 200
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          mapfile -t running < <(docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation ps --status running --services | sort)
+          expected=(dsh identity mailpit minio postgres wlt workforce)
+
+          if [[ "${running[*]}" != "${expected[*]}" ]]; then
+            printf 'running=%s\n' "${running[*]}"
+            printf 'expected=%s\n' "${expected[*]}"
+            echo "::error::Foundation compose service census mismatch"
+            exit 1
+          fi
+
+          echo "FOUNDATION_COMPOSE_SERVICES=PASS"
+
+      - name: Verify runtime proof did not mutate repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          drift="$(git status --porcelain --untracked-files=all)"
+          if [[ -n "$drift" ]]; then
+            printf '%s\n' "$drift"
+            git diff -- . || true
+            echo "::error::Foundation runtime proof mutated repository state"
+            exit 1
+          fi
+          echo "FOUNDATION_RUNTIME_REPOSITORY_MUTATION=0"
+
+      - name: Stop Foundation runtime
+        if: always()
+        shell: bash
+        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation down --volumes --remove-orphans
+
