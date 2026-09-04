@@ -55,6 +55,29 @@ OTP_ENGINE != SMS_PROVIDER
 SEARCH_INDEX != SOURCE_DOMAIN
 ```
 
+## Cross-cutting capability boundaries
+
+The clean target must preserve these ownership splits when the capabilities exist:
+
+- customer profile/preferences — DSH customer/profile capability; Identity remains authentication/session authority;
+- partner team/membership — DSH partner/team operational truth with Identity-owned permission/session enforcement;
+- catalog approval/publication — DSH catalog/store truth; discovery/search only derive eligibility;
+- promotions/coupons — DSH operational eligibility/scope; WLT owns authoritative monetary postings, funding, settlement/refund effects;
+- ratings/reviews — DSH trust/commerce truth; search/analytics may consume projections;
+- notifications — source business event remains with its source domain, delivery/inbox mechanics belong to a proven notification capability/adapter, native route/deep link belongs to the app host;
+- media/assets — business association and access belong to the owning domain, binary object transport/storage remains technical infrastructure;
+- search/discovery — derived query/read-model behavior; never mutation/authorization source;
+- analytics — derived read model with provenance/freshness; never transactional writer;
+- pricing/collateral/penalty financial effects — WLT when authoritative money/exposure truth is created; DSH may supply trusted operational evidence.
+
+```text
+DELIVERY_MECHANISM != SOURCE_DOMAIN
+OBJECT_STORAGE != BUSINESS_OWNER
+SEARCH_RESULT != AUTHORIZATION
+ANALYTICS != TRANSACTIONAL_TRUTH
+PROMOTION_ELIGIBILITY != FINANCIAL_LEDGER
+```
+
 ## Dependency exit gate
 
 - service → app dependencies = 0;

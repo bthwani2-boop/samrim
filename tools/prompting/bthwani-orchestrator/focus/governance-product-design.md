@@ -372,3 +372,30 @@ NO_ORPHAN_JOURNEY
 NO_KNOWN_REQUIRED_CAPABILITY_LOST_DURING_REFOUNDATION
 NO_KNOWN_MATERIAL_ACCESSIBILITY/LOCALIZATION/EXPERIENCE_GAP_WHERE_APPLICABLE
 ```
+
+## 14. Durable knowledge promotion law
+
+Execution must not leave newly proven durable meaning stranded in chat, a temporary plan, a one-off report, test fixture, code comment or donor reference.
+
+After a material root/capability is verified, classify every newly established piece of knowledge:
+
+```text
+DURABLE PRODUCT/SYSTEM/ARCHITECTURE/POLICY TRUTH → GOVERNANCE
+RECURRING HUMAN DEVELOPMENT/OPERATIONS GUIDANCE → DOCS/RUNBOOKS
+EXECUTABLE CONTRACT/CONFIG/SCHEMA/TRUTH → EXECUTABLE SOURCE OWNER
+TEMPORARY CAMPAIGN STATE/EVIDENCE → TEMPORARY PLAN/EVIDENCE ONLY
+HISTORICAL/DONOR CONTEXT → FORENSIC REFERENCE ONLY
+```
+
+Promote only what has durable value and one correct owner. Do not create governance/docs merely to mirror implementation inventories or execution status.
+
+Closure requires:
+
+```text
+KNOWN_DURABLE_TRUTH_STRANDED_IN_TEMPORARY_ARTIFACTS=0
+KNOWN_RECURRING_HUMAN_GUIDANCE_STRANDED_IN_CHAT/PLAN=0
+KNOWN_IMPLEMENTATION_INVENTORY_PROMOTED_AS_DURABLE_AUTHORITY=0
+KNOWN_DUPLICATE_DURABLE_KNOWLEDGE_OWNERS=0
+```
+
+When donor/history reveals valuable prior knowledge, revalidate it before promotion; age, detail and previous canonical labels do not grant authority.

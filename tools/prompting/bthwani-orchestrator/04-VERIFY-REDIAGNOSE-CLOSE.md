@@ -534,3 +534,24 @@ DONOR_EXHAUSTION_GATE=PASS
 UNJUSTIFIED_DONOR_TRUTH_LOSS=0
 TARGET_LEVEL_4_FIXED_POINT=PASS
 ```
+
+## 21. Deployable identity and release provenance
+
+When a deployable host/root/config moves or changes, build/typecheck green is not enough. Verify the applicable external/deployment identity independently:
+
+```text
+APP/PROJECT IDENTITY
+ANDROID APPLICATION ID/PACKAGE
+IOS BUNDLE IDENTIFIER
+SIGNING/KEYSTORE/CERTIFICATE ASSOCIATION
+URL SCHEME/DEEP-LINK IDENTITY
+EAS PROJECT ASSOCIATION
+RUNTIMEVERSION/UPDATE URL/CHANNEL
+NATIVE PLUGIN/FINGERPRINT CONSEQUENCE
+STORE/RELEASE IDENTITY
+WEB HOSTING PROJECT/BUILD ROOT/BASE PATH
+PUBLIC RUNTIME ENV BINDINGS
+OBSERVABILITY RELEASE/PROJECT BINDING
+```
+
+A repository path move does not by itself imply a remote rebuild, new Expo/EAS project or store identity. Rebuild/update necessity is derived from the actual native/config/runtime fingerprint and release mechanism. Conversely, source green cannot hide an unintended identity change.

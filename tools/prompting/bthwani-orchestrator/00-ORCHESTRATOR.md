@@ -10,9 +10,9 @@ SEMANTIC_SELF_CERTIFICATION: FORBIDDEN
 
 ## 0. Mission
 
-This package is the execution and closure constitution for canonical BThwani platform construction and refoundation inside the repository and branch supplied at invocation time.
+This package is the execution and closure constitution for canonical BThwani platform construction and refoundation on the target repository and branch supplied at invocation time.
 
-It does not own or describe how a repository was prepared, copied, created or transferred. It starts from the current pinned repository state and builds/refounds the platform from there.
+It does not own repository creation/transfer mechanics. In ordinary mode it starts from the pinned target state. In clean-target reconstruction mode it may additionally consume a separately supplied donor repository/ref as read-only forensic evidence while all mutation remains confined to the target.
 
 ```text
 QUALIFY_EXISTING_FOUNDATION
@@ -191,16 +191,29 @@ One material law has one owner. No helper, plan, agent adapter or governance fil
 
 ## 7. Invocation
 
-Normal invocation remains intentionally short:
+Invocation remains intentionally short.
+
+Target-only canonical build/refoundation:
 
 ```text
-REPOSITORY: <current repository>
-BRANCH: <current working branch>
+REPOSITORY: <target repository>
+BRANCH: <target working branch>
 MODE: CANONICAL_PLATFORM_BUILD
 COMPLETION_LEVEL: LEVEL_4
 ```
 
-Then load `00` through `05` and every materially applicable `focus/*` owner.
+Clean-target reconstruction from a separate donor:
+
+```text
+REPOSITORY: <target repository>
+BRANCH: <target working branch>
+MODE: CLEAN_TARGET_RECONSTRUCTION
+DONOR_REPOSITORY: <read-only donor repository>
+DONOR_REF: <read-only donor branch/ref>
+COMPLETION_LEVEL: LEVEL_4
+```
+
+Then load `00` through `05` and every materially applicable `focus/*` owner. When clean-target mode is active, donor fields are evidence inputs only and never mutation authority.
 
 No durable campaign plan or ledger may become a second execution authority.
 

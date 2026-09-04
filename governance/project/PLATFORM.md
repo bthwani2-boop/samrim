@@ -58,6 +58,16 @@ The primary operating market is Sana'a, Yemen. City/zone/serviceability is gover
 
 External vendors and technical mechanisms are integrations/adapters, not business-domain owners.
 
+## Cross-cutting capability classes
+
+Some capabilities cross several bounded contexts without becoming new sovereign domains by default:
+
+- customer profile/preferences, partner-team operations, catalog/publication, ratings/reviews, support and commerce eligibility remain assigned DSH operational capabilities unless Governance explicitly rehomes them;
+- promotions/coupons can span DSH eligibility and WLT financial effect while retaining one owner per fact;
+- notifications and media split source-domain business meaning from replaceable delivery/storage mechanisms;
+- search/discovery and analytics are derived/query capabilities and never become authorization, transactional or financial truth;
+- external providers remain adapters behind the operation-owning domain; Platform Control may govern configuration/rollout but does not execute unrelated domain semantics.
+
 ## Core non-conflation laws
 
 ```text

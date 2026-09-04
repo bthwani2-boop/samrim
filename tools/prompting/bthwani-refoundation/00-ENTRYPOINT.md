@@ -131,3 +131,23 @@ DONOR REQUIRED VALUE != DONOR CONTAINER SURVIVAL
 The target package must preserve or deliberately supersede all proven required Product/System/UX/data/security/financial/operational/engineering value from donor current state and material history. Clean reconstruction is not permission for knowledge loss.
 
 Use `04-DONOR-EXTRACTION-ACCOUNTING.md` as temporary evidence/accounting only. It never becomes Product truth or execution authority.
+
+## 10. Clean-target interpretation override
+
+When `MODE=CLEAN_TARGET_RECONSTRUCTION`, path-specific migration/destruction wording elsewhere in this package is interpreted against the two-repository model:
+
+```text
+DONOR PATH NAMED AS CURRENT/LOSING SOURCE
+→ INSPECT/EXTRACT REQUIRED VALUE
+→ REHOME/REIMPLEMENT DIRECTLY IN TARGET
+→ DO_NOT_IMPORT LOSING DONOR CONTAINER
+
+SAME LOSING PATH ALREADY EXISTS IN TARGET
+→ MIGRATE TARGET CONSUMERS IF ANY
+→ CUT OVER
+→ DELETE TARGET LOSER
+```
+
+Therefore instructions such as “move `core/*`”, “delete `shared/*`”, “flatten `apps/*/runtime`”, or “migrate from donor legacy path” must never cause creation of the losing path in a clean target merely to reproduce a same-repository migration sequence.
+
+This section overrides incompatible path-local mutation wording but does not weaken the target topology, required-truth preservation, consumer cutover, deployable-identity, data, contract, security, finance or verification gates.

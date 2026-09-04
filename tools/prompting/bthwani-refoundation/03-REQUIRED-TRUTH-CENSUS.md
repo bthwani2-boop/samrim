@@ -222,3 +222,114 @@ MATERIAL GIT HISTORY / DELETED FILES / PRIOR PLANS
 ```
 
 A later simplified donor representation cannot silently erase an earlier still-required semantic atom.
+
+## High-risk temporary evidence dimensions
+
+Do not recreate the historical matrix package as permanent governance. When the affected cone materially requires it, the ephemeral census must nevertheless prove the following dimensions explicitly.
+
+### Entity and terminology boundary
+
+```text
+ENTITY/CONCEPT
+CANONICAL MEANING
+CANONICAL OWNER
+IDENTIFIERS/RELATIONSHIPS
+OWNED STATES/ACTIONS
+ALLOWED/FORBIDDEN SURFACES
+CONFLATION RISKS
+TERMINOLOGY/LABEL CONSISTENCY
+```
+
+Use this whenever concepts such as Partner/Store, Actor/Role/Engagement, Payment/Settlement/Payout, or provider/control-plane/data-plane can be conflated.
+
+### Surface and action coverage
+
+For each applicable app/control-panel section:
+
+```text
+SURFACE/SECTION
+REQUIRED ROUTE/SCREEN
+CANONICAL CAPABILITY IMPORT/BINDING
+MATERIAL ACTIONS
+LOCAL BUSINESS/STATE/PERMISSION TRUTH ABSENCE
+LOADING/EMPTY/SUCCESS/FAILURE/RECOVERY
+CANONICAL EFFECT + REQUIRED READBACK
+```
+
+### Full binding chain
+
+```text
+SURFACE ACTION
+→ PRESENTATION/CONTROLLER
+→ GENERATED/EXPLICIT CLIENT
+→ CONTRACT/OPERATION
+→ AUTH/TRUST BOUNDARY
+→ HANDLER/APPLICATION SERVICE
+→ DOMAIN POLICY
+→ REPOSITORY/TRANSACTION
+→ DATABASE/EVENT/PROVIDER EFFECT
+→ CANONICAL READBACK
+```
+
+Every omitted link must be `NOT_APPLICABLE_WITH_PROOF`, never silently absent.
+
+### Data, SSOT and contract alignment
+
+```text
+DURABLE FACT
+CANONICAL TABLE/STORAGE CLASS
+CANONICAL WRITER
+DERIVED PROJECTIONS/CACHES/INDEXES
+SCHEMA/MODEL/CONTRACT ALIGNMENT
+API CLIENT/GENERATED BINDING LINEAGE
+DUPLICATE SOURCE CHECK
+MIGRATION/BACKFILL/READBACK
+```
+
+### Visibility/publishability and authorization
+
+For externally visible or privileged objects/actions prove:
+
+```text
+ELIGIBILITY/PUBLICATION GATES
+LIST/GET/SEARCH CONSISTENCY
+POSITIVE VISIBLE CASE
+NEGATIVE HIDDEN CASE
+ROLE/PERMISSION/OBJECT SCOPE
+UNAUTHENTICATED/FORBIDDEN CASES
+NO OBJECT-EXISTENCE LEAK WHEN REQUIRED
+UI 401/403/CONFLICT/RETRY BEHAVIOR
+```
+
+### Runtime/hosting/deployable identity
+
+```text
+AFFECTED PROCESS/CONTAINER/HOST
+BUILD/BOOT COMMAND AUTHORITY
+ENV/SECRET BINDING
+PORT/NETWORK/HEALTH/READINESS
+DATABASE/MIGRATION STATE
+PROVIDER/SIMULATOR MODE
+APP/EAS/STORE/SIGNING/SCHEME/UPDATE IDENTITY WHEN MATERIAL
+WEB HOSTING/BUILD-ROOT/BASE-PATH IDENTITY WHEN MATERIAL
+SMOKE/READBACK
+```
+
+### File/container decision and consolidation
+
+For material move/merge/delete/rewrite:
+
+```text
+PATH/CONTAINER
+CURRENT RESPONSIBILITY
+REQUIRED VALUE
+REFERENCES/CONSUMERS
+TARGET OWNER/DESTINATION
+DECISION = KEEP_PROVEN | HARDEN | MOVE | MERGE | SPLIT | REIMPLEMENT | REGENERATE | DELETE | DO_NOT_IMPORT
+CUTOVER DEPENDENCY
+NEGATIVE-SPACE PROOF
+```
+
+### Risk-based verification
+
+Tie each high-impact claim to the smallest decisive evidence, then widen for shared/high-risk cones. Database/API/migration, financial/security, multi-surface runtime, deployable identity, destructive structure changes and provider unknown-outcome behavior require heightened verification.
