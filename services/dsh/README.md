@@ -1,7 +1,18 @@
 # DSH Service
 
-Canonical backend/runtime owner for delivery and shopping capabilities.
+STRUCTURAL_STATUS: FOUNDATION_READY
+MIGRATION_STATUS: REQUIRED_TRUTH_NOT_YET_CUT_OVER
 
-DSH may own deployable backend runtime, canonical writers, durable DSH behavior, service contracts, and capability semantics.
+Canonical bounded-context owner for delivery/shopping/commerce operational capabilities assigned to DSH.
 
-Frontend application hosts do not live under this service. In particular, no `services/dsh/frontend/*` application tree is canonical.
+Prepared canonical rooms:
+
+- `backend/` — DSH runtime, domain writers/readers, and server enforcement.
+- `contracts/` — DSH-owned service contract authority.
+- `database/` — one canonical migration/schema lane.
+- `frontend/` — only reusable DSH-owned capability presentation.
+- `tests/` — DSH service/capability verification.
+
+`frontend/` must never recreate deployable app shells or app-shaped owners such as `app-client`, `app-partner`, `app-captain`, `app-field`, or `control-panel`.
+
+Apps own routing/navigation/composition; DSH owns DSH business/operational truth.
