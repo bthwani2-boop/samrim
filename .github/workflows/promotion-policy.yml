@@ -2,9 +2,6 @@ name: Promotion Policy
 
 on:
   workflow_call:
-    inputs:
-      candidate_sha: {required: true, type: string}
-      base_sha: {required: false, type: string, default: ""}
 
 permissions:
   contents: read
@@ -18,19 +15,20 @@ jobs:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || 'refs/heads/main' }}
           persist-credentials: false
           fetch-depth: 1
       - name: Validate promotion metadata
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          BASE_SHA: ${{ inputs.base_sha }}
+          EVENT_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || '' }}
           PR_BASE: ${{ github.event.pull_request.base.ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -u
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          BASE_SHA="${EVENT_BASE_SHA}"
           report="${RUNNER_TEMP}/promotion-policy.txt"; : >"${report}"; findings=0
           violation() { echo "$*" >>"${report}"; findings=$((findings + 1)); }
 

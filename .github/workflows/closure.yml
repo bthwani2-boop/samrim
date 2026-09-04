@@ -62,34 +62,23 @@ jobs:
     if: needs.metadata.outputs.should_run == 'true'
     needs: [metadata, classify]
     uses: ./.github/workflows/repository-policy.yml
-    with:
-      candidate_sha: ${{ needs.metadata.outputs.candidate_sha }}
-      base_sha: ${{ needs.metadata.outputs.base_sha }}
 
   workflow-integrity:
     if: needs.metadata.outputs.should_run == 'true'
     needs: [metadata, classify]
     uses: ./.github/workflows/workflow-integrity.yml
-    with:
-      candidate_sha: ${{ needs.metadata.outputs.candidate_sha }}
-      base_sha: ${{ needs.metadata.outputs.base_sha }}
 
   secrets:
     if: needs.metadata.outputs.should_run == 'true'
     needs: [metadata, classify]
     uses: ./.github/workflows/secrets.yml
     with:
-      candidate_sha: ${{ needs.metadata.outputs.candidate_sha }}
-      base_sha: ${{ needs.metadata.outputs.base_sha }}
       full_history: true
 
   promotion-policy:
     if: needs.metadata.outputs.should_run == 'true'
     needs: [metadata, classify]
     uses: ./.github/workflows/promotion-policy.yml
-    with:
-      candidate_sha: ${{ needs.metadata.outputs.candidate_sha }}
-      base_sha: ${{ needs.metadata.outputs.base_sha }}
 
   promotion-closure:
     name: promotion-closure

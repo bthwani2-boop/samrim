@@ -23,22 +23,19 @@ jobs:
     name: manual-request
     runs-on: ubuntu-24.04
     outputs:
-      candidate_sha: ${{ steps.validate.outputs.candidate_sha }}
       base_sha: ${{ steps.validate.outputs.base_sha }}
       mode: ${{ steps.validate.outputs.mode }}
     steps:
       - id: validate
         shell: bash
         env:
-          CANDIDATE: ${{ github.sha }}
+          SELECTED_REF: ${{ github.ref }}
           BASE: ${{ inputs.base_sha }}
           MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
-          [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::GitHub did not resolve an exact SHA"; exit 1; }
           [[ -z "${BASE}" || "${BASE}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::base_sha must be empty or exact SHA"; exit 1; }
           {
-            echo "candidate_sha=${CANDIDATE}"
             echo "base_sha=${BASE}"
             echo "mode=${MODE}"
           } >>"${GITHUB_OUTPUT}"
@@ -49,25 +46,17 @@ jobs:
     if: needs.validate.outputs.mode == 'technical-full' || needs.validate.outputs.mode == 'repository-policy'
     needs: validate
     uses: ./.github/workflows/repository-policy.yml
-    with:
-      candidate_sha: ${{ needs.validate.outputs.candidate_sha }}
-      base_sha: ${{ needs.validate.outputs.base_sha }}
 
   workflow-integrity:
     if: needs.validate.outputs.mode == 'technical-full' || needs.validate.outputs.mode == 'workflow-integrity'
     needs: validate
     uses: ./.github/workflows/workflow-integrity.yml
-    with:
-      candidate_sha: ${{ needs.validate.outputs.candidate_sha }}
-      base_sha: ${{ needs.validate.outputs.base_sha }}
 
   secrets:
     if: needs.validate.outputs.mode == 'technical-full' || needs.validate.outputs.mode == 'secrets'
     needs: validate
     uses: ./.github/workflows/secrets.yml
     with:
-      candidate_sha: ${{ needs.validate.outputs.candidate_sha }}
-      base_sha: ${{ needs.validate.outputs.base_sha }}
       full_history: true
 
   manual-assurance:

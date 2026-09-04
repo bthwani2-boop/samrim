@@ -53,25 +53,17 @@ jobs:
   repository:
     needs: classify
     uses: ./.github/workflows/repository-policy.yml
-    with:
-      candidate_sha: ${{ needs.classify.outputs.candidate_sha }}
-      base_sha: ${{ needs.classify.outputs.base_sha }}
 
   workflow-integrity:
     if: needs.classify.outputs.workflow_integrity == 'true'
     needs: classify
     uses: ./.github/workflows/workflow-integrity.yml
-    with:
-      candidate_sha: ${{ needs.classify.outputs.candidate_sha }}
-      base_sha: ${{ needs.classify.outputs.base_sha }}
 
   secrets:
     if: needs.classify.outputs.secrets == 'true'
     needs: classify
     uses: ./.github/workflows/secrets.yml
     with:
-      candidate_sha: ${{ needs.classify.outputs.candidate_sha }}
-      base_sha: ${{ needs.classify.outputs.base_sha }}
       full_history: false
 
   development-ci:

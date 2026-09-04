@@ -2,9 +2,6 @@ name: Workflow Integrity
 
 on:
   workflow_call:
-    inputs:
-      candidate_sha: {required: true, type: string}
-      base_sha: {required: false, type: string, default: ""}
 
 permissions:
   contents: read
@@ -18,7 +15,7 @@ jobs:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || 'refs/heads/main' }}
           persist-credentials: false
           fetch-depth: 1
       - name: Install actionlint and ShellCheck
@@ -26,10 +23,11 @@ jobs:
       - name: Run actionlint with pinned ShellCheck
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          BASE_SHA: ${{ inputs.base_sha }}
+          EVENT_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || '' }}
         run: |
           set -u
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          BASE_SHA="${EVENT_BASE_SHA}"
           source tools/ci/tool-versions.env
           actionlint -version
           shellcheck --version
@@ -62,7 +60,7 @@ jobs:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || 'refs/heads/main' }}
           persist-credentials: false
           fetch-depth: 1
       - name: Install zizmor
@@ -70,10 +68,11 @@ jobs:
       - name: Run zizmor
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          BASE_SHA: ${{ inputs.base_sha }}
+          EVENT_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || '' }}
         run: |
           set -u
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          BASE_SHA="${EVENT_BASE_SHA}"
           source tools/ci/tool-versions.env
           zizmor --version
           report="${RUNNER_TEMP}/zizmor.sarif"; stderr_report="${RUNNER_TEMP}/zizmor.stderr"; started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; code=0
@@ -108,7 +107,7 @@ jobs:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || 'refs/heads/main' }}
           persist-credentials: false
           fetch-depth: 1
       - name: Install pinact
@@ -116,10 +115,11 @@ jobs:
       - name: Verify all discovered action SHA annotations
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          BASE_SHA: ${{ inputs.base_sha }}
+          EVENT_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || '' }}
         run: |
           set -u
+          CANDIDATE_SHA="$(git rev-parse HEAD)"
+          BASE_SHA="${EVENT_BASE_SHA}"
           source tools/ci/tool-versions.env
           pinact version
           report="${RUNNER_TEMP}/pinact.txt"; started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; code=0
