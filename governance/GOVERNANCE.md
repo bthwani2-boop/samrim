@@ -52,6 +52,7 @@ A current implementation can reveal drift but does not silently redefine Product
 ### Architecture
 
 - `architecture/SYSTEM-CONTEXT.md` — bounded contexts and dependency direction.
+- `architecture/REPOSITORY-TOPOLOGY.md` — durable repository responsibility taxonomy, placement, and container-admission law.
 - `architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md` — semantic owner/writer/readback map.
 - `architecture/APP-SERVICE-COMPOSITION.md` — deployable-host versus service-capability responsibility.
 - `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` — data/contract/version/integration boundaries.
@@ -119,3 +120,34 @@ Governance is sufficient only when a qualified developer can determine, without 
 - runtime/reliability/security/quality/delivery policies.
 
 Implementation commands and operating procedures remain in `docs/**`.
+
+## Complete semantic coverage law
+
+Governance completeness is measured by semantic coverage, not by document count or file size.
+
+Every material platform responsibility must have exactly one durable disposition:
+
+```text
+DURABLE_CAPABILITY
+SUBCAPABILITY_OF_NAMED_OWNER
+DURABLE_POLICY
+TECHNICAL_MECHANISM_OWNED_ELSEWHERE
+DERIVED_PROJECTION/READ_MODEL
+EXPLICIT_NON_GOAL
+```
+
+No material responsibility may remain merely implicit because code happens to contain a folder for it. Conversely, implementation folders do not automatically earn durable capability status.
+
+Before Governance can be considered reconstruction-complete:
+
+```text
+UNACCOUNTED_MATERIAL_PRODUCT_RESPONSIBILITIES=0
+UNOWNED_DURABLE_FACTS=0
+UNMAPPED_REQUIRED_ACTORS/JOURNEYS=0
+UNMAPPED_REQUIRED_FAILURE/RECOVERY_SEMANTICS=0
+UNMAPPED_REQUIRED_SECURITY/FINANCIAL_INVARIANTS=0
+DUPLICATE_DURABLE_MEANING_AUTHORITIES=0
+IMPLEMENTATION_INVENTORY_AS_GOVERNANCE_AUTHORITY=0
+```
+
+Historical/donor material may reveal missing durable meaning, but donor names, files and topology never become Governance authority merely by being old or widely used.

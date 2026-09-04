@@ -278,7 +278,7 @@ Only these may stop mutation:
 ```text
 UNRESOLVED_IRREVERSIBLE_DATA_RISK
 UNRESOLVED_EXTERNAL_LIVE_CONSUMER_CONTRACT
-UNKNOWN_CURRENT_CURRENT_BRANCH_HEAD_MOVEMENT_NOT_YET_RECONCILED
+UNKNOWN_CURRENT_BRANCH_HEAD_MOVEMENT_NOT_YET_RECONCILED
 MISSING_REQUIRED_HUMAN_PRODUCT_DECISION
 MISSING_REQUIRED_SECRET_CREDENTIAL_ENVIRONMENT
 BLOCKED_UNKNOWN_THAT_CAN_CHANGE_CANONICAL_TARGET_OR_SAFE_CUTOVER
@@ -314,18 +314,100 @@ SELECTED_LOWER_UNIT_WITHOUT_ANCESTOR_EXONERATION
 
 The orchestrator is operational law, not advisory prose.
 
-## 14. Single mutation authority
+## 14. Maximum-safe parallel mutation authority
+
+Parallelism is controlled by semantic mutation cones, not by a blanket single-agent prohibition.
 
 ```text
-ACTIVE_EXECUTION_SESSIONS=1
-PARALLEL_MUTATING_SESSIONS=FORBIDDEN
-PARALLEL_EXECUTION_AGENTS=FORBIDDEN
-MAX_ACTIVE_OVERLAPPING_MATERIAL_MUTATION_UNITS=1
+NON_OVERLAPPING_MUTATION_CONES → PARALLEL_ALLOWED
+OVERLAPPING_AUTHORITY → SERIALIZE
+SHARED_DB/CONTRACT/RUNTIME/EXPORT_OWNER → ONE_ACTIVE_WRITER
+ONE_INTEGRATION_AUTHORITY_PER_TARGET_BRANCH
+EACH_MUTATING_UNIT → EXACT_BASE_SHA
+FOREIGN_DELTA → RECONCILE_BEFORE_WRITE_OR_INTEGRATION
+BLIND_MERGE/BLIND_CHERRY_PICK/FORCE_UPDATE → FORBIDDEN
 ```
 
-Wide read-only evidence collection may run in parallel when it cannot create competing mutation authority.
+Read-only evidence collection may run at maximum safe parallelism. Mutating work may also run in parallel only when affected cones are proven non-overlapping and integration ownership is explicit.
 
 ```text
+PARALLELISM_MUST_NOT_CREATE_SECOND_WRITERS
+PARALLELISM_MUST_NOT_CREATE_PARTIAL_CUTOVER
+PARALLELISM_MUST_NOT_INVALIDATE_UNRECONCILED_EVIDENCE
+MAX_ACTIVE_OVERLAPPING_MATERIAL_MUTATION_UNITS=1
 ONE_ACTIVE_UNIT != SMALL_UNIT
 CONTEXT_WINDOW != ARCHITECTURE_BOUNDARY
 ```
+
+## 15. Dual-repository authority for clean-target reconstruction
+
+When a donor is supplied:
+
+```text
+TARGET_REPOSITORY/BRANCH = MUTATION_AUTHORITY
+DONOR_REPOSITORY/REF = READ_ONLY_FORENSIC_AUTHORITY_ONLY
+DONOR_WRITES = FORBIDDEN
+TARGET_FORCE_PUSH = FORBIDDEN
+TARGET_FAST_FORWARD_WRITE = ALLOWED_ONLY_FROM_EXPECTED_HEAD
+```
+
+Evidence precedence is class-specific: current human Product/System decisions and durable target Governance own intended meaning; executable target state owns current implementation truth; donor current/history provides candidate value and forensic evidence only.
+
+The donor corpus must include material current-tree and historical evidence when history can contain truth removed by later simplification. A later donor commit does not automatically supersede an earlier semantic atom unless the replacement or rejection is proven.
+
+## 16. Research, evidence acquisition and foreign-delta discipline
+
+A material unknown must be classified before it can block or be ignored:
+
+```text
+DERIVABLE_FROM_TARGET
+DERIVABLE_FROM_DONOR_CURRENT
+DERIVABLE_FROM_DONOR_HISTORY
+REQUIRES_EXTERNAL_TECHNICAL_RESEARCH
+REQUIRES_HUMAN_PRODUCT_DECISION
+```
+
+External research may resolve technical/standard/provider facts but may not invent BThwani Product truth.
+
+For every material proof claim record conceptually:
+
+```text
+CAPABILITY_OR_CLAIM
+→ REQUIRED_EVIDENCE
+→ ACQUISITION_PATH
+→ PROOF_LIMIT
+```
+
+If target head moves, classify the foreign delta, invalidate only affected evidence, re-pin and continue. Never discard concurrent work merely to restore a previous expected head.
+
+## 17. Objective and focus routing
+
+The campaign remains project-wide even when the current work has a narrower semantic objective.
+
+```text
+PROJECT_FRAME = FULL BTHWANI FIXED-POINT CAMPAIGN
+OBJECTIVE = CURRENT SEMANTIC OUTCOME / NEXT DERIVABLE ROOT
+PRIMARY_FOCUS = LENS PRIORITY, NOT SCOPE EXCLUSION
+EFFECTIVE_SCOPE = OBJECTIVE + COMPLETE AFFECTED CONE + HIGHER ROOTS + REQUIRED CONSUMERS
+```
+
+`OBJECTIVE=AUTO/NEXT` means derive the next highest executable frontier from current evidence. A named objective may prioritize a capability/root but cannot exclude a higher prerequisite, shared writer, contract/data/runtime effect, required surface, security/financial invariant or regression cone.
+
+`PRIMARY_FOCUS=AUTO` loads every materially relevant focus owner. A named focus only orders diagnostic attention; it never permits skipping another affected focus.
+
+## 18. Research mode routing
+
+```text
+RESEARCH=AUTO
+→ derive from target/donor first
+→ use external research only when a material technical/standard/provider fact cannot be resolved internally and external access is available
+
+RESEARCH=INTERNAL_ONLY
+→ target + donor current/history only
+→ unresolved external technical fact remains explicit proof limit/blocker when material
+
+RESEARCH=EXTERNAL_ALLOWED
+→ external primary/official sources may be used for technical/standard/provider facts
+```
+
+External research cannot create BThwani Product truth, override a current human Product decision, or justify adopting a dependency/provider without the applicable target/governance gate.

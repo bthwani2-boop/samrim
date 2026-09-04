@@ -1,7 +1,7 @@
 # BThwani Canonical Platform Build and Refoundation Orchestrator
 
-PACKAGE_REVISION: 34
-REFOUNDATION_PROFILE_REVISION: 9
+PACKAGE_REVISION: 37
+REFOUNDATION_PROFILE_REVISION: 10
 PACKAGE_CLASS: PORTABLE_CONTINUOUS_CANONICAL_BUILD_REFOUNDATION_ENGINE
 PROJECT: BTHWANI
 TARGET_BRANCH: INVOCATION_SUPPLIED
@@ -10,9 +10,9 @@ SEMANTIC_SELF_CERTIFICATION: FORBIDDEN
 
 ## 0. Mission
 
-This package is the execution and closure constitution for canonical BThwani platform construction and refoundation inside the repository and branch supplied at invocation time.
+This package is the execution and closure constitution for canonical BThwani platform construction and refoundation on the target repository and branch supplied at invocation time.
 
-It does not own or describe how a repository was prepared, copied, created or transferred. It starts from the current pinned repository state and builds/refounds the platform from there.
+It does not own repository creation/transfer mechanics. In ordinary mode it starts from the pinned target state. In clean-target reconstruction mode it may additionally consume a separately supplied donor repository/ref as read-only forensic evidence while all mutation remains confined to the target.
 
 ```text
 QUALIFY_EXISTING_FOUNDATION
@@ -103,6 +103,59 @@ B : BUILD_OR_REFOUND_TRUE_PRODUCT/SYSTEM CAPABILITIES VERTICALLY INSIDE QUALIFIE
 
 Stage B begins only after the current exact repository state passes the applicable structural qualification gate.
 
+## 3A. Foundation construction substrate law
+
+When the target is clean, incomplete, or missing required structure, Foundation Construction is an explicit pre-Stage-B obligation rather than permission to begin semantic capability implementation.
+
+```text
+FOUNDATION_CONSTRUCTION = NON_SEMANTIC_STRUCTURAL_SUBSTRATE
+FOUNDATION_CONSTRUCTION != BUSINESS_CAPABILITY_IMPLEMENTATION
+FOUNDATION_MAY_BE_HORIZONTAL_ONLY_WHEN_OUTPUT_IS_STRUCTURAL_SUBSTRATE
+PARTIAL_SEMANTIC_CAPABILITY_IN_FOUNDATION = FORBIDDEN
+```
+
+Foundation Construction may establish only substrate required to make later vertical capability closure safe and reproducible, including as applicable:
+
+```text
+REPOSITORY/WORKSPACE MANIFESTS + TOOLCHAIN
+ONE CANONICAL LOCKFILE AFTER FOUNDATION MANIFESTS STABILIZE
+DEPLOYABLE HOST SHELLS + PRESERVED EXTERNAL APP/BUILD IDENTITY
+SERVICE PROCESS SKELETONS + HEALTH/READINESS + THIN STARTUP
+EMPTY/CANONICAL CONTRACT, CLIENT, DATABASE, TESTING LANES
+INFRA/COMPOSE/LOCAL DATA-PLANE ORCHESTRATION
+PROVEN REUSABLE TECHNICAL PACKAGES/DESIGN-SYSTEM SUBSTRATE
+DEVELOPER LAUNCHERS/DOCTOR/BOOTSTRAP
+CI/GUARDS/PREVENTION
+DOC ↔ EXECUTABLE COMMAND PARITY
+```
+
+Foundation Construction must not introduce or preserve merely for convenience:
+
+```text
+BUSINESS ROUTES OR BUSINESS SCREENS
+CAPABILITY-SPECIFIC DOMAIN WORKFLOWS/STATE MACHINES
+BUSINESS ENDPOINTS/EVENTS/OPENAPI OPERATIONS/DTO MIRRORS
+AUTH/SESSION/RBAC/OTP SEMANTICS BEYOND MINIMAL HOST/PROCESS BINDING
+ORDER/CHECKOUT/WALLET/CATALOG/WORKFORCE OR OTHER PRODUCT IMPLEMENTATION
+DONOR FEATURE TREES OR APP-SHAPED SERVICE MEGA-COMPOSITION
+MONOLITHIC CAPABILITY APPLICATION EXPORTS
+PARTIAL BACKEND/CONTRACT/FRONTEND CAPABILITY WAVES
+```
+
+If premature semantic furnishing is discovered during Foundation Construction:
+
+```text
+PRESERVE PROVEN DEPLOYABLE/TECHNICAL IDENTITY AND REQUIRED NON-SEMANTIC SUBSTRATE
+→ REMOVE/DEFER PREMATURE SEMANTIC IMPLEMENTATION
+→ STABILIZE FOUNDATION MANIFESTS
+→ BUILD/VERIFY THE COMPLETE FOUNDATION
+→ PASS FOUNDATION_CONSTRUCTION_EXIT_GATE
+→ RUN A2
+→ ONLY THEN ENTER STAGE B
+```
+
+The Foundation Construction exit gate is owned by `04-VERIFY-REDIAGNOSE-CLOSE.md`; procedural traversal is owned by `05-EXECUTION-PLAYBOOK.md`.
+
 ## 4. Relentless continuous fixed-point law
 
 The moment authorized mutation begins:
@@ -178,7 +231,7 @@ ASKING_FOR_CONTINUATION_WHEN_DERIVABLE
 Exactly nine semantic owners exist:
 
 1. `00-ORCHESTRATOR.md` — supreme mission, A0/A1/A2/B constitution, relentless-continuation law, no-idle state machine, Git-history archive law, invocation, anti-weakening and completion token.
-2. `01-SCOPE-AUTHORITY-RULES.md` — branch authority, all-tracked accounting, foundation survival qualification, known-garbage prohibition, exact-head, recovery, continuous engagement, legal stop states, deferral and preemption.
+2. `01-SCOPE-AUTHORITY-RULES.md` — branch/donor authority, objective/focus/research routing, all-tracked accounting, foundation survival qualification, exact-head, recovery, concurrency, legal stop states, deferral and preemption.
 3. `02-DIAGNOSE-ROOT-CAUSE.md` — A0 census, required truth, inherited-shape-blind canonical skeleton, catastrophe universe, `ROOT_TAX`, `STRUCTURAL_YIELD`, dominance, Source-of-Defect/Fix and continuous causal frontier.
 4. `03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md` — patch-vs-demolish, ancestor escalation, demolition plan, immediate/eager deletion, continuous mutation, checkpoint-only commits, migration/cutover/pruning.
 5. `04-VERIFY-REDIAGNOSE-CLOSE.md` — evidence, finding terminality, qualification gates, continuous-execution compliance, checkpoint legality, capability closure, fresh final recensus and completion.
@@ -191,16 +244,35 @@ One material law has one owner. No helper, plan, agent adapter or governance fil
 
 ## 7. Invocation
 
-Normal invocation remains intentionally short:
+Invocation remains intentionally short.
+
+Target-only canonical build/refoundation:
 
 ```text
-REPOSITORY: <current repository>
-BRANCH: <current working branch>
+REPOSITORY: <target repository>
+BRANCH: <target working branch>
 MODE: CANONICAL_PLATFORM_BUILD
+OBJECTIVE: AUTO/NEXT | <semantic outcome>
+PRIMARY_FOCUS: AUTO | <focus owner>
+RESEARCH: AUTO | INTERNAL_ONLY | EXTERNAL_ALLOWED
 COMPLETION_LEVEL: LEVEL_4
 ```
 
-Then load `00` through `05` and every materially applicable `focus/*` owner.
+Clean-target reconstruction from a separate donor:
+
+```text
+REPOSITORY: <target repository>
+BRANCH: <target working branch>
+MODE: CLEAN_TARGET_RECONSTRUCTION
+DONOR_REPOSITORY: <read-only donor repository>
+DONOR_REF: <read-only donor branch/ref>
+OBJECTIVE: AUTO/NEXT | <semantic outcome>
+PRIMARY_FOCUS: AUTO | <focus owner>
+RESEARCH: AUTO | INTERNAL_ONLY | EXTERNAL_ALLOWED
+COMPLETION_LEVEL: LEVEL_4
+```
+
+Then load `00` through `05` and every materially applicable `focus/*` owner. When clean-target mode is active, donor fields are evidence inputs only and never mutation authority.
 
 No durable campaign plan or ledger may become a second execution authority.
 
@@ -595,3 +667,57 @@ KNOWN_ORCHESTRATOR_COMPLIANCE_FAILURES=0
 ```
 
 Anything weaker is a recovery checkpoint, never completion.
+
+## 21. Clean-target reconstruction mode
+
+When invocation supplies a donor repository/ref, this section specializes any incompatible single-repository wording above.
+
+```text
+MODE=CLEAN_TARGET_RECONSTRUCTION
+TARGET_REPOSITORY = ONLY MUTABLE REPOSITORY
+DONOR_REPOSITORY = READ_ONLY FORENSIC CORPUS
+DONOR_CURRENT_TREE = FORENSIC EVIDENCE
+DONOR_GIT_HISTORY = FORENSIC EVIDENCE
+DONOR_GOVERNANCE = CANDIDATE DURABLE TRUTH
+DONOR_DOCS = CANDIDATE HUMAN KNOWLEDGE
+DONOR_CODE/DB/CONTRACT/RUNTIME/TESTS = IMPLEMENTATION/BEHAVIOR EVIDENCE
+NONE_OF_DONOR = AUTOMATIC TARGET AUTHORITY
+DONOR_VALUE_MAY_NOT_BE_DROPPED_SILENTLY
+```
+
+The clean-target campaign is:
+
+```text
+PIN_TARGET_HEAD + PIN_DONOR_REF
+→ EXHAUST_DONOR_CURRENT_TREE_AND_MATERIAL_HISTORY
+→ EXTRACT_REQUIRED_SEMANTIC_ATOMS
+→ DISPOSITION_EACH_MATERIAL_ATOM
+→ BUILD_CURRENT-SHAPE-INDEPENDENT_CANONICAL_TARGET
+→ REHOME/REIMPLEMENT/REGENERATE_REQUIRED_VALUE_IN_TARGET
+→ CONNECT_COMPLETE_VERTICAL_CAPABILITY_CONES
+→ VERIFY PARITY OR DELIBERATE IMPROVEMENT
+→ DO_NOT_IMPORT LOSERS
+→ FRESH TARGET RECENSUS
+→ DONOR_EXHAUSTION_GATE
+→ LEVEL_4_FIXED_POINT
+```
+
+Valid donor dispositions are:
+
+```text
+PRESERVE_AS_TRUTH
+REFINE
+MERGE
+REHOME
+REIMPLEMENT
+REGENERATE
+REFERENCE_ONLY
+SUPERSEDE
+REJECT_WITH_REASON
+```
+
+`IGNORED`, `UNKNOWN_AND_SKIPPED`, and deletion-by-omission are forbidden dispositions.
+
+For cross-repository reconstruction, donor losers are not deleted from the donor. They are excluded from the target after required value is extracted. Deletion/cutover laws apply to losing or obsolete structures inside the mutable target repository.
+
+Final completion additionally requires the donor-exhaustion gates owned by `04-VERIFY-REDIAGNOSE-CLOSE.md`.

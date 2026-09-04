@@ -2,6 +2,7 @@
 
 TEMPORARY_TARGET_SPECIALIZATION: YES
 GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 
 ## Mission
 
@@ -94,4 +95,35 @@ EXTERNAL_REFERENCE_BOUNDARY=PASS
 CAMPAIGN_BRANCH_SPECIFIC_RESIDUE=0
 STALE_COMMAND/PATH_GUIDANCE=0
 DOCS_PARALLEL_PRODUCT/CONTRACT/DATA_AUTHORITY=0
+```
+
+## Semantic parity and operational gap audit
+
+When durable development/operations guidance was historically split, simplified or deleted, Docs closure requires semantic-parity accounting rather than filename parity.
+
+At minimum, ensure human guidance exists for the applicable current platform around:
+
+```text
+DAILY_DEV / FOCUSED_INTEGRATION / FULL_INTEGRATION
+DATABASE/OBJECT_STORAGE/CACHE
+MAPS/MESSAGING/OTP/EMAIL/PUSH
+FINANCIAL/BILLER SIMULATORS
+DOCKER/ENV/SECRETS
+OBSERVABILITY
+MOBILE/CONTROL PANEL
+CONTRACT/MIGRATION/VERSION-SKEW RECOVERY
+SECURITY/DATA RECOVERY
+NOTIFICATION/MEDIA INCIDENTS
+CATALOG/PROMOTION/RATING OPERATIONS WHEN ADMITTED
+```
+
+The guide may route several topics to one coherent document/runbook; completeness is semantic, not one-file-per-topic.
+
+For donor-based reconstruction:
+
+```text
+DONOR_DOC_SEMANTIC_PARITY=PASS
+REQUIRED_HISTORICAL_OPERATIONAL_GUIDANCE_LOST=0
+CAMPAIGN_STATE_IN_DURABLE_DOCS=0
+STALE_DONOR_PATH/COMMAND_AUTHORITY=0
 ```

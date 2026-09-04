@@ -372,3 +372,55 @@ NO_ORPHAN_JOURNEY
 NO_KNOWN_REQUIRED_CAPABILITY_LOST_DURING_REFOUNDATION
 NO_KNOWN_MATERIAL_ACCESSIBILITY/LOCALIZATION/EXPERIENCE_GAP_WHERE_APPLICABLE
 ```
+
+## 14. Durable knowledge promotion law
+
+Execution must not leave newly proven durable meaning stranded in chat, a temporary plan, a one-off report, test fixture, code comment or donor reference.
+
+After a material root/capability is verified, classify every newly established piece of knowledge:
+
+```text
+DURABLE PRODUCT/SYSTEM/ARCHITECTURE/POLICY TRUTH → GOVERNANCE
+RECURRING HUMAN DEVELOPMENT/OPERATIONS GUIDANCE → DOCS/RUNBOOKS
+EXECUTABLE CONTRACT/CONFIG/SCHEMA/TRUTH → EXECUTABLE SOURCE OWNER
+TEMPORARY CAMPAIGN STATE/EVIDENCE → TEMPORARY PLAN/EVIDENCE ONLY
+HISTORICAL/DONOR CONTEXT → FORENSIC REFERENCE ONLY
+```
+
+Promote only what has durable value and one correct owner. Do not create governance/docs merely to mirror implementation inventories or execution status.
+
+Closure requires:
+
+```text
+KNOWN_DURABLE_TRUTH_STRANDED_IN_TEMPORARY_ARTIFACTS=0
+KNOWN_RECURRING_HUMAN_GUIDANCE_STRANDED_IN_CHAT/PLAN=0
+KNOWN_IMPLEMENTATION_INVENTORY_PROMOTED_AS_DURABLE_AUTHORITY=0
+KNOWN_DUPLICATE_DURABLE_KNOWLEDGE_OWNERS=0
+```
+
+When donor/history reveals valuable prior knowledge, revalidate it before promotion; age, detail and previous canonical labels do not grant authority.
+
+## 15. Engineering-governance and control-artifact admission
+
+Guards, scripts, CI workflows, registries, policies, routers, hooks, skills, agent instructions and generated status artifacts are engineering control-plane material. They must earn existence just like production code.
+
+Before creating or preserving one, prove:
+
+```text
+UNIQUE DURABLE INVARIANT/NEED
+CLEAR CONSUMER
+CLEAR TRIGGER/EXECUTION PATH
+CLEAR OWNER
+NO BETTER EXISTING OWNER/COMPILER/SCHEMA/TEST/RUNTIME MECHANISM
+NO DUPLICATE MANUAL SOURCE OF TRUTH
+FAILURE MODE IS FAIL-CLOSED WHEN CLAIM IS SAFETY/SECURITY CRITICAL
+RETIREMENT CONDITION IF TEMPORARY/CAMPAIGN-SPECIFIC
+```
+
+For existing control artifacts apply:
+
+```text
+KEEP | HARDEN | MERGE | REHOME | REPLACE_WITH_NATIVE_GUARANTEE | DELETE
+```
+
+Do not retain a guard because it is green, a registry because it is detailed, or a workflow because it is already wired. Measure before→after assurance and execution cost; a simplification that merely shifts cost/failure elsewhere is not an improvement.

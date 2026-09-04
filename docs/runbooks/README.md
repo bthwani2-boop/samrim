@@ -6,7 +6,7 @@ CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
 ## Precedence
 
-Runbooks explain diagnosis, containment, recovery and operational verification. They do not redefine Product/domain ownership, legal state transitions, financial truth, authorization or runtime implementation.
+Runbooks explain diagnosis, containment, recovery, and operational verification. They do not redefine Product/domain ownership, legal state transitions, financial truth, authorization, or runtime implementation.
 
 Use this precedence:
 
@@ -16,12 +16,12 @@ governance durable semantic owner
 → applicable runbook
 ```
 
-If a runbook conflicts with a live executable path/command, correct the runbook. If implementation conflicts with durable governance, treat it as a product/architecture finding rather than silently changing the runbook to bless the drift.
+If a runbook conflicts with a live executable path/command, correct the runbook. If implementation conflicts with durable governance, treat it as a Product/architecture finding rather than silently changing the runbook to bless the drift.
 
 ## Runbook map
 
-- `identity.md` — Identity availability, sessions/activation and safe support diagnostics.
-- `client-addresses.md` — client addresses, serviceability, privacy lifecycle and conflicts.
+- `identity.md` — Identity availability, sessions/activation, and safe support diagnostics.
+- `client-addresses.md` — client addresses, serviceability, privacy lifecycle, and conflicts.
 - `partner-onboarding.md` — onboarding/readiness/publication support.
 - `stores.md` — store discovery/publication/governance operations.
 - `orders.md` — canonical order operational truth and incident recovery.
@@ -31,10 +31,13 @@ If a runbook conflicts with a live executable path/command, correct the runbook.
 - `wallet-reconciliation.md` — WLT-backed projection/reconciliation incidents.
 - `settlements-and-payouts.md` — WLT settlement/payout/reconciliation incidents.
 - `workforce.md` — workforce profile/engagement/eligibility incidents.
-- `platform-control.md` — governed variables/change-set/rollout incidents.
+- `platform-control.md` — conditional target guidance; use operationally only after exact-current executable owner/materialization is proven.
 - `provider-unknown-outcomes.md` — ambiguous external mutation/provider outcomes.
 - `special-requests-and-support.md` — special-request and support/rescue incidents.
-- `rollout-recovery.md` — progressive rollout containment/rollback/recovery.
+- `rollout-recovery.md` — conditional target guidance; use operationally only when the exact-current rollout owner/state machine exists and is proven.
+- `systemic-platform-recovery.md` — database/migration, contract/version-skew, security/credential, and cross-service recovery routing.
+- `communications-and-media.md` — notification delivery, inbox/push/email/SMS routing, and media/object-storage incidents.
+- `catalog-promotions-ratings.md` — catalog publication, promotion/coupon, and ratings/reviews operational recovery.
 
 Mobile build activation and Sentry setup live under `../development/`, not operational runbooks.
 
@@ -48,6 +51,7 @@ A runbook must:
 - preserve idempotency/correlation and financial/security evidence;
 - avoid copying secrets or unnecessary PII into tickets/logs;
 - verify canonical readback after recovery;
-- use environment/configured thresholds rather than hardcoded historical numbers.
+- use environment/configured thresholds rather than hardcoded historical numbers;
+- state explicitly when it is target/conditional guidance rather than a currently executable operational procedure.
 
 A runbook may mention an implementation path only when operationally useful and must not become a hand-maintained route/table registry.

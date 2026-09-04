@@ -42,7 +42,7 @@ PRODUCT MEANING
 → SERVICE PRESENTATION
 → APP HOST COMPOSITION
 → MATERIAL ACTION/MUTATION
-→ PERSISTED/OBSERVABLE READBACK
+→ CANONICAL_OWNER_READBACK_PROVEN_IN_TARGET
 → ALL REQUIRED CONSUMERS
 → DELETE LOSERS
 → NEGATIVE SPACE
@@ -70,7 +70,7 @@ Internal consumers under atomic repository control cut over together where feasi
 
 A compatibility layer for independently deployed/external consumers requires explicit owner, scope, real version combination, telemetry/migration condition and deletion trigger.
 
-`COMPATIBILITY_JUST_IN_CASE = FORBIDDEN`.
+Compatibility follows the general bounded-window/deletion law from the orchestrator; speculative compatibility without a proven consumer/window is not admitted here.
 
 ## Deployable identity
 
@@ -90,3 +90,19 @@ STALE_EXPORTS/CONFIG/TEST/TOOL_RESIDUE=0
 REQUIRED_VALUE_STRANDED=0
 NEGATIVE_SPACE=PASS
 ```
+
+## Cross-repository reconstruction
+
+When the source is a separate read-only donor repository, translate migration semantics as follows:
+
+```text
+DONOR_REQUIRED_VALUE → EXTRACT/PROVE
+DONOR_CANONICAL_OR_IMPROVABLE_BEHAVIOR → REIMPLEMENT/REHOME IN TARGET
+DONOR_DATA/CONTRACT SHAPE → RECONSTRUCT ONLY IF TARGET REQUIRES IT
+DONOR LOSER/LEGACY/SHADOW → DO_NOT_IMPORT
+TARGET LOSER CREATED/INHERITED → CUT_OVER/DELETE
+```
+
+Never mutate the donor to satisfy target closure. A donor structure that contains useful truth does not earn survival in the target.
+
+Before declaring a reconstructed capability closed, prove source-to-target semantic parity or a deliberate governed improvement across owner, states/actions, data, contract, surfaces, failure/recovery, security/finance and runtime readback.

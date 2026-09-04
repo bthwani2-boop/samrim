@@ -78,4 +78,4 @@ Use the current registered runtime/guard commands from `package.json` and curren
 
 ## Closure boundary
 
-This runbook cannot close a journey. Final closure requires all applicable evidence scopes and protected approvals defined by current governance (`governance/policies/delivery.md` §18) on the same immutable candidate.
+This runbook cannot close a journey. Final closure requires all applicable evidence scopes, approvals, and release-closure conditions from `governance/policies/delivery.md` (including applicable qualification/promotion sections and §19 release closure) on the same immutable candidate.

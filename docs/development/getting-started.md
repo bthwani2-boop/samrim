@@ -49,27 +49,54 @@ pnpm control
 
 These commands delegate to repository-owned runtime scripts. Do not duplicate their internal environment/bootstrap logic in shell aliases or docs.
 
+## Canonical workspace bootstrap
+
+The canonical lockfile is committed. Install the exact workspace state with:
+
+```powershell
+pnpm bootstrap
+```
+
+For verification without changing declared dependencies or lockfile authority, use the repository verification commands below. Lockfile regeneration is a deliberate manifest-change operation, not a normal bootstrap step.
+
 ## Primary verification
 
-Fast affected verification:
+Discover the current Nx projects:
 
 ```powershell
-pnpm verify
+pnpm nx:projects
 ```
 
-Full workspace verification when the affected cone requires it:
+Verify the current workspace after the canonical lockfile has been installed:
 
 ```powershell
-pnpm verify:full
+pnpm workspace:verify
 ```
 
-Runtime smoke for the declared full integration profile:
+Verify app-owned mobile identities/configuration:
 
 ```powershell
-pnpm runtime:full:smoke
+pnpm mobile:verify-config
 ```
 
-Contract/database/runtime-specific commands are discoverable from `package.json`; choose only the evidence applicable to the change.
+Validate the Foundation runtime composition manually when diagnosing:
+
+```powershell
+pnpm runtime:foundation:config
+pnpm runtime:foundation:up
+pnpm runtime:foundation:status
+pnpm runtime:foundation:verify
+```
+
+For the canonical local Foundation runtime proof, use:
+
+```powershell
+pnpm foundation:runtime:close
+```
+
+This command requires a clean branch `a`, creates an ignored local compose `.env` when missing, builds and starts the Foundation profile, retries the four service health/readiness endpoints until ready, verifies all seven compose services are running, fails on repository mutation, prints diagnostics on failure, and stops the runtime after a successful proof unless `-KeepRunning` is supplied to the underlying PowerShell script.
+
+Contract/database/runtime-specific commands are discoverable from the current root/service manifests; choose only evidence applicable to the change.
 
 ## Before changing a capability
 

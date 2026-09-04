@@ -54,6 +54,7 @@ Then use the focused guide:
 - `development/testing-and-verification.md`
 - `development/configuration-and-secrets.md`
 - `development/runtime.md`
+- `development/runtime-profiles-and-integrations.md` — daily/focused/full development modes and provider/infrastructure responsibilities
 - `development/providers-and-sandboxes.md`
 - `development/mobile.md`
 - `development/control-panel.md`
@@ -66,6 +67,8 @@ Then use the focused guide:
 - `development/leanctx.md`
 
 ### Runbooks
+
+Additional cross-cutting recovery guides include `runbooks/systemic-platform-recovery.md`, `runbooks/communications-and-media.md`, and `runbooks/catalog-promotions-ratings.md`.
 
 `runbooks/README.md` routes operational incidents to focused runbooks. Runbooks describe diagnosis/recovery only; they do not override domain owners or invent direct business/database mutations.
 

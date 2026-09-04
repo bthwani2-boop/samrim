@@ -1,0 +1,50 @@
+{
+  "name": "samrim",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.0",
+  "engines": {
+    "node": ">=24.17.0 <25",
+    "pnpm": "10.34.0"
+  },
+  "scripts": {
+    "client": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-client",
+    "partner": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-partner",
+    "captain": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-captain",
+    "field": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-field",
+    "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
+    "control": "nx run control-panel:dev",
+    "dsh": "nx run dsh:serve",
+    "wlt": "nx run wlt:serve",
+    "identity": "nx run identity:serve",
+    "workforce": "nx run workforce:serve",
+    "nx:projects": "nx show projects",
+    "workspace:typecheck": "nx run-many -t typecheck --all --outputStyle=stream",
+    "workspace:test": "nx run-many -t test --all --outputStyle=stream",
+    "workspace:build": "nx run-many -t build --all --outputStyle=stream",
+    "workspace:vet": "nx run-many -t vet --all --outputStyle=stream",
+    "workspace:verify": "pnpm run workspace:typecheck && pnpm run workspace:test && pnpm run workspace:build && pnpm run workspace:vet",
+    "runtime:config": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml config",
+    "runtime:up": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml up -d",
+    "runtime:down": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml down",
+    "runtime:status": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml ps",
+    "runtime:logs": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml logs -f",
+    "doctor": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/doctor.ps1",
+    "bootstrap": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1",
+    "runtime:foundation:config": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml --profile foundation config",
+    "runtime:foundation:up": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml --profile foundation up -d --build",
+    "runtime:foundation:status": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml --profile foundation ps",
+    "runtime:foundation:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-foundation-runtime.ps1",
+    "nx:verify-tags": "node tools/dev/verify-nx-project-tags.mjs",
+    "foundation:runtime:close": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 && pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-runtime.ps1",
+    "docs:verify-command-parity": "node tools/dev/verify-doc-command-parity.mjs",
+    "knowledge:verify": "node tools/dev/verify-knowledge-system.mjs",
+    "repository:verify-structure": "node tools/dev/verify-repository-structure.mjs",
+    "repository:verify-hygiene": "node tools/dev/verify-structural-hygiene.mjs",
+    "foundation:local:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-foundation-local.ps1"
+  },
+  "devDependencies": {
+    "nx": "23.2.0",
+    "typescript": "6.0.2"
+  }
+}

@@ -1,5 +1,8 @@
 # Target — Contracts and Cross-Service Protocols
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. Service contracts remain sovereign
 
 Business/API contracts live with the service that owns the semantics:
@@ -9,7 +12,7 @@ services/dsh/contracts/
 services/wlt/contracts/
 services/identity/contracts/
 services/workforce/contracts/
-services/platform-control/contracts/
+services/platform-control/contracts/   # only if independent service admission passes
 ```
 
 Root `contracts/` must not become a second business-contract registry or manual mirror.
@@ -98,7 +101,7 @@ dsh.openapi.yaml
 wlt.openapi.yaml
 identity.openapi.yaml
 workforce.openapi.yaml
-platform-control.openapi.yaml
+platform-control.openapi.yaml   # only if Platform Control survives as an independent service
 ```
 
 Capability modules may be split physically for cohesion but remain one semantic owner.

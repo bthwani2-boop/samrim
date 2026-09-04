@@ -1,0 +1,24 @@
+{
+  "name": "بثواني الميدان",
+  "slug": "app-field-next",
+  "scheme": "bthwani-field-next",
+  "owner": "bthwani1",
+  "version": "0.3.0",
+  "androidPackage": "com.bthwani.field.next",
+  "iosBundleIdentifier": "com.bthwani.field.next",
+  "projectId": "08b6c8dc-80a2-4271-9904-d941a3d98914",
+  "nativeCapabilities": [
+    "router",
+    "updates",
+    "constants",
+    "crypto",
+    "battery",
+    "splashScreen",
+    "documentPicker",
+    "imagePicker",
+    "secureStore",
+    "notifications",
+    "location",
+    "maps"
+  ]
+}

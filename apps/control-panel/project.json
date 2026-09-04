@@ -1,0 +1,29 @@
+{
+  "name": "control-panel",
+  "root": "apps/control-panel",
+  "projectType": "application",
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/control-panel dev"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/control-panel typecheck"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/control-panel build"
+      }
+    }
+  },
+  "tags": [
+    "scope:control-panel",
+    "type:app"
+  ]
+}

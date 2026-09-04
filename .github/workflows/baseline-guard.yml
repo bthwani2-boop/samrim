@@ -2,7 +2,7 @@ name: Foundation Baseline Guard
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
     branches: [main]
 
@@ -17,7 +17,8 @@ jobs:
   baseline:
     name: foundation-baseline
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
+
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -37,26 +38,46 @@ jobs:
             governance
             docs
             tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md
-            tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md
             .github/CODEOWNERS
             .github/pull_request_template.md
+            package.json
+            pnpm-workspace.yaml
+            pnpm-lock.yaml
+            nx.json
+            go.work
           )
+
           for path in "${required[@]}"; do
-            [[ -e "${path}" ]] || { echo "::error::Required foundation path missing: ${path}"; exit 1; }
+            [[ -e "${path}" ]] || {
+              echo "::error::Required foundation path missing: ${path}"
+              exit 1
+            }
           done
 
+          if [[ -d tools/prompting/bthwani-refoundation ]]; then
+            [[ -f tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md ]] || {
+              echo "::error::Refoundation package exists without its entrypoint"
+              exit 1
+            }
+
+            orchestrator_profile="$(awk -F': ' '/^REFOUNDATION_PROFILE_REVISION:/ {print $2; exit}' tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md)"
+            refoundation_revision="$(awk -F': ' '/^PACKAGE_REVISION:/ {print $2; exit}' tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md)"
+
+            [[ -n "${orchestrator_profile}" && "${orchestrator_profile}" == "${refoundation_revision}" ]] || {
+              echo "::error::Orchestrator/refoundation revision mismatch: orchestrator=${orchestrator_profile:-missing} refoundation=${refoundation_revision:-missing}"
+              exit 1
+            }
+          fi
+
           for root in core shared; do
-            [[ ! -e "${root}" ]] || { echo "::error::Forbidden top-level ownership class: ${root}"; exit 1; }
+            [[ ! -e "${root}" ]] || {
+              echo "::error::Forbidden top-level ownership class: ${root}"
+              exit 1
+            }
           done
 
           if [[ -d apps ]] && find apps -mindepth 2 -maxdepth 2 -type d -name runtime -print -quit | grep -q .; then
-            echo "::error::Pass-through apps/*/runtime topology is forbidden on main"
-            exit 1
-          fi
-
-          forbidden='bthwani2-boop/bthwani-suite-next|bthwani-suite-next|D:\\bthwani-suite-next|C:\\bthwani-secrets|origin/h|RE_PIN_h|UNKNOWN_CURRENT_h_HEAD|H_TRUSTWORTHY_CANONICAL_BASELINE_REFOUNDATION_COMPLETE'
-          if git grep -n -I -E -- "${forbidden}" -- . ':(exclude).github/workflows/baseline-guard.yml' ; then
-            echo "::error::Donor/campaign-specific authority residue found"
+            echo "::error::Pass-through apps/*/runtime topology is forbidden"
             exit 1
           fi
 
@@ -74,7 +95,9 @@ jobs:
             ref="${use#*uses:}"
             ref="${ref%%#*}"
             ref="${ref//[[:space:]]/}"
+
             [[ "${ref}" == ./* ]] && continue
+
             [[ "${ref}" =~ @[0-9a-fA-F]{40}$ ]] || {
               echo "::error::Action is not pinned to a full commit SHA: ${ref}"
               exit 1
@@ -86,3 +109,209 @@ jobs:
           else
             git show --check --format= HEAD
           fi
+
+      - name: Verify donor residue
+        shell: bash
+        run: node tools/dev/verify-donor-residue.mjs
+
+      - name: Verify durable repository structure
+        shell: bash
+        run: node tools/dev/verify-repository-structure.mjs
+
+      - name: Verify tracked-artifact structural hygiene
+        shell: bash
+        run: node tools/dev/verify-structural-hygiene.mjs
+
+      - name: Verify docs command parity
+        shell: bash
+        run: node tools/dev/verify-doc-command-parity.mjs
+
+      - name: Verify knowledge-system invariants
+        shell: bash
+        run: node tools/dev/verify-knowledge-system.mjs
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+
+      - name: Install pinned pnpm
+        shell: bash
+        run: npm install --global pnpm@10.34.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: 1.27.1
+          cache: true
+          cache-dependency-path: |
+            services/identity/backend/go.mod
+            services/workforce/backend/go.mod
+            services/dsh/backend/go.mod
+            services/wlt/backend/go.mod
+
+      - name: Verify pinned toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(node --version)" == "v24.17.0" ]]
+          [[ "$(pnpm --version)" == "10.34.0" ]]
+          [[ "$(go version)" == *"go1.27.1"* ]]
+
+      - name: Frozen workspace install
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify mobile deployable identities
+        shell: bash
+        run: pnpm run mobile:verify-config
+
+      - name: Verify workspace dependency references
+        shell: bash
+        run: node tools/dev/verify-workspace-dependencies.mjs
+
+      - name: Verify Nx project tags
+        shell: bash
+        run: pnpm run nx:verify-tags
+
+      - name: Discover Nx projects
+        shell: bash
+        run: pnpm run nx:projects
+
+      - name: Verify PowerShell runtime scripts parse
+        shell: pwsh
+        run: ./tools/dev/verify-powershell-syntax.ps1
+
+      - name: Verify Go workspace synchronization
+        shell: bash
+        run: |
+          set -euo pipefail
+          go work sync
+          drift="$(git status --porcelain -- go.work services/*/backend)"
+          if [[ -n "${drift}" ]]; then
+            printf '%s\n' "${drift}"
+            git diff -- go.work services/*/backend || true
+            echo "::error::go work sync changed tracked or untracked Go workspace files"
+            exit 1
+          fi
+
+      - name: Verify developer doctor
+        shell: pwsh
+        run: ./tools/dev/doctor.ps1 -SkipBranchCheck
+
+      - name: Verify developer bootstrap
+        shell: pwsh
+        run: ./tools/dev/bootstrap.ps1
+
+      - name: Verify workspace
+        shell: bash
+        run: pnpm run workspace:verify
+
+      - name: Verify Foundation compose configuration
+        shell: bash
+        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation config >/dev/null
+
+      - name: Verify developer tooling is non-mutating
+        shell: bash
+        run: |
+          set -euo pipefail
+          drift="$(git status --porcelain --untracked-files=all)"
+          if [[ -n "${drift}" ]]; then
+            printf '%s\n' "${drift}"
+            git diff -- . || true
+            echo "::error::Foundation developer tooling mutated repository state"
+            exit 1
+          fi
+
+  runtime:
+    name: foundation-runtime
+    needs: baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Build and start Foundation runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation up -d --build
+
+      - name: Verify Foundation runtime composition
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          verify_json_endpoint() {
+            local service="$1"
+            local uri="$2"
+            local body
+            body="$(curl --fail --silent --show-error --max-time 5 "$uri")" || return 1
+            jq -e --arg service "$service" '.service == $service and .status == "ok"' <<<"$body" >/dev/null
+          }
+
+          for attempt in $(seq 1 60); do
+            ok=1
+
+            docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation exec -T postgres pg_isready -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
+            curl --fail --silent --show-error --max-time 5 http://127.0.0.1:59000/minio/health/live >/dev/null || ok=0
+            curl --fail --silent --show-error --max-time 5 http://127.0.0.1:58026/ >/dev/null || ok=0
+            (echo >/dev/tcp/127.0.0.1/58025) >/dev/null 2>&1 || ok=0
+
+            verify_json_endpoint identity http://127.0.0.1:18082/identity/health || ok=0
+            verify_json_endpoint identity http://127.0.0.1:18082/identity/readiness || ok=0
+            verify_json_endpoint workforce http://127.0.0.1:18086/workforce/health || ok=0
+            verify_json_endpoint workforce http://127.0.0.1:18086/workforce/readiness || ok=0
+            verify_json_endpoint dsh http://127.0.0.1:58080/dsh/health || ok=0
+            verify_json_endpoint dsh http://127.0.0.1:58080/dsh/readiness || ok=0
+            verify_json_endpoint wlt http://127.0.0.1:18083/wlt/health || ok=0
+            verify_json_endpoint wlt http://127.0.0.1:18083/wlt/readiness || ok=0
+
+            if [[ "$ok" -eq 1 ]]; then
+              echo "FOUNDATION_RUNTIME_ENDPOINTS=PASS"
+              break
+            fi
+
+            if [[ "$attempt" -eq 60 ]]; then
+              echo "::error::Foundation runtime did not become ready"
+              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation ps
+              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation logs --tail 200
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          mapfile -t running < <(docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation ps --status running --services | sort)
+          expected=(dsh identity mailpit minio postgres wlt workforce)
+
+          if [[ "${running[*]}" != "${expected[*]}" ]]; then
+            printf 'running=%s\n' "${running[*]}"
+            printf 'expected=%s\n' "${expected[*]}"
+            echo "::error::Foundation compose service census mismatch"
+            exit 1
+          fi
+
+          echo "FOUNDATION_COMPOSE_SERVICES=PASS"
+
+      - name: Verify runtime proof did not mutate repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          drift="$(git status --porcelain --untracked-files=all)"
+          if [[ -n "$drift" ]]; then
+            printf '%s\n' "$drift"
+            git diff -- . || true
+            echo "::error::Foundation runtime proof mutated repository state"
+            exit 1
+          fi
+          echo "FOUNDATION_RUNTIME_REPOSITORY_MUTATION=0"
+
+      - name: Stop Foundation runtime
+        if: always()
+        shell: bash
+        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation down --volumes --remove-orphans

@@ -1,6 +1,6 @@
 # BThwani Canonical Target Package — Entrypoint
 
-PACKAGE_REVISION: 7
+PACKAGE_REVISION: 10
 PACKAGE_CLASS: PORTABLE_BTHWANI_TARGET_SPECIALIZATION
 COMPLETION_TARGET: LEVEL_4_FIXED_POINT
 TEMPORARY_ARTIFACT: YES
@@ -45,15 +45,19 @@ The target preserves required Product/System/UX/data/security/financial/operatio
 3. Load `01-CANONICAL-REPOSITORY-TOPOLOGY.md`.
 4. Load `02-TARGET-BOUNDARY-MAP.md`.
 5. Load `03-REQUIRED-TRUTH-CENSUS.md`.
-6. Load every materially applicable `targets/*.md`.
-7. Load `closure/CAPABILITY-CUTOVER-AND-DELETION.md` when replacing any current authority/path/data/contract.
-8. Load `closure/TARGET-FIXED-POINT.md` for structural/capability/final qualification.
+6. Load `04-DONOR-EXTRACTION-ACCOUNTING.md` when a donor repository/ref is supplied.
+7. Load `05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md` when `MODE=CLEAN_TARGET_RECONSTRUCTION`; it is temporary campaign state, never execution/Product authority.
+8. Load every materially applicable `targets/*.md`.
+9. Load `closure/CAPABILITY-CUTOVER-AND-DELETION.md` when replacing any current authority/path/data/contract.
+10. Load `closure/TARGET-FIXED-POINT.md` for structural/capability/final qualification.
 
 ## 3. Foundational roles
 
 - `01-CANONICAL-REPOSITORY-TOPOLOGY.md` — BThwani repository taxonomy and structural target.
 - `02-TARGET-BOUNDARY-MAP.md` — BThwani-specific owner/dependency/boundary consequences.
 - `03-REQUIRED-TRUTH-CENSUS.md` — exhaustive anti-forgetting evidence template; not a law owner.
+- `04-DONOR-EXTRACTION-ACCOUNTING.md` — temporary donor semantic-atom/zero-loss accounting template when a donor is supplied; never Product or execution authority.
+- `05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md` — temporary clean-target campaign plan/frontier inside this package; derived state only, never a second orchestrator or Product authority; delete after verified Level-4 closure.
 - `closure/CAPABILITY-CUTOVER-AND-DELETION.md` — BThwani replacement/cutover specialization inside the active repository.
 - `closure/TARGET-FIXED-POINT.md` — exhaustive BThwani target gates.
 
@@ -113,3 +117,39 @@ Reference selection never grants authority or adoption rights.
 ## 8. Package lifetime
 
 After repository-wide Level-4 fixed point and after no execution/tool consumer depends on this package, delete the entire package and prove zero references. Git history is the archive.
+
+## 9. Donor-to-clean-target specialization
+
+The active BThwani reconstruction profile is allowed to use a separate legacy repository/ref as a read-only forensic corpus while all mutation occurs in the new target repository.
+
+```text
+DONOR = FORENSIC SOURCE CORPUS
+TARGET = ONLY MUTABLE CANONICAL CANDIDATE
+DONOR SHAPE != TARGET TOPOLOGY
+DONOR EXISTENCE != SURVIVAL RIGHT
+DONOR REQUIRED VALUE != DONOR CONTAINER SURVIVAL
+```
+
+The target package must preserve or deliberately supersede all proven required Product/System/UX/data/security/financial/operational/engineering value from donor current state and material history. Clean reconstruction is not permission for knowledge loss.
+
+Use `04-DONOR-EXTRACTION-ACCOUNTING.md` as temporary evidence/accounting only. It never becomes Product truth or execution authority.
+
+## 10. Clean-target interpretation override
+
+When `MODE=CLEAN_TARGET_RECONSTRUCTION`, path-specific migration/destruction wording elsewhere in this package is interpreted against the two-repository model:
+
+```text
+DONOR PATH NAMED AS CURRENT/LOSING SOURCE
+→ INSPECT/EXTRACT REQUIRED VALUE
+→ REHOME/REIMPLEMENT DIRECTLY IN TARGET
+→ DO_NOT_IMPORT LOSING DONOR CONTAINER
+
+SAME LOSING PATH ALREADY EXISTS IN TARGET
+→ MIGRATE TARGET CONSUMERS IF ANY
+→ CUT OVER
+→ DELETE TARGET LOSER
+```
+
+Therefore instructions such as “move `core/*`”, “delete `shared/*`”, “flatten `apps/*/runtime`”, or “migrate from donor legacy path” must never cause creation of the losing path in a clean target merely to reproduce a same-repository migration sequence.
+
+This section overrides incompatible path-local mutation wording but does not weaken the target topology, required-truth preservation, consumer cutover, deployable-identity, data, contract, security, finance or verification gates.

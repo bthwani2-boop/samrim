@@ -1,5 +1,8 @@
 # Target — Tooling, Assurance and Automation
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. Mission
 
 Refound top-level `tools/` into a small, coherent automation/evidence layer. Tools may inspect, generate, orchestrate development actions and produce evidence; they must never become Product, architecture, ownership, readiness or closure authority.

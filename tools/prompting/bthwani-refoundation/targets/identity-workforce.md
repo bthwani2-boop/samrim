@@ -1,5 +1,8 @@
 # Target — Identity and Workforce
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. Service placement
 
 Refound:

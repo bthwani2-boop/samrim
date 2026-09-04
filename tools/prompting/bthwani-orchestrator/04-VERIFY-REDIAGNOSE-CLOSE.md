@@ -304,6 +304,53 @@ CHECKPOINT + NO_BLOCKER + REMAINING_EXECUTABLE_WORK
 => MUST_CONTINUE
 ```
 
+## 9A. Foundation Construction exit gate
+
+When required foundation structure was built or materially refounded, A2 and Stage B are forbidden until fresh exact-current evidence proves the Foundation Construction substrate is complete and free of premature semantic furnishing.
+
+Required claims as applicable:
+
+```text
+FOUNDATION_AUTHORITY_REVISION_PARITY=PASS
+TOP_LEVEL_CANONICAL_TAXONOMY=PASS
+FOUNDATION_MANIFESTS_STABILIZED=PASS
+NONEXISTENT_WORKSPACE_DEPENDENCIES=0
+ONE_CANONICAL_LOCKFILE=PASS
+FROZEN_WORKSPACE_INSTALL=PASS
+WORKSPACE/NX_PROJECT_DISCOVERY=PASS
+WORKSPACE_TYPECHECK/BUILD/TEST/VET=PASS_WHEN_APPLICABLE
+GO_WORKSPACE_SYNC/BUILD/TEST/VET=PASS_WHEN_APPLICABLE
+
+DIRECT_DEPLOYABLE_HOST_SHELLS=PASS
+MOBILE_HOST_SHELL_PARITY=PASS
+DEPLOYABLE_IDENTITY_PRESERVED_OR_INTENTIONALLY_MIGRATED=PASS
+PREMATURE_BUSINESS_ROUTES/SCREENS_IN_FOUNDATION=0
+PREMATURE_MONOLITHIC_CAPABILITY_APP_COMPOSITION=0
+
+SERVICE_PROCESS_SKELETONS=PASS
+THIN_STARTUP=PASS
+HEALTH/READINESS=PASS
+PREMATURE_BUSINESS_ENDPOINTS/CONTRACTS/STATE_MACHINES=0
+
+INFRA/COMPOSE_CONFIG=PASS
+FOUNDATION_RUNTIME_COMPOSITION=PASS_WHEN_REQUIRED
+ROOT_CONTRACT_AUTHORITY_BOUNDARY=PASS
+DEVELOPER_LAUNCHERS/BOOTSTRAP/DOCTOR=PASS
+DOC_COMMAND_PARITY=PASS
+FOUNDATION_CI/PREVENTION=PASS
+KNOWN_FAKE_GREEN_FOUNDATION_HOLES=0
+```
+
+A lockfile is not generated to freeze a known-broken workspace. Stabilize manifests and remove losing/nonexistent dependencies first, then generate the single canonical lockfile and prove frozen installation.
+
+```text
+FOUNDATION_CONSTRUCTION_EXIT_GATE=FAIL
+=> A2_NOT_ADMISSIBLE
+=> STAGE_B_FORBIDDEN
+```
+
+Premature semantic furnishing discovered by this gate is an executable obligation: preserve proven deployable/technical identity, remove or defer the semantic implementation, then re-run the gate.
+
 ## 10. A2 adversarial zero-garbage qualification
 
 Stage B is forbidden until fresh exact-current evidence proves:
@@ -445,3 +492,150 @@ KNOWN_ORCHESTRATOR_COMPLIANCE_FAILURES=0
 ```
 
 Anything weaker is a recovery checkpoint, not completion.
+
+## 16. Evidence acquisition and proof-limit gate
+
+Every material closure claim must bind:
+
+```text
+CLAIM/CAPABILITY
+→ REQUIRED_EVIDENCE
+→ ACQUISITION_PATH
+→ EXACT_CANDIDATE/ENVIRONMENT
+→ PROOF_LIMIT
+```
+
+A green command proves only what it exercised. Missing acquisition capability, unavailable provider/runtime, or unverified external state must remain an explicit proof limit rather than being converted to PASS.
+
+Verification is risk-proportional: start affected-first, then widen when shared owners, contracts, database/migrations, runtime, security, finance, multi-surface behavior or failed evidence requires it.
+
+## 17. Runtime provenance and evidence invalidation
+
+Runtime evidence is valid only when the tested process/container/app is proven to correspond to the claimed exact target candidate and configuration.
+
+Record or reconstruct as applicable:
+
+```text
+TARGET_HEAD_SHA
+ARTIFACT/IMAGE/PROCESS IDENTITY
+CONFIG/ENV CLASS
+DATABASE/MIGRATION STATE
+PROVIDER/SIMULATOR MODE
+DEVICE/APP BUILD IDENTITY WHEN MATERIAL
+TIME/RECENCY
+```
+
+Any material head/config/runtime/database movement invalidates affected evidence. Re-run only the evidence whose proof cone became stale, then widen if the changed owner is shared.
+
+## 18. Repository-platform truth
+
+When closure depends on repository-host state, tracked YAML is not sufficient evidence. Inspect the live repository platform as applicable:
+
+```text
+BRANCH/RULESET PROTECTION
+REQUIRED CHECKS
+ACTUAL WORKFLOW RUN FOR EXACT CANDIDATE
+PR BASE/HEAD/DIFF
+REVIEW/APPROVAL PROVENANCE WHEN REQUIRED
+MERGEABILITY
+SECURITY ANALYSIS UPLOAD/RESULT STATE
+```
+
+Self-review is not independent review. Do not claim independent approval unless provenance proves it.
+
+## 19. Donor exhaustion gate
+
+Clean-target reconstruction cannot reach Level 4 until fresh evidence proves:
+
+```text
+DONOR_CENSUS=PASS
+DONOR_REQUIRED_TRUTH_EXHAUSTED=PASS
+DONOR_CAPABILITY_DISPOSITION=PASS
+DONOR_JOURNEY_DISPOSITION=PASS
+DONOR_DATA_TRUTH_DISPOSITION=PASS
+DONOR_CONTRACT_TRUTH_DISPOSITION=PASS
+DONOR_SECURITY_TRUTH_DISPOSITION=PASS
+DONOR_FINANCIAL_TRUTH_DISPOSITION=PASS
+DONOR_RUNTIME_TRUTH_DISPOSITION=PASS
+DONOR_UX_TRUTH_DISPOSITION=PASS
+DONOR_OPERATIONAL_KNOWLEDGE_DISPOSITION=PASS
+DONOR_TEST_VALUE_DISPOSITION=PASS
+DONOR_DOC_VALUE_DISPOSITION=PASS
+DONOR_GOVERNANCE_VALUE_DISPOSITION=PASS
+DONOR_TOOLING_VALUE_DISPOSITION=PASS
+UNINSPECTED_MATERIAL_DONOR_HISTORY=0
+UNCLASSIFIED_DONOR_REQUIRED_TRUTH=0
+UNJUSTIFIED_DONOR_TRUTH_LOSS=0
+```
+
+The gate proves accounting and preservation of required value, not copying. Rejected or superseded donor material is valid only with a recorded reason/evidence.
+
+## 20. Clean-target final token extension
+
+When `MODE=CLEAN_TARGET_RECONSTRUCTION`, the final token is valid only with:
+
+```text
+TARGET_EXACT_HEAD_SHA=<immutable sha>
+DONOR_PINNED_REF=<immutable sha/ref evidence>
+DONOR_EXHAUSTION_GATE=PASS
+UNJUSTIFIED_DONOR_TRUTH_LOSS=0
+TARGET_LEVEL_4_FIXED_POINT=PASS
+```
+
+## 21. Deployable identity and release provenance
+
+When a deployable host/root/config moves or changes, build/typecheck green is not enough. Verify the applicable external/deployment identity independently:
+
+```text
+APP/PROJECT IDENTITY
+ANDROID APPLICATION ID/PACKAGE
+IOS BUNDLE IDENTIFIER
+SIGNING/KEYSTORE/CERTIFICATE ASSOCIATION
+URL SCHEME/DEEP-LINK IDENTITY
+EAS PROJECT ASSOCIATION
+RUNTIMEVERSION/UPDATE URL/CHANNEL
+NATIVE PLUGIN/FINGERPRINT CONSEQUENCE
+STORE/RELEASE IDENTITY
+WEB HOSTING PROJECT/BUILD ROOT/BASE PATH
+PUBLIC RUNTIME ENV BINDINGS
+OBSERVABILITY RELEASE/PROJECT BINDING
+```
+
+A repository path move does not by itself imply a remote rebuild, new Expo/EAS project or store identity. Rebuild/update necessity is derived from the actual native/config/runtime fingerprint and release mechanism. Conversely, source green cannot hide an unintended identity change.
+
+## 22. Failure classification and no-blind-rerun law
+
+A failing CI/test/runtime/provider command is evidence to diagnose, not a command to repeat until green.
+
+Classify the failure before rerun as far as evidence permits:
+
+```text
+DETERMINISTIC_CODE/CONTRACT/DATA DEFECT
+CANDIDATE_OR_EVIDENCE_STALENESS
+CONFIG/ENVIRONMENT MISMATCH
+INFRA/RESOURCE/CAPACITY FAILURE
+EXTERNAL_PROVIDER FAILURE
+FLAKY/NONDETERMINISTIC TEST OR RACE
+TOOLCHAIN/DEPENDENCY FAILURE
+UNKNOWN_REQUIRING_DIAGNOSIS
+```
+
+A rerun is justified only when it can discriminate a transient/nondeterministic hypothesis, after the underlying condition changed, or after a fix. A passing retry does not erase an earlier failure unless the cause is classified and the closure claim remains valid for the exact candidate.
+
+```text
+BLIND_RERUN_UNTIL_GREEN = FORBIDDEN
+FAILURE_SUPPRESSION/ALLOWLIST_TO_MANUFACTURE_GREEN = FORBIDDEN
+PASS_AFTER_UNEXPLAINED_FAILURE != CLOSED
+```
+
+## 23. No documentation-only closure
+
+Governance, Docs, plans, matrices and reports can define/record truth and evidence obligations; they cannot substitute for required implementation/data/runtime treatment.
+
+```text
+IMPLEMENTATION_ROOT_EXISTS + ONLY_DOC/GOVERNANCE/PLAN_CHANGED → NOT_CLOSED
+MIGRATION_REQUIRED + ONLY_DOCUMENTED → NOT_CLOSED
+RUNTIME/SECURITY/FINANCIAL_DEFECT + ONLY_REPORTED → NOT_CLOSED
+```
+
+A documentation-only change may close only a genuinely documentation-only objective after executable Product/System truth is proven unaffected and the corrected document does not create a parallel authority.

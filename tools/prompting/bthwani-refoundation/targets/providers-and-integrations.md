@@ -1,5 +1,8 @@
 # Target — External Providers and Integrations
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. No generic Providers god service
 
 `core/providers` must not be moved wholesale to `services/providers` merely because it currently exists.
@@ -26,10 +29,12 @@ audit
 aggregated health/posture view
 ```
 
-Canonical candidate:
+Executable placement is conditional:
 
 ```text
-services/platform-control/backend/internal/external-integrations/
+PLATFORM_CONTROL_SEMANTIC_OWNER/external-integrations
+→ services/platform-control/backend/internal/external-integrations/ only if independent service admission passes
+→ otherwise rehome to the executable control-plane owner proven by current architecture
 ```
 
 Choose a more precise name if census proves a narrower responsibility.

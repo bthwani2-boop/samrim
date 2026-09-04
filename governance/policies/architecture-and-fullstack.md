@@ -50,6 +50,20 @@ For every materially affected symbol/file/module/package/directory, establish as
 
 This is an impact-analysis principle, not a requirement to maintain a repository-wide governance inventory of files.
 
+## Structural substrate versus semantic capability
+
+Canonical structure may be established before Product/System capability implementation only when the output is genuinely non-semantic substrate.
+
+```text
+STRUCTURAL_SUBSTRATE != SEMANTIC_CAPABILITY
+HORIZONTAL_SUBSTRATE_BUILD = ALLOWED_WHEN_NO_PARTIAL_CAPABILITY_OR_SECOND_AUTHORITY_IS_CREATED
+HORIZONTAL_CAPABILITY_WAVE = FORBIDDEN
+```
+
+Examples of structural substrate include workspace/toolchain wiring, deployable host shells and build identity, thin service process startup, health/readiness, empty canonical contract/data/testing lanes, infrastructure composition and verification tooling. Business routes, state machines, service operations, capability-specific contracts, authorization/session semantics and domain workflows are semantic capability implementation and must satisfy vertical full-stack integrity rather than being smuggled into a foundation phase.
+
+This policy defines the durable architectural distinction only. Active campaign stage/order and closure remain owned by the Orchestrator.
+
 ## Full-stack vertical integrity
 
 A material capability is not proven because a screen, endpoint and table each exist. Valid binding requires:

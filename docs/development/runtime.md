@@ -15,7 +15,7 @@ Run the exact service dependencies/simulators required by the current capability
 ### Full integration
 Use repository-owned orchestration for migrations, readiness, smoke, integration and journey verification.
 
-Useful root entrypoints include `pnpm runtime:full:up`, `pnpm runtime:full:smoke`, `pnpm runtime:full:down` and the current scripts exposed by `package.json`.
+Current Foundation runtime entrypoints are `pnpm runtime:foundation:config`, `pnpm runtime:foundation:up`, `pnpm runtime:foundation:status`, `pnpm runtime:foundation:verify`, and the canonical proof command `pnpm foundation:runtime:close`. Treat `package.json` as the executable command authority.
 
 ## Ports/endpoints
 
