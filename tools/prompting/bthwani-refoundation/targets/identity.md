@@ -8,7 +8,7 @@ DURABLE_AUTHORITY: NONE
 
 Refound `core/identity` directly into `services/identity`. A path move alone is not closure: rebuild canonical internals, migrate required data/contracts/clients/runtime consumers, then delete old roots and aliases.
 
-Legacy `core/workforce` is not mapped to a replacement service or module. Extract each still-required fact to its proven current owner: DSH for current client/partner/captain/field operational participant truth, Identity only for actor/authentication/access truth, and WLT only for financial truth.
+A legacy generic human-participant source is not mapped to a replacement service or module. Extract each still-required fact to its proven current owner: DSH for current client/partner/captain/field operational participant truth, Identity only for actor/authentication/access truth, and WLT only for financial truth.
 
 ## 2. Identity authority
 
@@ -43,7 +43,7 @@ financial truth                                 → WLT
 authentication/access                           → Identity
 ```
 
-Do not create a generic `Workforce`, `People`, `Staff` or `Actors` service/module merely to group human participants. A future enterprise HR domain requires fresh independent admission proof from concrete cross-domain lifecycle/data/rule requirements.
+Do not create a generic `People`, `Staff` or `Actors` service/module merely to group human participants. A future enterprise HR domain requires fresh independent admission proof from concrete cross-domain lifecycle/data/rule requirements.
 
 ## 4. Identity topology
 
@@ -94,9 +94,9 @@ External messaging/verification belongs under explicit Identity integrations onl
 
 ```text
 core/identity=ABSENT
-core/workforce=ABSENT_AS_LEGACY_SOURCE
-services/workforce=ABSENT
-IDENTITY_WORKFORCE_MODULE=ABSENT
+LEGACY_GENERIC_HUMAN_SOURCE=ABSENT
+GENERIC_PEOPLE_SERVICE=ABSENT
+IDENTITY_GENERIC_PEOPLE_MODULE=ABSENT
 GENERIC_PEOPLE_STAFF_ACTORS_SERVICE=ABSENT
 ONE_CROSS_BOUNDARY_HUMAN_IDENTIFIER_actor_id=PASS
 PARALLEL_AUTH/SESSION/CREDENTIAL/ACTOR_AUTHORITIES=0
