@@ -59,7 +59,7 @@ func (s *Service) Login(ctx context.Context, input domain.LoginRequest, ipHash s
 	}
 	if !identitysecurity.VerifyPassword(a.PasswordHash, input.Password) {
 		_, _ = s.db.ExecContext(ctx, "INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,false)", username, ipHash)
-		if accountFailures >= 5 {
+		if accountFailures >= 5 || sourceFailures >= 29 {
 			return domain.TokenPair{}, domain.ErrRateLimited
 		}
 		return domain.TokenPair{}, domain.ErrUnauthenticated
