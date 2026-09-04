@@ -1,0 +1,8 @@
+# Review routing only. Required CODEOWNER approval is intentionally not enabled
+# while this repository has a single human owner.
+* @bthwani2-boop
+
+/.github/ @bthwani2-boop
+/governance/ @bthwani2-boop
+/docs/ @bthwani2-boop
+/tools/prompting/ @bthwani2-boop

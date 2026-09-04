@@ -1,0 +1,169 @@
+# BThwani Cross-Capability Journey Model
+
+ARTIFACT_CLASS: DURABLE_PRODUCT_GOVERNANCE
+SEMANTIC_OWNER: governance/product/JOURNEYS.md
+EXECUTION_AUTHORITY: NONE
+IMPLEMENTATION_STATE_AUTHORITY: NONE
+
+## Purpose
+
+A capability is a stable semantic responsibility. A journey is an actor/system outcome that can cross several capabilities, owners and surfaces.
+
+```text
+CAPABILITY != JOURNEY
+JOURNEY != ROUTE
+SURFACE != OWNER
+```
+
+Every material journey accounts for entry, loading/pending, success, empty/missing, validation failure, authorization failure, business rejection, conflict/concurrency, offline/degraded behavior, duplicate/repeated submission, unknown outcome, partial state, restart/resume, stale reads, cross-service handoff, out-of-order/duplicate events, cancellation/compensation/reversal and canonical readback where applicable.
+
+## J1 — Customer commerce and fulfillment
+
+```text
+DISCOVERY / SERVICEABILITY
+→ CART / CHECKOUT
+→ ORDER CREATION
+→ PAYMENT ALLOCATION / FINANCIAL AUTHORIZATION WHEN REQUIRED
+→ STORE/PARTNER FULFILLMENT
+→ DISPATCH WHEN REQUIRED
+→ STORE↔CAPTAIN HANDOFF
+→ DELIVERY / PICKUP OUTCOME
+→ CUSTOMER READBACK / TRACKING
+→ SUPPORT/RESCUE WHEN REQUIRED
+→ FINAL FINANCIAL/REFUND READBACK WHEN REQUIRED
+```
+
+## J2 — Partner onboarding to live commerce
+
+```text
+IDENTITY / TRUSTED ACTOR
+→ PARTNER ONBOARDING
+→ WORKFORCE/ELIGIBILITY INPUTS WHEN REQUIRED
+→ STORE READINESS
+→ PUBLICATION
+→ CATALOG/ORDER OPERATIONS
+→ FULFILLMENT POLICY
+→ SETTLEMENT/COMMISSION READBACK
+```
+
+## J3 — Captain activation, assignment and earning
+
+```text
+IDENTITY / ACTIVATION
+→ WORKFORCE ELIGIBILITY
+→ DSH OPERATIONAL FLEET/READINESS
+→ DISPATCH OFFER
+→ ACCEPT/DECLINE/TIMEOUT
+→ COD EXPOSURE RESERVATION WHEN REQUIRED
+→ ASSIGNMENT
+→ HANDOFF/CUSTODY
+→ DELIVERY/EXCEPTION
+→ WLT EARNING / COD FINALIZATION
+→ CANONICAL READBACK
+```
+
+## J4 — Field workforce operation
+
+```text
+IDENTITY / ACTIVATION
+→ WORKFORCE PROFILE/ENGAGEMENT
+→ ASSIGNED FIELD TASK
+→ PARTNER/STORE EVIDENCE OR OPERATIONAL RESULT
+→ OWNER-SIDE VERIFICATION
+→ WORKFORCE/DSH READBACK
+→ AUTHORIZED WLT READBACK WHEN APPLICABLE
+```
+
+## J5 — Financial Cash-In / payment / reconciliation
+
+```text
+USER/SYSTEM INTENT
+→ WLT VALIDATION
+→ EXTERNAL FINANCIAL RAIL WHEN REQUIRED
+→ PROVEN PROVIDER RESULT OR UNKNOWN
+→ WLT LEDGER POSTING/STATE
+→ DSH/APP BOUNDED READBACK
+→ RECONCILIATION
+```
+
+## J6 — Stakeholder settlement / Cash-Out
+
+```text
+ELIGIBILITY
+→ HOLD
+→ REQUEST/PREPARE
+→ APPROVAL WHEN REQUIRED
+→ IMMUTABLE SNAPSHOT/BATCH
+→ EXTERNAL EXECUTION
+→ EVIDENCE
+→ INDEPENDENT VERIFICATION WHEN REQUIRED
+→ RECONCILIATION
+→ COMPLETION
+```
+
+## J7 — Operator administration and controlled change
+
+```text
+TRUSTED OPERATOR CONTEXT
+→ EXACT PERMISSION
+→ PROPOSED CHANGE
+→ VERSION/CONFLICT CHECK
+→ INDEPENDENT APPROVAL WHEN REQUIRED
+→ CANONICAL OWNER MUTATION
+→ AUDIT
+→ CANONICAL READBACK
+→ ROLLBACK/INVERSE DECISION WHEN REQUIRED
+```
+
+## J8 — Support incident and order rescue
+
+```text
+INCIDENT DETECTION
+→ AUTHORIZED SUPPORT ACCESS
+→ CANONICAL ORDER/DELIVERY/FINANCIAL READS
+→ ALLOWED RESCUE ACTION
+→ DOMAIN OWNER MUTATION
+→ FINANCIAL COMPENSATION/REVERSAL WHEN REQUIRED
+→ AUDIT
+→ REQUIRED CROSS-SURFACE READBACK
+```
+
+## J9 — Serviceability and special-request path
+
+```text
+ADDRESS / LOCATION INPUT
+→ PRIVACY/OWNERSHIP CHECK
+→ ZONE / SLA / CAPACITY / DELIVERY-MODE EVALUATION
+→ STANDARD COMMERCE PATH WHEN ELIGIBLE
+OR SPECIAL-REQUEST CAPABILITY WHEN GOVERNED
+→ OWNER-SIDE ACCEPT/REJECT/QUOTE/STATE
+→ FINANCIAL EFFECT WHEN REQUIRED
+→ CUSTOMER/OPERATOR READBACK
+```
+
+## Capability-to-journey coverage
+
+| Capability | Journey coverage |
+|---|---|
+| ADMINISTRATION_ROLES_APPROVALS_AUDIT | J7 |
+| CAPTAIN_DISPATCH | J1, J3 |
+| IDENTITY_ACTIVATION_SESSIONS | J2, J3, J4, J7 |
+| MAPS_SERVICE_AREA_ADDRESS_PRIVACY | J1, J9 |
+| ORDER_CREATION | J1 |
+| PARTNER_FLEET_CONNECTION | J2, J3 |
+| PARTNER_ONBOARDING_STORE_PUBLICATION | J2 |
+| PLATFORM_CHANGE_SETS | J7 |
+| PLATFORM_SOVEREIGN_CONTROL_PLANE | J7 |
+| REPRESENTATIVE_WALLETS_REFERENCE_FINANCE | J3, J4, J5, J6 |
+| SETTLEMENTS_COMMISSIONS | J2, J6 |
+| SPECIAL_REQUESTS | J9 |
+| STORE_CAPTAIN_HANDOFF | J1, J3 |
+| SUPPORT_INCIDENTS_ORDER_RESCUE | J1, J8 |
+| WLT_MONEY_MOVEMENT_SETTLEMENT | J5, J6 |
+| ZONES_SLA_CAPACITY_DELIVERY_MODES | J1, J2, J9 |
+
+Every durable capability must map to at least one journey or explicitly prove that it is a pure platform/system capability whose consumer/outcome model is independently complete.
+
+## Journey closure law
+
+A journey is not closed because each capability compiles independently. Cross-owner handoffs, user/system actions, failure semantics and final readback must be proven together.

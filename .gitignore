@@ -1,0 +1,55 @@
+# Dependencies / package managers
+node_modules/
+.pnpm-store/
+
+# Build / framework / coverage
+.next/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.expo/
+
+# Tool caches and ephemeral evidence
+.nx/cache/
+.nx/workspace-data/
+.sonar/
+.artifacts/
+.diagnostics/
+graphify-out/
+.graphify/
+.codeatlas/
+.tmp/
+.cache/
+.local/
+
+# Logs / OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Local agent/editor state
+.claude/settings.local.json
+
+# Environment and local bindings
+.env
+.env.*
+!.env.example
+!**/.env.example
+infra/local/*.env
+secrets.local.*
+**/*local*.secret.json
+
+# Firebase / mobile signing / credentials — external vault only
+**/credentials.json
+**/google-services.json
+**/GoogleService-Info.plist
+*.jks
+*.keystore
+*.p12
+*.p8
+*.pem
+*.key
+
+# Local-only BThwani materialization
+.bthwani-local/

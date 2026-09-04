@@ -1,0 +1,45 @@
+name: Foundation Pull Request Policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-pr-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    name: foundation-pr-policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Validate promotion pull request metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            [[ "${GITHUB_REF}" == "refs/heads/main" ]]
+            exit 0
+          fi
+
+          base="$(jq -r '.pull_request.base.ref' "${GITHUB_EVENT_PATH}")"
+          title="$(jq -r '.pull_request.title // ""' "${GITHUB_EVENT_PATH}")"
+          body="$(jq -r '.pull_request.body // ""' "${GITHUB_EVENT_PATH}")"
+
+          [[ "${base}" == "main" ]] || { echo "::error::Canonical promotion target must be main"; exit 1; }
+          (( ${#title} >= 8 )) || { echo "::error::PR title is too short"; exit 1; }
+          (( ${#body} >= 120 )) || { echo "::error::PR body is too short for canonical promotion evidence"; exit 1; }
+
+          for heading in '## Summary' '## Migration / Cutover' '## Verification' '## Security / Secrets' '## Negative space'; do
+            grep -Fq -- "${heading}" <<<"${body}" || {
+              echo "::error::PR body missing required section: ${heading}"
+              exit 1
+            }
+          done

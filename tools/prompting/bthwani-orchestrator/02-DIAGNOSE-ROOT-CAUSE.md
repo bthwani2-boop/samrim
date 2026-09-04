@@ -1,0 +1,321 @@
+# Diagnosis, Required-Truth Reconstruction and Causal Root Selection
+
+OWNER_ROLE: FORENSIC_CENSUS_REQUIRED_TRUTH_ROOT_DIAGNOSIS
+AUTHORITY_ASSIGNED_BY: 00-ORCHESTRATOR.md
+SELF_CERTIFICATION: FORBIDDEN
+
+## 1. Diagnosis starts repository-wide and evidence-first
+
+Do not begin from the first bug, first failed check, first file or easiest surface.
+
+Begin from the exact pinned current head and enumerate the material tracked system:
+
+```text
+TRACKED_TREE
+TOP_LEVEL_SURFACES
+WORKSPACES_PACKAGES_MANIFESTS
+DEPENDENCY_GRAPH_LOCKFILE
+DOMAINS_SERVICES_SHARED_CORE
+FILES_SYMBOLS_EXPORTS_ENTRYPOINTS
+IMPORT_EXPORT_REEXPORT_ALIAS_GRAPH
+DATABASE_SCHEMA_MIGRATIONS_SEEDS_BACKFILLS
+API_CONTRACT_GENERATED_LINEAGE
+RUNTIME_CONFIG_ENV_INFRA_REGISTRATIONS
+FRONTEND_SHARED_STATE_NAVIGATION
+TEST_FIXTURE_MOCK_SNAPSHOT_OWNERSHIP
+CI_ASSURANCE_SUPPRESSIONS
+TOOLS_DOCS_GOVERNANCE_AGENTS
+LEGACY_COMPAT_BRIDGE_ALIAS_WRAPPER_LAYERS
+DEAD_ORPHANED_STALE_UNOWNED_MATERIAL
+PARALLEL_SHADOW_TRUTH
+LARGE_HIGH_FAN_IN_SUBTREES
+```
+
+Sampling cannot satisfy A0.
+
+## 2. Required truth before current shape
+
+Extract only what must survive:
+
+```text
+PRODUCT_INTENT
+ACTORS_AUTHORIZATION
+DOMAIN_SEMANTICS
+PERSISTED_DATA_MEANING
+SECURITY_FINANCIAL_INVARIANTS
+EXTERNAL_CONTRACTS
+USER_JOURNEYS
+REQUIRED_INTEGRATIONS
+OBSERVABLE_RUNTIME_BEHAVIOR
+REQUIRED_OPERATIONAL_ASSURANCE_CLAIMS
+```
+
+Then build a current-shape-independent canonical model before accepting current containers as canonical solely because they exist:
+
+```text
+REQUIRED_TRUTH
+→ REQUIRED_DOMAINS
+→ REQUIRED_OWNERS_WRITERS
+→ REQUIRED_STORAGE
+→ REQUIRED_CONTRACT_AUTHORITIES
+→ REQUIRED_RUNTIME_AUTHORITIES
+→ REQUIRED_PRODUCT_SURFACES
+→ MINIMUM_NECESSARY_CANONICAL_CONTAINER_SET
+```
+
+Current topology is evidence, never a design constraint.
+
+## 3. Complete tracked accounting
+
+Every tracked artifact receives a current status. `NONMATERIAL` requires proof.
+
+High-level dispositions:
+
+```text
+KEEP_PROVEN
+PRESERVE_AND_REWIRE
+REFOUND
+MIGRATE_VALUE_THEN_DELETE
+DELETE
+BLOCKED_UNKNOWN
+```
+
+Container verdicts:
+
+```text
+CANONICAL_COHESIVE_CONTAINER
+MIXED_RESPONSIBILITY
+DUPLICATE_RESPONSIBILITY
+WRONG_OWNER
+WRONG_PATH_OR_BOUNDARY
+PASS_THROUGH_ONLY
+COMPATIBILITY_ONLY
+HISTORICAL_COMPENSATION
+SHADOW_PARALLEL_AUTHORITY
+DEAD_ORPHANED
+WHOLE_SUBTREE_REFOUND_CANDIDATE
+UNCLASSIFIED
+```
+
+`UNCLASSIFIED` and `BLOCKED_UNKNOWN` are non-terminal.
+
+## 4. Finding lifecycle is not treatment
+
+Raw findings may be discovered, clustered and mapped for causality, but these are transitional only:
+
+```text
+FOUND
+CLASSIFIED
+CLUSTERED
+ASSIGNED
+MAPPED_TO_PRE_ROOT_CATASTROPHE
+MAPPED_TO_STAGE_B_ROOT
+```
+
+They do not prove resolution.
+
+Terminal outcomes only:
+
+```text
+TREATED_AND_VERIFIED
+FALSE_POSITIVE_PROVEN
+AUTHORIZED_INTENTIONAL_CONDITION
+TOOL_LIMITATION_PROVEN
+STALE_OR_SUPERSEDED_WITH_PROOF
+N_A_PROVEN
+LEGITIMATE_BLOCKER
+```
+
+```text
+MAPPED != TREATED
+KNOWN_MAPPED_BUT_UNTREATED > 0 => RELEVANT_GATE_OPEN
+```
+
+## 5. Parent death and structural escalation
+
+For every suspect artifact, diagnose upward:
+
+```text
+SYMBOL
+→ FILE
+→ DIRECTORY
+→ PACKAGE_OR_WORKSPACE
+→ SERVICE_OR_BOUNDARY
+→ DOMAIN
+→ TOP_LEVEL_SURFACE
+→ REPOSITORY_TOPOLOGY
+```
+
+The diagnosis must identify the highest causally correct demolition/refoundation target, not merely the first broken descendant.
+
+A used loser remains a loser: migrate required consumers, then delete it.
+
+## 6. Pre-root baseline catastrophe universe
+
+`PRE_ROOT_BASELINE_CATASTROPHE` includes any proven condition whose early refoundation is required to make the baseline worth building upon, including:
+
+```text
+CROSS_ROOT_SYSTEMIC_CATASTROPHE
+FOUNDATIONAL_REPOSITORY_TOPOLOGY_CATASTROPHE
+WORKSPACE_PACKAGE_DEPENDENCY_CATASTROPHE
+SHARED_CORE_COMMON_AUTHORITY_CATASTROPHE
+DATABASE_OWNERSHIP_OR_MIGRATION_EPOCH_CATASTROPHE
+CONTRACT_GENERATED_LINEAGE_CATASTROPHE
+RUNTIME_CONFIG_INFRA_AUTHORITY_CATASTROPHE
+ASSURANCE_CONTROL_PLANE_CATASTROPHE
+GOVERNANCE_AGENT_TOOL_AUTHORITY_CATASTROPHE
+MASSIVELY_INVALID_DOMAIN_SERVICE_PACKAGE_DIRECTORY_SURFACE
+LARGE_OBSOLETE_COMPENSATORY_SUBTREE
+PARALLEL_SHADOW_TRUTH_ARCHITECTURE
+LEGACY_COMPATIBILITY_BRIDGE_ARCHITECTURE
+OTHER_HIGH_STRUCTURAL_YIELD_FOUNDATIONAL_UNIT
+```
+
+A catastrophe need not cross many roots when the container itself is a large invalid baseline structure.
+
+## 7. ROOT_TAX and STRUCTURAL_YIELD
+
+```text
+ROOT_TAX =
+EXTRA MIGRATION + COMPATIBILITY + DIAGNOSIS + VERIFICATION + PARALLEL_AUTHORITY + CLEANUP
+THAT SURVIVING SHARED OR FOUNDATIONAL DEBT WOULD FORCE INTO FUTURE ROOTS
+```
+
+```text
+STRUCTURAL_YIELD =
+HOW MUCH PROVEN WRONG STRUCTURE AND WRONG RESPONSIBILITY DISAPPEAR
+WHEN THE UNIT CLOSES CORRECTLY
+```
+
+Signals include:
+
+```text
+LOSING_AUTHORITIES_COLLAPSED
+LOSING_WRITERS_REMOVED
+FILES_ABSORBED_OR_DELETED
+DIRECTORIES_REMOVED
+PACKAGES_WORKSPACES_REMOVED
+SERVICES_BOUNDARIES_REFOUNDED
+WRAPPERS_ALIASES_REEXPORTS_REMOVED
+LEGACY_COMPATIBILITY_REMOVED
+FUTURE_ROOTS_SIMPLIFIED
+DIAGNOSIS_VERIFICATION_CONTAMINATION_REMOVED
+```
+
+## 8. Dominance ranking
+
+Before A1 mutation, build a serious top-candidate set and compare candidates by:
+
+```text
+TRUTH_DATA_SECURITY_FINANCIAL_RISK
+FOUNDATIONAL_BLOCKING_POWER
+CROSS_ROOT_BLOCKING_POWER
+AUTHORITY_COLLAPSE
+ROOT_TAX_REMOVAL
+STRUCTURAL_YIELD
+FUTURE_COMPLEXITY_REDUCTION
+DIAGNOSIS_VERIFICATION_DECONTAMINATION
+SAFE_COMPLETE_EXECUTABILITY
+```
+
+Safety is a gate, not a preference for smaller work.
+
+Required proof:
+
+```text
+TOP_CANDIDATE_SET
+SELECTED_DOMINANT_CANDIDATE
+SERIOUS_ALTERNATIVES_COMPARED
+WHY_SELECTED_OUTRANKS_ALTERNATIVES
+RANKING_RELEVANT_UNKNOWNS=0
+```
+
+```text
+FIRST_PROVEN_CATASTROPHE != FIRST_EXECUTED_CATASTROPHE
+```
+
+## 9. Deferral falsification
+
+A candidate mapped to Stage B must prove under `01` that its container and all materially relevant ancestors are canonical and that no structural demolition/refoundation obligation remains.
+
+If that proof fails, promote it to A0/A1 structural work.
+
+## 10. Source-of-Defect / Source-of-Fix execution gate
+
+Before material mutation establish:
+
+```text
+UNIT_ID
+UNIT_STAGE
+ROOT_OR_CATASTROPHE_ID
+ACTUAL_SOURCE_OF_DEFECT
+REQUIRED_SOURCE_OF_FIX
+CAUSAL_PROOF
+CANONICAL_TARGET
+CANONICAL_OWNER_WRITER_BOUNDARY
+VALUE_TO_PRESERVE
+LOSING_AUTHORITIES_CONTAINERS
+COMPLETE_AFFECTED_CONE
+WRITERS_READERS_CONSUMERS
+DATA_CONTRACT_RUNTIME_IMPACT
+MIGRATION_BACKFILL_RECONCILIATION
+CUTOVER
+DELETION_PRUNING
+ADMISSION_PREVENTION
+VERIFICATION_FALSIFICATION
+VALID_BLOCKERS
+```
+
+If a higher Source-of-Fix is proven, descendant patching is forbidden.
+
+## 11. Continuous causal frontier
+
+Diagnosis must always derive the next executable frontier; it must not end as a report when execution is authorized.
+
+```text
+CAUSAL_FRONTIER =
+THE HIGHEST CURRENT PROVEN EXECUTABLE OBLIGATION
+THAT ADVANCES THE CAMPAIGN TOWARD FIXED POINT
+```
+
+After every material mutation or closure:
+
+```text
+REFRESH_INVALIDATED_EVIDENCE
+→ REFRESH_STRUCTURAL_AND_SEMANTIC_GRAPHS
+→ ABSORB_NEWLY_EXPOSED_CAUSES
+→ RE_RANK
+→ DERIVE_NEXT_REQUIRED_ACTION
+```
+
+If no legitimate blocker exists, the derived action is executable, not advisory.
+
+```text
+DIAGNOSIS_WITH_EXECUTABLE_FRONTIER
++ NO_BLOCKER
+=> EXECUTION_REQUIRED
+```
+
+## 12. No disconnected-task interpretation
+
+The campaign graph is continuous.
+
+```text
+UNIT != INDEPENDENT_TASK
+COMMIT != NEW_OBJECTIVE
+NEW_FINDING != NEW_SESSION_BOUNDARY
+```
+
+New findings are absorbed into the current catastrophe/root graph, causally ranked, and executed in order without waiting for a separate human `NEXT`.
+
+## 13. Git history is forensic recovery, not live preservation
+
+A loser does not remain in the live tree because future analysis might need it.
+
+Previously committed historical shape is recoverable through Git history. Therefore:
+
+```text
+FUTURE_FORENSIC_INTEREST != PRESERVATION_RIGHT
+```
+
+Preserve required truth in canonical structure; preserve historical shape in history only.
