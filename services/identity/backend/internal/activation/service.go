@@ -43,6 +43,9 @@ func (s *Service) Request(ctx context.Context, input domain.OtpRequest, ipHash s
 	if len(ipHash) != 64 {
 		return domain.ActivationChallenge{}, domain.ErrInvalidInput
 	}
+	if err := s.preflightRateLimit(ctx, phone, ipHash); err != nil {
+		return domain.ActivationChallenge{}, err
+	}
 
 	var a domain.Actor
 	if role == "client" {
@@ -70,6 +73,12 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, ipHash string
 		return domain.ActivationChallenge{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	for _, key := range []string{"identity:otp-source:" + ipHash, "identity:otp-phone:" + a.PhoneE164} {
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", key); err != nil {
+			return domain.ActivationChallenge{}, err
+		}
+	}
 
 	if _, err := tx.ExecContext(ctx,
 		"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 AND enabled=true FOR UPDATE",
@@ -218,6 +227,24 @@ func (s *Service) Consume(ctx context.Context, input domain.ActivationRequest) (
 		return domain.TokenPair{}, err
 	}
 	return pair, nil
+}
+
+func (s *Service) preflightRateLimit(ctx context.Context, phone, ipHash string) error {
+	var phoneRecent, sourceRecent int
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM identity_activation_challenges WHERE phone_e164=$1 AND created_at>clock_timestamp()-interval '15 minutes'",
+		phone).Scan(&phoneRecent); err != nil {
+		return err
+	}
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM identity_activation_challenges WHERE request_ip_hash=$1 AND created_at>clock_timestamp()-interval '15 minutes'",
+		ipHash).Scan(&sourceRecent); err != nil {
+		return err
+	}
+	if phoneRecent >= 5 || sourceRecent >= 20 {
+		return domain.ErrRateLimited
+	}
+	return nil
 }
 
 func (s *Service) genericChallenge(phone string) (domain.ActivationChallenge, error) {
