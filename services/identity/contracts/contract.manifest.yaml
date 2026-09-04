@@ -1,0 +1,29 @@
+# Bounded-context contract manifest.
+#
+# Declares what this context asserts about its own contract surface. The
+# master indexes `entry` and nothing below it; `modules` must match the
+# entry's x-bthwani-contracts exactly. Enforced by contracts-foundation.mjs.
+
+context: services/identity
+entry: ./identity.openapi.yaml
+owner: services/identity
+contractState: CONTRACT_ACTIVE
+layout: INDEXED
+bundle: ./generated/identity.bundle.openapi.yaml
+generatedClients:
+  - mode: OPENAPI_TYPESCRIPT
+    client: ../clients/generated/identity-api.ts
+    regenerateScript: pnpm --dir services/identity openapi:generate
+  - mode: OPENAPI_GO
+    client: ../clients/go/identityauth/contract.gen.go
+    regenerateScript: pnpm run openapi:generate:identity:go
+    scanRoot: false
+modules:
+  - ./employee-access.openapi.yaml
+  - ./identity.rbac-admin.openapi.yaml
+  - ./identity.support-sessions.openapi.yaml
+overlays:
+  - ./identity.actor-admin.overlay.yaml
+  - ./identity.runtime-readiness.overlay.yaml
+  - ./identity.refresh-concurrency.overlay.yaml
+  - ./identity.device-binding.overlay.yaml

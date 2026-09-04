@@ -1,0 +1,16 @@
+overlay: 1.0.0
+info:
+  title: Identity device-bound refresh contract
+  version: 1.0.0
+actions:
+  - target: $.components.schemas.RefreshRequest.properties
+    description: Mobile Identity sessions bind refresh rotation to the device fingerprint captured at session issuance.
+    update:
+      deviceFingerprint:
+        type: string
+        maxLength: 200
+        description: Required when the referenced session belongs to app-client, app-partner, app-captain, or app-field. Control-panel BFF sessions use their separate server-session boundary and may omit it.
+  - target: $.paths['/auth/refresh'].post.responses['401']
+    description: Device-bound mobile refresh fails closed when its device fingerprint is absent or does not match; invalid or expired refresh tokens are also rejected.
+    update:
+      description: Invalid/expired refresh token, missing required mobile device fingerprint, or device mismatch. A missing/mismatched device proof revokes and marks the mobile session compromised.

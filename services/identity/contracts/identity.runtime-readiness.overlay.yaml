@@ -1,0 +1,191 @@
+overlay: 1.0.0
+info:
+  title: Identity runtime health and readiness contract
+  version: 1.0.0
+actions:
+  - target: $.components.schemas
+    description: Add the governed per-dependency readiness check model.
+    update:
+      RuntimeCheckStatus:
+        type: object
+        additionalProperties: false
+        required: [name, status, critical, durationMs]
+        properties:
+          name:
+            type: string
+            enum:
+              - activation_signing_key
+              - operator_context
+              - workforce_service_auth
+              - dsh_service_auth
+              - database
+              - migrations
+              - required_relations
+              - clock
+              - dependency_probe
+              - probe_timeout_configuration
+              - check_timeout_configuration
+              - clock_skew_configuration
+          status:
+            type: string
+            enum: [PASS, FAIL, UNKNOWN]
+          critical:
+            type: boolean
+          reasonCode:
+            type: string
+            enum:
+              - IDENTITY_CONFIGURATION_INVALID
+              - IDENTITY_SIGNING_KEY_INVALID
+              - IDENTITY_DATABASE_UNAVAILABLE
+              - IDENTITY_MIGRATION_INCOMPLETE
+              - IDENTITY_REQUIRED_RELATIONS_MISSING
+              - IDENTITY_CLOCK_UNSAFE
+              - IDENTITY_DEPENDENCY_TIMEOUT
+              - IDENTITY_PROBE_CONFIGURATION_INVALID
+          durationMs:
+            type: integer
+            minimum: 0
+  - target: $.components.schemas.RuntimeStatus
+    description: Make liveness/readiness freshness, checks, reasons, and correlation contract-visible.
+    update:
+      additionalProperties: false
+      required: [status, service, checkedAt, correlationId, durationMs, checks, reasonCodes]
+      properties:
+        status:
+          type: string
+          enum: [HEALTHY, DEGRADED, NOT_READY]
+        service:
+          type: string
+          const: core-identity
+        checkedAt:
+          type: string
+          format: date-time
+        lastSuccessAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        durationMs:
+          type: integer
+          minimum: 0
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeCheckStatus'
+        reasonCodes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - IDENTITY_READINESS_UNPROVEN
+              - IDENTITY_CONFIGURATION_INVALID
+              - IDENTITY_SIGNING_KEY_INVALID
+              - IDENTITY_DATABASE_UNAVAILABLE
+              - IDENTITY_MIGRATION_INCOMPLETE
+              - IDENTITY_REQUIRED_RELATIONS_MISSING
+              - IDENTITY_CLOCK_UNSAFE
+              - IDENTITY_DEPENDENCY_TIMEOUT
+              - IDENTITY_PROBE_CONFIGURATION_INVALID
+        code:
+          type: string
+          const: IDENTITY_NOT_READY
+        message:
+          type: string
+  - target: $.components.responses.ServiceUnavailable.content['application/json'].schema['$ref']
+    description: Remove the generic-only response authority before installing the governed union.
+    remove: true
+  - target: $.components.responses.ServiceUnavailable.content['application/json'].schema
+    description: A 503 may be the structured fail-closed runtime status or an operation-specific API error.
+    update:
+      oneOf:
+        - $ref: '#/components/schemas/RuntimeStatus'
+        - $ref: '#/components/schemas/ApiError'
+  - target: $.paths['/identity/readiness'].get.responses['503']['$ref']
+    description: Remove the generic response reference before defining the readiness-specific response.
+    remove: true
+  - target: $.paths['/identity/readiness'].get.responses['503']
+    update:
+      description: Identity is alive but must not receive authentication, session, actor, activation, or internal service traffic.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RuntimeStatus'
+  - target: $.paths['/auth/login'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/auth/logout'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/auth/refresh'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/auth/session'].get.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/auth/introspect'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/auth/sessions'].get.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/auth/sessions/{sessionId}'].delete.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/auth/account'].delete.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/auth/password/change'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/actors/search'].get.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/actors/{actorId}'].get.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/actors/{actorId}/deactivate'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/actors/{actorId}/reactivate'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/actors/{actorId}/activations/latest'].get.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/actors/{actorId}/activations/revoke'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/partner/permission-bundles'].get.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/partner/actors/provision'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/partner/actors/{actorId}/store-access'].put.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'
+  - target: $.paths['/internal/partner/actors/{actorId}/activations'].post.responses
+    update:
+      '503':
+        $ref: '#/components/responses/ServiceUnavailable'

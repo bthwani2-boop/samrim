@@ -1,0 +1,276 @@
+openapi: 3.1.0
+info:
+  title: BThwani Identity Support Sessions API
+  version: 0.2.0
+  description: >-
+    Identity is the sole issuer of elevated, time-limited support sessions.
+    A support session's Subject is the target actor being supported; the
+    initiator is recorded separately so every action taken through the
+    session is attributable to the real actor who requested it. Support
+    sessions carry only a fixed, minimal support.read permission scoped to
+    the target actor — never the target's own roles or permissions. Maximum
+    lifetime is 15 minutes, enforced by a database constraint independent of
+    this contract. DSH owns the maker-checker approval workflow around
+    issuance; Identity enforces only that the initiator and target differ
+    and both are active actors. This DSH-facing session module also owns the
+    caller-specific active-session read used by DSH to validate a referenced
+    actor session against Identity's sovereign session store.
+x-bthwani-contract-state: CONTRACT_ACTIVE
+x-bthwani-owner: services/identity
+x-bthwani-runtime-dependency: true
+x-bthwani-extends: ./identity.openapi.yaml
+servers:
+  - url: http://localhost:18082
+    description: Local Identity runtime
+paths:
+  /internal/dsh/actors/{actorId}/sessions:
+    get:
+      operationId: internalDshListActorSessions
+      tags: [internal-dsh-sessions]
+      summary: List active actor sessions for DSH session validation.
+      description: >-
+        Service-to-service only. DSH uses this caller-specific Identity boundary
+        to validate that a referenced actor session remains active. Identity
+        remains the sole owner of session state; DSH receives a read-only
+        projection and never mutates session truth through this route.
+      security:
+        - serviceToken: []
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/DshServiceCaller'
+      responses:
+        '200':
+          description: Active sessions for the actor.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './identity.openapi.yaml#/components/schemas/SessionInfo'
+        '401':
+          description: Invalid DSH service token.
+        '403':
+          description: Caller is forbidden.
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /internal/support-sessions:
+    post:
+      operationId: issueSupportSession
+      tags: [internal-support-sessions]
+      security:
+        - serviceToken: []
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/DshServiceCaller'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IssueSupportSessionRequest'
+      responses:
+        '200':
+          description: Support session issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportSessionToken'
+        '400':
+          description: Self-target, missing fields, or target/initiator unavailable.
+        '401':
+          description: Invalid DSH service token.
+        '403':
+          description: Caller is forbidden.
+        '409':
+          description: A support session was already issued for this request id.
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /internal/support-sessions/resolve:
+    post:
+      operationId: resolveSupportSession
+      tags: [internal-support-sessions]
+      security:
+        - serviceToken: []
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/DshServiceCaller'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [accessToken]
+              properties:
+                accessToken:
+                  type: string
+                  minLength: 1
+      responses:
+        '200':
+          description: Resolved support session identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportSessionIdentity'
+        '401':
+          description: Support token is invalid, expired, or revoked.
+        '403':
+          description: Caller is forbidden.
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /internal/support-sessions/{requestId}/revoke:
+    post:
+      operationId: revokeSupportSession
+      tags: [internal-support-sessions]
+      security:
+        - serviceToken: []
+      parameters:
+        - $ref: '#/components/parameters/Authorization'
+        - $ref: '#/components/parameters/DshServiceCaller'
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Support session revoked.
+        '401':
+          description: Invalid DSH service token.
+        '403':
+          description: Caller is forbidden.
+        '404':
+          description: No support session was ever issued for this request id, or it was already revoked.
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+  parameters:
+    Authorization:
+      name: Authorization
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    DshServiceCaller:
+      name: X-Service-Caller
+      in: header
+      required: true
+      schema:
+        const: dsh
+  responses:
+    ServiceUnavailable:
+      description: Identity session store is unavailable.
+  schemas:
+    Permission:
+      type: object
+      additionalProperties: false
+      required: [service, surface, action, scope]
+      properties:
+        service:
+          type: string
+        surface:
+          type: string
+        action:
+          type: string
+        scope:
+          type: string
+    IssueSupportSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [supportRequestId, targetActorId, initiatorActorId, reason]
+      properties:
+        supportRequestId:
+          type: string
+          minLength: 1
+        targetActorId:
+          type: string
+          minLength: 1
+        initiatorActorId:
+          type: string
+          minLength: 1
+        reason:
+          type: string
+          minLength: 5
+        durationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 15
+    SupportSessionIdentity:
+      type: object
+      additionalProperties: false
+      required:
+        - subject
+        - operatorContextId
+        - phoneE164
+        - roles
+        - permissions
+        - authState
+        - sessionId
+        - sessionKind
+        - initiatorActorId
+        - supportRequestId
+        - expiresAt
+      properties:
+        subject:
+          type: string
+        operatorContextId:
+          type: string
+        phoneE164:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+        authState:
+          type: string
+        sessionId:
+          type: string
+        sessionKind:
+          const: support
+        initiatorActorId:
+          type: string
+        supportRequestId:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    SupportSessionToken:
+      type: object
+      additionalProperties: false
+      required: [accessToken, tokenType, expiresIn, identity]
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          const: Bearer
+        expiresIn:
+          type: integer
+        identity:
+          $ref: '#/components/schemas/SupportSessionIdentity'

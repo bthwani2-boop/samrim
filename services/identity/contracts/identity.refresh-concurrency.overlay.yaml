@@ -1,0 +1,19 @@
+overlay: 1.0.0
+info:
+  title: Identity refresh concurrency contract
+  version: 1.0.0
+actions:
+  - target: $.paths['/auth/refresh'].post.responses
+    description: A concurrent loser is not an invalid session and must preserve client credentials.
+    update:
+      '409':
+        description: The immediately preceding refresh token was already rotated by another concurrent request. No token pair is issued and the active session remains valid.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiError'
+            examples:
+              alreadyRotated:
+                value:
+                  code: REFRESH_ALREADY_ROTATED
+                  message: refresh token was rotated by another concurrent request
