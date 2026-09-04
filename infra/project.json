@@ -1,0 +1,25 @@
+{
+  "name": "infra",
+  "root": "infra",
+  "projectType": "application",
+  "targets": {
+    "config": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm runtime:config"
+      }
+    },
+    "up": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm runtime:up"
+      }
+    },
+    "down": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm runtime:down"
+      }
+    }
+  }
+}

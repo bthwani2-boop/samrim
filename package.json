@@ -8,10 +8,6 @@
     "pnpm": "10.34.0"
   },
   "scripts": {
-    "client": "nx run app-client:start",
-    "partner": "nx run app-partner:start",
-    "captain": "nx run app-captain:start",
-    "field": "nx run app-field:start",
     "control": "nx run control-panel:dev",
     "dsh": "nx run dsh:serve",
     "wlt": "nx run wlt:serve",
