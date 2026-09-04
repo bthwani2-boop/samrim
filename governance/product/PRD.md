@@ -52,14 +52,14 @@ Captain professional affiliation, eligibility, fleet membership and assignment r
 - Platform Context is the platform isolation boundary.
 - Operator Context is trusted operational/data context within the platform boundary.
 - Partner Organization and Store are business authorization scopes, not platform-isolation contexts.
-- Trusted platform/operator context is server-derived from authenticated identity or governed server-side delegation.
-- A client header, query parameter, request body, cached local value, or UI selection cannot grant or override trusted context.
+- Trusted platform/operator context, where a concrete capability requires it, is server-derived from authenticated identity, governed delegation and canonical owner facts.
+- Operator Context is not automatically an Identity database field or generic request header. A client header, query parameter, request body, cached local value, or UI selection cannot grant or override trusted context.
 
 ## 4. Domain ownership
 
 Every durable fact has exactly one authoritative owner.
 
-- Identity owns actors, credentials, authentication, sessions, activation, roles/permissions, and trusted identity context.
+- Identity owns the one human actor identifier, canonical identity credentials, high-level actor-role admission, authentication/activation proofs and role-scoped sessions. Fine-grained business permissions/scopes/context remain with the capability that owns the protected truth unless a later explicit authorization owner is admitted.
 - DSH owns commerce, Central Catalog, cart/checkout/order operational truth, client/partner/captain/field operational participant state, stores/partner operations, field assignments/readiness, captain eligibility/fleet/dispatch/delivery, serviceability, notifications/inbox delivery state, special requests, support/rescue, and DSH-owned derived operational projections defined by current contracts.
 - WLT exclusively owns authoritative financial truth: wallet, ledger, payment, refund, settlement, payout, commission, reconciliation, and provider financial mutation.
 - Platform Control is the semantic owner for explicitly admitted cross-platform governed configuration/change/rollout facts. Whether that responsibility is deployed as an independent `services/platform-control` service is an architecture/runtime admission decision that must be proven from executable evidence rather than assumed by Governance.
@@ -148,7 +148,7 @@ Customer non-authentication profile/preferences are DSH-owned, versioned and pri
 
 ### Partner team membership
 
-Partner/store team membership is explicit, store-scoped, auditable and lifecycle-governed. DSH owns membership/operational scope while Identity owns authentication and exact permissions. Membership does not imply all-store access or create a second identity system.
+Partner/store team membership is explicit, store-scoped, auditable and lifecycle-governed. DSH owns membership/operational scope and its business authorization facts while Identity owns authentication, high-level role admission and session truth. Membership does not imply all-store access or create a second identity system.
 
 ### Catalog approval and publication
 

@@ -6,103 +6,124 @@ DURABLE_AUTHORITY: NONE
 
 ## 1. Service placement
 
-Refound `core/identity` directly into `services/identity`. A path move alone is not closure: rebuild canonical internals, migrate required data/contracts/clients/runtime consumers, then delete old roots and aliases.
+Refound donor Identity truth directly into `services/identity`. A path move alone is not closure: establish the canonical actor/auth/session model, migrate/cut over all required contracts/clients/consumers, then delete losing authorities.
 
-A legacy generic human-participant source is not mapped to a replacement service or module. Extract each still-required fact to its proven current owner: DSH for current client/partner/captain/field operational participant truth, Identity only for actor/authentication/access truth, and WLT only for financial truth.
+A legacy generic human-participant source is not mapped to a replacement service/module. Required facts go to the proven owner: DSH for current client/partner/captain/field operational truth, Identity for actor/authentication/high-level role admission, and WLT for financial truth.
 
 ## 2. Identity authority
 
-Identity owns:
+Identity owns only:
 
 ```text
-actor_id
-actor identity
-authentication
-credentials/verification
-session create/refresh/revoke
-activation/security state
-roles/permissions identity vocabulary
-trusted identity context
-device/session authorization semantics where applicable
+one actor_id per human identity
+canonical phone/credential identity required for authentication
+explicit high-level actor↔role admission
+OTP/password authentication proof
+role-scoped session create/refresh/revoke
+security audit and abuse-control evidence required by those operations
 ```
 
-`actor_id` is the single cross-boundary human identifier. Do not introduce `worker_id`, `employee_id`, `captain_id`, `field_id`, `person_id` or `staff_id` as competing cross-service human identities. Service-local technical primary keys may exist but remain private implementation details.
+Current canonical high-level roles:
 
-Identity does not own DSH participant profiles, partner/captain/field operational status, assignments, availability, qualification/fleet facts, WLT financial state, or app navigation.
+```text
+client   → app-client
+partner  → app-partner
+captain  → app-captain
+field    → app-field
+operator → control-panel
+```
 
-## 3. Domain participation
+`actor_id` is the single cross-boundary human identifier and is created only by Identity. Do not introduce competing cross-service human identifiers.
 
-Current role-specific operational truth is owned where the work occurs:
+```text
+ACTOR != ROLE
+ACTOR != OPERATOR_CONTEXT
+ROLE != DSH_OPERATIONAL_ELIGIBILITY
+```
+
+Do not encode role in actor ID. Do not store all roles as an array on the actor. Current role admission uses the smallest direct actor↔role binding; a generic access-grant/entitlement/tenant/context abstraction requires fresh admission proof.
+
+## 3. Domain participation and authorization scope
 
 ```text
 client/customer operational profile/preferences → DSH
 partner/store membership and operations          → DSH
 captain affiliation/eligibility/fleet/dispatch  → DSH
 field participant/assignment/readiness          → DSH
+DSH business permissions/scopes                 → DSH/capability owner
 financial truth                                 → WLT
-authentication/access                           → Identity
+actor/high-level role/authentication/session    → Identity
 ```
 
-Do not create a generic `People`, `Staff` or `Actors` service/module merely to group human participants. A future enterprise HR domain requires fresh independent admission proof from concrete cross-domain lifecycle/data/rule requirements.
+Identity does not invent a generic `operator_context_id` merely to isolate calls. Operator Context remains an independent project concept only when a concrete capability proves owner/lifecycle/isolation semantics.
 
-## 4. Identity topology
+Do not create `People`, `Staff`, `Actors`, `Workforce`, `AccessGrant` or Tenant modules/services merely to group participants or prepare for hypothetical requirements.
 
-Conceptual target when applicable:
+## 4. Authentication and role laws
 
-```text
-services/identity/
-├── backend/
-│   ├── cmd/
-│   └── internal/
-│       ├── runtime/
-│       ├── transport/http/
-│       ├── integrations/
-│       └── <cohesive-identity-capabilities>/
-├── contracts/
-├── clients/generated/
-├── frontend/          # only reusable host-neutral identity presentation/controllers
-├── database/
-└── tests/testing/
-```
-
-Possible cohesive capabilities come from live evidence: actor, authentication, session, activation/access, authorization vocabulary, device/session trust. HTTP, token parsing, cache, rate limiting, cleanup, provider adapters and audit plumbing are mechanisms, not business domains.
+- Client public OTP may create only the client role.
+- Partner/captain/field OTP may authenticate only an already-provisioned enabled role.
+- OTP never grants a governed DSH role.
+- Operator is password-only in the current model.
+- DSH credential may manage only partner/captain/field role admission.
+- Platform Control credential may manage only operator role admission/credential reset.
+- Internal service principal is derived from the service credential itself; caller-name headers do not grant identity.
+- Every session is bound to exactly one role. Surface is derived from role.
+- Disabling a role revokes only that actor-role's sessions/challenges.
+- Refresh is device-fingerprint checked and rotated; access remains a short-lived bearer token.
+- Password storage uses the current approved memory-hard hash; no periodic password change is invented without policy need.
 
 ## 5. Contracts and generated clients
 
-Identity has one canonical service contract composition root, e.g. `services/identity/contracts/identity.openapi.yaml`.
+Identity has one canonical contract:
+`services/identity/contracts/identity.openapi.yaml` → deterministic generated DTOs → canonical TS/Go clients → consumers.
+
+No consumer-local auth DTO, role registry, session interpretation, direct internal route, service-caller header or context header may become parallel authority.
+
+## 6. Database and migration
+
+Current canonical persisted shapes are:
 
 ```text
-IDENTITY CANONICAL CONTRACT
-→ VALIDATE/COMPOSE
-→ DETERMINISTIC GENERATED CLIENT/BINDING
-→ DSH/WLT/APPS/PLATFORM CONSUMERS
+identity_actors
+identity_actor_roles
+identity_activation_challenges
+identity_sessions
+identity_refresh_token_history
+identity_login_attempts
+identity_security_audit
+identity_schema_migrations
 ```
 
-No hand-maintained duplicate auth DTOs, role/permission enumerations, session interpretations or consumer-local mirrors may compete with canonical Identity semantics.
+The actor row must not contain role arrays, generic permissions, operator context, provisioning fingerprint, creator-service provenance or domain-operational lifecycle status.
 
-## 6. Database and security
+Before integration there is no production data obligation for the discarded Stage-B candidate schema. A stale local/non-production database containing that losing schema must fail migration explicitly and be reset; do not add compatibility columns or dual-read/write logic merely to preserve an unmerged candidate.
 
-For every durable Identity/security fact prove owner, writer, table/columns, readback/revocation, constraints, lifecycle, PII/secret classification, audit requirements and losing authorities. Multiple mutable session/credential/actor authorities are forbidden.
+## 7. Security closure
 
-Security closure proves secret non-exposure, single-authority session/token lifecycle, server-derived trusted context, actor/operator-context isolation, replay/expiry/revocation handling, abuse controls where required, auditability, PII minimization and runtime secret hygiene.
-
-## 7. Integrations and presentation
-
-External messaging/verification belongs under explicit Identity integrations only when Identity owns the semantic operation. Reusable login/security presentation may live with Identity only when host-neutral and genuinely reused; app route/shell/deep-link/native storage bindings remain in app roots.
+Prove one normalized phone cannot produce duplicate actors; same actor can hold multiple roles; role disable cannot affect another role; governed OTP cannot self-provision; operator OTP is rejected; credential not caller header determines internal principal; consumer cannot author actor ID; OTP/login abuse controls work; Argon2id reset revokes operator sessions; refresh rotation/replay behavior holds; secrets are not exposed; readiness rejects legacy schema.
 
 ## 8. Exit gate
 
 ```text
 core/identity=ABSENT
 LEGACY_GENERIC_HUMAN_SOURCE=ABSENT
-GENERIC_PEOPLE_SERVICE=ABSENT
-IDENTITY_GENERIC_PEOPLE_MODULE=ABSENT
-GENERIC_PEOPLE_STAFF_ACTORS_SERVICE=ABSENT
+GENERIC_PEOPLE_WORKFORCE_SERVICE_OR_MODULE=ABSENT
 ONE_CROSS_BOUNDARY_HUMAN_IDENTIFIER_actor_id=PASS
-PARALLEL_AUTH/SESSION/CREDENTIAL/ACTOR_AUTHORITIES=0
-IDENTITY_CONTRACT/GENERATED_CLIENT_DRIFT=0
-IDENTITY_SECURITY/PII/REVOCATION/AUDIT_GAPS=0
+ONE_NORMALIZED_PHONE_ONE_ACTOR=PASS
+ACTOR_ROLE_BINDING_CANONICAL=PASS
+ROLE_SHAPED_ACTOR_ID=0
+SESSION_SINGLE_ROLE=PASS
+CROSS_ROLE_REVOCATION_LEAK=0
+GOVERNED_ROLE_OTP_SELF_GRANT=0
+OPERATOR_OTP=0
+CONSUMER_AUTHORED_ACTOR_ID=0
+CALLER_HEADER_AS_SERVICE_IDENTITY=0
+IDENTITY_OPERATOR_CONTEXT_OR_TENANT_ABSTRACTION=0
+PARALLEL_AUTH_SESSION_CREDENTIAL_ACTOR_AUTHORITIES=0
+IDENTITY_CONTRACT_GENERATED_CLIENT_DRIFT=0
+IDENTITY_SECURITY_PII_REVOCATION_AUDIT_GAPS=0
 DSH_OPERATIONAL_PARTICIPANT_TRUTH_OWNED_OUTSIDE_DSH=0
 WLT_FINANCIAL_TRUTH_OWNED_OUTSIDE_WLT=0
-OLD_CONTRACT/CLIENT/WORKSPACE/DOCKER_PATHS=0
+OLD_CONTRACT_CLIENT_WORKSPACE_DOCKER_PATHS=0
 ```

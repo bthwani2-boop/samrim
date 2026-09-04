@@ -27,8 +27,9 @@ MEANING
 
 | Meaning | Owner / writer | Allowed derived consumers |
 |---|---|---|
-| actor authentication/session/activation | Identity | apps/services through Identity contracts |
-| roles/permissions/trusted identity context | Identity | authorized services/hosts |
+| actor identity/credential/authentication/activation/session | Identity | apps/services through Identity contracts |
+| high-level actor-role admission and role-scoped session state | Identity | authorized apps/services through Identity contracts |
+| business authorization scope/operational permission/context | capability/domain that owns the protected business truth; currently DSH for DSH partner/store/team/assignment scope | authorized consumers through owner contracts |
 | client/partner/captain/field operational participant profile/status/eligibility | DSH | authorized DSH surfaces and dependent services through DSH contracts |
 | partner/store operational truth | DSH | partner/operator hosts and dependent services through contracts |
 | address/serviceability/order/dispatch/delivery/support | DSH | apps and WLT where trusted operational evidence is required |
@@ -71,7 +72,7 @@ The following classes must preserve single-owner semantics when present:
 | field participant eligibility/assignment/visit/readiness/escalation | DSH FIELD_OPERATIONS_ASSIGNMENT_READINESS | Partner/Store and operator surfaces consume verified evidence |
 | campaigns/audiences/placements/loyalty/non-financial program eligibility | DSH MARKETING_CAMPAIGNS_LOYALTY; WLT owns monetary charging/posting; promotion funding stays in its governed cross-owner capability | apps/checkout/notifications consume bounded eligibility/readback |
 | customer profile/preferences excluding authentication | DSH customer/profile capability unless a future explicit owner supersedes it | apps consume bounded readback |
-| partner-team membership and store-scoped operational access facts | DSH partner/team capability; Identity remains permission/session authority | partner/control surfaces consume scoped projections |
+| partner-team membership and store-scoped operational access facts | DSH partner/team capability; Identity owns only high-level role admission/session authentication | partner/control surfaces consume scoped owner readback |
 | catalog taxonomy/master-product/attribute/relationship/assortment identity and approval/publication eligibility | DSH CENTRAL_CATALOG; approval/publication is a named subcapability | stores/apps consume governed readback; discovery/search are derived consumers |
 | promotion/coupon operational eligibility | DSH for commerce eligibility; WLT owns resulting authoritative monetary postings/effects | clients/operators consume bounded readback |
 | notification source event/business meaning | originating domain | DSH Notifications owns inbox/preferences/topic/delivery records; channel adapters execute transport; app host owns native route translation |

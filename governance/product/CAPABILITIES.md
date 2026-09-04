@@ -210,63 +210,73 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 ### IDENTITY_ACTIVATION_SESSIONS
 
-**Problem.** Every BThwani surface needs one sovereign actor, activation, and session model without duplicate identities, client-selected trust context, or surface-local authentication truth.
+**Problem.** Every BThwani surface needs one sovereign human actor and authentication/session model without role-shaped duplicate actors, speculative Identity context, OTP role self-grant, cross-role revocation, or surface-local authentication truth.
 **Problem frequency.** continuous
 **Problem severity.** critical
-**Target state.** Zero duplicate actors, context overrides, cross-actor reads, activation replays, false readiness, and parallel Identity truth.
-**Primary success measure.** identity_truth_and_cross_actor_violations
-**Guardrail measures.** duplicate_actor_count; cross_context_actor_reads; activation_replays; false_ready_responses; session_token_leaks
+**Target state.** One normalized human identity resolves to one `actor_id`; high-level roles are explicit bindings; every session is single-role; governed role admission is server-controlled; unrelated roles survive scoped disable/revocation.
+**Primary success measure.** identity_single_actor_role_isolation
+**Guardrail measures.** duplicate_actor_count; governed_role_otp_self_grants; cross_role_revocations; consumer_authored_actor_ids; service_caller_header_trust; refresh_replays; false_ready_responses; session_token_leaks
 
-**Required outcome.** One Identity actor and session source serves every required surface with governed provisioning, exact idempotency, trusted context, and durable readback.
+**Required outcome.** One Identity actor authority serves all required surfaces. DSH/Platform Control explicitly provision only roles they own. Authentication proves the role session without turning role, context, eligibility or business scope into properties of the human actor.
 
 **Primary actors.** customer, partner, captain, field, operator, dsh-service, platform-control-service.
-
-**Canonical ownership.** Identity.
-
+**Canonical ownership.** Identity owns actor identity, credentials, high-level role admission, OTP/password authentication and role-scoped sessions. DSH owns DSH operational participant/eligibility/business scopes. WLT owns financial truth.
 **Material deployable surfaces.** app-client, app-partner, app-captain, app-field, control-panel.
 
 **Business invariants**
-- Identity exclusively owns actor accounts, canonical identifiers, authentication state, and sessions.
-- DSH supplies partner/captain/field provisioning intent and Platform Control supplies operator provisioning intent; neither writes Identity persistence directly.
-- Internal callers authenticate as a service and cannot become the source of operator context.
-- Every actor provisioning and session mutation has durable owner readback.
+- Identity alone creates `actor_id`; runtime consumers cannot request a new actor identifier.
+- One normalized canonical phone resolves to one actor even when the same human holds several roles.
+- Actor and role are distinct durable facts. Current role admission is a direct actor↔role binding, not a generic grant/tenant/context abstraction.
+- DSH manages only partner/captain/field role admission. Platform Control manages only operator role admission. Public self-service may create only client.
+- Partner/captain/field OTP authenticates only an already-enabled role; OTP never grants those roles.
+- Operator authenticates by password only; trusted password reset revokes operator sessions.
+- Internal service principal is resolved from its credential, not a caller/context header.
+- Every session has exactly one role; surface is derived from role.
+- Disabling one actor-role revokes only that role's sessions/pending challenges.
+- Refresh rotates atomically; known replay compromises that session family; an unrelated random refresh cannot revoke it.
+- Refresh is device-fingerprint checked; access remains a short-lived bearer token.
+- Passwords use Argon2id. Login/OTP abuse controls include source throttling without creating a simple username-targeted permanent lockout.
 
 **Forbidden/negative invariants**
-- No browser or mobile client calls internal actor administration routes.
-- No idempotent provisioning retry expands roles or permissions.
-- No actor identifier or header supplied by a client grants object access.
-- No mock, fixture, local storage value, or Markdown declaration becomes production Identity truth.
+- No actor-global `roles[]`, generic permissions blob, operator context, provisioning fingerprint or creator-service provenance.
+- No generic AccessGrant/Tenant/People/Staff/Actors/Workforce authority without proven independent requirements.
+- No governed role creation through OTP.
+- No provisioning retry silently re-enables a disabled role or mutates another role.
+- No DSH operator grant and no Platform Control DSH-role grant.
+- No cross-role session revocation.
+- No consumer-authored actor ID, service-caller header or Identity context header grants authority.
 - No execution agent grants product, QA, security, release, or production approval.
 
 **Acceptance expectations**
-- Health remains liveness-only and readiness fails closed for configuration, database, migration, relation, and clock failures.
-- An exact canonical phone, username, role, and trusted operator-context provisioning retry returns one durable actor.
-- A retry that changes any provisioning fingerprint field fails without role or permission expansion.
-- Internal search and direct read are stable, paginated, service-authenticated, and operator-context isolated.
-- Activation is typed, surface-bound, short-lived, single-use, attempt-limited, and never logged in raw form.
-- Refresh rotates atomically, reuse is rejected, and logout or deactivation revokes applicable sessions.
-- Every required surface exposes explicit loading, expired, forbidden, blocked, unavailable, and recovery states.
+- Readiness fails closed for missing configuration/database/schema/relations, legacy actor columns and clock failure.
+- Client OTP followed by captain/partner provisioning on the same phone returns exactly the same `actor_id`.
+- Exact enabled-role provisioning retry is stable; a new role is an explicit mutation on the same actor; disabled role provisioning conflicts until explicit enable.
+- Unknown governed-role OTP cannot create a valid role/session.
+- OTP is short-lived, single-use, attempt-limited, phone/source-throttled and never exposed raw.
+- Client/captain sessions may coexist; disabling captain invalidates captain only.
+- Operator login works even when that actor has other roles.
+- Password reset invalidates old password/operator sessions but not unrelated-role sessions.
+- Forged caller headers cannot change the principal resolved from a service credential.
+- Generated contract/client/app/database/runtime evidence contains zero legacy Identity context/caller-header authority.
 
-**Named failure classes:** duplicate_actor, provisioning_fingerprint_mutation, client_context_override, cross_context_read, stale_migration_ready, activation_replay, refresh_reuse, secret_or_pii_leak, parallel_identity_truth.
+**Named failure classes:** duplicate_actor, role_shaped_actor_id, actor_role_collapse, governed_role_otp_self_grant, silent_role_reenable, cross_role_revocation, consumer_authored_actor_id, service_caller_header_trust, premature_identity_context_or_tenant, operator_otp, account_lockout_dos, activation_replay, refresh_reuse, secret_or_pii_leak, parallel_identity_truth.
 
 **Actor responsibility envelope**
-- `customer` — Uses app-client with an owned Identity actor and session.; permitted: activate or authenticate the owned actor, manage owned sessions; forbidden: select operator context, read another actor or session.
-- `partner` — Uses app-partner after governed partner actor provisioning and activation.; permitted: activate the provisioned partner actor, manage owned sessions; forbidden: self-provision an internal actor, reuse another actor activation.
-- `captain` — Uses app-captain after DSH-governed provisioning and operational readiness.; permitted: activate the assigned captain actor, manage owned sessions; forbidden: change the provisioned role, bypass DSH operational readiness.
-- `field` — Uses app-field after DSH-governed provisioning and assignment.; permitted: activate the assigned field actor, manage owned sessions; forbidden: change the provisioned role, access another field actor.
-- `operator` — Uses Control Panel and authorized administrative identity operations.; permitted: authenticate to Control Panel, perform explicitly authorized actor administration; forbidden: self-approve privileged access, provision outside trusted service context.
-- `dsh-service` — Trusted service caller for DSH-owned partner/captain/field actor provisioning and readback.; permitted: provision an exact DSH actor fingerprint, search and read within trusted operator context; forbidden: provision operator roles, override runtime operator context, expand a role through an idempotent retry.
-- `platform-control-service` — Trusted service caller for operator actor provisioning/readback when that control-plane responsibility is admitted.; permitted: provision the exact operator actor fingerprint; forbidden: provision DSH actor roles or override runtime operator context.
+- `customer` — self-establishes only client role and authenticates its client session.
+- `partner` — OTP-authenticates only a DSH-preprovisioned partner role; Identity role never implies store scope.
+- `captain` — OTP-authenticates only a DSH-preprovisioned captain role; Identity role never implies dispatch eligibility.
+- `field` — OTP-authenticates only a DSH-preprovisioned field role; Identity role never implies assignment.
+- `operator` — password-authenticates operator role; fine-grained administration permission is separate from the high-level role.
+- `dsh-service` — credential-authenticated manager of partner/captain/field Identity-role admission only.
+- `platform-control-service` — credential-authenticated manager of operator Identity-role admission/credential reset only.
 
 **Surface semantics**
-- `app-client` — required; actors: customer; states: loading, active, expired, blocked, failure; actions: authenticate and recover the owned session.
-- `app-partner` — required; actors: partner; states: loading, pending_activation, active, blocked, failure; actions: activate and authenticate the governed partner actor.
-- `app-captain` — required; actors: captain; states: loading, pending_activation, active, blocked, failure; actions: activate and authenticate the governed captain actor.
-- `app-field` — required; actors: field; states: loading, pending_activation, active, blocked, failure; actions: activate and authenticate the governed field actor.
-- `control-panel` — required; actors: operator; states: loading, authenticated, forbidden, not_found, failure; actions: authenticate and use authorized actor administration.
-- `backend` — required; actors: dsh-service, platform-control-service, operator, customer, partner, captain, field; states: healthy, degraded, not_ready, authorized, forbidden, conflict; actions: enforce trust boundaries and persist Identity-owned truth.
-- `database` — required; actors: dsh-service, platform-control-service, operator, customer, partner, captain, field; states: transactional, isolated, audited, migration_governed; actions: store sovereign actor, activation, session, and lifecycle truth.
-- technical presentation binding — required implementation evidence; actors: dsh-service, platform-control-service, operator, customer, partner, captain, field; states: typed, bound, fail_closed; actions: consume generated Identity contracts without parallel auth truth.
+- `app-client` — client OTP/activate/restore/refresh/logout.
+- `app-partner`, `app-captain`, `app-field` — OTP/activate only after preprovisioned role; restore/refresh/logout.
+- `control-panel` — operator password login/restore/refresh/logout; no operator OTP.
+- `backend` — credential-derived service identity, role admission, activation and session lifecycle.
+- `database` — one actor table, actor-role bindings, activation challenges, sessions, refresh history, login attempts and security audit.
+- technical presentation binding — generated typed single-role identity without parallel auth truth.
 
 ### MAPS_SERVICE_AREA_ADDRESS_PRIVACY — الخرائط ومناطق الخدمة وخصوصية العناوين
 
