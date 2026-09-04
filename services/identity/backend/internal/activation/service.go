@@ -85,16 +85,6 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, principal, id
 	if _, err := tx.ExecContext(ctx, "SELECT id FROM identity_actors WHERE id=$1 FOR UPDATE", a.ID); err != nil {
 		return domain.ActivationChallenge{}, err
 	}
-	var recent int
-	if err := tx.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM identity_activation_challenges WHERE phone_e164=$1 AND created_at>clock_timestamp()-interval '15 minutes'",
-		a.PhoneE164).Scan(&recent); err != nil {
-		return domain.ActivationChallenge{}, err
-	}
-	if recent >= 5 {
-		return domain.ActivationChallenge{}, domain.ErrRateLimited
-	}
-
 	scope := ""
 	if !public {
 		scope = principal + "|" + a.OperatorContextID + "|" + a.ID + "|" + surface
@@ -119,6 +109,16 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, principal, id
 		if !errors.Is(err, sql.ErrNoRows) {
 			return domain.ActivationChallenge{}, err
 		}
+	}
+
+	var recent int
+	if err := tx.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM identity_activation_challenges WHERE phone_e164=$1 AND created_at>clock_timestamp()-interval '15 minutes'",
+		a.PhoneE164).Scan(&recent); err != nil {
+		return domain.ActivationChallenge{}, err
+	}
+	if recent >= 5 {
+		return domain.ActivationChallenge{}, domain.ErrRateLimited
 	}
 
 	if _, err := tx.ExecContext(ctx,
