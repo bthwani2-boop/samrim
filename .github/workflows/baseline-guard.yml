@@ -127,7 +127,7 @@ jobs:
 
       - name: Verify A2 Foundation qualification
         shell: bash
-        run: pnpm run refoundation:a2:verify
+        run: node tools/dev/verify-a2-foundation-qualification.mjs
 
       - name: Verify docs command parity
         shell: bash
