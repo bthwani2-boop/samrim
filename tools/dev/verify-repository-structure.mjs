@@ -57,6 +57,11 @@ for (const forbiddenRoot of ["core/", "shared/"]) {
   );
 }
 
+const packageManagerLockfiles = tracked.filter((item) =>
+  /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$/.test(item),
+);
+exactSet("CANONICAL_PACKAGE_MANAGER_LOCKFILE", packageManagerLockfiles, ["pnpm-lock.yaml"]);
+
 assert(
   !tracked.some((item) => /^apps\/[^/]+\/runtime\//.test(item)),
   "Pass-through apps/*/runtime topology is forbidden",
@@ -89,6 +94,7 @@ for (const app of mobileApps) {
   const base = "apps/" + app + "/";
   for (const relative of [
     "README.md",
+    ".easignore",
     "app.config.ts",
     "app/_layout.tsx",
     "app/index.tsx",
