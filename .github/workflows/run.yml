@@ -41,9 +41,11 @@ jobs:
           set -euo pipefail
           [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::candidate_sha must be exact SHA"; exit 1; }
           [[ -z "${BASE}" || "${BASE}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::base_sha must be empty or exact SHA"; exit 1; }
-          echo "candidate_sha=${CANDIDATE}" >>"${GITHUB_OUTPUT}"
-          echo "base_sha=${BASE}" >>"${GITHUB_OUTPUT}"
-          echo "mode=${MODE}" >>"${GITHUB_OUTPUT}"
+          {
+            echo "candidate_sha=${CANDIDATE}"
+            echo "base_sha=${BASE}"
+            echo "mode=${MODE}"
+          } >>"${GITHUB_OUTPUT}"
 
   repository:
     if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'repository-policy'

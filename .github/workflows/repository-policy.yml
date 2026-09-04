@@ -24,7 +24,7 @@ jobs:
         with:
           ref: ${{ inputs.candidate_sha }}
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
       - name: Enforce durable repository policy
         shell: bash
         env:
