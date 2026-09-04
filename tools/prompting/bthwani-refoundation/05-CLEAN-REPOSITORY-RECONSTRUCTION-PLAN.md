@@ -219,9 +219,9 @@ This is a derived checkpoint, not closure truth.
 | donor semantic-atom exhaustion | OPEN | no completion claim allowed |
 | Governance coverage | PARTIAL | major missing capability families added; complete donor/current responsibility census remains open |
 | Docs semantic parity | PARTIAL | runtime and cross-cutting runbooks restored; full donor-doc parity remains open |
-| Foundation Construction | OPEN | current target has incomplete substrate and premature semantic furnishing; Stage B remains forbidden until the exact-current Foundation exit gate passes |
-| premature furnishing | PRESENT | app-client and Identity contain semantic capability implementation that must be removed/deferred while preserving proven deployable/technical identity |
-| A2 structural qualification | NOT_ADMISSIBLE | blocked until Foundation Construction exit gate passes |
+| Foundation Construction | PASS | exact-current Foundation exit evidence proves canonical substrate, workspace/Go verification, deployable shells, service skeletons, runtime composition, developer tooling, docs parity, CI prevention, and zero known premature semantic furnishing |
+| premature furnishing | REMOVED_AND_VERIFIED | Foundation hosts/services contain structural substrate only; business routes/endpoints/contracts/state machines remain deferred to Stage B |
+| A2 structural qualification | IN_PROGRESS | Foundation exit gate passed; fresh adversarial zero-garbage recensus is now the active gate |
 | Stage B capability reconstruction | FORBIDDEN | no Product/System capability furnishing until Foundation + A2 pass |
 | donor exhaustion gate | OPEN | required before Level 4; donor extraction may continue read-only in parallel |
 | target Level-4 fixed point | OPEN | not claimable yet |
