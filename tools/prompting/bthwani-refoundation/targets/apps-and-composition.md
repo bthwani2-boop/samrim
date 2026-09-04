@@ -23,7 +23,7 @@ CENSUS_PARENT_AND_RUNTIME_CONTENT
 → UPDATE_WORKSPACE/SCRIPTS/CI/EAS/NX/TSCONFIG/TOOLS
 → RENAME_PACKAGE_FROM_*runtime_WHERE_APPLICABLE
 → DELETE_runtime_PARENT_LAYER
-→ PROVE_OLD_PATH_REACHABILITY=0
+→ PROVE_BTHWANI_OLD_APP_RUNTIME_PATH_REACHABILITY=0
 ```
 
 For Control Panel, classify any helper scripts outside `runtime` separately; app-start helper code may stay at app root only if app-owned, otherwise move to appropriate `tools/` ownership before flattening.
