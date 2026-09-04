@@ -131,6 +131,38 @@ Cross-surface platform variables have a canonical server-side owner, type/schema
 
 Analytics are read models, not truth owners. Every metric identifies its source owner, aggregation/window, time basis, unit/currency, freshness behavior and allowed dimensions. Missing/stale/partial data is explicit and is not silently rendered as zero. Financial analytics derive from WLT-owned facts or governed WLT-backed projections.
 
+### Customer profile and communication preferences
+
+Customer non-authentication profile/preferences are DSH-owned, versioned and privacy-scoped. Identity remains credential/session/activation authority. Locale, currency preference and marketing consents are canonical server readback; device state or delivery success cannot fabricate consent.
+
+### Partner team membership
+
+Partner/store team membership is explicit, store-scoped, auditable and lifecycle-governed. DSH owns membership/operational scope while Identity owns authentication and exact permissions. Membership does not imply all-store access or create a second identity system.
+
+### Catalog approval and publication
+
+Customer visibility requires canonical DSH catalog/store approval, publication and serviceability gates. Partner, field, marketing, search and UI layers cannot independently publish content. Needs-fix/rejection/review transitions remain auditable and owner-controlled.
+
+### Ratings and reviews
+
+Ratings/reviews require a proven eligible source interaction and attributed actor/target, bounded edit/retry behavior, moderation/dispute semantics and canonical aggregate derivation. Ratings never become authorization or assignment truth.
+
+### Notifications and communications
+
+The originating domain owns the event/business meaning. Notification inbox/preferences/delivery semantics are governed separately from provider adapters, and deployable apps own native route translation. Delivery failure or duplication must not repeat/reverse the source-domain mutation unless Product explicitly defines that coupling.
+
+### Media and object storage
+
+Business object association/access is owned by the relevant domain. Binary object storage/presigning/proxying is technical infrastructure and never an independent Product truth owner. Asset validation, authorization, integrity and orphan/reference recovery are required where media is material.
+
+### Derived search and analytics
+
+Search/indexes and analytics are derived/query capabilities. They may improve discovery/operations but cannot authorize mutations, publish ineligible content, write transactional truth or replace WLT financial authority. Freshness/provenance/no-data behavior is explicit.
+
+### WLT pricing, collateral and penalties
+
+WLT owns authoritative financial quote/allocation, collateral/exposure and provider penalty monetary truth. Pricing evidence is server-verifiable and bounded; captain collateral remains distinct from available/COD/debt state; penalties/reversals are governed ledger/debt events rather than manual balance edits.
+
 ## 6. Multi-surface capability semantic envelope
 
 Every material durable capability defines, when applicable:

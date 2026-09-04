@@ -97,9 +97,9 @@ This table records current migration intent only. `PARTIAL` means the destinatio
 | verification/fixed-point package | orchestrator `04` + target fixed-point closure | MERGE/REFINE | PARTIAL |
 | development-runtime corpus | `docs/development/**` + runbooks | REHOME/REFINE | PARTIAL |
 | OSS/reference corpus | `docs/reference/external-systems/**` | REHOME/REFINE | PARTIAL |
-| Product Truth spec/schema/contracts | `PRD.md`, `CAPABILITIES.md`, `JOURNEYS.md`, domain models/policies | MERGE/REFINE | PARTIAL_PER_CAPABILITY |
+| Product Truth spec/schema/contracts | `governance/product/PRD.md`, `governance/product/CAPABILITIES.md`, `governance/product/JOURNEYS.md`, domain models/policies | MERGE/REFINE | PARTIAL_PER_CAPABILITY |
 | Operational Journey Protocol package | census evidence dimensions + orchestrator verification/closure laws | MERGE/REFINE | PARTIAL |
-| historical `99-SOURCE-MAP.md` semantic accounting | donor extraction template + this temporary plan | GENERALIZE/REHOME | PARTIAL |
+| historical donor `tools/prompting/bthwani-orchestrator/99-SOURCE-MAP.md` semantic accounting | donor extraction template + this temporary plan | GENERALIZE/REHOME | PARTIAL |
 | historical diagnosis plans/findings | temporary evidence only; each finding revalidated against donor/target | REFERENCE_ONLY | REVALIDATION_REQUIRED |
 
 No `PARTIAL` row may be converted to PASS by document existence alone.

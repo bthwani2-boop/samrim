@@ -1121,92 +1121,309 @@ IMPLEMENTATION_MECHANISM != DOMAIN
 
 ## Additional durable capability coverage
 
-The following envelopes close previously under-specified material responsibilities. They define durable meaning without prescribing donor folders, route names or table names.
+The following envelopes close responsibilities proven material by the donor/current platform evidence. The capability-change law above applies equally to every entry. Generic object storage/media transport and generic search are deliberately **not** promoted to standalone Product owners: media business authorization stays with the owning domain, while object storage is technical infrastructure; search/indexes remain derived query mechanisms unless a future independent lifecycle is proven.
 
 ### CUSTOMER_PROFILE_PREFERENCES
 
-**Outcome:** a customer can maintain non-authentication profile/preferences and receive owner-backed readback without turning Identity into a general customer-profile store.
+**Problem.** Customer locale, currency preference and marketing-channel consent must not be mixed into authentication/session truth or become device-local authority.
 
-- Actors: customer, authorized support/operator where explicitly permitted.
-- Owner: DSH customer/profile capability; Identity owns authentication/session/activation only.
-- Invariants: actor/object scope, privacy classification, server-authorized mutations, deletion/retention policy where governed.
-- Failures: unauthorized, stale/conflicting update, invalid field, unavailable owner, partial external preference delivery.
-- Surfaces: client account/profile and authorized operator support views.
+**Required outcome.** An authenticated customer owns one versioned non-authentication profile readback containing governed locale/preferences/consents; mutations are idempotent, conflict-safe and privacy-scoped.
+
+**Primary actors.** customer, authorized support/operator where explicitly permitted.
+
+**Canonical ownership.** DSH customer/profile truth; Identity owns authentication/session/activation only.
+
+**Material surfaces.** app-client; authorized control-panel/support view when required.
+
+**Durable states/actions.**
+- profile absent or present with monotonically versioned readback;
+- supported locale/preference values are server validated;
+- preferences and consent mutations require expected-version plus mutation identity/correlation;
+- marketing consent channels are independent booleans/preferences, not inferred from notification delivery success.
+
+**Forbidden/negative invariants.**
+- No device/local storage is authoritative profile or consent truth.
+- No Identity credential/session record becomes the owner of customer commerce preferences.
+- No stale expected version silently overwrites a newer profile.
+- No retry with a conflicting payload reuses the same idempotency identity as success.
+- No consent is inferred from silence, delivery success or app installation.
+
+**Failure/recovery.** not_found/initial creation, invalid value, version conflict, idempotency conflict, owner unavailable; recover through canonical reread and explicit retry with current version.
+
+**Acceptance expectations.**
+- profile/preferences and consents have canonical server readback;
+- mutation concurrency/version conflict is explicit;
+- privacy/marketing consent is enforced by downstream consumers rather than copied into parallel stores;
+- app-client loading/empty/success/conflict/forbidden/offline/error states are truthful.
 
 ### PARTNER_TEAM_MEMBERSHIP
 
-**Outcome:** partner organizations can govern member participation and store-scoped operational access without conflating membership with Identity permissions or store ownership.
+**Problem.** Store-scoped partner team membership must have a real lifecycle and audit without becoming Identity permission truth or being conflated with captain identity/affiliation.
 
-- Owner: DSH partner/team operational truth; Identity owns roles/permissions/session context.
-- Invariants: organization/store scope explicit, least privilege, lifecycle/audit, no implicit all-store access.
-- Required readback: partner and operator surfaces reflect canonical membership/access state.
+**Required outcome.** A published store can govern explicit partner-team membership with scoped role, lifecycle, versioned mutation and audit; Identity remains authentication/permission authority.
+
+**Primary actors.** partner manager, partner supervisor, partner staff member, authorized operator/system.
+
+**Canonical ownership.** DSH partner/team membership and store scope; Identity roles/permissions/session context remain separate.
+
+**Material surfaces.** app-partner, control-panel; backend/database.
+
+**Durable lifecycle.**
+```text
+invited → active
+active → suspended | ended
+suspended → active | ended
+invited → ended
+```
+Resend-invite preserves `invited`; ended membership is not silently reused as active authority.
+
+**Permitted actions.** invite within owned published store, pause/suspend, activate, block/end, resend invite, cancel invite, read canonical membership/audit according to authorization.
+
+**Forbidden/negative invariants.**
+- no implicit all-store access;
+- no duplicate active/invited binding for the same scoped identity;
+- no stale version update;
+- no membership status grants authentication by itself;
+- no partner surface edits Identity permission truth directly.
+
+**Failure/recovery.** member/store not found, duplicate bound identity, invalid transition/action, version conflict, unauthorized scope; recover through canonical reread and valid next transition.
+
+**Acceptance expectations.** every mutation is scoped, versioned, correlated/idempotent where retryable, audited from→to, and read back from DSH canonical membership.
 
 ### CATALOG_APPROVAL_PUBLICATION
 
-**Outcome:** catalog/store content becomes eligible for customer discovery only through canonical approval/publication/serviceability rules.
+**Problem.** Catalog/store content cannot become customer-visible through disconnected partner, field, marketing or UI flags.
 
-- Owner: DSH catalog/store capabilities.
-- Invariants: central identity/taxonomy is not forked by a store; publication is server-owned; discovery visibility is derived from canonical eligibility.
-- Failures: rejected/incomplete content, stale approval, unavailable catalog dependency, conflicting update.
+**Required outcome.** Content moves through one auditable DSH approval/publication chain before client visibility, with explicit needs-fix/rejection recovery.
+
+**Primary actors.** partner submitter/reviewer, field submitter, marketing reviewer, catalog owner/operator, customer as read-only consumer.
+
+**Canonical ownership.** DSH catalog/store approval and publication truth; search/discovery is derived.
+
+**Material surfaces.** app-partner, app-field when submitting evidence, control-panel review/marketing/catalog operations, app-client read-only discovery.
+
+**Durable stage model.**
+```text
+partner-submitted | field-submitted
+→ partner-review
+→ partner-approved
+→ marketing-review
+→ marketing-approved
+→ catalog-adopted
+→ client-visible
+```
+At applicable stages, `needs-fix` and `rejected` are legal governed outcomes; needs-fix may return only to an allowed submission/review stage.
+
+**Forbidden/negative invariants.**
+- no client-visible state before canonical approval/publication gates;
+- no store/search/local flag bypasses the stage owner;
+- no illegal stage jump;
+- no mutation outside trusted operator/owner scope;
+- no derived search index becomes publication authority.
+
+**Failure/recovery.** invalid transition, missing/invalid owner/entity/source, rejected/needs-fix, stale derived index, dependency unavailable; correction re-enters only through a legal owner transition.
+
+**Acceptance expectations.** every transition is validated and audited; list/get/search visibility derives from the same canonical publication/serviceability truth.
 
 ### PROMOTIONS_COUPONS_FUNDING
 
-**Outcome:** promotions/coupons can influence commerce under explicit eligibility/funding rules without creating a second financial ledger.
+**Problem.** Promotion/coupon eligibility and financial funding effects can diverge or double-apply across DSH, checkout and WLT.
 
-- Operational eligibility/association: DSH.
-- Authoritative monetary posting, funded amount, settlement/refund effect: WLT when money truth is created.
-- Invariants: server-derived eligibility/amounts, idempotent application, no double funding/discount, explicit expiry/scope, auditable source.
-- Failures: ineligible/expired, budget/funding unavailable, duplicate application, unknown financial outcome.
+**Required outcome.** DSH governs commercial coupon/promotion eligibility and lifecycle while WLT governs any authoritative financial reservation/posting/reversal.
+
+**Primary actors.** authorized operator/marketing actor, customer, partner where a funded commercial program permits participation, WLT system.
+
+**Canonical ownership.** DSH coupon/promotion terms and operational eligibility; WLT promotion funding reservation/ledger effects.
+
+**Material surfaces.** control-panel, app-client, app-partner where applicable, checkout/order readback.
+
+**DSH commercial lifecycle.**
+```text
+draft → active | archived
+active → paused | archived
+paused → active | archived
+```
+Activation is governed and cannot be self-approved when maker/checker separation applies.
+
+**WLT funding lifecycle.**
+```text
+reserved → committed | released
+committed → reversed
+```
+
+**Forbidden/negative invariants.**
+- no client-supplied authoritative discount/funding amount;
+- no duplicate coupon application or funding reservation;
+- no archived/expired/ineligible promotion applied;
+- no same financial reservation committed/released/reversed inconsistently;
+- no DSH commercial record becomes a second ledger;
+- no unknown financial result is retried into duplicate money movement.
+
+**Failure/recovery.** ineligible/expired, invalid status transition, funding unavailable, reservation conflict, released/reversed state, unknown provider/financial result; reconcile original financial identity before retry.
+
+**Acceptance expectations.** accepted transaction snapshot is reproducible, funding source/amount is conserved, WLT postings are balanced/idempotent, refund/reversal uses the governed original funding lineage.
 
 ### RATINGS_REVIEWS_TRUST
 
-**Outcome:** permitted actors can submit and read trustworthy feedback tied to eligible completed interactions, with governed moderation and privacy.
+**Problem.** Ratings must be tied to proven eligible interactions and cannot be fabricated, duplicated or used as authorization truth.
 
-- Owner: DSH trust/commerce capability.
-- Invariants: eligibility proof, bounded authorship, duplicate/spam control, moderation/audit, no rating as authorization truth.
-- Derived consumers: discovery/search/analytics.
+**Required outcome.** Eligible customer/partner actors submit one governed rating per eligible source/target relationship, with edit-window, moderation, dispute and aggregate readback.
+
+**Primary actors.** customer, partner, rated captain/field provider as response/dispute participant where permitted, authorized moderator/operator.
+
+**Canonical ownership.** DSH ratings/reviews trust capability; discovery/analytics consume derived summaries only.
+
+**Material surfaces.** app-client, app-partner, control-panel moderation; derived provider/store discovery/analytics.
+
+**Durable semantics.**
+- client rating requires an eligible delivered order and attributed target;
+- partner→field rating requires eligible partner/field attribution;
+- canonical rating status is active unless retired through a governed path;
+- moderation status is one of `pending | approved | rejected | disputed`;
+- edits are bounded by the governed edit window and idempotency identity.
+
+**Forbidden/negative invariants.**
+- no rating for an ineligible/uncompleted source;
+- no cross-actor/source spoofing;
+- no duplicate logical rating through retry;
+- no aggregate score edited as source truth;
+- no rating score grants permission/assignment eligibility by itself.
+
+**Failure/recovery.** not eligible, source/target not found, invalid score/data, edit window passed, idempotency conflict, moderation dispute; canonical reread resolves retry state.
+
+**Acceptance expectations.** moderation/fraud/dispute metadata is attributable; aggregates derive only from canonical active records; customer/partner/operator readbacks agree.
 
 ### NOTIFICATIONS_COMMUNICATIONS
 
-**Outcome:** required domain events reach users/operators through appropriate channels with correct routing, preference and failure semantics.
+**Problem.** Domain events, inbox state, delivery preferences and provider attempts can diverge or duplicate communication.
 
-- Source event/business meaning: originating domain.
-- Delivery/inbox mechanics: notification delivery capability/adapters.
-- Native deep-link/OS routing: deployable app host.
-- Invariants: idempotent delivery identity where required, preference/consent, no secret/PII leakage, retry without duplicating domain effects.
-- Failures: provider unavailable, delayed/duplicate delivery, invalid destination, app route unavailable.
+**Required outcome.** Source domains retain business-event truth while a governed notification capability owns inbox/preference/delivery semantics and app hosts own native route translation.
 
-### MEDIA_ASSET_LIFECYCLE
+**Primary actors.** customer, partner, captain, field, operator, source-domain system, notification-delivery system.
 
-**Outcome:** authorized business entities can attach/use/remove media without object storage becoming Product truth.
+**Canonical ownership.**
+- source business event/eligibility — source domain;
+- notification inbox/preference/config/delivery record — proven notification capability;
+- vendor channel execution — adapter;
+- native/deep-link route mapping — app host.
 
-- Business association/authorization: owning domain.
-- Binary storage/transport: object-storage adapter.
-- Invariants: ownership/scope, MIME/size/safety validation, reference lifecycle, privacy, orphan cleanup, no public exposure by default.
-- Failures: upload timeout, orphaned object/reference, unavailable storage, unauthorized read/delete.
+**Durable semantics.**
+- notification item has actor identity/type, topic, localized content/action target, read/unread state and creation/read timestamps;
+- preferences are actor/topic scoped, enabled/disabled, channel-set, quiet-hours, locale/timezone aware;
+- platform topic config is versioned and can mark a notification mandatory where Product explicitly requires it;
+- delivery retries/deduplication never repeat the source business mutation.
 
-### SEARCH_DISCOVERY_READ_MODEL
+**Forbidden/negative invariants.**
+- no provider success/failure rewrites source-domain truth;
+- no channel bypasses consent/preference except an explicitly mandatory governed topic;
+- no app route string becomes durable domain meaning;
+- no duplicate provider attempts create duplicate user/business effects;
+- no secrets/unnecessary PII in notification/audit payloads.
 
-**Outcome:** users can discover eligible entities efficiently while canonical domains retain eligibility and mutation authority.
+**Failure/recovery.** invalid destination/channel, provider unavailable/timeout, duplicate attempt, delayed delivery, app route unavailable, preference conflict; preserve inbox/business truth and reconcile delivery separately.
 
-- Search/index: derived query/read-model capability.
-- Invariants: search result is not authorization, stale results cannot authorize mutation, source eligibility wins, rebuild/reconciliation path exists.
-- Failures: stale/missing index, source unavailable, ranking degradation, partial result.
+**Acceptance expectations.** actor can list/read owned inbox and update allowed preferences; delivery has correlation/dedupe/audit; required native routing and degraded states are truthful.
 
 ### ANALYTICS_OPERATIONAL_READ_MODELS
 
-**Outcome:** authorized operators/stakeholders can observe platform activity without analytics becoming transactional truth.
+**Problem.** Dashboards can silently turn stale/partial projections into transactional or financial truth.
 
-- Owner: derived read-model/analytics capability over canonical domain events/reads.
-- Invariants: read-only authority, provenance/freshness, privacy/aggregation, no mutation decisions from unproven stale projections.
-- Failures: lag/staleness, incomplete ingestion, source mismatch, unauthorized dimension access.
+**Required outcome.** Authorized operational analytics expose provenance, window/freshness and source-owner semantics without mutation authority.
 
-### WLT_RISK_PRICING_COLLATERAL_PENALTIES
+**Primary actors.** authorized operator, partner/stakeholder for explicitly scoped summaries, system projection builder.
 
-**Outcome:** authoritative financial pricing, collateral/exposure and penalty effects are represented as governed WLT financial truth when they change money/eligibility.
+**Canonical ownership.** derived analytics/read-model capability; every underlying metric remains owned by its source domain.
 
-- Owner/writer: WLT for authoritative financial effects; DSH may supply trusted operational evidence.
-- Invariants: server-derived/versioned policy, idempotency, balanced/traceable postings when monetary, explicit reversal/adjustment, no client arithmetic as truth.
-- Failures: stale policy, insufficient collateral/exposure, duplicate penalty, disputed/invalid source evidence, reconciliation mismatch.
+**Material surfaces.** control-panel and explicitly authorized stakeholder summary views.
 
-These capabilities must map to journeys and exact current implementation only through evidence; Governance does not assert that every donor implementation should survive.
+**Durable semantics.** metric/window/time basis/unit/currency/source owner/freshness are explicit; availability can be `available` or `no_data` rather than fabricated zero; drilldown never bypasses source authorization.
+
+**Forbidden/negative invariants.**
+- analytics cannot write transactional state;
+- stale projection cannot authorize mutation;
+- financial metric cannot bypass WLT-owned source;
+- missing/partial data is not silently zero or “healthy”;
+- cross-tenant/object leakage is forbidden.
+
+**Failure/recovery.** lag, no data, incomplete ingestion, source mismatch, unauthorized dimension/drilldown; reconcile/rebuild from canonical sources.
+
+**Acceptance expectations.** read model can be rebuilt, freshness is observable, source mismatch is surfaced, and operator actions navigate to canonical owner rather than mutating analytics storage.
+
+### WLT_PRICING_QUOTES
+
+**Problem.** Checkout pricing can be manipulated or overflow if client values or unsigned/unbounded evidence are trusted.
+
+**Required outcome.** WLT produces one bounded, currency-consistent quote from authoritative pricing evidence tied to client/store/cart identity and version.
+
+**Primary actors.** customer as intent source, DSH pricing/catalog evidence producer, WLT system, authorized operator for diagnostics only.
+
+**Canonical ownership.** WLT quote/allocation financial computation; source commercial item evidence comes from canonical DSH owners.
+
+**Material surfaces.** app-client checkout readback, DSH↔WLT integration, control-panel diagnostics where authorized.
+
+**Durable semantics.** every line has canonical product identity/quantity and authoritative unit-price evidence; currency is one governed currency per quote; fee/discount figures are non-negative and bounded; quote is correlated to cart version and source evidence version.
+
+**Forbidden/negative invariants.**
+- no client-supplied unit price/fee/discount is authoritative;
+- no overflow/unbounded quantity/amount;
+- no mismatched product/currency evidence;
+- no quote accepted without authentic source evidence;
+- no quote becomes a ledger posting until the owning payment/checkout transition authorizes it.
+
+**Failure/recovery.** invalid/bounds failure, stale/mismatched evidence, unavailable evidence verifier/owner, cart version conflict; reacquire canonical evidence and requote.
+
+**Acceptance expectations.** quote arithmetic conserves totals, evidence provenance is verifiable, and checkout/order snapshot preserves the accepted commercial/financial basis.
+
+### WLT_CAPTAIN_COLLATERAL
+
+**Problem.** Captain collateral/exposure can be confused with available balance, COD capacity or debt and be released while obligations remain.
+
+**Required outcome.** WLT owns versioned collateral policy, captain collateral positions and releasable excess as financial truth backed by a proven captured captain top-up/ledger source.
+
+**Primary actors.** captain, authorized finance/operator, WLT system.
+
+**Canonical ownership.** WLT collateral/wallet/ledger truth; DSH only consumes eligibility/readback needed for operations.
+
+**Material surfaces.** app-captain readback, control-panel finance, dispatch eligibility integration when applicable.
+
+**Durable states.** collateral policy enabled/disabled and versioned; collateral position `active → released`; release records reason/time and cannot silently mutate source funding history.
+
+**Forbidden/negative invariants.**
+- no collateral position without proven eligible captured funding source;
+- no client/operator direct balance edit;
+- no release while pending/held/COD reserve/outstanding debt or required minimum makes it ineligible;
+- no DSH writer for collateral/wallet truth;
+- no released position reused as active exposure.
+
+**Failure/recovery.** policy disabled, invalid input/source, position not found, insufficient/restricted state, conflicting obligations; canonical WLT reread/reconciliation determines next legal action.
+
+**Acceptance expectations.** wallet summary distinguishes available/pending/held/COD/collateral/debt; release is atomic/auditable and preserves ledger/source lineage.
+
+### WLT_PROVIDER_PENALTIES
+
+**Problem.** Captain/field penalties can become manual arbitrary balance edits or be reversed after their debt/wallet state has materially changed.
+
+**Required outcome.** WLT applies a governed versioned penalty policy to an eligible captain/field source, posts the monetary effect through wallet/debt plus balanced ledger, and permits only state-safe reversal.
+
+**Primary actors.** authorized operator/system, captain or field provider as affected actor/read-only consumer.
+
+**Canonical ownership.** WLT penalty/debt/wallet/ledger truth; DSH/Workforce may supply trusted incident/actor evidence.
+
+**Material surfaces.** control-panel finance/incident workflow and bounded captain/field financial readback.
+
+**Durable semantics.** policy is enabled/versioned with provider actor type, amount, currency and reason; penalty records source incident and split between wallet-applied amount and debt; reversal restores exact governed financial effect only when live debt state still matches the reversible snapshot.
+
+**Forbidden/negative invariants.**
+- no generic manual balance decrement;
+- no unsupported actor type;
+- no duplicate posting for same mutation identity;
+- no reversal after partial settlement/state drift without explicit reconciliation;
+- no DSH/Workforce ledger writer;
+- no penalty without reason/audit/source evidence.
+
+**Failure/recovery.** wallet unavailable, policy disabled/invalid, debt state conflict, duplicate/idempotency conflict, reversal state drift; reconcile live wallet/debt before any new financial mutation.
+
+**Acceptance expectations.** original and reversal postings balance, debt/wallet split is reproducible, audit/source lineage is preserved and affected readback is consistent.
+
+These capabilities and read models must map to journeys and exact current implementation only through evidence. Generic media/object-storage and search/index mechanisms remain explicitly non-sovereign unless a future Product/System decision proves an independent lifecycle/owner.
+

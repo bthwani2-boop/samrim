@@ -206,7 +206,7 @@ ELIGIBLE COMPLETED INTERACTION
 → GOVERNED EDIT/REMOVAL/ABUSE HANDLING
 ```
 
-## J13 — Media asset lifecycle
+## J13 — Cross-capability media asset lifecycle
 
 ```text
 AUTHORIZED BUSINESS INTENT
@@ -248,13 +248,15 @@ Analytics never becomes a transactional writer or authorization owner.
 
 | Capability | Journey coverage |
 |---|---|
-| CUSTOMER_PROFILE_PREFERENCES | J1, J8 |
+| CUSTOMER_PROFILE_PREFERENCES | J1, J8, J11 where consent affects communication |
 | PARTNER_TEAM_MEMBERSHIP | J2, J14 |
-| CATALOG_APPROVAL_PUBLICATION | J1, J2, J10 |
+| CATALOG_APPROVAL_PUBLICATION | J1, J2, J10, J13 when media evidence/assets are required |
 | PROMOTIONS_COUPONS_FUNDING | J1, J5, J10 |
 | RATINGS_REVIEWS_TRUST | J1, J12 |
-| NOTIFICATIONS_COMMUNICATIONS | J1-J14 where a governed delivery is required |
-| MEDIA_ASSET_LIFECYCLE | J2, J8, J13 and other owner journeys when media is required |
-| SEARCH_DISCOVERY_READ_MODEL | J1, J9, J10 |
+| NOTIFICATIONS_COMMUNICATIONS | J1-J15 where a governed delivery/inbox result is required |
 | ANALYTICS_OPERATIONAL_READ_MODELS | J7, J15 |
-| WLT_RISK_PRICING_COLLATERAL_PENALTIES | J3, J5, J6 |
+| WLT_PRICING_QUOTES | J1, J5, J9 |
+| WLT_CAPTAIN_COLLATERAL | J3, J5, J6 |
+| WLT_PROVIDER_PENALTIES | J3, J4, J6, J8 |
+
+Generic media/object-storage and search/index mechanisms are not listed as sovereign capabilities. J13 is a cross-capability journey owned by the applicable business capability plus technical storage adapter; search/discovery steps in J1/J10 remain derived from canonical source owners.
