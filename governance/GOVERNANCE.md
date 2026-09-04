@@ -52,6 +52,7 @@ A current implementation can reveal drift but does not silently redefine Product
 ### Architecture
 
 - `architecture/SYSTEM-CONTEXT.md` — bounded contexts and dependency direction.
+- `architecture/REPOSITORY-TOPOLOGY.md` — durable repository responsibility taxonomy, placement, and container-admission law.
 - `architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md` — semantic owner/writer/readback map.
 - `architecture/APP-SERVICE-COMPOSITION.md` — deployable-host versus service-capability responsibility.
 - `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` — data/contract/version/integration boundaries.

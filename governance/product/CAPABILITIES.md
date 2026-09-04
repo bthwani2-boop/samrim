@@ -1414,9 +1414,9 @@ committed → reversed
 **Primary actors.** customer, partner, captain, field, operator, source-domain system, notification-delivery system.
 
 **Canonical ownership.**
-- source business event/eligibility — source domain;
-- notification inbox/preference/config/delivery record — proven notification capability;
-- vendor channel execution — adapter;
+- source business event/eligibility — originating domain;
+- notification inbox/preferences/topic configuration/delivery-attempt record — DSH Notifications capability;
+- vendor channel execution — replaceable adapter;
 - native/deep-link route mapping — app host.
 
 **Durable semantics.**
@@ -1435,6 +1435,8 @@ committed → reversed
 **Failure/recovery.** invalid destination/channel, provider unavailable/timeout, duplicate attempt, delayed delivery, app route unavailable, preference conflict; preserve inbox/business truth and reconcile delivery separately.
 
 **Acceptance expectations.** actor can list/read owned inbox and update allowed preferences; delivery has correlation/dedupe/audit; required native routing and degraded states are truthful.
+
+**Material deployable surfaces.** all applicable actor apps when inbox/preferences/native navigation are exposed, plus control-panel for authorized topic/configuration/diagnostics.
 
 **Target state.** DSH Notifications owns actor inbox, preferences/topic configuration and delivery-attempt lifecycle while source domains own business-event meaning, adapters own channel execution and app hosts own native route translation.
 **Primary success measure.** eligible notification intents producing at-most-once governed inbox/delivery effects with correct preference and canonical readback.
