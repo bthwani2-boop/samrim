@@ -3,12 +3,6 @@
   "root": "apps/app-client",
   "sourceRoot": "apps/app-client",
   "projectType": "application",
-  "implicitDependencies": [
-    "identity",
-    "dsh",
-    "wlt",
-    "design-system"
-  ],
   "targets": {
     "serve": {
       "executor": "nx:run-commands",
