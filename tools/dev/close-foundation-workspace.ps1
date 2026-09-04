@@ -34,6 +34,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) {
         Fail "Unable to determine current Git branch."
     }
+
     Write-Host "Branch: $branch"
     if ($branch -ne $ExpectedBranch) {
         Fail "Expected branch '$ExpectedBranch', found '$branch'."
@@ -52,17 +53,23 @@ try {
         Fail "Unable to inspect Git working-tree status."
     }
     if ($initialStatus.Count -gt 0) {
-        Fail ("Working tree must be clean before Foundation workspace closure:" + [Environment]::NewLine + ($initialStatus -join [Environment]::NewLine))
+        Fail ("Working tree must be clean before Foundation workspace closure:" +
+            [Environment]::NewLine +
+            ($initialStatus -join [Environment]::NewLine))
     }
 
     $nodeVersion = (& node --version).Trim()
-    if ($LASTEXITCODE -ne 0) { Fail "Node.js is required." }
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Node.js is required."
+    }
     if ($nodeVersion -ne "v24.17.0") {
         Fail "Expected Node v24.17.0, found $nodeVersion."
     }
 
     $pnpmVersion = (& pnpm --version).Trim()
-    if ($LASTEXITCODE -ne 0) { Fail "pnpm is required." }
+    if ($LASTEXITCODE -ne 0) {
+        Fail "pnpm is required."
+    }
     if ($pnpmVersion -ne "10.34.0") {
         Fail "Expected pnpm 10.34.0, found $pnpmVersion."
     }
@@ -75,8 +82,10 @@ try {
         node -e @'
 const fs = require("fs");
 const path = require("path");
+
 const roots = ["apps", "services", "packages"];
 const manifests = [];
+
 for (const root of roots) {
   if (!fs.existsSync(root)) continue;
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
@@ -85,8 +94,9 @@ for (const root of roots) {
     if (fs.existsSync(manifest)) manifests.push(manifest);
   }
 }
-const contracts = path.join("contracts", "package.json");
-if (fs.existsSync(contracts)) manifests.push(contracts);
+
+const contractsManifest = path.join("contracts", "package.json");
+if (fs.existsSync(contractsManifest)) manifests.push(contractsManifest);
 
 const packages = new Map();
 for (const manifest of manifests) {
@@ -105,11 +115,13 @@ for (const manifest of manifests) {
     }
   }
 }
-if (missing.length) {
+
+if (missing.length > 0) {
   console.error("NONEXISTENT_WORKSPACE_DEPENDENCIES:");
   for (const item of missing) console.error("  " + item);
   process.exit(1);
 }
+
 console.log("NONEXISTENT_WORKSPACE_DEPENDENCIES=0");
 '@
     }
@@ -120,6 +132,7 @@ console.log("NONEXISTENT_WORKSPACE_DEPENDENCIES=0");
     if ($LASTEXITCODE -ne 0) {
         Fail "Lockfile generation failed."
     }
+
     if (-not (Test-Path "pnpm-lock.yaml" -PathType Leaf)) {
         Fail "pnpm-lock.yaml was not created."
     }
@@ -163,23 +176,17 @@ console.log("NONEXISTENT_WORKSPACE_DEPENDENCIES=0");
     if ($LASTEXITCODE -ne 0) {
         Fail "Unable to inspect final Git working-tree status."
     }
-    $unexpected = @($finalStatus | Where-Object {
-        $_ -notmatch '^(\?\?| M|M |A |AM|MM) pnpm-lock\.yaml    Write-Host "pnpm-lock.yaml is generated and verified locally."
-    Write-Host ""
-    Write-Host "Next:"
-    Write-Host "  git status --short"
-    Write-Host "  git diff -- pnpm-lock.yaml"
-    Write-Host "  git add pnpm-lock.yaml"
-    Write-Host '  git commit -m "chore(workspace): establish canonical foundation lockfile"'
-    Write-Host "  git push origin $branch"
-}
-finally {
-    Pop-Location
-}
 
-    })
+    $unexpected = @(
+        $finalStatus | Where-Object {
+            $_ -notmatch '^(\?\?| M|M |A |AM|MM) pnpm-lock\.yaml$'
+        }
+    )
+
     if ($unexpected.Count -gt 0) {
-        Fail ("Verification changed files other than pnpm-lock.yaml:" + [Environment]::NewLine + ($unexpected -join [Environment]::NewLine))
+        Fail ("Verification changed files other than pnpm-lock.yaml:" +
+            [Environment]::NewLine +
+            ($unexpected -join [Environment]::NewLine))
     }
 
     Write-Host ""
