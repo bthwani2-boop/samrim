@@ -1,0 +1,63 @@
+name: Foundation Lockfile Bootstrap
+
+on:
+  push:
+    branches: [a]
+    paths:
+      - package.json
+      - pnpm-workspace.yaml
+      - "apps/*/package.json"
+      - "services/*/package.json"
+      - "packages/*/package.json"
+      - "contracts/package.json"
+      - .github/workflows/foundation-lockfile-bootstrap.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: foundation-lockfile-bootstrap-a
+  cancel-in-progress: true
+
+jobs:
+  lockfile:
+    name: generate-canonical-lockfile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: a
+          fetch-depth: 2
+
+      - name: Setup repository-pinned PNPM
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093
+        with:
+          version: 10.34.0
+
+      - name: Setup repository-pinned Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+          package-manager-cache: false
+
+      - name: Generate lockfile from current manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --lockfile-only --ignore-scripts
+
+      - name: Commit lockfile only when changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add pnpm-lock.yaml
+          if git diff --cached --quiet; then
+            echo "LOCKFILE_ALREADY_CURRENT=PASS"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(workspace): generate canonical lockfile"
+          git push origin HEAD:a
