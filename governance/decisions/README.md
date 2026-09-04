@@ -30,7 +30,6 @@ Git history remains the archive for ordinary implementation changes. Do not crea
 - `0001-repository-taxonomy.md`
 - `0002-app-host-service-capability-separation.md`
 - `0003-wlt-financial-sovereignty.md`
-- `0004-identity-workforce-separation.md` — superseded by ADR 0008.
 - `0008-single-actor-domain-owned-participation.md`
 - `0005-domain-specific-external-integration-ports.md`
 - `0006-service-contract-sovereignty.md`
