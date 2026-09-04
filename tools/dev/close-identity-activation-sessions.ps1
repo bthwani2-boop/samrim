@@ -158,10 +158,25 @@ try {
 
     if (-not $SkipRuntime) {
         Run-Step "Repository runtime proof before lockfile mutation" {
-            pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-runtime.ps1 -ExpectedBranch $ExpectedBranch
+            pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-runtime.ps1 -ExpectedBranch $ExpectedBranch -KeepRunning
         }
-        Assert-Clean "Repository runtime proof"
+        Assert-Clean "Repository runtime substrate proof"
+
+        Write-Host ""
+        Write-Host "=== Identity adversarial runtime semantic proof ==="
+        & node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env
+        $semanticCode = $LASTEXITCODE
+        if ($semanticCode -ne 0) {
+            Fail "Identity runtime semantic proof failed. The compose stack was left running for diagnosis."
+        }
+
+        Run-Step "Stop repository runtime after semantic proof" {
+            docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml --profile foundation down
+        }
+
+        Assert-Clean "Identity runtime semantic proof"
         Write-Host "IDENTITY_RUNTIME_SUBSTRATE=PASS"
+        Write-Host "IDENTITY_RUNTIME_SEMANTICS=PASS"
     }
 
     Run-Step "Generate canonical workspace lockfile" {
