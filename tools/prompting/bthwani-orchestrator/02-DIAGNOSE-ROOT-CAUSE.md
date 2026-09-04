@@ -319,3 +319,92 @@ FUTURE_FORENSIC_INTEREST != PRESERVATION_RIGHT
 ```
 
 Preserve required truth in canonical structure; preserve historical shape in history only.
+
+## 14. Donor semantic-atom census
+
+In clean-target reconstruction, diagnosis must exhaust both the donor current tree and material history that can contain removed Product/System/UX/data/security/financial/operational/engineering value.
+
+A semantic atom is one materially distinct requirement, invariant, ownership rule, state/transition, failure/recovery rule, UX requirement, security/financial constraint, evidence rule or operating procedure. Wording duplication is not a second atom.
+
+Each material atom receives exactly one disposition:
+
+```text
+PRESERVE_AS_TRUTH | REFINE | MERGE | REHOME | REIMPLEMENT | REGENERATE | REFERENCE_ONLY | SUPERSEDE | REJECT_WITH_REASON
+```
+
+No material atom may disappear because its source file was deleted, simplified, renamed or superseded structurally.
+
+## 15. Journey Matrix and complete operational trace
+
+For every material capability/root, reconstruct the applicable matrix across:
+
+```text
+ACTOR × JOURNEY × SURFACE × OWNER × STATE × ACTION × DATA × CONTRACT × RUNTIME × FAILURE × READBACK
+```
+
+Required diagnostic directions include forward, reverse, temporal, cross-surface, cross-owner, negative-space, invariant, counterfactual, experimental and adversarial reasoning.
+
+## 16. Findings Ledger
+
+Every material finding stays addressable until terminal disposition:
+
+```text
+FINDING_ID
+CLAIM
+EVIDENCE
+SOURCE_OF_DEFECT
+IMPACTED_CONE
+ROOT_CANDIDATE
+FALSIFICATION_ATTEMPT
+STATUS = OPEN | MERGED_INTO_ROOT | REJECTED_WITH_EVIDENCE | CLOSED_BY_VERIFIED_TREATMENT
+```
+
+`MAPPED`, `CLASSIFIED` and `KNOWN` are not terminal states.
+
+## 17. Decision taxonomy
+
+Unknowns are divided into:
+
+```text
+TECHNICAL_FACT_DERIVABLE
+DONOR_HISTORY_FACT_DERIVABLE
+EXTERNAL_STANDARD_OR_PROVIDER_FACT_RESEARCHABLE
+PRODUCT_DECISION_REQUIRED
+IRREVERSIBLE_RISK_DECISION_REQUIRED
+```
+
+Ask a human only for a true Product/System or irreversible-risk decision. Continue all independent derivable work.
+
+## 18. Canonical Target Model gate
+
+Before material reconstruction, define a target model independent of inherited donor/current names:
+
+```text
+REQUIRED_OUTCOME
+CANONICAL_OWNER
+CANONICAL_WRITER
+STORAGE_CLASS
+CONTRACT/EVENT_OWNER
+REQUIRED_CONSUMERS
+SURFACE_COMPOSITION
+FAILURE/RECOVERY
+SECURITY/FINANCIAL_INVARIANTS
+RUNTIME/CONFIG
+MIGRATION_OR_REIMPLEMENTATION_PATH
+LOSER_NON_IMPORT/DELETION_PATH
+```
+
+A clean path or green build without this target model is insufficient for high-impact restructuring.
+
+## 19. Patch-loop breaker
+
+Repeated descendant repair is evidence of an upstream root until falsified.
+
+```text
+REPEATED_LOCAL_FIXES
+OR GROWING_WRAPPERS/ALIASES/COMPATIBILITY
+OR REPEATED_CROSS_SURFACE_DRIFT
+→ STOP_DESCENDANT_PATCHING
+→ RE_DIAGNOSE_ANCESTOR_OWNER/BOUNDARY/CONTRACT/DATA/RUNTIME
+→ PROMOTE_HIGHER_ROOT_WHEN_PROVEN
+```

@@ -60,3 +60,22 @@ BOTH_SYSTEMS_KEEP_IT_IN_SYNC = NOT_OWNERSHIP
 ```
 
 When two systems appear to own the same fact, resolve the semantic owner first, then redesign writer/readback/projection flow.
+
+## Additional durable meaning classes
+
+The following classes must preserve single-owner semantics when present:
+
+| Meaning | Canonical owner / writer | Derived or delivery role |
+|---|---|---|
+| customer profile/preferences excluding authentication | DSH customer/profile capability unless a future explicit owner supersedes it | apps consume bounded readback |
+| partner-team membership and store-scoped operational access facts | DSH partner/team capability; Identity remains permission/session authority | partner/control surfaces consume scoped projections |
+| catalog identity/approval/publication eligibility | DSH catalog/store capabilities according to the governed split | discovery/search are derived consumers |
+| promotion/coupon operational eligibility | DSH for commerce eligibility; WLT owns resulting authoritative monetary postings/effects | clients/operators consume bounded readback |
+| notification intent/source event | originating domain | notification delivery mechanics route email/SMS/push/inbox; app host owns native route |
+| media asset business association/authorization | owning business domain | object-storage adapter owns transport/storage mechanics only |
+| rating/review business record and moderation policy | DSH trust/commerce capability unless explicitly rehomed | search/analytics may project it |
+| analytics/operational dashboards | derived read-model owner only | never transactional writer or authorization source |
+| search/discovery index/result | derived query capability | source domains remain eligibility/mutation authority |
+| pricing/penalty/collateral financial truth | WLT when value/financial exposure is authoritative; DSH may own non-financial operational inputs | projections only outside owner |
+
+A row establishes ownership class, not a promise that a particular implementation already exists. Current implementation must still be proven from executable evidence.

@@ -389,3 +389,45 @@ ORCHESTRATOR_COMPLIANCE_FAILURE
 → EXECUTE_MISSING_DEMOLITION_MIGRATION_DELETION
 → CONTINUE
 ```
+
+## 19. Clean-target donor reconstruction execution
+
+For donor→target reconstruction, the unit sequence is:
+
+```text
+EXTRACT_REQUIRED_DONOR_VALUE
+→ DEFINE_TARGET_OWNER
+→ BUILD/REIMPLEMENT/REGENERATE_IN_TARGET
+→ MIGRATE_TARGET-INTERNAL_CONSUMERS WHEN PRESENT
+→ VERIFY_PARITY_OR_DELIBERATE_IMPROVEMENT
+→ DO_NOT_IMPORT_DONOR_LOSERS
+→ DELETE_TARGET LOSERS/RESIDUE AT EARLIEST SAFE MOMENT
+→ NEGATIVE_SPACE
+```
+
+Never mutate or clean the donor as part of target reconstruction. Donor history remains external forensic evidence.
+
+## 20. Parallel execution, staging and integration safety
+
+Maximum-safe parallel mutation is permitted only for proven non-overlapping cones. Every mutating worker must be based on an exact target SHA and must own explicit paths/semantic responsibilities.
+
+```text
+OVERLAPPING_CONE → SERIALIZE
+SHARED_DB/CONTRACT/RUNTIME/EXPORT → SERIALIZE_WRITER
+FOREIGN_HUNK → PRESERVE_AND_RECONCILE
+BLIND_BROAD_STAGE/RESET/CLEAN → FORBIDDEN
+FORCE_REF_UPDATE → FORBIDDEN
+INTEGRATION → ONE_AUTHORITY + EXACT_EXPECTED_HEAD
+```
+
+Review intended, generated, deleted, manifest, dependency, runtime, test and governance/doc effects as one coherent mutation cone before integration.
+
+## 21. Donor versus target deletion law
+
+```text
+DONOR_LOSER → DO_NOT_IMPORT
+TARGET_LOSER → MIGRATE/CUT_OVER/DELETE
+REQUIRED_DONOR_TRUTH_IN_LOSER → EXTRACT_BEFORE_NON_IMPORT
+```
+
+A donor container never earns target survival merely because required truth was found inside it.

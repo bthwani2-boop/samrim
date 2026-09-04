@@ -1118,3 +1118,95 @@ ROUTE != CAPABILITY_OWNER
 SCREEN != CAPABILITY_OWNER
 IMPLEMENTATION_MECHANISM != DOMAIN
 ```
+
+## Additional durable capability coverage
+
+The following envelopes close previously under-specified material responsibilities. They define durable meaning without prescribing donor folders, route names or table names.
+
+### CUSTOMER_PROFILE_PREFERENCES
+
+**Outcome:** a customer can maintain non-authentication profile/preferences and receive owner-backed readback without turning Identity into a general customer-profile store.
+
+- Actors: customer, authorized support/operator where explicitly permitted.
+- Owner: DSH customer/profile capability; Identity owns authentication/session/activation only.
+- Invariants: actor/object scope, privacy classification, server-authorized mutations, deletion/retention policy where governed.
+- Failures: unauthorized, stale/conflicting update, invalid field, unavailable owner, partial external preference delivery.
+- Surfaces: client account/profile and authorized operator support views.
+
+### PARTNER_TEAM_MEMBERSHIP
+
+**Outcome:** partner organizations can govern member participation and store-scoped operational access without conflating membership with Identity permissions or store ownership.
+
+- Owner: DSH partner/team operational truth; Identity owns roles/permissions/session context.
+- Invariants: organization/store scope explicit, least privilege, lifecycle/audit, no implicit all-store access.
+- Required readback: partner and operator surfaces reflect canonical membership/access state.
+
+### CATALOG_APPROVAL_PUBLICATION
+
+**Outcome:** catalog/store content becomes eligible for customer discovery only through canonical approval/publication/serviceability rules.
+
+- Owner: DSH catalog/store capabilities.
+- Invariants: central identity/taxonomy is not forked by a store; publication is server-owned; discovery visibility is derived from canonical eligibility.
+- Failures: rejected/incomplete content, stale approval, unavailable catalog dependency, conflicting update.
+
+### PROMOTIONS_COUPONS_FUNDING
+
+**Outcome:** promotions/coupons can influence commerce under explicit eligibility/funding rules without creating a second financial ledger.
+
+- Operational eligibility/association: DSH.
+- Authoritative monetary posting, funded amount, settlement/refund effect: WLT when money truth is created.
+- Invariants: server-derived eligibility/amounts, idempotent application, no double funding/discount, explicit expiry/scope, auditable source.
+- Failures: ineligible/expired, budget/funding unavailable, duplicate application, unknown financial outcome.
+
+### RATINGS_REVIEWS_TRUST
+
+**Outcome:** permitted actors can submit and read trustworthy feedback tied to eligible completed interactions, with governed moderation and privacy.
+
+- Owner: DSH trust/commerce capability.
+- Invariants: eligibility proof, bounded authorship, duplicate/spam control, moderation/audit, no rating as authorization truth.
+- Derived consumers: discovery/search/analytics.
+
+### NOTIFICATIONS_COMMUNICATIONS
+
+**Outcome:** required domain events reach users/operators through appropriate channels with correct routing, preference and failure semantics.
+
+- Source event/business meaning: originating domain.
+- Delivery/inbox mechanics: notification delivery capability/adapters.
+- Native deep-link/OS routing: deployable app host.
+- Invariants: idempotent delivery identity where required, preference/consent, no secret/PII leakage, retry without duplicating domain effects.
+- Failures: provider unavailable, delayed/duplicate delivery, invalid destination, app route unavailable.
+
+### MEDIA_ASSET_LIFECYCLE
+
+**Outcome:** authorized business entities can attach/use/remove media without object storage becoming Product truth.
+
+- Business association/authorization: owning domain.
+- Binary storage/transport: object-storage adapter.
+- Invariants: ownership/scope, MIME/size/safety validation, reference lifecycle, privacy, orphan cleanup, no public exposure by default.
+- Failures: upload timeout, orphaned object/reference, unavailable storage, unauthorized read/delete.
+
+### SEARCH_DISCOVERY_READ_MODEL
+
+**Outcome:** users can discover eligible entities efficiently while canonical domains retain eligibility and mutation authority.
+
+- Search/index: derived query/read-model capability.
+- Invariants: search result is not authorization, stale results cannot authorize mutation, source eligibility wins, rebuild/reconciliation path exists.
+- Failures: stale/missing index, source unavailable, ranking degradation, partial result.
+
+### ANALYTICS_OPERATIONAL_READ_MODELS
+
+**Outcome:** authorized operators/stakeholders can observe platform activity without analytics becoming transactional truth.
+
+- Owner: derived read-model/analytics capability over canonical domain events/reads.
+- Invariants: read-only authority, provenance/freshness, privacy/aggregation, no mutation decisions from unproven stale projections.
+- Failures: lag/staleness, incomplete ingestion, source mismatch, unauthorized dimension access.
+
+### WLT_RISK_PRICING_COLLATERAL_PENALTIES
+
+**Outcome:** authoritative financial pricing, collateral/exposure and penalty effects are represented as governed WLT financial truth when they change money/eligibility.
+
+- Owner/writer: WLT for authoritative financial effects; DSH may supply trusted operational evidence.
+- Invariants: server-derived/versioned policy, idempotency, balanced/traceable postings when monetary, explicit reversal/adjustment, no client arithmetic as truth.
+- Failures: stale policy, insufficient collateral/exposure, duplicate penalty, disputed/invalid source evidence, reconciliation mismatch.
+
+These capabilities must map to journeys and exact current implementation only through evidence; Governance does not assert that every donor implementation should survive.

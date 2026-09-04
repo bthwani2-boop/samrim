@@ -231,3 +231,25 @@ MATERIAL_BUILD/DB/RUNTIME/E2E=PASS
 ## Package self-deletion
 
 Only after all applicable gates pass and no runtime/build/CI/test/prompt consumer depends on this package: delete the entire package, verify zero references and confirm fixed point.
+
+## Donor-exhaustion qualification
+
+When reconstruction uses a separate donor, repository Level-4 cannot pass until all applicable donor value is dispositioned and required value is represented in the target.
+
+```text
+DONOR_CURRENT_TREE_CENSUS=PASS
+DONOR_MATERIAL_HISTORY_CENSUS=PASS
+DONOR_SEMANTIC_ATOM_ACCOUNTING=PASS
+DONOR_CAPABILITY/JOURNEY_ACCOUNTING=PASS
+DONOR_DATA/CONTRACT_ACCOUNTING=PASS
+DONOR_SECURITY/FINANCE_ACCOUNTING=PASS
+DONOR_RUNTIME/UX/OPERATIONS_ACCOUNTING=PASS
+DONOR_GOVERNANCE/DOCS/TOOLS/TEST_ACCOUNTING=PASS
+UNINSPECTED_MATERIAL_DONOR_HISTORY=0
+UNCLASSIFIED_REQUIRED_DONOR_VALUE=0
+UNMAPPED_REQUIRED_DONOR_VALUE=0
+UNJUSTIFIED_DONOR_TRUTH_LOSS=0
+DONOR_LOSER_IMPORTED_AS_TARGET_AUTHORITY=0
+```
+
+This is a zero-loss semantic gate, not a requirement to copy donor files or topology.

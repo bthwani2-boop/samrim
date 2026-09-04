@@ -90,3 +90,19 @@ STALE_EXPORTS/CONFIG/TEST/TOOL_RESIDUE=0
 REQUIRED_VALUE_STRANDED=0
 NEGATIVE_SPACE=PASS
 ```
+
+## Cross-repository reconstruction
+
+When the source is a separate read-only donor repository, translate migration semantics as follows:
+
+```text
+DONOR_REQUIRED_VALUE → EXTRACT/PROVE
+DONOR_CANONICAL_OR_IMPROVABLE_BEHAVIOR → REIMPLEMENT/REHOME IN TARGET
+DONOR_DATA/CONTRACT SHAPE → RECONSTRUCT ONLY IF TARGET REQUIRES IT
+DONOR LOSER/LEGACY/SHADOW → DO_NOT_IMPORT
+TARGET LOSER CREATED/INHERITED → CUT_OVER/DELETE
+```
+
+Never mutate the donor to satisfy target closure. A donor structure that contains useful truth does not earn survival in the target.
+
+Before declaring a reconstructed capability closed, prove source-to-target semantic parity or a deliberate governed improvement across owner, states/actions, data, contract, surfaces, failure/recovery, security/finance and runtime readback.

@@ -329,3 +329,44 @@ Wide read-only evidence collection may run in parallel when it cannot create com
 ONE_ACTIVE_UNIT != SMALL_UNIT
 CONTEXT_WINDOW != ARCHITECTURE_BOUNDARY
 ```
+
+## 15. Dual-repository authority for clean-target reconstruction
+
+When a donor is supplied:
+
+```text
+TARGET_REPOSITORY/BRANCH = MUTATION_AUTHORITY
+DONOR_REPOSITORY/REF = READ_ONLY_FORENSIC_AUTHORITY_ONLY
+DONOR_WRITES = FORBIDDEN
+TARGET_FORCE_PUSH = FORBIDDEN
+TARGET_FAST_FORWARD_WRITE = ALLOWED_ONLY_FROM_EXPECTED_HEAD
+```
+
+Evidence precedence is class-specific: current human Product/System decisions and durable target Governance own intended meaning; executable target state owns current implementation truth; donor current/history provides candidate value and forensic evidence only.
+
+The donor corpus must include material current-tree and historical evidence when history can contain truth removed by later simplification. A later donor commit does not automatically supersede an earlier semantic atom unless the replacement or rejection is proven.
+
+## 16. Research, evidence acquisition and foreign-delta discipline
+
+A material unknown must be classified before it can block or be ignored:
+
+```text
+DERIVABLE_FROM_TARGET
+DERIVABLE_FROM_DONOR_CURRENT
+DERIVABLE_FROM_DONOR_HISTORY
+REQUIRES_EXTERNAL_TECHNICAL_RESEARCH
+REQUIRES_HUMAN_PRODUCT_DECISION
+```
+
+External research may resolve technical/standard/provider facts but may not invent BThwani Product truth.
+
+For every material proof claim record conceptually:
+
+```text
+CAPABILITY_OR_CLAIM
+→ REQUIRED_EVIDENCE
+→ ACQUISITION_PATH
+→ PROOF_LIMIT
+```
+
+If target head moves, classify the foreign delta, invalidate only affected evidence, re-pin and continue. Never discard concurrent work merely to restore a previous expected head.

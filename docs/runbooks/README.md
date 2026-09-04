@@ -35,6 +35,9 @@ If a runbook conflicts with a live executable path/command, correct the runbook.
 - `provider-unknown-outcomes.md` — ambiguous external mutation/provider outcomes.
 - `special-requests-and-support.md` — special-request and support/rescue incidents.
 - `rollout-recovery.md` — progressive rollout containment/rollback/recovery.
+- `systemic-platform-recovery.md` — database/migration, contract/version-skew, security/credential and cross-service recovery routing.
+- `communications-and-media.md` — notification delivery, inbox/push/email/SMS routing and media/object-storage incidents.
+- `catalog-promotions-ratings.md` — catalog publication, promotion/coupon and ratings/reviews operational recovery.
 
 Mobile build activation and Sentry setup live under `../development/`, not operational runbooks.
 

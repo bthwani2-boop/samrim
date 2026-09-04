@@ -445,3 +445,92 @@ KNOWN_ORCHESTRATOR_COMPLIANCE_FAILURES=0
 ```
 
 Anything weaker is a recovery checkpoint, not completion.
+
+## 16. Evidence acquisition and proof-limit gate
+
+Every material closure claim must bind:
+
+```text
+CLAIM/CAPABILITY
+→ REQUIRED_EVIDENCE
+→ ACQUISITION_PATH
+→ EXACT_CANDIDATE/ENVIRONMENT
+→ PROOF_LIMIT
+```
+
+A green command proves only what it exercised. Missing acquisition capability, unavailable provider/runtime, or unverified external state must remain an explicit proof limit rather than being converted to PASS.
+
+Verification is risk-proportional: start affected-first, then widen when shared owners, contracts, database/migrations, runtime, security, finance, multi-surface behavior or failed evidence requires it.
+
+## 17. Runtime provenance and evidence invalidation
+
+Runtime evidence is valid only when the tested process/container/app is proven to correspond to the claimed exact target candidate and configuration.
+
+Record or reconstruct as applicable:
+
+```text
+TARGET_HEAD_SHA
+ARTIFACT/IMAGE/PROCESS IDENTITY
+CONFIG/ENV CLASS
+DATABASE/MIGRATION STATE
+PROVIDER/SIMULATOR MODE
+DEVICE/APP BUILD IDENTITY WHEN MATERIAL
+TIME/RECENCY
+```
+
+Any material head/config/runtime/database movement invalidates affected evidence. Re-run only the evidence whose proof cone became stale, then widen if the changed owner is shared.
+
+## 18. Repository-platform truth
+
+When closure depends on repository-host state, tracked YAML is not sufficient evidence. Inspect the live repository platform as applicable:
+
+```text
+BRANCH/RULESET PROTECTION
+REQUIRED CHECKS
+ACTUAL WORKFLOW RUN FOR EXACT CANDIDATE
+PR BASE/HEAD/DIFF
+REVIEW/APPROVAL PROVENANCE WHEN REQUIRED
+MERGEABILITY
+SECURITY ANALYSIS UPLOAD/RESULT STATE
+```
+
+Self-review is not independent review. Do not claim independent approval unless provenance proves it.
+
+## 19. Donor exhaustion gate
+
+Clean-target reconstruction cannot reach Level 4 until fresh evidence proves:
+
+```text
+DONOR_CENSUS=PASS
+DONOR_REQUIRED_TRUTH_EXHAUSTED=PASS
+DONOR_CAPABILITY_DISPOSITION=PASS
+DONOR_JOURNEY_DISPOSITION=PASS
+DONOR_DATA_TRUTH_DISPOSITION=PASS
+DONOR_CONTRACT_TRUTH_DISPOSITION=PASS
+DONOR_SECURITY_TRUTH_DISPOSITION=PASS
+DONOR_FINANCIAL_TRUTH_DISPOSITION=PASS
+DONOR_RUNTIME_TRUTH_DISPOSITION=PASS
+DONOR_UX_TRUTH_DISPOSITION=PASS
+DONOR_OPERATIONAL_KNOWLEDGE_DISPOSITION=PASS
+DONOR_TEST_VALUE_DISPOSITION=PASS
+DONOR_DOC_VALUE_DISPOSITION=PASS
+DONOR_GOVERNANCE_VALUE_DISPOSITION=PASS
+DONOR_TOOLING_VALUE_DISPOSITION=PASS
+UNINSPECTED_MATERIAL_DONOR_HISTORY=0
+UNCLASSIFIED_DONOR_REQUIRED_TRUTH=0
+UNJUSTIFIED_DONOR_TRUTH_LOSS=0
+```
+
+The gate proves accounting and preservation of required value, not copying. Rejected or superseded donor material is valid only with a recorded reason/evidence.
+
+## 20. Clean-target final token extension
+
+When `MODE=CLEAN_TARGET_RECONSTRUCTION`, the final token is valid only with:
+
+```text
+TARGET_EXACT_HEAD_SHA=<immutable sha>
+DONOR_PINNED_REF=<immutable sha/ref evidence>
+DONOR_EXHAUSTION_GATE=PASS
+UNJUSTIFIED_DONOR_TRUTH_LOSS=0
+TARGET_LEVEL_4_FIXED_POINT=PASS
+```

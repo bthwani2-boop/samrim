@@ -167,3 +167,94 @@ Every durable capability must map to at least one journey or explicitly prove th
 ## Journey closure law
 
 A journey is not closed because each capability compiles independently. Cross-owner handoffs, user/system actions, failure semantics and final readback must be proven together.
+
+## J10 — Catalog, promotion and discovery publication
+
+```text
+CANONICAL CATALOG/STORE INPUT
+→ VALIDATION/APPROVAL
+→ PROMOTION/COUPON ELIGIBILITY WHEN APPLICABLE
+→ PUBLICATION/SERVICEABILITY GATES
+→ DERIVED SEARCH/DISCOVERY
+→ CUSTOMER READBACK
+→ OWNER-SIDE CORRECTION/UNPUBLISH WHEN INVALID
+```
+
+## J11 — Notification and communication delivery
+
+```text
+SOURCE-DOMAIN EVENT
+→ DELIVERY POLICY/PREFERENCE
+→ CHANNEL ADAPTER
+→ PROVIDER RESULT
+→ RETRY/DEDUPE WHEN REQUIRED
+→ INBOX/APP NATIVE ROUTE
+→ DELIVERY/FAILURE OBSERVABILITY
+```
+
+Delivery failure must not fabricate or reverse the source-domain business effect unless Product explicitly defines such coupling.
+
+## J12 — Rating/review trust loop
+
+```text
+ELIGIBLE COMPLETED INTERACTION
+→ AUTHOR/SCOPE CHECK
+→ SUBMISSION
+→ VALIDATION/MODERATION
+→ CANONICAL REVIEW/RATING READBACK
+→ DERIVED DISCOVERY/ANALYTICS
+→ GOVERNED EDIT/REMOVAL/ABUSE HANDLING
+```
+
+## J13 — Media asset lifecycle
+
+```text
+AUTHORIZED BUSINESS INTENT
+→ VALIDATE ASSET/METADATA
+→ STORE BINARY THROUGH ADAPTER
+→ COMMIT OWNER-SIDE REFERENCE
+→ SERVE UNDER ACCESS POLICY
+→ REPLACE/DELETE
+→ ORPHAN/FAILURE RECONCILIATION
+```
+
+## J14 — Partner team and scoped access
+
+```text
+IDENTITY/TRUSTED ACTOR
+→ PARTNER ORGANIZATION CONTEXT
+→ MEMBERSHIP INVITE/ASSIGNMENT
+→ STORE/ROLE SCOPE
+→ IDENTITY PERMISSION/SESSION BINDING
+→ PARTNER OPERATION
+→ AUDIT/READBACK
+→ SUSPEND/REMOVE/REASSIGN
+```
+
+## J15 — Operational analytics/read-model journey
+
+```text
+CANONICAL DOMAIN SOURCES
+→ DERIVED INGESTION/QUERY
+→ FRESHNESS/PROVENANCE
+→ AUTHORIZED AGGREGATION
+→ OPERATOR/STAKEHOLDER READBACK
+→ SOURCE RECONCILIATION WHEN MISMATCHED
+```
+
+Analytics never becomes a transactional writer or authorization owner.
+
+## Extended capability-to-journey coverage
+
+| Capability | Journey coverage |
+|---|---|
+| CUSTOMER_PROFILE_PREFERENCES | J1, J8 |
+| PARTNER_TEAM_MEMBERSHIP | J2, J14 |
+| CATALOG_APPROVAL_PUBLICATION | J1, J2, J10 |
+| PROMOTIONS_COUPONS_FUNDING | J1, J5, J10 |
+| RATINGS_REVIEWS_TRUST | J1, J12 |
+| NOTIFICATIONS_COMMUNICATIONS | J1-J14 where a governed delivery is required |
+| MEDIA_ASSET_LIFECYCLE | J2, J8, J13 and other owner journeys when media is required |
+| SEARCH_DISCOVERY_READ_MODEL | J1, J9, J10 |
+| ANALYTICS_OPERATIONAL_READ_MODELS | J7, J15 |
+| WLT_RISK_PRICING_COLLATERAL_PENALTIES | J3, J5, J6 |
