@@ -35,12 +35,9 @@
     "runtime:foundation:up": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml --profile foundation up -d --build",
     "runtime:foundation:status": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml --profile foundation ps",
     "runtime:foundation:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-foundation-runtime.ps1",
-    "foundation:workspace:close": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-workspace.ps1",
     "nx:verify-tags": "node tools/dev/verify-nx-project-tags.mjs",
     "foundation:runtime:close": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 && pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-runtime.ps1",
-    "foundation:verify-structure": "node tools/dev/verify-foundation-structure.mjs",
     "docs:verify-command-parity": "node tools/dev/verify-doc-command-parity.mjs",
-    "foundation:verify-static": "pnpm run mobile:verify-config && node tools/dev/verify-workspace-dependencies.mjs && pnpm run nx:verify-tags && pnpm run foundation:verify-structure && pnpm run docs:verify-command-parity && pnpm run knowledge:verify",
     "knowledge:verify": "node tools/dev/verify-knowledge-system.mjs",
     "repository:verify-structure": "node tools/dev/verify-repository-structure.mjs",
     "repository:verify-hygiene": "node tools/dev/verify-structural-hygiene.mjs"
