@@ -45,7 +45,7 @@ function Assert-Clean([string] $Context) {
     }
 }
 
-function Assert-OnlyLockfileDirty([string] $Context) {
+function Assert-LockfileCanonicalMutation([string] $Context) {
     $status = @(Get-Status)
     $unexpected = @()
 
@@ -70,7 +70,8 @@ function Assert-OnlyLockfileDirty([string] $Context) {
     }
 
     if ($status.Count -eq 0) {
-        Fail "$Context expected $($lockfile) to change, but the repository is clean."
+        Write-Host "IDENTITY_LOCKFILE_ALREADY_CURRENT=PASS"
+        return
     }
 
     Write-Host "IDENTITY_LOCKFILE_ONLY_MUTATION=PASS"
@@ -135,6 +136,10 @@ try {
         node tools/dev/verify-structural-hygiene.mjs
     }
 
+    Run-Step "Removed human-domain residue" {
+        node tools/dev/verify-removed-human-domain-residue.mjs
+    }
+
     Run-Step "Docs command parity" {
         node tools/dev/verify-doc-command-parity.mjs
     }
@@ -183,13 +188,13 @@ try {
         pnpm install --lockfile-only
     }
 
-    Assert-OnlyLockfileDirty "Lockfile generation"
+    Assert-LockfileCanonicalMutation "Lockfile generation"
 
     Run-Step "Frozen workspace install against generated lockfile" {
         pnpm install --frozen-lockfile
     }
 
-    Assert-OnlyLockfileDirty "Frozen workspace install"
+    Assert-LockfileCanonicalMutation "Frozen workspace install"
 
     Run-Step "Mobile deployable identity configuration" {
         pnpm run mobile:verify-config
@@ -225,7 +230,7 @@ try {
         docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation config *> $null
     }
 
-    Assert-OnlyLockfileDirty "Identity closure completion"
+    Assert-LockfileCanonicalMutation "Identity closure completion"
 
     Write-Host ""
     Write-Host "IDENTITY_LOCAL_PRECOMMIT=PASS"
@@ -239,7 +244,13 @@ try {
     }
     Write-Host "IDENTITY_LOCKFILE_READY=PASS"
     Write-Host ""
-    Write-Host "Only pnpm-lock.yaml should be dirty. Commit and push that file only."
+    $finalStatus = @(Get-Status)
+    if ($finalStatus.Count -eq 0) {
+        Write-Host "Repository is clean; no lockfile commit is required."
+    }
+    else {
+        Write-Host "Only pnpm-lock.yaml is dirty. Commit and push that file only."
+    }
 }
 finally {
     Pop-Location
