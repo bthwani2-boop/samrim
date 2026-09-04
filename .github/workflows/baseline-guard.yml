@@ -226,7 +226,7 @@ jobs:
             exit 1
           fi
 
-runtime:
+  runtime:
     name: foundation-runtime
     needs: baseline
     runs-on: ubuntu-24.04
