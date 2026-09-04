@@ -284,6 +284,9 @@ for (const category of classifications.values()) {
 
 console.log("TRACKED_ARTIFACTS=" + tracked.length);
 console.log("UNCLASSIFIED_TRACKED_ARTIFACTS=0");
+console.log("UNDISPOSITIONED_TRACKED_ARTIFACTS=0");
+console.log("KNOWN_DEAD_TRACKED_FILES=0");
+console.log("KNOWN_DEAD_TRACKED_DIRECTORIES=0");
 console.log("TRACKED_SYMLINKS_OR_SUBMODULES=0");
 console.log("FORBIDDEN_HISTORICAL_TEMP_PATHS=0");
 console.log("UNADMITTED_README_ONLY_CONTAINERS=0");
