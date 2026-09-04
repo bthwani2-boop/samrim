@@ -555,3 +555,40 @@ OBSERVABILITY RELEASE/PROJECT BINDING
 ```
 
 A repository path move does not by itself imply a remote rebuild, new Expo/EAS project or store identity. Rebuild/update necessity is derived from the actual native/config/runtime fingerprint and release mechanism. Conversely, source green cannot hide an unintended identity change.
+
+## 22. Failure classification and no-blind-rerun law
+
+A failing CI/test/runtime/provider command is evidence to diagnose, not a command to repeat until green.
+
+Classify the failure before rerun as far as evidence permits:
+
+```text
+DETERMINISTIC_CODE/CONTRACT/DATA DEFECT
+CANDIDATE_OR_EVIDENCE_STALENESS
+CONFIG/ENVIRONMENT MISMATCH
+INFRA/RESOURCE/CAPACITY FAILURE
+EXTERNAL_PROVIDER FAILURE
+FLAKY/NONDETERMINISTIC TEST OR RACE
+TOOLCHAIN/DEPENDENCY FAILURE
+UNKNOWN_REQUIRING_DIAGNOSIS
+```
+
+A rerun is justified only when it can discriminate a transient/nondeterministic hypothesis, after the underlying condition changed, or after a fix. A passing retry does not erase an earlier failure unless the cause is classified and the closure claim remains valid for the exact candidate.
+
+```text
+BLIND_RERUN_UNTIL_GREEN = FORBIDDEN
+FAILURE_SUPPRESSION/ALLOWLIST_TO_MANUFACTURE_GREEN = FORBIDDEN
+PASS_AFTER_UNEXPLAINED_FAILURE != CLOSED
+```
+
+## 23. No documentation-only closure
+
+Governance, Docs, plans, matrices and reports can define/record truth and evidence obligations; they cannot substitute for required implementation/data/runtime treatment.
+
+```text
+IMPLEMENTATION_ROOT_EXISTS + ONLY_DOC/GOVERNANCE/PLAN_CHANGED → NOT_CLOSED
+MIGRATION_REQUIRED + ONLY_DOCUMENTED → NOT_CLOSED
+RUNTIME/SECURITY/FINANCIAL_DEFECT + ONLY_REPORTED → NOT_CLOSED
+```
+
+A documentation-only change may close only a genuinely documentation-only objective after executable Product/System truth is proven unaffected and the corrected document does not create a parallel authority.
