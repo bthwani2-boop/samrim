@@ -177,6 +177,10 @@ jobs:
             exit 1
           fi
 
+      - name: Verify PowerShell runtime scripts parse
+        shell: pwsh
+        run: ./tools/dev/verify-powershell-syntax.ps1
+
       - name: Frozen workspace install
         shell: bash
         run: pnpm install --frozen-lockfile
@@ -196,10 +200,6 @@ jobs:
       - name: Discover Nx projects
         shell: bash
         run: pnpm run nx:projects
-
-      - name: Verify PowerShell runtime scripts parse
-        shell: pwsh
-        run: ./tools/dev/verify-powershell-syntax.ps1
 
       - name: Verify developer doctor
         shell: pwsh
