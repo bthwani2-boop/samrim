@@ -5,5 +5,6 @@
     "appsDir": "apps",
     "libsDir": "packages"
   },
-  "plugins": []
+  "plugins": [],
+  "analytics": false
 }
