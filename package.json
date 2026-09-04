@@ -40,7 +40,8 @@
     "docs:verify-command-parity": "node tools/dev/verify-doc-command-parity.mjs",
     "knowledge:verify": "node tools/dev/verify-knowledge-system.mjs",
     "repository:verify-structure": "node tools/dev/verify-repository-structure.mjs",
-    "repository:verify-hygiene": "node tools/dev/verify-structural-hygiene.mjs"
+    "repository:verify-hygiene": "node tools/dev/verify-structural-hygiene.mjs",
+    "refoundation:a2:verify": "node tools/dev/verify-a2-foundation-qualification.mjs"
   },
   "devDependencies": {
     "nx": "23.2.0",
