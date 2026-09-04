@@ -1,8 +1,9 @@
 FROM golang:1.27.1-alpine AS build
 WORKDIR /src
-COPY services/dsh/backend/go.mod ./
+COPY services/identity/clients/go ./services/identity/clients/go
+COPY services/dsh/backend ./services/dsh/backend
+WORKDIR /src/services/dsh/backend
 RUN go mod download
-COPY services/dsh/backend ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
 
 FROM scratch
