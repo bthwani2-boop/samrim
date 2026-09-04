@@ -1,0 +1,30 @@
+{
+  "name": "app-client",
+  "root": "apps/app-client",
+  "sourceRoot": "apps/app-client",
+  "projectType": "application",
+  "implicitDependencies": [
+    "identity",
+    "dsh",
+    "wlt",
+    "design-system"
+  ],
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm client"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/app-client typecheck"
+      }
+    }
+  },
+  "tags": [
+    "scope:app-client",
+    "type:app"
+  ]
+}
