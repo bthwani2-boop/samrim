@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/activation"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
@@ -326,4 +325,3 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-var _ = time.Second
