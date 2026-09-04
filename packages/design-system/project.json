@@ -9,5 +9,9 @@
         "command": "pnpm --dir packages/design-system typecheck"
       }
     }
-  }
+  },
+  "tags": [
+    "scope:design-system",
+    "type:package"
+  ]
 }
