@@ -49,6 +49,16 @@ pnpm control
 
 These commands delegate to repository-owned runtime scripts. Do not duplicate their internal environment/bootstrap logic in shell aliases or docs.
 
+## Foundation workspace closure
+
+During Foundation Construction, after manifests are stabilized and before normal frozen bootstrap, generate and verify the canonical lockfile locally:
+
+```powershell
+pnpm foundation:workspace:close
+```
+
+This command fails closed on branch mismatch, dirty worktree, wrong Node/pnpm versions, nonexistent workspace dependencies, lockfile generation failure, frozen-install failure, Nx/Go verification failure, unexpected file mutation, or invalid Foundation compose configuration. It does not commit or push the generated lockfile automatically.
+
 ## Primary verification
 
 Discover the current Nx projects:
