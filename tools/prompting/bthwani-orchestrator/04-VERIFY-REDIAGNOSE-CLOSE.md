@@ -304,6 +304,53 @@ CHECKPOINT + NO_BLOCKER + REMAINING_EXECUTABLE_WORK
 => MUST_CONTINUE
 ```
 
+## 9A. Foundation Construction exit gate
+
+When required foundation structure was built or materially refounded, A2 and Stage B are forbidden until fresh exact-current evidence proves the Foundation Construction substrate is complete and free of premature semantic furnishing.
+
+Required claims as applicable:
+
+```text
+FOUNDATION_AUTHORITY_REVISION_PARITY=PASS
+TOP_LEVEL_CANONICAL_TAXONOMY=PASS
+FOUNDATION_MANIFESTS_STABILIZED=PASS
+NONEXISTENT_WORKSPACE_DEPENDENCIES=0
+ONE_CANONICAL_LOCKFILE=PASS
+FROZEN_WORKSPACE_INSTALL=PASS
+WORKSPACE/NX_PROJECT_DISCOVERY=PASS
+WORKSPACE_TYPECHECK/BUILD/TEST/VET=PASS_WHEN_APPLICABLE
+GO_WORKSPACE_SYNC/BUILD/TEST/VET=PASS_WHEN_APPLICABLE
+
+DIRECT_DEPLOYABLE_HOST_SHELLS=PASS
+MOBILE_HOST_SHELL_PARITY=PASS
+DEPLOYABLE_IDENTITY_PRESERVED_OR_INTENTIONALLY_MIGRATED=PASS
+PREMATURE_BUSINESS_ROUTES/SCREENS_IN_FOUNDATION=0
+PREMATURE_MONOLITHIC_CAPABILITY_APP_COMPOSITION=0
+
+SERVICE_PROCESS_SKELETONS=PASS
+THIN_STARTUP=PASS
+HEALTH/READINESS=PASS
+PREMATURE_BUSINESS_ENDPOINTS/CONTRACTS/STATE_MACHINES=0
+
+INFRA/COMPOSE_CONFIG=PASS
+FOUNDATION_RUNTIME_COMPOSITION=PASS_WHEN_REQUIRED
+ROOT_CONTRACT_AUTHORITY_BOUNDARY=PASS
+DEVELOPER_LAUNCHERS/BOOTSTRAP/DOCTOR=PASS
+DOC_COMMAND_PARITY=PASS
+FOUNDATION_CI/PREVENTION=PASS
+KNOWN_FAKE_GREEN_FOUNDATION_HOLES=0
+```
+
+A lockfile is not generated to freeze a known-broken workspace. Stabilize manifests and remove losing/nonexistent dependencies first, then generate the single canonical lockfile and prove frozen installation.
+
+```text
+FOUNDATION_CONSTRUCTION_EXIT_GATE=FAIL
+=> A2_NOT_ADMISSIBLE
+=> STAGE_B_FORBIDDEN
+```
+
+Premature semantic furnishing discovered by this gate is an executable obligation: preserve proven deployable/technical identity, remove or defer the semantic implementation, then re-run the gate.
+
 ## 10. A2 adversarial zero-garbage qualification
 
 Stage B is forbidden until fresh exact-current evidence proves:
