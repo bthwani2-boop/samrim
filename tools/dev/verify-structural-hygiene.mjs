@@ -110,7 +110,10 @@ for (const file of tracked) {
     const service = segments[1];
     if (!services.has(service)) continue;
 
-    if (segments.length === 3 && ["README.md", "project.json"].includes(segments[2])) {
+    if (
+      segments.length === 3 &&
+      ["README.md", "project.json", "package.json", "tsconfig.json"].includes(segments[2])
+    ) {
       classify(file, "service-root:" + service);
       continue;
     }
