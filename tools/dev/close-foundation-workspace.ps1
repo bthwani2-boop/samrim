@@ -1,6 +1,7 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
+    [string] $ExpectedBranch = "a",
     [switch] $SkipInstall,
     [switch] $SkipDockerConfig,
     [switch] $SkipWorkspaceVerify
@@ -34,6 +35,9 @@ try {
         Fail "Unable to determine current Git branch."
     }
     Write-Host "Branch: $branch"
+    if ($branch -ne $ExpectedBranch) {
+        Fail "Expected branch '$ExpectedBranch', found '$branch'."
+    }
 
     $unmerged = @(& git diff --name-only --diff-filter=U)
     if ($LASTEXITCODE -ne 0) {
@@ -43,14 +47,12 @@ try {
         Fail ("Unresolved merge paths exist: " + ($unmerged -join ", "))
     }
 
-    & git diff --quiet
+    $initialStatus = @(& git status --porcelain)
     if ($LASTEXITCODE -ne 0) {
-        Fail "Tracked working-tree changes exist. Commit/stash them before Foundation workspace closure."
+        Fail "Unable to inspect Git working-tree status."
     }
-
-    & git diff --cached --quiet
-    if ($LASTEXITCODE -ne 0) {
-        Fail "Staged changes exist. Commit/stash them before Foundation workspace closure."
+    if ($initialStatus.Count -gt 0) {
+        Fail ("Working tree must be clean before Foundation workspace closure:" + [Environment]::NewLine + ($initialStatus -join [Environment]::NewLine))
     }
 
     $nodeVersion = (& node --version).Trim()
@@ -155,6 +157,29 @@ console.log("NONEXISTENT_WORKSPACE_DEPENDENCIES=0");
         Run-Step "Foundation Docker compose config" {
             pnpm run runtime:foundation:config
         }
+    }
+
+    $finalStatus = @(& git status --porcelain)
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Unable to inspect final Git working-tree status."
+    }
+    $unexpected = @($finalStatus | Where-Object {
+        $_ -notmatch '^(\?\?| M|M |A |AM|MM) pnpm-lock\.yaml    Write-Host "pnpm-lock.yaml is generated and verified locally."
+    Write-Host ""
+    Write-Host "Next:"
+    Write-Host "  git status --short"
+    Write-Host "  git diff -- pnpm-lock.yaml"
+    Write-Host "  git add pnpm-lock.yaml"
+    Write-Host '  git commit -m "chore(workspace): establish canonical foundation lockfile"'
+    Write-Host "  git push origin $branch"
+}
+finally {
+    Pop-Location
+}
+
+    })
+    if ($unexpected.Count -gt 0) {
+        Fail ("Verification changed files other than pnpm-lock.yaml:" + [Environment]::NewLine + ($unexpected -join [Environment]::NewLine))
     }
 
     Write-Host ""
