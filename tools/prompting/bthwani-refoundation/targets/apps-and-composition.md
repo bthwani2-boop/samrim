@@ -175,8 +175,8 @@ Split responsibilities:
 SOURCE BUSINESS EVENT
 → source domain remains owner
 
-INBOX/DELIVERY/TEMPLATE/CHANNEL STATE
-→ proven notification owner
+INBOX/PREFERENCES/TOPIC/DELIVERY-ATTEMPT STATE
+→ DSH Notifications capability
 
 OS PUSH PERMISSION/TOKEN/RECEIVE/NAVIGATION
 → app host
@@ -192,7 +192,7 @@ REFUND_COMPLETED → WLT/refund fact
 
 A notification owner may expose semantic navigation targets; the app translates them to host routes. Do not store app route strings as durable business semantics.
 
-If notification delivery becomes independently cross-service with its own persistence/API/runtime/lifecycle, promote it to a peer service rather than `shared/notifications`.
+DSH Notifications is the current semantic owner for inbox/preferences/topic/delivery-attempt records. If future executable evidence proves a genuinely independent cross-service notification service boundary, rehome that responsibility through normal service admission rather than creating `shared/notifications`.
 
 ## 6. DSH app-shaped losers
 

@@ -17,13 +17,14 @@ dispatch
 serviceability
 address
 support
+notification inbox/preferences/topic/delivery operational state
 marketing/promotion operational semantics
 rating
 special-request operational semantics
 client/partner/captain/field operational journeys
 ```
 
-Authentication/session, financial truth, generic provider management, notification delivery, and generic search are not automatically DSH responsibilities because DSH screens consume them.
+Authentication/session, financial truth, generic provider management, source-domain business-event meaning, channel/vendor transport execution, and generic search are not DSH-owned merely because DSH screens consume them. DSH Notifications specifically owns canonical inbox/preferences/topic/delivery-attempt state; originating domains retain event meaning and replaceable adapters execute channel delivery.
 
 ## 2. WLT ownership
 

@@ -32,7 +32,7 @@ Platform Control owns explicitly admitted platform-wide configuration/change/rol
 Apps are deployable hosts/composition owners: routes, navigation, shell/tabs, deep links, native adapters, app assets/build identity and cross-capability page composition.
 
 ```text
-WHERE_IT_APPEARS != WHO_OWNS_IT
+GENERAL_APP_HOST_OWNERSHIP_LAW=INHERITED_FROM_ORCHESTRATOR
 BTHWANI_APP_HOST_COMPOSES_CAPABILITIES_WITHOUT_OWNING_BUSINESS_TRUTH
 ```
 
@@ -64,7 +64,7 @@ The clean target must preserve these ownership splits when the capabilities exis
 - catalog approval/publication — DSH catalog/store truth; discovery/search only derive eligibility;
 - promotions/coupons — DSH operational eligibility/scope; WLT owns authoritative monetary postings, funding, settlement/refund effects;
 - ratings/reviews — DSH trust/commerce truth; search/analytics may consume projections;
-- notifications — source business event remains with its source domain, delivery/inbox mechanics belong to a proven notification capability/adapter, native route/deep link belongs to the app host;
+- notifications — source business event remains with its source domain; DSH Notifications owns inbox/preferences/topic/delivery-attempt records; channel adapters execute transport; native route/deep-link translation belongs to the app host;
 - media/assets — business association and access belong to the owning domain, binary object transport/storage remains technical infrastructure;
 - search/discovery — derived query/read-model behavior; never mutation/authorization source;
 - analytics — derived read model with provenance/freshness; never transactional writer;
