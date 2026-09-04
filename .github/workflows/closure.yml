@@ -52,6 +52,7 @@ jobs:
           name: evidence-closure-classification-${{ github.run_id }}
           path: .ci-evidence/classification.json
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
 
   repository:
@@ -157,4 +158,5 @@ jobs:
           name: evidence-promotion-closure-${{ github.run_id }}
           path: .ci-evidence
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30

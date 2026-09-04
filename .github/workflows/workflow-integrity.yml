@@ -55,6 +55,7 @@ jobs:
           name: evidence-workflow-actionlint-${{ github.run_id }}
           path: .ci-evidence
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
 
   zizmor:
@@ -101,6 +102,7 @@ jobs:
           name: evidence-workflow-zizmor-${{ github.run_id }}
           path: .ci-evidence
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
 
   pinact:
@@ -141,4 +143,5 @@ jobs:
           name: evidence-workflow-pinact-${{ github.run_id }}
           path: .ci-evidence
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14

@@ -44,6 +44,7 @@ jobs:
           name: evidence-classification-${{ github.run_id }}
           path: .ci-evidence/classification.json
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
 
   repository:
