@@ -35,7 +35,8 @@
     "runtime:foundation:up": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml --profile foundation up -d --build",
     "runtime:foundation:status": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml --profile foundation ps",
     "runtime:foundation:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-foundation-runtime.ps1",
-    "foundation:workspace:close": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-workspace.ps1"
+    "foundation:workspace:close": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-workspace.ps1",
+    "nx:verify-tags": "node tools/dev/verify-nx-project-tags.mjs"
   },
   "devDependencies": {
     "nx": "23.2.0",
