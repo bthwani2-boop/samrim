@@ -191,10 +191,20 @@ const codeFiles = tracked.filter((item) =>
   /\.(go|ts|tsx|js|jsx|mjs|cjs)$/.test(item),
 );
 
+const deferredMarkers = [
+  ["TO", "DO"].join(""),
+  ["FIX", "ME"].join(""),
+  ["HA", "CK"].join(""),
+  ["X", "XX"].join(""),
+];
+const deferredMarkerPattern = new RegExp(
+  "\\b(?:" + deferredMarkers.join("|") + ")\\b",
+);
+
 for (const item of codeFiles) {
   const content = fs.readFileSync(path.join(repoRoot, item), "utf8");
 
-  if (/\b(?:TODO|FIXME|HACK|XXX)\b/.test(content)) {
+  if (deferredMarkerPattern.test(content)) {
     fail("Deferred structural marker remains in code: " + item);
   }
 
