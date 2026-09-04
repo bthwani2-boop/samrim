@@ -79,7 +79,7 @@ Verify app-owned mobile identities/configuration:
 pnpm mobile:verify-config
 ```
 
-Validate and start the Foundation runtime composition:
+Validate the Foundation runtime composition manually when diagnosing:
 
 ```powershell
 pnpm runtime:foundation:config
@@ -87,6 +87,14 @@ pnpm runtime:foundation:up
 pnpm runtime:foundation:status
 pnpm runtime:foundation:verify
 ```
+
+For the canonical local Foundation runtime proof, use:
+
+```powershell
+pnpm foundation:runtime:close
+```
+
+This command requires a clean branch `a`, creates an ignored local compose `.env` when missing, builds and starts the Foundation profile, retries the four service health/readiness endpoints until ready, verifies all seven compose services are running, fails on repository mutation, prints diagnostics on failure, and stops the runtime after a successful proof unless `-KeepRunning` is supplied to the underlying PowerShell script.
 
 Contract/database/runtime-specific commands are discoverable from the current root/service manifests; choose only evidence applicable to the change.
 
