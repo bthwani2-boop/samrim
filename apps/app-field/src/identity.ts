@@ -24,10 +24,7 @@ let clientValue: IdentityClient | null = null;
 let sessionValue: IdentitySessionManager | null = null;
 
 function configuredEnvironmentUrl(): string | undefined {
-  const runtime = globalThis as typeof globalThis & {
-    process?: { env?: Record<string, string | undefined> };
-  };
-  const value = runtime.process?.env?.EXPO_PUBLIC_IDENTITY_API_URL?.trim();
+  const value = process.env.EXPO_PUBLIC_IDENTITY_API_URL?.trim();
   return value || undefined;
 }
 
