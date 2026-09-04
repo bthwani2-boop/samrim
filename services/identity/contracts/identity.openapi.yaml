@@ -209,6 +209,8 @@ paths:
         - $ref: "#/components/parameters/OperatorContext"
         - name: role
           in: query
+          required: true
+          description: Must be within the authenticated service caller responsibility.
           schema:
             $ref: "#/components/schemas/ActorType"
         - name: q
