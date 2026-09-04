@@ -41,7 +41,8 @@
     "foundation:verify-structure": "node tools/dev/verify-foundation-structure.mjs",
     "docs:verify-command-parity": "node tools/dev/verify-doc-command-parity.mjs",
     "foundation:verify-static": "pnpm run mobile:verify-config && node tools/dev/verify-workspace-dependencies.mjs && pnpm run nx:verify-tags && pnpm run foundation:verify-structure && pnpm run docs:verify-command-parity && pnpm run knowledge:verify",
-    "knowledge:verify": "node tools/dev/verify-knowledge-system.mjs"
+    "knowledge:verify": "node tools/dev/verify-knowledge-system.mjs",
+    "repository:verify-structure": "node tools/dev/verify-repository-structure.mjs"
   },
   "devDependencies": {
     "nx": "23.2.0",
