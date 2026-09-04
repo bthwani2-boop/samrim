@@ -61,4 +61,4 @@ Idempotency/temporary operational rows are cleaned only under current retention 
 
 ## Decision boundary
 
-This runbook cannot issue a custom closure label. Use only the delivery-policy decision vocabulary (`governance/policies/delivery.md` §18). A runbook or support procedure alone cannot produce `CLOSED_WITH_EVIDENCE`.
+This runbook cannot issue a custom closure label. Where release evidence is being classified, use the §18 audit vocabulary `PASS | FAIL | NEEDS_EVIDENCE | N/A_PROVEN`; actual release closure is governed by §19 and applicable earlier delivery gates. A runbook or support procedure alone cannot create a custom closure state such as `CLOSED_WITH_EVIDENCE`.

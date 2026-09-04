@@ -12,7 +12,7 @@ CURRENT_MOBILE_COMMAND_AUTHORITY: package.json + tools/mobile/start-mobile-runti
 | Captain | `pnpm captain` | 18103 |
 | Field | `pnpm field` | 18104 |
 
-Each root command delegates to the app runtime wrapper and shared mobile tooling. Do not launch a second hand-maintained Metro configuration with different environment semantics.
+Each root command delegates to the repository mobile launcher and cross-repository mobile tooling. Do not launch a second hand-maintained Metro configuration with different environment semantics.
 
 ## Device workflow
 
@@ -28,16 +28,16 @@ For screen mirroring, use `scrcpy` against the exact connected ADB serial.
 
 ## Cache/restart
 
-The app runtime wrappers support governed cache clearing. Prefer the repository command/path over deleting arbitrary generated/native directories.
+The repository mobile launcher supports governed app-scoped cache clearing. Prefer the repository launcher/option over deleting arbitrary generated or native directories.
 
 ## Environment and APIs
 
-Mobile runtime configuration must remain public-client safe. Server credentials, provider secrets and privileged service tokens never enter `EXPO_PUBLIC_*` or the mobile bundle.
+Mobile runtime configuration must remain public-client safe. Server credentials, provider secrets, and privileged service tokens never enter `EXPO_PUBLIC_*` or the mobile bundle.
 
 All API endpoints must come from active runtime configuration rather than hardcoded screen logic. Exact host ports are executable configuration, not portable documentation authority.
 
 ## Native/build identity
 
-Expo/EAS project identity, Android/iOS identifiers, schemes, runtime/update configuration and native plugins are deployable identity. Do not change them as incidental cleanup.
+Expo/EAS project identity, Android/iOS identifiers, schemes, runtime/update configuration, and native plugins are deployable identity. Do not change them as incidental cleanup.
 
 For EAS operations use `development/eas.md` and each app's checked-in `eas.json`/Expo project identity. EAS operations do not have a root package-script wrapper in the current Foundation.

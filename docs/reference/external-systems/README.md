@@ -27,7 +27,7 @@ DISCOVER_MISSING_TEST_SCENARIOS
 DISCOVER_BETTER_GENERIC_TECHNICAL_COMPONENTS
 ```
 
-Then BThwani must implement the required truth inside its canonical owners using BThwani’s existing languages, bounded contexts, contracts, and deployment identities unless a small external component independently passes the adoption gate in this document.
+Then BThwani must implement the required truth inside its canonical owners using BThwani’s existing languages, bounded contexts, contracts, and deployment identities unless the applicable durable Governance dependency/adoption policy independently approves a component.
 
 ---
 
@@ -62,7 +62,7 @@ NOT_A_BTHWANI_STACK_MATCH
 
 If the system is one of the strongest/mature references for the exact root and its public code/docs/design material can expose missing logic, edge cases, state machines, contracts, operational controls, or failure handling, it may be used as a reference.
 
-For direct code reuse, dependency, or runtime adoption, the stricter license, stack, ownership, cost, maintenance, operations, and source-of-truth gates in this document still apply.
+For direct code reuse, dependency, or runtime adoption, direct reuse/adoption is evaluated by the applicable durable Governance architecture, standards, security, runtime, and delivery policies; this reference file supplies evidence only.
 
 Therefore:
 
@@ -300,141 +300,27 @@ The goal is maximum semantic coverage with minimum browsing fan-out.
 
 ## Adoption and research policy
 
-## 2. Non-negotiable stack preservation
+## 2. Technology-stack reference boundary
 
-External-source research does **not** authorize a platform rewrite.
+The current technology and bounded-context direction is durable architecture/engineering Governance, not Reference authority.
+See `governance/architecture/SYSTEM-CONTEXT.md`, `governance/architecture/REPOSITORY-TOPOLOGY.md`, `governance/policies/architecture-and-fullstack.md`, and `governance/policies/standards-and-quality.md`.
 
-The default canonical technology direction remains:
-
-```text
-BACKEND
-→ Go
-
-DATABASE
-→ PostgreSQL / PostGIS
-
-MOBILE
-→ TypeScript
-→ React Native
-→ Expo
-
-CONTROL PANEL
-→ TypeScript
-→ React
-→ Next.js
-
-PRIMARY BUSINESS BOUNDED CONTEXTS
-→ DSH
-→ WLT
-→ Identity
-→ Workforce
-→ other independently proven services only
-```
-
-Therefore, the following are forbidden by default:
-
-```text
-REPLACE_GO_BACKEND_WITH_NODE_PLATFORM
-REPLACE_GO_BACKEND_WITH_PYTHON_PLATFORM
-REPLACE_GO_BACKEND_WITH_RUBY_PLATFORM
-REPLACE_POSTGRESQL_WITH_AN_UNRELATED_DATABASE
-REPLACE_EXPO_APPS_WITH_AN_EXTERNAL_MARKETPLACE_FRONTEND
-REPLACE_DSH/WLT_WITH_A_MONOLITHIC_EXTERNAL_PLATFORM
-ADOPT_A_WHOLE_PLATFORM_ONLY_BECAUSE_IT_IS_OPEN_SOURCE
-```
-
-A technology change is allowed only when the normal orchestrator/root-cause process independently proves that the current technology itself is the root defect and that migration is safer and materially better than refounding inside the existing stack.
+This corpus may compare alternatives and expose weaknesses in the current stack. It cannot approve, forbid, or execute a stack/domain replacement. Any such change must be governed at the durable owners and proven in executable source.
 
 ---
 
-## 3. Canonical usage model
+## 3. Reference-use classification
 
-Every external project must be classified into exactly one of these modes:
-
-### 3.1 REFERENCE_ONLY
-
-Read architecture, state machines, APIs, tests, failure handling, product flows, database models, and invariants.
-
-Do not copy or import code.
-
-Use this mode by default for:
+Classify external material for research as one of:
 
 ```text
-whole marketplace platforms
-whole logistics platforms
-whole ERP/banking platforms
-copyleft projects
-projects in a materially different stack
-projects with mixed/open-core licensing
+REFERENCE_ONLY
+BEHAVIORAL_INVARIANT_REFERENCE
+TEST_ORACLE_REFERENCE
+COMPONENT_CANDIDATE_FOR_GOVERNANCE_REVIEW
 ```
 
-### 3.2 SELECTIVE_LOGIC_REFERENCE
-
-Extract a specific behavioral invariant or workflow, then implement it natively inside BThwani.
-
-Example:
-
-```text
-EXTERNAL PROJECT
-→ refund state machine is stronger than ours
-→ identify invariant
-→ map invariant to WLT owner
-→ implement in Go/PostgreSQL/contracts/tests
-→ no external platform dependency introduced
-```
-
-### 3.3 SMALL_COMPONENT_CANDIDATE
-
-A focused library/tool may be adopted when it removes substantial custom plumbing and passes all gates.
-
-Examples:
-
-```text
-Testcontainers-Go
-sqlc
-pgx
-oapi-codegen
-Watermill
-OpenTelemetry-Go
-```
-
-None is automatically required.
-
-### 3.4 COMPONENT/SERVICE_ADOPTION
-
-A self-contained external engine may be integrated behind a semantic BThwani port only when it owns no BThwani business truth and can be replaced without rewriting the domain.
-
-Examples that may be evaluated in the future:
-
-```text
-routing engine
-GPS/telemetry engine
-object-storage implementation
-search engine
-observability backend
-```
-
-The domain must depend on a semantic port, never directly on the vendor/project.
-
-### 3.5 WHOLE_PLATFORM_REPLACEMENT
-
-Forbidden by default.
-
-This mode requires explicit proof that:
-
-```text
-CURRENT_BTHWANI_BOUNDARY_IS_A_PROVEN_LOSER
-REPLACEMENT_MATCHES_REQUIRED_TRUTH
-STACK_MIGRATION_COST_IS_ACCEPTABLE
-ALL_FIVE_SURFACES_CAN_CUT_OVER
-DSH/WLT/IDENTITY/WORKFORCE_BOUNDARIES_REMAIN_CORRECT
-DATA_MIGRATION_IS_PROVEN
-LICENSE_IS_ACCEPTABLE
-LOCK_IN_IS_ACCEPTABLE
-LEVEL_4_CLOSURE_GETS_FASTER_NOT_SLOWER
-```
-
-Absence of this proof means: do not replace.
+These labels control how evidence is consumed; they do not authorize dependency/runtime adoption. Direct reuse/adoption is decided only by applicable durable Governance after exact component/version/license/security/maintenance/ownership/operational evidence is reviewed.
 
 ---
 
@@ -443,7 +329,7 @@ Absence of this proof means: do not replace.
 Whenever a BThwani root touches an area covered by mature external systems:
 
 ```text
-PIN_LIVE_h
+PIN_CURRENT_RELEVANT_EVIDENCE
 → IDENTIFY_CURRENT_BTHWANI_OWNER
 → IDENTIFY_REQUIRED_PRODUCT_TRUTH
 → SELECT_RELEVANT_EXTERNAL_REFERENCES
@@ -584,126 +470,31 @@ cross-service contract tests
 
 ---
 
-## 10. Adoption gate for any external dependency
+## 10. Dependency-adoption policy boundary
 
-No dependency may be added until all applicable questions are answered:
+This corpus may identify a component candidate and collect comparative evidence. Dependency/runtime adoption authority lives in `governance/policies/standards-and-quality.md`, with architecture, security, runtime, and delivery owners applied as relevant.
 
-```text
-1. WHAT_PROVEN_ROOT_REQUIRES_THIS?
-2. WHAT_BTHWANI_TRUTH_DOES_IT_OWN?
-3. SHOULD_IT_OWN_THAT_TRUTH?
-4. DOES_IT_REPLACE_A_PROVEN_LOSER?
-5. DOES_IT_REMOVE_SUBSTANTIAL_CUSTOM_PLUMBING?
-6. CAN_THE_DOMAIN_DEPEND_ON_A_SEMANTIC_PORT_INSTEAD?
-7. IS_THE_LICENSE_ACCEPTABLE_FOR_THE_EXACT_VERSION/COMPONENT?
-8. IS_IT_FREE_TO_USE_IN_THE_REQUIRED_MODE?
-9. CAN_LEVEL_4_BE_REPRODUCED_WITHOUT_A_PAID_SAAS_DEPENDENCY?
-10. DOES_IT_PRESERVE_GO/POSTGRES/EXPO/NEXT_DIRECTION?
-11. DOES_IT_CREATE_A_SECOND_SOURCE_OF_TRUTH?
-12. DOES_IT_CREATE_A_SECOND_GENERATOR/REGISTRY/WRITER?
-13. DOES_IT_ADD_RUNTIME/OPERATIONS_COMPLEXITY?
-14. IS_MAINTENANCE_ACTIVE_ENOUGH?
-15. CAN_IT_BE_REMOVED/REPLACED_WITHOUT_REWRITING_BUSINESS_LOGIC?
-16. DOES_IT_MAKE_THE_CURRENT_ROOT_FASTER_TO_CLOSE?
-```
-
-Adoption is allowed only when the answer set proves a net reduction in canonical complexity.
+Do not duplicate the durable adoption checklist here. Record reference findings, then route the candidate to the canonical Governance review.
 
 ---
 
-## 11. Zero-cost rule
+## 11. Cost evidence boundary
 
-BThwani refoundation must not require buying source code or a commercial source license merely to achieve canonical closure.
-
-Default preference order:
-
-```text
-1. EXISTING_BTHWANI_CODE_IF_CANONICAL
-2. NATIVE_REFOUNDATION_IN_EXISTING_STACK
-3. PERMISSIVE_FREE_OSS_COMPONENT
-4. LOCAL_SIMULATOR / SELF_HOSTED_FREE_TOOL
-5. FREE_EXTERNAL_SANDBOX WHEN USEFUL
-6. COMPLEX_COPYLEFT_REFERENCE_ONLY
-7. PAID_SOURCE_OR_REQUIRED_PAID_SAAS = NOT_A_DEFAULT_CLOSURE_DEPENDENCY
-```
-
-Free-tier availability is operational convenience, not architectural truth.
+Cost, free-tier availability, and self-hosting feasibility are reference evidence, not architecture policy. Current pricing/trials must be revalidated when material. A paid/free label by itself neither approves nor rejects an architecture; the durable owner evaluates total operational, licensing, security, and replacement cost.
 
 ---
 
-## 12. License handling
+## 12. License evidence boundary
 
-Before direct code reuse or dependency adoption:
-
-```text
-FETCH_CURRENT_LICENSE
-→ VERIFY_EXACT_REPOSITORY
-→ VERIFY_EXACT_COMPONENT
-→ VERIFY_EXACT_VERSION/TAG
-→ CHECK_NOTICE/ATTRIBUTION_REQUIREMENTS
-→ CHECK_COPYLEFT/SOURCE_DISTRIBUTION_IMPLICATIONS
-→ RECORD_DECISION_IN_NORMAL_DEPENDENCY_REVIEW_EVIDENCE
-```
-
-Default engineering policy:
-
-```text
-MIT / BSD / Apache-2.0
-→ easiest direct-candidate class, still verify
-
-MPL
-→ conditional; inspect file-level obligations
-
-GPL / AGPL / strong copyleft
-→ reference-only by default unless explicitly approved after license review
-
-mixed / open-core / commercial add-ons
-→ reference-only by default; verify component boundaries before use
-
-unknown / no license
-→ no code reuse
-```
-
-This is an engineering risk policy, not legal advice.
+Before direct code/dependency reuse, obtain the exact current license/component/version and route it through durable dependency/security/delivery review. This file may record source links and observed license facts, but it does not issue legal approval or permanent license policy.
 
 ---
 
-## 13. Provider and SaaS rule
+## 13. Provider/SaaS reference boundary
 
-External providers must remain adapters behind semantic ports.
+Provider products are compared here only as possible implementations behind BThwani semantic ports. Domain-specific port ownership, secret boundaries, retry/unknown-outcome semantics, and provider adoption rules live in `governance/policies/architecture-and-fullstack.md`, `governance/policies/runtime-reliability.md`, `governance/policies/security.md`, and the owning Product/System model.
 
-Examples:
-
-```text
-DSH
-→ Geocoder
-→ RoutePlanner
-
-WLT
-→ PaymentGateway
-→ PayoutRail
-
-Identity / Notification owner
-→ SmsSender
-→ EmailSender
-→ PushSender
-
-Media owner
-→ ObjectStorage
-```
-
-Forbidden:
-
-```text
-GenericProvider.execute(...)
-ProviderManager as a business god service
-Vendor-specific domain models
-Vendor-specific business truth
-Provider credentials as general business records
-Blind financial fallback
-```
-
-Development may use real sandboxes/free tiers where practical, but Level-4 closure must have a reproducible path that does not depend on buying access to a SaaS provider.
+A provider name never becomes a BThwani business owner merely because it appears in this corpus.
 
 ---
 
@@ -771,49 +562,19 @@ CONTRACT_GENERATION_REPRODUCIBILITY
 
 ---
 
-## 20. Explicit prohibitions
+## 20. Reference prohibitions boundary
 
-```text
-DO_NOT_COPY_AN_EXTERNAL_ARCHITECTURE_WHOLESALE
-DO_NOT_CHANGE_LANGUAGE_TO_MATCH_A_REFERENCE_PROJECT
-DO_NOT_CHANGE_DATABASE_TO_MATCH_A_REFERENCE_PROJECT
-DO_NOT_CREATE_A_GENERIC_PROVIDERS_SERVICE
-DO_NOT_CREATE_A_GENERIC_SHARED_DUMP
-DO_NOT_ADD_A_BROKER_WITHOUT_A_PROVEN_ROOT
-DO_NOT_ADD_SQLC/PGX/TESTCONTAINERS/OAPI_CODEGEN_ONLY_FOR_MODERNIZATION
-DO_NOT_ADD_TWO_TOOLS_FOR_THE_SAME_GENERATION/AUTHORITY_ROLE
-DO_NOT_IMPORT_COPYLEFT_CODE_WITHOUT_REVIEW
-DO_NOT_ASSUME_GITHUB_PUBLIC == PERMISSIVE_LICENSE
-DO_NOT_ASSUME_FREE_TIER == DURABLE_FREE_ARCHITECTURE
-DO_NOT_MAKE_EXTERNAL_PROJECTS_CANONICAL_BTHWANI_AUTHORITIES
-DO_NOT_PRESERVE_A_LOSER_JUST_TO_MATCH_AN_EXTERNAL_PATTERN
-DO_NOT_TURN_THIS_FILE_INTO_A_PROGRESS_LEDGER
-DO_NOT_PIN_LIVE_h_STATE_IN_THIS_FILE
-```
+This file must remain non-authoritative: do not copy an external architecture wholesale, infer BThwani ownership from an external directory/model, turn reference notes into campaign state, or treat a public repository/free tier as permission for code reuse/adoption.
+
+Normative engineering prohibitions belong to Governance and should be linked rather than duplicated here.
 
 ---
 
-## 21. Decision rule
+## 21. Reference-to-decision handoff
 
-For every external idea/component:
+A reference result terminates by mapping evidence to the current BThwani semantic owner and one of: already covered, defective implementation, missing required behavior, not applicable, or component candidate for Governance review.
 
-```text
-IF BTHWANI_ALREADY_HAS_CORRECT_CANONICAL_TRUTH
-→ KEEP BTHWANI
-
-IF BTHWANI_HAS_REQUIRED_TRUTH_BUT_IMPLEMENTATION_IS_DEFECTIVE
-→ REFOUND_BTHWANI
-
-IF REQUIRED_LOGIC_IS_MISSING
-→ IMPLEMENT_IT_IN_THE_CANONICAL_BTHWANI_OWNER
-
-IF A_SMALL_FREE_COMPONENT_REMOVES_MATERIAL_GENERIC_PLUMBING
-AND LICENSE/MAINTENANCE/OPERATIONS/OWNERSHIP_GATES_PASS
-→ ADOPT_BEHIND_THE_CORRECT_BOUNDARY
-
-IF A_WHOLE_EXTERNAL_PLATFORM_REQUIRES_STACK/DOMAIN_REPLACEMENT
-→ REFERENCE_ONLY BY DEFAULT
-```
+The actual keep/refound/implement/adopt/reject decision is made by the applicable durable Product/System/architecture/policy owner and then verified in executable source. This file does not decide the architecture.
 
 ---
 

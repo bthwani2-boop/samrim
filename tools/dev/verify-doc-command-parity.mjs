@@ -36,6 +36,13 @@ const pnpmBuiltins = new Set([
 
 const forbiddenLegacyPatterns = [
   { label: "legacy mobile wrapper", regex: /tools\/mobile\/mobile\.ps1/i },
+  { label: "legacy app runtime wrapper wording", regex: /app runtime wrappers?/i },
+  { label: "stale LeanCTX repository policy path", regex: /\.agents\/tools\/leanctx\.md/i },
+  { label: "stale LeanCTX adapter path", regex: /\bLEAN-CTX\.md\b/i },
+  { label: "stale agent routing index", regex: /\.agents\/INDEX\.md/i },
+  { label: "stale AGENTS root path", regex: /\bAGENTS\.md\b/i },
+  { label: "stale LeanCTX tracked config", regex: /\.lean-ctx(?:\.toml|-id)\b/i },
+  { label: "donor-specific reference pin", regex: /PIN_LIVE_h/i },
   { label: "legacy full runtime command", regex: /runtime:full(?::smoke)?/i },
   { label: "legacy verify full command", regex: /verify:full/i },
   { label: "legacy reverse wrapper", regex: /\bpnpm\s+reverse\b/i },

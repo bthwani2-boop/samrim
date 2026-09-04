@@ -4,24 +4,16 @@ DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
 PRODUCT_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-LeanCTX is an optional context-reduction and code-navigation tool. It is not a governance source, Product Truth source, approval authority, or evidence substitute.
-
-Canonical tool policy: `.agents/tools/leanctx.md`.
-Agent adapter: `LEAN-CTX.md`.
-Agent routing index: `.agents/INDEX.md`.
+LeanCTX is an optional local context-reduction tool. The current repository Foundation does not materialize a repository-owned LeanCTX policy, adapter, routing index, or committed LeanCTX configuration.
 
 ## Use when
 
-Use LeanCTX when repeated reads, large search output, or context compression would materially reduce noise while preserving the exact files, symbols, evidence, blockers, and decision boundaries needed for the task.
-
-Do not use it automatically for small/scoped work. Do not let summarization replace exact contract, migration, security, finance, or candidate-bound evidence that must be inspected directly.
+Use LeanCTX only when repeated reads or large search output materially benefit from context compression. Do not use compression instead of inspecting exact contracts, migrations, security or finance evidence, or candidate-bound source required for a consequential decision.
 
 ## Operating rule
 
-Follow the normal tool ladder from `AGENTS.md`: direct inspection and focused search first; LeanCTX only when context reduction is actually useful. Any conclusion produced from compressed context must still be reconciled with the authoritative repository source before a consequential write or closure claim.
+Start with direct repository inspection and focused search. If a locally installed LeanCTX integration is used, treat its output as a navigation aid only and reconcile every consequential conclusion with authoritative repository source before write, verification, or closure.
 
-## Local setup
+## Local state
 
-Use the repository's current LeanCTX configuration (`.lean-ctx.toml` and `.lean-ctx-id`) and the executable/tool integration registered for the workspace. Installation or invocation details may change with the tool version; verify the installed command rather than relying on historical examples.
-
-Never commit generated caches, credentials, private context dumps, or local machine-specific state unless a repository contract explicitly requires them.
+Installation, caches, IDs, local configuration, and host-specific integration state are developer-machine concerns unless the repository later admits an explicit tracked tool contract. Never commit credentials, private context dumps, generated caches, or machine-specific LeanCTX state merely to make a local integration work.
