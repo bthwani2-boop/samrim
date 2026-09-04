@@ -117,9 +117,9 @@ jobs:
             git show --check --format= HEAD
           fi
 
-      - name: Verify Foundation structure
+      - name: Verify durable repository structure
         shell: bash
-        run: node tools/dev/verify-foundation-structure.mjs
+        run: pnpm run repository:verify-structure
 
       - name: Verify docs command parity
         shell: bash
