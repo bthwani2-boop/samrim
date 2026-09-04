@@ -147,4 +147,3 @@ The durable required-check interface is intentionally small. Tool-specific jobs 
 | Final custom assurance verdict | promotion-closure |
 
 Generated evidence is run-scoped and must never become product or governance truth.
-
