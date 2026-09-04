@@ -37,7 +37,7 @@
     "runtime:foundation:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-foundation-runtime.ps1",
     "foundation:workspace:close": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-workspace.ps1",
     "nx:verify-tags": "node tools/dev/verify-nx-project-tags.mjs",
-    "foundation:runtime:close": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 -Path tools/dev/close-foundation-runtime.ps1,tools/dev/verify-foundation-runtime.ps1 && pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-runtime.ps1"
+    "foundation:runtime:close": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 && pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-runtime.ps1"
   },
   "devDependencies": {
     "nx": "23.2.0",
