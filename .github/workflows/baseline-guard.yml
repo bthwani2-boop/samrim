@@ -2,7 +2,7 @@ name: Foundation Baseline Guard
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
     branches: [main]
 
@@ -37,13 +37,67 @@ jobs:
             governance
             docs
             tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md
-            tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md
             .github/CODEOWNERS
             .github/pull_request_template.md
           )
           for path in "${required[@]}"; do
             [[ -e "${path}" ]] || { echo "::error::Required foundation path missing: ${path}"; exit 1; }
           done
+
+          if [[ -d tools/prompting/bthwani-refoundation ]]; then
+            [[ -f tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md ]] || {
+              echo "::error::Refoundation package exists without its entrypoint"
+              exit 1
+            }
+            orchestrator_profile="$(awk -F': ' '/^REFOUNDATION_PROFILE_REVISION:/ {print $2; exit}' tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md)"
+            refoundation_revision="$(awk -F': ' '/^PACKAGE_REVISION:/ {print $2; exit}' tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md)"
+            [[ -n "${orchestrator_profile}" && "${orchestrator_profile}" == "${refoundation_revision}" ]] || {
+              echo "::error::Orchestrator/refoundation revision mismatch: orchestrator=${orchestrator_profile:-missing} refoundation=${refoundation_revision:-missing}"
+              exit 1
+            }
+          fi
+
+          if [[ -f package.json && ! -f pnpm-lock.yaml ]]; then
+            echo "::error::Root package.json exists but the canonical pnpm-lock.yaml is missing"
+            exit 1
+          fi
+
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const roots = ['apps', 'services', 'packages'];
+          const manifests = [];
+          for (const root of roots) {
+            if (!fs.existsSync(root)) continue;
+            for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+              if (!entry.isDirectory()) continue;
+              const manifest = path.join(root, entry.name, 'package.json');
+              if (fs.existsSync(manifest)) manifests.push(manifest);
+            }
+          }
+          if (fs.existsSync(path.join('contracts', 'package.json'))) manifests.push(path.join('contracts', 'package.json'));
+          const packages = new Map();
+          for (const manifest of manifests) {
+            const json = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+            if (json.name) packages.set(json.name, manifest);
+          }
+          const missing = [];
+          for (const manifest of manifests) {
+            const json = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+            for (const section of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+              for (const [name, spec] of Object.entries(json[section] || {})) {
+                if (typeof spec === 'string' && spec.startsWith('workspace:') && !packages.has(name)) {
+                  missing.push(`${manifest}: ${section} -> ${name} (${spec})`);
+                }
+              }
+            }
+          }
+          if (missing.length) {
+            console.error('::error::Nonexistent workspace dependencies detected');
+            for (const item of missing) console.error(item);
+            process.exit(1);
+          }
+          NODE
 
           for root in core shared; do
             [[ ! -e "${root}" ]] || { echo "::error::Forbidden top-level ownership class: ${root}"; exit 1; }
@@ -55,7 +109,9 @@ jobs:
           fi
 
           forbidden='bthwani2-boop/bthwani-suite-next|bthwani-suite-next|D:\\bthwani-suite-next|C:\\bthwani-secrets|origin/h|RE_PIN_h|UNKNOWN_CURRENT_h_HEAD|H_TRUSTWORTHY_CANONICAL_BASELINE_REFOUNDATION_COMPLETE'
-          if git grep -n -I -E -- "${forbidden}" -- . ':(exclude).github/workflows/baseline-guard.yml' ; then
+          if git grep -n -I -E -- "${forbidden}" -- . \
+            ':(exclude).github/workflows/baseline-guard.yml' \
+            ':(exclude)tools/prompting/bthwani-refoundation/**' ; then
             echo "::error::Donor/campaign-specific authority residue found"
             exit 1
           fi
