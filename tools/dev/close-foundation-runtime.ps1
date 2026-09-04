@@ -171,7 +171,7 @@ function Verify-HostPortsAvailable {
         }
 
         if ($seen.ContainsKey($port)) {
-            $failures += "Duplicate host port $port: $($seen[$port]) and $key"
+            $failures += "Duplicate host port ${port}: $($seen[$port]) and $key"
             continue
         }
 
