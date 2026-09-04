@@ -126,7 +126,11 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, ipHash string
 		activationID, a.ID, role, a.PhoneE164, codeHash, ipHash, expires); err != nil {
 		return domain.ActivationChallenge{}, err
 	}
-	if err := auditTx(ctx, tx, "activation.issued", a.ID, a.ID, "success", "", map[string]any{"role": role}); err != nil {
+	principal := a.ID
+	if principal == "" {
+		principal = "public-otp"
+	}
+	if err := auditTx(ctx, tx, "activation.issued", a.ID, principal, "success", "", map[string]any{"role": role}); err != nil {
 		return domain.ActivationChallenge{}, err
 	}
 	if err := tx.Commit(); err != nil {
