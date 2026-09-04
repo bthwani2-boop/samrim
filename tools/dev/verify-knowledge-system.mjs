@@ -29,6 +29,22 @@ if (ids.includes("CATALOG_APPROVAL_PUBLICATION")) failures.push("CATALOG_APPROVA
 if (ids.includes("PLATFORM_CHANGE_SETS")) failures.push("PLATFORM_CHANGE_SETS remains a parallel durable capability");
 if (ids.includes("WLT_MONEY_MOVEMENT_SETTLEMENT")) failures.push("ambiguous legacy WLT_MONEY_MOVEMENT_SETTLEMENT capability name remains");
 
+const highRiskBoundaryIds = [
+  "ORDER_CREATION",
+  "PARTNER_ONBOARDING_STORE_PUBLICATION",
+  "CENTRAL_CATALOG",
+  "PROMOTIONS_COUPONS_FUNDING",
+  "CART_CHECKOUT",
+  "FIELD_OPERATIONS_ASSIGNMENT_READINESS",
+  "MARKETING_CAMPAIGNS_LOYALTY",
+  "PLATFORM_SOVEREIGN_CONTROL_PLANE",
+  "SETTLEMENTS_COMMISSIONS",
+  "WLT_MONEY_MOVEMENT_PAYOUT_RECONCILIATION",
+];
+for (const id of highRiskBoundaryIds) {
+  const section = sections.find((x) => x.id === id);
+  if (!section || !section.body.includes("**Boundary/non-overlap.**")) failures.push(id + " missing explicit non-overlap boundary");
+}
 const checks = [
   ["Problem", (b) => b.includes("**Problem.")],
   ["Target state", (b) => b.includes("**Target state.")],

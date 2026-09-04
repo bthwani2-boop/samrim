@@ -341,6 +341,8 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Canonical ownership.** DSH operational order truth; WLT financial truth.
 
+**Boundary/non-overlap.** CART_CHECKOUT owns cart mutation, checkout validation, checkout-intent state and the eligibility handoff. ORDER_CREATION begins only after that boundary and owns atomic order creation plus immutable accepted order snapshots; it does not re-own cart or checkout state.
+
 **Material deployable surfaces.** app-client, app-partner, control-panel.
 
 **Business invariants**
@@ -482,6 +484,8 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 **Primary actors.** field-agent, partner-owner, control-operator, client.
 
 **Canonical ownership.** DSH partner/store operational truth; WLT payout-destination truth; Identity trusted context.
+
+**Boundary/non-overlap.** FIELD_OPERATIONS_ASSIGNMENT_READINESS owns field assignment/visit/check/evidence lifecycle. This capability consumes verified field evidence and owns Partner/Store onboarding, activation/readiness decision and store publication eligibility. CENTRAL_CATALOG separately owns taxonomy/master-product/assortment/catalog publication; customer visibility requires all applicable owners to pass.
 
 **Material deployable surfaces.** app-client, app-partner, app-field, control-panel.
 
@@ -1219,6 +1223,8 @@ Resend-invite preserves `invited`; ended membership is not silently reused as ac
 
 **Canonical ownership.** DSH Central Catalog capability. Catalog approval/publication is a subcapability/workflow of Central Catalog; search/discovery is derived; binary object storage is a technical adapter.
 
+**Boundary/non-overlap.** PARTNER_ONBOARDING_STORE_PUBLICATION owns Partner/Store onboarding, activation/readiness and store publication eligibility. CENTRAL_CATALOG owns taxonomy, master-product identity, governed attributes/relationships, assortment/proposals and catalog/product publication. Neither may mutate the other's lifecycle merely to force customer visibility.
+
 **Material deployable surfaces.** app-partner, app-field where evidence/proposals are submitted, control-panel, app-client read-only discovery.
 
 **Business invariants**
@@ -1272,6 +1278,8 @@ Resend-invite preserves `invited`; ended membership is not silently reused as ac
 **Primary actors.** authorized operator/marketing actor, customer, partner where a funded commercial program permits participation, WLT system.
 
 **Canonical ownership.** DSH coupon/promotion terms and operational eligibility; WLT promotion funding reservation/ledger effects.
+
+**Boundary/non-overlap.** MARKETING_CAMPAIGNS_LOYALTY owns campaign/audience/placement and non-financial loyalty/subscription/program eligibility. This capability owns coupon/promotion transactional eligibility and the correlated WLT funding lifecycle; WLT alone owns authoritative monetary posting.
 
 **Material surfaces.** control-panel, app-client, app-partner where applicable, checkout/order readback.
 
@@ -1598,6 +1606,8 @@ committed → reversed
 
 **Canonical ownership.** DSH owns cart and checkout operational truth; canonical catalog/store/address/serviceability owners provide evidence; WLT owns authoritative financial quote/payment-session truth; Order Creation begins only after the governed checkout eligibility boundary.
 
+**Boundary/non-overlap.** ORDER_CREATION owns only creation of the canonical order from an eligible confirmed checkout. CART_CHECKOUT owns the cart and checkout-intent lifecycle up to that handoff and cannot mutate the created order as if it were checkout state.
+
 **Material deployable surfaces.** app-client and authorized control-panel diagnostics when operationally required.
 
 **Business invariants**
@@ -1651,6 +1661,8 @@ committed → reversed
 **Primary actors.** field worker, field operations operator/supervisor, partner/store reviewer, Workforce system as eligibility provider.
 
 **Canonical ownership.** DSH field-operations capability owns assignments, visits, readiness checks, escalation and operational evidence; Workforce owns workforce person/engagement/eligibility; Partner/Store owners consume the resulting evidence.
+
+**Boundary/non-overlap.** PARTNER_ONBOARDING_STORE_PUBLICATION consumes verified field evidence but owns Partner/Store activation/readiness/publication decisions. Field Operations cannot activate/publish a Partner or Store and Onboarding cannot rewrite assignment/visit/check history to force readiness.
 
 **Material deployable surfaces.** app-field, control-panel, app-partner readback where the partner journey requires it.
 
@@ -1706,6 +1718,8 @@ committed → reversed
 **Primary actors.** marketing operator/maker, independent approver where required, customer, partner, DSH system, WLT system for monetary consequences.
 
 **Canonical ownership.** DSH marketing/commercial-program capability owns campaign/audience/placement and non-financial program eligibility/entitlement semantics; WLT owns authoritative monetary charging/funding/posting; Central Catalog owns catalog identity/publication; notification adapters only deliver selected communications.
+
+**Boundary/non-overlap.** PROMOTIONS_COUPONS_FUNDING owns coupon/promotion transactional eligibility and funding correlation; CENTRAL_CATALOG owns catalog/product publication; DSH Notifications owns inbox/preferences/topic/delivery-attempt state; WLT owns money. Marketing owns campaign/audience/placement and non-financial loyalty/subscription/program eligibility only.
 
 **Material deployable surfaces.** control-panel, app-client, app-partner where a program is offered, and checkout/readback when eligibility changes commerce.
 
