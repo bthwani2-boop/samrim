@@ -163,7 +163,7 @@ DSH high-priority structural candidates to resolve from live evidence:
 centralcatalog + catalogapproval           → catalog
 checkoutpaymentsaga/checkoutfinanceoutbox  → checkout or WLT integration mechanism
 internal/http                              → transport/http
-legacy workforceclient → delete after required participant truth is rehomed to DSH; identity/platform/maps/WLT clients → integrations/*
+legacy participant client → delete after required participant truth is rehomed to DSH; identity/platform/maps/WLT clients → integrations/*
 large multi-responsibility main.go         → thin cmd + runtime composition
 ```
 
