@@ -87,6 +87,7 @@ for (const required of [
   'sameSite: "strict" as const',
   'identityAuthorizesSurface(pair.identity, "operator", "control-panel")',
   'identityAuthorizesSurface(identity, "operator", "control-panel")',
+  "activateOperator",
 ]) {
   if (!bff.includes(required)) failures.push("control-panel Identity BFF missing " + required);
 }
@@ -96,7 +97,7 @@ for (const forbidden of ["localStorage", "sessionStorage"]) {
 
 expectText("apps/control-panel/next.config.mjs", 'transpilePackages: ["@bthwani/identity"]');
 
-for (const route of ["login", "session", "logout"]) {
+for (const route of ["activate", "login", "session", "logout"]) {
   expectText("apps/control-panel/app/api/auth/" + route + "/route.ts", "identity-bff", route + " BFF binding");
 }
 
