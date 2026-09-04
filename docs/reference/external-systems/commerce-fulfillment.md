@@ -184,7 +184,7 @@ Specialist rule: product search starts at Algolia; deep distributed-search archi
 
 **P3 — OrangeHRM**
 - Repository: https://github.com/orangehrm/orangehrm
-- Use only when future HR-specific employee lifecycle questions remain unresolved; this does not imply a current Workforce boundary.
+- Use only when future HR-specific employee lifecycle questions remain unresolved; this does not imply a current peer HR boundary.
 
 **P4 — Microsoft Dynamics 365**
 - Docs: https://learn.microsoft.com/dynamics365/
