@@ -43,7 +43,14 @@ func (s *Service) Login(ctx context.Context, input domain.LoginRequest, ipHash s
 	}
 
 	actor, err := actorByUsername(ctx, s.db, username)
-	if err != nil || actor.Status != domain.ActorStatusActive || !identitysecurity.VerifyPassword(actor.PasswordHash, input.Password) {
+	if errors.Is(err, sql.ErrNoRows) {
+		_, _ = s.db.ExecContext(ctx, "INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,false)", username, ipHash)
+		return domain.TokenPair{}, domain.ErrUnauthenticated
+	}
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	if actor.Status != domain.ActorStatusActive || !identitysecurity.VerifyPassword(actor.PasswordHash, input.Password) {
 		_, _ = s.db.ExecContext(ctx, "INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,false)", username, ipHash)
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
@@ -164,11 +171,14 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	err = tx.QueryRowContext(ctx,
 		"SELECT actor_id,surface,refresh_token_hash,device_fingerprint_hash,refresh_expires_at FROM identity_sessions WHERE id=$1 AND revoked_at IS NULL FOR UPDATE",
 		sessionID).Scan(&actorID, &surface, &currentHash, &deviceHash, &refreshExpiry)
-	if errors.Is(err, sql.ErrNoRows) || refreshExpiry.Before(s.now()) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if err != nil {
 		return domain.TokenPair{}, err
+	}
+	if !refreshExpiry.After(s.now()) {
+		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if !identitysecurity.ConstantTimeHexEqual(deviceHash, identitysecurity.SHA256Hex(device)) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
