@@ -216,15 +216,23 @@ for (const forbidden of ["previous_refresh_token_hash", "operator_context", "sur
 }
 
 const activation = read("services/identity/backend/internal/activation/service.go");
-const preflightIndex = activation.indexOf("preflightRateLimit(ctx, phone, ipHash)");
-const clientEnsureIndex = activation.indexOf("EnsurePublicClient(ctx, phone)");
-if (preflightIndex < 0 || clientEnsureIndex < 0 || preflightIndex > clientEnsureIndex) {
-  failures.push("OTP source/phone preflight must happen before public actor creation");
+const requestStart = activation.indexOf("func (s *Service) Request(");
+const issueStart = activation.indexOf("func (s *Service) issue(", requestStart);
+const requestBody = activation.slice(requestStart, issueStart);
+if (requestBody.includes("EnsurePublicClient")) {
+  failures.push("public OTP request must not create client actor before proof");
+}
+const consumeStart = activation.indexOf("func (s *Service) Consume(");
+const codeProofIndex = activation.indexOf("ConstantTimeHexEqual(codeHash, expected)", consumeStart);
+const clientCreateIndex = activation.indexOf("EnsurePublicClientTx(ctx, tx, phone)", consumeStart);
+if (codeProofIndex < 0 || clientCreateIndex < 0 || clientCreateIndex < codeProofIndex) {
+  failures.push("client actor creation must happen only after valid OTP proof");
 }
 for (const required of [
   '"identity:otp-source:" + ipHash',
   '"identity:otp-phone:" + a.PhoneE164',
   "FindEnabledByPhoneRole",
+  "QueryRowContext",
 ]) {
   if (!activation.includes(required)) failures.push("Identity activation service missing " + required);
 }

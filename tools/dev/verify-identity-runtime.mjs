@@ -152,6 +152,25 @@ assert(/^act_/.test(actorId), "actor_id is not neutral");
 assertSession(sharedClientPair, "client", "app-client", actorId);
 await expect("GET", "/auth/session", 200, { token: sharedClientPair.accessToken });
 
+// Client OTP request must not create a ghost actor before proof.
+const proofDeferredPhone = phone();
+const proofDeferredChallenge = await requestOtp(proofDeferredPhone, "client");
+const proofDeferredCaptain = await expect("POST", "/internal/actor-roles/provision", 201, {
+  headers: service(dshToken),
+  body: { phoneE164: proofDeferredPhone, role: "captain" },
+});
+assert(proofDeferredCaptain.actorCreated === true, "client OTP request created actor before proof");
+const proofDeferredClientPair = await activate(
+  proofDeferredPhone,
+  "client",
+  proofDeferredChallenge,
+  "device-proof-deferred-" + suffix,
+);
+assert(
+  proofDeferredClientPair.identity.subject === proofDeferredCaptain.actorId,
+  "post-proof client role did not converge on actor created by DSH",
+);
+
 // Governed OTP never self-provisions.
 const unknownCaptainPhone = phone();
 const fakeCaptainChallenge = await requestOtp(unknownCaptainPhone, "captain");
@@ -427,6 +446,7 @@ await expect("GET", "/internal/actors/" + encodeURIComponent(actorId) + "/roles/
 
 console.log("IDENTITY_RUNTIME_SEMANTICS=PASS");
 console.log("IDENTITY_SINGLE_ACTOR_MULTI_ROLE=PASS");
+console.log("IDENTITY_CLIENT_ACTOR_CREATION_AFTER_PROOF=PASS");
 console.log("IDENTITY_ROLE_SCOPED_REVOCATION=PASS");
 console.log("IDENTITY_GOVERNED_OTP_SELF_GRANT=0");
 console.log("IDENTITY_OPERATOR_PASSWORD_ONLY=PASS");

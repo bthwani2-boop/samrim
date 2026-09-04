@@ -36,7 +36,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS identity_actors_phone_uq ON identity_actors(ph
 CREATE UNIQUE INDEX IF NOT EXISTS identity_actors_username_uq ON identity_actors(lower(username)) WHERE username IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS identity_actor_roles (
-    actor_id text NOT NULL REFERENCES identity_actors(id) ON DELETE CASCADE,
+    actor_id text REFERENCES identity_actors(id) ON DELETE CASCADE,
     role varchar(32) NOT NULL,
     enabled boolean NOT NULL DEFAULT true,
     version integer NOT NULL DEFAULT 1,
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS identity_activation_challenges (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS identity_activation_one_pending_uq
-    ON identity_activation_challenges(actor_id, role)
+    ON identity_activation_challenges(role, phone_e164)
     WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS identity_activation_lookup_idx
     ON identity_activation_challenges(role, phone_e164, created_at DESC);

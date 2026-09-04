@@ -43,16 +43,12 @@ func (s *Service) Request(ctx context.Context, input domain.OtpRequest, ipHash s
 	if len(ipHash) != 64 {
 		return domain.ActivationChallenge{}, domain.ErrInvalidInput
 	}
-	if err := s.preflightRateLimit(ctx, phone, ipHash); err != nil {
-		return domain.ActivationChallenge{}, err
+
+	if role == "client" {
+		return s.issue(ctx, domain.Actor{PhoneE164: phone}, role, ipHash)
 	}
 
-	var a domain.Actor
-	if role == "client" {
-		a, err = s.actors.EnsurePublicClient(ctx, phone)
-	} else {
-		a, err = s.actors.FindEnabledByPhoneRole(ctx, phone, role)
-	}
+	a, err := s.actors.FindEnabledByPhoneRole(ctx, phone, role)
 	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrActorBlocked) {
 		return s.genericChallenge(phone)
 	}
@@ -80,13 +76,18 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, ipHash string
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx,
-		"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 AND enabled=true FOR UPDATE",
-		a.ID, role); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	if role != "client" {
+		var enabled bool
+		if err := tx.QueryRowContext(ctx,
+			"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE",
+			a.ID, role).Scan(&enabled); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return s.genericChallenge(a.PhoneE164)
+			}
+			return domain.ActivationChallenge{}, err
+		} else if !enabled {
 			return s.genericChallenge(a.PhoneE164)
 		}
-		return domain.ActivationChallenge{}, err
 	}
 
 	var phoneRecent, sourceRecent int
@@ -105,8 +106,8 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, ipHash string
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE identity_activation_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'",
-		a.ID, role); err != nil {
+		"UPDATE identity_activation_challenges SET status='revoked',updated_at=clock_timestamp() WHERE phone_e164=$1 AND role=$2 AND status='pending'",
+		a.PhoneE164, role); err != nil {
 		return domain.ActivationChallenge{}, err
 	}
 
@@ -121,7 +122,7 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, ipHash string
 	expires := s.now().UTC().Add(10 * time.Minute)
 	codeHash := identitysecurity.HMAC256Hex(s.secret, activationID, code)
 	if _, err := tx.ExecContext(ctx,
-		"INSERT INTO identity_activation_challenges(id,actor_id,role,phone_e164,code_hash,request_ip_hash,status,attempts,expires_at) VALUES($1,$2,$3,$4,$5,$6,'pending',0,$7)",
+		"INSERT INTO identity_activation_challenges(id,actor_id,role,phone_e164,code_hash,request_ip_hash,status,attempts,expires_at) VALUES($1,NULLIF($2,''),$3,$4,$5,$6,'pending',0,$7)",
 		activationID, a.ID, role, a.PhoneE164, codeHash, ipHash, expires); err != nil {
 		return domain.ActivationChallenge{}, err
 	}
@@ -162,7 +163,8 @@ func (s *Service) Consume(ctx context.Context, input domain.ActivationRequest) (
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var challengeID, actorID, codeHash string
+	var challengeID, codeHash string
+	var actorID sql.NullString
 	var attempts int
 	var expires time.Time
 	err = tx.QueryRowContext(ctx,
@@ -204,11 +206,24 @@ func (s *Service) Consume(ctx context.Context, input domain.ActivationRequest) (
 		return domain.TokenPair{}, domain.ErrInvalidActivation
 	}
 
-	var enabled bool
-	if err := tx.QueryRowContext(ctx,
-		"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE",
-		actorID, role).Scan(&enabled); err != nil || !enabled {
-		return domain.TokenPair{}, domain.ErrActorBlocked
+	resolvedActorID := ""
+	if role == "client" {
+		a, err := s.actors.EnsurePublicClientTx(ctx, tx, phone)
+		if err != nil {
+			return domain.TokenPair{}, err
+		}
+		resolvedActorID = a.ID
+	} else {
+		if !actorID.Valid || strings.TrimSpace(actorID.String) == "" {
+			return domain.TokenPair{}, domain.ErrInvalidActivation
+		}
+		var enabled bool
+		if err := tx.QueryRowContext(ctx,
+			"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE",
+			actorID.String, role).Scan(&enabled); err != nil || !enabled {
+			return domain.TokenPair{}, domain.ErrActorBlocked
+		}
+		resolvedActorID = actorID.String
 	}
 
 	if _, err := tx.ExecContext(ctx,
@@ -216,35 +231,17 @@ func (s *Service) Consume(ctx context.Context, input domain.ActivationRequest) (
 		challengeID); err != nil {
 		return domain.TokenPair{}, err
 	}
-	pair, err := s.sessions.CreateForActivationTx(ctx, tx, actorID, role, input.DeviceFingerprint)
+	pair, err := s.sessions.CreateForActivationTx(ctx, tx, resolvedActorID, role, input.DeviceFingerprint)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	if err := auditTx(ctx, tx, "activation.consumed", actorID, actorID, "success", "", map[string]any{"role": role}); err != nil {
+	if err := auditTx(ctx, tx, "activation.consumed", resolvedActorID, resolvedActorID, "success", "", map[string]any{"role": role}); err != nil {
 		return domain.TokenPair{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return domain.TokenPair{}, err
 	}
 	return pair, nil
-}
-
-func (s *Service) preflightRateLimit(ctx context.Context, phone, ipHash string) error {
-	var phoneRecent, sourceRecent int
-	if err := s.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM identity_activation_challenges WHERE phone_e164=$1 AND created_at>clock_timestamp()-interval '15 minutes'",
-		phone).Scan(&phoneRecent); err != nil {
-		return err
-	}
-	if err := s.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM identity_activation_challenges WHERE request_ip_hash=$1 AND created_at>clock_timestamp()-interval '15 minutes'",
-		ipHash).Scan(&sourceRecent); err != nil {
-		return err
-	}
-	if phoneRecent >= 5 || sourceRecent >= 20 {
-		return domain.ErrRateLimited
-	}
-	return nil
 }
 
 func (s *Service) genericChallenge(phone string) (domain.ActivationChallenge, error) {

@@ -151,16 +151,11 @@ func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input dom
 	}, nil
 }
 
-func (s *Service) EnsurePublicClient(ctx context.Context, rawPhone string) (domain.Actor, error) {
+func (s *Service) EnsurePublicClientTx(ctx context.Context, tx *sql.Tx, rawPhone string) (domain.Actor, error) {
 	phone, err := identitysecurity.NormalizePhoneE164(rawPhone)
 	if err != nil {
 		return domain.Actor{}, domain.ErrInvalidInput
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return domain.Actor{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:phone:"+phone); err != nil {
 		return domain.Actor{}, err
 	}
@@ -201,10 +196,6 @@ func (s *Service) EnsurePublicClient(ctx context.Context, rawPhone string) (doma
 		return domain.Actor{}, err
 	} else if !enabled {
 		return domain.Actor{}, domain.ErrActorBlocked
-	}
-
-	if err := tx.Commit(); err != nil {
-		return domain.Actor{}, err
 	}
 	return a, nil
 }
