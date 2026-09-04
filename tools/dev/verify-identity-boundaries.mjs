@@ -184,8 +184,11 @@ for (const forbidden of ["ActorStatus", "Permission", "operatorContextId", "role
 }
 
 const domain = read("services/identity/backend/internal/domain/types.go");
-for (const required of ["type ActorRole struct", "Role string", "Enabled bool", "type ActorIdentity struct"]) {
+for (const required of ["type ActorRole struct", "type ActorIdentity struct"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
+}
+if (!/type ActorRole struct\s*\{[\s\S]*?Role\s+string[\s\S]*?Enabled\s+bool[\s\S]*?\}/.test(domain)) {
+  failures.push("Identity ActorRole must contain role and enabled fields");
 }
 for (const forbidden of ["OperatorContextID", "Roles []string", "Permissions []", "ActorStatus", "ProvisioningFingerprint", "CreatedByService"]) {
   if (domain.includes(forbidden)) failures.push("Identity domain contains collapsed actor authority " + forbidden);
