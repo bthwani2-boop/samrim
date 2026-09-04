@@ -30,5 +30,9 @@
         "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/run-go-service.ps1 -Service wlt"
       }
     }
-  }
+  },
+  "tags": [
+    "scope:wlt",
+    "type:service"
+  ]
 }
