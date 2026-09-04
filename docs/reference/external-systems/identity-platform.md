@@ -86,7 +86,7 @@ Source business facts remain owned by DSH/WLT/etc.; notification references do n
 
 ### 1B.14 HR / employee lifecycle references (future-adoption only)
 
-These references do not imply a current Workforce service, module, or bounded context. Adopt an enterprise HR boundary only if concrete future cross-domain lifecycle/data/rule requirements independently justify it.
+These references do not imply a current peer HR service, module, or bounded context. Adopt an enterprise HR boundary only if concrete future cross-domain lifecycle/data/rule requirements independently justify it.
 
 **P1 — Odoo HR**
 - Docs: https://www.odoo.com/documentation/
@@ -104,7 +104,7 @@ These references do not imply a current Workforce service, module, or bounded co
 - Entry: https://www.workday.com/
 - Use only for high-level enterprise HR falsification where public material is sufficient.
 
-Do not overload Identity actor truth with domain-specific participant state, and do not invent a generic people/workforce service merely to group roles.
+Do not overload Identity actor truth with domain-specific participant state, and do not invent a generic people service merely to group roles.
 
 ### 1B.16 Feature flags / configuration / Platform Control
 
