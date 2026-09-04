@@ -62,6 +62,38 @@ If the foundation is already canonical enough for safe capability work, do not m
 
 If a dominant systemic root blocks safe downstream work, execute it before long capability closure.
 
+### 4A. Foundation Construction traversal
+
+When A0 proves required foundation substrate is missing/incomplete, execute Foundation Construction before semantic capability work:
+
+```text
+C0 AUTHORITY/TOPOLOGY CONSISTENCY
+→ C1 REPOSITORY + WORKSPACE + TOOLCHAIN SUBSTRATE
+→ C2 SERVICE PROCESS/RUNTIME SKELETONS
+→ C3 CONTRACT/CLIENT/DATABASE/TESTING LANES WITHOUT BUSINESS SEMANTICS
+→ C4 DEPLOYABLE HOST SHELLS + EXTERNAL IDENTITY PRESERVATION
+→ C5 INFRA/COMPOSE/LOCAL RUNTIME COMPOSITION
+→ C6 DEVELOPER TOOLING + ROOT COMMANDS
+→ C7 FOUNDATION ASSURANCE + DOC COMMAND PARITY
+→ C8 STABILIZE MANIFESTS → GENERATE ONE LOCKFILE → FROZEN INSTALL → FRESH FOUNDATION EXIT GATE
+```
+
+At every construction step:
+
+```text
+OUTPUT_HAS_PRODUCT/CAPABILITY_SEMANTICS?
+  YES → STOP_LOCAL_FURNISHING → PRESERVE ONLY REQUIRED TECHNICAL/DEPLOYABLE IDENTITY → REMOVE/DEFER SEMANTIC CONTENT
+  NO  → CONTINUE FOUNDATION CONSTRUCTION
+```
+
+Do not generate the canonical lockfile while known nonexistent/losing workspace dependencies remain. Do not use Foundation Construction as an all-backend/all-contract/all-app capability wave.
+
+```text
+FOUNDATION_CONSTRUCTION_EXIT_GATE=PASS
+→ A2_ADVERSARIAL_STRUCTURAL_QUALIFICATION
+→ STAGE_B_ONLY_IF_A2_PASS
+```
+
 ## 5. Systemic refoundation traversal
 
 ```text
