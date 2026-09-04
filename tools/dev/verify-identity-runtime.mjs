@@ -42,9 +42,10 @@ for (const [name, value, minimum] of [
 ]) {
   if (typeof value !== "string" || value.length < minimum) fail(name + " is not configured strongly enough");
 }
+if (dshToken === platformToken) fail("internal service tokens must be distinct");
 
 const suffix = crypto.randomBytes(5).toString("hex");
-let phoneCounter = crypto.randomInt(10_000_000, 90_000_000);
+let phoneCounter = crypto.randomInt(10_000_000, 80_000_000);
 function phone() {
   phoneCounter += 1;
   return "+9677" + String(phoneCounter).padStart(8, "0").slice(-8);
@@ -57,8 +58,7 @@ function codeFor(activationId) {
     .update(Buffer.from([0]))
     .update("activation-code")
     .digest();
-  const value = digest.readUInt32BE(0) % 1_000_000;
-  return String(value).padStart(6, "0");
+  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0");
 }
 
 async function request(method, pathname, options = {}) {
@@ -88,17 +88,8 @@ async function request(method, pathname, options = {}) {
 async function expect(method, pathname, expectedStatus, options = {}) {
   const response = await request(method, pathname, options);
   if (response.status !== expectedStatus) {
-    fail(
-      method +
-        " " +
-        pathname +
-        " returned " +
-        response.status +
-        ", expected " +
-        expectedStatus +
-        "; body=" +
-        JSON.stringify(response.body),
-    );
+    fail(method + " " + pathname + " returned " + response.status +
+      ", expected " + expectedStatus + "; body=" + JSON.stringify(response.body));
   }
   return response.body;
 }
@@ -107,88 +98,262 @@ function assert(condition, message) {
   if (!condition) fail(message);
 }
 
-function assertSurface(pair, role, surface) {
+function service(token, extra = {}) {
+  return { Authorization: "Bearer " + token, ...extra };
+}
+
+function assertSession(pair, role, surface, actorId) {
   assert(pair && typeof pair === "object", "token pair is missing");
   assert(typeof pair.accessToken === "string" && pair.accessToken.length >= 20, "access token missing");
   assert(typeof pair.refreshToken === "string" && pair.refreshToken.length >= 20, "refresh token missing");
-  assert(pair.identity?.authState === "ACTIVE", "identity authState is not ACTIVE");
-  assert(pair.identity?.sessionSurface === surface, "session surface mismatch for " + role);
-  assert(pair.identity?.surfaceAccess?.[surface] === true, "surfaceAccess missing " + surface);
-  assert(Array.isArray(pair.identity?.roles) && pair.identity.roles.includes(role), "role missing " + role);
+  assert(pair.identity?.role === role, "session role mismatch: expected " + role);
+  assert(pair.identity?.surface === surface, "session surface mismatch: expected " + surface);
+  if (actorId) assert(pair.identity?.subject === actorId, "session actor mismatch");
+  assert(!("roles" in pair.identity), "session leaked all actor roles");
+  assert(!("permissions" in pair.identity), "session leaked generic permissions");
+  assert(!("operatorContextId" in pair.identity), "session leaked premature operator context");
+  assert(!("surfaceAccess" in pair.identity), "session leaked redundant surfaceAccess");
 }
 
-function serviceHeaders(caller, token, operatorContextId, extra = {}) {
-  return {
-    Authorization: "Bearer " + token,
-    "X-Service-Caller": caller,
-    "X-Operator-Context-ID": operatorContextId,
-    ...extra,
-  };
+async function requestOtp(phoneValue, role) {
+  return expect("POST", "/auth/otp/request", 201, { body: { phone: phoneValue, role } });
+}
+
+async function activate(phoneValue, role, challenge, device) {
+  const code = codeFor(challenge.activationId);
+  assert(!JSON.stringify(challenge).includes(code), "raw activation code leaked in challenge response");
+  return expect("POST", "/auth/activate", 200, {
+    body: { phone: phoneValue, role, code, deviceFingerprint: device },
+  });
 }
 
 console.log("Identity runtime candidate: " + baseUrl);
-
 await expect("GET", "/identity/health", 200);
 await expect("GET", "/identity/readiness", 200);
 
-// Public client enrollment is client-only and cannot inject trusted context.
-const clientPhone = phone();
+// Removed client-controlled context/legacy request shape fails closed.
 await expect("POST", "/auth/otp/request", 400, {
-  body: { phone: clientPhone, actorType: "client", operatorContextId: "attacker-context" },
+  body: { phone: phone(), role: "client", operatorContextId: "attacker-context" },
+});
+await expect("POST", "/auth/otp/request", 400, {
+  body: { phone: phone(), actorType: "client" },
 });
 await expect("POST", "/auth/otp/request", 403, {
-  body: { phone: clientPhone, actorType: "partner" },
+  body: { phone: phone(), role: "operator" },
 });
 
-const clientChallenge = await expect("POST", "/auth/otp/request", 201, {
-  body: { phone: clientPhone, actorType: "client" },
-});
-const clientCode = codeFor(clientChallenge.activationId);
-assert(!JSON.stringify(clientChallenge).includes(clientCode), "raw activation code leaked in challenge response");
+// Same human starts as client.
+const sharedPhone = phone();
+const sharedClientChallenge = await requestOtp(sharedPhone, "client");
+const sharedClientDevice = "device-shared-client-" + suffix;
+const sharedClientPair = await activate(sharedPhone, "client", sharedClientChallenge, sharedClientDevice);
+const actorId = sharedClientPair.identity.subject;
+assert(/^act_/.test(actorId), "actor_id is not neutral");
+assertSession(sharedClientPair, "client", "app-client", actorId);
+await expect("GET", "/auth/session", 200, { token: sharedClientPair.accessToken });
 
-const clientDevice = "device-client-" + suffix;
-const clientPair = await expect("POST", "/auth/activate", 200, {
+// Governed OTP never self-provisions.
+const unknownCaptainPhone = phone();
+const fakeCaptainChallenge = await requestOtp(unknownCaptainPhone, "captain");
+await expect("POST", "/auth/activate", 401, {
   body: {
-    phone: clientPhone,
-    actorType: "client",
-    code: clientCode,
-    deviceFingerprint: clientDevice,
+    phone: unknownCaptainPhone,
+    role: "captain",
+    code: codeFor(fakeCaptainChallenge.activationId),
+    deviceFingerprint: "device-unprovisioned-" + suffix,
   },
 });
-assertSurface(clientPair, "client", "app-client");
-await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 
-// A random refresh token must not be able to compromise/revoke a known session.
-const randomRefresh =
-  clientPair.identity.sessionId + "." + crypto.randomBytes(48).toString("base64url");
-await expect("POST", "/auth/refresh", 401, {
-  body: { refreshToken: randomRefresh, deviceFingerprint: clientDevice },
+// DSH explicitly adds captain and partner roles to the SAME actor.
+const captain = await expect("POST", "/internal/actor-roles/provision", 201, {
+  headers: service(dshToken),
+  body: { phoneE164: sharedPhone, role: "captain" },
 });
-await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
+assert(captain.actorId === actorId, "captain provisioning created a second actor");
+assert(captain.role === "captain" && captain.enabled === true, "captain role readback invalid");
 
-// Valid refresh rotates. Reuse of the known rotated token compromises the session family.
-const rotatedPair = await expect("POST", "/auth/refresh", 200, {
-  body: { refreshToken: clientPair.refreshToken, deviceFingerprint: clientDevice },
+const captainRetry = await expect("POST", "/internal/actor-roles/provision", 200, {
+  headers: service(dshToken),
+  body: { phoneE164: sharedPhone, role: "captain" },
 });
-assertSurface(rotatedPair, "client", "app-client");
-assert(rotatedPair.refreshToken !== clientPair.refreshToken, "refresh token did not rotate");
-await expect("POST", "/auth/refresh", 401, {
-  body: { refreshToken: clientPair.refreshToken, deviceFingerprint: clientDevice },
-});
-await expect("GET", "/auth/session", 401, { token: rotatedPair.accessToken });
+assert(captainRetry.actorId === actorId, "captain retry changed actor_id");
+assert(captainRetry.roleCreated !== true, "captain retry recreated role");
 
-// Five bad activation attempts lock the challenge; correct code cannot revive it.
+const partner = await expect("POST", "/internal/actor-roles/provision", 201, {
+  headers: service(dshToken),
+  body: { phoneE164: sharedPhone, role: "partner" },
+});
+assert(partner.actorId === actorId, "partner provisioning created a second actor");
+
+// Consumers cannot author actor_id or non-operator username.
+await expect("POST", "/internal/actor-roles/provision", 400, {
+  headers: service(dshToken),
+  body: { actorId: "attacker-selected", phoneE164: phone(), role: "captain" },
+});
+await expect("POST", "/internal/actor-roles/provision", 400, {
+  headers: service(dshToken),
+  body: { phoneE164: phone(), role: "captain", username: "attacker.name" },
+});
+
+// Credential determines caller even if old headers are forged.
+await expect("POST", "/internal/actor-roles/provision", 403, {
+  headers: service(dshToken, { "X-Service-Caller": "platform-control", "X-Operator-Context-ID": "forged" }),
+  body: {
+    phoneE164: phone(),
+    role: "operator",
+    username: "forged.operator." + suffix,
+    password: "Forged-Operator-" + suffix + "-Password",
+  },
+});
+await expect("POST", "/internal/actor-roles/provision", 403, {
+  headers: service(platformToken),
+  body: { phoneE164: phone(), role: "captain" },
+});
+await expect("POST", "/internal/actor-roles/provision", 401, {
+  body: { phoneE164: phone(), role: "captain" },
+});
+
+// Pre-provisioned governed role can authenticate by OTP.
+const captainChallenge = await requestOtp(sharedPhone, "captain");
+const captainDevice = "device-shared-captain-" + suffix;
+const captainPair = await activate(sharedPhone, "captain", captainChallenge, captainDevice);
+assertSession(captainPair, "captain", "app-captain", actorId);
+await expect("GET", "/auth/session", 200, { token: captainPair.accessToken });
+await expect("GET", "/auth/session", 200, { token: sharedClientPair.accessToken });
+
+// Scoped disable revokes captain only.
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable", 204, {
+  headers: service(dshToken, { "X-Correlation-ID": "disable-captain-" + suffix }),
+});
+await expect("GET", "/auth/session", 401, { token: captainPair.accessToken });
+await expect("GET", "/auth/session", 200, { token: sharedClientPair.accessToken });
+await expect("POST", "/internal/actor-roles/provision", 409, {
+  headers: service(dshToken),
+  body: { phoneE164: sharedPhone, role: "captain" },
+});
+const disabledCaptainChallenge = await requestOtp(sharedPhone, "captain");
+await expect("POST", "/auth/activate", 401, {
+  body: {
+    phone: sharedPhone,
+    role: "captain",
+    code: codeFor(disabledCaptainChallenge.activationId),
+    deviceFingerprint: captainDevice,
+  },
+});
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/enable", 204, {
+  headers: service(dshToken),
+});
+const reenabledCaptainChallenge = await requestOtp(sharedPhone, "captain");
+const reenabledCaptainPair = await activate(
+  sharedPhone,
+  "captain",
+  reenabledCaptainChallenge,
+  "device-reenabled-captain-" + suffix,
+);
+assertSession(reenabledCaptainPair, "captain", "app-captain", actorId);
+
+// Governed role that was unknown can authenticate only AFTER DSH provisioning.
+const lateCaptain = await expect("POST", "/internal/actor-roles/provision", 201, {
+  headers: service(dshToken),
+  body: { phoneE164: unknownCaptainPhone, role: "captain" },
+});
+const lateCaptainChallenge = await requestOtp(unknownCaptainPhone, "captain");
+const lateCaptainPair = await activate(
+  unknownCaptainPhone,
+  "captain",
+  lateCaptainChallenge,
+  "device-late-captain-" + suffix,
+);
+assertSession(lateCaptainPair, "captain", "app-captain", lateCaptain.actorId);
+
+// Operator becomes another role of the SAME actor and remains password-only.
+const operatorUsername = "operator." + suffix;
+const operatorPassword = "Strong-Operator-" + suffix + "-Password";
+const operator = await expect("POST", "/internal/actor-roles/provision", 201, {
+  headers: service(platformToken),
+  body: { phoneE164: sharedPhone, role: "operator", username: operatorUsername, password: operatorPassword },
+});
+assert(operator.actorId === actorId, "operator provisioning created a second actor");
+const operatorRetry = await expect("POST", "/internal/actor-roles/provision", 200, {
+  headers: service(platformToken),
+  body: { phoneE164: sharedPhone, role: "operator", username: operatorUsername, password: operatorPassword },
+});
+assert(operatorRetry.actorId === actorId, "operator retry changed actor_id");
+await expect("POST", "/internal/actor-roles/provision", 409, {
+  headers: service(platformToken),
+  body: {
+    phoneE164: sharedPhone,
+    role: "operator",
+    username: operatorUsername,
+    password: operatorPassword + "-different",
+  },
+});
+await expect("POST", "/auth/otp/request", 403, {
+  body: { phone: sharedPhone, role: "operator" },
+});
+
+// Six wrong passwords trigger account throttling, but correct password still works.
+for (let attempt = 0; attempt < 5; attempt++) {
+  await expect("POST", "/auth/login", 401, {
+    body: {
+      username: operatorUsername,
+      password: "Wrong-Password-" + suffix + "-" + attempt,
+      deviceFingerprint: "device-operator-wrong-" + suffix,
+    },
+  });
+}
+await expect("POST", "/auth/login", 429, {
+  body: {
+    username: operatorUsername,
+    password: "Wrong-Password-" + suffix + "-6",
+    deviceFingerprint: "device-operator-wrong-" + suffix,
+  },
+});
+const operatorPair = await expect("POST", "/auth/login", 200, {
+  body: {
+    username: operatorUsername,
+    password: operatorPassword,
+    deviceFingerprint: "device-operator-" + suffix,
+  },
+});
+assertSession(operatorPair, "operator", "control-panel", actorId);
+await expect("GET", "/auth/session", 200, { token: operatorPair.accessToken });
+await expect("GET", "/auth/session", 200, { token: sharedClientPair.accessToken });
+
+// Password reset revokes operator only and old credential no longer works.
+const newOperatorPassword = operatorPassword + "-Reset";
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
+  headers: service(platformToken, { "X-Correlation-ID": "password-reset-" + suffix }),
+  body: { password: newOperatorPassword },
+});
+await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
+await expect("GET", "/auth/session", 200, { token: sharedClientPair.accessToken });
+await expect("POST", "/auth/login", 401, {
+  body: {
+    username: operatorUsername,
+    password: operatorPassword,
+    deviceFingerprint: "device-old-password-" + suffix,
+  },
+});
+const resetOperatorPair = await expect("POST", "/auth/login", 200, {
+  body: {
+    username: operatorUsername,
+    password: newOperatorPassword,
+    deviceFingerprint: "device-new-password-" + suffix,
+  },
+});
+assertSession(resetOperatorPair, "operator", "control-panel", actorId);
+
+// OTP attempt lock remains exact.
 const lockedPhone = phone();
-const lockedChallenge = await expect("POST", "/auth/otp/request", 201, {
-  body: { phone: lockedPhone, actorType: "client" },
-});
+const lockedChallenge = await requestOtp(lockedPhone, "client");
 const lockedCode = codeFor(lockedChallenge.activationId);
 const wrongCode = lockedCode === "000000" ? "000001" : "000000";
 for (let attempt = 0; attempt < 5; attempt++) {
   await expect("POST", "/auth/activate", 401, {
     body: {
       phone: lockedPhone,
-      actorType: "client",
+      role: "client",
       code: wrongCode,
       deviceFingerprint: "device-lock-" + suffix,
     },
@@ -197,189 +362,80 @@ for (let attempt = 0; attempt < 5; attempt++) {
 await expect("POST", "/auth/activate", 401, {
   body: {
     phone: lockedPhone,
-    actorType: "client",
+    role: "client",
     code: lockedCode,
     deviceFingerprint: "device-lock-" + suffix,
   },
 });
 
-// DSH can provision partner/captain/field and cannot read across operator context.
-const dshCaptainContext = "dsh-captain-" + suffix;
-const captainPhone = phone();
-const captainRequest = {
-  username: "captain." + suffix,
-  phoneE164: captainPhone,
-  role: "captain",
-};
-const captain = await expect("POST", "/internal/actors/provision", 201, {
-  headers: serviceHeaders("dsh", dshToken, dshCaptainContext),
-  body: captainRequest,
+// Refresh random-token resistance and historical replay compromise use an independent session.
+const refreshPhone = phone();
+const refreshChallenge = await requestOtp(refreshPhone, "client");
+const refreshDevice = "device-refresh-" + suffix;
+const refreshPair = await activate(refreshPhone, "client", refreshChallenge, refreshDevice);
+const randomRefresh = refreshPair.identity.sessionId + "." + crypto.randomBytes(48).toString("base64url");
+await expect("POST", "/auth/refresh", 401, {
+  body: { refreshToken: randomRefresh, deviceFingerprint: refreshDevice },
 });
-const captainRetry = await expect("POST", "/internal/actors/provision", 200, {
-  headers: serviceHeaders("dsh", dshToken, dshCaptainContext),
-  body: captainRequest,
+await expect("GET", "/auth/session", 200, { token: refreshPair.accessToken });
+const rotatedPair = await expect("POST", "/auth/refresh", 200, {
+  body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: refreshDevice },
 });
-assert(captainRetry.actorId === captain.actorId, "trusted provisioning retry changed actor identity");
+assertSession(rotatedPair, "client", "app-client", refreshPair.identity.subject);
+assert(rotatedPair.refreshToken !== refreshPair.refreshToken, "refresh token did not rotate");
+await expect("POST", "/auth/refresh", 401, {
+  body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: refreshDevice },
+});
+await expect("GET", "/auth/session", 401, { token: rotatedPair.accessToken });
 
-await expect("POST", "/internal/actors/provision", 409, {
-  headers: serviceHeaders("dsh", dshToken, dshCaptainContext),
-  body: { ...captainRequest, role: "field" },
-});
-await expect("POST", "/internal/actors/provision", 403, {
-  headers: serviceHeaders("dsh", dshToken, dshCaptainContext),
-  body: { username: "operator.bad." + suffix, phoneE164: phone(), role: "operator" },
-});
-await expect("GET", "/internal/actors/" + encodeURIComponent(captain.actorId), 404, {
-  headers: serviceHeaders("dsh", dshToken, "other-" + suffix),
+// Per-phone OTP rate limit.
+const ratePhone = phone();
+for (let i = 0; i < 5; i++) {
+  await requestOtp(ratePhone, "client");
+}
+await expect("POST", "/auth/otp/request", 429, {
+  body: { phone: ratePhone, role: "client" },
 });
 
-const activationHeaders = serviceHeaders("dsh", dshToken, dshCaptainContext, {
-  "Idempotency-Key": "captain-activation-" + suffix,
-  "X-Correlation-ID": "corr-" + suffix,
-});
-const captainChallenge = await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(captain.actorId) + "/activations",
-  201,
-  {
-    headers: activationHeaders,
-    body: { expectedActorType: "captain" },
-  },
+// Source-level OTP throttling must eventually reject unique phone spam within the configured 20-challenge window.
+let sourceLimited = false;
+for (let i = 0; i < 25; i++) {
+  const response = await request("POST", "/auth/otp/request", {
+    body: { phone: phone(), role: "client" },
+  });
+  if (response.status === 429) {
+    sourceLimited = true;
+    break;
+  }
+  if (response.status !== 201) {
+    fail("unexpected source-throttle probe status " + response.status + " body=" + JSON.stringify(response.body));
+  }
+}
+assert(sourceLimited, "OTP source-level throttling did not engage");
+
+// Role-scoped read/search remains credential-authorized without generic context.
+const captainRead = await expect(
+  "GET",
+  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain",
+  200,
+  { headers: service(dshToken) },
 );
-const captainChallengeRetry = await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(captain.actorId) + "/activations",
-  201,
-  {
-    headers: activationHeaders,
-    body: { expectedActorType: "captain" },
-  },
-);
-assert(
-  captainChallengeRetry.activationId === captainChallenge.activationId,
-  "activation idempotency retry changed challenge identity",
-);
-const captainCode = codeFor(captainChallenge.activationId);
-assert(!JSON.stringify(captainChallenge).includes(captainCode), "governed activation response leaked raw code");
-
-await expect("POST", "/auth/activate", 401, {
-  body: {
-    phone: captainPhone,
-    actorType: "field",
-    code: captainCode,
-    deviceFingerprint: "device-captain-" + suffix,
-  },
-});
-const captainPair = await expect("POST", "/auth/activate", 200, {
-  body: {
-    phone: captainPhone,
-    actorType: "captain",
-    code: captainCode,
-    deviceFingerprint: "device-captain-" + suffix,
-  },
-});
-assertSurface(captainPair, "captain", "app-captain");
-await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(captain.actorId) + "/suspend",
-  204,
-  { headers: serviceHeaders("dsh", dshToken, dshCaptainContext) },
-);
-await expect("GET", "/auth/session", 401, { token: captainPair.accessToken });
-
-// DSH also provisions partner actors under an independent trusted operator context.
-const dshContext = "dsh-" + suffix;
-const partner = await expect("POST", "/internal/actors/provision", 201, {
-  headers: serviceHeaders("dsh", dshToken, dshContext),
-  body: { username: "partner." + suffix, phoneE164: phone(), role: "partner" },
-});
-assert(partner.roles?.includes("partner"), "DSH partner provisioning did not return partner role");
-await expect("POST", "/internal/actors/provision", 403, {
-  headers: serviceHeaders("dsh", dshToken, dshContext),
-  body: { username: "operator.bad." + suffix, phoneE164: phone(), role: "operator" },
-});
-
-// Platform-control provisions password operators. Exact retries are credential-exact.
-const operatorContext = "control-" + suffix;
-const operatorUsername = "operator." + suffix;
-const operatorPassword = "Strong-Operator-" + suffix + "-Password";
-const operatorBody = {
-  username: operatorUsername,
-  phoneE164: phone(),
-  role: "operator",
-  password: operatorPassword,
-};
-const operator = await expect("POST", "/internal/actors/provision", 201, {
-  headers: serviceHeaders("platform-control", platformToken, operatorContext),
-  body: operatorBody,
-});
-const operatorRetry = await expect("POST", "/internal/actors/provision", 200, {
-  headers: serviceHeaders("platform-control", platformToken, operatorContext),
-  body: operatorBody,
-});
-assert(operatorRetry.actorId === operator.actorId, "operator provisioning retry changed actor");
-await expect("POST", "/internal/actors/provision", 409, {
-  headers: serviceHeaders("platform-control", platformToken, operatorContext),
-  body: { ...operatorBody, password: operatorPassword + "-changed" },
-});
-
-await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(operator.actorId) + "/reactivate",
-  409,
-  { headers: serviceHeaders("platform-control", platformToken, operatorContext) },
-);
-
-const operatorChallenge = await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(operator.actorId) + "/activations",
-  201,
-  {
-    headers: serviceHeaders("platform-control", platformToken, operatorContext, {
-      "Idempotency-Key": "operator-activation-" + suffix,
-      "X-Correlation-ID": "operator-corr-" + suffix,
-    }),
-    body: { expectedActorType: "operator" },
-  },
-);
-const operatorCode = codeFor(operatorChallenge.activationId);
-const activatedOperatorPair = await expect("POST", "/auth/activate", 200, {
-  body: {
-    phone: operatorBody.phoneE164,
-    actorType: "operator",
-    code: operatorCode,
-    deviceFingerprint: "device-operator-activation-" + suffix,
-  },
-});
-assertSurface(activatedOperatorPair, "operator", "control-panel");
-await expect("POST", "/auth/logout", 204, { token: activatedOperatorPair.accessToken });
-
-const operatorPair = await expect("POST", "/auth/login", 200, {
-  body: {
-    username: operatorUsername,
-    password: operatorPassword,
-    deviceFingerprint: "device-operator-login-" + suffix,
-  },
-});
-assertSurface(operatorPair, "operator", "control-panel");
-await expect("POST", "/auth/logout", 204, { token: operatorPair.accessToken });
-await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
-
-// Unauthenticated callers never cross the internal boundary.
-await expect("POST", "/internal/actors/provision", 401, {
-  headers: {
-    "X-Service-Caller": "dsh",
-    "X-Operator-Context-ID": dshCaptainContext,
-  },
-  body: { username: "noauth." + suffix, phoneE164: phone(), role: "captain" },
+assert(captainRead.actorId === actorId && captainRead.role === "captain", "role readback mismatch");
+await expect("GET", "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain", 403, {
+  headers: service(platformToken),
 });
 
 console.log("IDENTITY_RUNTIME_SEMANTICS=PASS");
-console.log("IDENTITY_PUBLIC_CLIENT_ACTIVATION=PASS");
-console.log("IDENTITY_ACTIVATION_ATTEMPT_LOCK=PASS");
+console.log("IDENTITY_SINGLE_ACTOR_MULTI_ROLE=PASS");
+console.log("IDENTITY_ROLE_SCOPED_REVOCATION=PASS");
+console.log("IDENTITY_GOVERNED_OTP_SELF_GRANT=0");
+console.log("IDENTITY_OPERATOR_PASSWORD_ONLY=PASS");
+console.log("IDENTITY_SERVICE_CREDENTIAL_CALLER=PASS");
+console.log("IDENTITY_ACCOUNT_LOCKOUT_DOS_RESISTANCE=PASS");
+console.log("IDENTITY_PASSWORD_RESET_REVOCATION=PASS");
+console.log("IDENTITY_OTP_PHONE_RATE_LIMIT=PASS");
+console.log("IDENTITY_OTP_SOURCE_RATE_LIMIT=PASS");
 console.log("IDENTITY_REFRESH_RANDOM_DOS_RESISTANCE=PASS");
 console.log("IDENTITY_REFRESH_REPLAY_COMPROMISE=PASS");
-console.log("IDENTITY_DSH_DOMAIN_BOUNDARY=PASS");
-console.log("IDENTITY_OPERATOR_SESSION=PASS");
-console.log("IDENTITY_CROSS_CONTEXT_ISOLATION=PASS");
+console.log("IDENTITY_PREMATURE_CONTEXT_AUTHORITY=0");
 console.log("IDENTITY_RAW_ACTIVATION_CODE_LEAK=0");

@@ -4,18 +4,24 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "../..");
 const failures = [];
 
-function read(relative) {
+function read(relative, optional = false) {
   const file = path.join(root, relative);
   if (!fs.existsSync(file)) {
-    failures.push("missing required Identity artifact: " + relative);
+    if (!optional) failures.push("missing required Identity artifact: " + relative);
     return "";
   }
   return fs.readFileSync(file, "utf8");
 }
 
-function expectText(relative, text, label = text) {
+function requireText(relative, text) {
   const body = read(relative);
-  if (!body.includes(text)) failures.push(relative + " missing " + label);
+  if (!body.includes(text)) failures.push(relative + " missing " + text);
+  return body;
+}
+
+function forbidText(relative, text) {
+  const body = read(relative);
+  if (body.includes(text)) failures.push(relative + " contains forbidden residue " + text);
   return body;
 }
 
@@ -51,23 +57,20 @@ for (const [app, role, surface] of [
     'from "@bthwani/identity"',
     'from "expo-secure-store"',
     'from "expo-crypto"',
-    'const actorType = "' + role + '" as const',
+    'const role = "' + role + '" as const',
     'const surface = "' + surface + '" as const',
     "new IdentitySessionManager(",
+    "requestIdentityActivation",
+    "requestOtp({ phone, role })",
   ]) {
     if (!runtime.includes(required)) failures.push(runtimePath + " missing " + required);
+  }
+  for (const forbidden of ["actorType", "operatorContext", "X-Service-Caller", "X-Operator-Context-ID"]) {
+    if (runtime.includes(forbidden)) failures.push(runtimePath + " contains legacy authority " + forbidden);
   }
 
   const page = read("apps/" + app + "/app/index.tsx");
   if (!page.includes('from "../src/identity"')) failures.push(app + " UI bypasses its Identity host binding");
-
-  if (role === "client") {
-    if (!runtime.includes("requestIdentityActivation")) failures.push("client activation request binding missing");
-  } else {
-    if (runtime.includes("requestIdentityActivation") || runtime.includes(".requestOtp(")) {
-      failures.push(app + " must not expose public OTP issuance");
-    }
-  }
 }
 
 const controlPackagePath = "apps/control-panel/package.json";
@@ -87,25 +90,43 @@ for (const required of [
   'sameSite: "strict" as const',
   'identityAuthorizesSurface(pair.identity, "operator", "control-panel")',
   'identityAuthorizesSurface(identity, "operator", "control-panel")',
-  "activateOperator",
+  "loginOperator",
 ]) {
   if (!bff.includes(required)) failures.push("control-panel Identity BFF missing " + required);
 }
-for (const forbidden of ["localStorage", "sessionStorage"]) {
-  if (bff.includes(forbidden)) failures.push("control-panel Identity BFF uses forbidden browser storage: " + forbidden);
+for (const forbidden of ["activateOperator", "localStorage", "sessionStorage", "actorType", "operatorContext"]) {
+  if (bff.includes(forbidden)) failures.push("control-panel Identity BFF contains forbidden residue " + forbidden);
 }
-
-expectText("apps/control-panel/next.config.mjs", 'transpilePackages: ["@bthwani/identity"]');
-
-for (const route of ["activate", "login", "session", "logout"]) {
-  expectText("apps/control-panel/app/api/auth/" + route + "/route.ts", "identity-bff", route + " BFF binding");
+if (fs.existsSync(path.join(root, "apps/control-panel/app/api/auth/activate/route.ts"))) {
+  failures.push("operator OTP BFF route still exists");
+}
+for (const route of ["login", "session", "logout"]) {
+  requireText("apps/control-panel/app/api/auth/" + route + "/route.ts", "identity-bff");
 }
 
 const dsh = read("services/dsh/backend/internal/identityboundary/client.go");
-for (const required of ["ProvisionPartner", "ProvisionCaptain", "ProvisionField", '"dsh"']) {
+for (const required of [
+  "ProvisionPartner",
+  "ProvisionCaptain",
+  "ProvisionField",
+  "SetPartnerEnabled",
+  "SetCaptainEnabled",
+  "SetFieldEnabled",
+]) {
   if (!dsh.includes(required)) failures.push("DSH Identity boundary missing " + required);
 }
-if (dsh.includes("ProvisionOperator")) failures.push("DSH Identity boundary must not provision operator roles");
+for (const forbidden of [
+  "ProvisionOperator",
+  "IssueActivation",
+  "operatorContext",
+  "ActorID",
+  "Username",
+  '"dsh"',
+  "X-Service-Caller",
+  "X-Operator-Context-ID",
+]) {
+  if (dsh.includes(forbidden)) failures.push("DSH Identity boundary contains forbidden authority " + forbidden);
+}
 
 const dshMod = read("services/dsh/backend/go.mod");
 if (!dshMod.includes("github.com/bthwani2-boop/samrim/services/identity/clients/go v0.0.0")) {
@@ -116,25 +137,138 @@ if (!dshMod.includes("../../identity/clients/go")) {
 }
 
 const goClient = read("services/identity/clients/go/client.go");
-for (const route of ["/internal/actors/provision", "/internal/actors/", "/activations"]) {
+for (const route of ["/internal/actor-roles/provision", "/roles/", "/operator-password/reset"]) {
   if (!goClient.includes(route)) failures.push("Identity Go client missing canonical route " + route);
 }
-for (const header of ["X-Service-Caller", "X-Operator-Context-ID", "Idempotency-Key"]) {
-  if (!goClient.includes(header)) failures.push("Identity Go client missing trust header " + header);
+for (const forbidden of [
+  "X-Service-Caller",
+  "X-Operator-Context-ID",
+  "Idempotency-Key",
+  "/internal/actors/provision",
+  "/activations",
+  "operatorContext",
+]) {
+  if (goClient.includes(forbidden)) failures.push("Identity Go client contains legacy authority " + forbidden);
+}
+
+const contract = read("services/identity/contracts/identity.openapi.yaml");
+for (const required of [
+  "/internal/actor-roles/provision:",
+  "/internal/actors/{actorId}/roles/{role}/disable:",
+  "/internal/actors/{actorId}/operator-password/reset:",
+  "authenticated service token determines the caller",
+  "Identity alone creates actor_id",
+]) {
+  if (!contract.includes(required)) failures.push("Identity contract missing " + required);
+}
+for (const forbidden of [
+  "X-Service-Caller",
+  "X-Operator-Context-ID",
+  "operatorContextId",
+  "IssueActivationRequest",
+  "expectedActorType",
+  "sessionSurface",
+  "surfaceAccess",
+  "ActorStatus:",
+  "Permission:",
+]) {
+  if (contract.includes(forbidden)) failures.push("Identity contract contains legacy/premature authority " + forbidden);
 }
 
 const generated = read("services/identity/clients/generated/identity-types.ts");
 if (!generated.includes("AUTO-GENERATED from services/identity/contracts/identity.openapi.yaml")) {
   failures.push("generated Identity types provenance header missing");
 }
+for (const forbidden of ["ActorStatus", "Permission", "operatorContextId", "roles:", "surfaceAccess", "sessionSurface"]) {
+  if (generated.includes(forbidden)) failures.push("generated Identity types contain legacy shape " + forbidden);
+}
 
-const directAuthPattern = /["'`]\/(?:auth|internal\/actors)\//;
+const domain = read("services/identity/backend/internal/domain/types.go");
+for (const required of ["type ActorRole struct", "Role string", "Enabled bool", "type ActorIdentity struct"]) {
+  if (!domain.includes(required)) failures.push("Identity domain missing " + required);
+}
+for (const forbidden of ["OperatorContextID", "Roles []string", "Permissions []", "ActorStatus", "ProvisioningFingerprint", "CreatedByService"]) {
+  if (domain.includes(forbidden)) failures.push("Identity domain contains collapsed actor authority " + forbidden);
+}
+
+const actor = read("services/identity/backend/internal/actor/service.go");
+for (const required of ['return "act_" + token', "identity_actor_roles", "SetRoleEnabled", "ResetOperatorPassword"]) {
+  if (!actor.includes(required)) failures.push("Identity actor service missing " + required);
+}
+for (const forbidden of ["requestedID", "operatorContextID", "roles,permissions", "provisioning_fingerprint", "created_by_service"]) {
+  if (actor.includes(forbidden)) failures.push("Identity actor service contains legacy actor authority " + forbidden);
+}
+
+const session = read("services/identity/backend/internal/session/service.go");
+for (const required of [
+  "identity_actor_roles",
+  "role,access_token_hash",
+  "identityOf(actorID, sessionID, role",
+  "identity_refresh_token_history",
+]) {
+  if (!session.includes(required)) failures.push("Identity session service missing " + required);
+}
+for (const forbidden of ["previous_refresh_token_hash", "operator_context", "surfaceAccess", "Roles:", "Permissions:"]) {
+  if (session.includes(forbidden)) failures.push("Identity session service contains redundant/legacy state " + forbidden);
+}
+
+const activation = read("services/identity/backend/internal/activation/service.go");
+const preflightIndex = activation.indexOf("preflightRateLimit(ctx, phone, ipHash)");
+const clientEnsureIndex = activation.indexOf("EnsurePublicClient(ctx, phone)");
+if (preflightIndex < 0 || clientEnsureIndex < 0 || preflightIndex > clientEnsureIndex) {
+  failures.push("OTP source/phone preflight must happen before public actor creation");
+}
+for (const required of [
+  '"identity:otp-source:" + ipHash',
+  '"identity:otp-phone:" + a.PhoneE164',
+  "FindEnabledByPhoneRole",
+]) {
+  if (!activation.includes(required)) failures.push("Identity activation service missing " + required);
+}
+for (const forbidden of ["IssueForActor", "idempotencyKey", "expectedActorType", "operatorContextID"]) {
+  if (activation.includes(forbidden)) failures.push("Identity activation service contains obsolete governed-issuance semantics " + forbidden);
+}
+
+const security = read("services/identity/backend/internal/security/values.go");
+if (!security.includes("argon2.IDKey")) failures.push("Identity password hashing is not Argon2id");
+if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identity security implementation");
+
+const migration = read("services/identity/database/migrations/001_identity_activation_sessions.sql");
+for (const required of [
+  "CREATE TABLE IF NOT EXISTS identity_actor_roles",
+  "PRIMARY KEY (actor_id, role)",
+  "FOREIGN KEY (actor_id, role) REFERENCES identity_actor_roles(actor_id, role)",
+]) {
+  if (!migration.includes(required)) failures.push("Identity migration missing " + required);
+}
+for (const forbidden of [
+  "operator_context_id varchar",
+  "roles text[]",
+  "permissions jsonb",
+  "previous_refresh_token_hash",
+  "provisioning_fingerprint char",
+  "created_by_service varchar",
+]) {
+  if (migration.includes(forbidden)) failures.push("Identity migration recreates legacy actor/session state " + forbidden);
+}
+
+for (const file of [
+  "services/identity/backend/internal/transport/http/server.go",
+  "services/identity/backend/internal/runtime/server.go",
+  "services/identity/clients/go/client.go",
+  "services/dsh/backend/internal/identityboundary/client.go",
+  "infra/local/compose/compose.yaml",
+  "infra/local/compose/.env.example",
+]) {
+  const body = read(file);
+  for (const forbidden of ["X-Service-Caller", "X-Operator-Context-ID", "IDENTITY_CONSUMER_OPERATOR_CONTEXT_ID"]) {
+    if (body.includes(forbidden)) failures.push(file + " contains removed Identity context/caller authority " + forbidden);
+  }
+}
+
+const directAuthPattern = /["'`]\/(?:auth|internal\/actor|internal\/actors)//;
 for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
-  const files = [
-    "apps/" + app + "/src/identity.ts",
-    "apps/" + app + "/app/index.tsx",
-  ];
-  for (const file of files) {
+  for (const file of ["apps/" + app + "/src/identity.ts", "apps/" + app + "/app/index.tsx"]) {
     const body = read(file);
     if (directAuthPattern.test(body)) failures.push(file + " bypasses canonical Identity client with direct auth URL");
   }
@@ -147,6 +281,8 @@ if (failures.length > 0) {
 }
 
 console.log("IDENTITY_BOUNDARY_VERIFY=PASS");
-console.log("IDENTITY_SURFACE_BINDINGS=5");
-console.log("IDENTITY_TRUSTED_DOMAIN_CONSUMERS=1");
+console.log("IDENTITY_ONE_ACTOR_ROLE_MODEL=PASS");
+console.log("IDENTITY_SESSION_SINGLE_ROLE=PASS");
+console.log("IDENTITY_PREMATURE_CONTEXT_RESIDUE=0");
+console.log("IDENTITY_CALLER_HEADER_AUTHORITY=0");
 console.log("PARALLEL_IDENTITY_CLIENT_TRUTH=0");
