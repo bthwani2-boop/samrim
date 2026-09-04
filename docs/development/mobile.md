@@ -1,7 +1,7 @@
 # Mobile Development
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
-CURRENT_MOBILE_COMMAND_AUTHORITY: tools/mobile/mobile.ps1 and app runtime wrappers
+CURRENT_MOBILE_COMMAND_AUTHORITY: package.json + tools/mobile/start-mobile-runtime.ps1 + app-owned mobile.config.json
 
 ## Applications and Metro ports
 
@@ -22,11 +22,7 @@ Verify device visibility:
 adb devices -l
 ```
 
-When repository/device networking requires reverse mappings:
-
-```powershell
-pnpm reverse
-```
+When repository/device networking requires ADB reverse mappings, configure them explicitly with `adb reverse` for the exact service port needed by the current task. No repository `pnpm reverse` wrapper exists in the current Foundation.
 
 For screen mirroring, use `scrcpy` against the exact connected ADB serial.
 
@@ -44,4 +40,4 @@ All API endpoints must come from active runtime configuration rather than hardco
 
 Expo/EAS project identity, Android/iOS identifiers, schemes, runtime/update configuration and native plugins are deployable identity. Do not change them as incidental cleanup.
 
-For EAS operations use `development/eas.md` and the repository `pnpm mobile:eas` wrapper.
+For EAS operations use `development/eas.md` and each app's checked-in `eas.json`/Expo project identity. No root `pnpm mobile:eas` wrapper exists in the current Foundation.
