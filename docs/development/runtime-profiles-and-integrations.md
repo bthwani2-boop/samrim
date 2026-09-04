@@ -56,3 +56,18 @@ FAKE SUCCESS THAT BYPASSES REAL OWNER STATE MACHINE = FORBIDDEN
 ## Practical selection
 
 Use DAILY_DEV for ordinary UI/API work, FOCUSED_INTEGRATION for a capability crossing service/provider/data boundaries, and FULL_INTEGRATION for closure, migration, runtime or representative end-to-end proof. Exact commands/ports/providers are always read from live repository configuration.
+
+## Development non-goals
+
+The development model intentionally does **not** require unnecessary always-on infrastructure or provider duplication. Unless a current capability test proves the need, do not require:
+
+- a dedicated development VPS or production-like hosting environment;
+- multiple vendors for the same map/payment/messaging capability merely for completeness;
+- full-time local object storage, mail sink, tracing stack or cache when the active work does not need it;
+- real paid SMS for every developer authentication cycle;
+- every service running in Docker all day;
+- a cache/coordination service without a proven requirement;
+- production data copied into general development or third-party test services;
+- a vendor-specific domain model just because that vendor is used in development.
+
+A non-goal may become required for a specific focused/full integration proof when the affected capability demands it. That temporary test requirement does not automatically make it a permanent daily-development dependency.
