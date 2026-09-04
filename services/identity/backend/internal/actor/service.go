@@ -82,6 +82,9 @@ func (s *Service) ProvisionTrusted(ctx context.Context, caller, operatorContextI
 			(requestedID != "" && existing.ID != requestedID) {
 			return domain.ActorView{}, domain.ErrConflict
 		}
+		if role == "operator" && !identitysecurity.VerifyPassword(existing.PasswordHash, input.Password) {
+			return domain.ActorView{}, domain.ErrConflict
+		}
 		if err := tx.Commit(); err != nil { return domain.ActorView{}, err }
 		view := viewOf(existing)
 		view.Created = false
