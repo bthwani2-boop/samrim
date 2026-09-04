@@ -30,5 +30,9 @@
         "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/run-go-service.ps1 -Service workforce"
       }
     }
-  }
+  },
+  "tags": [
+    "scope:workforce",
+    "type:service"
+  ]
 }
