@@ -221,8 +221,8 @@ This is a derived checkpoint, not closure truth.
 | Docs semantic parity | PARTIAL | runtime and cross-cutting runbooks restored; full donor-doc parity remains open |
 | Foundation Construction | PASS | exact-current Foundation exit evidence proves canonical substrate, workspace/Go verification, deployable shells, service skeletons, runtime composition, developer tooling, docs parity, CI prevention, and zero known premature semantic furnishing |
 | premature furnishing | REMOVED_AND_VERIFIED | Foundation hosts/services contain structural substrate only; business routes/endpoints/contracts/state machines remain deferred to Stage B |
-| A2 structural qualification | IN_PROGRESS | Foundation exit gate passed; fresh adversarial zero-garbage recensus is now the active gate |
-| Stage B capability reconstruction | FORBIDDEN | no Product/System capability furnishing until Foundation + A2 pass |
+| A2 structural qualification | PASS | exact PR candidate `949579518e3f2479826cb86b30c0d40d7ac2e330` passed structural hygiene + full A2 zero-garbage qualification + executable Foundation baseline/runtime proof |
+| Stage B capability reconstruction | ADMISSIBLE | Foundation + A2 are closed; next vertical root is `IDENTITY_ACTIVATION_SESSIONS`; semantic work must remain one capability/journey cone at a time |
 | donor exhaustion gate | OPEN | required before Level 4; donor extraction may continue read-only in parallel |
 | target Level-4 fixed point | OPEN | not claimable yet |
 
