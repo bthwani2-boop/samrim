@@ -242,7 +242,25 @@ func (s *Service) SetStatus(ctx context.Context, operatorContextID, actorID stri
 	err = tx.QueryRowContext(ctx, "SELECT status FROM identity_actors WHERE id=$1 AND operator_context_id=$2 FOR UPDATE", actorID, operatorContextID).Scan(&current)
 	if errors.Is(err, sql.ErrNoRows) { return domain.ErrNotFound }
 	if err != nil { return err }
-	if current == string(domain.ActorStatusDeactivated) && status != domain.ActorStatusDeactivated { return domain.ErrConflict }
+	if current == string(status) {
+		return tx.Commit()
+	}
+	switch status {
+	case domain.ActorStatusSuspended:
+		if current != string(domain.ActorStatusActive) {
+			return domain.ErrConflict
+		}
+	case domain.ActorStatusActive:
+		if current != string(domain.ActorStatusSuspended) {
+			return domain.ErrConflict
+		}
+	case domain.ActorStatusDeactivated:
+		if current == string(domain.ActorStatusDeactivated) {
+			return tx.Commit()
+		}
+	default:
+		return domain.ErrInvalidInput
+	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_actors SET status=$1,version=version+1,updated_at=clock_timestamp() WHERE id=$2", string(status), actorID); err != nil {
 		return err
 	}
