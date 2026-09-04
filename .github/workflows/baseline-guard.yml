@@ -164,6 +164,19 @@ jobs:
           [[ "$(pnpm --version)" == "10.34.0" ]]
           [[ "$(go version)" == *"go1.27.1"* ]]
 
+      - name: Verify Go workspace synchronization
+        shell: bash
+        run: |
+          set -euo pipefail
+          go work sync
+          drift="$(git status --porcelain -- go.work services/*/backend)"
+          if [[ -n "${drift}" ]]; then
+            printf '%s\n' "${drift}"
+            git diff -- go.work services/*/backend || true
+            echo "::error::go work sync changed tracked or untracked Go workspace files"
+            exit 1
+          fi
+
       - name: Frozen workspace install
         shell: bash
         run: pnpm install --frozen-lockfile
@@ -187,19 +200,6 @@ jobs:
       - name: Verify PowerShell runtime scripts parse
         shell: pwsh
         run: ./tools/dev/verify-powershell-syntax.ps1
-
-      - name: Verify Go workspace synchronization
-        shell: bash
-        run: |
-          set -euo pipefail
-          go work sync
-          drift="$(git status --porcelain -- go.work services/*/backend)"
-          if [[ -n "${drift}" ]]; then
-            printf '%s\n' "${drift}"
-            git diff -- go.work services/*/backend || true
-            echo "::error::go work sync changed tracked or untracked Go workspace files"
-            exit 1
-          fi
 
       - name: Verify developer doctor
         shell: pwsh
