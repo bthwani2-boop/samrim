@@ -120,3 +120,31 @@ GOOD_REFERENCE != RIGHT_TO_COPY_TOPOLOGY
 Before direct code reuse or dependency/runtime adoption, verify the exact current component/version, license, maintenance health, security/supply-chain posture, stack fit, operational cost, ownership fit, replacement/exit cost and whether the same requirement is already owned more simply. Unknown/no-license code is reference-only by default.
 
 Whole-platform replacement is forbidden by default unless the current BThwani owner/stack is independently proven to be the root defect and replacement passes the full adoption/migration gate. Research stops once the material question is sufficiently resolved and no high-risk unknown remains.
+
+## Canonical Assurance Architecture
+
+The repository uses a stable assurance interface:
+
+1. one canonical owner per concern;
+2. no duplicate blocking authorities;
+3. no evidence means no pass;
+4. affected/risk-based verification during development;
+5. exact-SHA full closure before promotion to `main`;
+6. native platform enforcement is preferred over custom guards;
+7. temporary refoundation assurance must self-delete after verified cutover.
+
+The durable required-check interface is intentionally small. Tool-specific jobs remain behind stable concern workflows and the `promotion-closure` check. Tool versions may evolve without renaming claims or redesigning the promotion interface.
+
+| Concern | Canonical owner |
+| --- | --- |
+| Deep SAST/dataflow | GitHub CodeQL Default Setup |
+| Workflow syntax and embedded shell correctness | actionlint + ShellCheck |
+| GitHub Actions security | zizmor |
+| Action SHA annotation verification | pinact |
+| Secret value detection in CI | Gitleaks |
+| Secret prevention | GitHub Push Protection + Secret Scanning |
+| Secret-bearing file classes | repository-policy |
+| Final custom assurance verdict | promotion-closure |
+
+Generated evidence is run-scoped and must never become product or governance truth.
+
