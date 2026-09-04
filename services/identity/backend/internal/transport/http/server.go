@@ -240,7 +240,7 @@ func (s *Server) revokeSession(w http.ResponseWriter, r *http.Request, caller, o
 
 func (s *Server) revokeAllSessions(w http.ResponseWriter, r *http.Request, caller, operatorContextID string) {
 	actorID := r.PathValue("actorId")
-	if _, err := s.actors.Get(r.Context(), operatorContextID, actorID); err != nil { writeDomainError(w, err); return }
+	if _, err := s.authorizedActor(r, caller, operatorContextID); err != nil { writeDomainError(w, err); return }
 	principal := strings.TrimSpace(r.Header.Get("X-Principal-Actor-ID"))
 	if principal == "" { principal = caller }
 	if err := s.sessions.RevokeAll(r.Context(), actorID, principal, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
