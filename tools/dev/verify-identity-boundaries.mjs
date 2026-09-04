@@ -269,7 +269,7 @@ for (const file of [
   }
 }
 
-const directAuthPattern = /["'`]\/(?:auth|internal\/actor|internal\/actors)//;
+const directAuthPattern = /["\'`]\\/(?:auth|internal\\/actor|internal\\/actors)\\//;
 for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
   for (const file of ["apps/" + app + "/src/identity.ts", "apps/" + app + "/app/index.tsx"]) {
     const body = read(file);
