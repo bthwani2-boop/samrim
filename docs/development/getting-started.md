@@ -51,25 +51,34 @@ These commands delegate to repository-owned runtime scripts. Do not duplicate th
 
 ## Primary verification
 
-Fast affected verification:
+Discover the current Nx projects:
 
 ```powershell
-pnpm verify
+pnpm nx:projects
 ```
 
-Full workspace verification when the affected cone requires it:
+Verify the current workspace after the canonical lockfile has been installed:
 
 ```powershell
-pnpm verify:full
+pnpm workspace:verify
 ```
 
-Runtime smoke for the declared full integration profile:
+Verify app-owned mobile identities/configuration:
 
 ```powershell
-pnpm runtime:full:smoke
+pnpm mobile:verify-config
 ```
 
-Contract/database/runtime-specific commands are discoverable from `package.json`; choose only the evidence applicable to the change.
+Validate and start the Foundation runtime composition:
+
+```powershell
+pnpm runtime:foundation:config
+pnpm runtime:foundation:up
+pnpm runtime:foundation:status
+pnpm runtime:foundation:verify
+```
+
+Contract/database/runtime-specific commands are discoverable from the current root/service manifests; choose only evidence applicable to the change.
 
 ## Before changing a capability
 
