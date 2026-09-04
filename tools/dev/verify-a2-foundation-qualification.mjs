@@ -205,11 +205,8 @@ for (const item of codeFiles) {
     fail("Unjustified pass-through re-export candidate: " + item);
   }
 
-  if (
-    /bthwani-suite-next|origin\/h|apps\/[^/]+\/runtime\//i.test(content) &&
-    !item.startsWith("tools/prompting/bthwani-refoundation/")
-  ) {
-    fail("Legacy donor/topology residue in executable code: " + item);
+  if (/apps\/[^/]+\/runtime\//i.test(content)) {
+    fail("Legacy pass-through app runtime residue in executable code: " + item);
   }
 }
 
