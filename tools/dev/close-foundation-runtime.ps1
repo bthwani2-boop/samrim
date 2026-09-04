@@ -62,8 +62,9 @@ function Invoke-Compose {
         "--profile", "foundation"
     )
 
-    & docker @baseArgs @Arguments
-    return $LASTEXITCODE
+    & docker @baseArgs @Arguments | Out-Host
+    $code = $LASTEXITCODE
+    return $code
 }
 
 function Show-Diagnostics {
