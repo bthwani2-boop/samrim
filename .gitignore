@@ -4,6 +4,7 @@ node_modules/
 
 # Build / framework / coverage
 **/next-env.d.ts
+**/expo-env.d.ts
 .next/
 dist/
 build/
