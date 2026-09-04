@@ -50,7 +50,7 @@ This list is a minimum seed, not a closed universe.
 
 ## Current durable-knowledge gaps to close
 
-Explicitly disposition donor responsibilities around promotions/coupons/funding, ratings/reviews, notifications/communications, media/assets, search/discovery, analytics/read models, client profile/preferences, partner team/membership, catalog approval/publication, pricing/penalties/collateral, COD/refund/payout/reconciliation, provider operations and support/incident flows.
+Explicitly disposition every material donor/current responsibility. The current highest knowledge frontier includes Central Catalog versus approval/publication ownership; Cart/Checkout before ORDER_CREATION; Field Operations assignment/visit/readiness/escalation separate from Workforce eligibility; Marketing/Campaigns/Loyalty/commercial-program eligibility separate from coupon funding and WLT money truth; concrete DSH owners for notification inbox/preferences/delivery state and operational-analytics projections; Platform Control semantic responsibility versus independent deployable-service admission; and remaining promotions/funding, ratings/reviews, media/assets, search/discovery, profile/preferences, partner team, pricing/penalties/collateral, COD/refund/payout/reconciliation, provider operations and support/incident flows.
 
 A responsibility may be merged into another capability only with owner/journey/failure/readback proof.
 
@@ -116,6 +116,7 @@ MAXIMUM-SAFE PARALLELISM
 EXACT-HEAD/FOREIGN-DELTA LAW
 DONOR ZERO-LOSS GATES
 TEMPORARY PLAN NON-AUTHORITY
+DURABLE_REPOSITORY_TOPOLOGY_OWNER
 ```
 
 Exit only when no active owner contradicts these laws.
@@ -257,6 +258,10 @@ UNACCOUNTED_MATERIAL_DONOR_SOURCE_FAMILIES=0
 UNACCOUNTED_MATERIAL_DONOR_SEMANTIC_ATOMS=0
 UNCLASSIFIED_MATERIAL_PLATFORM_RESPONSIBILITIES=0
 UNMAPPED_DURABLE_CAPABILITIES/JOURNEYS=0
+ALL_MATERIAL_JOURNEY_STEPS_CLASSIFIED=PASS
+UNOWNED_MATERIAL_JOURNEY_STEPS=0
+CAPABILITY_REQUIRED_SEMANTIC_ENVELOPE=PASS
+TEMPORARY_REFOUNDATION_LAW_STRANDED=0
 UNJUSTIFIED_DONOR_TRUTH_LOSS=0
 KNOWN_REQUIRED_OPERATIONAL_GUIDANCE_GAPS=0
 ```
