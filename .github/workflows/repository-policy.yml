@@ -52,13 +52,10 @@ jobs:
             violation "forbidden pass-through apps/*/runtime topology"
           fi
 
-          bad_names="$(git ls-files | grep -E -i -- '(^|/)(credentials.json|google-services.json|GoogleService-Info.plist)$|.(jks|keystore|p12|p8|pem|key)$|(^|/).env($|.)' | grep -E -v -- '(^|/).env.example$' || true)"
+          bad_names="$(git ls-files | grep -E -i -- '(^|/)(credentials\.json|google-services\.json|GoogleService-Info\.plist)$|\.(jks|keystore|p12|p8|pem|key)$|(^|/)\.env($|\.)' | grep -E -v -- '(^|/)\.env\.example$' || true)"
           if [[ -n "${bad_names}" ]]; then
-            printf 'forbidden secret-bearing file class:
-%s
-' "${bad_names}" >>"${report}"
-            findings=$((findings + $(printf '%s
-' "${bad_names}" | grep -c .)))
+            printf 'forbidden secret-bearing file class:\n%s\n' "${bad_names}" >>"${report}"
+            findings=$((findings + $(printf '%s\n' "${bad_names}" | grep -c .)))
           fi
 
           diff_report="${RUNNER_TEMP}/diff-check.txt"

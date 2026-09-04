@@ -13,8 +13,7 @@ install_tar_binary() {
   tmp="$(mktemp -d)"
   archive="${tmp}/${name}.tar.gz"
   curl --fail --silent --show-error --location --retry 3 --retry-all-errors "${url}" --output "${archive}"
-  printf '%s  %s
-' "${sha256}" "${archive}" | sha256sum --check --status || {
+  printf '%s  %s\n' "${sha256}" "${archive}" | sha256sum --check --status || {
     echo "::error::Checksum verification failed for ${name} ${version}"
     exit 2
   }
@@ -37,6 +36,4 @@ for tool in "${requested[@]}"; do
     *) echo "::error::Unknown assurance tool: ${tool}"; exit 2 ;;
   esac
 done
-[[ -n "${GITHUB_PATH:-}" ]] && printf '%s
-' "${BIN_DIR}" >> "${GITHUB_PATH}" || printf '%s
-' "${BIN_DIR}"
+[[ -n "${GITHUB_PATH:-}" ]] && printf '%s\n' "${BIN_DIR}" >> "${GITHUB_PATH}" || printf '%s\n' "${BIN_DIR}"
