@@ -119,11 +119,11 @@ jobs:
 
       - name: Verify durable repository structure
         shell: bash
-        run: pnpm run repository:verify-structure
+        run: node tools/dev/verify-repository-structure.mjs
 
       - name: Verify tracked-artifact structural hygiene
         shell: bash
-        run: pnpm run repository:verify-hygiene
+        run: node tools/dev/verify-structural-hygiene.mjs
 
       - name: Verify docs command parity
         shell: bash
