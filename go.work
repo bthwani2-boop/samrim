@@ -1,0 +1,8 @@
+go 1.27.1
+
+use (
+	./services/identity/backend
+	./services/workforce/backend
+	./services/dsh/backend
+	./services/wlt/backend
+)

@@ -1,0 +1,17 @@
+packages:
+  - "apps/*"
+  - "services/*"
+  - "packages/*"
+  - "contracts"
+
+allowBuilds:
+  "@sentry/cli": true
+  nx: true
+  sharp: true
+
+autoInstallPeers: false
+engineStrict: true
+nodeLinker: isolated
+saveExact: true
+sharedWorkspaceLockfile: true
+strictPeerDependencies: false

@@ -1,0 +1,38 @@
+{
+  "name": "samrim",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.0",
+  "engines": {
+    "node": ">=24.17.0 <25",
+    "pnpm": "10.34.0"
+  },
+  "scripts": {
+    "client": "nx run app-client:start",
+    "partner": "nx run app-partner:start",
+    "captain": "nx run app-captain:start",
+    "field": "nx run app-field:start",
+    "control": "nx run control-panel:dev",
+    "dsh": "nx run dsh:serve",
+    "wlt": "nx run wlt:serve",
+    "identity": "nx run identity:serve",
+    "workforce": "nx run workforce:serve",
+    "nx:projects": "nx show projects",
+    "workspace:typecheck": "nx run-many -t typecheck --all --outputStyle=stream",
+    "workspace:test": "nx run-many -t test --all --outputStyle=stream",
+    "workspace:build": "nx run-many -t build --all --outputStyle=stream",
+    "workspace:vet": "nx run-many -t vet --all --outputStyle=stream",
+    "workspace:verify": "pnpm run workspace:typecheck && pnpm run workspace:test && pnpm run workspace:build && pnpm run workspace:vet",
+    "runtime:config": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml config",
+    "runtime:up": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml up -d",
+    "runtime:down": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml down",
+    "runtime:status": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml ps",
+    "runtime:logs": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml logs -f",
+    "doctor": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/doctor.ps1",
+    "bootstrap": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1"
+  },
+  "devDependencies": {
+    "nx": "23.2.0",
+    "typescript": "6.0.2"
+  }
+}
