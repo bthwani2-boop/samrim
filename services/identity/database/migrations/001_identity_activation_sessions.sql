@@ -36,7 +36,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS identity_actors_phone_uq ON identity_actors(ph
 CREATE UNIQUE INDEX IF NOT EXISTS identity_actors_username_uq ON identity_actors(lower(username)) WHERE username IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS identity_actor_roles (
-    actor_id text REFERENCES identity_actors(id) ON DELETE CASCADE,
+    actor_id text NOT NULL REFERENCES identity_actors(id) ON DELETE CASCADE,
     role varchar(32) NOT NULL,
     enabled boolean NOT NULL DEFAULT true,
     version integer NOT NULL DEFAULT 1,
@@ -50,7 +50,7 @@ CREATE INDEX IF NOT EXISTS identity_actor_roles_role_idx ON identity_actor_roles
 
 CREATE TABLE IF NOT EXISTS identity_activation_challenges (
     id text PRIMARY KEY,
-    actor_id text NOT NULL REFERENCES identity_actors(id) ON DELETE CASCADE,
+    actor_id text REFERENCES identity_actors(id) ON DELETE CASCADE,
     role varchar(32) NOT NULL,
     phone_e164 varchar(16) NOT NULL,
     code_hash char(64) NOT NULL,
