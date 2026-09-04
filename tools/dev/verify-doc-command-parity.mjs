@@ -40,8 +40,14 @@ const forbiddenLegacyPatterns = [
   { label: "legacy verify full command", regex: /verify:full/i },
   { label: "legacy reverse wrapper", regex: /\bpnpm\s+reverse\b/i },
   { label: "legacy mobile eas wrapper", regex: /\bpnpm\s+mobile:eas\b/i },
-  { label: "donor repository path", regex: /bthwani-suite-next/i },
-  { label: "donor branch authority", regex: /\borigin\/h\b/i },
+  {
+    label: "donor repository path",
+    regex: new RegExp("bthwani-suite" + "-next", "i"),
+  },
+  {
+    label: "donor branch authority",
+    regex: new RegExp("\\borigin" + "\\/h\\b", "i"),
+  },
   {
     label: "wrong diagnosis-plan authority",
     regex: /plans\/diagnose-implementing/i,
