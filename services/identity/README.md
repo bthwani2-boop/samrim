@@ -1,18 +1,23 @@
 # Identity Service
 
-STRUCTURAL_STATUS: FOUNDATION_ONLY
-CAPABILITY_IMPLEMENTATION_STATUS: DEFERRED_UNTIL_STAGE_B
+STRUCTURAL_STATUS: CANONICAL
+CAPABILITY_IMPLEMENTATION_STATUS: STAGE_B_CANDIDATE_PENDING_EXACT_HEAD_CLOSURE
 
-Canonical bounded-context owner for actor identity, authentication, credentials/verification, sessions, activation, roles/permissions vocabulary, and trusted identity context.
+Identity is the sole creator/owner of the cross-boundary human `actor_id` and owns authentication, credentials, explicit high-level actor-role admission, activation proofs and role-scoped sessions.
 
-Prepared canonical rooms:
+```text
+identity_actors
+  1
+  └── * identity_actor_roles
+          └── role-scoped activation/session
+```
 
-- `backend/` — service runtime and server-side enforcement.
-- `clients/` — Identity-owned public/generated client surface.
-- `contracts/` — canonical Identity wire contract authority.
-- `database/` — one canonical migration/schema lane.
-- `tests/` — service-level contract/security/cutover verification.
+One normalized phone resolves to one actor. The same actor may hold client, partner, captain, field and operator roles without creating another human identity.
 
-Identity does not own DSH operational participant/assignment truth, WLT financial truth, app composition, or app-native storage adapters.
+Identity intentionally does not own DSH participant eligibility/assignment, partner/store membership/business scope, WLT finance, HR/workforce, a generic permissions engine, Tenant, AccessGrant, or generic Operator Context.
 
-During Foundation Construction only the service process skeleton and canonical lanes are materialized. Authentication/session/RBAC/OTP/business contract semantics are intentionally absent until Stage B proves the Identity capability cone and donor truth required for it.
+Internal service identity is resolved from the bearer service credential itself. DSH manages only partner/captain/field Identity-role admission; Platform Control manages only operator role/credential intent.
+
+Public OTP: client may establish client; partner/captain/field require a pre-existing enabled role; operator OTP is forbidden.
+
+Each session carries exactly one role. Role disablement revokes only that role's sessions/challenges.

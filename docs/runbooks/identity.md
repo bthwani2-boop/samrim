@@ -4,64 +4,65 @@ DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
 PRODUCT_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-Status: OPERATIONAL_RUNBOOK
+Status: STAGE_B_CANDIDATE_RUNBOOK
 Owner: Identity service operations
 
-Current canonical identity contracts, migrations, runtime configuration and registered CI/guard commands override stale details.
+## Current authority
 
-## Service objectives
+```text
+actor identity + actor_id            → Identity
+high-level actor-role admission      → Identity
+OTP/password authentication          → Identity
+role-scoped sessions                 → Identity
+DSH participant eligibility/scope    → DSH
+financial truth                      → WLT
+```
 
-Availability/latency/error-budget numbers are operational targets only after they are configured and measured in the active environment. They are not fabricated production evidence.
+Identity currently has no generic Tenant/Operator-Context/AccessGrant/permissions engine.
 
 ## Required signals
 
-Prefer structured dimensions such as:
+Prefer operation ID, result/error code, HTTP status, duration, correlation ID and resolved session role. Never record passwords, activation codes, bearer/refresh tokens, token hashes, password hashes, service secrets or full sensitive request bodies.
 
-- operation ID;
-- result/error code;
-- HTTP status;
-- duration;
-- correlation ID;
-- surface;
-- resolved actor role;
-- trusted context identifiers only when permitted and redacted appropriately.
+## Authentication behavior
 
-Never record passwords, activation codes, bearer/refresh tokens, token hashes, secrets or full sensitive request bodies.
+- Client OTP may establish client role.
+- Partner/captain/field OTP succeeds only after DSH has provisioned and enabled that role.
+- Operator is password-only.
+- OTP is short-lived, single-use and attempt-limited, with phone/source throttling.
+- Operator login failures are tracked by account and source; abusive sources are throttled without a simple username-only permanent lockout.
+- Refresh is checked against device fingerprint and rotates atomically. Access tokens remain short-lived bearer tokens.
 
-## Alerts
+## Role disable / recovery
 
-Investigate the current equivalents of:
+Disabling `actor_id + role` revokes only that role's sessions and pending activations. A provisioning retry never silently re-enables the role; the owner must explicitly enable it.
 
-1. repeated readiness failure;
-2. abnormal login/activation rate limiting;
-3. elevated refresh/session failure;
-4. identity outbox rows overdue beyond their retry schedule;
-5. forbidden-origin/CORS bursts;
-6. repeated PostgreSQL constraint violations in identity-owned tables.
+Operator password reset is Platform-Control-authenticated, audited, replaces the Argon2id credential and revokes existing operator sessions.
+
+## Stale Stage-B database
+
+The discarded pre-refoundation Stage-B schema was never integrated as production truth. Migration 001 intentionally fails if legacy actor columns such as `roles`, `operator_context_id`, `permissions` or actor-global lifecycle fields are present.
+
+For local/non-production development only: stop the stack, reset/remove the stale PostgreSQL development volume, start the stack, then rerun the Identity runtime verifier. Do not add compatibility migration/dual-read logic for the discarded unmerged schema. Do not apply destructive reset instructions to production data.
 
 ## Diagnostic sequence
 
-1. Capture exact commit and correlation ID.
-2. Check current identity health/readiness routes.
-3. Check PostgreSQL connectivity and current migration state.
-4. Classify the failure: login, activation, refresh, session ownership, service authentication, authorization, CORS or outbox delivery.
-5. Reproduce only with sanitized actor identifiers and masked personal data.
-6. Verify revoked/rotated credentials cannot be replayed after refresh, logout, session revocation, deactivation or deletion where the current contract requires it.
+1. Capture exact commit/correlation ID.
+2. Check `/identity/health` and `/identity/readiness`.
+3. Check database schema and absence of legacy actor columns.
+4. Classify provisioning/OTP/activation/password/reset/refresh/role/session/service-auth/CORS/rate-limit failure.
+5. Reproduce with sanitized actor identifiers and masked phone data.
+6. Verify canonical actor-role/session readback.
+7. Re-run same-actor multi-role and scoped-revocation tests.
 
 ## Support rules
 
-- Expired/revoked session → use the governed sign-in/activation flow; never restore a token manually.
-- Locked activation → follow current challenge/rate-limit policy; never reset attempts ad hoc.
-- Wrong role/surface → correct the canonical actor/domain-role assignment; do not patch client-local state.
-- Duplicate identity data → resolve the sovereign existing actor; do not create a parallel actor.
-- Outbox backlog → retry by stable event identity after root cause is corrected; do not duplicate downstream effects.
-
-## Rollback
-
-- Roll back application code to a candidate verified under current policy; do not rely on historical workflow names.
-- Applied identity migrations are corrected through forward migrations unless an explicitly reviewed rollback contract exists.
-- Never roll back to behavior that re-enables wildcard trust, token reuse, cross-actor access, plaintext secrets or unbound support sessions.
+- Expired/revoked session → use canonical login/OTP; never restore token manually.
+- Locked activation → request a new challenge after throttling; never reset attempts ad hoc.
+- Wrong DSH eligibility/store/assignment scope → correct DSH owner truth; do not add Identity permissions/context.
+- Wrong Identity role admission → owning service manages the explicit role; do not create another actor.
+- Credential compromise → use governed operator password reset where applicable and verify revocation.
 
 ## Verification boundary
 
-Use current registered identity/runtime/CI checks from the repository. A historical workflow path or old commit is not current evidence. Final closure requires all applicable same-commit scopes and protected approvals.
+Final closure requires generated-contract checks, boundary/residue checks, Go/workspace verification, full Foundation runtime and `tools/dev/verify-identity-runtime.mjs`, followed by same-commit GitHub baseline/runtime checks. Isolated-role green fixtures alone are not closure proof.

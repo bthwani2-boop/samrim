@@ -1,7 +1,9 @@
 # Identity Contracts
 
-This room is the canonical Identity service contract authority.
+`identity.openapi.yaml` is the sole current Identity wire-contract authority.
 
-The target is one coherent service contract composition root with deterministic generated-client lineage.
+It preserves: one `actor_id`, explicit actor↔role binding, single-role sessions, OTP authentication for client/partner/captain/field, password authentication for operator, and credential-derived internal service identity.
 
-Do not copy inherited fragments mechanically. Preserve required wire/security truth, converge duplicate fragments, generate consumers from the winner, then delete losing contract authorities.
+Forbidden residue includes caller/context trust headers, consumer-authored actor IDs, generic grant/tenant/context objects, operator OTP, actor-global role arrays/permissions and obsolete governed-activation issuance routes.
+
+Generated client lineage must be deterministic from this contract.
