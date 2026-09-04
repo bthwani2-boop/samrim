@@ -1,0 +1,29 @@
+{
+  "name": "بثواني",
+  "slug": "app-client-next",
+  "scheme": "bthwani-client-next",
+  "owner": "bthwani1",
+  "version": "0.3.0",
+  "androidPackage": "com.bthwani.client.next",
+  "iosBundleIdentifier": "com.bthwani.client.next",
+  "projectId": "abec897b-1f5f-409d-8286-607a5a6b69e2",
+  "nativeCapabilities": [
+    "router",
+    "updates",
+    "constants",
+    "crypto",
+    "image",
+    "splashScreen",
+    "fileSystem",
+    "documentPicker",
+    "imagePicker",
+    "secureStore",
+    "notifications",
+    "video",
+    "sharing",
+    "webBrowser",
+    "haptics",
+    "location",
+    "maps"
+  ]
+}

@@ -8,6 +8,11 @@
     "pnpm": "10.34.0"
   },
   "scripts": {
+    "client": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-client",
+    "partner": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-partner",
+    "captain": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-captain",
+    "field": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-field",
+    "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
     "control": "nx run control-panel:dev",
     "dsh": "nx run dsh:serve",
     "wlt": "nx run wlt:serve",

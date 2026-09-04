@@ -1,0 +1,24 @@
+{
+  "name": "بثواني الشريك",
+  "slug": "app-partner-next",
+  "scheme": "bthwani-partner-next",
+  "owner": "bthwani1",
+  "version": "0.3.0",
+  "androidPackage": "com.bthwani.partner.next",
+  "iosBundleIdentifier": "com.bthwani.partner.next",
+  "projectId": "4cde7be0-7582-4a6b-9ae0-d74f2d149580",
+  "nativeCapabilities": [
+    "router",
+    "updates",
+    "constants",
+    "crypto",
+    "splashScreen",
+    "fileSystem",
+    "documentPicker",
+    "imagePicker",
+    "secureStore",
+    "notifications",
+    "location",
+    "maps"
+  ]
+}

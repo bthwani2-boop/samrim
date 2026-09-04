@@ -1,0 +1,24 @@
+{
+  "name": "بثواني الكابتن",
+  "slug": "app-captain-next",
+  "scheme": "bthwani-captain-next",
+  "owner": "bthwani1",
+  "version": "0.3.0",
+  "androidPackage": "com.bthwani.captain.next",
+  "iosBundleIdentifier": "com.bthwani.captain.next",
+  "projectId": "07382a76-4dc5-460f-b4a7-7105d724bae6",
+  "nativeCapabilities": [
+    "router",
+    "updates",
+    "constants",
+    "crypto",
+    "battery",
+    "splashScreen",
+    "documentPicker",
+    "imagePicker",
+    "secureStore",
+    "notifications",
+    "location",
+    "maps"
+  ]
+}
