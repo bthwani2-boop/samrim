@@ -241,6 +241,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Node for semantic runtime proof
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+
       - name: Build and start repository runtime
         shell: bash
         run: |
@@ -303,6 +308,10 @@ jobs:
           fi
 
           echo "REPOSITORY_COMPOSE_SERVICES=PASS"
+
+      - name: Verify Identity activation-session semantics
+        shell: bash
+        run: node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env.example
 
       - name: Verify runtime proof did not mutate repository
         shell: bash
