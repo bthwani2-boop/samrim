@@ -185,6 +185,7 @@ jobs:
           drift="$(git status --porcelain -- go.work services/*/backend)"
           if [[ -n "${drift}" ]]; then
             printf '%s\n' "${drift}"
+            git diff -- go.work services/*/backend || true
             echo "::error::go work sync changed tracked or untracked Go workspace files"
             exit 1
           fi
