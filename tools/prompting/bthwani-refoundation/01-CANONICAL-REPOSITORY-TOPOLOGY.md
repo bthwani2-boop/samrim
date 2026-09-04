@@ -27,7 +27,7 @@ When required donor value is found in historical/generic shapes, use these recon
 
 ```text
 core/identity          → services/identity
-core/workforce         → extract required legacy facts to their proven owner (normally DSH operational participant state; Identity only actor/auth truth; WLT only financial truth); NEVER recreate services/workforce
+legacy generic human-participant container → extract required facts to their proven owner (normally DSH operational participant state; Identity only actor/auth truth; WLT only financial truth); never recreate a generic people service
 core/platform-control  → Platform Control semantic owner; services/platform-control only if service admission passes
 core/providers         → operation-owning service integration ports/adapters
 shared/ui-kit          → packages/design-system when reusable visual-system admission passes
