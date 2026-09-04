@@ -13,10 +13,6 @@
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "dependencies": {
-    "@bthwani/core-identity": "workspace:*",
-    "@bthwani/data-runtime": "workspace:*",
-    "@bthwani/dsh": "workspace:*",
-    "@bthwani/ui-kit": "workspace:*",
     "@react-native-community/netinfo": "12.0.1",
     "@sentry/react-native": "~7.11.0",
     "expo": "^57.0.0",
