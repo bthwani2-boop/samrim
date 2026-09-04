@@ -43,4 +43,4 @@ Material capability closure follows the action through owner, storage, transport
 
 Search for old writers/readers, stale exports/config, wrappers/aliases, obsolete tests/mocks, duplicate contracts and wrong-owner paths after cutover.
 
-Root scripts such as `pnpm verify`, `pnpm verify:full` and runtime smoke are entrypoints; inspect `package.json` for exact current commands.
+Use the current root verification entrypoints exposed by `package.json`, including `pnpm workspace:verify`, `pnpm foundation:verify-static`, and `pnpm foundation:runtime:close` as applicable. Do not infer retired aggregate commands from historical documentation.
