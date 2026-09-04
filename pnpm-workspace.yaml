@@ -14,4 +14,4 @@ engineStrict: true
 nodeLinker: isolated
 saveExact: true
 sharedWorkspaceLockfile: true
-strictPeerDependencies: false
+strictPeerDependencies: true
