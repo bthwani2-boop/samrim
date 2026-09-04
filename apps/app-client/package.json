@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "types": "src/index.ts",
   "scripts": {
     "start": "expo start --dev-client --port 18101",
     "typecheck": "tsc --noEmit -p tsconfig.json"
