@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: "${SAMRIM_POSTGRES_PASSWORD}"
       POSTGRES_DB: "${SAMRIM_POSTGRES_DB}"
     ports:
-      - "127.0.0.1:${SAMRIM_POSTGRES_PORT:-55432}:5432"
+      - "127.0.0.1:${SAMRIM_POSTGRES_PORT:-58432}:5432"
     volumes:
       - samrim-postgres-data:/var/lib/postgresql/data
     healthcheck:
