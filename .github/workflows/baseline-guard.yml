@@ -125,6 +125,10 @@ jobs:
         shell: bash
         run: node tools/dev/verify-doc-command-parity.mjs
 
+      - name: Verify knowledge-system invariants
+        shell: bash
+        run: node tools/dev/verify-knowledge-system.mjs
+
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
