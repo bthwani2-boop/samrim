@@ -1,10 +1,7 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
-    [string[]] $Path = @(
-        "tools/dev/close-foundation-runtime.ps1",
-        "tools/dev/verify-foundation-runtime.ps1"
-    )
+    [string[]] $Path
 )
 
 Set-StrictMode -Version Latest
@@ -13,7 +10,28 @@ $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $failures = @()
 
-foreach ($item in $Path) {
+if (-not $Path -or $Path.Count -eq 0) {
+    Push-Location $repo
+    try {
+        $Path = @(
+            & git ls-files -- "*.ps1"
+        )
+        if ($LASTEXITCODE -ne 0) {
+            throw "Unable to enumerate tracked PowerShell files."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+if (-not $Path -or $Path.Count -eq 0) {
+    Write-Host "POWERSHELL_SYNTAX=FAIL"
+    Write-Error "No tracked PowerShell files were discovered."
+    exit 1
+}
+
+foreach ($item in ($Path | Sort-Object -Unique)) {
     $candidate = if ([IO.Path]::IsPathRooted($item)) {
         $item
     }
@@ -52,4 +70,4 @@ if ($failures.Count -gt 0) {
     exit 1
 }
 
-Write-Host "POWERSHELL_SYNTAX_ALL=PASS"
+Write-Host "POWERSHELL_SYNTAX_ALL=PASS count=$($Path.Count)"
