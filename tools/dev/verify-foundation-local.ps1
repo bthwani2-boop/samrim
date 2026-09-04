@@ -34,7 +34,7 @@ function Assert-CleanTree([string] $Context) {
 
     if ($status.Count -gt 0) {
         Fail (
-            "Repository must remain clean during $Context:" +
+            "Repository must remain clean during ${Context}:" +
             [Environment]::NewLine +
             ($status -join [Environment]::NewLine)
         )
