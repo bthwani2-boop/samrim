@@ -55,6 +55,7 @@ The target preserves required Product/System/UX/data/security/financial/operatio
 - `01-CANONICAL-REPOSITORY-TOPOLOGY.md` — BThwani repository taxonomy and structural target.
 - `02-TARGET-BOUNDARY-MAP.md` — BThwani-specific owner/dependency/boundary consequences.
 - `03-REQUIRED-TRUTH-CENSUS.md` — exhaustive anti-forgetting evidence template; not a law owner.
+- `04-DONOR-EXTRACTION-ACCOUNTING.md` — temporary donor semantic-atom/zero-loss accounting template when a donor is supplied; never Product or execution authority.
 - `closure/CAPABILITY-CUTOVER-AND-DELETION.md` — BThwani replacement/cutover specialization inside the active repository.
 - `closure/TARGET-FIXED-POINT.md` — exhaustive BThwani target gates.
 
