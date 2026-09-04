@@ -1,4 +1,4 @@
-name: Foundation Baseline Guard
+name: Repository Baseline Guard
 
 on:
   push:
@@ -10,12 +10,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: foundation-baseline-${{ github.ref }}
+  group: repository-baseline-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   baseline:
-    name: foundation-baseline
+    name: repository-baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
 
-      - name: Enforce canonical foundation invariants
+      - name: Enforce canonical repository invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -130,6 +130,12 @@ jobs:
         shell: bash
         run: node tools/dev/verify-knowledge-system.mjs
 
+      - name: Verify Identity vertical boundaries
+        shell: bash
+        run: |
+          node tools/dev/generate-identity-types.mjs --check
+          node tools/dev/verify-identity-boundaries.mjs
+
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
@@ -207,7 +213,7 @@ jobs:
         shell: bash
         run: pnpm run workspace:verify
 
-      - name: Verify Foundation compose configuration
+      - name: Verify repository compose configuration
         shell: bash
         run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation config >/dev/null
 
@@ -224,7 +230,7 @@ jobs:
           fi
 
   runtime:
-    name: foundation-runtime
+    name: repository-runtime
     needs: baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -235,13 +241,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build and start Foundation runtime
+      - name: Build and start repository runtime
         shell: bash
         run: |
           set -euo pipefail
           docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation up -d --build
 
-      - name: Verify Foundation runtime composition
+      - name: Verify repository runtime composition
         shell: bash
         run: |
           set -euo pipefail
@@ -272,12 +278,12 @@ jobs:
             verify_json_endpoint wlt http://127.0.0.1:18083/wlt/readiness || ok=0
 
             if [[ "$ok" -eq 1 ]]; then
-              echo "FOUNDATION_RUNTIME_ENDPOINTS=PASS"
+              echo "REPOSITORY_RUNTIME_ENDPOINTS=PASS"
               break
             fi
 
             if [[ "$attempt" -eq 60 ]]; then
-              echo "::error::Foundation runtime did not become ready"
+              echo "::error::Repository runtime did not become ready"
               docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation ps
               docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation logs --tail 200
               exit 1
@@ -292,11 +298,11 @@ jobs:
           if [[ "${running[*]}" != "${expected[*]}" ]]; then
             printf 'running=%s\n' "${running[*]}"
             printf 'expected=%s\n' "${expected[*]}"
-            echo "::error::Foundation compose service census mismatch"
+            echo "::error::Repository compose service census mismatch"
             exit 1
           fi
 
-          echo "FOUNDATION_COMPOSE_SERVICES=PASS"
+          echo "REPOSITORY_COMPOSE_SERVICES=PASS"
 
       - name: Verify runtime proof did not mutate repository
         shell: bash
@@ -306,12 +312,12 @@ jobs:
           if [[ -n "$drift" ]]; then
             printf '%s\n' "$drift"
             git diff -- . || true
-            echo "::error::Foundation runtime proof mutated repository state"
+            echo "::error::Repository runtime proof mutated repository state"
             exit 1
           fi
-          echo "FOUNDATION_RUNTIME_REPOSITORY_MUTATION=0"
+          echo "REPOSITORY_RUNTIME_REPOSITORY_MUTATION=0"
 
-      - name: Stop Foundation runtime
+      - name: Stop repository runtime
         if: always()
         shell: bash
         run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation down --volumes --remove-orphans
