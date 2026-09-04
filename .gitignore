@@ -3,6 +3,7 @@ node_modules/
 .pnpm-store/
 
 # Build / framework / coverage
+**/next-env.d.ts
 .next/
 dist/
 build/
