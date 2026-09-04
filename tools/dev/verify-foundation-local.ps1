@@ -61,15 +61,42 @@ function Verify-ExpoConfig([string] $App) {
 
     $mobile = Get-Content $mobileConfigPath -Raw | ConvertFrom-Json
 
-    Push-Location $appRoot
+    $utf8 = [Text.UTF8Encoding]::new($false)
+    $processInfo = [Diagnostics.ProcessStartInfo]::new()
+    $processInfo.FileName = "cmd.exe"
+    $processInfo.WorkingDirectory = $appRoot
+    $processInfo.UseShellExecute = $false
+    $processInfo.CreateNoWindow = $true
+    $processInfo.RedirectStandardOutput = $true
+    $processInfo.RedirectStandardError = $true
+    $processInfo.StandardOutputEncoding = $utf8
+    $processInfo.StandardErrorEncoding = $utf8
+    $null = $processInfo.ArgumentList.Add("/d")
+    $null = $processInfo.ArgumentList.Add("/s")
+    $null = $processInfo.ArgumentList.Add("/c")
+    $null = $processInfo.ArgumentList.Add("pnpm exec expo config --type public --json")
+
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $processInfo
+
     try {
-        $jsonText = (& pnpm exec expo config --type public --json | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0) {
-            Fail "$App Expo config resolution failed."
+        if (-not $process.Start()) {
+            Fail "$App Expo config process failed to start."
+        }
+
+        $jsonText = $process.StandardOutput.ReadToEnd().Trim()
+        $stderr = $process.StandardError.ReadToEnd().Trim()
+        $process.WaitForExit()
+
+        if ($process.ExitCode -ne 0) {
+            if (-not [string]::IsNullOrWhiteSpace($stderr)) {
+                Write-Host $stderr
+            }
+            Fail "$App Expo config resolution failed with exit code $($process.ExitCode)."
         }
     }
     finally {
-        Pop-Location
+        $process.Dispose()
     }
 
     if ([string]::IsNullOrWhiteSpace($jsonText)) {
