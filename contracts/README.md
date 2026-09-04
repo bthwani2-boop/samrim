@@ -1,7 +1,13 @@
 # Contracts
 
-Canonical machine-readable interface contracts live here.
+Root `contracts/` is reserved for genuinely cross-service protocol primitives, generated/discovery catalog material, and their verification tooling.
 
-This root may contain API, event, schema, and compatibility contracts when they are the authoritative source for producer/consumer boundaries.
+Service-owned business API/event/schema contracts remain sovereign under:
 
-Generated clients and derived artifacts are not independent sources of truth and must retain explicit lineage to their canonical contract.
+```text
+services/<owner>/contracts/
+```
+
+This root must not own DSH, WLT, Identity, Workforce, or other service business operations merely because multiple consumers use them.
+
+Generated clients and other derived artifacts are never independent sources of truth and must retain explicit lineage to their canonical service or cross-service contract.
