@@ -3,11 +3,10 @@
 ARTIFACT_CLASS: DURABLE_DECISION_RATIONALE
 STATUS: ACTIVE
 EXECUTION_AUTHORITY: NONE
-SUPERSEDES: governance/decisions/0004-identity-workforce-separation.md
 
 ## Context
 
-The platform needs one stable human identity across surfaces without creating a generic people/workforce service before an independently justified HR capability exists. Client, partner, captain, field and operator are actor/domain participation roles, not reasons to create separate identity systems.
+The platform needs one stable human identity across surfaces without creating a generic people service before an independently justified HR capability exists. Client, partner, captain, field and operator are actor/domain participation roles, not reasons to create separate identity systems.
 
 ## Decision
 
@@ -15,9 +14,9 @@ The platform needs one stable human identity across surfaces without creating a 
 - Identity owns actor identity, credentials, authentication, activation, sessions, roles/permissions vocabulary and trusted identity context.
 - DSH owns current client/partner/captain/field operational participant state, affiliation, eligibility, assignments and other DSH-specific operational facts.
 - WLT owns financial truth.
-- No `Workforce`, `People`, `Staff` or `Actors` peer service/module is admitted merely to group human participants.
+- No `People`, `Staff` or `Actors` peer service/module is admitted merely to group human participants.
 - Control Panel sections such as HR are composition/navigation and do not imply a backend bounded context.
-- A future enterprise HR/workforce bounded context may be extracted only when concrete cross-domain lifecycle/data/rule independence proves the need.
+- A future enterprise HR bounded context may be extracted only when concrete cross-domain lifecycle/data/rule independence proves the need.
 
 ## Consequences
 
@@ -27,7 +26,7 @@ Identity does not become an HR database. DSH does not own authentication or fina
 
 ```text
 ONE_CROSS_BOUNDARY_HUMAN_IDENTIFIER=actor_id
-CURRENT_WORKFORCE_SERVICE_OR_MODULE=ABSENT
+CURRENT_GENERIC_PEOPLE_SERVICE_OR_MODULE=ABSENT
 PREMATURE_GENERIC_PEOPLE_DOMAIN=FORBIDDEN
 DOMAIN_PARTICIPATION_TRUTH=OWNED_BY_THE_DOMAIN_THAT_USES_IT
 ```
