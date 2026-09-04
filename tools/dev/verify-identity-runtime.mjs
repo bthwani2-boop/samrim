@@ -336,6 +336,31 @@ const operatorPair = await expect("POST", "/auth/login", 200, {
   },
 });
 assertSession(operatorPair, "operator", "control-panel", actorId);
+
+// Source throttling applies to failed attempts, but cannot turn a noisy/shared source into a denial of correct credentials.
+for (let i = 0; i < 30; i++) {
+  const probe = await request("POST", "/auth/login", {
+    body: {
+      username: "unknown." + suffix + "." + i,
+      password: "Wrong-Unknown-" + suffix + "-" + i,
+      deviceFingerprint: "device-source-throttle-" + suffix,
+    },
+  });
+  if (i < 29 && probe.status !== 401) {
+    fail("source-throttle probe " + i + " returned " + probe.status + ", expected 401");
+  }
+  if (i === 29 && probe.status !== 429) {
+    fail("source-throttle terminal probe returned " + probe.status + ", expected 429");
+  }
+}
+const operatorAfterSourceThrottle = await expect("POST", "/auth/login", 200, {
+  body: {
+    username: operatorUsername,
+    password: operatorPassword,
+    deviceFingerprint: "device-operator-after-source-throttle-" + suffix,
+  },
+});
+assertSession(operatorAfterSourceThrottle, "operator", "control-panel", actorId);
 await expect("GET", "/auth/session", 200, { token: operatorPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: sharedClientPair.accessToken });
 
@@ -452,6 +477,7 @@ console.log("IDENTITY_GOVERNED_OTP_SELF_GRANT=0");
 console.log("IDENTITY_OPERATOR_PASSWORD_ONLY=PASS");
 console.log("IDENTITY_SERVICE_CREDENTIAL_CALLER=PASS");
 console.log("IDENTITY_ACCOUNT_LOCKOUT_DOS_RESISTANCE=PASS");
+console.log("IDENTITY_LOGIN_SOURCE_DOS_RESISTANCE=PASS");
 console.log("IDENTITY_PASSWORD_RESET_REVOCATION=PASS");
 console.log("IDENTITY_OTP_PHONE_RATE_LIMIT=PASS");
 console.log("IDENTITY_OTP_SOURCE_RATE_LIMIT=PASS");
