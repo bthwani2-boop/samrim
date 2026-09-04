@@ -438,3 +438,27 @@ NO_UNUSED_MATERIAL_DEPENDENCIES
 NO_DUPLICATE_CONTRACT/MIGRATION/RUNTIME_AUTHORITIES
 NO_KNOWN_UNVERIFIED_MATERIAL_DATA/SECURITY/FINANCIAL/OPERATIONAL_CLAIMS
 ```
+
+## 17. Engineering control-path efficiency
+
+When build/test/CI/runtime/developer tooling itself is materially slow, flaky, duplicated or expensive, treat the control path as a root-cause surface rather than adding wrappers blindly.
+
+```text
+MEASURE CURRENT COST/FAILURE
+→ TRACE THE ACTUAL CRITICAL PATH
+→ IDENTIFY HIGHEST CAUSAL BOTTLENECK/REDUNDANCY
+→ SIMPLIFY / DELETE / CONSOLIDATE / MOVE TO NATIVE GUARANTEE
+→ MEASURE AGAIN ON THE SAME CLAIM
+```
+
+Required proof:
+
+```text
+ASSURANCE_NOT_WEAKENED
+FAILURE_NOT_SHIFTED_TO_ANOTHER_STAGE/TEAM/SERVICE
+TOTAL_CRITICAL_PATH_COST_NOT_HIDDEN_BY_PARALLEL WASTE
+NO NEW SHADOW SOURCE OF TRUTH
+NO CAMPAIGN-ONLY RESIDUE AFTER PURPOSE ENDS
+```
+
+Do not optimize by skipping required evidence, suppressing failures, moving checks to a later slower gate, or running the same semantic check through several wrappers.
