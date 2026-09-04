@@ -21,5 +21,9 @@
         "command": "pnpm --dir apps/control-panel build"
       }
     }
-  }
+  },
+  "tags": [
+    "scope:control-panel",
+    "type:app"
+  ]
 }
