@@ -17,7 +17,8 @@ jobs:
   baseline:
     name: foundation-baseline
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
+
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -39,9 +40,18 @@ jobs:
             tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md
             .github/CODEOWNERS
             .github/pull_request_template.md
+            package.json
+            pnpm-workspace.yaml
+            pnpm-lock.yaml
+            nx.json
+            go.work
           )
+
           for path in "${required[@]}"; do
-            [[ -e "${path}" ]] || { echo "::error::Required foundation path missing: ${path}"; exit 1; }
+            [[ -e "${path}" ]] || {
+              echo "::error::Required foundation path missing: ${path}"
+              exit 1
+            }
           done
 
           if [[ -d tools/prompting/bthwani-refoundation ]]; then
@@ -49,69 +59,31 @@ jobs:
               echo "::error::Refoundation package exists without its entrypoint"
               exit 1
             }
+
             orchestrator_profile="$(awk -F': ' '/^REFOUNDATION_PROFILE_REVISION:/ {print $2; exit}' tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md)"
             refoundation_revision="$(awk -F': ' '/^PACKAGE_REVISION:/ {print $2; exit}' tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md)"
+
             [[ -n "${orchestrator_profile}" && "${orchestrator_profile}" == "${refoundation_revision}" ]] || {
               echo "::error::Orchestrator/refoundation revision mismatch: orchestrator=${orchestrator_profile:-missing} refoundation=${refoundation_revision:-missing}"
               exit 1
             }
           fi
 
-          if [[ -f package.json && ! -f pnpm-lock.yaml ]]; then
-            echo "::error::Root package.json exists but the canonical pnpm-lock.yaml is missing"
-            exit 1
-          fi
-
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          const roots = ['apps', 'services', 'packages'];
-          const manifests = [];
-          for (const root of roots) {
-            if (!fs.existsSync(root)) continue;
-            for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-              if (!entry.isDirectory()) continue;
-              const manifest = path.join(root, entry.name, 'package.json');
-              if (fs.existsSync(manifest)) manifests.push(manifest);
-            }
-          }
-          if (fs.existsSync(path.join('contracts', 'package.json'))) manifests.push(path.join('contracts', 'package.json'));
-          const packages = new Map();
-          for (const manifest of manifests) {
-            const json = JSON.parse(fs.readFileSync(manifest, 'utf8'));
-            if (json.name) packages.set(json.name, manifest);
-          }
-          const missing = [];
-          for (const manifest of manifests) {
-            const json = JSON.parse(fs.readFileSync(manifest, 'utf8'));
-            for (const section of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
-              for (const [name, spec] of Object.entries(json[section] || {})) {
-                if (typeof spec === 'string' && spec.startsWith('workspace:') && !packages.has(name)) {
-                  missing.push(`${manifest}: ${section} -> ${name} (${spec})`);
-                }
-              }
-            }
-          }
-          if (missing.length) {
-            console.error('::error::Nonexistent workspace dependencies detected');
-            for (const item of missing) console.error(item);
-            process.exit(1);
-          }
-          NODE
-
           for root in core shared; do
-            [[ ! -e "${root}" ]] || { echo "::error::Forbidden top-level ownership class: ${root}"; exit 1; }
+            [[ ! -e "${root}" ]] || {
+              echo "::error::Forbidden top-level ownership class: ${root}"
+              exit 1
+            }
           done
 
           if [[ -d apps ]] && find apps -mindepth 2 -maxdepth 2 -type d -name runtime -print -quit | grep -q .; then
-            echo "::error::Pass-through apps/*/runtime topology is forbidden on main"
+            echo "::error::Pass-through apps/*/runtime topology is forbidden"
             exit 1
           fi
 
           forbidden='bthwani2-boop/bthwani-suite-next|bthwani-suite-next|D:\\bthwani-suite-next|C:\\bthwani-secrets|origin/h|RE_PIN_h|UNKNOWN_CURRENT_h_HEAD|H_TRUSTWORTHY_CANONICAL_BASELINE_REFOUNDATION_COMPLETE'
-          if git grep -n -I -E -- "${forbidden}" -- . \
-            ':(exclude).github/workflows/baseline-guard.yml' \
-            ':(exclude)tools/prompting/bthwani-refoundation/**' ; then
+
+          if git grep -n -I -E -- "${forbidden}" -- .             ':(exclude).github/workflows/baseline-guard.yml'             ':(exclude)tools/prompting/bthwani-refoundation/**' ; then
             echo "::error::Donor/campaign-specific authority residue found"
             exit 1
           fi
@@ -130,7 +102,9 @@ jobs:
             ref="${use#*uses:}"
             ref="${ref%%#*}"
             ref="${ref//[[:space:]]/}"
+
             [[ "${ref}" == ./* ]] && continue
+
             [[ "${ref}" =~ @[0-9a-fA-F]{40}$ ]] || {
               echo "::error::Action is not pinned to a full commit SHA: ${ref}"
               exit 1
@@ -142,3 +116,67 @@ jobs:
           else
             git show --check --format= HEAD
           fi
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093
+        with:
+          version: 10.34.0
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: 1.27.1
+          cache: true
+          cache-dependency-path: |
+            services/identity/backend/go.mod
+            services/workforce/backend/go.mod
+            services/dsh/backend/go.mod
+            services/wlt/backend/go.mod
+
+      - name: Verify pinned toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(node --version)" == "v24.17.0" ]]
+          [[ "$(pnpm --version)" == "10.34.0" ]]
+          [[ "$(go version)" == *"go1.27.1"* ]]
+
+      - name: Frozen workspace install
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify mobile deployable identities
+        shell: bash
+        run: pnpm run mobile:verify-config
+
+      - name: Verify workspace dependency references
+        shell: bash
+        run: node tools/dev/verify-workspace-dependencies.mjs
+
+      - name: Verify Nx project tags
+        shell: bash
+        run: pnpm run nx:verify-tags
+
+      - name: Discover Nx projects
+        shell: bash
+        run: pnpm run nx:projects
+
+      - name: Verify PowerShell runtime scripts parse
+        shell: pwsh
+        run: ./tools/dev/verify-powershell-syntax.ps1
+
+      - name: Verify workspace
+        shell: bash
+        run: pnpm run workspace:verify
+
+      - name: Verify Foundation compose configuration
+        shell: bash
+        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation config >/dev/null
