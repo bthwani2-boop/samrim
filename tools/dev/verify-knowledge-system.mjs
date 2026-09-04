@@ -9,7 +9,31 @@ const fixed = read("tools/prompting/bthwani-refoundation/closure/TARGET-FIXED-PO
 const platform = read("governance/project/PLATFORM.md");
 const systemContext = read("governance/architecture/SYSTEM-CONTEXT.md");
 const topology = read("governance/architecture/REPOSITORY-TOPOLOGY.md");
+const governanceIndex = read("governance/GOVERNANCE.md");
+const campaignPlan = read("tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md");
 const failures = [];
+
+function collectMarkdown(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const absolute = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...collectMarkdown(absolute));
+    else if (entry.isFile() && entry.name.endsWith(".md")) out.push(absolute);
+  }
+  return out;
+}
+
+function normalizedLawLine(line) {
+  return line.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function isGeneralLawLike(line) {
+  const t = line.trim();
+  if (t.length < 30) return false;
+  if (t.includes("=") || t.includes("!=") || t.startsWith("→")) return true;
+  const letters = t.replace(/[^A-Za-z]/g, "");
+  return letters.length >= 20 && letters === letters.toUpperCase();
+}
 
 const headingRe = /^###\s+([A-Z0-9_]+)\b.*$/gm;
 const headingMatches = [...cap.matchAll(headingRe)];
@@ -65,6 +89,38 @@ for (const { id, body } of sections) {
   for (const [label, test] of checks) if (!test(body)) failures.push(id + " missing semantic envelope field: " + label);
 }
 
+
+const refoundationTargetsDir = path.join(root, "tools/prompting/bthwani-refoundation/targets");
+for (const file of collectMarkdown(refoundationTargetsDir)) {
+  const body = fs.readFileSync(file, "utf8");
+  const rel = path.relative(root, file).split(path.sep).join("/");
+  if (!body.includes("TEMPORARY_TARGET_SPECIALIZATION: YES")) failures.push(rel + " temporary target module missing specialization header");
+  if (!body.includes("GENERAL_EXECUTION_AUTHORITY: NONE")) failures.push(rel + " target module missing execution non-authority marker");
+  if (!body.includes("DURABLE_AUTHORITY: NONE")) failures.push(rel + " target module missing durable non-authority marker");
+}
+
+const orchestratorDir = path.join(root, "tools/prompting/bthwani-orchestrator");
+const refoundationDir = path.join(root, "tools/prompting/bthwani-refoundation");
+const orchestratorLawLines = new Map();
+for (const file of collectMarkdown(orchestratorDir)) {
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+    if (!isGeneralLawLike(line)) continue;
+    const normalized = normalizedLawLine(line);
+    if (!normalized) continue;
+    if (!orchestratorLawLines.has(normalized)) orchestratorLawLines.set(normalized, []);
+    orchestratorLawLines.get(normalized).push(path.relative(root, file).split(path.sep).join("/"));
+  }
+}
+for (const file of collectMarkdown(refoundationDir)) {
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+    if (!isGeneralLawLike(line)) continue;
+    const normalized = normalizedLawLine(line);
+    if (orchestratorLawLines.has(normalized)) {
+      failures.push("general law duplicated in refoundation: " + line.trim() + " @ " + path.relative(root, file).split(path.sep).join("/"));
+    }
+  }
+}
+
 if (cap.includes("`shared` — required")) failures.push("technical shared layer masquerades as Product surface");
 if (cap.toLowerCase().includes("proven notification capability")) failures.push("notification owner unresolved");
 if (cap.toLowerCase().includes("canonical ownership.** derived analytics/read-model capability")) failures.push("analytics owner unresolved");
@@ -88,6 +144,8 @@ for (const token of ["ALL_MATERIAL_JOURNEY_STEPS_CLASSIFIED=PASS","UNOWNED_MATER
   if (!fixed.includes(token)) failures.push("fixed-point gate missing: " + token);
 }
 if (!topology.includes("SEMANTIC_OWNER: governance/architecture/REPOSITORY-TOPOLOGY.md")) failures.push("durable topology owner missing");
+if (!governanceIndex.includes("architecture/REPOSITORY-TOPOLOGY.md")) failures.push("governance index missing durable repository-topology owner");
+if (campaignPlan.includes("## Current durable-knowledge gaps to close")) failures.push("campaign plan still reports resolved responsibility families as open");
 if (systemContext.includes("explicitly admitted Platform Control are the primary bounded contexts")) failures.push("Platform Control service admission is assumed");
 if (!platform.includes("independent deployable-service admission remains conditional")) failures.push("Platform Control semantic/deployment split missing");
 

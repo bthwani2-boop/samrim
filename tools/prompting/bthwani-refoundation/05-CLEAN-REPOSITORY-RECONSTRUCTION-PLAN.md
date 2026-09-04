@@ -48,11 +48,22 @@ Material history must explicitly inspect at least the historical families that p
 
 This list is a minimum seed, not a closed universe.
 
-## Current durable-knowledge gaps to close
+## Current durable-knowledge status
 
-Explicitly disposition every material donor/current responsibility. The current highest knowledge frontier includes Central Catalog versus approval/publication ownership; Cart/Checkout before ORDER_CREATION; Field Operations assignment/visit/readiness/escalation separate from Workforce eligibility; Marketing/Campaigns/Loyalty/commercial-program eligibility separate from coupon funding and WLT money truth; concrete DSH owners for notification inbox/preferences/delivery state and operational-analytics projections; Platform Control semantic responsibility versus independent deployable-service admission; and remaining promotions/funding, ratings/reviews, media/assets, search/discovery, profile/preferences, partner team, pricing/penalties/collateral, COD/refund/payout/reconciliation, provider operations and support/incident flows.
+The current target Governance has explicitly classified the previously open high-risk responsibility families:
 
-A responsibility may be merged into another capability only with owner/journey/failure/readback proof.
+- `CENTRAL_CATALOG` owns catalog identity/lifecycle; catalog approval/publication is its named subcapability, while Partner/Store publication remains separately owned;
+- `CART_CHECKOUT` owns cart and checkout-intent lifecycle before `ORDER_CREATION`;
+- `FIELD_OPERATIONS_ASSIGNMENT_READINESS` owns assignment/visit/check/readiness/escalation evidence while Workforce owns engagement/eligibility and Partner/Store onboarding consumes evidence;
+- `MARKETING_CAMPAIGNS_LOYALTY` owns campaign/audience/placement and non-financial loyalty/subscription/program eligibility while promotions/funding and WLT monetary truth remain separate;
+- DSH Notifications owns inbox/preferences/topic/delivery-attempt state while source domains own business-event truth and adapters own channel execution;
+- DSH operational analytics owns derived projection/readback lifecycle while source domains remain transactional truth;
+- Platform Control semantic responsibility is distinct from independent deployable-service admission;
+- `SETTLEMENTS_COMMISSIONS` is explicitly separated from common WLT money-movement/payout/reconciliation execution.
+
+These are no longer open semantic-owner gaps. They remain falsifiable by new donor/current evidence and do not prove implementation or donor exhaustion.
+
+Open knowledge work is the remaining unexhausted donor/current responsibility universe, not the already-classified families above. Any newly discovered material responsibility must receive an explicit disposition and owner/journey/failure/readback model before knowledge closure. A responsibility may be merged into another capability only with proof, and a previously resolved classification may be reopened only by new contradictory evidence.
 
 ## Campaign evidence model
 
@@ -217,8 +228,8 @@ This is a derived checkpoint, not closure truth.
 | clean-target orchestration authority | IMPLEMENTED_PENDING_CONTINUOUS_AUDIT | clean-target/zero-loss/exact-head laws introduced; contradiction scans continue |
 | historical donor checkpoint identification | INITIAL_PASS | minimum high-value checkpoints identified; history universe remains open |
 | donor semantic-atom exhaustion | OPEN | no completion claim allowed |
-| Governance coverage | PARTIAL | major missing capability families added; complete donor/current responsibility census remains open |
-| Docs semantic parity | PARTIAL | runtime and cross-cutting runbooks restored; full donor-doc parity remains open |
+| Governance semantic model | COHERENT_PENDING_EXHAUSTION | current 28-capability model is internally mapped/owned with explicit high-risk non-overlap; fresh donor/current exhaustion may still reopen classifications |
+| Docs/current-command parity | CURRENT_TARGET_CLEAN_PENDING_DONOR_EXHAUSTION | current docs/command scan is clean; historical donor-doc semantic exhaustion remains open |
 | Foundation Construction | PASS | exact-current Foundation exit evidence proves canonical substrate, workspace/Go verification, deployable shells, service skeletons, runtime composition, developer tooling, docs parity, CI prevention, and zero known premature semantic furnishing |
 | premature furnishing | REMOVED_AND_VERIFIED | Foundation hosts/services contain structural substrate only; business routes/endpoints/contracts/state machines remain deferred to Stage B |
 | A2 structural qualification | PASS | exact PR candidate `949579518e3f2479826cb86b30c0d40d7ac2e330` passed structural hygiene + full A2 zero-garbage qualification + executable Foundation baseline/runtime proof |
