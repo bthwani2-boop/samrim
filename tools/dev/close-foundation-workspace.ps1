@@ -119,6 +119,10 @@ try {
         go work edit -json *> $null
     }
 
+    Run-NativeStep "Verify Nx project tags" {
+        pnpm run nx:verify-tags
+    }
+
     Run-NativeStep "Nx project discovery" {
         pnpm run nx:projects
     }
