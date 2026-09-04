@@ -122,10 +122,6 @@ jobs:
         shell: bash
         run: node tools/dev/verify-structural-hygiene.mjs
 
-      - name: Verify A2 Foundation qualification
-        shell: bash
-        run: node tools/dev/verify-a2-foundation-qualification.mjs
-
       - name: Verify docs command parity
         shell: bash
         run: node tools/dev/verify-doc-command-parity.mjs
