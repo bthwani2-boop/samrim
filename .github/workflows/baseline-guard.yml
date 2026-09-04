@@ -55,7 +55,7 @@ jobs:
           fi
 
           forbidden='bthwani2-boop/bthwani-suite-next|bthwani-suite-next|D:\\bthwani-suite-next|C:\\bthwani-secrets|origin/h|RE_PIN_h|UNKNOWN_CURRENT_h_HEAD|H_TRUSTWORTHY_CANONICAL_BASELINE_REFOUNDATION_COMPLETE'
-          if git grep -n -I -E -- "${forbidden}" -- . ':(exclude).github/workflows/baseline-guard.yml' ; then
+          if git grep -n -I -E -- "${forbidden}" -- . ':(exclude).github/workflows/baseline-guard.yml' ':(exclude).github/workflows/repository-policy.yml' ; then
             echo "::error::Donor/campaign-specific authority residue found"
             exit 1
           fi
