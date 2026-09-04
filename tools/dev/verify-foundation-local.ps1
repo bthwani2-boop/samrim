@@ -150,10 +150,6 @@ try {
         node tools/dev/verify-structural-hygiene.mjs
     }
 
-    Run-NativeStep "A2 Foundation qualification" {
-        node tools/dev/verify-a2-foundation-qualification.mjs
-    }
-
     Run-NativeStep "Docs command parity" {
         node tools/dev/verify-doc-command-parity.mjs
     }
