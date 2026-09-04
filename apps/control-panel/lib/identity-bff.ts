@@ -60,6 +60,18 @@ export async function clearOperatorCookies(): Promise<void> {
   }
 }
 
+export async function activateOperator(phone: string, code: string): Promise<ActorIdentity> {
+  const deviceFingerprint = randomUUID();
+  const pair = await identityClient().activate({
+    phone,
+    actorType: "operator",
+    code,
+    deviceFingerprint,
+  });
+  await writeTokens(pair, deviceFingerprint);
+  return pair.identity;
+}
+
 export async function loginOperator(username: string, password: string): Promise<ActorIdentity> {
   const deviceFingerprint = randomUUID();
   const pair = await identityClient().login({ username, password, deviceFingerprint });
