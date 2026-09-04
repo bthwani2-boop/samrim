@@ -1,8 +1,10 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [string[]] $Path
+    [string[]] $Path = @(
+        "tools/dev/close-foundation-runtime.ps1",
+        "tools/dev/verify-foundation-runtime.ps1"
+    )
 )
 
 Set-StrictMode -Version Latest
@@ -36,7 +38,7 @@ foreach ($item in $Path) {
         foreach ($error in $errors) {
             $line = $error.Extent.StartLineNumber
             $column = $error.Extent.StartColumnNumber
-            $failures += "$item:$line:$column -> $($error.Message)"
+            $failures += "${item}:${line}:${column} -> $($error.Message)"
         }
     }
     else {
@@ -49,3 +51,5 @@ if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }
     exit 1
 }
+
+Write-Host "POWERSHELL_SYNTAX_ALL=PASS"
