@@ -57,7 +57,7 @@ During Foundation Construction, after manifests are stabilized and before normal
 pnpm foundation:workspace:close
 ```
 
-This command fails closed on branch mismatch, dirty worktree, wrong Node/pnpm versions, nonexistent workspace dependencies, lockfile generation failure, frozen-install failure, Nx/Go verification failure, unexpected file mutation, or invalid Foundation compose configuration. It does not commit or push the generated lockfile automatically.
+This command fails closed on branch mismatch, dirty worktree, wrong declared toolchain versions (Node/pnpm), nonexistent workspace dependencies, lockfile generation failure, frozen-install failure, Nx/Go verification failure, unexpected file mutation, or invalid Foundation compose configuration. It does not commit or push the generated lockfile automatically.
 
 ## Primary verification
 
