@@ -2,7 +2,10 @@ import {execFileSync} from "node:child_process";
 import fs from "node:fs";
 
 const argv = process.argv.slice(2);
-const get = (name) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : undefined; };
+const get = (name) => {
+  const i = argv.indexOf("--" + name);
+  return i >= 0 ? argv[i + 1] : undefined;
+};
 const head = get("head");
 let base = get("base") ?? "";
 if (!head || !/^[0-9a-f]{40}$/.test(head)) throw new Error("--head must be a 40-character SHA");
@@ -10,7 +13,7 @@ if (!head || !/^[0-9a-f]{40}$/.test(head)) throw new Error("--head must be a 40-
 const validBase = /^[0-9a-f]{40}$/.test(base) && !/^0+$/.test(base);
 let changed = [];
 try {
-  if (validBase) changed = execFileSync("git", ["diff","--name-only",`${base}...${head}`], {encoding:"utf8"}).split(/\r?\n/).filter(Boolean);
+  if (validBase) changed = execFileSync("git", ["diff","--name-only",base + "..." + head], {encoding:"utf8"}).split(/\r?\n/).filter(Boolean);
   else { changed = execFileSync("git", ["show","--pretty=","--name-only",head], {encoding:"utf8"}).split(/\r?\n/).filter(Boolean); base = ""; }
 } catch {
   changed = execFileSync("git", ["ls-tree","-r","--name-only",head], {encoding:"utf8"}).split(/\r?\n/).filter(Boolean);
@@ -65,20 +68,21 @@ const result = {
 fs.mkdirSync(".ci-evidence",{recursive:true});
 fs.writeFileSync(".ci-evidence/classification.json",JSON.stringify(result,null,2)+"\n");
 if (process.env.GITHUB_OUTPUT) {
-  for (const [k,v] of Object.entries(claims)) fs.appendFileSync(process.env.GITHUB_OUTPUT,`${k}=${v}\n`);
-  fs.appendFileSync(process.env.GITHUB_OUTPUT,`high_risk=${highRisk}\n`);
-  fs.appendFileSync(process.env.GITHUB_OUTPUT,`unimplemented_required=${unimplementedRequired.join(",")}\n`);
+  for (const [k,v] of Object.entries(claims)) fs.appendFileSync(process.env.GITHUB_OUTPUT,k+"="+v+"\n");
+  fs.appendFileSync(process.env.GITHUB_OUTPUT,"high_risk="+highRisk+"\n");
+  fs.appendFileSync(process.env.GITHUB_OUTPUT,"unimplemented_required="+unimplementedRequired.join(",")+"\n");
 }
 if (process.env.GITHUB_STEP_SUMMARY) {
   const active = Object.entries(claims).filter(([,v])=>v).map(([k])=>k).join(", ");
-  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-    `### Semantic classification
-
-- High risk: **${highRisk}**
-- Active claims: ${active}
-- Changed files: ${changed.length}
-- Unimplemented required claims: ${unimplementedRequired.join(", ") || "none"}
-
-`);
+  const summary = [
+    "### Semantic classification",
+    "",
+    "- High risk: **" + highRisk + "**",
+    "- Active claims: " + active,
+    "- Changed files: " + changed.length,
+    "- Unimplemented required claims: " + (unimplementedRequired.join(", ") || "none"),
+    ""
+  ].join("\n");
+  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,summary+"\n");
 }
 console.log(JSON.stringify(result));

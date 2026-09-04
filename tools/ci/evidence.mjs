@@ -10,13 +10,14 @@ for (let i = 2; i < process.argv.length; i += 2) {
 }
 const req = (name) => {
   const value = args.get(name);
-  if (!value) throw new Error(`Missing --${name}`);
+  if (!value) throw new Error("Missing --" + name);
   return value;
 };
+
 const allowed = new Set(["PASS","FAIL","NOT_APPLICABLE","TOOL_ERROR","BLOCKED"]);
 const claimId = req("claim");
 const status = req("status");
-if (!allowed.has(status)) throw new Error(`Invalid status: ${status}`);
+if (!allowed.has(status)) throw new Error("Invalid status: " + status);
 
 const candidateSha = req("candidate").toLowerCase();
 if (!/^[0-9a-f]{40}$/.test(candidateSha)) throw new Error("candidate SHA must be 40 hex characters");
@@ -28,7 +29,7 @@ const expectedScope = (args.get("expected-scope") ?? args.get("scope") ?? "").sp
 const scopeDigest = crypto.createHash("sha256").update(JSON.stringify({scope, expectedScope})).digest("hex");
 
 const reportFormat = (args.get("format") ?? "text").toLowerCase();
-if (!new Set(["text","json","sarif"]).has(reportFormat)) throw new Error(`Unsupported report format: ${reportFormat}`);
+if (!new Set(["text","json","sarif"]).has(reportFormat)) throw new Error("Unsupported report format: " + reportFormat);
 const sourceReport = args.get("report") ?? "";
 let reportPath = "", reportDigest = "", reportValid = false;
 
@@ -43,14 +44,14 @@ if (sourceReport && fs.existsSync(sourceReport) && fs.statSync(sourceReport).isF
   const ext = reportFormat === "text" ? "txt" : "json";
   const reportsDir = path.join(".ci-evidence", "reports");
   fs.mkdirSync(reportsDir, {recursive: true});
-  const copied = path.join(reportsDir, `${safeClaim}.${ext}`);
+  const copied = path.join(reportsDir, safeClaim + "." + ext);
   fs.writeFileSync(copied, bytes);
-  reportPath = path.posix.join("reports", `${safeClaim}.${ext}`);
+  reportPath = path.posix.join("reports", safeClaim + "." + ext);
   reportDigest = crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
 if (status === "PASS" && !reportValid) {
-  throw new Error(`PASS requires a present, parseable report: ${sourceReport || "<missing>"}`);
+  throw new Error("PASS requires a present, parseable report: " + (sourceReport || "<missing>"));
 }
 
 const completedAt = new Date().toISOString();
@@ -87,14 +88,15 @@ const outPath = path.join(".ci-evidence", claimId.replace(/[^a-zA-Z0-9._-]/g, "_
 fs.writeFileSync(outPath, JSON.stringify(evidence, null, 2) + "\n");
 
 if (process.env.GITHUB_STEP_SUMMARY) {
-  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-    `### ${claimId}
-
-- Status: **${status}**
-- Tool: ${evidence.tool} ${evidence.tool_version}
-- Candidate: \\`${candidateSha}\\`
-- Findings: ${findingCount}
-
-`);
+  const summary = [
+    "### " + claimId,
+    "",
+    "- Status: **" + status + "**",
+    "- Tool: " + evidence.tool + " " + evidence.tool_version,
+    "- Candidate: " + candidateSha,
+    "- Findings: " + findingCount,
+    ""
+  ].join("\n");
+  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + "\n");
 }
 console.log(outPath);
