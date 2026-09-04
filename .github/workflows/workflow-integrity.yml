@@ -21,7 +21,10 @@ jobs:
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: {ref: ${{ inputs.candidate_sha }}, persist-credentials: false, fetch-depth: 1}
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+          fetch-depth: 1
       - name: Install actionlint
         run: bash tools/ci/install-assurance-tools.sh actionlint
       - name: Run actionlint with ShellCheck integration
@@ -42,7 +45,11 @@ jobs:
       - name: Upload actionlint evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with: {name: evidence-workflow-actionlint-${{ github.run_id }}, path: .ci-evidence/workflow.actionlint.json, if-no-files-found: error, retention-days: 14}
+        with:
+          name: evidence-workflow-actionlint-${{ github.run_id }}
+          path: .ci-evidence/workflow.actionlint.json
+          if-no-files-found: error
+          retention-days: 14
 
   zizmor:
     name: actions-security
@@ -51,7 +58,10 @@ jobs:
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: {ref: ${{ inputs.candidate_sha }}, persist-credentials: false, fetch-depth: 1}
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+          fetch-depth: 1
       - name: Install zizmor
         run: bash tools/ci/install-assurance-tools.sh zizmor
       - name: Run zizmor
@@ -72,7 +82,11 @@ jobs:
       - name: Upload zizmor evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with: {name: evidence-workflow-zizmor-${{ github.run_id }}, path: .ci-evidence/workflow.zizmor.json, if-no-files-found: error, retention-days: 14}
+        with:
+          name: evidence-workflow-zizmor-${{ github.run_id }}
+          path: .ci-evidence/workflow.zizmor.json
+          if-no-files-found: error
+          retention-days: 14
 
   pinact:
     name: actions-pinning
@@ -81,7 +95,10 @@ jobs:
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with: {ref: ${{ inputs.candidate_sha }}, persist-credentials: false, fetch-depth: 1}
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          persist-credentials: false
+          fetch-depth: 1
       - name: Install pinact
         run: bash tools/ci/install-assurance-tools.sh pinact
       - name: Verify durable action SHA annotations
@@ -103,4 +120,8 @@ jobs:
       - name: Upload pinact evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with: {name: evidence-workflow-pinact-${{ github.run_id }}, path: .ci-evidence/workflow.pinact.json, if-no-files-found: error, retention-days: 14}
+        with:
+          name: evidence-workflow-pinact-${{ github.run_id }}
+          path: .ci-evidence/workflow.pinact.json
+          if-no-files-found: error
+          retention-days: 14

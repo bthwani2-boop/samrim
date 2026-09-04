@@ -49,19 +49,25 @@ jobs:
     if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'repository-policy'
     needs: validate
     uses: ./.github/workflows/repository-policy.yml
-    with: {candidate_sha: ${{ needs.validate.outputs.candidate_sha }}, base_sha: ${{ needs.validate.outputs.base_sha }}}
+    with:
+      candidate_sha: ${{ needs.validate.outputs.candidate_sha }}
+      base_sha: ${{ needs.validate.outputs.base_sha }}
 
   workflow-integrity:
     if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'workflow-integrity'
     needs: validate
     uses: ./.github/workflows/workflow-integrity.yml
-    with: {candidate_sha: ${{ needs.validate.outputs.candidate_sha }}, base_sha: ${{ needs.validate.outputs.base_sha }}}
+    with:
+      candidate_sha: ${{ needs.validate.outputs.candidate_sha }}
+      base_sha: ${{ needs.validate.outputs.base_sha }}
 
   secrets:
     if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'secrets'
     needs: validate
     uses: ./.github/workflows/secrets.yml
-    with: {candidate_sha: ${{ needs.validate.outputs.candidate_sha }}, base_sha: ${{ needs.validate.outputs.base_sha }}}
+    with:
+      candidate_sha: ${{ needs.validate.outputs.candidate_sha }}
+      base_sha: ${{ needs.validate.outputs.base_sha }}
 
   manual-assurance:
     name: manual-assurance
