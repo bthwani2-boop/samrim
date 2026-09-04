@@ -5,7 +5,7 @@ const path = require("path");
 const {
   resolveGoogleServicesFile,
   resolveSentryEnvironment,
-} = require("./sentry-env.cjs");
+} = require("./mobile-provider-env.cjs");
 
 const PERMISSION_TEXT = {
   photos: "نحتاج الوصول إلى معرض الصور لاختيار الصور ومشاركتها.",
