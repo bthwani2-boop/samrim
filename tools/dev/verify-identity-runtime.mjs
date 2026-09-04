@@ -328,14 +328,39 @@ await expect("POST", "/internal/actors/provision", 409, {
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(operator.actorId) + "/reactivate",
-  204,
+  409,
   { headers: serviceHeaders("platform-control", platformToken, operatorContext) },
 );
+
+const operatorChallenge = await expect(
+  "POST",
+  "/internal/actors/" + encodeURIComponent(operator.actorId) + "/activations",
+  201,
+  {
+    headers: serviceHeaders("platform-control", platformToken, operatorContext, {
+      "Idempotency-Key": "operator-activation-" + suffix,
+      "X-Correlation-ID": "operator-corr-" + suffix,
+    }),
+    body: { expectedActorType: "operator" },
+  },
+);
+const operatorCode = codeFor(operatorChallenge.activationId);
+const activatedOperatorPair = await expect("POST", "/auth/activate", 200, {
+  body: {
+    phone: operatorBody.phoneE164,
+    actorType: "operator",
+    code: operatorCode,
+    deviceFingerprint: "device-operator-activation-" + suffix,
+  },
+});
+assertSurface(activatedOperatorPair, "operator", "control-panel");
+await expect("POST", "/auth/logout", 204, { token: activatedOperatorPair.accessToken });
+
 const operatorPair = await expect("POST", "/auth/login", 200, {
   body: {
     username: operatorUsername,
     password: operatorPassword,
-    deviceFingerprint: "device-operator-" + suffix,
+    deviceFingerprint: "device-operator-login-" + suffix,
   },
 });
 assertSurface(operatorPair, "operator", "control-panel");
