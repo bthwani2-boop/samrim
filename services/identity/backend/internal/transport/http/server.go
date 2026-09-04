@@ -153,15 +153,20 @@ func (s *Server) provisionActor(w http.ResponseWriter, r *http.Request, caller, 
 	writeJSON(w, status, view)
 }
 
-func (s *Server) searchActors(w http.ResponseWriter, r *http.Request, _ string, operatorContextID string) {
+func (s *Server) searchActors(w http.ResponseWriter, r *http.Request, caller string, operatorContextID string) {
 	limit := 25
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		value, err := strconv.Atoi(raw)
 		if err != nil { writeDomainError(w, domain.ErrInvalidInput); return }
 		limit = value
 	}
+	role := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("role")))
+	if role == "" || !domain.RoleAllowedForCaller(caller, role) {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
 	page, err := s.actors.Search(r.Context(), operatorContextID, domain.ActorSearchInput{
-		Role:strings.TrimSpace(r.URL.Query().Get("role")),
+		Role:role,
 		Query:strings.TrimSpace(r.URL.Query().Get("q")),
 		Status:domain.ActorStatus(strings.TrimSpace(r.URL.Query().Get("status"))),
 		Limit:limit,
@@ -171,8 +176,8 @@ func (s *Server) searchActors(w http.ResponseWriter, r *http.Request, _ string, 
 	writeJSON(w, http.StatusOK, page)
 }
 
-func (s *Server) getActor(w http.ResponseWriter, r *http.Request, _ string, operatorContextID string) {
-	view, err := s.actors.Get(r.Context(), operatorContextID, r.PathValue("actorId"))
+func (s *Server) getActor(w http.ResponseWriter, r *http.Request, caller string, operatorContextID string) {
+	view, err := s.authorizedActor(r, caller, operatorContextID)
 	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, view)
 }
@@ -202,6 +207,10 @@ func (s *Server) deactivateActor(w http.ResponseWriter, r *http.Request, caller,
 }
 
 func (s *Server) setActorStatus(w http.ResponseWriter, r *http.Request, caller, operatorContextID string, status domain.ActorStatus) {
+	if _, err := s.authorizedActor(r, caller, operatorContextID); err != nil {
+		writeDomainError(w, err)
+		return
+	}
 	principal := strings.TrimSpace(r.Header.Get("X-Principal-Actor-ID"))
 	if principal == "" { principal = caller }
 	if err := s.actors.SetStatus(r.Context(), operatorContextID, r.PathValue("actorId"), status, principal, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
@@ -210,9 +219,9 @@ func (s *Server) setActorStatus(w http.ResponseWriter, r *http.Request, caller, 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) listSessions(w http.ResponseWriter, r *http.Request, _ string, operatorContextID string) {
+func (s *Server) listSessions(w http.ResponseWriter, r *http.Request, caller string, operatorContextID string) {
 	actorID := r.PathValue("actorId")
-	if _, err := s.actors.Get(r.Context(), operatorContextID, actorID); err != nil { writeDomainError(w, err); return }
+	if _, err := s.authorizedActor(r, caller, operatorContextID); err != nil { writeDomainError(w, err); return }
 	items, err := s.sessions.List(r.Context(), actorID)
 	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, items)
@@ -220,7 +229,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request, _ string, 
 
 func (s *Server) revokeSession(w http.ResponseWriter, r *http.Request, caller, operatorContextID string) {
 	actorID := r.PathValue("actorId")
-	if _, err := s.actors.Get(r.Context(), operatorContextID, actorID); err != nil { writeDomainError(w, err); return }
+	if _, err := s.authorizedActor(r, caller, operatorContextID); err != nil { writeDomainError(w, err); return }
 	principal := strings.TrimSpace(r.Header.Get("X-Principal-Actor-ID"))
 	if principal == "" { principal = caller }
 	if err := s.sessions.Revoke(r.Context(), actorID, r.PathValue("sessionId"), principal, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
@@ -238,6 +247,19 @@ func (s *Server) revokeAllSessions(w http.ResponseWriter, r *http.Request, calle
 		writeDomainError(w, err); return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) authorizedActor(r *http.Request, caller, operatorContextID string) (domain.ActorView, error) {
+	view, err := s.actors.Get(r.Context(), operatorContextID, r.PathValue("actorId"))
+	if err != nil {
+		return domain.ActorView{}, err
+	}
+	for _, role := range view.Roles {
+		if domain.RoleAllowedForCaller(caller, role) {
+			return view, nil
+		}
+	}
+	return domain.ActorView{}, domain.ErrForbidden
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
