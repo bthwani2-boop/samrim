@@ -1,5 +1,8 @@
 # Target — Apps and Application Composition
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. Canonical app roots
 
 Refound deployables so each app is a direct workspace root:

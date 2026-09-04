@@ -1,5 +1,8 @@
 # Target — Contracts and Cross-Service Protocols
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. Service contracts remain sovereign
 
 Business/API contracts live with the service that owns the semantics:

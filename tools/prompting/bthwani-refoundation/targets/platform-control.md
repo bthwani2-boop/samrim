@@ -1,5 +1,8 @@
 # Target — Platform Control
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. Canonical placement
 
 `core/platform-control` is not a canonical top-level Core package. If its independent service responsibility is proven from live evidence, refound it as:

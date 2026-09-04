@@ -1,5 +1,8 @@
 # Target — Design System and Reusable Packages
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. Demolish `shared/` as a generic ownership root
 
 The current `shared/` root mixes unrelated responsibilities and must disappear after value migration.

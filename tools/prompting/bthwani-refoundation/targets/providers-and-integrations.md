@@ -1,5 +1,8 @@
 # Target — External Providers and Integrations
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. No generic Providers god service
 
 `core/providers` must not be moved wholesale to `services/providers` merely because it currently exists.

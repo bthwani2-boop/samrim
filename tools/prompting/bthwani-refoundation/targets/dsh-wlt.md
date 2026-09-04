@@ -1,5 +1,8 @@
 # Target — DSH and WLT
 
+TEMPORARY_TARGET_SPECIALIZATION: YES
+GENERAL_EXECUTION_AUTHORITY: NONE
+DURABLE_AUTHORITY: NONE
 ## 1. DSH ownership
 
 DSH owns operational commerce/delivery truth when proven, including:
