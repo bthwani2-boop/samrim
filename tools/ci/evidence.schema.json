@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bthwani2-boop/samrim/tools/ci/evidence.schema.json",
+  "title": "Samrim CI Evidence",
+  "type": "object",
+  "required": ["schema_version","claim_id","tool","tool_version","candidate_sha","base_sha","scope","expected_scope","scope_digest","status","finding_count","started_at","completed_at","report_format","report_path","report_digest","report_valid","runner","workflow_run_id","reason"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "claim_id": {"type": "string","minLength": 1},
+    "tool": {"type": "string","minLength": 1},
+    "tool_version": {"type": "string","minLength": 1},
+    "candidate_sha": {"type": "string","pattern": "^[0-9a-f]{40}$"},
+    "base_sha": {"type": "string"},
+    "scope": {"type": "array","items": {"type": "string"}},
+    "expected_scope": {"type": "array","items": {"type": "string"}},
+    "scope_digest": {"type": "string","pattern": "^[0-9a-f]{64}$"},
+    "status": {"enum": ["PASS","FAIL","NOT_APPLICABLE","TOOL_ERROR","BLOCKED"]},
+    "finding_count": {"type": "integer","minimum": 0},
+    "started_at": {"type": "string"},
+    "completed_at": {"type": "string"},
+    "report_format": {"type": "string"},
+    "report_path": {"type": "string"},
+    "report_digest": {"type": "string"},
+    "report_valid": {"type": "boolean"},
+    "runner": {"type": "string"},
+    "workflow_run_id": {"type": "string"},
+    "reason": {"type": ["string","null"]}
+  },
+  "additionalProperties": false
+}

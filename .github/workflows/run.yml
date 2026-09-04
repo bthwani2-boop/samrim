@@ -1,0 +1,86 @@
+name: Manual Assurance
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact commit SHA to verify
+        required: true
+        type: string
+      base_sha:
+        description: Optional base SHA
+        required: false
+        default: ""
+        type: string
+      mode:
+        description: Verification mode
+        required: true
+        default: full
+        type: choice
+        options: [full, repository-policy, workflow-integrity, secrets]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: manual-request
+    runs-on: ubuntu-24.04
+    outputs:
+      candidate_sha: ${{ steps.validate.outputs.candidate_sha }}
+      base_sha: ${{ steps.validate.outputs.base_sha }}
+      mode: ${{ steps.validate.outputs.mode }}
+    steps:
+      - id: validate
+        shell: bash
+        env:
+          CANDIDATE: ${{ inputs.candidate_sha }}
+          BASE: ${{ inputs.base_sha }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::candidate_sha must be exact SHA"; exit 1; }
+          [[ -z "${BASE}" || "${BASE}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::base_sha must be empty or exact SHA"; exit 1; }
+          echo "candidate_sha=${CANDIDATE}" >>"${GITHUB_OUTPUT}"
+          echo "base_sha=${BASE}" >>"${GITHUB_OUTPUT}"
+          echo "mode=${MODE}" >>"${GITHUB_OUTPUT}"
+
+  repository:
+    if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'repository-policy'
+    needs: validate
+    uses: ./.github/workflows/repository-policy.yml
+    with: {candidate_sha: ${{ needs.validate.outputs.candidate_sha }}, base_sha: ${{ needs.validate.outputs.base_sha }}}
+
+  workflow-integrity:
+    if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'workflow-integrity'
+    needs: validate
+    uses: ./.github/workflows/workflow-integrity.yml
+    with: {candidate_sha: ${{ needs.validate.outputs.candidate_sha }}, base_sha: ${{ needs.validate.outputs.base_sha }}}
+
+  secrets:
+    if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'secrets'
+    needs: validate
+    uses: ./.github/workflows/secrets.yml
+    with: {candidate_sha: ${{ needs.validate.outputs.candidate_sha }}, base_sha: ${{ needs.validate.outputs.base_sha }}}
+
+  manual-assurance:
+    name: manual-assurance
+    if: always()
+    needs: [validate, repository, workflow-integrity, secrets]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Enforce selected mode
+        shell: bash
+        env:
+          MODE: ${{ needs.validate.outputs.mode }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jq -e '.validate.result == "success"' <<<"${NEEDS_JSON}" >/dev/null
+          case "${MODE}" in
+            full) jq -e '.repository.result == "success" and .["workflow-integrity"].result == "success" and .secrets.result == "success"' <<<"${NEEDS_JSON}" >/dev/null ;;
+            repository-policy) jq -e '.repository.result == "success"' <<<"${NEEDS_JSON}" >/dev/null ;;
+            workflow-integrity) jq -e '.["workflow-integrity"].result == "success"' <<<"${NEEDS_JSON}" >/dev/null ;;
+            secrets) jq -e '.secrets.result == "success"' <<<"${NEEDS_JSON}" >/dev/null ;;
+            *) echo "::error::Unknown mode: ${MODE}"; exit 1 ;;
+          esac
