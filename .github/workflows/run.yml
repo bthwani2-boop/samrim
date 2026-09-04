@@ -3,10 +3,6 @@ name: Manual Assurance
 on:
   workflow_dispatch:
     inputs:
-      candidate_sha:
-        description: Exact commit SHA to verify
-        required: true
-        type: string
       base_sha:
         description: Optional base SHA
         required: false
@@ -34,12 +30,12 @@ jobs:
       - id: validate
         shell: bash
         env:
-          CANDIDATE: ${{ inputs.candidate_sha }}
+          CANDIDATE: ${{ github.sha }}
           BASE: ${{ inputs.base_sha }}
           MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
-          [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::candidate_sha must be exact SHA"; exit 1; }
+          [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::GitHub did not resolve an exact SHA"; exit 1; }
           [[ -z "${BASE}" || "${BASE}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::base_sha must be empty or exact SHA"; exit 1; }
           {
             echo "candidate_sha=${CANDIDATE}"

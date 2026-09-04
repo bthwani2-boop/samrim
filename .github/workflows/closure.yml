@@ -45,7 +45,10 @@ jobs:
           fetch-depth: 0
       - id: classify
         name: Derive closure claims
-        run: node tools/ci/classify.mjs --head "${{ needs.metadata.outputs.candidate_sha }}" --base "${{ needs.metadata.outputs.base_sha }}"
+        env:
+          CANDIDATE_SHA: ${{ needs.metadata.outputs.candidate_sha }}
+          BASE_SHA: ${{ needs.metadata.outputs.base_sha }}
+        run: node tools/ci/classify.mjs --head "${CANDIDATE_SHA}" --base "${BASE_SHA}"
       - name: Upload closure classification
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -122,6 +125,7 @@ jobs:
           UNIMPLEMENTED: ${{ needs.classify.outputs.unimplemented_required }}
           NEEDS_JSON: ${{ toJSON(needs) }}
           DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          BASE_SHA: ${{ needs.metadata.outputs.base_sha }}
         run: |
           set -u
           report="${RUNNER_TEMP}/promotion-closure.txt"; : >"${report}"; code=0
@@ -148,7 +152,7 @@ jobs:
           fi
 
           cat "${report}"
-          node tools/ci/evidence.mjs --claim promotion.closure --tool samrim-promotion-closure --version 1 --candidate "${CANDIDATE_SHA}" --base "${{ needs.metadata.outputs.base_sha }}" --scope promotion --expected-scope promotion --status "${status}" --findings "${findings}" --report "${report}" --format text --reason "${reason}"
+          node tools/ci/evidence.mjs --claim promotion.closure --tool samrim-promotion-closure --version 1 --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope promotion --expected-scope promotion --status "${status}" --findings "${findings}" --report "${report}" --format text --reason "${reason}"
           [[ "${status}" == "PASS" ]]
 
       - name: Upload promotion closure evidence

@@ -37,7 +37,10 @@ jobs:
           fetch-depth: 0
       - id: classify
         name: Derive required claims
-        run: node tools/ci/classify.mjs --head "${{ steps.meta.outputs.candidate_sha }}" --base "${{ steps.meta.outputs.base_sha }}"
+        env:
+          CANDIDATE_SHA: ${{ steps.meta.outputs.candidate_sha }}
+          BASE_SHA: ${{ steps.meta.outputs.base_sha }}
+        run: node tools/ci/classify.mjs --head "${CANDIDATE_SHA}" --base "${BASE_SHA}"
       - name: Upload classification evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
