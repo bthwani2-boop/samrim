@@ -1,6 +1,8 @@
 #Requires -Version 7.4
 [CmdletBinding()]
-param()
+param(
+    [switch] $SkipBranchCheck
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -17,7 +19,9 @@ function Check([string]$Name, [scriptblock]$Probe, [scriptblock]$Accept) {
 
 Push-Location $repo
 try {
-    Check "branch" { git branch --show-current } { param($v) $v.Trim() -eq "a" }
+    if (-not $SkipBranchCheck) {
+        Check "branch" { git branch --show-current } { param($v) $v.Trim() -eq "a" }
+    }
     Check "node" { node --version } { param($v) ($v.Trim() -replace '^v','') -eq "24.17.0" }
     Check "pnpm" { pnpm --version } { param($v) $v.Trim() -eq "10.34.0" }
     Check "go" { go version } { param($v) $v -match 'go1\.27\.1\b' }
