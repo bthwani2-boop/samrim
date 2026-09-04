@@ -7,8 +7,6 @@ import (
 )
 
 type ActorInput struct {
-	ActorID   string
-	Username  string
 	PhoneE164 string
 }
 
@@ -17,43 +15,40 @@ type Client struct {
 }
 
 func New(baseURL, serviceToken string) (*Client, error) {
-	inner, err := identityclient.New(baseURL, "dsh", serviceToken)
+	inner, err := identityclient.New(baseURL, serviceToken)
 	if err != nil {
 		return nil, err
 	}
 	return &Client{inner: inner}, nil
 }
 
-func (c *Client) provision(ctx context.Context, operatorContextID, role string, input ActorInput) (identityclient.ActorView, error) {
-	return c.inner.ProvisionActor(ctx, operatorContextID, identityclient.ProvisionActorRequest{
-		ActorID: input.ActorID, Username: input.Username, PhoneE164: input.PhoneE164, Role: role,
+func (c *Client) provision(ctx context.Context, role string, input ActorInput) (identityclient.ActorRoleView, error) {
+	return c.inner.ProvisionRole(ctx, identityclient.ProvisionActorRoleRequest{
+		PhoneE164: input.PhoneE164,
+		Role: role,
 	})
 }
 
-func (c *Client) issueActivation(ctx context.Context, operatorContextID, actorID, actorType, idempotencyKey, correlationID string) (identityclient.ActivationChallenge, error) {
-	return c.inner.IssueActivation(ctx, operatorContextID, actorID, actorType, idempotencyKey, correlationID)
+func (c *Client) ProvisionPartner(ctx context.Context, input ActorInput) (identityclient.ActorRoleView, error) {
+	return c.provision(ctx, "partner", input)
 }
 
-func (c *Client) ProvisionPartner(ctx context.Context, operatorContextID string, input ActorInput) (identityclient.ActorView, error) {
-	return c.provision(ctx, operatorContextID, "partner", input)
+func (c *Client) ProvisionCaptain(ctx context.Context, input ActorInput) (identityclient.ActorRoleView, error) {
+	return c.provision(ctx, "captain", input)
 }
 
-func (c *Client) ProvisionCaptain(ctx context.Context, operatorContextID string, input ActorInput) (identityclient.ActorView, error) {
-	return c.provision(ctx, operatorContextID, "captain", input)
+func (c *Client) ProvisionField(ctx context.Context, input ActorInput) (identityclient.ActorRoleView, error) {
+	return c.provision(ctx, "field", input)
 }
 
-func (c *Client) ProvisionField(ctx context.Context, operatorContextID string, input ActorInput) (identityclient.ActorView, error) {
-	return c.provision(ctx, operatorContextID, "field", input)
+func (c *Client) SetPartnerEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
+	return c.inner.SetRoleEnabled(ctx, actorID, "partner", enabled, correlationID)
 }
 
-func (c *Client) IssuePartnerActivation(ctx context.Context, operatorContextID, actorID, idempotencyKey, correlationID string) (identityclient.ActivationChallenge, error) {
-	return c.issueActivation(ctx, operatorContextID, actorID, "partner", idempotencyKey, correlationID)
+func (c *Client) SetCaptainEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
+	return c.inner.SetRoleEnabled(ctx, actorID, "captain", enabled, correlationID)
 }
 
-func (c *Client) IssueCaptainActivation(ctx context.Context, operatorContextID, actorID, idempotencyKey, correlationID string) (identityclient.ActivationChallenge, error) {
-	return c.issueActivation(ctx, operatorContextID, actorID, "captain", idempotencyKey, correlationID)
-}
-
-func (c *Client) IssueFieldActivation(ctx context.Context, operatorContextID, actorID, idempotencyKey, correlationID string) (identityclient.ActivationChallenge, error) {
-	return c.issueActivation(ctx, operatorContextID, actorID, "field", idempotencyKey, correlationID)
+func (c *Client) SetFieldEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
+	return c.inner.SetRoleEnabled(ctx, actorID, "field", enabled, correlationID)
 }

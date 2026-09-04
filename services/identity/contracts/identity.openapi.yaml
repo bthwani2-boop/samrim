@@ -2,12 +2,12 @@ openapi: 3.1.0
 info:
   title: Samrim Identity API
   version: 1.0.0-stage-b
-  description: Canonical wire contract for IDENTITY_ACTIVATION_SESSIONS.
+  description: Canonical Identity contract for one actor_id, explicit actor roles, authentication, and role-scoped sessions.
 servers:
   - url: http://localhost:18082
 tags:
   - name: auth
-  - name: internal-actors
+  - name: internal-actor-roles
   - name: internal-sessions
 
 paths:
@@ -38,8 +38,8 @@ paths:
   /auth/otp/request:
     post:
       tags: [auth]
-      operationId: requestClientOtp
-      description: Public self-service activation exists only for the client actor type.
+      operationId: requestOtp
+      description: Client may self-provision its client role. Partner, captain and field roles must already exist and be enabled. Operator OTP is forbidden.
       requestBody:
         required: true
         content:
@@ -48,7 +48,7 @@ paths:
               $ref: "#/components/schemas/OtpRequest"
       responses:
         "201":
-          description: Activation challenge was created and delivered out of band.
+          description: A generic activation challenge response. Governed roles are never granted by this endpoint.
           content:
             application/json:
               schema:
@@ -65,7 +65,8 @@ paths:
   /auth/activate:
     post:
       tags: [auth]
-      operationId: activateActor
+      operationId: activateRoleSession
+      description: Consumes one OTP proof and creates a session only for the requested enabled role.
       requestBody:
         required: true
         content:
@@ -74,7 +75,7 @@ paths:
               $ref: "#/components/schemas/ActivationRequest"
       responses:
         "200":
-          description: Activation consumed exactly once and a bound session was created.
+          description: Activation consumed exactly once and a role-scoped session was created.
           content:
             application/json:
               schema:
@@ -89,8 +90,8 @@ paths:
   /auth/login:
     post:
       tags: [auth]
-      operationId: loginActor
-      description: Password login is available only to actors provisioned with a password, currently operators.
+      operationId: loginOperator
+      description: Password login is currently restricted to the operator role.
       requestBody:
         required: true
         content:
@@ -99,7 +100,7 @@ paths:
               $ref: "#/components/schemas/LoginRequest"
       responses:
         "200":
-          description: Authenticated session.
+          description: Authenticated operator session.
           content:
             application/json:
               schema:
@@ -123,7 +124,7 @@ paths:
               $ref: "#/components/schemas/RefreshRequest"
       responses:
         "200":
-          description: Refresh token rotated atomically.
+          description: Refresh token rotated atomically while the session role remains enabled.
           content:
             application/json:
               schema:
@@ -141,7 +142,7 @@ paths:
         - accessToken: []
       responses:
         "204":
-          description: Session revoked.
+          description: Current session revoked.
         "401":
           $ref: "#/components/responses/Unauthenticated"
 
@@ -153,7 +154,7 @@ paths:
         - accessToken: []
       responses:
         "200":
-          description: Current canonical session identity.
+          description: Minimal current session identity.
           content:
             application/json:
               schema:
@@ -161,34 +162,32 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthenticated"
 
-  /internal/actors/provision:
+  /internal/actor-roles/provision:
     post:
-      tags: [internal-actors]
-      operationId: provisionActor
+      tags: [internal-actor-roles]
+      operationId: provisionActorRole
       security:
         - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
+      description: The authenticated service token determines the caller. Identity alone creates actor_id. Exact role retries are idempotent; disabled roles are never silently re-enabled.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProvisionActorRequest"
+              $ref: "#/components/schemas/ProvisionActorRoleRequest"
       responses:
         "200":
-          description: Exact idempotent readback of an existing actor.
+          description: Existing canonical actor-role readback.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ActorView"
+                $ref: "#/components/schemas/ActorRoleView"
         "201":
-          description: New canonical actor created.
+          description: A canonical actor and/or role was created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ActorView"
+                $ref: "#/components/schemas/ActorRoleView"
         "400":
           $ref: "#/components/responses/Invalid"
         "401":
@@ -198,19 +197,17 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  /internal/actors/search:
+  /internal/actor-roles/search:
     get:
-      tags: [internal-actors]
-      operationId: searchActors
+      tags: [internal-actor-roles]
+      operationId: searchActorRoles
       security:
         - internalServiceToken: []
       parameters:
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
         - name: role
           in: query
           required: true
-          description: Must be within the authenticated service caller responsibility.
+          description: Must be owned by the authenticated service principal.
           schema:
             $ref: "#/components/schemas/ActorType"
         - name: q
@@ -218,10 +215,10 @@ paths:
           schema:
             type: string
             maxLength: 100
-        - name: status
+        - name: enabled
           in: query
           schema:
-            $ref: "#/components/schemas/ActorStatus"
+            type: boolean
         - name: limit
           in: query
           schema:
@@ -235,127 +232,100 @@ paths:
             type: string
       responses:
         "200":
-          description: Stable paginated actor readback.
+          description: Stable role-scoped actor readback.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ActorSearchPage"
-        "400":
-          $ref: "#/components/responses/Invalid"
+                $ref: "#/components/schemas/ActorRoleSearchPage"
         "401":
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
 
-  /internal/actors/{actorId}:
+  /internal/actors/{actorId}/roles/{role}:
     get:
-      tags: [internal-actors]
-      operationId: readActor
+      tags: [internal-actor-roles]
+      operationId: readActorRole
       security:
         - internalServiceToken: []
       parameters:
         - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
+        - $ref: "#/components/parameters/Role"
       responses:
         "200":
-          description: Operator-context-isolated actor readback.
+          description: Exact role-scoped actor readback.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ActorView"
+                $ref: "#/components/schemas/ActorRoleView"
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /internal/actors/{actorId}/activations:
+  /internal/actors/{actorId}/roles/{role}/disable:
     post:
-      tags: [internal-actors]
-      operationId: issueGovernedActivation
+      tags: [internal-actor-roles]
+      operationId: disableActorRole
       security:
         - internalServiceToken: []
       parameters:
         - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
-        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Role"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "204":
+          description: Role disabled; only sessions and pending activations for that actor-role are revoked.
+
+  /internal/actors/{actorId}/roles/{role}/enable:
+    post:
+      tags: [internal-actor-roles]
+      operationId: enableActorRole
+      security:
+        - internalServiceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/Role"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "204":
+          description: Existing role enabled. No session is created.
+
+  /internal/actors/{actorId}/operator-password/reset:
+    post:
+      tags: [internal-actor-roles]
+      operationId: resetOperatorPassword
+      security:
+        - internalServiceToken: []
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
         - $ref: "#/components/parameters/CorrelationId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IssueActivationRequest"
-      responses:
-        "201":
-          description: Actor-bound activation delivered out of band.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActivationChallenge"
-        "409":
-          $ref: "#/components/responses/Conflict"
-
-  /internal/actors/{actorId}/suspend:
-    post:
-      tags: [internal-actors]
-      operationId: suspendActor
-      security:
-        - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
-        - $ref: "#/components/parameters/PrincipalActor"
-        - $ref: "#/components/parameters/CorrelationId"
+              $ref: "#/components/schemas/PasswordResetRequest"
       responses:
         "204":
-          description: Actor suspended and active sessions revoked.
+          description: Operator credential replaced and existing operator sessions revoked.
+        "400":
+          $ref: "#/components/responses/Invalid"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
-  /internal/actors/{actorId}/reactivate:
-    post:
-      tags: [internal-actors]
-      operationId: reactivateActor
-      security:
-        - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
-        - $ref: "#/components/parameters/PrincipalActor"
-        - $ref: "#/components/parameters/CorrelationId"
-      responses:
-        "204":
-          description: Actor returned to active lifecycle state.
-
-  /internal/actors/{actorId}/deactivate:
-    post:
-      tags: [internal-actors]
-      operationId: deactivateActor
-      security:
-        - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
-        - $ref: "#/components/parameters/PrincipalActor"
-        - $ref: "#/components/parameters/CorrelationId"
-      responses:
-        "204":
-          description: Actor permanently deactivated and sessions/activations revoked.
-
-  /internal/actors/{actorId}/sessions:
+  /internal/actors/{actorId}/roles/{role}/sessions:
     get:
       tags: [internal-sessions]
-      operationId: listActorSessions
+      operationId: listActorRoleSessions
       security:
         - internalServiceToken: []
       parameters:
         - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
+        - $ref: "#/components/parameters/Role"
       responses:
         "200":
-          description: Active sessions for the scoped actor.
+          description: Active sessions for the exact actor-role.
           content:
             application/json:
               schema:
@@ -364,39 +334,35 @@ paths:
                   $ref: "#/components/schemas/SessionInfo"
     delete:
       tags: [internal-sessions]
-      operationId: revokeAllActorSessions
+      operationId: revokeActorRoleSessions
       security:
         - internalServiceToken: []
       parameters:
         - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
-        - $ref: "#/components/parameters/PrincipalActor"
+        - $ref: "#/components/parameters/Role"
         - $ref: "#/components/parameters/CorrelationId"
       responses:
         "204":
-          description: All active sessions revoked.
+          description: All active sessions for the exact actor-role revoked.
 
-  /internal/actors/{actorId}/sessions/{sessionId}:
+  /internal/actors/{actorId}/roles/{role}/sessions/{sessionId}:
     delete:
       tags: [internal-sessions]
-      operationId: revokeActorSession
+      operationId: revokeActorRoleSession
       security:
         - internalServiceToken: []
       parameters:
         - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/Role"
         - name: sessionId
           in: path
           required: true
           schema:
             type: string
-        - $ref: "#/components/parameters/ServiceCaller"
-        - $ref: "#/components/parameters/OperatorContext"
-        - $ref: "#/components/parameters/PrincipalActor"
         - $ref: "#/components/parameters/CorrelationId"
       responses:
         "204":
-          description: Session revoked.
+          description: Exact session revoked.
 
 components:
   securitySchemes:
@@ -416,42 +382,18 @@ components:
       required: true
       schema:
         type: string
-    ServiceCaller:
-      name: X-Service-Caller
-      in: header
+    Role:
+      name: role
+      in: path
       required: true
       schema:
-        type: string
-        enum: [dsh, platform-control]
-    OperatorContext:
-      name: X-Operator-Context-ID
-      in: header
-      required: true
-      description: Trusted only after internal service authentication.
-      schema:
-        type: string
-        maxLength: 128
-    PrincipalActor:
-      name: X-Principal-Actor-ID
-      in: header
-      required: false
-      schema:
-        type: string
-        maxLength: 128
+        $ref: "#/components/schemas/ActorType"
     CorrelationId:
       name: X-Correlation-ID
       in: header
       required: false
       schema:
         type: string
-        maxLength: 128
-    IdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: true
-      schema:
-        type: string
-        minLength: 1
         maxLength: 128
 
   schemas:
@@ -470,30 +412,27 @@ components:
       type: string
       enum: [client, partner, captain, field, operator]
 
-    ActorStatus:
-      type: string
-      enum: [PROVISIONED, PENDING_ACTIVATION, ACTIVE, SUSPENDED, DEACTIVATED]
-
     OtpRequest:
       type: object
       additionalProperties: false
-      required: [phone, actorType]
+      required: [phone, role]
       properties:
         phone:
           type: string
-        actorType:
+        role:
           type: string
-          const: client
+          enum: [client, partner, captain, field]
 
     ActivationRequest:
       type: object
       additionalProperties: false
-      required: [phone, actorType, code, deviceFingerprint]
+      required: [phone, role, code, deviceFingerprint]
       properties:
         phone:
           type: string
-        actorType:
-          $ref: "#/components/schemas/ActorType"
+        role:
+          type: string
+          enum: [client, partner, captain, field]
         code:
           type: string
           pattern: "^[0-9]{6}$"
@@ -543,48 +482,18 @@ components:
           minLength: 8
           maxLength: 256
 
-    Permission:
-      type: object
-      additionalProperties: false
-      required: [service, surface, action, scope]
-      properties:
-        service:
-          type: string
-        surface:
-          type: string
-        action:
-          type: string
-        scope:
-          type: string
-
     ActorIdentity:
       type: object
       additionalProperties: false
-      required: [subject, sessionId, operatorContextId, phoneE164, roles, permissions, authState, surfaceAccess, sessionSurface, expiresAt]
+      required: [subject, sessionId, role, surface, expiresAt]
       properties:
         subject:
           type: string
         sessionId:
           type: string
-        operatorContextId:
-          type: string
-        phoneE164:
-          type: string
-        roles:
-          type: array
-          items:
-            type: string
-        permissions:
-          type: array
-          items:
-            $ref: "#/components/schemas/Permission"
-        authState:
-          const: ACTIVE
-        surfaceAccess:
-          type: object
-          additionalProperties:
-            type: boolean
-        sessionSurface:
+        role:
+          $ref: "#/components/schemas/ActorType"
+        surface:
           type: string
         expiresAt:
           type: string
@@ -605,51 +514,50 @@ components:
         identity:
           $ref: "#/components/schemas/ActorIdentity"
 
-    ProvisionActorRequest:
+    ProvisionActorRoleRequest:
       type: object
       additionalProperties: false
-      required: [username, phoneE164, role]
+      required: [phoneE164, role]
       properties:
-        actorId:
-          type: string
-        username:
-          type: string
         phoneE164:
           type: string
         role:
           type: string
           enum: [partner, captain, field, operator]
+        username:
+          type: string
         password:
           type: string
           minLength: 12
           maxLength: 128
 
-    ActorView:
+    ActorRoleView:
       type: object
       additionalProperties: false
-      required: [actorId, username, phoneE164, operatorContextId, roles, status, version]
+      required: [actorId, phoneE164, role, enabled, actorVersion, roleVersion]
       properties:
         actorId:
           type: string
-        username:
-          type: string
         phoneE164:
           type: string
-        operatorContextId:
+        username:
           type: string
-        roles:
-          type: array
-          items:
-            type: string
-        status:
-          $ref: "#/components/schemas/ActorStatus"
-        version:
+        role:
+          $ref: "#/components/schemas/ActorType"
+        enabled:
+          type: boolean
+        actorVersion:
           type: integer
           minimum: 1
-        created:
+        roleVersion:
+          type: integer
+          minimum: 1
+        actorCreated:
+          type: boolean
+        roleCreated:
           type: boolean
 
-    ActorSearchPage:
+    ActorRoleSearchPage:
       type: object
       additionalProperties: false
       required: [items, limit]
@@ -657,30 +565,31 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/ActorView"
+            $ref: "#/components/schemas/ActorRoleView"
         limit:
           type: integer
         nextCursor:
           type: string
 
-    IssueActivationRequest:
+    PasswordResetRequest:
       type: object
       additionalProperties: false
-      required: [expectedActorType]
+      required: [password]
       properties:
-        issuedBy:
+        password:
           type: string
-        expectedActorType:
-          type: string
-          enum: [partner, captain, field, operator]
+          minLength: 12
+          maxLength: 128
 
     SessionInfo:
       type: object
       additionalProperties: false
-      required: [sessionId, surface, version, createdAt, expiresAt]
+      required: [sessionId, role, surface, version, createdAt, expiresAt]
       properties:
         sessionId:
           type: string
+        role:
+          $ref: "#/components/schemas/ActorType"
         surface:
           type: string
         version:
@@ -721,25 +630,25 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Unauthenticated:
-      description: Authentication or activation proof failed.
+      description: Authentication proof failed.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     Forbidden:
-      description: Trust boundary rejected the request.
+      description: Authenticated principal is not authorized for the operation.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     NotFound:
-      description: Scoped resource does not exist.
+      description: Resource does not exist in the caller-owned role boundary.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     Conflict:
-      description: Canonical identity state conflicts with the request.
+      description: Canonical identity state conflicts with the requested mutation.
       content:
         application/json:
           schema:

@@ -14,18 +14,17 @@ const sourceBlobSha = crypto
 const schemaNames = [
   "StatusResponse",
   "ActorType",
-  "ActorStatus",
   "OtpRequest",
   "ActivationRequest",
   "ActivationChallenge",
   "LoginRequest",
   "RefreshRequest",
-  "Permission",
   "ActorIdentity",
   "TokenPair",
-  "ActorView",
-  "ActorSearchPage",
-  "IssueActivationRequest",
+  "ProvisionActorRoleRequest",
+  "ActorRoleView",
+  "ActorRoleSearchPage",
+  "PasswordResetRequest",
   "SessionInfo",
 ];
 

@@ -20,8 +20,6 @@ export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [activationPhone, setActivationPhone] = useState("");
-  const [activationCode, setActivationCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -74,29 +72,6 @@ export default function Home() {
     }
   }
 
-  async function activateOperator() {
-    setBusy(true);
-    setError("");
-    try {
-      const response = await fetch("/api/auth/activate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: activationPhone, code: activationCode }),
-      });
-      if (!response.ok) {
-        setError(await responseMessage(response));
-        return;
-      }
-      const body = (await response.json()) as { identity: ActorIdentity };
-      setActivationCode("");
-      setView({ kind: "authenticated", identity: body.identity });
-    } catch {
-      setError("تعذر الوصول إلى خدمة الهوية.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function logout() {
     setBusy(true);
     setError("");
@@ -138,7 +113,8 @@ export default function Home() {
           <p>جلسة المشغل موثقة.</p>
           <dl>
             <div><dt>Actor</dt><dd>{view.identity.subject}</dd></div>
-            <div><dt>Surface</dt><dd>{view.identity.sessionSurface}</dd></div>
+            <div><dt>Role</dt><dd>{view.identity.role}</dd></div>
+            <div><dt>Surface</dt><dd>{view.identity.surface}</dd></div>
           </dl>
           {error ? <p className="identity-error">{error}</p> : null}
           <button disabled={busy} onClick={logout}>{busy ? "جارٍ التنفيذ…" : "تسجيل الخروج"}</button>
@@ -168,34 +144,6 @@ export default function Home() {
         {error ? <p className="identity-error">{error}</p> : null}
         <button disabled={busy || !username.trim() || password.length < 12} onClick={login}>
           {busy ? "جارٍ التحقق…" : "تسجيل الدخول"}
-        </button>
-
-        <hr />
-
-        <p>تفعيل مشغل جديد</p>
-        <label>
-          رقم الهاتف
-          <input
-            inputMode="tel"
-            value={activationPhone}
-            onChange={(event) => setActivationPhone(event.target.value)}
-            placeholder="+967..."
-          />
-        </label>
-        <label>
-          رمز التفعيل
-          <input
-            inputMode="numeric"
-            maxLength={6}
-            value={activationCode}
-            onChange={(event) => setActivationCode(event.target.value)}
-          />
-        </label>
-        <button
-          disabled={busy || !activationPhone.trim() || activationCode.trim().length !== 6}
-          onClick={activateOperator}
-        >
-          {busy ? "جارٍ التحقق…" : "تفعيل الحساب"}
         </button>
       </section>
     </main>

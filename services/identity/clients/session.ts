@@ -39,13 +39,7 @@ export function identityAuthorizesSurface(
   role: ActorType,
   surface: IdentitySurface,
 ): boolean {
-  return (
-    identity.authState === "ACTIVE" &&
-    roleSurface[role] === surface &&
-    identity.sessionSurface === surface &&
-    identity.surfaceAccess[surface] === true &&
-    identity.roles.includes(role)
-  );
+  return identity.role === role && identity.surface === surface && roleSurface[role] === surface;
 }
 
 function parseStoredTokens(raw: string | null): StoredTokens | null {
@@ -134,9 +128,7 @@ export class IdentitySessionManager {
       try {
         await this.client.logout(stored.accessToken);
       } catch (error) {
-        if (isIdentityClientError(error) && error.kind === "network") {
-          throw error;
-        }
+        if (isIdentityClientError(error) && error.kind === "network") throw error;
       }
     }
     await this.clearLocal();

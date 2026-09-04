@@ -9,7 +9,7 @@ import {
   type IdentitySessionState,
 } from "@bthwani/identity";
 
-const actorType = "client" as const;
+const role = "client" as const;
 const surface = "app-client" as const;
 const namespace = "bthwani.client";
 const deviceKey = namespace + ".identity.device.v1";
@@ -69,7 +69,7 @@ function identitySession(): IdentitySessionManager {
     identityClient(),
     secureStorage,
     deviceFingerprint,
-    actorType,
+    role,
     surface,
     namespace,
   );
@@ -84,7 +84,7 @@ export async function activateIdentity(phone: string, code: string): Promise<Ide
   const fingerprint = await deviceFingerprint();
   const pair = await identityClient().activate({
     phone,
-    actorType,
+    role,
     code,
     deviceFingerprint: fingerprint,
   });
@@ -92,7 +92,7 @@ export async function activateIdentity(phone: string, code: string): Promise<Ide
 }
 
 export function requestIdentityActivation(phone: string) {
-  return identityClient().requestOtp({ phone, actorType: "client" });
+  return identityClient().requestOtp({ phone, role });
 }
 
 export function logoutIdentity(): Promise<void> {
