@@ -9,15 +9,11 @@ Apply the durable orchestrator architecture/data/product laws to BThwani-specifi
 
 ## Identity
 
-Identity owns actor authentication, credentials, sessions, activation, roles/permissions and trusted identity context. It does not own workforce engagement, DSH operational assignment or WLT financial truth.
-
-## Workforce
-
-Workforce owns person/engagement/workforce status/eligibility/evidence. Captain/field operational roles may consume Workforce truth but do not create separate identity systems.
+Identity owns actor identity, authentication, credentials, sessions, activation, roles/permissions and trusted identity context. It does not own DSH operational participant/assignment truth or WLT financial truth.
 
 ## DSH
 
-DSH owns commerce/partner/store/order/serviceability/dispatch/delivery/support and other assigned operational truth. DSH may consume WLT/Identity/Workforce facts through contracts but cannot become their writer.
+DSH owns commerce/client/partner/captain/field operational participant state, store/order/serviceability/dispatch/delivery/support and other assigned operational truth. DSH consumes Identity actor/access truth and WLT financial truth through contracts but cannot become their writer.
 
 ## WLT
 

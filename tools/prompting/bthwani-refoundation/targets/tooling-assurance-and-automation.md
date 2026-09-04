@@ -44,7 +44,7 @@ APP-SPECIFIC TOOL     → apps/<app>/... when app lifecycle owns it
 CROSS-REPOSITORY TOOL → tools/
 ```
 
-Examples: WLT financial simulators belong with WLT testing; Identity fixtures/provisioning helpers use Identity/Workforce canonical APIs; DSH database helpers belong with DSH database tooling.
+Examples: WLT financial simulators belong with WLT testing; Identity fixtures/provisioning helpers use canonical Identity APIs and DSH-owned actor provisioning flows; DSH database helpers belong with DSH database tooling.
 
 ## 3. Manual authority demolition
 

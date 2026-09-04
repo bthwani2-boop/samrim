@@ -11,7 +11,6 @@ Business/API contracts live with the service that owns the semantics:
 services/dsh/contracts/
 services/wlt/contracts/
 services/identity/contracts/
-services/workforce/contracts/
 services/platform-control/contracts/   # only if independent service admission passes
 ```
 
@@ -45,7 +44,7 @@ service-to-service trust/auth headers
 transport-level Money value object only if truly protocol-wide
 ```
 
-It must not own balance, fee, settlement, commission, order, store, actor, workforce, or other business schemas.
+It must not own balance, fee, settlement, commission, order, store, actor, operational-participant, or other business schemas.
 
 ### `catalog/`
 
@@ -100,7 +99,6 @@ Each service should expose one canonical contract composition root, for example:
 dsh.openapi.yaml
 wlt.openapi.yaml
 identity.openapi.yaml
-workforce.openapi.yaml
 platform-control.openapi.yaml   # only if Platform Control survives as an independent service
 ```
 

@@ -101,30 +101,18 @@ for (const route of ["activate", "login", "session", "logout"]) {
   expectText("apps/control-panel/app/api/auth/" + route + "/route.ts", "identity-bff", route + " BFF binding");
 }
 
-const workforce = read("services/workforce/backend/internal/identityboundary/client.go");
-for (const required of ["ProvisionCaptain", "ProvisionField", '"workforce"']) {
-  if (!workforce.includes(required)) failures.push("Workforce Identity boundary missing " + required);
-}
-for (const forbidden of ["ProvisionPartner", "ProvisionOperator"]) {
-  if (workforce.includes(forbidden)) failures.push("Workforce Identity boundary exceeds role ownership: " + forbidden);
-}
-
 const dsh = read("services/dsh/backend/internal/identityboundary/client.go");
-for (const required of ["ProvisionPartner", '"dsh"']) {
+for (const required of ["ProvisionPartner", "ProvisionCaptain", "ProvisionField", '"dsh"']) {
   if (!dsh.includes(required)) failures.push("DSH Identity boundary missing " + required);
 }
-for (const forbidden of ["ProvisionCaptain", "ProvisionField", "ProvisionOperator"]) {
-  if (dsh.includes(forbidden)) failures.push("DSH Identity boundary exceeds role ownership: " + forbidden);
-}
+if (dsh.includes("ProvisionOperator")) failures.push("DSH Identity boundary must not provision operator roles");
 
-for (const service of ["workforce", "dsh"]) {
-  const mod = read("services/" + service + "/backend/go.mod");
-  if (!mod.includes("github.com/bthwani2-boop/samrim/services/identity/clients/go v0.0.0")) {
-    failures.push(service + " Go module does not require canonical Identity Go client");
-  }
-  if (!mod.includes("../../identity/clients/go")) {
-    failures.push(service + " Go module local Identity client replacement missing");
-  }
+const dshMod = read("services/dsh/backend/go.mod");
+if (!dshMod.includes("github.com/bthwani2-boop/samrim/services/identity/clients/go v0.0.0")) {
+  failures.push("DSH Go module does not require canonical Identity Go client");
+}
+if (!dshMod.includes("../../identity/clients/go")) {
+  failures.push("DSH Go module local Identity client replacement missing");
 }
 
 const goClient = read("services/identity/clients/go/client.go");
@@ -160,5 +148,5 @@ if (failures.length > 0) {
 
 console.log("IDENTITY_BOUNDARY_VERIFY=PASS");
 console.log("IDENTITY_SURFACE_BINDINGS=5");
-console.log("IDENTITY_TRUSTED_CONSUMERS=2");
+console.log("IDENTITY_TRUSTED_DOMAIN_CONSUMERS=1");
 console.log("PARALLEL_IDENTITY_CLIENT_TRUTH=0");

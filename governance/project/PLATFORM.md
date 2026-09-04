@@ -7,7 +7,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Platform classification
 
-BThwani is one BThwani-operated unified multi-surface B2B2C commerce, fulfillment, workforce, operations and financial platform.
+BThwani is one BThwani-operated unified multi-surface B2B2C commerce, fulfillment, operations and financial platform.
 
 It is not a collection of independent apps, not a separate platform instance per partner/store and not a generic multi-tenant SaaS abstraction by default.
 
@@ -16,7 +16,7 @@ It is not a collection of independent apps, not a separate platform instance per
 - `app-client` — customer-facing mobile host.
 - `app-partner` — partner/store-facing mobile host.
 - `app-captain` — captain/delivery mobile host.
-- `app-field` — field/workforce mobile host.
+- `app-field` — field-operations mobile host.
 - `control-panel` — trusted operator web host.
 
 Surfaces compose capabilities; they do not own domain truth merely because a capability is rendered there.
@@ -33,7 +33,7 @@ Captain affiliation may be BThwani-affiliated or partner-affiliated. Affiliation
 - `PARTNER_DELIVERY`
 - `CLIENT_PICKUP`
 
-A lower-level fleet/workforce arrangement does not create an additional fulfillment policy mode unless Product governance explicitly introduces one.
+A lower-level fleet/operational arrangement does not create an additional fulfillment policy mode unless Product governance explicitly introduces one.
 
 ## Partner commercial models
 
@@ -51,7 +51,6 @@ The primary operating market is Sana'a, Yemen. City/zone/serviceability is gover
 ## Bounded contexts
 
 - Identity — authentication/session/activation/identity authority.
-- Workforce — workforce profile, engagement, eligibility and workforce evidence.
 - DSH — commerce, catalog consumption, partner/store operations, checkout/order, serviceability, dispatch/delivery, special requests, support/rescue and other operational truth assigned by Product.
 - WLT — wallet, ledger, payment, refund, commission, payout, settlement and reconciliation authority.
 - Platform Control — admitted semantic control-plane responsibility for explicitly assigned platform-wide governed configuration/change/rollout facts; independent deployable-service admission remains conditional on executable lifecycle/persistence/API/runtime evidence.
@@ -72,8 +71,7 @@ Some capabilities cross several bounded contexts without becoming new sovereign 
 
 ```text
 ACTOR != ROLE
-ROLE != ENGAGEMENT
-ENGAGEMENT != ORGANIZATION
+ROLE != ORGANIZATION
 ORGANIZATION != AUTHORIZATION_SCOPE
 PARTNER != TENANT_BY_DEFAULT
 STORE != TENANT_BY_DEFAULT

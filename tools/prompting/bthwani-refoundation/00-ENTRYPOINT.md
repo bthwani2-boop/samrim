@@ -63,7 +63,7 @@ The target preserves required Product/System/UX/data/security/financial/operatio
 
 ## 4. Target modules
 
-The target modules cover apps/composition, DSH/WLT, Identity/Workforce, Platform Control, external integrations, design system/packages, contracts/protocols, infra/runtime, governance knowledge, docs/runbooks and tooling/assurance.
+The target modules cover apps/composition, DSH/WLT, Identity, Platform Control, external integrations, design system/packages, contracts/protocols, infra/runtime, governance knowledge, docs/runbooks and tooling/assurance.
 
 Each module specializes target decisions only; general diagnosis/execution/verification law remains in the orchestrator owners.
 

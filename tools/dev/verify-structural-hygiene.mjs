@@ -66,7 +66,7 @@ const apps = new Set([
   "control-panel",
 ]);
 
-const services = new Set(["identity", "workforce", "dsh", "wlt"]);
+const services = new Set(["identity", "dsh", "wlt"]);
 const serviceLanes = new Set([
   "backend",
   "clients",
@@ -248,9 +248,6 @@ const admittedReadmeOnlyDirectories = new Set([
   "services/wlt/contracts",
   "services/wlt/database",
   "services/wlt/tests",
-  "services/workforce/contracts",
-  "services/workforce/database",
-  "services/workforce/tests",
 ]);
 
 for (const [dir, files] of filesByDirectory) {

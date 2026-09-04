@@ -46,7 +46,6 @@ A current implementation can reveal drift but does not silently redefine Product
 - `product/JOURNEYS.md` — cross-capability actor/system journeys.
 - `product/FINANCIAL-MODEL.md` — cross-capability WLT/financial model.
 - `product/COMMERCIAL-AND-PARTNER-MODEL.md` — partner/store/commercial relationship model.
-- `product/WORKFORCE-MODEL.md` — person/engagement/eligibility/operational-role model.
 - `product/EXPERIENCE-AND-DESIGN.md` — durable UX, RTL/accessibility and design-system meaning.
 
 ### Architecture

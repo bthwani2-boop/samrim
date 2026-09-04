@@ -12,7 +12,6 @@ BThwani treats these as independent axes:
 PERSON / ACTOR
 AUTHENTICATION IDENTITY
 ROLE / PERMISSION
-WORKFORCE ENGAGEMENT
 ORGANIZATION
 STORE / BUSINESS SCOPE
 OPERATIONAL ROLE / ASSIGNMENT
@@ -44,10 +43,10 @@ Consumes discovery/catalog/serviceability, checkout/order, support/tracking and 
 Acts within governed partner/store scopes for store/catalog/order/team operations and authorized financial readback. Partner organization is a business scope, not platform isolation.
 
 ### Captain
-Acts within dispatch/delivery/custody/proof/exception responsibilities when eligibility and assignment are valid. Captain workforce affiliation and DSH assignment are related but distinct facts.
+Acts within dispatch/delivery/custody/proof/exception responsibilities when eligibility and assignment are valid. Captain affiliation, eligibility and assignment required for DSH operations are DSH-owned facts.
 
 ### Field worker
-Performs assigned workforce-linked field/onboarding/verification tasks. Workforce truth and DSH operational task truth remain separate owners.
+Performs assigned DSH field/onboarding/verification tasks. Field participant status, eligibility and task truth are DSH-owned.
 
 ### Operator
 Acts through trusted operator context and exact server-side permissions. Read, mutation, approval and financial permissions are distinct.

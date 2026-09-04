@@ -32,13 +32,11 @@ const env = parseEnv(envFile);
 const port = env.SAMRIM_IDENTITY_PORT || "18082";
 const baseUrl = "http://127.0.0.1:" + port;
 const activationSecret = env.IDENTITY_ACTIVATION_HMAC_SECRET;
-const workforceToken = env.IDENTITY_WORKFORCE_SERVICE_TOKEN;
 const dshToken = env.IDENTITY_DSH_SERVICE_TOKEN;
 const platformToken = env.IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN;
 
 for (const [name, value, minimum] of [
   ["IDENTITY_ACTIVATION_HMAC_SECRET", activationSecret, 32],
-  ["IDENTITY_WORKFORCE_SERVICE_TOKEN", workforceToken, 24],
   ["IDENTITY_DSH_SERVICE_TOKEN", dshToken, 24],
   ["IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN", platformToken, 24],
 ]) {
@@ -205,8 +203,8 @@ await expect("POST", "/auth/activate", 401, {
   },
 });
 
-// Workforce can provision only captain/field and cannot read across operator context.
-const workforceContext = "workforce-" + suffix;
+// DSH can provision partner/captain/field and cannot read across operator context.
+const dshCaptainContext = "dsh-captain-" + suffix;
 const captainPhone = phone();
 const captainRequest = {
   username: "captain." + suffix,
@@ -214,28 +212,28 @@ const captainRequest = {
   role: "captain",
 };
 const captain = await expect("POST", "/internal/actors/provision", 201, {
-  headers: serviceHeaders("workforce", workforceToken, workforceContext),
+  headers: serviceHeaders("dsh", dshToken, dshCaptainContext),
   body: captainRequest,
 });
 const captainRetry = await expect("POST", "/internal/actors/provision", 200, {
-  headers: serviceHeaders("workforce", workforceToken, workforceContext),
+  headers: serviceHeaders("dsh", dshToken, dshCaptainContext),
   body: captainRequest,
 });
 assert(captainRetry.actorId === captain.actorId, "trusted provisioning retry changed actor identity");
 
 await expect("POST", "/internal/actors/provision", 409, {
-  headers: serviceHeaders("workforce", workforceToken, workforceContext),
+  headers: serviceHeaders("dsh", dshToken, dshCaptainContext),
   body: { ...captainRequest, role: "field" },
 });
 await expect("POST", "/internal/actors/provision", 403, {
-  headers: serviceHeaders("workforce", workforceToken, workforceContext),
-  body: { username: "partner.bad." + suffix, phoneE164: phone(), role: "partner" },
+  headers: serviceHeaders("dsh", dshToken, dshCaptainContext),
+  body: { username: "operator.bad." + suffix, phoneE164: phone(), role: "operator" },
 });
 await expect("GET", "/internal/actors/" + encodeURIComponent(captain.actorId), 404, {
-  headers: serviceHeaders("workforce", workforceToken, "other-" + suffix),
+  headers: serviceHeaders("dsh", dshToken, "other-" + suffix),
 });
 
-const activationHeaders = serviceHeaders("workforce", workforceToken, workforceContext, {
+const activationHeaders = serviceHeaders("dsh", dshToken, dshCaptainContext, {
   "Idempotency-Key": "captain-activation-" + suffix,
   "X-Correlation-ID": "corr-" + suffix,
 });
@@ -285,11 +283,11 @@ await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(captain.actorId) + "/suspend",
   204,
-  { headers: serviceHeaders("workforce", workforceToken, workforceContext) },
+  { headers: serviceHeaders("dsh", dshToken, dshCaptainContext) },
 );
 await expect("GET", "/auth/session", 401, { token: captainPair.accessToken });
 
-// DSH is partner-only.
+// DSH also provisions partner actors under an independent trusted operator context.
 const dshContext = "dsh-" + suffix;
 const partner = await expect("POST", "/internal/actors/provision", 201, {
   headers: serviceHeaders("dsh", dshToken, dshContext),
@@ -298,7 +296,7 @@ const partner = await expect("POST", "/internal/actors/provision", 201, {
 assert(partner.roles?.includes("partner"), "DSH partner provisioning did not return partner role");
 await expect("POST", "/internal/actors/provision", 403, {
   headers: serviceHeaders("dsh", dshToken, dshContext),
-  body: { username: "captain.bad." + suffix, phoneE164: phone(), role: "captain" },
+  body: { username: "operator.bad." + suffix, phoneE164: phone(), role: "operator" },
 });
 
 // Platform-control provisions password operators. Exact retries are credential-exact.
@@ -370,8 +368,8 @@ await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
 // Unauthenticated callers never cross the internal boundary.
 await expect("POST", "/internal/actors/provision", 401, {
   headers: {
-    "X-Service-Caller": "workforce",
-    "X-Operator-Context-ID": workforceContext,
+    "X-Service-Caller": "dsh",
+    "X-Operator-Context-ID": dshCaptainContext,
   },
   body: { username: "noauth." + suffix, phoneE164: phone(), role: "captain" },
 });
@@ -381,8 +379,7 @@ console.log("IDENTITY_PUBLIC_CLIENT_ACTIVATION=PASS");
 console.log("IDENTITY_ACTIVATION_ATTEMPT_LOCK=PASS");
 console.log("IDENTITY_REFRESH_RANDOM_DOS_RESISTANCE=PASS");
 console.log("IDENTITY_REFRESH_REPLAY_COMPROMISE=PASS");
-console.log("IDENTITY_WORKFORCE_BOUNDARY=PASS");
-console.log("IDENTITY_DSH_BOUNDARY=PASS");
+console.log("IDENTITY_DSH_DOMAIN_BOUNDARY=PASS");
 console.log("IDENTITY_OPERATOR_SESSION=PASS");
 console.log("IDENTITY_CROSS_CONTEXT_ISOLATION=PASS");
 console.log("IDENTITY_RAW_ACTIVATION_CODE_LEAK=0");

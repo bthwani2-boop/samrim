@@ -191,7 +191,7 @@ Use this table to avoid broad browsing.
 | Tracing / telemetry contract | OpenTelemetry | Grafana | Sentry |
 | Error/release observability | Sentry | OpenTelemetry | Grafana |
 | Backoffice operations | Odoo | ERPNext | Dynamics concepts |
-| Workforce / HR | Odoo HR | ERPNext HR | OrangeHRM |
+| Future HR / employee lifecycle reference only | Odoo HR | ERPNext HR | OrangeHRM |
 | Support | Zendesk | Intercom | Chatwoot |
 | Feature flags / rollout | LaunchDarkly | OpenFeature | Unleash |
 | Promotions / loyalty | Shopify | Talon.One | Voucherify |
@@ -513,8 +513,11 @@ PAYMENT / LEDGER / REFUND / COMMISSION / SETTLEMENT / PAYOUT / RECONCILIATION
 AUTHENTICATION / SESSION / ACTOR / SECURITY-SENSITIVE AUTHORIZATION
 → Identity
 
-PERSON / ENGAGEMENT / EMPLOYEE / OPERATIONAL WORKFORCE STATE
-→ Workforce
+CURRENT CLIENT / PARTNER / CAPTAIN / FIELD OPERATIONAL PARTICIPANT STATE
+→ DSH
+
+FUTURE ENTERPRISE HR / EMPLOYEE LIFECYCLE
+→ no current owner; requires independent bounded-context admission when concrete requirements exist
 
 ROUTE / APP SHELL / NAVIGATION / DEEP LINKS / NATIVE INTEGRATION
 → apps/*
@@ -605,7 +608,7 @@ The objective is faster and more complete Level-4 refoundation with **less** cus
 
 - `commerce-fulfillment.md` — commerce, marketplace, delivery, maps, search, ERP/support/promotions plus detailed marketplace/logistics references.
 - `finance-payments.md` — payment rails, wallet/ledger/accounting, fraud and financial comparison checklist.
-- `identity-platform.md` — identity, authorization, notifications, workforce, feature/configuration and secrets references.
+- `identity-platform.md` — identity, authorization, notifications, future HR-reference material, feature/configuration and secrets references.
 - `engineering-infrastructure.md` — workflows, observability, storage, API/contracts, integration testing and Go/PostgreSQL engineering candidates.
 
 Named AI/model routing is intentionally excluded: model names are transient and do not belong in durable reference policy.

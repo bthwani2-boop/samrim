@@ -55,7 +55,7 @@ Prefer application/control gating while preserving database/audit evidence. Addi
 ## Escalation
 
 - Security: cross-scope/object-authorization evidence.
-- Workforce: workforce/accreditation/vehicle/employment projection ownership.
+- DSH: captain eligibility/accreditation/vehicle/operational-participant ownership.
 - Platform/operations: service-area/platform context issues.
 - WLT: financial truth/projection issues only.
 

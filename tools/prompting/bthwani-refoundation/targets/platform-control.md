@@ -48,7 +48,7 @@ object-storage domain operations
 DSH order/delivery policy
 WLT financial policy
 Identity authentication/session policy
-Workforce employment/engagement policy
+DSH operational-participant policy
 app route/navigation logic
 service-private business feature flags encoded as a second domain policy authority
 ```

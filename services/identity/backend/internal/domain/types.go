@@ -163,10 +163,8 @@ func SurfaceForRole(role string) (string, bool) {
 func RoleAllowedForCaller(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch strings.ToLower(strings.TrimSpace(caller)) {
-	case "workforce":
-		return role == "captain" || role == "field"
 	case "dsh":
-		return role == "partner"
+		return role == "partner" || role == "captain" || role == "field"
 	case "platform-control":
 		return role == "operator"
 	default:

@@ -134,7 +134,7 @@ for (const relative of [
   );
 }
 
-const expectedServices = ["identity", "workforce", "dsh", "wlt"];
+const expectedServices = ["identity", "dsh", "wlt"];
 const actualServices = tracked
   .filter((item) => item.startsWith("services/"))
   .map((item) => item.slice("services/".length))
@@ -223,7 +223,7 @@ for (const item of tracked) {
 
   if (
     /\/(?:contracts?|database|migrations?|schema)(?:\/|$)/i.test(item) ||
-    /\/(?:orders?|wallet|ledger|catalog|checkout|identity|workforce)(?:\/|$)/i.test(item)
+    /\/(?:orders?|wallet|ledger|catalog|checkout|identity)(?:\/|$)/i.test(item)
   ) {
     failures.push("Infra contains service/business ownership path: " + item);
   }

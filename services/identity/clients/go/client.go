@@ -68,7 +68,7 @@ func New(baseURL, caller, serviceToken string) (*Client, error) {
 		return nil, errors.New("identity client base URL is invalid")
 	}
 	switch caller {
-	case "workforce", "dsh", "platform-control":
+	case "dsh", "platform-control":
 	default:
 		return nil, errors.New("identity client caller is invalid")
 	}

@@ -163,7 +163,7 @@ DSH high-priority structural candidates to resolve from live evidence:
 centralcatalog + catalogapproval           → catalog
 checkoutpaymentsaga/checkoutfinanceoutbox  → checkout or WLT integration mechanism
 internal/http                              → transport/http
-workforceclient/platformclient/mapproviders/WLT client → integrations/*
+legacy workforceclient → delete after required participant truth is rehomed to DSH; identity/platform/maps/WLT clients → integrations/*
 large multi-responsibility main.go         → thin cmd + runtime composition
 ```
 
@@ -269,7 +269,7 @@ store-onboarding-fee
 special-request financial quote fragments
 → pricing when WLT owns only financial quote semantics
 
-workforce-finance actor-shaped fragments
+actor-shaped finance fragments
 → distribute to wallet/commission/payout/etc.
 
 captain-collateral

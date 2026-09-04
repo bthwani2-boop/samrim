@@ -36,7 +36,7 @@ DESIGN SYSTEM → DOMAIN POLICY
 
 ## Contexts
 
-Identity, Workforce, DSH and WLT are the primary durable bounded-context responsibilities. Platform Control is an admitted semantic control-plane responsibility for explicitly assigned cross-platform configuration/change/rollout facts; whether it is an independently deployable service remains conditional on executable service-admission evidence. Other peer services require the same independent admission proof. External systems are integrations behind semantic owners.
+Identity, DSH and WLT are the primary durable bounded-context responsibilities. Platform Control is an admitted semantic control-plane responsibility for explicitly assigned cross-platform configuration/change/rollout facts; whether it is an independently deployable service remains conditional on executable service-admission evidence. Other peer services require the same independent admission proof. External systems are integrations behind semantic owners.
 
 ## Deployable hosts
 

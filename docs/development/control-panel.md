@@ -5,7 +5,7 @@ PRODUCT_AUTHORITY: NONE
 
 ## Role
 
-Control Panel is the trusted operator deployable host. It owns operator navigation/shell/composition, not Identity/Workforce/DSH/WLT/Platform Control domain semantics.
+Control Panel is the trusted operator deployable host. It owns operator navigation/shell/composition, not Identity/DSH/WLT/Platform Control domain semantics.
 
 ## Before adding an operator action
 

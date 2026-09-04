@@ -238,7 +238,7 @@ navigation/shell/app composition → apps/control-panel
 reusable design primitives        → packages/design-system
 DSH-specific presentation         → services/dsh/frontend/<capability>/presentation/control-panel
 WLT-specific presentation         → services/wlt/frontend/<capability>/presentation/control-panel
-Identity/Workforce/Platform UI    → their canonical frontend capability owners when reusable
+Identity/Platform UI              → their canonical frontend capability owners when reusable
 ```
 
 ## 8. App closure gate

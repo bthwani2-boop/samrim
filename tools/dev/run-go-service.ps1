@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet("identity", "workforce", "dsh", "wlt")]
+    [ValidateSet("identity", "dsh", "wlt")]
     [string]$Service
 )
 
@@ -12,7 +12,6 @@ $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $config = @{
     identity  = @{ Port = "18082"; Path = "services\identity\backend" }
-    workforce = @{ Port = "18086"; Path = "services\workforce\backend" }
     dsh       = @{ Port = "58080"; Path = "services\dsh\backend" }
     wlt       = @{ Port = "18083"; Path = "services\wlt\backend" }
 }[$Service]

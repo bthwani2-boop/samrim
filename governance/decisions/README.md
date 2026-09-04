@@ -20,7 +20,7 @@ An ADR records Context, Decision, Alternatives, Consequences and Supersession.
 
 ## High-value ADR subjects
 
-Examples include repository taxonomy, app-host/service-capability separation, WLT independence, Identity/Workforce separation, provider control-plane/data-plane separation, contract sovereignty and design-system authority.
+Examples include repository taxonomy, app-host/service-capability separation, WLT independence, single actor identity and domain-owned participation, provider control-plane/data-plane separation, contract sovereignty and design-system authority.
 
 Git history remains the archive for ordinary implementation changes. Do not create ADRs merely to preserve obsolete files or campaign history.
 
@@ -30,7 +30,8 @@ Git history remains the archive for ordinary implementation changes. Do not crea
 - `0001-repository-taxonomy.md`
 - `0002-app-host-service-capability-separation.md`
 - `0003-wlt-financial-sovereignty.md`
-- `0004-identity-workforce-separation.md`
+- `0004-identity-workforce-separation.md` — superseded by ADR 0008.
+- `0008-single-actor-domain-owned-participation.md`
 - `0005-domain-specific-external-integration-ports.md`
 - `0006-service-contract-sovereignty.md`
 - `0007-design-system-authority.md`

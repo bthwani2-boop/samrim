@@ -152,7 +152,6 @@ jobs:
           cache: true
           cache-dependency-path: |
             services/identity/backend/go.mod
-            services/workforce/backend/go.mod
             services/dsh/backend/go.mod
             services/wlt/backend/go.mod
 
@@ -275,8 +274,6 @@ jobs:
 
             verify_json_endpoint identity http://127.0.0.1:18082/identity/health || ok=0
             verify_json_endpoint identity http://127.0.0.1:18082/identity/readiness || ok=0
-            verify_json_endpoint workforce http://127.0.0.1:18086/workforce/health || ok=0
-            verify_json_endpoint workforce http://127.0.0.1:18086/workforce/readiness || ok=0
             verify_json_endpoint dsh http://127.0.0.1:58080/dsh/health || ok=0
             verify_json_endpoint dsh http://127.0.0.1:58080/dsh/readiness || ok=0
             verify_json_endpoint wlt http://127.0.0.1:18083/wlt/health || ok=0
@@ -298,7 +295,7 @@ jobs:
           done
 
           mapfile -t running < <(docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation ps --status running --services | sort)
-          expected=(dsh identity mailpit minio postgres wlt workforce)
+          expected=(dsh identity mailpit minio postgres wlt)
 
           if [[ "${running[*]}" != "${expected[*]}" ]]; then
             printf 'running=%s\n' "${running[*]}"

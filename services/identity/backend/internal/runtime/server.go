@@ -121,7 +121,6 @@ func loadConfig(defaultPort string) (config, error) {
 		return config{}, errors.New("IDENTITY_CONSUMER_OPERATOR_CONTEXT_ID is required")
 	}
 	tokens := map[string]string{
-		"workforce":strings.TrimSpace(os.Getenv("IDENTITY_WORKFORCE_SERVICE_TOKEN")),
 		"dsh":strings.TrimSpace(os.Getenv("IDENTITY_DSH_SERVICE_TOKEN")),
 		"platform-control":strings.TrimSpace(os.Getenv("IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN")),
 	}

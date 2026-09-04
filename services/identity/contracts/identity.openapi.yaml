@@ -422,7 +422,7 @@ components:
       required: true
       schema:
         type: string
-        enum: [workforce, dsh, platform-control]
+        enum: [dsh, platform-control]
     OperatorContext:
       name: X-Operator-Context-ID
       in: header

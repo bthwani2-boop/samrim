@@ -12,9 +12,7 @@ This glossary defines stable platform vocabulary. If implementation naming confl
 
 **Actor** — a human or system participant capable of authenticated/authorized action or consumption.
 
-**Role** — a responsibility/permission grouping; not the same as a person, engagement or organization.
-
-**Engagement** — the workforce/business relationship through which a person participates.
+**Role** — a responsibility/permission grouping; not the same as a person, organization or domain assignment.
 
 **Organization** — a business entity such as a partner organization. It is not automatically a tenant.
 

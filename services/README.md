@@ -8,7 +8,6 @@ Canonical bounded-context services live here.
 Current admitted service roots:
 
 - `services/identity`
-- `services/workforce`
 - `services/dsh`
 - `services/wlt`
 

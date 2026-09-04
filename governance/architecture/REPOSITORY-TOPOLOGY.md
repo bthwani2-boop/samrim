@@ -69,7 +69,7 @@ services/<owner>/
 
 Subdirectories exist only when that responsibility is real. `cmd/*` remains process startup; transport does not own business state machines; integrations translate peer/external boundaries and do not own remote truth.
 
-Identity, Workforce, DSH and WLT are durable primary bounded-context responsibilities. Platform Control is an admitted semantic control-plane responsibility, but independent deployment as `services/platform-control` remains conditional on executable service-admission proof. Notification, Search or any other peer service is likewise conditional and never inferred from a donor/current folder name.
+Identity, DSH and WLT are the durable primary bounded-context responsibilities. Platform Control is an admitted semantic control-plane responsibility, but independent deployment as `services/platform-control` remains conditional on executable service-admission proof. Notification, Search or any other peer service is likewise conditional and never inferred from a donor/current folder name.
 
 ## Packages
 

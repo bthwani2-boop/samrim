@@ -240,7 +240,7 @@ CONFLATION RISKS
 TERMINOLOGY/LABEL CONSISTENCY
 ```
 
-Use this whenever concepts such as Partner/Store, Actor/Role/Engagement, Payment/Settlement/Payout, or provider/control-plane/data-plane can be conflated.
+Use this whenever concepts such as Partner/Store, Actor/Role/Organization, Payment/Settlement/Payout, or provider/control-plane/data-plane can be conflated.
 
 ### Surface and action coverage
 

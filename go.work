@@ -4,5 +4,4 @@ use (
 	./services/dsh/backend
 	./services/identity/backend
 	./services/wlt/backend
-	./services/workforce/backend
 )

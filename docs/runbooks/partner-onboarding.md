@@ -7,7 +7,7 @@ CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 Status: OPERATIONAL_RUNBOOK
 Owner: DSH partner onboarding
 
-Current capability governance, DSH contracts, Identity/Workforce ownership and WLT boundary rules override stale operational details.
+Current capability governance, DSH contracts, Identity/DSH ownership and WLT boundary rules override stale operational details.
 
 ## Triage keys
 

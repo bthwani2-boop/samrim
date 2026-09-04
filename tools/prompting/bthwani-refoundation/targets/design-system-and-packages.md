@@ -118,7 +118,7 @@ Domain/product strings stay with their semantic owner:
 ```text
 Order delivered    → Order/DSH presentation owner
 Wallet balance     → Wallet/WLT presentation owner
-Captain suspended  → Workforce/DSH owner according to actual meaning
+Captain suspended  → DSH when operational; Identity only when the actor/account itself is suspended
 Store approval     → Store/Catalog owner according to actual meaning
 ```
 

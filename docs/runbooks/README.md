@@ -30,7 +30,6 @@ If a runbook conflicts with a live executable path/command, correct the runbook.
 - `payments.md` — payment sessions/provider webhook/reconciliation safety.
 - `wallet-reconciliation.md` — WLT-backed projection/reconciliation incidents.
 - `settlements-and-payouts.md` — WLT settlement/payout/reconciliation incidents.
-- `workforce.md` — workforce profile/engagement/eligibility incidents.
 - `platform-control.md` — conditional target guidance; use operationally only after exact-current executable owner/materialization is proven.
 - `provider-unknown-outcomes.md` — ambiguous external mutation/provider outcomes.
 - `special-requests-and-support.md` — special-request and support/rescue incidents.

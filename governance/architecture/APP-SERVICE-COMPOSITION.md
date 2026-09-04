@@ -42,4 +42,4 @@ Search/query infrastructure is derived. The owning domain remains authoritative 
 
 ## Control Panel
 
-Control Panel is a deployable trusted operator host. It composes service-owned capabilities and may own operator navigation/shell, but it does not absorb Identity, Workforce, DSH, WLT or Platform Control semantics into a generic administration domain.
+Control Panel is a deployable trusted operator host. It composes service-owned capabilities and may own operator navigation/shell, but it does not absorb Identity, DSH, WLT or Platform Control semantics into a generic administration domain.

@@ -54,7 +54,7 @@ The current target Governance has explicitly classified the previously open high
 
 - `CENTRAL_CATALOG` owns catalog identity/lifecycle; catalog approval/publication is its named subcapability, while Partner/Store publication remains separately owned;
 - `CART_CHECKOUT` owns cart and checkout-intent lifecycle before `ORDER_CREATION`;
-- `FIELD_OPERATIONS_ASSIGNMENT_READINESS` owns assignment/visit/check/readiness/escalation evidence while Workforce owns engagement/eligibility and Partner/Store onboarding consumes evidence;
+- `FIELD_OPERATIONS_ASSIGNMENT_READINESS` owns field participant eligibility, assignment/visit/check/readiness/escalation evidence while Partner/Store onboarding consumes verified evidence;
 - `MARKETING_CAMPAIGNS_LOYALTY` owns campaign/audience/placement and non-financial loyalty/subscription/program eligibility while promotions/funding and WLT monetary truth remain separate;
 - DSH Notifications owns inbox/preferences/topic/delivery-attempt state while source domains own business-event truth and adapters own channel execution;
 - DSH operational analytics owns derived projection/readback lifecycle while source domains remain transactional truth;
@@ -171,7 +171,7 @@ BUSINESS ROUTES/SCREENS
 CAPABILITY STATE MACHINES/WORKFLOWS
 BUSINESS ENDPOINTS/EVENTS/OPENAPI OPERATIONS
 SESSION/RBAC/OTP OR OTHER DOMAIN SEMANTICS
-ORDER/CHECKOUT/WALLET/CATALOG/WORKFORCE IMPLEMENTATION
+ORDER/CHECKOUT/WALLET/CATALOG OR OTHER PRODUCT IMPLEMENTATION
 DONOR FEATURE TREES
 MONOLITHIC APP-SHAPED SERVICE COMPOSITION
 PARTIAL SEMANTIC CAPABILITY WAVES
@@ -207,7 +207,7 @@ Potential lanes after K0 authority consistency is proven:
 
 ```text
 READ-ONLY DONOR FORENSIC EXTRACTION         → parallel unrestricted by mutation conflicts
-IDENTITY/WORKFORCE TARGET CONE              → parallel when no shared contract/DB/runtime writer overlaps
+IDENTITY TARGET CONE                        → parallel when no shared contract/DB/runtime writer overlaps
 DSH CAPABILITY CONE                         → split only by proven independent owner/writer cones
 WLT FINANCIAL CONE                          → serialize shared ledger/contract/migration authority
 APPS/HOST COMPOSITION                       → parallel after shared service contracts are stable for the touched cone

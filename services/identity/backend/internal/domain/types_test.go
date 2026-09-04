@@ -22,13 +22,13 @@ func TestCanonicalRoleSurfaceMapping(t *testing.T) {
 }
 
 func TestTrustedCallerRoleAllowlist(t *testing.T) {
-	allowed := [][2]string{{"workforce", "captain"}, {"workforce", "field"}, {"dsh", "partner"}, {"platform-control", "operator"}}
+	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"dsh", "field"}, {"platform-control", "operator"}}
 	for _, pair := range allowed {
 		if !RoleAllowedForCaller(pair[0], pair[1]) {
 			t.Fatalf("expected %s to provision %s", pair[0], pair[1])
 		}
 	}
-	denied := [][2]string{{"workforce", "partner"}, {"dsh", "captain"}, {"platform-control", "client"}, {"browser", "operator"}}
+	denied := [][2]string{{"dsh", "operator"}, {"platform-control", "captain"}, {"platform-control", "client"}, {"browser", "operator"}}
 	for _, pair := range denied {
 		if RoleAllowedForCaller(pair[0], pair[1]) {
 			t.Fatalf("unexpected permission: %s can provision %s", pair[0], pair[1])

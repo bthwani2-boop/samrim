@@ -159,7 +159,7 @@ Data handling distinguishes at minimum:
 
 - public/non-sensitive content;
 - internal operational data;
-- personal/location/workforce data;
+- personal/location/operational-participant data;
 - authentication/credential/secret material;
 - financial/payment/payout/reconciliation evidence.
 

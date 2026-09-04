@@ -22,19 +22,19 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 ### ADMINISTRATION_ROLES_APPROVALS_AUDIT — الإدارة والأدوار والاعتمادات والتدقيق
 
-**Problem.** Administration needs precise operation/surface-scoped permissions, maker-checker separation, auditable rollback, redacted diagnostics, and delegation to sovereign Identity/Workforce/Partner owners without creating parallel administration truth.
+**Problem.** Administration needs precise operation/surface-scoped permissions, maker-checker separation, auditable rollback, redacted diagnostics, and delegation to the sovereign Identity and DSH owners without creating parallel administration truth.
 **Target state.** Every executable administration decision has one governed maker/checker lifecycle, canonical owner readback, append-only redacted audit, and no parallel sovereign-domain projection.
 
-**Required outcome.** Administration role and approval changes are surface-scoped, independently approved, version-fenced, auditable and reversible without moving Identity, Workforce, partner lifecycle or credential truth into DSH Administration.
+**Required outcome.** Administration role and approval changes are surface-scoped, independently approved, version-fenced, auditable and reversible without moving Identity credential/access truth or DSH partner/captain/field lifecycle truth into DSH Administration.
 
 **Primary actors.** operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary.
 
-**Canonical ownership.** DSH administration workflow; Identity owns authentication; Workforce owns workforce truth; DSH owns partner lifecycle.
+**Canonical ownership.** DSH administration workflow and DSH-owned operational actor/partner lifecycle; Identity owns authentication/access truth.
 
 **Material deployable surfaces.** control-panel.
 
 **Business invariants**
-- DSH Administration owns its role-definition/approval/audit workflow but not Identity authentication truth, Workforce profile/credential truth, or partner lifecycle truth.
+- DSH Administration owns its role-definition/approval/audit workflow but not Identity authentication/credential truth or DSH-owned partner/captain/field lifecycle truth.
 - Approved means the canonical downstream mutation succeeded, canonical owner readback proved the resulting truth, and administration finalization committed.
 - Pending execution states are non-applied and must not be consumed as effective RBAC truth.
 - Rejected requests have no executable canonical mutation intent.
@@ -53,31 +53,31 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Acceptance expectations**
 - Role definitions persist normalized operation permissions and explicit surface scope with control-panel mandatory for administration capability.
-- Role definition and staff role changes use maker-checker approval with canonical role-version conflict protection.
+- Role definition and actor role changes use maker-checker approval with canonical role-version conflict protection.
 - A failed-terminal request is recovered only by one atomic supersede-and-replace operation followed by fresh independent approval.
 - Approved assignment or revocation decisions are reversed only through a separate independently approved inverse request.
 - Audit writes avoid raw reason/review-note sensitive values, audit readback is redacted, and ordinary update/delete of audit history is rejected.
 - Approval queues require their exact checker permissions and cannot be listed through a generic administration-read permission alone.
 - The administration permission boundary has no broad operator-role bypass and does not propagate unnecessary PII.
-- Partner lifecycle and captain credential/workforce reads and mutations remain at their sovereign owners; administration delegates to those owner surfaces/contracts rather than maintaining local truth.
+- Partner/captain/field operational reads and mutations remain DSH-owned while credentials/access remain Identity-owned; Administration delegates to those canonical owners rather than maintaining local truth.
 
-**Named failure classes:** direct_unapproved_role_mutation, maker_self_approval, beneficiary_self_approval, rollback_checker_not_independent, broad_role_bypass, failed_terminal_intent_replayed_or_edited, duplicate_replacement_request, audit_history_mutated, sensitive_data_in_audit_or_diagnostics, parallel_partner_or_workforce_truth.
+**Named failure classes:** direct_unapproved_role_mutation, maker_self_approval, beneficiary_self_approval, rollback_checker_not_independent, broad_role_bypass, failed_terminal_intent_replayed_or_edited, duplicate_replacement_request, audit_history_mutated, sensitive_data_in_audit_or_diagnostics, parallel_partner_or_operational_actor_truth.
 
 **Actor responsibility envelope**
-- `operator-role-maker` — Creates reasoned role-definition, assignment/revocation, rollback, and terminal-failure replacement requests without approving their own intent.; permitted: request surface-scoped role definition, request staff role assignment or revocation, request inverse action for approved decision, supersede failed-terminal request while creating one fresh version-fenced request; forbidden: self approve or reject, directly mutate canonical role truth, edit or replay failed-terminal intent, store sensitive identity/workforce values in administration audit.
+- `operator-role-maker` — Creates reasoned role-definition, assignment/revocation, rollback, and terminal-failure replacement requests without approving their own intent.; permitted: request surface-scoped role definition, request actor role assignment or revocation, request inverse action for approved decision, supersede failed-terminal request while creating one fresh version-fenced request; forbidden: self approve or reject, directly mutate canonical role truth, edit or replay failed-terminal intent, store sensitive Identity or DSH participant values in administration audit.
 - `operator-role-checker` — Independently reviews and approves/rejects the governed administration requests for which the actor has exact checker permission.; permitted: approve or reject role-definition request, approve or reject role assignment/revocation, approve or reject rollback when independence rules are satisfied; forbidden: approve own request, approve a request benefiting the same actor, approve rollback when the actor was the original decision checker, use a broad role label instead of exact permission.
 - `operator-auditor` — Reads append-only redacted administration audit and privacy-safe aggregate diagnostics within authorized scope.; permitted: read redacted audit, read aggregate diagnostics; forbidden: mutate role or approval state, delete or rewrite audit history, read secrets, sessions, documents, raw review notes or unnecessary PII.
 - `role-beneficiary` — Receives the effect of an independently approved role assignment/revocation but does not approve the change.; permitted: consume the resulting authorized role state; forbidden: approve own assignment, self grant permissions, bypass surface or operation scope.
 
 **Surface semantics**
-- `control-panel` — required; actors: operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary; states: loading, empty, ready, pending, approved, rejected, superseded, reconciling, retryable_failure, failed_terminal, forbidden, conflict, error; actions: request, approve, reject, request rollback, recover failed-terminal intent by supersede-and-replace, read audit, read diagnostics, navigate to sovereign partner/workforce owner surface.
-- `backend` — required; actors: operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary; states: not_started, pending, reconciling, retryable_failure, failed_terminal, applied, forbidden, conflict; actions: enforce exact permissions, enforce maker-checker and beneficiary separation, fence by canonical role version, delegate Identity/Workforce/Partner mutations to their owners, finalize only after canonical owner readback, return redacted audit and diagnostics.
+- `control-panel` — required; actors: operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary; states: loading, empty, ready, pending, approved, rejected, superseded, reconciling, retryable_failure, failed_terminal, forbidden, conflict, error; actions: request, approve, reject, request rollback, recover failed-terminal intent by supersede-and-replace, read audit, read diagnostics, navigate to the sovereign Identity/DSH owner surface.
+- `backend` — required; actors: operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary; states: not_started, pending, reconciling, retryable_failure, failed_terminal, applied, forbidden, conflict; actions: enforce exact permissions, enforce maker-checker and beneficiary separation, fence by canonical role version, delegate Identity/DSH mutations to their canonical owners, finalize only after canonical owner readback, return redacted audit and diagnostics.
 - `database` — required; actors: operator-role-maker, operator-role-checker, operator-auditor; states: versioned, append_only_audit, immutable_failed_terminal_intent, auditable; actions: persist requests and decisions, enforce one fresh replacement per superseded terminal failure, retain immutable source decision history, reject audit update/delete outside explicit maintenance authority.
 - technical presentation binding — required implementation evidence; actors: operator-role-maker, operator-role-checker, operator-auditor, role-beneficiary; states: loading, ready, forbidden, conflict, error; actions: map canonical administration state, coordinate mutation/readback, avoid local role or approval truth.
 - `app-client` — excluded; states: not_affected_directly; exclusion reason: Consumes authorization outcomes but does not own administration controls..
 - `app-partner` — excluded; states: not_affected_directly; exclusion reason: Partner lifecycle/authorization outcomes are consumed through sovereign owners; administration does not become partner lifecycle truth..
-- `app-captain` — excluded; states: not_affected_directly; exclusion reason: Captain credential/workforce truth remains with Workforce and is only affected indirectly by authorized outcomes..
-- `app-field` — excluded; states: not_affected_directly; exclusion reason: Field workforce truth remains with Workforce and is only affected indirectly by authorized outcomes..
+- `app-captain` — excluded; states: not_affected_directly; exclusion reason: Captain operational truth remains DSH-owned and Identity credential/access truth remains Identity-owned..
+- `app-field` — excluded; states: not_affected_directly; exclusion reason: Field operational truth remains DSH-owned and Identity credential/access truth remains Identity-owned..
 
 **Additional durable semantic model**
 
@@ -156,7 +156,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Primary actors.** operator, captain, client, system.
 
-**Canonical ownership.** DSH operational dispatch; Workforce eligibility; WLT financial effects.
+**Canonical ownership.** DSH operational dispatch and captain eligibility; WLT financial effects.
 
 **Material deployable surfaces.** control-panel, app-captain, app-client.
 
@@ -219,7 +219,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Required outcome.** One Identity actor and session source serves every required surface with governed provisioning, exact idempotency, trusted context, and durable readback.
 
-**Primary actors.** customer, partner, captain, field, operator, workforce-service.
+**Primary actors.** customer, partner, captain, field, operator, dsh-service, platform-control-service.
 
 **Canonical ownership.** Identity.
 
@@ -227,7 +227,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Business invariants**
 - Identity exclusively owns actor accounts, canonical identifiers, authentication state, and sessions.
-- Workforce supplies professional intent but never writes Identity persistence directly.
+- DSH supplies partner/captain/field provisioning intent and Platform Control supplies operator provisioning intent; neither writes Identity persistence directly.
 - Internal callers authenticate as a service and cannot become the source of operator context.
 - Every actor provisioning and session mutation has durable owner readback.
 
@@ -252,10 +252,11 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 **Actor responsibility envelope**
 - `customer` — Uses app-client with an owned Identity actor and session.; permitted: activate or authenticate the owned actor, manage owned sessions; forbidden: select operator context, read another actor or session.
 - `partner` — Uses app-partner after governed partner actor provisioning and activation.; permitted: activate the provisioned partner actor, manage owned sessions; forbidden: self-provision an internal actor, reuse another actor activation.
-- `captain` — Uses app-captain after Workforce-governed provisioning and readiness.; permitted: activate the assigned captain actor, manage owned sessions; forbidden: change the provisioned role, bypass Workforce readiness.
-- `field` — Uses app-field after Workforce-governed provisioning and assignment.; permitted: activate the assigned field actor, manage owned sessions; forbidden: change the provisioned role, access another field actor.
+- `captain` — Uses app-captain after DSH-governed provisioning and operational readiness.; permitted: activate the assigned captain actor, manage owned sessions; forbidden: change the provisioned role, bypass DSH operational readiness.
+- `field` — Uses app-field after DSH-governed provisioning and assignment.; permitted: activate the assigned field actor, manage owned sessions; forbidden: change the provisioned role, access another field actor.
 - `operator` — Uses Control Panel and authorized administrative identity operations.; permitted: authenticate to Control Panel, perform explicitly authorized actor administration; forbidden: self-approve privileged access, provision outside trusted service context.
-- `workforce-service` — Trusted service caller for Workforce-managed actor provisioning and readback.; permitted: provision an exact actor fingerprint, search and read within trusted operator context; forbidden: override runtime operator context, expand a role through an idempotent retry.
+- `dsh-service` — Trusted service caller for DSH-owned partner/captain/field actor provisioning and readback.; permitted: provision an exact DSH actor fingerprint, search and read within trusted operator context; forbidden: provision operator roles, override runtime operator context, expand a role through an idempotent retry.
+- `platform-control-service` — Trusted service caller for operator actor provisioning/readback when that control-plane responsibility is admitted.; permitted: provision the exact operator actor fingerprint; forbidden: provision DSH actor roles or override runtime operator context.
 
 **Surface semantics**
 - `app-client` — required; actors: customer; states: loading, active, expired, blocked, failure; actions: authenticate and recover the owned session.
@@ -263,9 +264,9 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `app-captain` — required; actors: captain; states: loading, pending_activation, active, blocked, failure; actions: activate and authenticate the governed captain actor.
 - `app-field` — required; actors: field; states: loading, pending_activation, active, blocked, failure; actions: activate and authenticate the governed field actor.
 - `control-panel` — required; actors: operator; states: loading, authenticated, forbidden, not_found, failure; actions: authenticate and use authorized actor administration.
-- `backend` — required; actors: workforce-service, operator, customer, partner, captain, field; states: healthy, degraded, not_ready, authorized, forbidden, conflict; actions: enforce trust boundaries and persist Identity-owned truth.
-- `database` — required; actors: workforce-service, operator, customer, partner, captain, field; states: transactional, isolated, audited, migration_governed; actions: store sovereign actor, activation, session, and lifecycle truth.
-- technical presentation binding — required implementation evidence; actors: workforce-service, operator, customer, partner, captain, field; states: typed, bound, fail_closed; actions: consume generated Identity contracts without parallel auth truth.
+- `backend` — required; actors: dsh-service, platform-control-service, operator, customer, partner, captain, field; states: healthy, degraded, not_ready, authorized, forbidden, conflict; actions: enforce trust boundaries and persist Identity-owned truth.
+- `database` — required; actors: dsh-service, platform-control-service, operator, customer, partner, captain, field; states: transactional, isolated, audited, migration_governed; actions: store sovereign actor, activation, session, and lifecycle truth.
+- technical presentation binding — required implementation evidence; actors: dsh-service, platform-control-service, operator, customer, partner, captain, field; states: typed, bound, fail_closed; actions: consume generated Identity contracts without parallel auth truth.
 
 ### MAPS_SERVICE_AREA_ADDRESS_PRIVACY — الخرائط ومناطق الخدمة وخصوصية العناوين
 
@@ -386,7 +387,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `database` — required; actors: system; states: transactional, idempotent, snapshot_persisted, auditable; actions: enforce one order per canonical checkout/idempotency identity, persist immutable required snapshot, atomically retain required operational event/outbox state.
 - technical presentation binding — required implementation evidence; actors: client, partner, operator; states: loading, success, forbidden, conflict, offline, error; actions: map canonical contract state, coordinate readback, avoid local order/payment authority.
 - `app-captain` — excluded; states: not_affected; exclusion reason: Captain enters later dispatch/fulfillment journeys, not order creation..
-- `app-field` — excluded; states: not_affected; exclusion reason: Field workforce does not own order creation/truth under the current model..
+- `app-field` — excluded; states: not_affected; exclusion reason: Field actors do not own order creation/truth under the current model..
 
 **Additional durable semantic model**
 
@@ -804,7 +805,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `control-panel` — required; actors: operator; states: loading, empty, success, offline, forbidden, conflict, error, under_review, customer_information, needs_customer_input, approved, assigned, in_progress, completed, cancelled, rejected; actions: inspect, request information, read response, prepare quote, transition, record operational rejection, assign captain, read execution proof exception and WLT status.
 - `app-captain` — required; actors: captain; states: offered, accepted, assigned, picked_up, arrived_customer, completed, exception_open, exception_resolved; actions: recognize service type, accept assignment, execute delivery, submit proof, report exception.
 - `app-partner` — excluded; states: not_affected; exclusion reason: Special requests are client/operator/captain journeys under the current model..
-- `app-field` — excluded; states: not_affected; exclusion reason: Field workforce does not own these special requests under the current model..
+- `app-field` — excluded; states: not_affected; exclusion reason: Field actors do not own these special requests under the current model..
 - `backend` — required; actors: client, operator, captain; states: authorized, forbidden, not_found, conflict, idempotent_replay, information_pending, information_responded, wlt_unavailable, dispatch_not_ready, exception_open, exception_resolved; actions: validate ownership, enforce stage transition, persist information exchange, create and read payment session, create assignment, read dispatch evidence, resolve eligible exception, return canonical readback.
 - `database` — required; actors: client, operator, captain; states: transactional, context_scoped, versioned, audited, idempotent; actions: persist request truth, persist information rounds, enforce constraints, record workflow timestamps, link WLT dispatch proof and exception references.
 - technical presentation binding — required implementation evidence; actors: client, operator, captain; states: loading, empty, success, offline, forbidden, conflict, error; actions: classify error, bind generated contract, coordinate information exchange, enforce quote stage, refresh canonical request execution and financial readback, map captain service type.
@@ -871,7 +872,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - `backend` — required; actors: partner, captain, operator, system; states: awaiting_partner, partner_confirmed, completed, superseded, exception_open, exception_resolved, forbidden, conflict; actions: authorize store/captain scope, enforce active assignment, persist dual confirmation, enforce idempotency/payload consistency, create/read/resolve exception, return canonical readback.
 - `database` — required; actors: system, operator; states: transactional, assignment_bound, idempotent, audited, exception_governed; actions: persist handoff attempt, prevent competing executable attempt, retain actor/time/version, persist exception/correlation, enforce supersession.
 - technical presentation binding — required implementation evidence; actors: partner, captain, operator; states: loading, ready, blocked, completed, superseded, offline, error; actions: map canonical handoff/exception state, avoid local custody/exception truth.
-- `app-field` — excluded; states: not_affected; exclusion reason: Field workforce has no custody role after store readiness under the current model..
+- `app-field` — excluded; states: not_affected; exclusion reason: Field actors have no custody role after store readiness under the current model..
 
 **Additional durable semantic model**
 
@@ -1558,7 +1559,7 @@ committed → reversed
 
 **Primary actors.** authorized operator/system, captain or field provider as affected actor/read-only consumer.
 
-**Canonical ownership.** WLT penalty/debt/wallet/ledger truth; DSH/Workforce may supply trusted incident/actor evidence.
+**Canonical ownership.** WLT penalty/debt/wallet/ledger truth; DSH may supply trusted incident/actor evidence.
 
 **Material surfaces.** control-panel finance/incident workflow and bounded captain/field financial readback.
 
@@ -1569,7 +1570,7 @@ committed → reversed
 - no unsupported actor type;
 - no duplicate posting for same mutation identity;
 - no reversal after partial settlement/state drift without explicit reconciliation;
-- no DSH/Workforce ledger writer;
+- no non-WLT ledger writer;
 - no penalty without reason/audit/source evidence.
 
 **Failure/recovery.** wallet unavailable, policy disabled/invalid, debt state conflict, duplicate/idempotency conflict, reversal state drift; reconcile live wallet/debt before any new financial mutation.
@@ -1578,7 +1579,7 @@ committed → reversed
 
 **Target state.** WLT owns versioned captain/field monetary-penalty policy, posting/debt split and state-safe reversal from trusted source evidence.
 **Primary success measure.** penalty/reversal operations with exact source lineage and balanced reproducible wallet/debt/ledger effects.
-**Guardrail measures.** direct balance decrement; duplicate posting; unsupported actor; reasonless penalty; reversal after incompatible debt/state drift; DSH/Workforce ledger write.
+**Guardrail measures.** direct balance decrement; duplicate posting; unsupported actor; reasonless penalty; reversal after incompatible debt/state drift; non-WLT ledger write.
 **Business invariants**
 - penalty policy is versioned and actor/type/currency/reason scoped;
 - one logical mutation identity yields one financial effect;
@@ -1651,16 +1652,16 @@ committed → reversed
 
 ### FIELD_OPERATIONS_ASSIGNMENT_READINESS
 
-**Problem.** Field assignments, visits, readiness checks and escalations can become disconnected from Workforce eligibility and Partner/Store onboarding, creating unowned task state or evidence that can be bypassed.
-**Target state.** DSH owns one scoped operational assignment/visit/readiness lifecycle while Workforce owns person/engagement eligibility and Partner/Store capabilities consume verified field evidence.
+**Problem.** Field assignments, visits, readiness checks and escalations can become disconnected from canonical DSH field-actor eligibility and Partner/Store onboarding, creating unowned task state or evidence that can be bypassed.
+**Target state.** DSH owns one scoped field-participant eligibility/assignment/visit/readiness lifecycle while Partner/Store capabilities consume verified field evidence.
 **Primary success measure.** assigned field work reaching a governed completed or escalated owner-side result with attributable evidence and zero cross-scope task access.
 **Guardrail measures.** unauthorized assignment reads/writes; in-progress reassignment without handoff; completed visit with missing required/critical evidence; unresolved blocking escalation at completion; stale-version transition.
 
-**Required outcome.** Authorized field actors receive scoped assignments, perform versioned visits/checklists with location/evidence where required, escalate blockers and produce canonical DSH readiness evidence consumed by onboarding/store operations without becoming Workforce truth.
+**Required outcome.** Authorized field actors receive scoped assignments, perform versioned visits/checklists with location/evidence where required, escalate blockers and produce canonical DSH readiness evidence consumed by onboarding/store operations without creating a parallel field-actor truth.
 
-**Primary actors.** field worker, field operations operator/supervisor, partner/store reviewer, Workforce system as eligibility provider.
+**Primary actors.** field worker, field operations operator/supervisor, partner/store reviewer.
 
-**Canonical ownership.** DSH field-operations capability owns assignments, visits, readiness checks, escalation and operational evidence; Workforce owns workforce person/engagement/eligibility; Partner/Store owners consume the resulting evidence.
+**Canonical ownership.** DSH field-operations capability owns field participant status/eligibility, assignments, visits, readiness checks, escalation and operational evidence; Partner/Store owners consume the resulting evidence.
 
 **Boundary/non-overlap.** PARTNER_ONBOARDING_STORE_PUBLICATION consumes verified field evidence but owns Partner/Store activation/readiness/publication decisions. Field Operations cannot activate/publish a Partner or Store and Onboarding cannot rewrite assignment/visit/check history to force readiness.
 
@@ -1672,7 +1673,7 @@ committed → reversed
 - visit/readiness policy identifies required and critical checklist items and evidence requirements;
 - visit completion is blocked while required checks/evidence or blocking escalations remain unresolved;
 - location/geofence evidence is validated when the policy requires it and never grants authorization by itself;
-- Workforce eligibility is consumed, not copied as DSH workforce truth.
+- Field participant eligibility is canonical DSH truth and is not duplicated into a parallel actor/HR model.
 
 **Durable state semantics.**
 - assignment: assigned → in_progress → draft_linked or cancelled where legal;
@@ -1684,7 +1685,7 @@ committed → reversed
 - no cross-scope assignment/visit access;
 - no in-progress reassignment without governed handoff;
 - no completion with missing required/critical evidence;
-- no direct Workforce status mutation from field operations;
+- no parallel field-status mutation outside the canonical DSH owner;
 - no field evidence silently publishes/activates Partner/Store state without owner review;
 - no stale-version transition.
 
@@ -1693,10 +1694,9 @@ committed → reversed
 **Acceptance expectations.** operator and field views agree on assignment/visit version; required evidence gates are enforced server-side; onboarding/store consumers reference canonical field evidence; audit/correlation is attributable and cross-scope leakage is absent.
 
 **Actor responsibility envelope**
-- `field worker` — performs only assigned/authorized work and captures governed evidence; forbidden: self-assign privileged work, approve owner decisions or alter Workforce truth.
+- `field worker` — performs only assigned/authorized work and captures governed evidence; forbidden: self-assign privileged work, approve owner decisions or alter unrelated canonical domain truth.
 - `field operations operator/supervisor` — creates/reassigns/cancels scoped work and resolves/escalates according to permission; forbidden: bypass handoff/evidence/version rules.
 - `partner/store reviewer` — consumes verified field evidence for owner decisions; forbidden: mutate field history to force readiness.
-- `Workforce system` — supplies current eligibility/engagement facts; does not own DSH operational assignments.
 
 **Surface semantics**
 - `app-field` — required; states include assigned, in_progress, offline_draft, blocked, escalated, complete, conflict, forbidden and error.

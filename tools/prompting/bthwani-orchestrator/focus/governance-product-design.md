@@ -206,8 +206,7 @@ Do not manufacture an admin surface for every capability. Do not close an operat
 
 ```text
 ACTOR != ROLE
-ROLE != ENGAGEMENT
-ENGAGEMENT != ORGANIZATION
+ROLE != ORGANIZATION
 ORGANIZATION != AUTHORIZATION_SCOPE
 PARTNER != TENANT_BY_DEFAULT
 STORE != TENANT_BY_DEFAULT

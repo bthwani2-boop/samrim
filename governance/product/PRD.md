@@ -8,7 +8,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## 1. Product definition
 
-BThwani is one BThwani-operated unified multi-surface B2B2C commerce, fulfillment, operations, workforce, and financial platform. It is not a collection of independent applications or partner-specific platform instances. The client, partner, captain, field, and control-panel surfaces are different operating views over shared governed domain truth.
+BThwani is one BThwani-operated unified multi-surface B2B2C commerce, fulfillment, operations, and financial platform. It is not a collection of independent applications or partner-specific platform instances. The client, partner, captain, field, and control-panel surfaces are different operating views over shared governed domain truth.
 
 The platform supports multi-vertical commerce including restaurants, groceries, pharmacy, electronics, gifts/flowers, desserts/juices, fruits/vegetables, and other catalog-governed verticals added through the same contracts.
 
@@ -34,7 +34,7 @@ The standard product surfaces are:
 - `app-client`: customer discovery, cart, checkout, orders, support, tracking, and bounded financial readback.
 - `app-partner`: partner/store/catalog/order/team and authorized financial readback.
 - `app-captain`: assignment, delivery lifecycle, proof/exception handling, and authorized earnings readback.
-- `app-field`: assigned field onboarding, verification, readiness, and workforce-linked operational tasks.
+- `app-field`: assigned field onboarding, verification, readiness, and DSH operational tasks.
 - `control-panel`: governed operator administration and operational control.
 - backend/domain services and their service-owned persistence.
 - generated clients, service-owned capability presentation, design-system primitives, events/jobs and runtime infrastructure required by the above surfaces.
@@ -43,9 +43,9 @@ A capability may exclude a surface only when the applicable capability governanc
 
 ## 3. Actors and trust model
 
-Primary actors are customer, partner, captain, field worker, and operator. Authentication identity, business scope, workforce affiliation, operational ownership, and financial ownership are separate concepts and must not be conflated.
+Primary actors are customer, partner, captain, field worker, and operator. Authentication identity, business scope, operational ownership, and financial ownership are separate concepts and must not be conflated.
 
-Captain professional affiliation may be BThwani-affiliated or partner-affiliated. Workforce owns workforce affiliation/eligibility truth; DSH may own the operational fleet membership/assignment state needed by fulfillment. Those facts are related but not interchangeable authorities.
+Captain professional affiliation, eligibility, fleet membership and assignment required by fulfillment are DSH operational truth; Identity supplies only actor/authentication/access truth.
 
 ### Platform context
 
@@ -60,8 +60,7 @@ Captain professional affiliation may be BThwani-affiliated or partner-affiliated
 Every durable fact has exactly one authoritative owner.
 
 - Identity owns actors, credentials, authentication, sessions, activation, roles/permissions, and trusted identity context.
-- Workforce owns employment/workforce profiles, status, supervisor/shift/affiliation and workforce-specific evidence.
-- DSH owns commerce, Central Catalog, cart/checkout/order operational truth, stores/partner operations, field operational assignments/readiness, marketing/commercial-program eligibility, dispatch/delivery, serviceability, notifications/inbox delivery state, special requests, support/rescue, and DSH-owned derived operational projections defined by current contracts.
+- DSH owns commerce, Central Catalog, cart/checkout/order operational truth, client/partner/captain/field operational participant state, stores/partner operations, field assignments/readiness, captain eligibility/fleet/dispatch/delivery, serviceability, notifications/inbox delivery state, special requests, support/rescue, and DSH-owned derived operational projections defined by current contracts.
 - WLT exclusively owns authoritative financial truth: wallet, ledger, payment, refund, settlement, payout, commission, reconciliation, and provider financial mutation.
 - Platform Control is the semantic owner for explicitly admitted cross-platform governed configuration/change/rollout facts. Whether that responsibility is deployed as an independent `services/platform-control` service is an architecture/runtime admission decision that must be proven from executable evidence rather than assumed by Governance.
 - External technical integrations are owned by the consuming semantic capability through explicit ports/adapters. Platform Control may own governed cross-platform integration enablement/configuration where explicitly assigned; secret values remain in approved runtime secret storage. A generic provider service/name does not become a business domain.
@@ -81,7 +80,7 @@ Home and store discovery use canonical DSH/product data under trusted context an
 
 ### Partner and store model
 
-One partner may own/manage multiple stores according to current contracts. A store has one canonical operational owner unless an explicit transfer capability governs reassignment. Partner onboarding, store readiness, publication, team access, documents/evidence, and payout references must converge on canonical DSH/Identity/Workforce/WLT ownership rather than surface-local state.
+One partner may own/manage multiple stores according to current contracts. A store has one canonical operational owner unless an explicit transfer capability governs reassignment. Partner onboarding, store readiness, publication, team access, documents/evidence, and payout references must converge on canonical DSH/Identity/WLT ownership rather than surface-local state.
 
 Partner commercial model is governed platform state and uses one of `COMMISSION`, `SUBSCRIPTION`, `HYBRID`, or `OPERATOR_MANAGED`; billing/commercial classification does not alter platform isolation or create duplicate partner/store truth.
 
@@ -98,14 +97,14 @@ ORDER_CREATION begins only after the governed checkout eligibility boundary. One
 The current operational fulfillment-policy modes are `bthwani_delivery`, `partner_delivery`, and `client_pickup`.
 
 - `bthwani_delivery` uses BThwani-governed captain dispatch and delivery ownership.
-- `partner_delivery` means the partner owns the fulfillment execution path under the applicable Partner/DSH contracts; partner workforce/fleet detail does not create a fourth platform policy mode.
+- `partner_delivery` means the partner owns the fulfillment execution path under the applicable Partner/DSH contracts; partner fleet/operational-participant detail does not create a fourth platform policy mode.
 - `client_pickup` keeps delivery dispatch out of the order while preserving governed readiness/handoff semantics required by the applicable contract.
 
-Dispatch, assignment, custody/handoff, delivery progression, proof, cancellation/reassignment, and delivery exceptions remain DSH operational truth. Workforce eligibility may be consumed from Workforce but must not become a parallel assignment owner. Financial effects caused by fulfillment remain WLT truth.
+Dispatch, assignment, custody/handoff, delivery progression, proof, cancellation/reassignment, and delivery exceptions remain DSH operational truth. Captain eligibility required by dispatch is DSH-owned and must not be duplicated into a parallel actor/HR owner. Financial effects caused by fulfillment remain WLT truth.
 
 ### Field operations, assignment and readiness
 
-DSH owns field operational assignment, visit/checklist, readiness evidence and escalation lifecycle. Workforce supplies person/engagement/eligibility facts but does not own DSH task state. In-progress reassignment requires governed handoff, required/critical evidence gates completion, and Partner/Store owners consume verified field evidence without mutating field history.
+DSH owns field participant status/eligibility, operational assignment, visit/checklist, readiness evidence and escalation lifecycle. In-progress reassignment requires governed handoff, required/critical evidence gates completion, and Partner/Store owners consume verified field evidence without mutating field history.
 
 ### Marketing, campaigns and loyalty
 

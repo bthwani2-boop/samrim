@@ -166,7 +166,6 @@ function Verify-HostPortsAvailable {
         "SAMRIM_MAILPIT_SMTP_PORT",
         "SAMRIM_MAILPIT_WEB_PORT",
         "SAMRIM_IDENTITY_PORT",
-        "SAMRIM_WORKFORCE_PORT",
         "SAMRIM_DSH_PORT",
         "SAMRIM_WLT_PORT"
     )
@@ -317,7 +316,7 @@ function Show-Diagnostics {
     )
 
     & docker @baseArgs "ps"
-    & docker @baseArgs "logs" "--tail" "200" "identity" "workforce" "dsh" "wlt" "postgres" "minio" "mailpit"
+    & docker @baseArgs "logs" "--tail" "200" "identity" "dsh" "wlt" "postgres" "minio" "mailpit"
 }
 
 Push-Location $repo
@@ -405,7 +404,6 @@ try {
         "minio",
         "mailpit",
         "identity",
-        "workforce",
         "dsh",
         "wlt"
     )

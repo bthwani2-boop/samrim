@@ -13,6 +13,6 @@ Prepared canonical rooms:
 - `database/` — one canonical migration/schema lane.
 - `tests/` — service-level contract/security/cutover verification.
 
-Identity does not own Workforce engagement, DSH operational assignment, WLT financial truth, app composition, or app-native storage adapters.
+Identity does not own DSH operational participant/assignment truth, WLT financial truth, app composition, or app-native storage adapters.
 
 During Foundation Construction only the service process skeleton and canonical lanes are materialized. Authentication/session/RBAC/OTP/business contract semantics are intentionally absent until Stage B proves the Identity capability cone and donor truth required for it.

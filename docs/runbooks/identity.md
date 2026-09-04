@@ -52,7 +52,7 @@ Investigate the current equivalents of:
 
 - Expired/revoked session → use the governed sign-in/activation flow; never restore a token manually.
 - Locked activation → follow current challenge/rate-limit policy; never reset attempts ad hoc.
-- Wrong role/surface → correct the canonical actor/workforce assignment; do not patch client-local state.
+- Wrong role/surface → correct the canonical actor/domain-role assignment; do not patch client-local state.
 - Duplicate identity data → resolve the sovereign existing actor; do not create a parallel actor.
 - Outbox backlog → retry by stable event identity after root cause is corrected; do not duplicate downstream effects.
 

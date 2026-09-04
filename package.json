@@ -17,7 +17,6 @@
     "dsh": "nx run dsh:serve",
     "wlt": "nx run wlt:serve",
     "identity": "nx run identity:serve",
-    "workforce": "nx run workforce:serve",
     "nx:projects": "nx show projects",
     "workspace:typecheck": "nx run-many -t typecheck --all --outputStyle=stream",
     "workspace:test": "nx run-many -t test --all --outputStyle=stream",

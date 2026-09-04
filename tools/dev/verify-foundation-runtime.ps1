@@ -13,7 +13,6 @@ $ErrorActionPreference = "Stop"
 
 $checks = @(
     @{ Name = "identity";  Base = "http://127.0.0.1:18082/identity" },
-    @{ Name = "workforce"; Base = "http://127.0.0.1:18086/workforce" },
     @{ Name = "dsh";       Base = "http://127.0.0.1:58080/dsh" },
     @{ Name = "wlt";       Base = "http://127.0.0.1:18083/wlt" }
 )

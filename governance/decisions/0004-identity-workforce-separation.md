@@ -1,20 +1,18 @@
 # ADR 0004 — Identity and Workforce separation
 
 ARTIFACT_CLASS: DURABLE_DECISION_RATIONALE
-STATUS: ACTIVE
+STATUS: SUPERSEDED
+SUPERSEDED_BY: governance/decisions/0008-single-actor-domain-owned-participation.md
 EXECUTION_AUTHORITY: NONE
 
-## Context
-Authentication/session truth and employment/engagement/eligibility truth have different security/lifecycle semantics. Modeling captain/field/employee as mutually exclusive identity types conflates axes.
+## Historical context
 
-## Decision
-Identity owns authentication/session/activation/permissions. Workforce owns person/engagement/profile/eligibility. DSH owns operational roles/assignments; WLT owns financial identity/truth.
+This decision separated authentication/session truth from a proposed Workforce owner for employment/engagement/eligibility truth.
 
-## Alternatives
-Single combined identity/workforce service/model; separate captain/field identities.
+## Historical decision
 
-## Consequences
-A person can hold orthogonal engagements/operational roles without creating parallel authentication authorities.
+Identity owned authentication/session/activation/permissions; Workforce was proposed as a peer owner for workforce person/engagement/profile/eligibility; DSH owned operational assignments; WLT owned financial truth.
 
 ## Supersession
-A later ADR may supersede this decision only by explicitly accounting for migration, ownership and affected Product/System truth.
+
+ADR 0008 supersedes the architectural portion of this decision. The current model does not admit a Workforce service, module, or bounded context. Required captain/field/partner/client operational participation facts remain with DSH, Identity remains the single actor/authentication authority, WLT remains the financial authority, and `actor_id` is the single cross-boundary human identifier.

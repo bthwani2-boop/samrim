@@ -29,7 +29,7 @@ MEANING
 |---|---|---|
 | actor authentication/session/activation | Identity | apps/services through Identity contracts |
 | roles/permissions/trusted identity context | Identity | authorized services/hosts |
-| workforce person/engagement/status/eligibility | Workforce | DSH/operator/app bounded reads |
+| client/partner/captain/field operational participant profile/status/eligibility | DSH | authorized DSH surfaces and dependent services through DSH contracts |
 | partner/store operational truth | DSH | partner/operator hosts and dependent services through contracts |
 | address/serviceability/order/dispatch/delivery/support | DSH | apps and WLT where trusted operational evidence is required |
 | wallet/ledger/payment/refund | WLT | DSH/app bounded projections/readback |
@@ -68,7 +68,7 @@ The following classes must preserve single-owner semantics when present:
 | Meaning | Canonical owner / writer | Derived or delivery role |
 |---|---|---|
 | cart/checkout operational truth | DSH CART_CHECKOUT; WLT owns financial quote/payment-session facts | ORDER_CREATION consumes only eligible checkout evidence; apps consume canonical readback |
-| field assignment/visit/readiness/escalation | DSH FIELD_OPERATIONS_ASSIGNMENT_READINESS; Workforce owns person/engagement/eligibility | Partner/Store and operator surfaces consume verified evidence |
+| field participant eligibility/assignment/visit/readiness/escalation | DSH FIELD_OPERATIONS_ASSIGNMENT_READINESS | Partner/Store and operator surfaces consume verified evidence |
 | campaigns/audiences/placements/loyalty/non-financial program eligibility | DSH MARKETING_CAMPAIGNS_LOYALTY; WLT owns monetary charging/posting; promotion funding stays in its governed cross-owner capability | apps/checkout/notifications consume bounded eligibility/readback |
 | customer profile/preferences excluding authentication | DSH customer/profile capability unless a future explicit owner supersedes it | apps consume bounded readback |
 | partner-team membership and store-scoped operational access facts | DSH partner/team capability; Identity remains permission/session authority | partner/control surfaces consume scoped projections |
