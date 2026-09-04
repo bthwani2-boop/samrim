@@ -56,6 +56,10 @@ function Ensure-LocalEnv {
     $existing = Get-Content $envPath -Raw
     $migrated = $existing
     $migrated = $migrated.Replace(
+        "SAMRIM_POSTGRES_PORT=55432",
+        "SAMRIM_POSTGRES_PORT=58432"
+    )
+    $migrated = $migrated.Replace(
         "SAMRIM_MAILPIT_SMTP_PORT=1025",
         "SAMRIM_MAILPIT_SMTP_PORT=58025"
     )
@@ -66,7 +70,7 @@ function Ensure-LocalEnv {
 
     if ($migrated -ne $existing) {
         Write-Utf8File -Path $envPath -Content $migrated
-        Write-Host "LOCAL_RUNTIME_ENV=MIGRATED_MAILPIT_PORTS"
+        Write-Host "LOCAL_RUNTIME_ENV=MIGRATED_FOUNDATION_PORTS"
     }
 }
 
@@ -135,6 +139,42 @@ function Test-PortBindable([int] $Port) {
     }
 }
 
+function Get-PortOwnerDescription([int] $Port) {
+    try {
+        $connections = @(
+            Get-NetTCPConnection -LocalAddress "127.0.0.1" -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+        )
+
+        if ($connections.Count -eq 0) {
+            $connections = @(
+                Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+            )
+        }
+
+        if ($connections.Count -eq 0) {
+            return "owner=unknown"
+        }
+
+        $owners = @()
+        foreach ($connection in $connections) {
+            $pidValue = [int] $connection.OwningProcess
+            $processName = "unknown"
+
+            try {
+                $processName = (Get-Process -Id $pidValue -ErrorAction Stop).ProcessName
+            }
+            catch {}
+
+            $owners += "pid=$pidValue process=$processName"
+        }
+
+        return ($owners | Sort-Object -Unique) -join "; "
+    }
+    catch {
+        return "owner=unknown"
+    }
+}
+
 function Verify-HostPortsAvailable {
     param([hashtable] $Env)
 
@@ -178,7 +218,8 @@ function Verify-HostPortsAvailable {
         $seen[$port] = $key
 
         if (-not (Test-PortBindable -Port $port)) {
-            $failures += "Host port 127.0.0.1:$port is already allocated ($key)"
+            $owner = Get-PortOwnerDescription -Port $port
+            $failures += "Host port 127.0.0.1:${port} is already allocated ($key; $owner)"
         }
     }
 
