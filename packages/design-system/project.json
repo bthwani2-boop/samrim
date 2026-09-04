@@ -1,0 +1,13 @@
+{
+  "name": "design-system",
+  "root": "packages/design-system",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir packages/design-system typecheck"
+      }
+    }
+  }
+}
