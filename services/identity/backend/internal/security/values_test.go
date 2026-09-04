@@ -1,6 +1,9 @@
 package security
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalizePhoneE164(t *testing.T) {
 	for raw, expected := range map[string]string{
@@ -45,5 +48,22 @@ func TestOpaqueSecurityValues(t *testing.T) {
 	}
 	if HMAC256Hex([]byte("01234567890123456789012345678901"), "a") == HMAC256Hex([]byte("01234567890123456789012345678901"), "b") {
 		t.Fatal("HMAC does not distinguish payloads")
+	}
+}
+
+func TestArgon2idPasswordHashing(t *testing.T) {
+	password := "Correct-Horse-Battery-Staple"
+	hash, err := HashPassword(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(hash, "$argon2id$") {
+		t.Fatalf("unexpected password hash format: %s", hash)
+	}
+	if !VerifyPassword(hash, password) {
+		t.Fatal("valid password rejected")
+	}
+	if VerifyPassword(hash, password+"-wrong") {
+		t.Fatal("invalid password accepted")
 	}
 }

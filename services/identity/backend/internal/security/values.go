@@ -11,16 +11,22 @@ import (
 	"regexp"
 	"strings"
 
-	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/argon2"
 )
 
 var (
-	phonePattern      = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
-	usernamePattern   = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
-	actorIDPattern    = regexp.MustCompile(`^[a-z][A-Za-z0-9._:-]{1,127}$`)
-	devicePattern     = regexp.MustCompile(`^[A-Za-z0-9._:-]{8,256}$`)
-	activationPattern = regexp.MustCompile(`^[0-9]{6}$`)
+	phonePattern      = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
+	usernamePattern   = regexp.MustCompile("^[a-z0-9][a-z0-9._-]{0,63}$")
+	devicePattern     = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
+	activationPattern = regexp.MustCompile("^[0-9]{6}$")
 	ErrInvalidValue   = errors.New("invalid identity value")
+)
+
+const (
+	argonMemory  uint32 = 64 * 1024
+	argonTime    uint32 = 3
+	argonThreads uint8  = 2
+	argonKeyLen  uint32 = 32
 )
 
 func NormalizePhoneE164(raw string) (string, error) {
@@ -47,18 +53,6 @@ func NormalizeUsername(raw string) (string, error) {
 		return "", ErrInvalidValue
 	}
 	return username, nil
-}
-
-func NormalizeActorID(raw, role string) (string, error) {
-	actorID := strings.TrimSpace(raw)
-	if actorID == "" {
-		return "", nil
-	}
-	role = strings.ToLower(strings.TrimSpace(role))
-	if !actorIDPattern.MatchString(actorID) || !strings.HasPrefix(actorID, role+"-") {
-		return "", ErrInvalidValue
-	}
-	return actorID, nil
 }
 
 func NormalizeDeviceFingerprint(raw string) (string, error) {
@@ -88,15 +82,6 @@ func RandomToken(byteCount int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buffer), nil
 }
 
-func RandomActivationCode() (string, error) {
-	buffer := make([]byte, 4)
-	if _, err := rand.Read(buffer); err != nil {
-		return "", err
-	}
-	value := (uint32(buffer[0])<<24 | uint32(buffer[1])<<16 | uint32(buffer[2])<<8 | uint32(buffer[3])) % 1000000
-	return fmt.Sprintf("%06d", value), nil
-}
-
 func SHA256Hex(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
@@ -118,22 +103,55 @@ func ConstantTimeHexEqual(a, b string) bool {
 }
 
 func HashPassword(password string) (string, error) {
-	password = strings.TrimSpace(password)
 	if len(password) < 12 || len(password) > 128 {
 		return "", ErrInvalidValue
 	}
-	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	return string(hashed), nil
+	key := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	return fmt.Sprintf(
+		"$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
+		argon2.Version,
+		argonMemory,
+		argonTime,
+		argonThreads,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(key),
+	), nil
 }
 
-func VerifyPassword(hash, password string) bool {
-	if strings.TrimSpace(hash) == "" || strings.TrimSpace(password) == "" {
+func VerifyPassword(encoded, password string) bool {
+	if encoded == "" || password == "" {
 		return false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" {
+		return false
+	}
+	var version int
+	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil || version != argon2.Version {
+		return false
+	}
+	var memory, iterations uint32
+	var threads uint8
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &threads); err != nil {
+		return false
+	}
+	if memory == 0 || iterations == 0 || threads == 0 || memory > 256*1024 || iterations > 10 || threads > 16 {
+		return false
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil || len(salt) < 16 {
+		return false
+	}
+	expected, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil || len(expected) < 16 || len(expected) > 64 {
+		return false
+	}
+	actual := argon2.IDKey([]byte(password), salt, iterations, memory, threads, uint32(len(expected)))
+	return hmac.Equal(actual, expected)
 }
 
 func MaskPhone(phone string) string {

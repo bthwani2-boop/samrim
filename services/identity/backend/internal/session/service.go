@@ -10,7 +10,6 @@ import (
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	identitysecurity "github.com/bthwani2-boop/samrim/services/identity/backend/internal/security"
-	"github.com/lib/pq"
 )
 
 type Service struct {
@@ -31,45 +30,61 @@ func (s *Service) Login(ctx context.Context, input domain.LoginRequest, ipHash s
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
+	ipHash = strings.TrimSpace(ipHash)
+	if len(ipHash) != 64 {
+		return domain.TokenPair{}, domain.ErrInvalidInput
+	}
 
-	var recentFailures int
+	var accountFailures, sourceFailures int
 	if err := s.db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM identity_login_attempts WHERE username=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'",
-		username).Scan(&recentFailures); err != nil {
+		username).Scan(&accountFailures); err != nil {
 		return domain.TokenPair{}, err
 	}
-	if recentFailures >= 5 {
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM identity_login_attempts WHERE ip_hash=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'",
+		ipHash).Scan(&sourceFailures); err != nil {
+		return domain.TokenPair{}, err
+	}
+	if sourceFailures >= 30 {
 		return domain.TokenPair{}, domain.ErrRateLimited
 	}
 
-	actor, err := actorByUsername(ctx, s.db, username)
+	a, err := operatorByUsername(ctx, s.db, username)
 	if errors.Is(err, sql.ErrNoRows) {
 		_, _ = s.db.ExecContext(ctx, "INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,false)", username, ipHash)
+		if accountFailures >= 5 {
+			return domain.TokenPair{}, domain.ErrRateLimited
+		}
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	if actor.Status != domain.ActorStatusActive || !identitysecurity.VerifyPassword(actor.PasswordHash, input.Password) {
+	if !identitysecurity.VerifyPassword(a.PasswordHash, input.Password) {
 		_, _ = s.db.ExecContext(ctx, "INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,false)", username, ipHash)
+		if accountFailures >= 5 {
+			return domain.TokenPair{}, domain.ErrRateLimited
+		}
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
-	_, _ = s.db.ExecContext(ctx, "INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,true)", username, ipHash)
 
-	surface, err := onlySurface(actor)
-	if err != nil {
-		return domain.TokenPair{}, err
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	pair, err := s.createTx(ctx, tx, actor, surface, device)
+	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_login_attempts WHERE username=$1 AND succeeded=false", username); err != nil {
+		return domain.TokenPair{}, err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,true)", username, ipHash); err != nil {
+		return domain.TokenPair{}, err
+	}
+	pair, err := s.createTx(ctx, tx, a.ID, "operator", device)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	if err := auditTx(ctx, tx, "session.login", actor.ID, actor.ID, "success", "", map[string]any{"surface": surface}); err != nil {
+	if err := auditTx(ctx, tx, "session.login", a.ID, a.ID, "success", "", map[string]any{"role": "operator"}); err != nil {
 		return domain.TokenPair{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -78,18 +93,18 @@ func (s *Service) Login(ctx context.Context, input domain.LoginRequest, ipHash s
 	return pair, nil
 }
 
-func (s *Service) CreateForActivationTx(ctx context.Context, tx *sql.Tx, actor domain.Actor, surface, deviceFingerprint string) (domain.TokenPair, error) {
+func (s *Service) CreateForActivationTx(ctx context.Context, tx *sql.Tx, actorID, role, deviceFingerprint string) (domain.TokenPair, error) {
 	device, err := identitysecurity.NormalizeDeviceFingerprint(deviceFingerprint)
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
-	if !domain.SurfaceAccess(actor)[surface] {
+	if _, ok := domain.SurfaceForRole(role); !ok {
 		return domain.TokenPair{}, domain.ErrForbidden
 	}
-	return s.createTx(ctx, tx, actor, surface, device)
+	return s.createTx(ctx, tx, actorID, role, device)
 }
 
-func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actor domain.Actor, surface, device string) (domain.TokenPair, error) {
+func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actorID, role, device string) (domain.TokenPair, error) {
 	sessionID, err := identitysecurity.RandomToken(18)
 	if err != nil {
 		return domain.TokenPair{}, err
@@ -105,18 +120,17 @@ func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actor domain.Actor, 
 	now := s.now().UTC()
 	accessExpiry := now.Add(15 * time.Minute)
 	refreshExpiry := now.Add(7 * 24 * time.Hour)
-	_, err = tx.ExecContext(ctx,
-		"INSERT INTO identity_sessions(id,actor_id,surface,access_token_hash,refresh_token_hash,device_fingerprint_hash,access_expires_at,refresh_expires_at,last_used_at,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,1)",
-		sessionID, actor.ID, surface, identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(refreshRandom),
-		identitysecurity.SHA256Hex(device), accessExpiry, refreshExpiry, now)
-	if err != nil {
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO identity_sessions(id,actor_id,role,access_token_hash,refresh_token_hash,device_fingerprint_hash,access_expires_at,refresh_expires_at,last_used_at,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,1)",
+		sessionID, actorID, role, identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(refreshRandom),
+		identitysecurity.SHA256Hex(device), accessExpiry, refreshExpiry, now); err != nil {
 		return domain.TokenPair{}, err
 	}
 	return domain.TokenPair{
 		AccessToken: access,
 		RefreshToken: sessionID + "." + refreshRandom,
 		AccessExpiry: accessExpiry,
-		Identity: identityOf(actor, sessionID, surface, accessExpiry),
+		Identity: identityOf(actorID, sessionID, role, accessExpiry),
 	}, nil
 }
 
@@ -125,27 +139,18 @@ func (s *Service) ResolveAccessToken(ctx context.Context, accessToken string) (d
 	if accessToken == "" {
 		return domain.ActorIdentity{}, domain.ErrUnauthenticated
 	}
-	var a domain.Actor
-	var roles pq.StringArray
-	var rawPermissions []byte
-	var status, sessionID, surface string
+	var actorID, sessionID, role string
 	var expires time.Time
 	err := s.db.QueryRowContext(ctx,
-		"SELECT a.id,a.username,a.phone_e164,a.operator_context_id,a.roles,a.permissions,a.password_hash,a.status,a.version,a.provisioning_fingerprint,a.created_by_service,s.id,s.surface,s.access_expires_at FROM identity_sessions s JOIN identity_actors a ON a.id=s.actor_id WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND a.status='ACTIVE'",
-		identitysecurity.SHA256Hex(accessToken)).Scan(
-		&a.ID, &a.Username, &a.PhoneE164, &a.OperatorContextID, &roles, &rawPermissions, &a.PasswordHash,
-		&status, &a.Version, &a.ProvisioningFingerprint, &a.CreatedByService, &sessionID, &surface, &expires)
+		"SELECT s.actor_id,s.id,s.role,s.access_expires_at FROM identity_sessions s JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND r.enabled=true",
+		identitysecurity.SHA256Hex(accessToken)).Scan(&actorID, &sessionID, &role, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ActorIdentity{}, domain.ErrUnauthenticated
 	}
 	if err != nil {
 		return domain.ActorIdentity{}, err
 	}
-	a.Roles, a.Status = []string(roles), domain.ActorStatus(status)
-	if err := json.Unmarshal(rawPermissions, &a.Permissions); err != nil {
-		return domain.ActorIdentity{}, err
-	}
-	return identityOf(a, sessionID, surface, expires), nil
+	return identityOf(actorID, sessionID, role, expires), nil
 }
 
 func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (domain.TokenPair, error) {
@@ -166,11 +171,11 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var actorID, surface, currentHash, deviceHash string
+	var actorID, role, currentHash, deviceHash string
 	var refreshExpiry time.Time
 	err = tx.QueryRowContext(ctx,
-		"SELECT actor_id,surface,refresh_token_hash,device_fingerprint_hash,refresh_expires_at FROM identity_sessions WHERE id=$1 AND revoked_at IS NULL FOR UPDATE",
-		sessionID).Scan(&actorID, &surface, &currentHash, &deviceHash, &refreshExpiry)
+		"SELECT actor_id,role,refresh_token_hash,device_fingerprint_hash,refresh_expires_at FROM identity_sessions WHERE id=$1 AND revoked_at IS NULL FOR UPDATE",
+		sessionID).Scan(&actorID, &role, &currentHash, &deviceHash, &refreshExpiry)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
@@ -199,7 +204,7 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 			sessionID); err != nil {
 			return domain.TokenPair{}, err
 		}
-		if err := auditTx(ctx, tx, "session.refresh_reuse", actorID, actorID, "compromised", "", map[string]any{"sessionId": sessionID}); err != nil {
+		if err := auditTx(ctx, tx, "session.refresh_reuse", actorID, actorID, "compromised", "", map[string]any{"sessionId": sessionID, "role": role}); err != nil {
 			return domain.TokenPair{}, err
 		}
 		if err := tx.Commit(); err != nil {
@@ -208,10 +213,13 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 
-	actor, err := actorByIDTx(ctx, tx, actorID)
-	if err != nil || actor.Status != domain.ActorStatusActive {
+	var enabled bool
+	if err := tx.QueryRowContext(ctx,
+		"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE",
+		actorID, role).Scan(&enabled); err != nil || !enabled {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
+
 	access, err := identitysecurity.RandomToken(32)
 	if err != nil {
 		return domain.TokenPair{}, err
@@ -229,8 +237,8 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, err
 	}
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE identity_sessions SET previous_refresh_token_hash=$1,access_token_hash=$2,refresh_token_hash=$3,access_expires_at=$4,refresh_expires_at=$5,last_used_at=$6,version=version+1 WHERE id=$7",
-		currentHash, identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(nextRefresh), accessExpiry, nextRefreshExpiry, now, sessionID); err != nil {
+		"UPDATE identity_sessions SET access_token_hash=$1,refresh_token_hash=$2,access_expires_at=$3,refresh_expires_at=$4,last_used_at=$5,version=version+1 WHERE id=$6",
+		identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(nextRefresh), accessExpiry, nextRefreshExpiry, now, sessionID); err != nil {
 		return domain.TokenPair{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -240,7 +248,7 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		AccessToken: access,
 		RefreshToken: sessionID + "." + nextRefresh,
 		AccessExpiry: accessExpiry,
-		Identity: identityOf(actor, sessionID, surface, accessExpiry),
+		Identity: identityOf(actorID, sessionID, role, accessExpiry),
 	}, nil
 }
 
@@ -251,9 +259,10 @@ func (s *Service) Logout(ctx context.Context, accessToken string) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var sessionID, actorID string
+	var sessionID, actorID, role string
 	err = tx.QueryRowContext(ctx,
-		"SELECT id,actor_id FROM identity_sessions WHERE access_token_hash=$1 AND revoked_at IS NULL FOR UPDATE", hash).Scan(&sessionID, &actorID)
+		"SELECT id,actor_id,role FROM identity_sessions WHERE access_token_hash=$1 AND revoked_at IS NULL FOR UPDATE",
+		hash).Scan(&sessionID, &actorID, &role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrUnauthenticated
 	}
@@ -261,122 +270,110 @@ func (s *Service) Logout(ctx context.Context, accessToken string) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE identity_sessions SET revoked_at=clock_timestamp(),version=version+1 WHERE id=$1", sessionID); err != nil {
+		"UPDATE identity_sessions SET revoked_at=clock_timestamp(),version=version+1 WHERE id=$1",
+		sessionID); err != nil {
 		return err
 	}
-	if err := auditTx(ctx, tx, "session.logout", actorID, actorID, "success", "", map[string]any{"sessionId": sessionID}); err != nil {
+	if err := auditTx(ctx, tx, "session.logout", actorID, actorID, "success", "", map[string]any{"sessionId": sessionID, "role": role}); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *Service) List(ctx context.Context, actorID string) ([]domain.SessionInfo, error) {
+func (s *Service) ListRole(ctx context.Context, actorID, role string) ([]domain.SessionInfo, error) {
+	role = strings.ToLower(strings.TrimSpace(role))
+	surface, ok := domain.SurfaceForRole(role)
+	if !ok {
+		return nil, domain.ErrInvalidInput
+	}
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT id,surface,version,created_at,refresh_expires_at,last_used_at,compromised_at FROM identity_sessions WHERE actor_id=$1 AND revoked_at IS NULL ORDER BY created_at DESC",
-		strings.TrimSpace(actorID))
+		"SELECT id,role,version,created_at,refresh_expires_at,last_used_at,compromised_at FROM identity_sessions WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL ORDER BY created_at DESC",
+		strings.TrimSpace(actorID), role)
 	if err != nil {
 		return nil, err
 	}
-	defer func(){ _ = rows.Close() }()
+	defer func() { _ = rows.Close() }()
 	result := []domain.SessionInfo{}
 	for rows.Next() {
 		var item domain.SessionInfo
-		if err := rows.Scan(&item.SessionID,&item.Surface,&item.Version,&item.CreatedAt,&item.ExpiresAt,&item.LastUsedAt,&item.CompromisedAt); err != nil {
+		if err := rows.Scan(&item.SessionID, &item.Role, &item.Version, &item.CreatedAt, &item.ExpiresAt, &item.LastUsedAt, &item.CompromisedAt); err != nil {
 			return nil, err
 		}
+		item.Surface = surface
 		result = append(result, item)
 	}
 	return result, rows.Err()
 }
 
-func (s *Service) Revoke(ctx context.Context, actorID, sessionID, principal, correlationID string) error {
+func (s *Service) RevokeRoleSession(ctx context.Context, actorID, role, sessionID, principal, correlationID string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil { return err }
-	defer func(){ _ = tx.Rollback() }()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
 	result, err := tx.ExecContext(ctx,
-		"UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE id=$1 AND actor_id=$2",
-		strings.TrimSpace(sessionID), strings.TrimSpace(actorID))
-	if err != nil { return err }
+		"UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE id=$1 AND actor_id=$2 AND role=$3",
+		strings.TrimSpace(sessionID), strings.TrimSpace(actorID), strings.ToLower(strings.TrimSpace(role)))
+	if err != nil {
+		return err
+	}
 	count, _ := result.RowsAffected()
-	if count == 0 { return domain.ErrNotFound }
-	if err := auditTx(ctx, tx, "session.revoked", actorID, principal, "success", correlationID, map[string]any{"sessionId":sessionID}); err != nil {
+	if count == 0 {
+		return domain.ErrNotFound
+	}
+	if err := auditTx(ctx, tx, "session.revoked", actorID, principal, "success", correlationID, map[string]any{"sessionId": sessionID, "role": role}); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *Service) RevokeAll(ctx context.Context, actorID, principal, correlationID string) error {
+func (s *Service) RevokeRoleAll(ctx context.Context, actorID, role, principal, correlationID string) error {
+	role = strings.ToLower(strings.TrimSpace(role))
 	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil { return err }
-	defer func(){ _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx,
-		"UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND revoked_at IS NULL",
-		strings.TrimSpace(actorID)); err != nil {
+	if err != nil {
 		return err
 	}
-	if err := auditTx(ctx, tx, "session.revoked_all", actorID, principal, "success", correlationID, nil); err != nil {
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL",
+		strings.TrimSpace(actorID), role); err != nil {
+		return err
+	}
+	if err := auditTx(ctx, tx, "session.revoked_role", actorID, principal, "success", correlationID, map[string]any{"role": role}); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func onlySurface(actor domain.Actor) (string, error) {
-	access := domain.SurfaceAccess(actor)
-	if len(access) != 1 {
-		return "", domain.ErrForbidden
-	}
-	for surface := range access {
-		return surface, nil
-	}
-	return "", domain.ErrForbidden
-}
-
-func identityOf(actor domain.Actor, sessionID, surface string, expires time.Time) domain.ActorIdentity {
+func identityOf(actorID, sessionID, role string, expires time.Time) domain.ActorIdentity {
+	surface, _ := domain.SurfaceForRole(role)
 	return domain.ActorIdentity{
-		Subject:actor.ID,SessionID:sessionID,OperatorContextID:actor.OperatorContextID,PhoneE164:actor.PhoneE164,
-		Roles:actor.Roles,Permissions:actor.Permissions,AuthState:"ACTIVE",SurfaceAccess:domain.SurfaceAccess(actor),
-		SessionSurface:surface,ExpiresAt:expires,
+		Subject: actorID,
+		SessionID: sessionID,
+		Role: role,
+		Surface: surface,
+		ExpiresAt: expires,
 	}
 }
 
-func actorByUsername(ctx context.Context, db *sql.DB, username string) (domain.Actor, error) {
-	return scanActor(func(dest ...any) error {
-		return db.QueryRowContext(ctx,
-			"SELECT id,username,phone_e164,operator_context_id,roles,permissions,password_hash,status,version,provisioning_fingerprint,created_by_service FROM identity_actors WHERE lower(username)=lower($1)",
-			username).Scan(dest...)
-	})
-}
-
-func actorByIDTx(ctx context.Context, tx *sql.Tx, actorID string) (domain.Actor, error) {
-	return scanActor(func(dest ...any) error {
-		return tx.QueryRowContext(ctx,
-			"SELECT id,username,phone_e164,operator_context_id,roles,permissions,password_hash,status,version,provisioning_fingerprint,created_by_service FROM identity_actors WHERE id=$1 FOR UPDATE",
-			actorID).Scan(dest...)
-	})
-}
-
-type scanner func(dest ...any) error
-
-func scanActor(scan scanner) (domain.Actor, error) {
+func operatorByUsername(ctx context.Context, db *sql.DB, username string) (domain.Actor, error) {
 	var a domain.Actor
-	var roles pq.StringArray
-	var raw []byte
-	var status string
-	if err := scan(&a.ID,&a.Username,&a.PhoneE164,&a.OperatorContextID,&roles,&raw,&a.PasswordHash,&status,&a.Version,&a.ProvisioningFingerprint,&a.CreatedByService); err != nil {
-		return domain.Actor{}, err
-	}
-	a.Roles,a.Status=[]string(roles),domain.ActorStatus(status)
-	if err := json.Unmarshal(raw,&a.Permissions); err != nil { return domain.Actor{}, err }
-	if a.Permissions == nil { a.Permissions=[]domain.Permission{} }
-	return a,nil
+	err := db.QueryRowContext(ctx,
+		"SELECT a.id,a.phone_e164,COALESCE(a.username,''),COALESCE(a.password_hash,''),a.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE lower(a.username)=lower($1) AND r.role='operator' AND r.enabled=true",
+		username).Scan(&a.ID, &a.PhoneE164, &a.Username, &a.PasswordHash, &a.Version)
+	return a, err
 }
 
 func auditTx(ctx context.Context, tx *sql.Tx, eventType, actorID, principal, outcome, correlationID string, metadata map[string]any) error {
-	if metadata == nil { metadata=map[string]any{} }
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
 	raw, err := json.Marshal(metadata)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx,
 		"INSERT INTO identity_security_audit(event_type,subject_actor_id,principal,outcome,correlation_id,metadata) VALUES($1,NULLIF($2,''),$3,$4,NULLIF($5,''),$6::jsonb)",
-		eventType,actorID,principal,outcome,correlationID,string(raw))
+		eventType, actorID, principal, outcome, correlationID, string(raw))
 	return err
 }

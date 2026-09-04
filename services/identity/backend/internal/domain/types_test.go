@@ -25,13 +25,26 @@ func TestTrustedCallerRoleAllowlist(t *testing.T) {
 	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"dsh", "field"}, {"platform-control", "operator"}}
 	for _, pair := range allowed {
 		if !RoleAllowedForCaller(pair[0], pair[1]) {
-			t.Fatalf("expected %s to provision %s", pair[0], pair[1])
+			t.Fatalf("expected %s to manage %s", pair[0], pair[1])
 		}
 	}
 	denied := [][2]string{{"dsh", "operator"}, {"platform-control", "captain"}, {"platform-control", "client"}, {"browser", "operator"}}
 	for _, pair := range denied {
 		if RoleAllowedForCaller(pair[0], pair[1]) {
-			t.Fatalf("unexpected permission: %s can provision %s", pair[0], pair[1])
+			t.Fatalf("unexpected permission: %s can manage %s", pair[0], pair[1])
+		}
+	}
+}
+
+func TestPublicOtpRoleBoundary(t *testing.T) {
+	for _, role := range []string{"client", "partner", "captain", "field"} {
+		if !IsPublicOtpRole(role) {
+			t.Fatalf("expected OTP authentication for %s", role)
+		}
+	}
+	for _, role := range []string{"operator", "employee", ""} {
+		if IsPublicOtpRole(role) {
+			t.Fatalf("unexpected public OTP role %q", role)
 		}
 	}
 }

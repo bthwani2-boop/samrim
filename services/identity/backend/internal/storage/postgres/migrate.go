@@ -14,7 +14,7 @@ func Migrate(ctx context.Context, db *sql.DB, migrationSQL string) error {
 		return fmt.Errorf("identity migration is empty")
 	}
 	if _, err := db.ExecContext(ctx, migrationSQL); err != nil {
-		return fmt.Errorf("apply identity migration v1: %w", err)
+		return fmt.Errorf("apply identity canonical migration v1: %w", err)
 	}
 	return nil
 }
@@ -32,6 +32,7 @@ func Ready(ctx context.Context, db *sql.DB) error {
 	}
 	for _, relation := range []string{
 		"identity_actors",
+		"identity_actor_roles",
 		"identity_activation_challenges",
 		"identity_sessions",
 		"identity_refresh_token_history",
@@ -44,6 +45,19 @@ func Ready(ctx context.Context, db *sql.DB) error {
 		}
 		if !resolved.Valid || resolved.String == "" {
 			return fmt.Errorf("required relation missing: %s", relation)
+		}
+	}
+	for _, legacyColumn := range []string{
+		"operator_context_id", "roles", "permissions", "status", "provisioning_fingerprint", "created_by_service",
+	} {
+		var exists bool
+		if err := db.QueryRowContext(ctx,
+			"SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='identity_actors' AND column_name=$1)",
+			legacyColumn).Scan(&exists); err != nil {
+			return fmt.Errorf("legacy schema check %s: %w", legacyColumn, err)
+		}
+		if exists {
+			return fmt.Errorf("legacy identity actor column remains: %s", legacyColumn)
 		}
 	}
 	var databaseNow time.Time

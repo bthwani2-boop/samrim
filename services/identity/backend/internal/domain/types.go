@@ -6,85 +6,68 @@ import (
 	"time"
 )
 
-type ActorStatus string
-
-const (
-	ActorStatusProvisioned       ActorStatus = "PROVISIONED"
-	ActorStatusPendingActivation ActorStatus = "PENDING_ACTIVATION"
-	ActorStatusActive            ActorStatus = "ACTIVE"
-	ActorStatusSuspended         ActorStatus = "SUSPENDED"
-	ActorStatusDeactivated       ActorStatus = "DEACTIVATED"
-)
-
-type Permission struct {
-	Service string `json:"service"`
-	Surface string `json:"surface"`
-	Action  string `json:"action"`
-	Scope   string `json:"scope"`
-}
-
 type Actor struct {
-	ID                      string
-	Username                string
-	PhoneE164               string
-	OperatorContextID       string
-	Roles                   []string
-	Permissions             []Permission
-	PasswordHash            string
-	Status                  ActorStatus
-	Version                 int
-	ProvisioningFingerprint string
-	CreatedByService        string
+	ID           string
+	PhoneE164    string
+	Username     string
+	PasswordHash string
+	Version      int
 }
 
-type ActorView struct {
-	ActorID           string      `json:"actorId"`
-	Username          string      `json:"username"`
-	PhoneE164         string      `json:"phoneE164"`
-	OperatorContextID string      `json:"operatorContextId"`
-	Roles             []string    `json:"roles"`
-	Status            ActorStatus `json:"status"`
-	Version           int         `json:"version"`
-	Created           bool        `json:"created,omitempty"`
+type ActorRole struct {
+	ActorID string
+	Role    string
+	Enabled bool
+	Version int
+}
+
+type ActorRoleView struct {
+	ActorID      string `json:"actorId"`
+	PhoneE164    string `json:"phoneE164"`
+	Username     string `json:"username,omitempty"`
+	Role         string `json:"role"`
+	Enabled      bool   `json:"enabled"`
+	ActorVersion int    `json:"actorVersion"`
+	RoleVersion  int    `json:"roleVersion"`
+	ActorCreated bool   `json:"actorCreated,omitempty"`
+	RoleCreated  bool   `json:"roleCreated,omitempty"`
 }
 
 type ActorSearchInput struct {
-	Role   string
-	Query  string
-	Status ActorStatus
-	Limit  int
-	Cursor string
+	Role    string
+	Query   string
+	Enabled *bool
+	Limit   int
+	Cursor  string
 }
 
 type ActorSearchPage struct {
-	Items      []ActorView `json:"items"`
-	Limit      int         `json:"limit"`
-	NextCursor string      `json:"nextCursor,omitempty"`
+	Items      []ActorRoleView `json:"items"`
+	Limit      int             `json:"limit"`
+	NextCursor string          `json:"nextCursor,omitempty"`
 }
 
-type ProvisionActorInput struct {
-	ActorID   string `json:"actorId,omitempty"`
-	Username  string `json:"username"`
+type ProvisionActorRoleInput struct {
 	PhoneE164 string `json:"phoneE164"`
 	Role      string `json:"role"`
+	Username  string `json:"username,omitempty"`
 	Password  string `json:"password,omitempty"`
+}
+
+type PasswordResetRequest struct {
+	Password string `json:"password"`
 }
 
 type ActivationRequest struct {
 	Phone             string `json:"phone"`
-	ActorType         string `json:"actorType"`
+	Role              string `json:"role"`
 	Code              string `json:"code"`
 	DeviceFingerprint string `json:"deviceFingerprint"`
 }
 
 type OtpRequest struct {
-	Phone     string `json:"phone"`
-	ActorType string `json:"actorType"`
-}
-
-type IssueActivationInput struct {
-	IssuedBy          string `json:"issuedBy"`
-	ExpectedActorType string `json:"expectedActorType"`
+	Phone string `json:"phone"`
+	Role  string `json:"role"`
 }
 
 type ActivationChallenge struct {
@@ -105,16 +88,11 @@ type RefreshRequest struct {
 }
 
 type ActorIdentity struct {
-	Subject           string          `json:"subject"`
-	SessionID         string          `json:"sessionId"`
-	OperatorContextID string          `json:"operatorContextId"`
-	PhoneE164         string          `json:"phoneE164"`
-	Roles             []string        `json:"roles"`
-	Permissions       []Permission    `json:"permissions"`
-	AuthState         string          `json:"authState"`
-	SurfaceAccess     map[string]bool `json:"surfaceAccess"`
-	SessionSurface    string          `json:"sessionSurface"`
-	ExpiresAt         time.Time       `json:"expiresAt"`
+	Subject   string    `json:"subject"`
+	SessionID string    `json:"sessionId"`
+	Role      string    `json:"role"`
+	Surface   string    `json:"surface"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type TokenPair struct {
@@ -126,6 +104,7 @@ type TokenPair struct {
 
 type SessionInfo struct {
 	SessionID     string     `json:"sessionId"`
+	Role          string     `json:"role"`
 	Surface       string     `json:"surface"`
 	Version       int        `json:"version"`
 	CreatedAt     time.Time  `json:"createdAt"`
@@ -172,22 +151,11 @@ func RoleAllowedForCaller(caller, role string) bool {
 	}
 }
 
-func ActorHasRole(actor Actor, role string) bool {
-	role = strings.ToLower(strings.TrimSpace(role))
-	for _, candidate := range actor.Roles {
-		if strings.ToLower(strings.TrimSpace(candidate)) == role {
-			return true
-		}
+func IsPublicOtpRole(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "client", "partner", "captain", "field":
+		return true
+	default:
+		return false
 	}
-	return false
-}
-
-func SurfaceAccess(actor Actor) map[string]bool {
-	result := map[string]bool{}
-	for _, role := range actor.Roles {
-		if surface, ok := SurfaceForRole(role); ok {
-			result[surface] = true
-		}
-	}
-	return result
 }
