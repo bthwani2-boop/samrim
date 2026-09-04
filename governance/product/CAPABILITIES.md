@@ -1425,7 +1425,7 @@ committed → reversed
 
 **Primary actors.** authorized operator, partner/stakeholder for explicitly scoped summaries, system projection builder.
 
-**Canonical ownership.** derived analytics/read-model capability; every underlying metric remains owned by its source domain.
+**Canonical ownership.** DSH operational-analytics projection responsibility owns projection build/read/rebuild lifecycle; every underlying metric fact remains owned by its canonical source domain.
 
 **Material surfaces.** control-panel and explicitly authorized stakeholder summary views.
 
