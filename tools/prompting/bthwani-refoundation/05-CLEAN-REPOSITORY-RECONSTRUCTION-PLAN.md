@@ -136,6 +136,37 @@ Restore human-operational/development knowledge that remains valid after target 
 
 Build the target repository foundations directly in canonical locations. Never recreate a donor loser merely to migrate it again.
 
+Foundation Construction is non-semantic substrate only. It may be horizontal only when the output creates no partial Product/System capability and no second authority.
+
+```text
+A.C0 — Authority/topology consistency
+A.C1 — Repository/workspace/toolchain substrate
+A.C2 — Service process/runtime skeletons
+A.C3 — Empty canonical contract/client/database/testing lanes
+A.C4 — Deployable host shells + preserved Expo/EAS/web identity
+A.C5 — Infra/compose/local runtime composition
+A.C6 — Developer tooling/root commands
+A.C7 — Foundation assurance + Docs command parity
+A.C8 — Stabilize manifests → one lockfile → frozen install → fresh Foundation exit gate
+```
+
+Allowed Foundation outputs include workspace manifests/toolchain, service startup + health/readiness, deployable shells/build identity, technical packages, local infrastructure composition, launchers, CI/guards and executable-command documentation parity.
+
+Forbidden during Foundation Construction:
+
+```text
+BUSINESS ROUTES/SCREENS
+CAPABILITY STATE MACHINES/WORKFLOWS
+BUSINESS ENDPOINTS/EVENTS/OPENAPI OPERATIONS
+SESSION/RBAC/OTP OR OTHER DOMAIN SEMANTICS
+ORDER/CHECKOUT/WALLET/CATALOG/WORKFORCE IMPLEMENTATION
+DONOR FEATURE TREES
+MONOLITHIC APP-SHAPED SERVICE COMPOSITION
+PARTIAL SEMANTIC CAPABILITY WAVES
+```
+
+If premature furnishing already exists, preserve proven deployable/technical identity and required non-semantic substrate, remove/defer the semantic implementation, stabilize manifests, then complete and verify Foundation Construction before A2/Stage B.
+
 ### B — Vertical capability reconstruction
 
 For each capability:
@@ -187,8 +218,11 @@ This is a derived checkpoint, not closure truth.
 | donor semantic-atom exhaustion | OPEN | no completion claim allowed |
 | Governance coverage | PARTIAL | major missing capability families added; complete donor/current responsibility census remains open |
 | Docs semantic parity | PARTIAL | runtime and cross-cutting runbooks restored; full donor-doc parity remains open |
-| target app/service reconstruction | ACTIVE/OPEN | independent implementation work may continue only inside qualified cones |
-| donor exhaustion gate | OPEN | required before Level 4 |
+| Foundation Construction | OPEN | current target has incomplete substrate and premature semantic furnishing; Stage B remains forbidden until the exact-current Foundation exit gate passes |
+| premature furnishing | PRESENT | app-client and Identity contain semantic capability implementation that must be removed/deferred while preserving proven deployable/technical identity |
+| A2 structural qualification | NOT_ADMISSIBLE | blocked until Foundation Construction exit gate passes |
+| Stage B capability reconstruction | FORBIDDEN | no Product/System capability furnishing until Foundation + A2 pass |
+| donor exhaustion gate | OPEN | required before Level 4; donor extraction may continue read-only in parallel |
 | target Level-4 fixed point | OPEN | not claimable yet |
 
 ## Mandatory contradiction scan
