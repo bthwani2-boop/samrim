@@ -1,7 +1,7 @@
 # Identity Service
 
-STRUCTURAL_STATUS: FOUNDATION_READY
-MIGRATION_STATUS: REQUIRED_TRUTH_NOT_YET_CUT_OVER
+STRUCTURAL_STATUS: FOUNDATION_ONLY
+CAPABILITY_IMPLEMENTATION_STATUS: DEFERRED_UNTIL_STAGE_B
 
 Canonical bounded-context owner for actor identity, authentication, credentials/verification, sessions, activation, roles/permissions vocabulary, and trusted identity context.
 
@@ -15,4 +15,4 @@ Prepared canonical rooms:
 
 Identity does not own Workforce engagement, DSH operational assignment, WLT financial truth, app composition, or app-native storage adapters.
 
-The existence of this structure does not mean `core/identity` donor truth has been migrated. Migration must salvage required truth, establish this winner, cut over all consumers, then delete losing authorities.
+During Foundation Construction only the service process skeleton and canonical lanes are materialized. Authentication/session/RBAC/OTP/business contract semantics are intentionally absent until Stage B proves the Identity capability cone and donor truth required for it.
