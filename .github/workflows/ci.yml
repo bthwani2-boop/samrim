@@ -16,6 +16,7 @@ jobs:
       secrets: ${{ steps.classify.outputs.secrets }}
       workflow_integrity: ${{ steps.classify.outputs.workflow_integrity }}
       high_risk: ${{ steps.classify.outputs.high_risk }}
+      unimplemented_required: ${{ steps.classify.outputs.unimplemented_required }}
       candidate_sha: ${{ steps.meta.outputs.candidate_sha }}
       base_sha: ${{ steps.meta.outputs.base_sha }}
     steps:
@@ -37,6 +38,13 @@ jobs:
       - id: classify
         name: Derive required claims
         run: node tools/ci/classify.mjs --head "${{ steps.meta.outputs.candidate_sha }}" --base "${{ steps.meta.outputs.base_sha }}"
+      - name: Upload classification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-classification-${{ github.run_id }}
+          path: .ci-evidence/classification.json
+          if-no-files-found: error
+          retention-days: 14
 
   repository:
     needs: classify
@@ -60,6 +68,7 @@ jobs:
     with:
       candidate_sha: ${{ needs.classify.outputs.candidate_sha }}
       base_sha: ${{ needs.classify.outputs.base_sha }}
+      full_history: false
 
   development-ci:
     name: development-ci
@@ -73,8 +82,13 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
           REQUIRE_WORKFLOW: ${{ needs.classify.outputs.workflow_integrity }}
           REQUIRE_SECRETS: ${{ needs.classify.outputs.secrets }}
+          UNIMPLEMENTED: ${{ needs.classify.outputs.unimplemented_required }}
         run: |
           set -euo pipefail
           jq -e '.classify.result == "success" and .repository.result == "success"' <<<"${NEEDS_JSON}" >/dev/null
           [[ "${REQUIRE_WORKFLOW}" != "true" ]] || jq -e '.["workflow-integrity"].result == "success"' <<<"${NEEDS_JSON}" >/dev/null
           [[ "${REQUIRE_SECRETS}" != "true" ]] || jq -e '.secrets.result == "success"' <<<"${NEEDS_JSON}" >/dev/null
+          if [[ -n "${UNIMPLEMENTED}" ]]; then
+            echo "::error::Required claims have no installed canonical owner yet: ${UNIMPLEMENTED}"
+            exit 1
+          fi

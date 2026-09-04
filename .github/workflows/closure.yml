@@ -3,6 +3,7 @@ name: Canonical Promotion Closure
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -14,42 +15,73 @@ jobs:
     outputs:
       candidate_sha: ${{ steps.meta.outputs.candidate_sha }}
       base_sha: ${{ steps.meta.outputs.base_sha }}
+      should_run: ${{ steps.meta.outputs.should_run }}
     steps:
       - id: meta
         shell: bash
         env:
           CANDIDATE: ${{ github.event.pull_request.head.sha }}
           BASE: ${{ github.event.pull_request.base.sha }}
+          DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
           [[ "${CANDIDATE}" =~ ^[0-9a-f]{40}$ ]]
           [[ "${BASE}" =~ ^[0-9a-f]{40}$ ]]
           echo "candidate_sha=${CANDIDATE}" >>"${GITHUB_OUTPUT}"
           echo "base_sha=${BASE}" >>"${GITHUB_OUTPUT}"
+          [[ "${DRAFT}" == "true" ]] && echo "should_run=false" >>"${GITHUB_OUTPUT}" || echo "should_run=true" >>"${GITHUB_OUTPUT}"
+
+  classify:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      unimplemented_required: ${{ steps.classify.outputs.unimplemented_required }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.metadata.outputs.candidate_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - id: classify
+        name: Derive closure claims
+        run: node tools/ci/classify.mjs --head "${{ needs.metadata.outputs.candidate_sha }}" --base "${{ needs.metadata.outputs.base_sha }}"
+      - name: Upload closure classification
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-closure-classification-${{ github.run_id }}
+          path: .ci-evidence/classification.json
+          if-no-files-found: error
+          retention-days: 14
 
   repository:
-    needs: metadata
+    if: needs.metadata.outputs.should_run == 'true'
+    needs: [metadata, classify]
     uses: ./.github/workflows/repository-policy.yml
     with:
       candidate_sha: ${{ needs.metadata.outputs.candidate_sha }}
       base_sha: ${{ needs.metadata.outputs.base_sha }}
 
   workflow-integrity:
-    needs: metadata
+    if: needs.metadata.outputs.should_run == 'true'
+    needs: [metadata, classify]
     uses: ./.github/workflows/workflow-integrity.yml
     with:
       candidate_sha: ${{ needs.metadata.outputs.candidate_sha }}
       base_sha: ${{ needs.metadata.outputs.base_sha }}
 
   secrets:
-    needs: metadata
+    if: needs.metadata.outputs.should_run == 'true'
+    needs: [metadata, classify]
     uses: ./.github/workflows/secrets.yml
     with:
       candidate_sha: ${{ needs.metadata.outputs.candidate_sha }}
       base_sha: ${{ needs.metadata.outputs.base_sha }}
+      full_history: true
 
   promotion-policy:
-    needs: metadata
+    if: needs.metadata.outputs.should_run == 'true'
+    needs: [metadata, classify]
     uses: ./.github/workflows/promotion-policy.yml
     with:
       candidate_sha: ${{ needs.metadata.outputs.candidate_sha }}
@@ -58,7 +90,7 @@ jobs:
   promotion-closure:
     name: promotion-closure
     if: always()
-    needs: [metadata, repository, workflow-integrity, secrets, promotion-policy]
+    needs: [metadata, classify, repository, workflow-integrity, secrets, promotion-policy]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -68,18 +100,61 @@ jobs:
           ref: ${{ needs.metadata.outputs.candidate_sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Download all evidence
+
+      - name: Download all required evidence
+        id: download
+        if: needs.metadata.outputs.should_run == 'true'
+        continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: "evidence-*"
           path: .closure-evidence
           merge-multiple: true
-      - name: Validate exact-SHA evidence closure
+
+      - name: Verify exact-SHA closure
+        id: verify
+        if: always()
         shell: bash
         env:
           CANDIDATE_SHA: ${{ needs.metadata.outputs.candidate_sha }}
+          SHOULD_RUN: ${{ needs.metadata.outputs.should_run }}
+          UNIMPLEMENTED: ${{ needs.classify.outputs.unimplemented_required }}
           NEEDS_JSON: ${{ toJSON(needs) }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
         run: |
-          set -euo pipefail
-          jq -e '.repository.result == "success" and .["workflow-integrity"].result == "success" and .secrets.result == "success" and .["promotion-policy"].result == "success"' <<<"${NEEDS_JSON}" >/dev/null
-          node tools/ci/aggregate-evidence.mjs --root .closure-evidence --candidate "${CANDIDATE_SHA}" --require repository.policy,workflow.actionlint,workflow.zizmor,workflow.pinact,secrets.gitleaks,promotion.policy
+          set -u
+          report="${RUNNER_TEMP}/promotion-closure.txt"; : >"${report}"; code=0
+
+          if [[ "${SHOULD_RUN}" != "true" ]]; then
+            echo "draft pull request is BLOCKED from canonical promotion until ready_for_review" >"${report}"
+            status=BLOCKED; findings=1; reason="draft pull request is not a promotion candidate"; code=1
+          else
+            if [[ -n "${UNIMPLEMENTED}" ]]; then
+              echo "required claims have no installed canonical owner: ${UNIMPLEMENTED}" >>"${report}"
+              code=1
+            fi
+            jq -e '.metadata.result == "success" and .classify.result == "success" and .repository.result == "success" and .["workflow-integrity"].result == "success" and .secrets.result == "success" and .["promotion-policy"].result == "success"' <<<"${NEEDS_JSON}" >/dev/null || {
+              echo "one or more required proof jobs failed or did not run" >>"${report}"; code=1;
+            }
+            if [[ "${DOWNLOAD_OUTCOME}" != "success" ]]; then
+              echo "required evidence artifacts were not completely downloadable" >>"${report}"; code=1
+            fi
+            if [[ "${code}" -eq 0 ]]; then
+              node tools/ci/aggregate-evidence.mjs --root .closure-evidence --candidate "${CANDIDATE_SHA}" --require repository.policy,workflow.actionlint,workflow.zizmor,workflow.pinact,secrets.gitleaks,promotion.policy >>"${report}" 2>&1 || code="${?}"
+            fi
+            status=PASS; findings=0; reason=""
+            if [[ "${code}" -ne 0 ]]; then status=FAIL; findings=1; reason="required exact-SHA assurance evidence is incomplete or failed"; fi
+          fi
+
+          cat "${report}"
+          node tools/ci/evidence.mjs --claim promotion.closure --tool samrim-promotion-closure --version 1 --candidate "${CANDIDATE_SHA}" --base "${{ needs.metadata.outputs.base_sha }}" --scope promotion --expected-scope promotion --status "${status}" --findings "${findings}" --report "${report}" --format text --reason "${reason}"
+          [[ "${status}" == "PASS" ]]
+
+      - name: Upload promotion closure evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-promotion-closure-${{ github.run_id }}
+          path: .ci-evidence
+          if-no-files-found: error
+          retention-days: 30

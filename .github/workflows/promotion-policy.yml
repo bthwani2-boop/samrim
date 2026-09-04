@@ -31,26 +31,31 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -u
-          report="${RUNNER_TEMP}/promotion-policy.txt"; : >"${report}"; code=0
-          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then echo "promotion-policy requires a pull_request event" >>"${report}"; code=2
+          report="${RUNNER_TEMP}/promotion-policy.txt"; : >"${report}"; findings=0
+          violation() { echo "$*" >>"${report}"; findings=$((findings + 1)); }
+
+          if [[ "${GITHUB_EVENT_NAME}" != "pull_request" ]]; then
+            violation "promotion-policy requires a pull_request event"
           else
-            [[ "${PR_BASE}" == "main" ]] || { echo "base branch must be main" >>"${report}"; code=1; }
-            (( ${#PR_TITLE} >= 8 )) || { echo "PR title is too short" >>"${report}"; code=1; }
-            (( ${#PR_BODY} >= 120 )) || { echo "PR body is too short" >>"${report}"; code=1; }
+            [[ "${PR_BASE}" == "main" ]] || violation "base branch must be main"
+            (( ${#PR_TITLE} >= 8 )) || violation "PR title is too short"
+            (( ${#PR_BODY} >= 120 )) || violation "PR body is too short"
             for heading in '## Summary' '## Migration / Cutover' '## Verification' '## Security / Secrets' '## Negative space'; do
-              grep -Fq -- "${heading}" <<<"${PR_BODY}" || { echo "missing PR section: ${heading}" >>"${report}"; code=1; }
+              grep -Fq -- "${heading}" <<<"${PR_BODY}" || violation "missing PR section: ${heading}"
             done
           fi
+
+          status=PASS; reason=""
+          if [[ "${findings}" -gt 0 ]]; then status=FAIL; reason="promotion metadata policy failed"; fi
           [[ -s "${report}" ]] || echo "promotion metadata policy passed" >"${report}"
           cat "${report}"
-          status=PASS; reason=""; [[ "${code}" -eq 0 ]] || { status=FAIL; reason="promotion metadata policy failed"; }
-          node tools/ci/evidence.mjs --claim promotion.policy --tool samrim-promotion-policy --version 1 --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope pull-request --expected-scope pull-request --status "${status}" --findings "${code}" --report "${report}" --format text --reason "${reason}"
-          exit "${code}"
+          node tools/ci/evidence.mjs --claim promotion.policy --tool samrim-promotion-policy --version 1 --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope pull-request --expected-scope pull-request --status "${status}" --findings "${findings}" --report "${report}" --format text --reason "${reason}"
+          [[ "${status}" == "PASS" ]]
       - name: Upload promotion policy evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: evidence-promotion-policy-${{ github.run_id }}
-          path: .ci-evidence/promotion.policy.json
+          path: .ci-evidence
           if-no-files-found: error
           retention-days: 14

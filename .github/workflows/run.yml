@@ -13,11 +13,11 @@ on:
         default: ""
         type: string
       mode:
-        description: Verification mode
+        description: Verification mode; manual runs never satisfy promotion-closure
         required: true
-        default: full
+        default: technical-full
         type: choice
-        options: [full, repository-policy, workflow-integrity, secrets]
+        options: [technical-full, repository-policy, workflow-integrity, secrets]
 
 permissions:
   contents: read
@@ -46,9 +46,11 @@ jobs:
             echo "base_sha=${BASE}"
             echo "mode=${MODE}"
           } >>"${GITHUB_OUTPUT}"
+          echo "### Manual assurance" >>"${GITHUB_STEP_SUMMARY}"
+          echo "This workflow is diagnostic/technical assurance and cannot satisfy the canonical promotion-closure check." >>"${GITHUB_STEP_SUMMARY}"
 
   repository:
-    if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'repository-policy'
+    if: needs.validate.outputs.mode == 'technical-full' || needs.validate.outputs.mode == 'repository-policy'
     needs: validate
     uses: ./.github/workflows/repository-policy.yml
     with:
@@ -56,7 +58,7 @@ jobs:
       base_sha: ${{ needs.validate.outputs.base_sha }}
 
   workflow-integrity:
-    if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'workflow-integrity'
+    if: needs.validate.outputs.mode == 'technical-full' || needs.validate.outputs.mode == 'workflow-integrity'
     needs: validate
     uses: ./.github/workflows/workflow-integrity.yml
     with:
@@ -64,12 +66,13 @@ jobs:
       base_sha: ${{ needs.validate.outputs.base_sha }}
 
   secrets:
-    if: needs.validate.outputs.mode == 'full' || needs.validate.outputs.mode == 'secrets'
+    if: needs.validate.outputs.mode == 'technical-full' || needs.validate.outputs.mode == 'secrets'
     needs: validate
     uses: ./.github/workflows/secrets.yml
     with:
       candidate_sha: ${{ needs.validate.outputs.candidate_sha }}
       base_sha: ${{ needs.validate.outputs.base_sha }}
+      full_history: true
 
   manual-assurance:
     name: manual-assurance
@@ -77,7 +80,7 @@ jobs:
     needs: [validate, repository, workflow-integrity, secrets]
     runs-on: ubuntu-24.04
     steps:
-      - name: Enforce selected mode
+      - name: Enforce selected technical mode
         shell: bash
         env:
           MODE: ${{ needs.validate.outputs.mode }}
@@ -86,7 +89,7 @@ jobs:
           set -euo pipefail
           jq -e '.validate.result == "success"' <<<"${NEEDS_JSON}" >/dev/null
           case "${MODE}" in
-            full) jq -e '.repository.result == "success" and .["workflow-integrity"].result == "success" and .secrets.result == "success"' <<<"${NEEDS_JSON}" >/dev/null ;;
+            technical-full) jq -e '.repository.result == "success" and .["workflow-integrity"].result == "success" and .secrets.result == "success"' <<<"${NEEDS_JSON}" >/dev/null ;;
             repository-policy) jq -e '.repository.result == "success"' <<<"${NEEDS_JSON}" >/dev/null ;;
             workflow-integrity) jq -e '.["workflow-integrity"].result == "success"' <<<"${NEEDS_JSON}" >/dev/null ;;
             secrets) jq -e '.secrets.result == "success"' <<<"${NEEDS_JSON}" >/dev/null ;;

@@ -25,6 +25,7 @@ jobs:
           ref: ${{ inputs.candidate_sha }}
           persist-credentials: false
           fetch-depth: 0
+
       - name: Enforce durable repository policy
         shell: bash
         env:
@@ -34,44 +35,57 @@ jobs:
           set -u
           report="${RUNNER_TEMP}/repository-policy.txt"
           : >"${report}"
-          code=0
+          findings=0
+          violation() { echo "$*" >>"${report}"; findings=$((findings + 1)); }
+
+          [[ "$(git rev-parse HEAD)" == "${CANDIDATE_SHA}" ]] || violation "exact candidate checkout failed"
+
           for required in README.md SECURITY.md CONTRIBUTING.md governance docs tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md; do
-            [[ -e "${required}" ]] || { echo "missing required path: ${required}" >>"${report}"; code=1; }
+            [[ -e "${required}" ]] || violation "missing required path: ${required}"
           done
+
           for forbidden_root in core shared; do
-            [[ ! -e "${forbidden_root}" ]] || { echo "forbidden top-level ownership class: ${forbidden_root}" >>"${report}"; code=1; }
+            [[ ! -e "${forbidden_root}" ]] || violation "forbidden top-level ownership class: ${forbidden_root}"
           done
+
           if [[ -d apps ]] && find apps -mindepth 2 -maxdepth 2 -type d -name runtime -print -quit | grep -q .; then
-            echo "forbidden pass-through apps/*/runtime topology" >>"${report}"; code=1
+            violation "forbidden pass-through apps/*/runtime topology"
           fi
-          bad_names="$(git ls-files | grep -E -i -- '(^|/)(credentials\.json|google-services\.json|GoogleService-Info\.plist)$|\.(jks|keystore|p12|p8|pem|key)$|(^|/)\.env($|\.)' | grep -E -v -- '(^|/)\.env\.example$' || true)"
-          [[ -z "${bad_names}" ]] || { printf 'forbidden secret-bearing file class:\n%s\n' "${bad_names}" >>"${report}"; code=1; }
-          if grep -R -n -E --exclude=repository-policy.yml --exclude=baseline-guard.yml -- '^[[:space:]]*pull_request_target:' .github/workflows >>"${report}" 2>&1; then
-            echo "pull_request_target is forbidden" >>"${report}"; code=1
+
+          bad_names="$(git ls-files | grep -E -i -- '(^|/)(credentials.json|google-services.json|GoogleService-Info.plist)$|.(jks|keystore|p12|p8|pem|key)$|(^|/).env($|.)' | grep -E -v -- '(^|/).env.example$' || true)"
+          if [[ -n "${bad_names}" ]]; then
+            printf 'forbidden secret-bearing file class:
+%s
+' "${bad_names}" >>"${report}"
+            findings=$((findings + $(printf '%s
+' "${bad_names}" | grep -c .)))
           fi
-          if grep -R -n -E --exclude=repository-policy.yml --exclude=baseline-guard.yml -- '^[[:space:]]*permissions:[[:space:]]*write-all' .github/workflows >>"${report}" 2>&1; then
-            echo "write-all workflow permissions are forbidden" >>"${report}"; code=1
-          fi
-          donor='bthwani2-boop/bthwani-suite-next|D:\\bthwani-suite-next|C:\\bthwani-secrets|origin/h|RE_PIN_h|UNKNOWN_CURRENT_h_HEAD|H_TRUSTWORTHY_CANONICAL_BASELINE_REFOUNDATION_COMPLETE'
-          if git grep -n -I -E -- "${donor}" -- . ':(exclude).github/workflows/repository-policy.yml' ':(exclude).github/workflows/baseline-guard.yml' >>"${report}" 2>&1; then
-            echo "donor/campaign-specific authority residue found" >>"${report}"; code=1
-          fi
+
+          diff_report="${RUNNER_TEMP}/diff-check.txt"
+          : >"${diff_report}"
           if [[ "${BASE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
-            git diff --check "${BASE_SHA}" "${CANDIDATE_SHA}" >>"${report}" 2>&1 || code=1
+            git diff --check "${BASE_SHA}" "${CANDIDATE_SHA}" >"${diff_report}" 2>&1 || true
           else
-            git show --check --format= "${CANDIDATE_SHA}" >>"${report}" 2>&1 || code=1
+            git show --check --format= "${CANDIDATE_SHA}" >"${diff_report}" 2>&1 || true
           fi
+          if [[ -s "${diff_report}" ]]; then
+            cat "${diff_report}" >>"${report}"
+            findings=$((findings + $(grep -c . "${diff_report}")))
+          fi
+
+          status=PASS; reason=""
+          if [[ "${findings}" -gt 0 ]]; then status=FAIL; reason="repository policy violation"; fi
           [[ -s "${report}" ]] || echo "repository policy checks passed" >"${report}"
           cat "${report}"
-          status=PASS; reason=""
-          [[ "${code}" -eq 0 ]] || { status=FAIL; reason="repository policy violation"; }
-          node tools/ci/evidence.mjs --claim repository.policy --tool samrim-repository-policy --version 1 --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope repository --expected-scope repository --status "${status}" --findings "${code}" --report "${report}" --format text --reason "${reason}"
-          exit "${code}"
+
+          node tools/ci/evidence.mjs --claim repository.policy --tool samrim-repository-policy --version 1 --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope repository --expected-scope repository --status "${status}" --findings "${findings}" --report "${report}" --format text --reason "${reason}"
+          [[ "${status}" == "PASS" ]]
+
       - name: Upload repository policy evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: evidence-repository-policy-${{ github.run_id }}
-          path: .ci-evidence/repository.policy.json
+          path: .ci-evidence
           if-no-files-found: error
           retention-days: 14

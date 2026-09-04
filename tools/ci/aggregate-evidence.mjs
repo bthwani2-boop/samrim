@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 const argv = process.argv.slice(2);
 const get = (name) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -19,21 +20,26 @@ const walk = (dir) => {
   }
 };
 walk(root);
+
 const byClaim = new Map();
 for (const file of files) {
-  const data = JSON.parse(fs.readFileSync(file, "utf8"));
+  let data;
+  try { data = JSON.parse(fs.readFileSync(file, "utf8")); } catch { continue; }
   if (!data.claim_id) continue;
   if (byClaim.has(data.claim_id)) throw new Error(`Duplicate evidence for ${data.claim_id}`);
-  byClaim.set(data.claim_id, data);
+  byClaim.set(data.claim_id, {data, file});
 }
+
 const failures = [];
 const statuses = new Set(["PASS","FAIL","NOT_APPLICABLE","TOOL_ERROR","BLOCKED"]);
 const sha256 = /^[0-9a-f]{64}$/;
 const sha40 = /^[0-9a-f]{40}$/;
+const rootResolved = path.resolve(root);
 
 for (const claim of required) {
-  const e = byClaim.get(claim);
-  if (!e) { failures.push(`${claim}: missing evidence`); continue; }
+  const record = byClaim.get(claim);
+  if (!record) { failures.push(`${claim}: missing evidence`); continue; }
+  const {data: e, file} = record;
 
   const mandatory = [
     "schema_version","claim_id","tool","tool_version","candidate_sha","base_sha",
@@ -51,17 +57,48 @@ for (const claim of required) {
   if (typeof e.tool_version !== "string" || !e.tool_version) failures.push(`${claim}: invalid tool_version`);
   if (!sha40.test(e.candidate_sha ?? "")) failures.push(`${claim}: invalid candidate SHA shape`);
   if (e.candidate_sha !== candidate) failures.push(`${claim}: wrong candidate SHA ${e.candidate_sha}`);
+  if (e.base_sha && !sha40.test(e.base_sha)) failures.push(`${claim}: invalid base SHA`);
   if (!Array.isArray(e.scope) || !Array.isArray(e.expected_scope)) failures.push(`${claim}: invalid scope arrays`);
-  if (!sha256.test(e.scope_digest ?? "")) failures.push(`${claim}: invalid scope_digest`);
+
+  const expectedScopeDigest = crypto.createHash("sha256")
+    .update(JSON.stringify({scope:e.scope, expectedScope:e.expected_scope})).digest("hex");
+  if (!sha256.test(e.scope_digest ?? "") || e.scope_digest !== expectedScopeDigest) failures.push(`${claim}: invalid scope_digest`);
+
   if (!statuses.has(e.status)) failures.push(`${claim}: invalid status=${e.status}`);
   if (e.status !== "PASS") failures.push(`${claim}: status=${e.status}`);
   if (!Number.isInteger(e.finding_count) || e.finding_count < 0) failures.push(`${claim}: invalid finding_count`);
-  if (e.report_valid !== true || !sha256.test(e.report_digest ?? "")) failures.push(`${claim}: invalid/missing report evidence`);
-  if (typeof e.report_path !== "string" || !e.report_path) failures.push(`${claim}: missing report_path`);
+  if (Number.isNaN(Date.parse(e.started_at)) || Number.isNaN(Date.parse(e.completed_at))) failures.push(`${claim}: invalid timestamps`);
   if (typeof e.workflow_run_id !== "string" || !e.workflow_run_id) failures.push(`${claim}: missing workflow_run_id`);
+  if (typeof e.runner !== "string" || !e.runner) failures.push(`${claim}: missing runner`);
+
+  if (e.report_valid !== true || !sha256.test(e.report_digest ?? "") || typeof e.report_path !== "string" || !e.report_path) {
+    failures.push(`${claim}: invalid report metadata`);
+    continue;
+  }
+
+  const reportFile = path.resolve(path.dirname(file), e.report_path);
+  if (!(reportFile === rootResolved || reportFile.startsWith(rootResolved + path.sep))) {
+    failures.push(`${claim}: report path escapes evidence root`);
+    continue;
+  }
+  if (!fs.existsSync(reportFile) || !fs.statSync(reportFile).isFile()) {
+    failures.push(`${claim}: raw report artifact missing: ${e.report_path}`);
+    continue;
+  }
+  const bytes = fs.readFileSync(reportFile);
+  const actualDigest = crypto.createHash("sha256").update(bytes).digest("hex");
+  if (actualDigest !== e.report_digest) failures.push(`${claim}: raw report digest mismatch`);
+  if (e.report_format === "json" || e.report_format === "sarif") {
+    try { JSON.parse(bytes.toString("utf8")); } catch { failures.push(`${claim}: raw ${e.report_format} report does not parse`); }
+  } else if (e.report_format !== "text") {
+    failures.push(`${claim}: unsupported report format ${e.report_format}`);
+  }
 }
+
 const summary = ["# Promotion closure evidence","",`Candidate: \`${candidate}\``,"",
-  ...required.map(c => `- ${c}: ${byClaim.get(c)?.status ?? "MISSING"}`),""].join("\n");
+  ...required.map(c => `- ${c}: ${byClaim.get(c)?.data.status ?? "MISSING"}`),""].join("
+");
 console.log(summary);
 if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
-if (failures.length) { console.error(failures.join("\n")); process.exit(1); }
+if (failures.length) { console.error(failures.join("
+")); process.exit(1); }

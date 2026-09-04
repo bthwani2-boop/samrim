@@ -25,9 +25,9 @@ jobs:
           ref: ${{ inputs.candidate_sha }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Install actionlint
-        run: bash tools/ci/install-assurance-tools.sh actionlint
-      - name: Run actionlint with ShellCheck integration
+      - name: Install actionlint and ShellCheck
+        run: bash tools/ci/install-assurance-tools.sh actionlint shellcheck
+      - name: Run actionlint with pinned ShellCheck
         shell: bash
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
@@ -35,19 +35,25 @@ jobs:
         run: |
           set -u
           source tools/ci/tool-versions.env
+          actionlint -version
+          shellcheck --version
           report="${RUNNER_TEMP}/actionlint.txt"; started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; code=0
-          command -v shellcheck >/dev/null 2>&1 || { echo "ShellCheck is unavailable" >"${report}"; code=2; }
-          if [[ "${code}" -eq 0 ]]; then { actionlint -version; actionlint -shellcheck "$(command -v shellcheck)"; } >"${report}" 2>&1 || code="${?}"; fi
+          actionlint -shellcheck "$(command -v shellcheck)" >"${report}" 2>&1 || code="${?}"
+          findings="$(grep -Ec '^[^:]+:[0-9]+:[0-9]+:' "${report}" 2>/dev/null || true)"
+          status=PASS; reason=""
+          if [[ "${code}" -ne 0 && "${findings}" -eq 0 ]]; then status=TOOL_ERROR; findings=1; reason="actionlint failed without parseable findings"
+          elif [[ "${code}" -ne 0 || "${findings}" -gt 0 ]]; then status=FAIL; reason="actionlint or ShellCheck found blocking issues"
+          fi
+          [[ -s "${report}" ]] || echo "no actionlint or ShellCheck findings" >"${report}"
           cat "${report}"
-          status=PASS; reason=""; [[ "${code}" -eq 0 ]] || { status=FAIL; reason="actionlint or ShellCheck failed"; }
-          node tools/ci/evidence.mjs --claim workflow.actionlint --tool actionlint --version "${ACTIONLINT_VERSION}" --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope .github/workflows --expected-scope .github/workflows --status "${status}" --findings "${code}" --started "${started}" --report "${report}" --format text --reason "${reason}"
-          exit "${code}"
+          node tools/ci/evidence.mjs --claim workflow.actionlint --tool actionlint+shellcheck --version "${ACTIONLINT_VERSION}+${SHELLCHECK_VERSION}" --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope .github/workflows --expected-scope .github/workflows --status "${status}" --findings "${findings}" --started "${started}" --report "${report}" --format text --reason "${reason}"
+          [[ "${status}" == "PASS" ]]
       - name: Upload actionlint evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: evidence-workflow-actionlint-${{ github.run_id }}
-          path: .ci-evidence/workflow.actionlint.json
+          path: .ci-evidence
           if-no-files-found: error
           retention-days: 14
 
@@ -73,18 +79,27 @@ jobs:
         run: |
           set -u
           source tools/ci/tool-versions.env
-          report="${RUNNER_TEMP}/zizmor.txt"; started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; code=0
-          { zizmor --version; zizmor --config .github/zizmor.yml --strict-collection --min-severity medium --min-confidence medium .; } >"${report}" 2>&1 || code="${?}"
-          cat "${report}"
-          status=PASS; reason=""; [[ "${code}" -eq 0 ]] || { status=FAIL; reason="zizmor security audit failed"; }
-          node tools/ci/evidence.mjs --claim workflow.zizmor --tool zizmor --version "${ZIZMOR_VERSION}" --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope .github --expected-scope .github --status "${status}" --findings "${code}" --started "${started}" --report "${report}" --format text --reason "${reason}"
-          exit "${code}"
+          zizmor --version
+          report="${RUNNER_TEMP}/zizmor.sarif"; stderr_report="${RUNNER_TEMP}/zizmor.stderr"; started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; code=0
+          zizmor --config .github/zizmor.yml --strict-collection --min-severity medium --min-confidence medium --format=sarif --color=never . >"${report}" 2>"${stderr_report}" || code="${?}"
+          cat "${stderr_report}" >&2 || true
+          status=PASS; reason=""; findings=0
+          if ! jq -e . "${report}" >/dev/null 2>&1; then
+            status=TOOL_ERROR; findings=1; reason="zizmor did not produce valid SARIF"
+          else
+            findings="$(jq '[.runs[]?.results[]?] | length' "${report}")"
+            if [[ "${findings}" -gt 0 ]]; then status=FAIL; reason="zizmor found blocking workflow-security issues"
+            elif [[ "${code}" -ne 0 ]]; then status=TOOL_ERROR; findings=1; reason="zizmor failed without findings"
+            fi
+          fi
+          node tools/ci/evidence.mjs --claim workflow.zizmor --tool zizmor --version "${ZIZMOR_VERSION}" --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope .github --expected-scope .github --status "${status}" --findings "${findings}" --started "${started}" --report "${report}" --format sarif --reason "${reason}"
+          [[ "${status}" == "PASS" ]]
       - name: Upload zizmor evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: evidence-workflow-zizmor-${{ github.run_id }}
-          path: .ci-evidence/workflow.zizmor.json
+          path: .ci-evidence
           if-no-files-found: error
           retention-days: 14
 
@@ -101,7 +116,7 @@ jobs:
           fetch-depth: 1
       - name: Install pinact
         run: bash tools/ci/install-assurance-tools.sh pinact
-      - name: Verify durable action SHA annotations
+      - name: Verify all discovered action SHA annotations
         shell: bash
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
@@ -110,18 +125,20 @@ jobs:
         run: |
           set -u
           source tools/ci/tool-versions.env
+          pinact version
           report="${RUNNER_TEMP}/pinact.txt"; started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; code=0
-          files=(.github/workflows/repository-policy.yml .github/workflows/workflow-integrity.yml .github/workflows/secrets.yml .github/workflows/promotion-policy.yml .github/workflows/closure.yml .github/workflows/ci.yml .github/workflows/run.yml)
-          { pinact version; pinact run --check --verify "${files[@]}"; } >"${report}" 2>&1 || code="${?}"
+          pinact run --check --verify >"${report}" 2>&1 || code="${?}"
+          findings=0; status=PASS; reason=""
+          if [[ "${code}" -ne 0 ]]; then findings=1; status=FAIL; reason="pinact verification failed"; fi
+          [[ -s "${report}" ]] || echo "all discovered GitHub Actions are pinned and verified" >"${report}"
           cat "${report}"
-          status=PASS; reason=""; [[ "${code}" -eq 0 ]] || { status=FAIL; reason="pinact verification failed"; }
-          node tools/ci/evidence.mjs --claim workflow.pinact --tool pinact --version "${PINACT_VERSION}" --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope .github/workflows --expected-scope .github/workflows --status "${status}" --findings "${code}" --started "${started}" --report "${report}" --format text --reason "${reason}"
-          exit "${code}"
+          node tools/ci/evidence.mjs --claim workflow.pinact --tool pinact --version "${PINACT_VERSION}" --candidate "${CANDIDATE_SHA}" --base "${BASE_SHA}" --scope .github/workflows --expected-scope .github/workflows --status "${status}" --findings "${findings}" --started "${started}" --report "${report}" --format text --reason "${reason}"
+          [[ "${status}" == "PASS" ]]
       - name: Upload pinact evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: evidence-workflow-pinact-${{ github.run_id }}
-          path: .ci-evidence/workflow.pinact.json
+          path: .ci-evidence
           if-no-files-found: error
           retention-days: 14
