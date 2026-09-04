@@ -53,25 +53,6 @@ function Ensure-LocalEnv {
         return
     }
 
-    $existing = Get-Content $envPath -Raw
-    $migrated = $existing
-    $migrated = $migrated.Replace(
-        "SAMRIM_POSTGRES_PORT=55432",
-        "SAMRIM_POSTGRES_PORT=58432"
-    )
-    $migrated = $migrated.Replace(
-        "SAMRIM_MAILPIT_SMTP_PORT=1025",
-        "SAMRIM_MAILPIT_SMTP_PORT=58025"
-    )
-    $migrated = $migrated.Replace(
-        "SAMRIM_MAILPIT_WEB_PORT=8025",
-        "SAMRIM_MAILPIT_WEB_PORT=58026"
-    )
-
-    if ($migrated -ne $existing) {
-        Write-Utf8File -Path $envPath -Content $migrated
-        Write-Host "LOCAL_RUNTIME_ENV=MIGRATED_FOUNDATION_PORTS"
-    }
 }
 
 function Read-EnvMap {
