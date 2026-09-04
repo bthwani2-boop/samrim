@@ -6,7 +6,7 @@ EXECUTION_AUTHORITY: NONE
 
 ## Context
 
-The platform needs one stable human identity across surfaces without creating a generic people/workforce service or encoding roles, business scopes, organizations, stores, operational assignments, or speculative tenancy into the human identity row.
+The platform needs one stable human identity across surfaces without creating a generic human-participant service or encoding roles, business scopes, organizations, stores, operational assignments, or speculative tenancy into the human identity row.
 
 Client, partner, captain, field and operator are roles/participations of a human actor. The same human may hold more than one role. A role is not a new person.
 
@@ -23,7 +23,7 @@ Client, partner, captain, field and operator are roles/participations of a human
 - DSH owns current client/partner/captain/field operational participant state, affiliation, eligibility, assignment, partner/store membership and business authorization scopes.
 - WLT owns financial truth.
 - Operator Context remains a distinct project concept when a capability proves it, but Identity does not persist or invent a generic `operator_context_id` merely to simulate tenancy/isolation.
-- No `People`, `Staff`, `Actors`, `Workforce`, generic `AccessGrant`, or tenant module/service is admitted merely to group human participants.
+- No `generic human-participant`, generic `AccessGrant`, or tenant module/service is admitted merely to group human participants.
 - A future enterprise HR or contextual authorization boundary may be extracted only after concrete lifecycle/data/rule/isolation requirements prove it.
 
 ## Consequences
@@ -46,6 +46,6 @@ ROLE_DISABLE_REVOKES_ONLY_ROLE=REQUIRED
 GOVERNED_ROLE_OTP_SELF_GRANT=FORBIDDEN
 CALLER_HEADER_AS_SERVICE_IDENTITY=FORBIDDEN
 IDENTITY_GENERIC_CONTEXT_OR_TENANT=ABSENT_UNTIL_PROVEN
-CURRENT_GENERIC_PEOPLE_WORKFORCE_SERVICE_OR_MODULE=ABSENT
+CURRENT_GENERIC_HUMAN_PARTICIPANT_SERVICE_OR_MODULE=ABSENT
 DOMAIN_PARTICIPATION_TRUTH=OWNED_BY_THE_DOMAIN_THAT_USES_IT
 ```

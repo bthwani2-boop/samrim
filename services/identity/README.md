@@ -14,7 +14,7 @@ identity_actors
 
 One normalized phone resolves to one actor. The same actor may hold client, partner, captain, field and operator roles without creating another human identity.
 
-Identity intentionally does not own DSH participant eligibility/assignment, partner/store membership/business scope, WLT finance, HR/workforce, a generic permissions engine, Tenant, AccessGrant, or generic Operator Context.
+Identity intentionally does not own DSH participant eligibility/assignment, partner/store membership/business scope, WLT finance, enterprise HR/personnel, a generic permissions engine, Tenant, AccessGrant, or generic Operator Context.
 
 Internal service identity is resolved from the bearer service credential itself. DSH manages only partner/captain/field Identity-role admission; Platform Control manages only operator role/credential intent.
 

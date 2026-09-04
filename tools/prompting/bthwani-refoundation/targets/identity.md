@@ -57,7 +57,7 @@ actor/high-level role/authentication/session    → Identity
 
 Identity does not invent a generic `operator_context_id` merely to isolate calls. Operator Context remains an independent project concept only when a concrete capability proves owner/lifecycle/isolation semantics.
 
-Do not create `People`, `Staff`, `Actors`, `Workforce`, `AccessGrant` or Tenant modules/services merely to group participants or prepare for hypothetical requirements.
+Do not create `generic human-participant`, `AccessGrant` or Tenant modules/services merely to group participants or prepare for hypothetical requirements.
 
 ## 4. Authentication and role laws
 
@@ -108,7 +108,7 @@ Prove one normalized phone cannot produce duplicate actors; same actor can hold 
 ```text
 core/identity=ABSENT
 LEGACY_GENERIC_HUMAN_SOURCE=ABSENT
-GENERIC_PEOPLE_WORKFORCE_SERVICE_OR_MODULE=ABSENT
+GENERIC_HUMAN_PARTICIPANT_SERVICE_OR_MODULE=ABSENT
 ONE_CROSS_BOUNDARY_HUMAN_IDENTIFIER_actor_id=PASS
 ONE_NORMALIZED_PHONE_ONE_ACTOR=PASS
 ACTOR_ROLE_BINDING_CANONICAL=PASS

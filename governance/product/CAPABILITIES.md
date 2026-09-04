@@ -239,7 +239,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 
 **Forbidden/negative invariants**
 - No actor-global `roles[]`, generic permissions blob, operator context, provisioning fingerprint or creator-service provenance.
-- No generic AccessGrant/Tenant/People/Staff/Actors/Workforce authority without proven independent requirements.
+- No generic AccessGrant/Tenant/generic-human-participant authority without proven independent requirements.
 - No governed role creation through OTP.
 - No provisioning retry silently re-enables a disabled role or mutates another role.
 - No DSH operator grant and no Platform Control DSH-role grant.
