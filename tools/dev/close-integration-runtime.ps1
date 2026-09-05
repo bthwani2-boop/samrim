@@ -204,12 +204,12 @@ function Verify-HostPortsAvailable {
     }
 
     if ($failures.Count -gt 0) {
-        Fail ("FOUNDATION_HOST_PORT_PREFLIGHT=FAIL" +
+        Fail ("INTEGRATION_HOST_PORT_PREFLIGHT=FAIL" +
             [Environment]::NewLine +
             ($failures -join [Environment]::NewLine))
     }
 
-    Write-Host "FOUNDATION_HOST_PORT_PREFLIGHT=PASS"
+    Write-Host "INTEGRATION_HOST_PORT_PREFLIGHT=PASS"
 }
 
 function Test-TcpReady([string] $HostName, [int] $Port) {
@@ -297,11 +297,11 @@ function Verify-InfraEndpoints {
     }
 
     if ($pending.Count -gt 0) {
-        Fail ("FOUNDATION_INFRA_RUNTIME=FAIL pending=" +
+        Fail ("INTEGRATION_INFRA_RUNTIME=FAIL pending=" +
             (($pending | Sort-Object) -join ", "))
     }
 
-    Write-Host "FOUNDATION_INFRA_RUNTIME=PASS"
+    Write-Host "INTEGRATION_INFRA_RUNTIME=PASS"
 }
 
 function Show-Diagnostics {
@@ -365,7 +365,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         Fail "Integration compose config failed."
     }
-    Write-Host "FOUNDATION_DOCKER_CONFIG=PASS"
+    Write-Host "INTEGRATION_DOCKER_CONFIG=PASS"
 
     Write-Host ""
     Write-Host "=== Build and start integration runtime ==="
@@ -414,7 +414,7 @@ try {
         Fail ("Integration services not running: " + ($missing -join ", "))
     }
 
-    Write-Host "FOUNDATION_COMPOSE_SERVICES=PASS"
+    Write-Host "INTEGRATION_COMPOSE_SERVICES=PASS"
 
     $finalStatus = @(& git status --porcelain)
     if ($LASTEXITCODE -ne 0) {
@@ -430,12 +430,12 @@ try {
     $success = $true
 
     Write-Host ""
-    Write-Host "FOUNDATION_RUNTIME_CLOSURE=PASS"
-    Write-Host "FOUNDATION_HOST_PORT_PREFLIGHT=PASS"
-    Write-Host "FOUNDATION_DOCKER_CONFIG=PASS"
-    Write-Host "FOUNDATION_INFRA_RUNTIME=PASS"
-    Write-Host "FOUNDATION_COMPOSE_SERVICES=PASS"
-    Write-Host "FOUNDATION_RUNTIME=PASS"
+    Write-Host "INTEGRATION_RUNTIME_CLOSURE=PASS"
+    Write-Host "INTEGRATION_HOST_PORT_PREFLIGHT=PASS"
+    Write-Host "INTEGRATION_DOCKER_CONFIG=PASS"
+    Write-Host "INTEGRATION_INFRA_RUNTIME=PASS"
+    Write-Host "INTEGRATION_COMPOSE_SERVICES=PASS"
+    Write-Host "INTEGRATION_RUNTIME=PASS"
 }
 finally {
     if ($success -and -not $KeepRunning) {
