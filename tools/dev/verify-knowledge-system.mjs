@@ -16,6 +16,7 @@ const financialModel = read("governance/product/FINANCIAL-MODEL.md");
 const glossary = read("governance/project/GLOSSARY.md");
 const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md");
 const scopeAuthority = read("tools/prompting/bthwani-orchestrator/01-SCOPE-AUTHORITY-RULES.md");
+const executionPlaybook = read("tools/prompting/bthwani-orchestrator/05-EXECUTION-PLAYBOOK.md");
 const verificationOwner = read("tools/prompting/bthwani-orchestrator/04-VERIFY-REDIAGNOSE-CLOSE.md");
 const cleanTargetProfile = read("tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md");
 const composition = read("governance/architecture/APP-SERVICE-COMPOSITION.md");
@@ -198,6 +199,9 @@ for (const file of collectMarkdown(durableGovernanceDir)) {
   if (retiredHumanDomainAuthorityPattern.test(body)) {
     failures.push("retired generic human-domain service authority residue in durable Governance: " + rel);
   }
+  if (/\bOperator Context\b|\bOPERATOR_CONTEXT\b/i.test(body)) {
+    failures.push("retired Operator Context semantic residue in durable Governance: " + rel);
+  }
   if (/service-owned capability presentation|service-owned presentation where justified/i.test(body)) {
     failures.push("ambiguous service-owned surface presentation wording in durable Governance: " + rel);
   }
@@ -249,6 +253,40 @@ for (const file of collectMarkdown(docsDir)) {
   if (hasNonNoneAuthority(body, ["EXECUTION_AUTHORITY", "PRODUCT_AUTHORITY", "PRODUCT_SEMANTIC_AUTHORITY", "ARCHITECTURE_AUTHORITY", "CLOSURE_AUTHORITY"])) {
     failures.push("Docs claims forbidden normative authority: " + rel);
   }
+  if (!rel.startsWith("docs/reference/") && /\bOperator Context\b|\bOPERATOR_CONTEXT\b/i.test(body)) {
+    failures.push("retired Operator Context residue in current Docs: " + rel);
+  }
+}
+
+const runbookDir = path.join(root, "docs/runbooks");
+for (const file of collectMarkdown(runbookDir)) {
+  const rel = path.relative(root, file).split(path.sep).join("/");
+  if (rel === "docs/runbooks/README.md") continue;
+  const body = fs.readFileSync(file, "utf8");
+  for (const token of [
+    "DOCUMENT_CLASS: OPERATIONAL_RUNBOOK",
+    "PRODUCT_AUTHORITY: NONE",
+    "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
+  ]) {
+    if (!body.includes(token)) failures.push(rel + " missing runbook non-authority metadata: " + token);
+  }
+  if (/^Status:\s*STAGE_/mi.test(body)) failures.push("campaign/stage status leaked into runbook: " + rel);
+  if (/Final closure requires/i.test(body)) failures.push("Orchestrator closure law leaked into runbook: " + rel);
+}
+
+const lifecycleDir = path.join(root, "docs/platform-engineering-lifecycle");
+for (const file of collectMarkdown(lifecycleDir)) {
+  const rel = path.relative(root, file).split(path.sep).join("/");
+  const body = fs.readFileSync(file, "utf8");
+  if (/^#\s+PHASE\s+\d+/m.test(body)) failures.push("parallel execution phase leaked into lifecycle docs: " + rel);
+  if (/^#{1,4}\s+.*(?:Exit gate|Closure Gate|Canonical evidence gates)/mi.test(body)) {
+    failures.push("parallel closure/gate authority leaked into lifecycle docs: " + rel);
+  }
+}
+
+const incrementalGuide = read("docs/development/incremental-product-delivery.md");
+for (const forbiddenHeading of ["Preferred expansion sequence", "Initial breadth discipline", "Deferred expansion"]) {
+  if (incrementalGuide.includes(forbiddenHeading)) failures.push("hidden Product roadmap leaked into incremental delivery guide: " + forbiddenHeading);
 }
 
 const orchestratorDir = path.join(root, "tools/prompting/bthwani-orchestrator");
@@ -336,12 +374,7 @@ for (const [normalized, occurrences] of orchestratorLawLines) {
   }
 }
 
-for (const token of allowedSharedOrchestratorProtocolTokens) {
-  const occurrences = orchestratorLawLines.get(token) ?? [];
-  if (new Set(occurrences).size <= 1) {
-    failures.push("stale orchestrator shared-protocol allowlist token: " + token);
-  }
-}
+// Protocol-interface tokens are an exception only when actually shared.
 if (fs.existsSync(refoundationDir)) {
   for (const file of collectMarkdown(refoundationDir)) {
     for (const line of fs.readFileSync(file, "utf8").split("\n")) {
@@ -373,6 +406,20 @@ if (duplicateRows.length) failures.push("duplicate journey rows: " + [...new Set
 for (const id of ids) if (!rowIds.includes(id)) failures.push("capability missing journey row: " + id);
 for (const id of rowIds) if (!ids.includes(id)) failures.push("orphan journey row: " + id);
 
+const declaredJourneyIds = new Set(
+  [...journeys.matchAll(/^##\s+(J\d+)\s+—/gm)].map((match) => match[1]),
+);
+for (const row of rows) {
+  const refs = [...row.coverage.matchAll(/\bJ\d+\b/g)].map((match) => match[0]);
+  if (refs.length === 0) failures.push("capability has no concrete journey coverage: " + row.id + " -> " + row.coverage);
+  for (const ref of refs) {
+    if (!declaredJourneyIds.has(ref)) failures.push("capability references unknown journey: " + row.id + " -> " + ref);
+  }
+}
+if (journeys.includes("EXPLICIT_SYSTEM_OUTCOME_REQUIRED")) {
+  failures.push("journey coverage retains unresolved EXPLICIT_SYSTEM_OUTCOME_REQUIRED placeholder");
+}
+
 for (const token of ["ALL_MATERIAL_JOURNEY_STEPS_CLASSIFIED=PASS","UNOWNED_MATERIAL_JOURNEY_STEPS=0","CAPABILITY_REQUIRED_SEMANTIC_ENVELOPE=PASS","DURABLE_REPOSITORY_TOPOLOGY_OWNER=PASS"]) {
   if (!fixed.includes(token)) failures.push("fixed-point gate missing: " + token);
 }
@@ -397,6 +444,23 @@ if (!verificationOwner.includes("BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE")
 }
 
 if (!orchestrator.includes("## 6A. Context-loading protocol")) failures.push("orchestrator missing staged context-loading protocol");
+if (orchestrator.includes("Exactly nine semantic owners exist")) failures.push("orchestrator still labels execution modules as semantic owners");
+if (/focus\/\* owner\(s\)/.test(orchestrator)) failures.push("orchestrator still labels focus lenses as semantic owners");
+if (scopeAuthority.includes("## 8. Legal runtime states")) failures.push("scope authority still owns a duplicate runtime-state list");
+if (!executionPlaybook.includes("## 3. Canonical runtime state machine")) failures.push("execution playbook missing sole runtime-state owner section");
+for (const state of ["BUILDING", "DEMOLISHING", "QUALIFYING_FOUNDATION", "LEGITIMATELY_BLOCKED"]) {
+  if (!executionPlaybook.includes(state)) failures.push("canonical runtime-state machine missing state: " + state);
+}
+for (const focusPath of [
+  "tools/prompting/bthwani-orchestrator/focus/code-architecture-organization.md",
+  "tools/prompting/bthwani-orchestrator/focus/governance-product-design.md",
+  "tools/prompting/bthwani-orchestrator/focus/data-contracts-runtime-security-quality.md",
+]) {
+  const body = read(focusPath);
+  if (!body.includes("ARTIFACT_CLASS: ORCHESTRATOR_EXECUTION_FOCUS_LENS")) failures.push(focusPath + " missing focus-lens artifact class");
+  if (!body.includes("DURABLE_SEMANTIC_AUTHORITY: NONE")) failures.push(focusPath + " claims or omits semantic non-authority");
+  if (/^OWNER_ROLE:/m.test(body)) failures.push(focusPath + " still declares semantic-owner-style OWNER_ROLE metadata");
+}
 for (const token of [
   "EXECUTION_LAW_PACKAGE_SELF_CONTAINED: YES",
   "PRODUCT_SEMANTIC_AUTHORITY: NONE",
@@ -428,11 +492,20 @@ if (!journeys.includes("TARGET_JOURNEY_ENVELOPE != ACTIVE_JOURNEY_INCREMENT")) f
 if (!financialModel.includes("## Financial breadth activation law")) failures.push("financial governance missing incremental breadth activation law");
 if (!financialModel.includes("REAL_FINANCIAL_EFFECT_CREATED_BY_ACTIVE_SLICE = CURRENT_WLT_OBLIGATION")) failures.push("financial governance can defer an already-created financial effect");
 
-for (const term of ["**Partner**", "**Internal Wallet**", "**Ledger**", "**Balance**", "**External Financial Rail / External Wallet Provider**"]) {
+for (const term of ["**Partner**", "**Partner Member**", "**Human Actor**", "**Product Persona**", "**Internal Wallet**", "**Ledger**", "**Balance**", "**External Financial Rail / External Wallet Provider**"]) {
   if (!glossary.includes(term)) failures.push("glossary missing canonical term: " + term);
 }
+if (platform.includes("## Primary actors")) failures.push("platform orientation collapses roles/personas into primary actors");
+if (!platform.includes("## Primary human roles and personas")) failures.push("platform orientation missing canonical human role/persona section");
+if (/\bOperator Context\b|\bOPERATOR_CONTEXT\b/i.test(prd)) failures.push("PRD retains retired Operator Context semantics");
 
 if (!fixed.includes("BTHWANI_JOURNEY_READY_PLATFORM_SUBSTRATE=PASS")) failures.push("target qualification checklist missing journey-ready platform-substrate gate");
+for (const token of ["STRUCTURAL_FOUNDATION_READY", "PROTECTED_JOURNEY_READY"]) {
+  if (!foundationSubstrate.includes(token)) failures.push("foundation/journey-ready governance missing readiness distinction: " + token);
+}
+if (!orchestrator.includes("FOUNDATION_CONSTRUCTION_EXIT_GATE") || !orchestrator.includes("STRUCTURAL_FOUNDATION_READY")) {
+  failures.push("orchestrator missing structural-foundation versus protected-journey-ready distinction");
+}
 
 if (!prd.includes("app-owned surface-specific capability presentation")) failures.push("PRD does not encode app-owned surface-specific presentation");
 if (!composition.includes("SURFACE_SPECIFIC_FEATURE_UI → APP HOST")) failures.push("app/service composition governance missing canonical surface-specific UI owner");
