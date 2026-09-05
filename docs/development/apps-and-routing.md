@@ -7,15 +7,19 @@ PRODUCT_AUTHORITY: NONE
 
 BThwani deployable apps are hosts, not business-domain owners.
 
-Apps own route hierarchy, navigation, tabs/shell, deep links, cross-capability page composition, bootstrap/session binding, native adapters, app assets and build/deployable configuration.
+Apps own route hierarchy, navigation, tabs/shell, deep links, cross-capability page composition, bootstrap/session binding, native adapters, app assets, build/deployable configuration and surface-specific feature presentation.
 
-## Required hosts
+Services remain the business/data/contract owners. A feature screen living under an app does not make the app the business owner.
+
+## Target hosts
 
 - app-client
 - app-partner
 - app-captain
 - app-field
 - control-panel
+
+A target host may be **host-ready but business-deferred**. Keep its deployable identity, auth/session bootstrap, shell/runtime/build valid without inventing placeholder Product screens.
 
 ## Adding a route/screen
 
@@ -31,6 +35,12 @@ Before adding a route:
 8. verify all cross-surface consumers affected by the same mutation.
 
 A route/page/screen name does not create a capability.
+
+## Feature placement
+
+Surface-specific Product presentation starts under the consuming app's feature area (for example `src/features/<capability>`) and calls the canonical service public client/contract. Do not recreate `services/<service>/frontend/app-*` or a parallel app-shaped service UI tree.
+
+Extract only proven domain-neutral visual reuse to the Design System. Do not create a runtime feature/journey registry merely to make routes appear automatically; file-based routing plus explicit navigation composition is the default.
 
 ## Account/Home/Settings/Search
 
