@@ -24,6 +24,72 @@ for (const route of [
   if (!contract.includes(route)) failures.push("missing canonical route " + route);
 }
 
+function contractPathBlock(pathname, nextPathname) {
+  const start = contract.indexOf("  " + pathname + ":");
+  if (start < 0) return "";
+  const end = nextPathname
+    ? contract.indexOf("\n  " + nextPathname + ":", start + 1)
+    : contract.indexOf("\ncomponents:", start + 1);
+  return contract.slice(start, end >= 0 ? end : contract.length);
+}
+
+function requireResponseStatuses(label, body, statuses) {
+  for (const status of statuses) {
+    if (!body.includes('        "' + status + '":')) {
+      failures.push(label + " missing documented HTTP " + status + " response");
+    }
+  }
+}
+
+requireResponseStatuses(
+  "actor-role search",
+  contractPathBlock("/internal/actor-roles/search", "/internal/actors/{actorId}/roles/{role}"),
+  ["200", "400", "401", "403"],
+);
+requireResponseStatuses(
+  "actor-role read",
+  contractPathBlock("/internal/actors/{actorId}/roles/{role}", "/internal/actors/{actorId}/roles/{role}/disable"),
+  ["200", "401", "403", "404"],
+);
+for (const action of ["disable", "enable"]) {
+  requireResponseStatuses(
+    "actor-role " + action,
+    contractPathBlock(
+      "/internal/actors/{actorId}/roles/{role}/" + action,
+      action === "disable"
+        ? "/internal/actors/{actorId}/roles/{role}/enable"
+        : "/internal/actors/{actorId}/security/disable",
+    ),
+    ["204", "401", "403", "404"],
+  );
+}
+requireResponseStatuses(
+  "operator password reset",
+  contractPathBlock(
+    "/internal/actors/{actorId}/operator-password/reset",
+    "/internal/actors/{actorId}/roles/{role}/sessions",
+  ),
+  ["204", "400", "401", "403", "404"],
+);
+const roleSessionsBlock = contractPathBlock(
+  "/internal/actors/{actorId}/roles/{role}/sessions",
+  "/internal/actors/{actorId}/roles/{role}/sessions/{sessionId}",
+);
+const roleSessionsDeleteStart = roleSessionsBlock.indexOf("\n    delete:");
+const roleSessionsGetBlock = roleSessionsDeleteStart >= 0
+  ? roleSessionsBlock.slice(0, roleSessionsDeleteStart)
+  : roleSessionsBlock;
+const roleSessionsDeleteBlock = roleSessionsDeleteStart >= 0
+  ? roleSessionsBlock.slice(roleSessionsDeleteStart)
+  : "";
+requireResponseStatuses("role-session list", roleSessionsGetBlock, ["200", "401", "403", "404"]);
+requireResponseStatuses("role-session revoke-all", roleSessionsDeleteBlock, ["204", "401", "403", "404"]);
+requireResponseStatuses(
+  "role-session revoke-one",
+  contractPathBlock("/internal/actors/{actorId}/roles/{role}/sessions/{sessionId}", null),
+  ["204", "401", "403", "404"],
+);
+
 for (const forbidden of [
   "X-Service-Caller",
   "X-Operator-Context-ID",

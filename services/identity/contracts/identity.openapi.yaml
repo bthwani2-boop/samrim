@@ -240,6 +240,8 @@ paths:
           $ref: "#/components/responses/Unauthenticated"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "400":
+          $ref: "#/components/responses/Invalid"
 
   /internal/actors/{actorId}/roles/{role}:
     get:
@@ -259,6 +261,10 @@ paths:
                 $ref: "#/components/schemas/ActorRoleView"
         "404":
           $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /internal/actors/{actorId}/roles/{role}/disable:
     post:
@@ -273,6 +279,12 @@ paths:
       responses:
         "204":
           description: Role disabled; only sessions and pending activations for that actor-role are revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /internal/actors/{actorId}/roles/{role}/enable:
     post:
@@ -287,6 +299,12 @@ paths:
       responses:
         "204":
           description: Existing role enabled. No session is created.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /internal/actors/{actorId}/security/disable:
     post:
@@ -352,6 +370,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
 
   /internal/actors/{actorId}/roles/{role}/sessions:
     get:
@@ -371,6 +391,12 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/SessionInfo"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
     delete:
       tags: [internal-sessions]
       operationId: revokeActorRoleSessions
@@ -383,6 +409,12 @@ paths:
       responses:
         "204":
           description: All active sessions for the exact actor-role revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /internal/actors/{actorId}/roles/{role}/sessions/{sessionId}:
     delete:
@@ -402,6 +434,12 @@ paths:
       responses:
         "204":
           description: Exact session revoked.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
 components:
   securitySchemes:
