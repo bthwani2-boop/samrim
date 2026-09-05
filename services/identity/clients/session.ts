@@ -1,5 +1,5 @@
 import type { ActorIdentity, ActorType, TokenPair } from "./generated/identity-types";
-import { type IdentityClient, isIdentityClientError } from "./client";
+import { type IdentityClient, type IdentityClientError, isIdentityClientError } from "./client";
 
 export interface IdentitySessionStorage {
   getItem(key: string): Promise<string | null>;
@@ -40,6 +40,13 @@ export function identityAuthorizesSurface(
   surface: IdentitySurface,
 ): boolean {
   return identity.role === role && identity.surface === surface && roleSurface[role] === surface;
+}
+
+function isIdentityServiceUnavailable(value: unknown): value is IdentityClientError {
+  return (
+    isIdentityClientError(value) &&
+    (value.kind === "network" || (value.kind === "http" && value.status >= 500))
+  );
 }
 
 function parseStoredTokens(raw: string | null): StoredTokens | null {
@@ -99,7 +106,7 @@ export class IdentitySessionManager {
       this.tokens = stored;
       return (this.stateValue = { kind: "authenticated", identity });
     } catch (error) {
-      if (isIdentityClientError(error) && error.kind === "network") {
+      if (isIdentityServiceUnavailable(error)) {
         return (this.stateValue = { kind: "service_unavailable", reason: error.message });
       }
       return this.refreshStored(stored);
@@ -144,7 +151,7 @@ export class IdentitySessionManager {
       if (fingerprint.length < 8) throw new Error("IDENTITY_DEVICE_FINGERPRINT_UNAVAILABLE");
       return this.adopt(await this.client.refresh({ refreshToken: stored.refreshToken, deviceFingerprint: fingerprint }));
     } catch (error) {
-      if (isIdentityClientError(error) && error.kind === "network") {
+      if (isIdentityServiceUnavailable(error)) {
         return (this.stateValue = { kind: "service_unavailable", reason: error.message });
       }
       await this.clearLocal();

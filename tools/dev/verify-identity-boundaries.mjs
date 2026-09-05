@@ -266,6 +266,18 @@ for (const forbidden of ["ActorStatus", "Permission", "operatorContextId", "role
   if (generated.includes(forbidden)) failures.push("generated Identity types contain legacy shape " + forbidden);
 }
 
+const tsSession = read("services/identity/clients/session.ts");
+for (const required of [
+  "isIdentityServiceUnavailable",
+  'value.kind === "network"',
+  'value.kind === "http" && value.status >= 500',
+]) {
+  if (!tsSession.includes(required)) failures.push("Identity TS session recovery missing " + required);
+}
+if ((tsSession.match(/isIdentityServiceUnavailable\(error\)/g) || []).length < 2) {
+  failures.push("Identity TS session recovery must preserve local credentials for service failure during restore and refresh");
+}
+
 const domain = read("services/identity/backend/internal/domain/types.go");
 for (const required of ["type ActorRole struct", "type ActorIdentity struct"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
