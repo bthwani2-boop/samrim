@@ -46,7 +46,17 @@ operator → control-panel
 
 A session is bound to one actor and one role. It does not carry every role held by the human.
 
-Client may establish only the `client` role through public OTP. DSH provisions partner/captain/field role admission. Platform Control provisions operator role admission. OTP authentication for a governed DSH role requires that enabled role to exist first and never creates it.
+Customer self-service may establish only the `client` role after proving phone possession and registering a client credential. DSH provisions partner/captain/field role admission; those governed roles use one-time activation only after admission exists. Platform Control provisions operator role admission; privileged operator sessions require password plus a second factor/challenge in the current baseline.
+
+`actor_id` is the permanent cross-boundary human identifier. Phone is a mutable verified identifier, not the primary identity key; username is optional and must not exist merely as an authentication convention without Product need.
+
+```text
+PHONE_VERIFICATION != MANAGED_ACTIVATION
+MANAGED_ACTIVATION != NORMAL_AUTHENTICATION
+NORMAL_AUTHENTICATION != RECOVERY_OR_REENROLLMENT
+```
+
+Customer registration/recovery, managed-role activation and operator authentication therefore have separate journeys while remaining owned by the same Identity authority. Passkeys/WebAuthn are a preferred progressive hardening path, especially for privileged operator access, but are not a mandatory first-release credential for every actor class.
 
 Role enable/disable is Identity admission truth. Captain/field/partner eligibility, assignment, organization/store membership and other operational states remain DSH truth.
 

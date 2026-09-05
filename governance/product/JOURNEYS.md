@@ -30,6 +30,33 @@ An active increment may stop at an earlier meaningful outcome when the Orchestra
 
 Conversely, once an active increment creates a cross-owner effect—especially money, custody, authorization or external-provider state—the corresponding invariant/handoff is inside the active cone and cannot be deferred merely because the rest of the target journey is deferred.
 
+## J0 — Identity registration, activation, authentication and recovery
+
+```text
+CUSTOMER:
+RESTORE EXISTING CLIENT SESSION WHEN VALID
+OR PHONE VERIFICATION → CLIENT REGISTRATION + PASSWORD CREDENTIAL → CLIENT SESSION
+OR PHONE + PASSWORD → CLIENT SESSION
+OR PHONE-VERIFIED PASSWORD RECOVERY → CLIENT SESSION
+
+PARTNER / CAPTAIN / FIELD:
+GOVERNED ROLE PROVISIONING
+→ ONE-TIME ROLE ACTIVATION
+→ ROLE-SCOPED SESSION
+→ RESTORE / ROTATE SESSION DURING NORMAL USE
+→ EXPLICIT GOVERNED RECOVERY / RE-ENROLLMENT WHEN ACCESS IS LOST
+
+OPERATOR:
+GOVERNED ROLE/CREDENTIAL PROVISIONING
+→ PASSWORD PROOF
+→ REQUIRED SECOND-FACTOR CHALLENGE
+→ OPERATOR SESSION
+→ STEP-UP WHEN A SENSITIVE CAPABILITY REQUIRES IT
+→ PASSKEY/WEBAUTHN AS THE PREFERRED PROGRESSIVE PHISHING-RESISTANT TARGET
+```
+
+Phone verification, managed activation, normal authentication and recovery/re-enrollment are distinct Identity lifecycles. None may silently grant a business role or scope.
+
 ## J1 — Customer commerce and fulfillment
 
 ```text
@@ -236,7 +263,7 @@ Analytics never becomes a transactional writer or authorization owner.
 
 ## Journey-step responsibility classification law
 
-Every material step named in J1–J15 must resolve to exactly one disposition:
+Every material step named in J0–J15 must resolve to exactly one disposition:
 
 ```text
 DURABLE_CAPABILITY
@@ -269,7 +296,7 @@ Key durable dispositions in the current model:
 |---|---|
 | ADMINISTRATION_ROLES_APPROVALS_AUDIT | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
 | CAPTAIN_DISPATCH | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
-| IDENTITY_ACTIVATION_SESSIONS | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
+| IDENTITY_ACTIVATION_SESSIONS | J0 |
 | MAPS_SERVICE_AREA_ADDRESS_PRIVACY | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
 | ORDER_CREATION | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
 | PARTNER_FLEET_CONNECTION | EXPLICIT_SYSTEM_OUTCOME_REQUIRED |
