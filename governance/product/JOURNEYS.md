@@ -17,6 +17,19 @@ SURFACE != OWNER
 
 Every material journey accounts for entry, loading/pending, success, empty/missing, validation failure, authorization failure, business rejection, conflict/concurrency, offline/degraded behavior, duplicate/repeated submission, unknown outcome, partial state, restart/resume, stale reads, cross-service handoff, out-of-order/duplicate events, cancellation/compensation/reversal and canonical readback where applicable.
 
+## Target journey envelope versus active increment
+
+The journeys below describe the durable end-to-end **target envelope** and dependency order. They do not authorize every optional step in the same delivery slice.
+
+```text
+TARGET_JOURNEY_ENVELOPE != ACTIVE_JOURNEY_INCREMENT
+WHEN_REQUIRED / WHEN_APPLICABLE = CONDITIONAL PRODUCT TRIGGER
+```
+
+An active increment may stop at an earlier meaningful outcome when the Orchestrator-authorized Product scope says so, provided every effect it actually creates is closed through its canonical owners and readback. A later target step must not be preimplemented as a placeholder.
+
+Conversely, once an active increment creates a cross-owner effect—especially money, custody, authorization or external-provider state—the corresponding invariant/handoff is inside the active cone and cannot be deferred merely because the rest of the target journey is deferred.
+
 ## J1 — Customer commerce and fulfillment
 
 ```text
