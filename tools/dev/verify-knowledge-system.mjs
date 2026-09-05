@@ -293,6 +293,12 @@ requireTokens("docs/development/quality/quality-and-verification.md", [
   "NIST Secure Software Development Framework",
   "SLSA specification",
 ]);
+requireTokens("docs/development/release/release-and-store-submission.md", [
+  "Operational go-live readiness",
+  "incident/decision owner and escalation path",
+  "support/operator visibility and governed actions",
+  "backup checkbox",
+]);
 requireTokens("tools/prompting/bthwani-orchestrator/verify/evidence-falsification.md", [
   "BLIND_RERUN_UNTIL_GREEN = FORBIDDEN",
   "FAILURE_SUPPRESSION/ALLOWLIST_TO_MANUFACTURE_GREEN = FORBIDDEN",
