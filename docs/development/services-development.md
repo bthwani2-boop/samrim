@@ -1,7 +1,9 @@
 # Service Development
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
-PRODUCT_AUTHORITY: NONE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
 ## Start from ownership
 
@@ -37,7 +39,6 @@ Material mutations define trusted context, preconditions, allowed/forbidden stat
 ## External effects
 
 Preserve external operation identity/provenance. Timeout is not proof of failure; do not blind-fallback an ambiguous mutation.
-
 
 ## Internal responsibility shape
 
