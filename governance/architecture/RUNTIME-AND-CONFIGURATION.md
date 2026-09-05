@@ -19,6 +19,21 @@ These classes must not share one generic mutable authority.
 
 Cross-surface platform variables require canonical server-side ownership, typed/schema validation, versioning, audit/reason, rollout semantics and readback. Platform Control owns only explicitly admitted cross-platform control-plane variables.
 
+## Infra and runtime ownership
+
+`infra/` owns environment/deployment composition and shared environment-level infrastructure wiring. It does not own service business logic, service schema/migrations, app runtime configuration contracts, provider business semantics or financial test behavior.
+
+~~~text
+INFRA BINDS/COMPOSES VALUES
+OWNER DEFINES VALUE SEMANTICS
+~~~
+
+App runtime input schema/example configuration belongs with the app when it defines app behavior. Service configuration schema/validation belongs with the service. Infra may supply environment-specific bindings but cannot redefine those contracts.
+
+Local infrastructure may provision server instances/databases/users/extensions required for development, while the owning service retains private schema/migration authority.
+
+Service-specific provider simulators/fixtures follow the owning service testing lifecycle; Infra may compose them into an environment but does not own their business/failure semantics.
+
 ## Development runtime
 
 Development may use local code with managed stateful dependencies when contracts remain equivalent. Development providers are implementations, not Product/domain authorities.
