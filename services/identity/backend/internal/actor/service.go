@@ -327,6 +327,17 @@ func (s *Service) SetRoleEnabled(ctx context.Context, caller, actorID, role stri
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var phone string
+	if err := tx.QueryRowContext(ctx, "SELECT phone_e164 FROM identity_actors WHERE id=$1", actorID).Scan(&phone); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.ErrNotFound
+		}
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:otp-phone:"+phone); err != nil {
+		return err
+	}
+
 	var current bool
 	err = tx.QueryRowContext(ctx,
 		"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE",
@@ -376,11 +387,21 @@ func (s *Service) SetSecurityEnabled(ctx context.Context, caller, actorID string
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var current bool
 	var phone string
+	if err := tx.QueryRowContext(ctx, "SELECT phone_e164 FROM identity_actors WHERE id=$1", actorID).Scan(&phone); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.ErrNotFound
+		}
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:otp-phone:"+phone); err != nil {
+		return err
+	}
+
+	var current bool
 	err = tx.QueryRowContext(ctx,
-		"SELECT security_enabled,phone_e164 FROM identity_actors WHERE id=$1 FOR UPDATE",
-		actorID).Scan(&current, &phone)
+		"SELECT security_enabled FROM identity_actors WHERE id=$1 FOR UPDATE",
+		actorID).Scan(&current)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrNotFound
 	}

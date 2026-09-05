@@ -70,6 +70,13 @@ func (s *Service) Login(ctx context.Context, input domain.LoginRequest, ipHash s
 		return domain.TokenPair{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	var securityEnabled, roleEnabled bool
+	if err := tx.QueryRowContext(ctx,
+		"SELECT a.security_enabled,r.enabled FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.id=$1 AND r.role='operator' FOR UPDATE OF a,r",
+		a.ID).Scan(&securityEnabled, &roleEnabled); err != nil || !securityEnabled || !roleEnabled {
+		return domain.TokenPair{}, domain.ErrUnauthenticated
+	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_login_attempts WHERE username=$1 AND succeeded=false", username); err != nil {
 		return domain.TokenPair{}, err
 	}
@@ -167,11 +174,31 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var actorID, role, currentHash, deviceHash string
+	var actorID, role string
+	if err := tx.QueryRowContext(ctx,
+		"SELECT actor_id,role FROM identity_sessions WHERE id=$1",
+		sessionID).Scan(&actorID, &role); err != nil {
+		return domain.TokenPair{}, domain.ErrInvalidRefresh
+	}
+
+	var securityEnabled bool
+	if err := tx.QueryRowContext(ctx,
+		"SELECT security_enabled FROM identity_actors WHERE id=$1 FOR UPDATE",
+		actorID).Scan(&securityEnabled); err != nil || !securityEnabled {
+		return domain.TokenPair{}, domain.ErrInvalidRefresh
+	}
+	var roleEnabled bool
+	if err := tx.QueryRowContext(ctx,
+		"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE",
+		actorID, role).Scan(&roleEnabled); err != nil || !roleEnabled {
+		return domain.TokenPair{}, domain.ErrInvalidRefresh
+	}
+
+	var currentHash, deviceHash string
 	var refreshExpiry time.Time
 	err = tx.QueryRowContext(ctx,
-		"SELECT actor_id,role,refresh_token_hash,device_fingerprint_hash,refresh_expires_at FROM identity_sessions WHERE id=$1 AND revoked_at IS NULL FOR UPDATE",
-		sessionID).Scan(&actorID, &role, &currentHash, &deviceHash, &refreshExpiry)
+		"SELECT refresh_token_hash,device_fingerprint_hash,refresh_expires_at FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE",
+		sessionID, actorID, role).Scan(&currentHash, &deviceHash, &refreshExpiry)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
@@ -179,12 +206,6 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, err
 	}
 	if !refreshExpiry.After(s.now()) {
-		return domain.TokenPair{}, domain.ErrInvalidRefresh
-	}
-	var securityEnabled bool
-	if err := tx.QueryRowContext(ctx,
-		"SELECT security_enabled FROM identity_actors WHERE id=$1 FOR UPDATE",
-		actorID).Scan(&securityEnabled); err != nil || !securityEnabled {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if !identitysecurity.ConstantTimeHexEqual(deviceHash, identitysecurity.SHA256Hex(device)) {
@@ -212,13 +233,6 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		if err := tx.Commit(); err != nil {
 			return domain.TokenPair{}, err
 		}
-		return domain.TokenPair{}, domain.ErrInvalidRefresh
-	}
-
-	var enabled bool
-	if err := tx.QueryRowContext(ctx,
-		"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE",
-		actorID, role).Scan(&enabled); err != nil || !enabled {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 

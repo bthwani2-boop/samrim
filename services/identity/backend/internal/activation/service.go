@@ -76,16 +76,27 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, ipHash string
 		}
 	}
 
-	if role != "client" {
-		var enabled bool
+	if role == "client" {
+		var securityEnabled bool
+		err := tx.QueryRowContext(ctx,
+			"SELECT security_enabled FROM identity_actors WHERE phone_e164=$1",
+			a.PhoneE164).Scan(&securityEnabled)
+		if err == nil && !securityEnabled {
+			return s.genericChallenge(a.PhoneE164)
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return domain.ActivationChallenge{}, err
+		}
+	} else {
+		var enabled, securityEnabled bool
 		if err := tx.QueryRowContext(ctx,
-			"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE",
-			a.ID, role).Scan(&enabled); err != nil {
+			"SELECT r.enabled,a.security_enabled FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.actor_id=$1 AND r.role=$2 FOR UPDATE OF a,r",
+			a.ID, role).Scan(&enabled, &securityEnabled); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return s.genericChallenge(a.PhoneE164)
 			}
 			return domain.ActivationChallenge{}, err
-		} else if !enabled {
+		} else if !enabled || !securityEnabled {
 			return s.genericChallenge(a.PhoneE164)
 		}
 	}
@@ -166,6 +177,10 @@ func (s *Service) Consume(ctx context.Context, input domain.ActivationRequest) (
 		return domain.TokenPair{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:otp-phone:"+phone); err != nil {
+		return domain.TokenPair{}, err
+	}
 
 	var challengeID, codeHash string
 	var actorID sql.NullString
