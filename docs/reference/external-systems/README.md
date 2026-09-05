@@ -199,6 +199,13 @@ Use this table to avoid broad browsing.
 | Object storage | S3 semantics | R2 | MinIO |
 | Secrets | Vault | AWS Secrets Manager | SOPS |
 | OpenAPI contract | OpenAPI spec | oapi-codegen | Redocly / Pact |
+| Design tokens / cross-platform styling | Style Dictionary | current DTCG guidance | platform-specific native/web outputs |
+| Web accessibility primitives | Base UI | React Aria | shadcn RTL/composition reference |
+| Control Panel UX patterns | Cloudscape | Saleor Dashboard | React Aria/shadcn interaction counterexamples |
+| Component workbench | Storybook | native Storybook | rendered app evidence |
+| Web visual/accessibility E2E | Playwright | axe-core | manual accessibility/device evidence |
+| Mobile UI E2E | Maestro | platform-native/manual device evidence | provider/device specialist tooling |
+| Generic icons | Lucide | platform-native symbols where appropriate | bespoke BThwani semantic icon wrapper |
 | Real integration proof | Testcontainers-Go | WireMock | Toxiproxy / Pact |
 
 ---
@@ -610,6 +617,7 @@ The objective is faster and more complete Level-4 refoundation with **less** cus
 - `finance-payments.md` — payment rails, wallet/ledger/accounting, fraud and financial comparison checklist.
 - `identity-platform.md` — identity, authorization, notifications, future HR-reference material, feature/configuration and secrets references.
 - `engineering-infrastructure.md` — workflows, observability, storage, API/contracts, integration testing and Go/PostgreSQL engineering candidates.
+- `experience-design-ui-assurance.md` — design tokens, web/native UI primitives, RTL/accessibility, Storybook, Playwright/axe, Maestro, icons and Control Panel UX pattern references.
 
 Named AI/model routing is intentionally excluded: model names are transient and do not belong in durable reference policy.
 
