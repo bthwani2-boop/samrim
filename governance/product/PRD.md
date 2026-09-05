@@ -69,166 +69,76 @@ Current role/persona mapping is owned by `../project/ACTORS-TRUST-AND-SCOPE.md`;
 
 Trusted identity comes from authenticated Identity/session state. Fine-grained business scope, permissions, eligibility, assignment and operational context come from the capability that owns the protected truth. Partner Organization and Store are business scopes, not platform-isolation or tenancy boundaries. No client header, query parameter, request body, cached local value, UI selector or generic context field grants identity, role, permission, scope or tenancy.
 
+## 4. Product ownership orientation
 
-## 4. Domain ownership
+This PRD owns product-level orientation only. Exact durable owner/writer/readback boundaries are owned by:
 
-Every durable fact has exactly one authoritative owner.
+- `../architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md` for the canonical owner map;
+- `CAPABILITIES.md` and `capabilities/**` for capability-specific Product semantics;
+- `JOURNEYS.md` for cross-capability actor/system journeys;
+- `FINANCIAL-MODEL.md` for financial Product truth and WLT sovereignty;
+- `COMMERCIAL-AND-PARTNER-MODEL.md` for partner/commercial semantics;
+- `EXPERIENCE-AND-DESIGN.md` for durable UX/design meaning.
 
-- Identity owns the one human actor identifier, canonical identity credentials, high-level actor-role admission, authentication/activation proofs and role-scoped sessions. Fine-grained business permissions/scopes/context remain with the capability that owns the protected truth unless a later explicit authorization owner is admitted.
-- DSH owns commerce, Central Catalog, cart/checkout/order operational truth, client/partner/captain/field operational participant state, stores/partner operations, field assignments/readiness, captain eligibility/fleet/dispatch/delivery, serviceability, notifications/inbox delivery state, special requests, support/rescue, and DSH-owned derived operational projections defined by current contracts.
-- WLT exclusively owns authoritative financial truth: wallet, ledger, payment, refund, settlement, payout, commission, reconciliation, and provider financial mutation.
-- Platform Control is the semantic owner for explicitly admitted cross-platform governed configuration/change/rollout facts. Whether that responsibility is deployed as an independent `services/platform-control` service is an architecture/runtime admission decision that must be proven from executable evidence rather than assumed by Governance.
-- External technical integrations are owned by the consuming semantic capability through explicit ports/adapters. Platform Control may own governed cross-platform integration enablement/configuration where explicitly assigned; secret values remain in approved runtime secret storage. A generic provider service/name does not become a business domain.
-- Media/object-storage behavior belongs to the bounded context/capability that owns the business object; reusable storage primitives/adapters remain technical infrastructure rather than a second business owner.
+At the platform level:
 
-A consumer may keep a cache or projection only when the owner contract permits it. A projection is never a second truth owner.
+```text
+IDENTITY → human identity, high-level role admission, credentials/proofs/sessions
+DSH      → commerce/fulfillment/partner/customer/captain/field operational truth
+WLT      → authoritative financial truth
+PLATFORM CONTROL → only explicitly admitted cross-platform governed control-plane facts
+```
 
-## 5. Core product requirements
+No surface, integration adapter, search/index, analytics view, cache/projection or documentation artifact becomes a parallel Product owner merely because it renders or transports owner truth.
 
-### Central catalog
+## 5. Product-wide requirements
 
-DSH Central Catalog owns canonical category/taxonomy, master-product identity, governed attributes/relationships, store assortment/proposals and catalog approval/publication eligibility. Approval/publication is a named workflow inside Central Catalog, not a second sovereign owner. No application, search index, marketing layer or store-local flag may maintain a competing runtime catalog, hardcoded category list, demo product authority or publication truth.
+The detailed behavior of catalog, cart, checkout, orders, partner/store lifecycle, dispatch, handoff, field operations, support, communications, analytics, promotions, ratings and financial operations is defined only in the applicable capability owner. This PRD does not maintain a second capability registry.
 
-### Discovery and serviceability
+The target supported fulfillment-policy modes are `bthwani_delivery`, `partner_delivery`, and `client_pickup`. Target support does not activate all modes simultaneously; the active Product slice and current executable contracts determine implemented breadth.
 
-Home and store discovery use canonical DSH/product data under trusted context and current serviceability/publication gates. Ranking or personalization may reorder eligible results but may not make an ineligible store/product visible. Cached discovery may not authorize checkout/order creation after a current canonical denial.
+Product-wide invariants are:
 
-### Partner and store model
+- one durable fact has one canonical semantic owner and governed writer;
+- one Human Actor may hold multiple Identity roles without creating duplicate human identities;
+- Partner Organization, Partner Member, Store, Human Actor, Identity Role, Product Persona, authorization scope and tenancy are distinct concepts;
+- customer/client-controlled data never grants trusted identity, role, business scope, financial truth or platform isolation;
+- WLT remains the only authoritative owner of wallet/ledger/payment/refund/settlement/payout/commission/reconciliation truth;
+- derived search, analytics, projections and caches never become mutation authority;
+- external providers implement semantic ports and never become business-domain owners;
+- inactive future Product breadth remains absent rather than represented by fake screens, tables, APIs, state machines or compatibility structures.
 
-One partner may own/manage multiple stores according to current contracts. A store has one canonical operational owner unless an explicit transfer capability governs reassignment. Partner onboarding, store readiness, publication, team access, documents/evidence, and payout references must converge on canonical DSH/Identity/WLT ownership rather than surface-local state.
+## 6. Capability and journey routing
 
-Partner commercial model is governed platform state and uses one of `COMMISSION`, `SUBSCRIPTION`, `HYBRID`, or `OPERATOR_MANAGED`; billing/commercial classification does not alter platform isolation or create duplicate partner/store truth.
+Use `CAPABILITIES.md` as the capability index and load only the semantic owner required by the task:
 
-### Cart and checkout
+```text
+pnpm knowledge:query -- list capabilities
+pnpm knowledge:query -- capability <CAPABILITY_ID>
+pnpm knowledge:query -- journey <J_ID>
+```
 
-DSH Cart/Checkout owns the customer's versioned active cart and checkout-intent operational lifecycle. Item price/currency and assortment evidence are server-owned; address, serviceability and fulfillment mode are owner-validated; WLT owns authoritative financial quote/payment-session facts. Checkout progresses only through legal versioned/idempotent states, and a blocked/expired/financially ambiguous checkout cannot create an order.
-
-### Order creation
-
-ORDER_CREATION begins only after the governed checkout eligibility boundary. One canonical checkout/idempotency scope creates at most one order. Order commercial/address/item snapshots required by the contract are immutable after creation except through an explicit legal transition.
-
-### Fulfillment and dispatch
-
-The target supported fulfillment-policy modes are `bthwani_delivery`, `partner_delivery`, and `client_pickup`.
-
-Support in the target model does not mean simultaneous activation. The current authorized Product slice and executable contract determine which modes are active. A mode outside the active slice must not leak into UI, contracts, branching state machines, providers, or operational dependencies merely to anticipate future breadth.
-
-- `bthwani_delivery` uses BThwani-governed captain dispatch and delivery ownership.
-- `partner_delivery` means the partner owns the fulfillment execution path under the applicable Partner/DSH contracts; partner fleet/operational-participant detail does not create a fourth platform policy mode.
-- `client_pickup` keeps delivery dispatch out of the order while preserving governed readiness/handoff semantics required by the applicable contract.
-
-Dispatch, assignment, custody/handoff, delivery progression, proof, cancellation/reassignment, and delivery exceptions remain DSH operational truth. Captain eligibility required by dispatch is DSH-owned and must not be duplicated into a parallel actor/HR owner. Financial effects caused by fulfillment remain WLT truth.
-
-### Field operations, assignment and readiness
-
-DSH owns field participant status/eligibility, operational assignment, visit/checklist, readiness evidence and escalation lifecycle. In-progress reassignment requires governed handoff, required/critical evidence gates completion, and Partner/Store owners consume verified field evidence without mutating field history.
-
-### Marketing, campaigns and loyalty
-
-DSH owns campaign/audience/placement and non-financial loyalty/subscription/commercial-program eligibility. Campaign and program policies are versioned and auditable, with maker/checker separation where required. Central Catalog remains publication/catalog identity owner, PROMOTIONS_COUPONS_FUNDING owns coupon/promotion funding semantics, WLT owns authoritative monetary charging/posting, and notification adapters only deliver selected communications.
-
-### Financial access
-
-Applications access financial state only through the current governed application-facing boundary. DSH may orchestrate or store bounded WLT-backed references/projections but cannot become ledger, wallet, payment, refund, settlement, payout, commission, or reconciliation truth.
-
-Every financial mutation is server-side, authenticated, idempotent, correlated, auditable, and reconciled against WLT/provider authority. Unknown outcomes remain unknown/reconcilable; they are never converted into fabricated success.
-
-BThwani's internal wallet is a private WLT ledger balance, not an official external electronic wallet. Each actor has one canonical internal wallet; `available`, `held`, `pending`, earned/settled totals, and withdrawal eligibility are states or projections over that one WLT truth, not parallel wallets or ledgers.
-
-For an order that can combine internal wallet, external official-wallet payment, COD, subsidy, discount, or delivery charges, WLT owns one server-derived payment allocation that conserves the governed order total. A payment-method label alone is not sufficient financial truth, and the same delivery fee or earning must never be counted twice.
-
-Captain COD financial authorization is order-specific and atomic against the captain's same internal wallet. Required COD exposure is reserved before assignment is allowed, released exactly once when the governed order outcome requires release, and finalized exactly once when the governed outcome requires debit. Delivery earnings are a separate WLT movement and cannot be used to fabricate pre-existing COD capacity.
-
-Approved official electronic-wallet rails may move external money into BThwani for supported Cash-In/top-up/payment purposes. Customer or operator claims, screenshots, client-side success screens, or unverified provider responses never create internal wallet credit; authoritative provider evidence and WLT reconciliation/posting are required.
-
-The current stakeholder Cash-Out model for partner, captain, and field is a governed manual external transfer from BThwani's official wallet accounts to a verified, versioned official-wallet destination. Funds move through hold, approval, immutable execution snapshot/batch, external execution evidence, independent verification as required, reconciliation, and only then completion. A spreadsheet/export is an execution artifact and never financial truth.
-
-One visible internal balance does not imply that every unit is withdrawable. Withdrawal eligibility is server-owned policy. General customer withdrawal and withdrawal of externally funded principal are not enabled by implication and require explicit approved Product/legal/financial governance before activation.
-
-Automated external payout is not implied by a generic provider adapter. It requires a separate approved capability with proven provider support, security, accounting, reconciliation, contractual and applicable regulatory evidence before it can replace the governed manual settlement path.
-
-### Promotions and funding
-
-Every promotion has stable identity/version, eligibility, scope, validity window and explicit funding model. Client-supplied totals/discounts are untrusted. Checkout/order captures the commercial snapshot required to reproduce the accepted transaction. WLT owns the authoritative financial consequences, reimbursement, settlement and refund effects.
-
-### Platform variables and provider health
-
-Cross-surface platform variables have a canonical server-side owner, type/schema, validation, version, audit/reason, rollout and readback semantics. Governed change sets are a subcapability of the Platform Control semantic control plane, not a separate Product owner. Provider health comes from current runtime/provider evidence; a configured endpoint or `enabled=true` flag is not health evidence. Secrets never become product configuration or client-visible variables.
-
-### Operational analytics
-
-Analytics are read models, not truth owners. Every metric identifies its source owner, aggregation/window, time basis, unit/currency, freshness behavior and allowed dimensions. Missing/stale/partial data is explicit and is not silently rendered as zero. Financial analytics derive from WLT-owned facts or governed WLT-backed projections.
-
-### Customer profile and communication preferences
-
-Customer non-authentication profile/preferences are DSH-owned, versioned and privacy-scoped. Identity remains credential/session/activation authority. Locale, currency preference and marketing consents are canonical server readback; device state or delivery success cannot fabricate consent.
-
-### Partner team membership
-
-Partner/store team membership is explicit, store-scoped, auditable and lifecycle-governed. DSH owns membership/operational scope and its business authorization facts while Identity owns authentication, high-level role admission and session truth. Membership does not imply all-store access or create a second identity system.
-
-### Catalog approval and publication
-
-Catalog approval/publication is a named Central Catalog subcapability. Customer visibility requires canonical DSH catalog/store approval, publication and serviceability gates. Partner, field, marketing, search and UI layers cannot independently publish content. Needs-fix/rejection/review transitions remain auditable and owner-controlled.
-
-### Ratings and reviews
-
-Ratings/reviews require a proven eligible source interaction and attributed actor/target, bounded edit/retry behavior, moderation/dispute semantics and canonical aggregate derivation. Ratings never become authorization or assignment truth.
-
-### Notifications and communications
-
-The originating domain owns the event/business meaning. Notification inbox/preferences/delivery semantics are governed separately from provider adapters, and deployable apps own native route translation. Delivery failure or duplication must not repeat/reverse the source-domain mutation unless Product explicitly defines that coupling.
-
-### Media and object storage
-
-Business object association/access is owned by the relevant domain. Binary object storage/presigning/proxying is technical infrastructure and never an independent Product truth owner. Asset validation, authorization, integrity and orphan/reference recovery are required where media is material.
-
-### Derived search and analytics
-
-Search/indexes and analytics are derived/query capabilities. They may improve discovery/operations but cannot authorize mutations, publish ineligible content, write transactional truth or replace WLT financial authority. Freshness/provenance/no-data behavior is explicit.
-
-### WLT pricing, collateral and penalties
-
-WLT owns authoritative financial quote/allocation, collateral/exposure and provider penalty monetary truth. Pricing evidence is server-verifiable and bounded; captain collateral remains distinct from available/COD/debt state; penalties/reversals are governed ledger/debt events rather than manual balance edits.
-
-## 6. Multi-surface capability semantic envelope
-
-Every material durable capability defines, when applicable:
-
-1. problem statement, affected actors, frequency/severity when governed;
-2. required outcome, target state, primary success measure and guardrails when governed;
-3. actor responsibilities plus permitted/forbidden actions;
-4. canonical owner(s), writer(s) and cross-domain boundaries;
-5. required surfaces/consumers and explicit exclusions with reasons;
-6. preconditions, trusted context and object-scope requirements;
-7. durable states, legal transitions and forbidden transitions;
-8. canonical mutation authority and committed readback semantics;
-9. cross-surface/service handoffs and durable event/contract meaning;
-10. canonical data ownership and material persistence/migration implications;
-11. idempotency/concurrency/retry/replay semantics;
-12. external-provider unknown-result/reconciliation/recovery semantics;
-13. security/privacy/financial restrictions;
-14. loading/empty/offline/forbidden/conflict/partial/error/recovery semantics;
-15. acceptance criteria, failure states and negative invariants;
-16. bounded unresolved durable decisions that genuinely require authorization.
-
-Representation-only cleanup must preserve every still-valid semantic statement. Formatting/structure change is not permission to drop Product meaning.
+The capability semantic-envelope schema and capability-admission law live in `CAPABILITIES.md`. Individual capability meaning lives only in `capabilities/**`. Cross-capability sequence/handoff meaning lives in `JOURNEYS.md`.
 
 ## 7. Product-to-engineering boundary
 
-This PRD and its routed capability/journey owners define durable Product outcomes and invariants. Durable implementation architecture belongs to the applicable `governance/architecture/**` and `governance/policies/**` owners. Execution, evidence and closure belong exclusively to the Orchestrator. This PRD does not define campaign sequencing, closure gates or implementation-state truth.
+Product semantics do not define repository execution order, current implementation state, verification procedure or closure.
 
+- durable architecture belongs to the applicable `governance/architecture/**` owner;
+- engineering constraints belong to the applicable `governance/policies/**` owner;
+- current implementation/configuration/runtime truth belongs to executable source;
+- execution, recovery, evidence and closure belong exclusively to the Orchestrator.
 
-## 8. UX and accessibility baseline
+## 8. Experience, accessibility, privacy and security routing
 
-All required surfaces provide truthful, actionable state. No toast/local optimistic state may stand in for committed readback where server truth is required.
+Durable UX, RTL, localization, accessibility and Design-System meaning belong to `EXPERIENCE-AND-DESIGN.md`.
 
-Applicable surfaces support Arabic/RTL, localization, accessibility semantics, keyboard/focus behavior on web, large-text/device constraints on mobile, and recovery from weak/offline network conditions. Visual polish cannot override correctness, ownership, authorization, or persisted state.
+Security/privacy controls belong to `../policies/security.md`; data lifecycle/migration rules belong to `../policies/data-and-migrations.md`; frontend/client engineering behavior belongs to `../policies/frontend-and-client.md`.
 
-## 9. Data and privacy baseline
+This PRD requires truthful and actionable user/operator outcomes but does not duplicate those specialized policies.
 
-PII is minimized, scoped, redacted and retained according to current policy. Secrets, credentials, tokens, payment instruments and private provider payloads are never ordinary product telemetry or general audit content. Audit/evidence uses stable identifiers and correlation metadata sufficient for investigation without copying unnecessary sensitive data.
+## 9. Product acceptance semantics
 
-## 10. Product acceptance semantics
+A Product outcome is semantically acceptable only when it conforms to its current PRD orientation plus every applicable capability, journey, financial/commercial, experience and policy owner.
 
-Product acceptance means the implemented outcome conforms to the current durable Product/capability/journey meaning. The evidence and closure procedure for a concrete candidate is not owned here; it is resolved through the applicable engineering policies and the Orchestrator.
+Concrete candidate evidence, release authorization and closure are not owned by this PRD.
