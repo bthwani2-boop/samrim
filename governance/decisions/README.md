@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 ARTIFACT_CLASS: DURABLE_DECISION_RATIONALE
-SEMANTIC_OWNER: governance/decisions/
+SEMANTIC_OWNER: governance/decisions/README.md
 EXECUTION_AUTHORITY: NONE
 
 ## Purpose
