@@ -518,6 +518,7 @@ if (!foundationCloseScript.includes('[string] $ExpectedBranch = ""')) failures.p
 if (!foundationLocalScript.includes('[string] $ExpectedBranch = ""')) failures.push("local foundation proof branch check is not invocation-driven");
 if (!foundationLocalScript.includes('$verificationBranch = if ([string]::IsNullOrWhiteSpace($ExpectedBranch))')) failures.push("local foundation proof does not derive verification branch from current candidate");
 if (!foundationLocalScript.includes("pnpm run knowledge:verify:all")) failures.push("local foundation proof does not run the complete knowledge verification suite");
+if (!foundationLocalScript.includes("pnpm run docs:verify:all")) failures.push("local foundation proof does not run the complete documentation parity suite");
 
 for (const forbiddenRegistryToken of ["expectedApps", "expectedServices", "expectedPackages", "CANONICAL_APPS", "CANONICAL_SERVICES", "CANONICAL_PACKAGES"]) {
   if (repositoryStructureGuard.includes(forbiddenRegistryToken)) {
@@ -565,6 +566,8 @@ for (const adapterPath of agentAdapterPaths) {
     failures.push(adapterPath + " claims Product authority");
   }
 }
+if (packageJson.scripts?.["docs:verify-config-parity"] !== "node tools/dev/verify-doc-config-parity.mjs") failures.push("package.json missing docs:verify-config-parity");
+if (packageJson.scripts?.["docs:verify:all"] !== "pnpm run docs:verify-command-parity && pnpm run docs:verify-config-parity") failures.push("package.json missing docs:verify:all");
 if (packageJson.scripts?.["knowledge:query"] !== "node tools/dev/query-knowledge.mjs") failures.push("package.json missing canonical knowledge:query command");
 if (packageJson.scripts?.["knowledge:verify:all"] !== "pnpm run knowledge:verify && pnpm run knowledge:verify-references && pnpm run knowledge:verify-agent-contract") {
   failures.push("package.json missing canonical knowledge:verify:all command");
@@ -593,6 +596,7 @@ if (!baselineGuard.includes("Retired bthwani-refoundation package must not exist
   failures.push("baseline guard does not forbid retired refoundation package");
 }
 for (const command of [
+  "node tools/dev/verify-doc-config-parity.mjs",
   "node tools/dev/verify-knowledge-system.mjs",
   "node tools/dev/verify-knowledge-references.mjs",
   "node tools/dev/verify-agent-knowledge-contract.mjs",
