@@ -1,364 +1,188 @@
 # Scope, Authority, Exact-Head and Recovery Rules
 
-OWNER_ROLE: BRANCH_SCOPE_EXACT_HEAD_RECOVERY_STOP_STATES
+OWNER_ROLE: BRANCH_SCOPE_RECOVERY_BLOCKERS_PARALLEL_AUTHORITY
 AUTHORITY_ASSIGNED_BY: 00-ORCHESTRATOR.md
 SELF_CERTIFICATION: FORBIDDEN
-LOAD_TRIGGER: ENTRY_RESUME_SCOPE_AUTHORITY_BEFORE_BRANCH_OR_SCOPE_ACTION
+LOAD_TRIGGER: ENTRY_RESUME_OR_SCOPE_CHANGE
 
-## 1. Invocation branch law
+## 1. Mutation authority
 
-```text
-MUTABLE_AUTHORITY = INVOCATION_BRANCH
-```
+Only the invocation repository/branch is mutable unless the human explicitly expands scope.
 
-Only the repository/branch supplied by the current invocation is mutable unless explicit human authorization expands scope.
+~~~text
+TARGET BRANCH = MUTATION AUTHORITY
+DONOR / OTHER BRANCHES = READ-ONLY FORENSIC INPUT BY DEFAULT
+FORCE PUSH / BLIND MERGE / BLIND CHERRY-PICK = FORBIDDEN
+~~~
 
-Cross-branch merge, rebase, autosync, blind cherry-pick of historical structure and force-push are forbidden by default. A normal fast-forward update of the invocation branch is allowed when the expected head is still current.
+A fast-forward write is valid only from the expected current HEAD.
 
-## 1A. Product-breadth authority
+## 2. Product-breadth authority
 
-Execution breadth is supplied by invocation and is independent of `COMPLETION_LEVEL`.
+~~~text
+PRODUCT_BREADTH=ACTIVE_SLICE | FULL_TARGET
+LEVEL_4 != FUTURE PRODUCT AUTHORIZATION
+~~~
 
-```text
-PRODUCT_BREADTH=ACTIVE_SLICE  # default when omitted
-PRODUCT_BREADTH=FULL_TARGET   # explicit only
+`ACTIVE_SLICE` authorizes the named/current semantic outcome plus only its real causal prerequisites and complete affected cone.
 
-TARGET_PRODUCT_VISION != AUTHORIZED_PRODUCT_SCOPE
-LEVEL_4 != AUTHORIZATION_TO_BUILD_ALL_FUTURE_FEATURES
-```
+The affected cone may include:
 
-For `ACTIVE_SLICE`, `ACTIVE_PRODUCT_SLICE` names the currently authorized semantic outcome/increment. The effective mutation scope may expand only to its real structural prerequisites, canonical owners/writers, affected data/contracts/runtime, required consumers/readbacks, security/financial invariants actually exercised, and regression repairs exposed by the change.
+- canonical owner/writer/data/contract/runtime;
+- required consumers/readbacks/surfaces;
+- security/privacy/financial invariants actually exercised;
+- migration/cutover dependencies;
+- regressions caused by shared owners;
+- structural prerequisites without which the authorized outcome cannot be canonical.
 
-Unrelated future capabilities remain outside executable scope until explicitly activated. Their absence is not a blocker and must not be filled with speculative placeholders.
+Unrelated future capabilities and unrelated repository cleanup remain outside mutation scope.
 
-For `FULL_TARGET`, the complete current governed target is authorized and repository-wide fixed-point rules apply.
-
-## 2. Live tree vs forensic history
-
-```text
-CURRENT_HEAD = CANONICAL_PRESENT
-GIT_HISTORY = FORENSIC_PAST
-```
-
-The live tree is not an archive.
-
-```text
-DO_NOT_KEEP_OBSOLETE_MATERIAL_FOR_POSSIBLE_FUTURE_REFERENCE
-DO_NOT_MOVE_LOSERS_TO_ARCHIVE_LEGACY_HISTORY_BACKUP_UNUSED
-DO_NOT_PRESERVE_DEAD_CODE_FOR_EXPLANATION
-```
-
-If previously committed material is needed later, recover it through commit history, parent blobs, diffs and historical refs.
-
-```text
-GIT_HISTORY_IS_THE_ARCHIVE
-CURRENT_HEAD_IS_NOT_AN_ARCHIVE
-```
-
-Historical branches and old commits are forensic only. They may recover required truth or explain past behavior; they never impose topology or preservation rights.
+`FULL_TARGET` explicitly authorizes repository-wide governed convergence.
 
 ## 3. Exact-head discipline
 
 Before every coherent mutation batch:
 
-```text
-RESOLVE_REMOTE_CURRENT_BRANCH
-→ RECORD_EXPECTED_CURRENT_BRANCH_SHA
-→ DIAGNOSE_AGAINST_THAT_SHA
-```
+~~~text
+RESOLVE LIVE TARGET HEAD
+→ RECORD EXPECTED SHA
+→ DIAGNOSE AGAINST THAT SHA
+→ RECHECK SHA IMMEDIATELY BEFORE WRITE
+~~~
 
-Immediately before write:
+Unexpected movement stops only the pending unsafe write:
 
-```text
-RESOLVE_ACTUAL_CURRENT_BRANCH_SHA
-```
+~~~text
+INSPECT FOREIGN DELTA
+→ INVALIDATE AFFECTED EVIDENCE
+→ RECONSTRUCT OPEN UNIT
+→ RE-PIN
+→ CONTINUE
+~~~
 
-If the head moved unexpectedly:
+## 4. Scope-directed accounting
 
-```text
-STOP_THE_PENDING_WRITE_ONLY
-→ INSPECT_DELTA
-→ INVALIDATE_AFFECTED_EVIDENCE
-→ RECONSTRUCT_ACTIVE_UNIT_STATE
-→ RE_PIN
-→ CONTINUE_FROM_THE_CORRECT_FRONTIER
-```
+Do not require a repository-wide census for every active slice.
 
-Head movement does not authorize campaign idleness or restart from zero.
+Start with the authorized outcome and evidence-derived affected cone. Expand the census only when a finding proves a higher/shared/systemic dependency.
 
-## 4. All-tracked hostile accounting
+For explicit `FULL_TARGET` or a proven repository-wide structural root, repository-wide accounting is appropriate.
 
-```text
-TRACKED_ARTIFACT_DEFAULT=ACCOUNT_REQUIRED
-CURRENT_CONTAINER_DEFAULT=DOES_NOT_SURVIVE_UNLESS_PROVEN_CANONICAL
-```
+~~~text
+ACTIVE_SLICE → MATERIAL CAUSAL CONE ACCOUNTING
+SYSTEMIC ROOT → ROOT'S COMPLETE AFFECTED CONE
+FULL_TARGET   → REPOSITORY-WIDE ACCOUNTING
+~~~
 
-Every tracked line/symbol/file/directory/package/workspace/service/database object/migration/contract/generated artifact/runtime registration/config/workflow/tool/doc/governance artifact/test/fixture/dependency/top-level surface is in scope.
+A tracked artifact outside the current cone is neither “proven good” nor automatically a blocker.
 
-`NONMATERIAL` requires positive proof. `KEEP_PROVEN` requires positive proof.
+## 5. Survival and legacy law
 
-A surviving container must prove as applicable:
+Inside the affected cone, a surviving artifact must have a current required responsibility, correct owner/location/boundary and no better canonical consolidation.
 
-```text
-REQUIRED
-SEMANTICS_CORRECT
-UNIQUE_COHESIVE_RESPONSIBILITY
-CANONICAL_OWNER
-CANONICAL_WRITER_OR_DERIVED_ROLE
-CANONICAL_LOCATION
-CANONICAL_BOUNDARY
-NON_DUPLICATIVE
-NON_SHADOW
-NO_BETTER_CONSOLIDATION
-NO_OBSOLETE_COMPATIBILITY
-REQUIRED_BY_CANONICAL_BASELINE
-```
+A proven loser may remain only while actively required for truth extraction, migration, compatibility with a real live consumer or safe cutover.
 
-## 5. Known-garbage survival law
+~~~text
+LAST REQUIRED DEPENDENCY ENDS → DELETE LOSER
+HISTORY/EXPLANATION ONLY       → USE GIT HISTORY
+~~~
 
-```text
-KNOWN_GARBAGE_SURVIVAL=FORBIDDEN
-KNOWN_LOSING_CONTAINER_SURVIVAL=FORBIDDEN
-KNOWN_DEAD_ARTIFACT_SURVIVAL=FORBIDDEN
-KNOWN_DEFERRED_STRUCTURAL_GARBAGE=FORBIDDEN
-```
+## 6. Structural prerequisite law
 
-A proven loser may remain temporarily only when it is an active, explicit dependency of truth extraction, migration or safe cutover.
+Structural work is pulled forward only when it is causally required.
 
-```text
-LAST_REQUIRED_DEPENDENCY_ENDS
-→ DELETE_LOSER_NOW
-```
+Do not defer a proven prerequisite merely because it looks “infrastructure”, and do not force unrelated structural cleanup before a Product root.
 
-The following are not treatments:
+A structural finding joins the current authorized cone when at least one is true:
 
-```text
-CLASSIFIED
-MAPPED
-CLUSTERED
-ASSIGNED_TO_ROOT
-RENAMED
-MOVED
-MERGED
-DOCUMENTED
-DEPRECATED
-```
+- it blocks the canonical owner/path;
+- it creates duplicate/shadow authority used by the slice;
+- it affects the same mutable writer/data/contract/runtime;
+- it contaminates migration/cutover/evidence for the slice;
+- it is an ancestor/root whose continued existence makes the slice noncanonical.
 
-## 6. Stage-B deferral isolation law
+Otherwise it remains outside the active slice unless `FULL_TARGET` is authorized.
 
-Structural garbage cannot be sent to Stage B merely because it is local or inconvenient.
+## 7. Ephemeral execution state
 
-Stage-B deferral requires positive proof of all applicable isolation conditions:
+Maintain enough transient state to recover and force the next action:
 
-```text
-CONTAINER_AND_ANCESTORS_ARE_CANONICAL
-NO_CROSS_ROOT_AUTHORITY
-NO_SHARED_MUTABLE_WRITER
-NO_SHARED_RUNTIME_EFFECT
-NO_REPOSITORY_TOPOLOGY_EFFECT
-NO_MIGRATION_EPOCH_EFFECT
-NO_CONTRACT_GENERATED_LINEAGE_EFFECT
-NO_VERIFICATION_CONTAMINATION
-NO_HIGH_FAN_IN_COMPENSATION
-NO_PARENT_PRE_ROOT_CATASTROPHE
-NO_MATERIAL_ROOT_TAX
-NO_STRUCTURAL_DEMOLITION_TARGET
-```
-
-Without this proof, the obligation remains A0/A1 structural work.
-
-## 7. Continuous-engagement authorization boundary
-
-This file does not own no-idle movement or commit/unit transition behavior; those are owned by `05-EXECUTION-PLAYBOOK.md`.
-
-Its sole responsibility here is authorization duration: the invocation's Product scope remains the executable authority until either its Level-4 fixed point is proven or a legitimate stop condition in §12 prevents safe forward execution. Reaching a fixed point for `ACTIVE_SLICE` never authorizes an adjacent future Product slice.
-
-
-## 8. Runtime-state authorization boundary
-
-`05-EXECUTION-PLAYBOOK.md` is the sole owner of the exact runtime-state vocabulary and no-idle movement state machine. This file does not maintain a second state list.
-
-This owner decides only whether the current authorized scope may continue or whether a legitimate stop condition in §12 blocks safe forward execution. Any state emitted by `05` must remain inside the invocation's authorized Product scope and obey those stop conditions.
-
-
-## 9. Mandatory ephemeral execution control state
-
-During execution, maintain an ephemeral control state sufficient to force the next action:
-
-```text
+~~~text
 EXACT_HEAD_SHA
-CAMPAIGN_ENGAGED
 PRODUCT_BREADTH
 ACTIVE_PRODUCT_SLICE
-AUTHORIZED_PRODUCT_SCOPE
-CURRENT_STAGE
+AUTHORIZED_SCOPE
+CURRENT_CAUSAL_ROOT
 CURRENT_UNIT
 UNIT_STATE
 RECOVERY_FRONTIER
 NEXT_REQUIRED_ACTION
 CURRENT_BLOCKER_OR_NONE
 VALID_EVIDENCE_STATE
-```
+~~~
 
-This is not a durable campaign ledger and must not become a second authority.
+This state is ephemeral and must not become a durable campaign ledger.
 
-If `CURRENT_BLOCKER_OR_NONE=NONE`, `NEXT_REQUIRED_ACTION` must be executed rather than merely reported.
+## 8. Recovery priority
 
-## 10. Recovery and open-unit priority
+Reconstruct from live HEAD, commit graph, material diffs, current reachability and nonstale evidence.
 
-Recovery reconstructs from:
+Open units are:
 
-```text
-LIVE_REMOTE_CURRENT_BRANCH
-+ COMMIT_GRAPH
-+ MATERIAL_DIFFS
-+ CURRENT_REACHABILITY
-+ NONSTALE_EVIDENCE
-```
+- `OPEN_CRITICAL` — partial authority/data/runtime/consumer cutover or other unsafe mixed state; normally resume first.
+- `OPEN_SAFE_CHECKPOINT` — recoverable state with no unsafe mixed authority; may be preempted by a proven higher prerequisite/root.
 
-An open unit is classified as:
+## 9. Stop states
 
-```text
-OPEN_CRITICAL
-OPEN_SAFE_CHECKPOINT
-```
+Mutation may stop only for:
 
-`OPEN_CRITICAL` includes partial authority, data, runtime or consumer cutover and normally resumes first.
-
-`OPEN_SAFE_CHECKPOINT` has no dangerous mixed-authority state and may be preempted by a proven safely executable dominant pre-root catastrophe.
-
-A checkpoint exists only so execution can recover if forcibly interrupted.
-
-## 11. Continuation authorization after unit closure
-
-When verification emits a closed-unit result, `05-EXECUTION-PLAYBOOK.md` owns the post-closure movement sequence. This file contributes only scope authorization:
-
-```text
-NEXT_FRONTIER_INSIDE_AUTHORIZED_PRODUCT_SCOPE → MAY_CONTINUE
-CAUSAL_PREREQUISITE_OR_REGRESSION_INSIDE_AFFECTED_CONE → MAY_CONTINUE
-ADJACENT_FUTURE_PRODUCT_SLICE → NOT_AUTHORIZED_BY_CONTINUATION
-```
-
-No human confirmation is required for derivable work already authorized by the invocation. Activating a new future Product slice still requires explicit authorization.
-
-
-## 12. Stop states
-
-Only these may stop mutation:
-
-```text
+~~~text
 UNRESOLVED_IRREVERSIBLE_DATA_RISK
 UNRESOLVED_EXTERNAL_LIVE_CONSUMER_CONTRACT
-UNKNOWN_CURRENT_BRANCH_HEAD_MOVEMENT_NOT_YET_RECONCILED
+UNRECONCILED_TARGET_HEAD_MOVEMENT
 MISSING_REQUIRED_HUMAN_PRODUCT_DECISION
-MISSING_REQUIRED_SECRET_CREDENTIAL_ENVIRONMENT
-BLOCKED_UNKNOWN_THAT_CAN_CHANGE_CANONICAL_TARGET_OR_SAFE_CUTOVER
-EXTERNAL_PROVIDER_BLOCKER_THAT_PREVENTS_REQUIRED_PROOF_OR_CUTOVER
-```
+MISSING_REQUIRED_SECRET_CREDENTIAL_OR_ENVIRONMENT
+UNKNOWN_THAT_CAN_CHANGE_CANONICAL_TARGET_OR_SAFE_CUTOVER
+EXTERNAL_PROVIDER_BLOCKER_PREVENTING_REQUIRED_PROOF_OR_CUTOVER
+~~~
 
-Large deletion, many callers, extensive migration, unfamiliar structure, session length, token pressure, commit boundaries, unit boundaries or stage boundaries are not stop states.
+Large deletion, many callers, difficult migration, token/session length, commit boundaries and unfamiliar code are not stop states.
 
-## 13. Compliance-failure recovery boundary
+## 10. Continuation authorization
 
-Execution-law compliance findings are detected/closed by `04-VERIFY-REDIAGNOSE-CLOSE.md`. When such a finding invalidates current scope/control state, this owner reconstructs the authorized scope, blocker state, open-unit classification and recovery frontier. `05` owns the resulting movement; this file does not maintain a second compliance procedure.
+After a unit closes:
 
+~~~text
+NEXT ROOT INSIDE AUTHORIZED SCOPE → MAY CONTINUE
+REQUIRED PREREQUISITE/REGRESSION  → MAY CONTINUE
+ADJACENT FUTURE PRODUCT SLICE     → NOT AUTHORIZED
+~~~
 
-## 14. Maximum-safe parallel mutation authority
+No human confirmation is required for derivable work already authorized.
 
-Parallelism is controlled by semantic mutation cones, not by a blanket single-agent prohibition.
+## 11. Parallel mutation authority
 
-```text
-NON_OVERLAPPING_MUTATION_CONES → PARALLEL_ALLOWED
-OVERLAPPING_AUTHORITY → SERIALIZE
-SHARED_DB/CONTRACT/RUNTIME/EXPORT_OWNER → ONE_ACTIVE_WRITER
-ONE_INTEGRATION_AUTHORITY_PER_TARGET_BRANCH
-EACH_MUTATING_UNIT → EXACT_BASE_SHA
-FOREIGN_DELTA → RECONCILE_BEFORE_WRITE_OR_INTEGRATION
-BLIND_MERGE/BLIND_CHERRY_PICK/FORCE_UPDATE → FORBIDDEN
-```
+Parallel mutation is allowed only for proven non-overlapping mutation cones.
 
-Read-only evidence collection may run at maximum safe parallelism. Mutating work may also run in parallel only when affected cones are proven non-overlapping and integration ownership is explicit.
+~~~text
+NON_OVERLAPPING CONES → PARALLEL ALLOWED
+SHARED MUTABLE OWNER/DB/CONTRACT/RUNTIME/EXPORT → SERIALIZE
+ONE INTEGRATION AUTHORITY PER TARGET BRANCH
+EACH MUTATING UNIT → EXACT BASE SHA
+FOREIGN DELTA → RECONCILE BEFORE WRITE/INTEGRATION
+~~~
 
-```text
-PARALLELISM_MUST_NOT_CREATE_SECOND_WRITERS
-PARALLELISM_MUST_NOT_CREATE_PARTIAL_CUTOVER
-PARALLELISM_MUST_NOT_INVALIDATE_UNRECONCILED_EVIDENCE
-MAX_ACTIVE_OVERLAPPING_MATERIAL_MUTATION_UNITS=1
-ONE_ACTIVE_UNIT != SMALL_UNIT
-CONTEXT_WINDOW != ARCHITECTURE_BOUNDARY
-```
+Read-only evidence acquisition may run at maximum safe parallelism.
 
-## 15. Dual-repository authority for clean-target reconstruction
+## 12. Donor/research authority
 
-When a donor is supplied:
+When a donor exists:
 
-```text
-TARGET_REPOSITORY/BRANCH = MUTATION_AUTHORITY
-DONOR_REPOSITORY/REF = READ_ONLY_FORENSIC_AUTHORITY_ONLY
-DONOR_WRITES = FORBIDDEN
-TARGET_FORCE_PUSH = FORBIDDEN
-TARGET_FAST_FORWARD_WRITE = ALLOWED_ONLY_FROM_EXPECTED_HEAD
-```
+~~~text
+TARGET = MUTATION AUTHORITY
+DONOR  = READ-ONLY FORENSIC EVIDENCE
+~~~
 
-Evidence precedence is class-specific: current human Product/System decisions and durable target Governance own intended meaning; executable target state owns current implementation truth; donor current/history provides candidate value and forensic evidence only.
+Inspect only donor current/history capable of changing required truth for the authorized scope unless `FULL_TARGET` is explicit.
 
-The donor corpus must include material current-tree and historical evidence when history can contain truth removed by later simplification. A later donor commit does not automatically supersede an earlier semantic atom unless the replacement or rejection is proven.
-
-## 16. Research, evidence acquisition and foreign-delta discipline
-
-A material unknown must be classified before it can block or be ignored:
-
-```text
-DERIVABLE_FROM_TARGET
-DERIVABLE_FROM_DONOR_CURRENT
-DERIVABLE_FROM_DONOR_HISTORY
-REQUIRES_EXTERNAL_TECHNICAL_RESEARCH
-REQUIRES_HUMAN_PRODUCT_DECISION
-```
-
-External research may resolve technical/standard/provider facts but may not invent BThwani Product truth.
-
-For every material proof claim record conceptually:
-
-```text
-CAPABILITY_OR_CLAIM
-→ REQUIRED_EVIDENCE
-→ ACQUISITION_PATH
-→ PROOF_LIMIT
-```
-
-If target head moves, classify the foreign delta, invalidate only affected evidence, re-pin and continue. Never discard concurrent work merely to restore a previous expected head.
-
-## 17. Objective and focus routing
-
-The target vision remains project-wide, but mutation authority is bounded by the invocation's Product breadth. An active slice is not permission to ignore higher prerequisites or regressions, and full target vision is not permission to auto-expand an active slice.
-
-```text
-PROJECT_FRAME = FULL BTHWANI TARGET VISION
-PRODUCT_BREADTH = ACTIVE_SLICE | FULL_TARGET
-ACTIVE_PRODUCT_SLICE = CURRENT AUTHORIZED SEMANTIC INCREMENT WHEN PRODUCT_BREADTH=ACTIVE_SLICE
-OBJECTIVE = CURRENT SEMANTIC OUTCOME / NEXT DERIVABLE ROOT INSIDE AUTHORIZED PRODUCT SCOPE
-PRIMARY_FOCUS = LENS PRIORITY, NOT SCOPE EXCLUSION
-EFFECTIVE_SCOPE = AUTHORIZED PRODUCT SLICE + COMPLETE AFFECTED CONE + REQUIRED HIGHER PREREQUISITES + REQUIRED CONSUMERS + AFFECTED PRIOR REGRESSION
-```
-
-`OBJECTIVE=AUTO/NEXT` means derive the next highest executable frontier **inside the current authorized Product scope** from current evidence. It never activates the next deferred Product capability by itself. A named objective may prioritize a capability/root but cannot exclude a higher prerequisite, shared writer, contract/data/runtime effect, required surface, security/financial invariant or regression cone that the authorized slice materially requires.
-
-`PRIMARY_FOCUS=AUTO` loads every materially relevant focus owner. A named focus only orders diagnostic attention; it never permits skipping another affected focus.
-
-## 18. Research mode routing
-
-```text
-RESEARCH=AUTO
-→ derive from target/donor first
-→ use external research only when a material technical/standard/provider fact cannot be resolved internally and external access is available
-
-RESEARCH=INTERNAL_ONLY
-→ target + donor current/history only
-→ unresolved external technical fact remains explicit proof limit/blocker when material
-
-RESEARCH=EXTERNAL_ALLOWED
-→ external primary/official sources may be used for technical/standard/provider facts
-```
-
-External research cannot create BThwani Product truth, override a current human Product decision, or justify adopting a dependency/provider without the applicable target/governance gate.
+External research may resolve technical/standard/provider facts. It may not invent BThwani Product truth or authorize a new dependency/provider without applicable Governance.
