@@ -376,7 +376,7 @@ await expect("GET", "/auth/session", 401, { token: reenabledCaptainPair.accessTo
 await expect("GET", "/auth/session", 401, { token: resetOperatorPair.accessToken });
 
 const blockedClientChallenge = await requestOtp(sharedPhone, "client");
-await expect("POST", "/auth/activate", 403, {
+await expect("POST", "/auth/activate", 401, {
   body: {
     phone: sharedPhone,
     role: "client",
