@@ -81,6 +81,26 @@ const cases = [
     include: ["SOURCE       = CURRENT EXECUTABLE IMPLEMENTATION / CONFIGURATION / RUNTIME"],
   },
   {
+    id: "governance_reconstruction_completeness",
+    source: "governance/GOVERNANCE.md",
+    include: ["Developer reconstruction acceptance", "UNACCOUNTED_MATERIAL_PRODUCT_RESPONSIBILITIES=0", "UNMAPPED_REQUIRED_FAILURE/RECOVERY_SEMANTICS=0"],
+  },
+  {
+    id: "rollout_fail_closed_and_effective_readback",
+    source: "governance/product/capabilities/access/platform-sovereign-control-plane.md",
+    include: ["EMPTY_OR_UNKNOWN_TARGET_SELECTOR = FAIL_CLOSED", "CONTROL_PLANE_READBACK != EFFECTIVE_CONSUMER_APPLICATION", "ROLLBACK_MUST_NOT_OVERWRITE_NEWER_REVISION"],
+  },
+  {
+    id: "anti_forgetting_candidate_proof",
+    source: "tools/prompting/bthwani-orchestrator/templates/candidate-proof-matrix.md",
+    include: ["Complete affected-cone accounting", "Full binding chain", "Supporting-value accounting", "UNACCOUNTED_FAILURE_UNKNOWN_RECOVERY=0"],
+  },
+  {
+    id: "donor_semantic_zero_loss",
+    source: "tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md",
+    include: ["Semantic-atom accounting record", "ACTIVE_SLICE_DONOR_CONE_ACCOUNTING=COMPLETE", "UNINSPECTED_DONOR_HISTORY_MATERIAL_TO_ACTIVE_SLICE=0"],
+  },
+  {
     id: "no_live_adr_tree",
     source: "governance/GOVERNANCE.md",
     include: ["No live ADR tree"],
