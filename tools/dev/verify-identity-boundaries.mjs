@@ -288,6 +288,8 @@ for (const file of [
 
 const directAuthPattern = /["'`]\/(?:auth|internal\/actor|internal\/actors)\//;
 for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
+  const pageBody = read("apps/" + app + "/app/index.tsx");
+  if (pageBody.includes("sessionSurface")) failures.push(app + " contains legacy sessionSurface residue in deployable app");
   for (const file of ["apps/" + app + "/src/identity.ts", "apps/" + app + "/app/index.tsx"]) {
     const body = read(file);
     if (directAuthPattern.test(body)) failures.push(file + " bypasses canonical Identity client with direct auth URL");

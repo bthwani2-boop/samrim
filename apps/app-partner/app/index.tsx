@@ -90,7 +90,7 @@ export default function IdentityGate() {
         <Text style={styles.title}>بثواني الشريك</Text>
         <Text style={styles.status}>الهوية مفعلة</Text>
         <Text style={styles.muted}>الشريك: {state.identity.subject}</Text>
-        <Text style={styles.muted}>السطح: {state.identity.sessionSurface}</Text>
+        <Text style={styles.muted}>السطح: {state.identity.surface}</Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable disabled={busy} onPress={logout} style={styles.primaryButton}>
           <Text style={styles.primaryButtonText}>{busy ? "جارٍ التنفيذ…" : "تسجيل الخروج"}</Text>
