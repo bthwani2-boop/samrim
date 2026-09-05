@@ -10,7 +10,6 @@ const platform = read("governance/project/PLATFORM.md");
 const systemContext = read("governance/architecture/SYSTEM-CONTEXT.md");
 const topology = read("governance/architecture/REPOSITORY-TOPOLOGY.md");
 const governanceIndex = read("governance/GOVERNANCE.md");
-const campaignPlan = read("tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md");
 const prd = read("governance/product/PRD.md");
 const financialModel = read("governance/product/FINANCIAL-MODEL.md");
 const glossary = read("governance/project/GLOSSARY.md");
@@ -18,6 +17,7 @@ const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.
 const appsTarget = read("tools/prompting/bthwani-refoundation/targets/apps-and-composition.md");
 const dshWltTarget = read("tools/prompting/bthwani-refoundation/targets/dsh-wlt.md");
 const designTarget = read("tools/prompting/bthwani-refoundation/targets/design-system-and-packages.md");
+const refoundationEntrypoint = read("tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md");
 const agentRouter = read("AGENTS.md");
 const repositoryReadme = read("README.md");
 const contributing = read("CONTRIBUTING.md");
@@ -155,7 +155,6 @@ for (const token of ["ALL_MATERIAL_JOURNEY_STEPS_CLASSIFIED=PASS","UNOWNED_MATER
 }
 if (!topology.includes("SEMANTIC_OWNER: governance/architecture/REPOSITORY-TOPOLOGY.md")) failures.push("durable topology owner missing");
 if (!governanceIndex.includes("architecture/REPOSITORY-TOPOLOGY.md")) failures.push("governance index missing durable repository-topology owner");
-if (campaignPlan.includes("## Current durable-knowledge gaps to close")) failures.push("campaign plan still reports resolved responsibility families as open");
 if (systemContext.includes("explicitly admitted Platform Control are the primary bounded contexts")) failures.push("Platform Control service admission is assumed");
 if (!platform.includes("independent deployable-service admission remains conditional")) failures.push("Platform Control semantic/deployment split missing");
 
@@ -215,6 +214,24 @@ if (!agentRouter.includes("never infer `FULL_TARGET` from `LEVEL_4`")) failures.
 if (!agentRouter.includes("surface-specific feature UI belongs to the consuming app host by default")) failures.push("AGENTS.md missing app-host feature UI routing");
 if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(repositoryReadme)) failures.push("README hard-codes temporary branch a as active repository state");
 if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(contributing)) failures.push("CONTRIBUTING hard-codes temporary branch a as active repository state");
+
+
+const retiredPlanPath = "tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md";
+if (fs.existsSync(path.join(root, retiredPlanPath))) failures.push("temporary clean-reconstruction campaign plan remains in the live knowledge system");
+if (refoundationEntrypoint.includes("05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md")) failures.push("refoundation entrypoint still depends on the retired campaign plan");
+
+for (const scope of ["governance", "docs", "tools/prompting"]) {
+  const scopeDir = path.join(root, scope);
+  if (!fs.existsSync(scopeDir)) continue;
+  for (const file of collectMarkdown(scopeDir)) {
+    const rel = path.relative(root, file).split(path.sep).join("/");
+    if (rel === retiredPlanPath) continue;
+    const body = fs.readFileSync(file, "utf8");
+    if (body.includes("05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md")) {
+      failures.push("stale retired campaign-plan reference: " + rel);
+    }
+  }
+}
 
 if (failures.length) {
   console.error("KNOWLEDGE_SYSTEM_VERIFY=FAIL");
