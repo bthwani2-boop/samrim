@@ -8,6 +8,7 @@ const defaultEnv = fs.existsSync(path.join(root, "infra/local/compose/.env"))
   ? "infra/local/compose/.env"
   : "infra/local/compose/.env.example";
 const envFile = path.resolve(root, requestedEnv || defaultEnv);
+const runtimeRequestTimeoutMs = 30_000;
 
 function fail(message) {
   console.error("IDENTITY_RUNTIME_SEMANTICS=FAIL");
@@ -71,7 +72,7 @@ async function request(method, pathname, options = {}) {
       ...(options.headers || {}),
     },
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-    signal: AbortSignal.timeout(8_000),
+    signal: AbortSignal.timeout(runtimeRequestTimeoutMs),
   });
   const raw = await response.text();
   let body = null;
