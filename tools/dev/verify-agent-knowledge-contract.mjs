@@ -101,6 +101,16 @@ const cases = [
     include: ["Semantic-atom accounting record", "ACTIVE_SLICE_DONOR_CONE_ACCOUNTING=COMPLETE", "UNINSPECTED_DONOR_HISTORY_MATERIAL_TO_ACTIVE_SLICE=0"],
   },
   {
+    id: "failure_not_hidden_by_rerun",
+    source: "tools/prompting/bthwani-orchestrator/verify/evidence-falsification.md",
+    include: ["BLIND_RERUN_UNTIL_GREEN = FORBIDDEN", "FAILURE_SUPPRESSION/ALLOWLIST_TO_MANUFACTURE_GREEN = FORBIDDEN"],
+  },
+  {
+    id: "documentation_not_implementation_closure",
+    source: "tools/prompting/bthwani-orchestrator/verify/evidence-falsification.md",
+    include: ["No documentation-only closure", "IMPLEMENTATION_ROOT_EXISTS + ONLY_DOC/GOVERNANCE/PLAN_CHANGED → NOT_CLOSED"],
+  },
+  {
     id: "no_live_adr_tree",
     source: "governance/GOVERNANCE.md",
     include: ["No live ADR tree"],
