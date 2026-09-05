@@ -27,6 +27,16 @@ Dependency changes require exact package/version/license/security/maintenance re
 A red workflow is a finding to diagnose; do not suppress/allowlist a failing canonical invariant merely to recover green status.
 
 
+## Documentation parity
+
+Use:
+
+~~~text
+pnpm docs:verify:all
+~~~
+
+It combines command parity with executable configuration parity. Command parity rejects stale/nonexistent root commands; configuration parity checks pinned Node/pnpm/Go/PowerShell guidance, documented Identity configuration keys, and avoids hand-maintained local port claims.
+
 ## Knowledge-system verification
 
 For the knowledge layer, use:
