@@ -135,6 +135,15 @@ jobs:
         shell: bash
         run: node tools/dev/verify-knowledge-system.mjs
 
+      - name: Verify source-derived knowledge queries
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/dev/query-knowledge.mjs list capabilities | grep -Fx 'IDENTITY_ACTIVATION_SESSIONS'
+          node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'SOURCE=governance/product/CAPABILITIES.md'
+          node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'public_auth_state_enumeration'
+          node tools/dev/query-knowledge.mjs journey J1 | grep -F 'SOURCE=governance/product/JOURNEYS.md'
+
       - name: Verify Identity vertical boundaries
         shell: bash
         run: |
