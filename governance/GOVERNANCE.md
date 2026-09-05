@@ -73,6 +73,21 @@ A current implementation can reveal drift but does not silently redefine Product
 - `policies/documentation-and-knowledge.md` — Governance/Docs/agent authority partition, portability, semantic-parity preservation and knowledge verification.
 - `policies/delivery.md` — candidate identity, promotion, rollout, release, rollback and delivery evidence.
 
+## Semantic-owner boundary law
+
+A specialized owner may **route to** or **apply** another owner's rule, but it may not restate that rule as a second normative definition.
+
+```text
+ARCHITECTURE OWNER = durable structural/boundary meaning
+POLICY OWNER       = durable behavioral/quality constraint inside those boundaries
+PRODUCT OWNER      = durable Product outcome/state/invariant meaning
+ADR                = rationale/history for a decision, never the current mutable rule owner
+DOCS               = human guidance only
+ORCHESTRATOR       = execution/evidence/closure law only
+```
+
+If two current Governance files appear to define the same material rule, one must be reduced to routing/context or the ownership split must be made explicit. Agreement between duplicates does not make duplication acceptable.
+
 ## One-source laws
 
 ```text
