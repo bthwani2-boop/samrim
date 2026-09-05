@@ -1,15 +1,17 @@
 # BThwani Canonical Target Package — Entrypoint
 
-PACKAGE_REVISION: 10
+PACKAGE_REVISION: 11
 PACKAGE_CLASS: PORTABLE_BTHWANI_TARGET_SPECIALIZATION
-COMPLETION_TARGET: LEVEL_4_FIXED_POINT
+COMPLETION_TARGET: LEVEL_4_FIXED_POINT_FOR_AUTHORIZED_SCOPE; FULL_TARGET_ONLY_WHEN_EXPLICIT
 TEMPORARY_ARTIFACT: YES
 PROGRESS_LEDGER: FORBIDDEN
 SELF_DELETE_AFTER_VERIFIED_CLOSURE: REQUIRED
 
 ## 0. Authority
 
-This package defines what BThwani must converge to. It does not describe repository preparation/transfer and does not own execution state.
+This package defines what BThwani must converge to. It does not describe repository preparation/transfer and does not own execution state or Product-delivery breadth.
+
+The target modules describe the complete governed destination. The Orchestrator/invocation decides whether execution is an `ACTIVE_SLICE` or explicit `FULL_TARGET` campaign. Target-module presence never auto-activates future Product breadth.
 
 The sole execution/closure constitution is `tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md` plus its required owners.
 
@@ -116,7 +118,9 @@ Reference selection never grants authority or adoption rights.
 
 ## 8. Package lifetime
 
-After repository-wide Level-4 fixed point and after no execution/tool consumer depends on this package, delete the entire package and prove zero references. Git history is the archive.
+An active-slice Level-4 fixed point does **not** delete this target specialization because future slices still consume it.
+
+After explicit repository-wide `FULL_TARGET` Level-4 fixed point, and after no execution/tool consumer depends on this package, delete the entire package and prove zero references. Git history is the archive.
 
 ## 9. Donor-to-clean-target specialization
 
