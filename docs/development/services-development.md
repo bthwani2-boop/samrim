@@ -18,7 +18,11 @@ Before creating/changing a service capability:
 
 ## Service boundary
 
-A service owns stable business/system semantics and its durable data. Do not split one capability by actor surface or create a service for a vendor/mechanism name.
+A service owns stable business/system semantics, its durable data, canonical public contract and generated/public client lineage. Do not split one capability by actor surface or create a service for a vendor/mechanism name.
+
+Surface-specific feature UI remains in the consuming app. Do not add `services/<service>/frontend/app-*` or equivalent app-shaped presentation ownership merely because the service owns the underlying truth.
+
+Before a service is called journey-ready, its technical chassis must have real config validation, health/readiness, graceful shutdown, request/correlation/error conventions as actually adopted, and its private data/contract/migration lanes must be executable where required. Do not build a generic internal service framework solely to centralize these few conventions.
 
 ## Cross-service calls
 
