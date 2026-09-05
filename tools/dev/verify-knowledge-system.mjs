@@ -5,7 +5,7 @@ const root = path.resolve(import.meta.dirname, "../..");
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 const cap = read("governance/product/CAPABILITIES.md");
 const journeys = read("governance/product/JOURNEYS.md");
-const fixed = read("tools/prompting/bthwani-refoundation/closure/TARGET-FIXED-POINT.md");
+const fixed = read("tools/prompting/bthwani-orchestrator/templates/bthwani-target-qualification.md");
 const platform = read("governance/project/PLATFORM.md");
 const systemContext = read("governance/architecture/SYSTEM-CONTEXT.md");
 const topology = read("governance/architecture/REPOSITORY-TOPOLOGY.md");
