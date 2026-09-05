@@ -225,6 +225,14 @@ if (challenge.includes("EnsurePublicClientTx") || challenge.includes("IsPublicOt
 }
 const operatorStart = challenge.slice(challenge.indexOf("func (s *Service) StartOperatorLogin"), challenge.indexOf("func (s *Service) CompleteOperatorLogin"));
 if (operatorStart.includes("CreateTx(")) failures.push("operator password proof can create a session before MFA");
+for (const required of [
+  "expectedCredentialHash",
+  "currentHash",
+  "FOR UPDATE OF c,r,a",
+  "ConstantTimeHexEqual(currentHash,expectedCredentialHash)",
+]) {
+  if (!challenge.includes(required)) failures.push("operator MFA issuance is not fenced against credential rotation: " + required);
+}
 if (!challenge.includes("r.ActivatedAt==nil")) failures.push("managed activation does not enforce one-time enrollment state");
 
 const session = read("services/identity/backend/internal/session/service.go");
