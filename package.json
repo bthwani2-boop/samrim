@@ -42,7 +42,8 @@
     "repository:verify-hygiene": "node tools/dev/verify-structural-hygiene.mjs",
     "foundation:local:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-foundation-local.ps1",
     "knowledge:query": "node tools/dev/query-knowledge.mjs",
-    "knowledge:verify-agent-contract": "node tools/dev/verify-agent-knowledge-contract.mjs"
+    "knowledge:verify-agent-contract": "node tools/dev/verify-agent-knowledge-contract.mjs",
+    "knowledge:verify-references": "node tools/dev/verify-knowledge-references.mjs"
   },
   "devDependencies": {
     "nx": "23.2.0",
