@@ -18,11 +18,10 @@ Client, partner, captain, field and operator are roles/participations of a human
 - Current Identity role admission is represented directly as an actor↔role binding; no generic grant/entitlement/tenant/context engine is admitted without a proven requirement.
 - Identity owns actor identity, credentials, Identity-wide security eligibility, authentication/verification, high-level actor-role admission, activation proof, and role-scoped sessions.
 - A session carries one role only. Surface is derived from the canonical role→surface mapping rather than persisted as parallel truth.
-- Client may establish its own `client` role through the public OTP flow. Partner/captain/field roles must be provisioned first by DSH. Operator role is provisioned by Platform Control and authenticates with password, not OTP.
+- Client may establish its own `client` role only after phone verification and client-credential registration. Partner/captain/field roles must be provisioned first by DSH and use one-time managed activation. Operator role is provisioned by Platform Control and requires password plus a second factor before session creation.
 - The authenticated internal-service credential determines the service principal server-side; a caller-name header does not grant service identity.
 - DSH owns current client/partner/captain/field operational participant state, affiliation, eligibility, assignment, partner/store membership and business authorization scopes.
 - WLT owns financial truth.
-- Operator Context remains a distinct project concept when a capability proves it, but Identity does not persist or invent a generic `operator_context_id` merely to simulate tenancy/isolation.
 - No `generic human-participant`, generic `AccessGrant`, or tenant module/service is admitted merely to group human participants.
 - A future enterprise HR or contextual authorization boundary may be extracted only after concrete lifecycle/data/rule/isolation requirements prove it.
 
@@ -42,7 +41,6 @@ Domain participant records reference `actor_id` directly. Service-local technica
 ONE_CROSS_BOUNDARY_HUMAN_IDENTIFIER=actor_id
 ONE_NORMALIZED_PHONE_ONE_ACTOR=REQUIRED
 ACTOR_NE_ROLE=REQUIRED
-ACTOR_NE_OPERATOR_CONTEXT=REQUIRED
 SESSION_SINGLE_ROLE=REQUIRED
 ROLE_DISABLE_REVOKES_ONLY_ROLE=REQUIRED
 GLOBAL_SECURITY_DISABLE_REVOKES_ALL_SESSIONS_WITHOUT_DELETING_ROLES=REQUIRED
