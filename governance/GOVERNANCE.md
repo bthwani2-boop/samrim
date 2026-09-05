@@ -108,7 +108,37 @@ EXPLICIT NON-GOAL
 
 A folder, donor artifact, route, screen, provider or table does not automatically earn capability or service status.
 
-## 10. Change/survival law
+## 10. Developer reconstruction acceptance
+
+Governance is complete only when a qualified developer or execution agent can determine, without reverse-engineering accidental repository structure:
+
+- what BThwani is and is not, including explicit non-goals;
+- deployable surfaces, Human Actors, Identity roles, Product personas and trust/scope boundaries;
+- the canonical owner and writer of every material durable fact;
+- admitted capabilities, cross-capability journeys and required/excluded surfaces;
+- financial ownership, conservation, unknown-outcome and reconciliation semantics;
+- authentication, authorization, privacy, secret and privileged-operation boundaries;
+- app-host versus service-capability responsibility;
+- data, migration, contract, generated-binding and cross-service integration expectations;
+- provider/control-plane/data-plane ownership and ambiguity handling;
+- experience, Arabic/RTL, accessibility and localization requirements;
+- runtime, reliability, quality, delivery and release policy boundaries.
+
+The acceptance test is semantic, not file-count based:
+
+~~~text
+UNACCOUNTED_MATERIAL_PRODUCT_RESPONSIBILITIES=0
+UNOWNED_DURABLE_FACTS=0
+UNMAPPED_REQUIRED_ACTORS/JOURNEYS=0
+UNMAPPED_REQUIRED_FAILURE/RECOVERY_SEMANTICS=0
+UNMAPPED_REQUIRED_SECURITY/PRIVACY/FINANCIAL_INVARIANTS=0
+DUPLICATE_DURABLE_MEANING_AUTHORITIES=0
+IMPLEMENTATION_INVENTORY_AS_GOVERNANCE_AUTHORITY=0
+~~~
+
+When history or donor evidence reveals still-required meaning that current owners do not represent, Governance is incomplete until that meaning is deliberately owned, superseded, or rejected with reason. Historical file survival is never required.
+
+## 11. Change/survival law
 
 A Governance artifact survives only if it owns unique current durable meaning and is not better represented by another owner or executable source.
 
