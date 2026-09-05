@@ -7,6 +7,40 @@ GENERAL_VERIFICATION_AUTHORITY: tools/prompting/bthwani-orchestrator/04-VERIFY-R
 
 Exhaustive BThwani-specific qualification matrix. General evidence/finding/closure law remains owned by the orchestrator.
 
+## Qualification scope law
+
+This matrix describes the **full BThwani target**, not the Product breadth automatically authorized in every execution.
+
+```text
+TARGET_MATRIX = FULL_PRODUCT_DESTINATION
+EXECUTION_BREADTH = ORCHESTRATOR/INVOCATION_AUTHORITY
+LEVEL_4_DEPTH != FULL_TARGET_BREADTH
+```
+
+For `PRODUCT_BREADTH=ACTIVE_SLICE`:
+
+1. universal structural/ownership laws still apply;
+2. every row materially exercised by the active slice or its prerequisite/regression cone must pass;
+3. a target-only row outside that cone is recorded as `DEFERRED_OUTSIDE_AUTHORIZED_SCOPE`, not fabricated as PASS and not implemented speculatively;
+4. `UNKNOWN` is never converted into `DEFERRED` when it can change the active slice's canonical target or safety.
+
+```text
+ACTIVE_SCOPE_APPLICABLE_REQUIREMENTS=PASS
+ACTIVE_SCOPE_KNOWN_DEFECTS=0
+ACTIVE_SCOPE_KNOWN_UNKNOWNS=0
+AFFECTED_PREVIOUSLY_PROVEN_REGRESSION=PASS
+DEFERRED_OUTSIDE_AUTHORIZED_SCOPE=ALLOWED
+```
+
+For `PRODUCT_BREADTH=FULL_TARGET`:
+
+```text
+ALL_TARGET_REQUIREMENTS=PASS
+DEFERRED_OUTSIDE_AUTHORIZED_SCOPE=0
+```
+
+Therefore a financial target row such as settlement/payout/refund does not force those Product features into an Identity-, Store-, or Catalog-only slice unless that slice actually exercises the corresponding financial invariant.
+
 ## Foundation/topology
 
 General foundation/exact-candidate/donor evidence gates are inherited from `tools/prompting/bthwani-orchestrator/04-VERIFY-REDIAGNOSE-CLOSE.md` and are not redefined here.
@@ -165,6 +199,7 @@ TEMPORARY_REFOUNDATION_LAW_STRANDED=0
 
 ```text
 DOCS_ENTRYPOINT=PASS
+PLATFORM_ENGINEERING_LIFECYCLE_GUIDE=PASS
 NEW_DEVELOPER_BOOTSTRAP=PASS
 REPOSITORY_ORIENTATION=PASS
 APPS/ROUTING_GUIDE=PASS
