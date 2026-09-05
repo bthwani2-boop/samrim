@@ -258,7 +258,7 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("TOP_LEVEL_TAXONOMY_ADMISSION=PASS");
+console.log("TOP_LEVEL_TAXONOMY=PASS");
 console.log("DISCOVERED_APPS=" + appNames.join(","));
 console.log("DISCOVERED_SERVICES=" + serviceNames.join(","));
 console.log("DISCOVERED_PACKAGES=" + packageNames.join(","));
