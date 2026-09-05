@@ -44,6 +44,7 @@ Read in this order for normal onboarding:
 2. `development/repository-map.md`
 3. `development/first-change.md`
 4. `development/platform-engineering-lifecycle.md` — audited end-to-end method from donor forensics and journey-ready foundation through production, mobile-store release, and operations
+5. `development/incremental-product-delivery.md` — non-authoritative strategy for small canonical active slices, core fixed point, and staged feature expansion
 
 Then use the focused guide:
 
