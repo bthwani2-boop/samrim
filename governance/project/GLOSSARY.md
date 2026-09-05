@@ -16,7 +16,9 @@ This glossary defines stable platform vocabulary. If implementation naming confl
 
 **Organization** — a business entity such as a partner organization. It is not automatically a tenant.
 
-**Store** — an operational commerce location/business scope governed by DSH.
+**Partner** — the commercial/business organization that has the governed relationship with BThwani and may own/manage one or more Stores. A Partner is not an Actor, Store, or Tenant.
+
+**Store** — an operational commerce location/business scope governed by DSH. A Store is distinct from its owning Partner and is not automatically a Tenant.
 
 **Authorization Scope** — the object/business boundary inside which a permission applies.
 
@@ -46,6 +48,20 @@ This glossary defines stable platform vocabulary. If implementation naming confl
 
 **Idempotency** — repeated delivery/retry of the same logical operation cannot create duplicate effect.
 
+**WLT** — the bounded context that exclusively owns BThwani authoritative financial truth.
+
+**Internal Wallet** — an actor-linked internal financial account/view governed by WLT. It is not an external electronic-wallet provider and does not by itself define the accounting source of truth.
+
+**Ledger** — WLT-owned authoritative posting/accounting history from which financial positions are established. Ledger entries/postings are not interchangeable with a mutable cached balance field.
+
+**Balance** — a current financial position/projection derived from authoritative WLT ledger/accounting state. It is not an independent source of truth.
+
+**Payment** — a governed financial operation/state representing allocation, authorization, capture/collection, or equivalent payment lifecycle semantics owned by WLT according to the applicable contract.
+
+**External Financial Rail / External Wallet Provider** — an external payment or money-movement system integrated behind a WLT-owned semantic port. Its provider balance/state is not BThwani's Internal Wallet or Ledger.
+
+**Finance** — a functional/operator-facing grouping or UI label when used for navigation. It is not a bounded-context owner; WLT owns the underlying financial truth.
+
 **Settlement** — governed financial accounting between parties over authoritative operational/financial facts; not equivalent to wallet balance.
 
 **Payout** — movement of eligible funds to an external destination through governed WLT policy.
@@ -67,4 +83,16 @@ SCREEN != CAPABILITY
 VENDOR != DOMAIN
 IMPLEMENTATION_MECHANISM != DOMAIN
 GENERIC_BUCKET != CANONICAL_OWNER
+
+PARTNER != STORE
+PARTNER != TENANT
+STORE != TENANT
+ACTOR != PARTNER
+ACTOR != STORE
+
+WALLET != LEDGER
+BALANCE != INDEPENDENT_SOURCE_OF_TRUTH
+INTERNAL_WALLET != EXTERNAL_FINANCIAL_RAIL
+FINANCE_UI_SECTION != DOMAIN_OWNER
+WLT = SOLE_AUTHORITATIVE_FINANCIAL_OWNER
 ```
