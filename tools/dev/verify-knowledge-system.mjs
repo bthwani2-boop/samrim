@@ -436,6 +436,9 @@ for (const token of [
 if (!agentRouter.includes("never infer `FULL_TARGET` from `LEVEL_4`")) failures.push("AGENTS.md missing active-slice anti-expansion routing");
 if (!agentRouter.includes("surface-specific feature UI belongs to the consuming app host by default")) failures.push("AGENTS.md missing app-host feature UI routing");
 if (!agentRouter.includes("pnpm knowledge:query -- capability IDENTITY_ACTIVATION_SESSIONS")) failures.push("AGENTS.md missing selective capability-query routing");
+if (!agentRouter.includes("pnpm knowledge:query -- list owners")) failures.push("AGENTS.md missing derived semantic-owner navigation");
+if (!agentRouter.includes("pnpm knowledge:query -- owner financial")) failures.push("AGENTS.md missing semantic-owner query example");
+
 if (!doctorScript.includes('[string] $ExpectedBranch = ""')) failures.push("doctor branch check is not invocation-driven");
 if (!foundationCloseScript.includes('[string] $ExpectedBranch = ""')) failures.push("foundation runtime closure branch check is not invocation-driven");
 if (!foundationLocalScript.includes('[string] $ExpectedBranch = ""')) failures.push("local foundation proof branch check is not invocation-driven");
@@ -466,6 +469,9 @@ if (packageJson.scripts?.["knowledge:query"] !== "node tools/dev/query-knowledge
 for (const sourcePath of ["governance/product/CAPABILITIES.md", "governance/product/JOURNEYS.md"]) {
   if (!queryKnowledge.includes(sourcePath)) failures.push("knowledge query tool missing canonical source: " + sourcePath);
 }
+if (!queryKnowledge.includes("function governanceOwners()")) failures.push("knowledge query tool missing source-derived Governance owner discovery");
+if (!queryKnowledge.includes('rawId === "owners"')) failures.push("knowledge query tool missing list owners mode");
+if (!queryKnowledge.includes('kind === "owner"')) failures.push("knowledge query tool missing owner lookup mode");
 if (/writeFileSync|appendFileSync|createWriteStream/.test(queryKnowledge)) failures.push("knowledge query tool writes a parallel knowledge artifact");
 
 if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(repositoryReadme)) failures.push("README hard-codes temporary branch a as active repository state");
