@@ -37,7 +37,9 @@ Use the smallest evidence that proves the claim, but do not substitute a weaker 
 
 ## Vertical verification
 
-Material capability closure follows the action through owner, storage, transport, contract, generated binding, presentation, app composition, mutation and persisted/observable readback.
+A material **full capability or explicitly scoped vertical increment** follows the action through owner, storage, transport, contract, generated binding, presentation, app composition, mutation and persisted/observable readback.
+
+Closing an increment does not prove the remaining target capability breadth. Test every surface/action required by the authorized increment, plus every previously proven cone invalidated by shared owners/contracts/data/runtime.
 
 ## Negative space
 
