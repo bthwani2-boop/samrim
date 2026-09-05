@@ -16,7 +16,7 @@ Use the smallest runtime able to prove the current claim:
 - **FOCUSED_INTEGRATION** — exact cross-service/provider/database dependencies required by the capability.
 - **FULL_INTEGRATION** — repository-owned orchestration for migrations/readiness/contracts/runtime/journey/failure proof.
 
-Current Foundation commands are derived from `package.json`; canonical full proof is `pnpm foundation:runtime:close`. Do not turn this guide into a second command/port registry.
+Current integration-runtime commands are derived from `package.json`; canonical full proof is `pnpm runtime:integration:close`. Do not turn this guide into a second command/port registry.
 
 ## Stateful dependencies
 
