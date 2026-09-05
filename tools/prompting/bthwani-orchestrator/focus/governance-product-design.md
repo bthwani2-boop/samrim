@@ -1,4 +1,4 @@
-# Focus — Product, End-to-End Design and Governance Truth
+# Focus — Product, Journey, Experience and Governance Application
 
 ARTIFACT_CLASS: ORCHESTRATOR_EXECUTION_FOCUS_LENS
 LENS_ROLE: PRODUCT_JOURNEY_EXPERIENCE_GOVERNANCE_APPLICATION
@@ -7,424 +7,115 @@ DURABLE_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 SELF_CERTIFICATION: FORBIDDEN
 
-This lens never defines BThwani Product/System/actor/journey/UX meaning. Resolve that meaning from current explicit human decisions and the materially applicable `governance/**` semantic owners, then use this file only to apply/falsify that meaning during execution.
+This lens applies and falsifies Product, actor, journey and UX meaning from current explicit human decisions and materially applicable governance owners. It never defines durable Product meaning itself.
 
+## 1. Required-truth reconstruction
 
-## 1. Product/System truth is required value, not inherited implementation
+When source, donor, history or documentation conflict, reconstruct only the minimum Product truth needed for the active root:
 
-Reconstruct required behavior from evidence:
+~~~text
+ACTOR / ROLE / PERSONA
+CAPABILITY OUTCOME
+JOURNEY / STATE / HANDOFF
+CANONICAL OWNER / WRITER / READBACK
+REQUIRED SURFACES
+FAILURE / RECOVERY / NEGATIVE INVARIANTS
+UX / ACCESSIBILITY / LOCALIZATION CONSEQUENCES
+~~~
 
-```text
-ACTORS
-CAPABILITIES
-JOURNEYS
-STATES / TRANSITIONS / ALLOWED ACTIONS
-OWNERSHIP / AUTHORIZATION
-PERSISTED FACTS
-FINANCIAL CONSEQUENCES
-EXTERNAL INTEGRATIONS
-OBSERVABLE OUTCOMES
-```
+Do not infer Product truth solely from routes, screens, tables, packages or historical prose. Unresolved evidence goes to diagnosis; accepted durable meaning terminates in Governance.
 
-Do not infer canonical Product/System truth solely from current routes, screens, docs, tables, packages or historical governance.
+## 2. End-to-end vertical application
 
-## 2. Complete end-to-end capability chain
+Trace the materially affected chain:
 
-For each material capability trace as applicable:
+~~~text
+ACTOR ACTION
+→ TRUSTED AUTHORIZATION/SCOPE
+→ CANONICAL OWNER
+→ CONTRACT/API/EVENT
+→ DURABLE OR EXTERNAL EFFECT
+→ READBACK/PROJECTION
+→ CLIENT/OPERATOR PRESENTATION
+→ FINAL VISIBLE/SYSTEM STATE
+~~~
 
-```text
-PRODUCT MEANING
-→ ACTOR / JOURNEY / STATE
-→ DATA/STORAGE TRUTH
-→ CANONICAL DOMAIN/BACKEND OWNER
-→ API / EVENT / COMMAND
-→ CANONICAL CONTRACT
-→ GENERATED BINDING
-→ FRONTEND QUERY/MUTATION/STORE
-→ VIEW MODEL / COMPONENT
-→ SCREEN / ROUTE
-→ USER ACTION
-→ MUTATION
-→ PERSISTED READBACK
-→ VISIBLE FINAL STATE
-```
+Layer-local success never proves a cross-layer Product outcome.
 
-Any unjustified break is a parity gap. A UI-only, API-only, backend-only or database-only success is not closure when the capability crosses layers.
+## 3. Material surface/action census
 
-## 3. One business meaning, one authority
+For each affected user or operator surface account for route/entry, actor/persona, visibility/permission, canonical capability owner, query/mutation/event, loading/pending/empty/offline, forbidden/conflict/error/unknown/recovery, persisted readback and navigation/deep-link result where material.
 
-Search for duplicated meaning across:
+If a surface has no required journey it is a deletion or deferral candidate. If two flows serve the same responsibility, determine the winner and migrate consumers.
 
-```text
-BACKEND SERVICES
-FRONTEND STORES/HOOKS/VIEW MODELS
-CONTROL PANEL
-MOBILE APPS
-SHARED/CORE LIBRARIES
-CONFIG
-DATABASE DEFAULTS/POLICIES
-CONTRACTS/DTOs/ENUMs
-DOCS/GOVERNANCE
-TEST FIXTURES/MOCKS
-```
+## 4. Operator/control correlation
 
-Choose one canonical mutable authority and make other layers derived consumers/adapters.
+When a journey requires approval, support, reconciliation, investigation, audit or intervention, verify the operator/control surface against the same canonical owner and state. Do not create operator-only parallel business state.
 
-Frontend may own presentation/navigation/transient editing state, but not a second mutable source for permissions, eligibility, serviceability, financial/order state, allowed actions, pricing, fees, workflow transitions or business validation.
+## 5. Actor and scope non-conflation
 
-## 4. Every screen/flow re-earns existence
+Inspect for accidental conflation among Human Actor, Identity Role, Product Persona, Partner Organization/Store, authorization scope, operational assignment and tenancy. Resolve meaning from ACTORS-TRUST-AND-SCOPE.md plus the applicable capability owner.
 
-For every material screen/route/flow ask:
+UI hiding is not authorization evidence.
 
-```text
-WHAT_REQUIRED_CAPABILITY_DOES_IT_SERVE?
-WHICH_ACTOR/JOURNEY?
-WHAT_CANONICAL_BACKEND/DATA/CONTRACT_SUPPORTS_IT?
-WHAT_QUERY/MUTATION/STORE_DOES_IT_USE?
-WHAT_STATES/ACTIONS/READBACK_DOES_IT_REPRESENT?
-IS_BUSINESS_TRUTH_HARDCODED_LOCALLY?
-IS_A_MOCK/FALLBACK_HIDING_A_BACKEND_GAP?
-IS_THIS_RESPONSIBILITY_DUPLICATED_BY_ANOTHER_SCREEN_UNDER_ANOTHER_NAME/PATH?
-```
+## 6. Human-experience root altitude
 
-If no required journey exists, delete the flow. If duplicate, migrate navigation/consumers to the winner and delete the losing screen/route/files.
+For user-facing defects diagnose above local styling:
 
-## 5. Actors and authorization
-
-Actor identity, role, permission, scope and lifecycle require canonical ownership.
-
-Do not allow applications, screens or local stores to invent role/permission truth independently.
-
-Security-sensitive decisions require backend/persistence/contract/runtime proof where applicable, not UI hiding.
-
-## 6. Journey completeness
-
-For every required journey account for applicable:
-
-```text
-ENTRY
-LOADING/PENDING
-SUCCESS
-EMPTY/MISSING
-VALIDATION_FAILURE
-AUTH/AUTHZ_FAILURE
-BUSINESS_REJECTION
-CONFLICT/CONCURRENCY
-OFFLINE/DEGRADED
-RETRY/IDEMPOTENCY
-DUPLICATE/REPEATED_SUBMISSION
-UNKNOWN_OUTCOME
-PARTIAL/INDETERMINATE_STATE
-PROCESS_RESTART/RESUME
-STALE_CLIENT/STALE_READ
-CROSS_SERVICE_HANDOFF
-OUT_OF_ORDER/DUPLICATE_EVENT
-CANCELLATION/COMPENSATION/REVERSAL
-CANONICAL_READBACK
-CROSS_SURFACE_CONSISTENCY
-```
-
-Do not add UX compensation for broken domain ownership; repair the higher root.
-
-A journey is not complete only because its happy path terminates.
-
-```text
-UNKNOWN MUST REMAIN UNKNOWN UNTIL RECONCILED
-DO_NOT_FABRICATE_SUCCESS_FROM_TIMEOUT_OR_MISSING_CONFIRMATION
-```
-
-### 6.1 Material surface-interaction census
-
-For every materially affected user/operator surface, enumerate applicable interactive entrypoints rather than proving only that the screen renders:
-
-```text
-ROUTE
-PAGE/SCREEN
-LAYOUT/SECTION
-TAB
-MENU
-CARD/LIST/TABLE ACTION
-DIALOG/MODAL/DRAWER
-FORM/FIELD
-BUTTON
-ACTIONABLE ICON
-LINK
-GESTURE
-FILTER
-SEARCH
-SORT
-PAGINATION
-REFRESH/PULL-TO-REFRESH
-CONFIRMATION
-NOTIFICATION ACTION
-BACK ACTION
-DEEP LINK
-```
-
-For every material action prove as applicable:
-
-```text
-VISIBILITY
-ENABLED/DISABLED STATE
-ACTOR/ROLE/SCOPE
-INPUT
-HANDLER/CONTROLLER
-CANONICAL CAPABILITY OWNER
-CONTRACT/API/EVENT
-LOADING/PENDING STATE
-DUPLICATE-ACTION / IDEMPOTENCY BEHAVIOR
-BACKEND/SYSTEM EFFECT
-PERSISTED/OBSERVABLE READBACK
-ERROR MAPPING
-RETRY/RECOVERY
-NAVIGATION/FINAL VISIBLE RESULT
-```
-
-```text
-RENDERED != WIRED
-CLICKABLE != FUNCTIONAL
-LOCAL_SUCCESS != PERSISTED_SUCCESS
-VISIBLE_CONTROL_WITHOUT_REQUIRED_EFFECT = OPEN_FINDING
-```
-
-### 6.2 Operator/control-surface correlation
-
-For any Product/System journey that materially requires operator observation, intervention, approval, support, reconciliation, investigation or audit, prove the applicable operator/control surface:
-
-```text
-END_USER/SERVICE ACTION
-→ CANONICAL SYSTEM EFFECT
-→ OPERATOR-VISIBLE STATE WHEN REQUIRED
-→ ALLOWED OPERATOR ACTIONS
-→ SERVER-SIDE AUTHORIZATION
-→ AUDITABLE RESULT
-→ CANONICAL READBACK
-```
-
-```text
-CONTROL_PANEL_REQUIRED = WHEN_PRODUCT/OPERATIONS_REQUIRE_IT
-```
-
-Do not manufacture an admin surface for every capability. Do not close an operator-dependent capability while its required operational visibility or intervention path is missing.
-
-### 6.3 Actor/scope/organization non-conflation
-
-```text
-ACTOR != ROLE
-ROLE != ORGANIZATION
-ORGANIZATION != AUTHORIZATION_SCOPE
-PARTNER != TENANT_BY_DEFAULT
-STORE != TENANT_BY_DEFAULT
-AUTHORIZATION_SCOPE != TENANT
-AUTHORIZATION_SCOPE != ORGANIZATION_ID
-```
-
-`TENANT` is admitted only when the Product/System model proves a real tenancy boundary with independent isolation/lifecycle semantics.
-
-## 7. Human-experience root altitude
-
-When a material root affects a user-facing journey, diagnose above local styling before patching presentation:
-
-```text
-USER/ACTOR_NEED
+~~~text
+PRODUCT OUTCOME
 → JOURNEY/TASK
-→ INFORMATION_ARCHITECTURE
-→ INTERACTION / FEEDBACK / RECOVERY
-→ CONTENT / TERMINOLOGY
-→ DESIGN_TOKEN / COMPONENT / PATTERN_AUTHORITY
-→ SURFACE_COMPOSITION
-→ RENDERED_BEHAVIOR
-→ ACCESSIBILITY / LOCALIZATION / PERFORMANCE / USABILITY_EVIDENCE
-```
+→ INFORMATION ARCHITECTURE
+→ SHARED TOKEN/COMPONENT/CONTENT VOCABULARY
+→ LOCAL PRESENTATION
+~~~
 
-High-leverage experience-root signals include:
+Repair the highest material root and reverify affected consumers. Do not preserve competing token, component or content authorities.
 
-```text
-COMPETING_DESIGN/TOKEN_SOURCES
-UNJUSTIFIED_LOCAL_STYLE/TOKEN_OVERRIDES
-DUPLICATE_COMPONENT/PATTERN_AUTHORITY
-INCONSISTENT_STATE/ERROR_SEMANTICS
-MISSING_MATERIAL_COMPONENT_STATES
-CROSS_SURFACE_DIVERGENCE_WITHOUT_PRODUCT_REASON
-RENDERED_ONLY_DEFECTS
-HIGH_RISK_USABILITY_ASSUMPTIONS_PRESENTED_AS_FACT
-```
+## 7. Accessibility, localization and performance
 
-Do not patch a screenshot when the shared component, token, content vocabulary, journey semantics or Product authority is the actual Source-of-Fix.
+Load EXPERIENCE-AND-DESIGN.md plus applicable frontend policy. Verify only material RTL/LTR, semantics, keyboard/focus, touch/large text, responsive behavior, loading/perceived performance and platform conventions. This lens does not invent thresholds.
 
-This does not require design bureaucracy. It exists to promote the highest correct experience root and eliminate repeated local UI patches.
+## 8. Representation preservation
 
-## 8. Accessibility, localization and performance
+When a format, path, schema or topology refactor claims semantic equivalence:
 
-When material, account for:
+~~~text
+ENUMERATE STILL-VALID MEANING
+→ MAP EACH ITEM TO NEW OWNER/REPRESENTATION
+→ MIGRATE/CUT OVER
+→ VERIFY NO REQUIRED MEANING LOST
+→ DELETE LOSING REPRESENTATION
+~~~
 
-```text
-KEYBOARD/FOCUS/SEMANTIC_ACCESSIBILITY
-SCREEN_READER_MEANING
-CONTRAST/SCALING/REDUCED_MOTION WHERE APPLICABLE
-ARABIC/RTL/LTR/NUMBER/DATE/CURRENCY SEMANTICS
-RESPONSIVE/DEVICE-SIZE BEHAVIOR
-LOADING/PERCEIVED_PERFORMANCE
-RENDERING/NETWORK/STATE PERFORMANCE BOTTLENECKS
-```
+Preserve required experience and behavior, not donor topology.
 
-Do not create arbitrary numeric targets without a real Product/operations requirement. But do not claim a user-facing baseline correct while known material accessibility/localization/performance defects remain.
+## 9. Durable knowledge promotion
 
-## 9. Durable truth vs mirrors
+Do not leave newly proven durable meaning in chat, temporary plans, fixtures, comments or donor references.
 
-Material mutable Product truth must not live in synchronized mirrors.
+~~~text
+DURABLE PRODUCT/SYSTEM/ARCHITECTURE/POLICY MEANING → GOVERNANCE
+EXECUTABLE CONTRACT/CONFIG/SCHEMA/CURRENT STATE → SOURCE
+TEMPORARY CAMPAIGN STATE/EVIDENCE → EXECUTION STATE/EVIDENCE
+~~~
 
-Derived cache/read/frontend state must have explicit derivation/invalidation and cannot become a second writer.
+Do not create Docs/Governance to mirror implementation inventories.
 
-Manual DTO/enum/status/error/business mappings that duplicate canonical contract/domain semantics are parallel-truth candidates and should be migrated/deleted when redundant.
+## 10. Governance and control-artifact death test
 
-## 10. Forensic/reference value and experience salvage
+Governance, Docs, guards, scripts, workflows, registries and routers must re-earn existence:
 
-Old branches, dead code, historical docs and external reference systems may contain required value without having any right to donate their authority or topology.
+~~~text
+UNIQUE RESPONSIBILITY?
+CORRECT OWNER?
+NO BETTER COMPILER/SCHEMA/TEST/RUNTIME MECHANISM?
+NO DUPLICATE MANUAL SOURCE OF TRUTH?
+FAIL-CLOSED WHEN SAFETY/SECURITY CRITICAL?
+~~~
 
-```text
-DISCOVER_REQUIRED_VALUE
-→ PROVE_CURRENT_PRODUCT/SYSTEM_RELEVANCE
-→ EXTRACT_REQUIRED_BEHAVIOR / EXPERIENCE / INVARIANT / EDGE_CASE / FAILURE_MODE / ASSET
-→ MAP_TO_CURRENT_CANONICAL_OWNER
-→ REIMPLEMENT_OR_REHOME_AGAINST_CURRENT_CONTRACTS
-→ VERIFY
-→ DELETE/IGNORE_DONOR_SHAPE
-```
+Absorb or delete stale, duplicate or campaign-only control artifacts once unique value is preserved.
 
-```text
-DONOR_VALUE != DONOR_AUTHORITY
-GOOD_UX != RIGHT_TO_COPY_OLD_TOPOLOGY
-REFERENCE_SELECTION != ADOPTION_SELECTION
-NEVER_IMPORT_DONOR_AUTHORITY
-NEVER_IMPORT_DONOR_TOPOLOGY_BY_DEFAULT
-NEVER_IMPORT_DONOR_MOCK/FALLBACK_AS_PRODUCT_TRUTH
-```
+## 11. Handoff
 
-Refoundation must preserve required experience value without preserving a losing container:
-
-```text
-REFOUNDATION != AUTOMATIC_PRODUCT_REDESIGN
-REFOUNDATION != AUTOMATIC_VISUAL_REDESIGN
-DEMOLISHING_A_CONTAINER != PERMISSION_TO_LOSE_REQUIRED_EXPERIENCE_VALUE
-
-CENSUS_REQUIRED_BEHAVIOR
-→ CENSUS_APPROVED_INTERACTION_VALUE
-→ CENSUS_REQUIRED_ASSETS
-→ CENSUS_ACCESSIBILITY/RTL/PLATFORM_VALUE
-→ REHOME_VALUE
-→ ONLY_THEN_DELETE_LOSER
-```
-
-## 10A. Representation-preservation law
-
-A format/file/schema/topology refactor that claims Product-semantic equivalence must preserve every still-valid semantic statement.
-
-```text
-REPRESENTATION_CHANGE
-→ CENSUS_EXISTING_DURABLE_SEMANTICS
-→ MAP_EACH_TO_NEW_OWNER/REPRESENTATION
-→ EXPLICITLY_JUSTIFY_ANY_INTENTIONAL_SEMANTIC_REMOVAL
-→ VERIFY_NO_REQUIRED_MEANING_LOST
-```
-
-```text
-FORMATTING_CLEANUP != PERMISSION_TO_DROP_PRODUCT_MEANING
-MERGE_DOCUMENTS != SEMANTIC_DELETION
-SCHEMA_REMOVAL != REQUIREMENT_REMOVAL
-```
-
-## 11. Governance is not privileged
-
-`governance/**` and governance-like docs are not automatically canonical because they describe process or Product intent.
-
-For every governance artifact determine:
-
-```text
-DOES_IT_CONTAIN_UNIQUE_REQUIRED_DURABLE_TRUTH?
-IS_THAT_TRUTH_ALREADY_OWNED_EXECUTABLY_ELSEWHERE?
-DOES_IT_CONFLICT_WITH_LIVE_PRODUCT/SYSTEM_TRUTH?
-DOES_IT_CREATE_A_SECOND_EXECUTION/APPROVAL/ROUTING_AUTHORITY?
-WOULD_EXTRACT→DELETE→MINIMAL_RECREATE_BE_CLEANER?
-```
-
-Delete stale, duplicative, obsolete or confusing governance. Preserve/recreate only unique truth that the canonical baseline actually needs.
-
-Do not automate governance prose merely to make it look authoritative.
-
-## 12. Documentation
-
-Documentation survives only when it owns unique required explanatory/operational truth not better represented elsewhere.
-
-Stale/contradictory docs must be corrected, absorbed or deleted. Historical prose cannot control execution.
-
-## 13. Product fixed-point proof
-
-At final closure prove for every material capability:
-
-```text
-REQUIRED_CAPABILITY_ACCOUNTED_FOR
-CANONICAL_OWNER/WRITER_ACCOUNTED_FOR
-DATA/PERSISTENCE_ACCOUNTED_FOR
-API/CONTRACT/GENERATED_LINEAGE_ACCOUNTED_FOR_WHERE_APPLICABLE
-ALL_MATERIAL_SURFACES/SCREENS_ACCOUNTED_FOR
-ACTION→MUTATION→READBACK_ACCOUNTED_FOR
-NO_FRONTEND/BACKEND_SHADOW_BUSINESS_TRUTH
-NO_ORPHAN_REQUIRED_SCREEN/API/BINDING/DATA
-NO_PARALLEL_PRODUCT_TRUTH
-NO_ORPHAN_JOURNEY
-NO_KNOWN_REQUIRED_CAPABILITY_LOST_DURING_REFOUNDATION
-NO_KNOWN_MATERIAL_ACCESSIBILITY/LOCALIZATION/EXPERIENCE_GAP_WHERE_APPLICABLE
-```
-
-## 14. Durable knowledge promotion law
-
-Execution must not leave newly proven durable meaning stranded in chat, a temporary plan, a one-off report, test fixture, code comment or donor reference.
-
-After a material root/capability is verified, classify every newly established piece of knowledge:
-
-```text
-DURABLE PRODUCT/SYSTEM/ARCHITECTURE/POLICY TRUTH → GOVERNANCE
-RECURRING HUMAN DEVELOPMENT/OPERATIONS GUIDANCE → DOCS/RUNBOOKS
-EXECUTABLE CONTRACT/CONFIG/SCHEMA/TRUTH → EXECUTABLE SOURCE OWNER
-TEMPORARY CAMPAIGN STATE/EVIDENCE → TEMPORARY PLAN/EVIDENCE ONLY
-HISTORICAL/DONOR CONTEXT → FORENSIC REFERENCE ONLY
-```
-
-Promote only what has durable value and one correct owner. Do not create governance/docs merely to mirror implementation inventories or execution status.
-
-Closure requires:
-
-```text
-KNOWN_DURABLE_TRUTH_STRANDED_IN_TEMPORARY_ARTIFACTS=0
-KNOWN_RECURRING_HUMAN_GUIDANCE_STRANDED_IN_CHAT/PLAN=0
-KNOWN_IMPLEMENTATION_INVENTORY_PROMOTED_AS_DURABLE_AUTHORITY=0
-KNOWN_DUPLICATE_DURABLE_KNOWLEDGE_OWNERS=0
-```
-
-When donor/history reveals valuable prior knowledge, revalidate it before promotion; age, detail and previous canonical labels do not grant authority.
-
-## 15. Engineering-governance and control-artifact admission
-
-Guards, scripts, CI workflows, registries, policies, routers, hooks, skills, agent instructions and generated status artifacts are engineering control-plane material. They must earn existence just like production code.
-
-Before creating or preserving one, prove:
-
-```text
-UNIQUE DURABLE INVARIANT/NEED
-CLEAR CONSUMER
-CLEAR TRIGGER/EXECUTION PATH
-CLEAR OWNER
-NO BETTER EXISTING OWNER/COMPILER/SCHEMA/TEST/RUNTIME MECHANISM
-NO DUPLICATE MANUAL SOURCE OF TRUTH
-FAILURE MODE IS FAIL-CLOSED WHEN CLAIM IS SAFETY/SECURITY CRITICAL
-RETIREMENT CONDITION IF TEMPORARY/CAMPAIGN-SPECIFIC
-```
-
-For existing control artifacts apply:
-
-```text
-KEEP | HARDEN | MERGE | REHOME | REPLACE_WITH_NATIVE_GUARANTEE | DELETE
-```
-
-Do not retain a guard because it is green, a registry because it is detailed, or a workflow because it is already wired. Measure before→after assurance and execution cost; a simplification that merely shifts cost/failure elsewhere is not an improvement.
+This lens emits Product, journey, experience and governance findings plus the affected cone. 02 ranks roots, 03 mutates, 04 proves, 05 moves.

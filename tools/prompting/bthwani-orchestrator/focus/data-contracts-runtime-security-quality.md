@@ -1,4 +1,4 @@
-# Focus — Data, Contracts, Runtime, Security and Assurance
+# Focus — Data, Contracts, Runtime, Security and Assurance Application
 
 ARTIFACT_CLASS: ORCHESTRATOR_EXECUTION_FOCUS_LENS
 LENS_ROLE: DATA_CONTRACTS_RUNTIME_SECURITY_ASSURANCE_APPLICATION
@@ -7,463 +7,131 @@ DURABLE_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 SELF_CERTIFICATION: FORBIDDEN
 
-This lens never defines durable data, contract, runtime, security, financial or quality semantics. Resolve those requirements from the materially applicable Governance owners and executable sources for current implementation truth, then use this file only to apply/falsify them during execution.
+This lens applies and falsifies materially applicable Governance owners and executable sources for data, contracts, runtime, security, finance and assurance. It never defines those semantics itself.
 
+## 1. Route by affected concern
 
-## 1. Data ownership
+Load only what is material:
 
-For every material persisted fact prove:
+- ownership/data/contracts → ownership map, data/contracts architecture, data/migration policy;
+- runtime/config/reliability → runtime architecture, runtime-reliability policy and executable config/scripts;
+- providers → provider policy plus applicable capability/financial owner;
+- security/privacy → security policy plus Identity/capability owner;
+- financial truth → Financial Model plus WLT capability owner;
+- testing/tooling/delivery → standards/quality, tooling/assurance and delivery policies.
 
-```text
-CANONICAL DOMAIN OWNER
-CANONICAL WRITE PATH
-CANONICAL STORAGE
-INVARIANTS/CONSTRAINTS
-READBACK PATH
-LIFECYCLE/RETENTION WHEN MATERIAL
-SECURITY/FINANCIAL CLASSIFICATION WHEN MATERIAL
-```
+## 2. Data and migration application
 
-Multiple mutable stores for one business truth are forbidden unless one is explicitly derived and non-authoritative.
+For each affected durable fact identify canonical owner/writer, schema/migration authority, readers/projections, classification and readback.
 
-`ONE TRUTH` does not mean one table; correct normalization may use multiple tables. What is forbidden is multiple mutable authorities for the same meaning.
+When ownership or shape changes require deterministic migration/backfill/reconciliation and delete losing storage/writers after cutover. Destructive transformation requires evidence capable of proving required truth preservation.
 
-## 2. Schema and migration refoundation
+Multiple normalized tables are not automatically multiple mutable authorities.
 
-Migration history is executable architecture, not sacred chronology.
+## 3. Contract and generated lineage
 
-Audit:
+Trace:
 
-```text
-SCHEMA OWNERSHIP
-MIGRATION ORDER / EPOCHS
-DUPLICATE TABLE/COLUMN AUTHORITIES
-OBSOLETE COMPATIBILITY COLUMNS
-BACKFILLS
-SEEDS / BOOTSTRAP
-CONSTRAINTS / INDEXES
-POLICIES / TRIGGERS
-MIGRATION MANIFESTS / ORDERING AUTHORITIES
-GENERATED DB CONTRACTS
-UPGRADE/RESET ASSUMPTIONS
-```
+~~~text
+CANONICAL CONTRACT SOURCE
+→ VALIDATION/GENERATION
+→ GENERATED BINDING
+→ CONSUMER
+→ RUNTIME CALL/EVENT
+→ CANONICAL READBACK
+~~~
 
-If the migration epoch itself is structurally corrupt, do not patch hundreds of migrations by default.
+Parallel hand-maintained DTO/status/operation mirrors are findings. Compatibility survives only for a proven coexistence requirement with bounded owner, scope, cutover and removal condition.
 
-```text
-DETERMINE REQUIRED DURABLE TRUTH
-→ DETERMINE RESET VS CONTROLLED CUTOVER CONSTRAINTS
-→ DESIGN CANONICAL EPOCH/OWNERSHIP
-→ MIGRATE/BACKFILL/RECONCILE
-→ CUT OVER
-→ DELETE SHADOW/OBSOLETE MIGRATION AUTHORITIES
-→ PROVE REAL UPGRADE/READBACK WHERE REQUIRED
-```
+## 4. Cross-service facts and projections
 
-No destructive data transformation without deterministic evidence.
+Classify every material cross-service fact:
 
-## 3. Contracts and generated lineage
-
-```text
-ONE CANONICAL SOURCE CONTRACT
-ONE GENERATOR/TRANSFORM LINEAGE WHEN GENERATED
-JUSTIFIED CANONICAL OUTPUT SET
-ZERO HAND-MAINTAINED MIRRORS
-ZERO STALE GENERATED OUTPUT
-ZERO DUPLICATE DTO/ENUM/API-TYPE AUTHORITIES
-```
-
-Generated code may contain many files when they are derived from one source. Do not force one-file output; eliminate parallel hand-maintained truth.
-
-Migrate all consumers and delete old contracts/mirrors after cutover unless a proven live external consumer requires bounded compatibility.
-
-## 4. Backend/frontend/data parity
-
-For every exposed material meaning prove the applicable lineage:
-
-```text
-PERSISTED TRUTH
-→ CANONICAL WRITER
-→ DOMAIN SEMANTICS
-→ API/EVENT CONTRACT
-→ GENERATED CLIENT/BINDING
-→ REQUIRED FRONTEND/OTHER CONSUMERS
-→ USER ACTION/MUTATION
-→ PERSISTED READBACK
-```
-
-Manual frontend business mappings, enums, DTOs, allowed-action logic or status interpretations that duplicate canonical semantics are shadow-truth candidates.
-
-A clean backend and clean frontend that disagree semantically are not closed.
-
-### 4.1 Cross-service facts, projections and mirrors
-
-For every material cross-service fact/reference/projection/cache prove as applicable:
-
-```text
-CANONICAL_SOURCE_OWNER
-CANONICAL_WRITER
-SOURCE_EVENT/API
-DERIVATION
+~~~text
+CANONICAL OWNER
+SOURCE API/EVENT
 MUTABILITY
 PERSISTENCE
-AUTHORITATIVE_OR_DERIVED
-REBUILDABILITY_IF_DERIVED
-CONSISTENCY_GUARANTEE / RETRY_MODEL
+AUTHORITATIVE OR DERIVED
+REBUILDABILITY
+CONSISTENCY/RETRY
 CONSUMERS
 READBACK
-CAN_IT_DIVERGE
-IS_IT_USED_FOR_AUTHORITATIVE_MUTATION_DECISIONS
-```
+~~~
 
-```text
-DERIVED != AUTHORITATIVE
-CACHED != CANONICAL
-MATERIALIZED != SECOND_WRITER
-```
+Derived projections, caches and indexes cannot become mutation authority.
 
-Classify material mirrors:
+## 5. Runtime, configuration and provider application
 
-```text
-REDUNDANT_MUTABLE_MIRROR
-→ MIGRATE CONSUMERS
-→ DELETE
+Inspect executable runtime/config/infra for competing authorities, hidden fallback, stale paths, environment divergence and provider-specific domain leakage.
 
-NECESSARY_DERIVED_PROJECTION
-→ ONE-WAY
-→ NON-AUTHORITATIVE
-→ REBUILDABLE
+For externally consequential operations preserve operation identity and distinguish rejected, failed, pending and unknown. Unknown remains unresolved until query/reconciliation proves terminal state; never blind-failover where duplicate effect is possible.
 
-CANONICAL_TRUTH_MISOWNED_OR_MISNAMED
-→ REHOME/RENAME
-```
+## 6. Material mutation contract
 
-## 5. Runtime/config/infra
+For materially affected mutations account for:
 
-Audit every material runtime authority:
-
-```text
-ENV VARIABLES
-CONFIG FILES
-FEATURE FLAGS
-PORTS/ENDPOINTS
-CONTAINER/COMPOSE/DEPLOYMENT
-STARTUP/BOOTSTRAP
-HEALTH/READINESS
-QUEUES/JOBS
-SECRET REFERENCES
-OBSERVABILITY
-ROUTING/PROXY
-```
-
-Eliminate competing authorities and stale runtime paths after cutover. Do not preserve scripts/config merely because historical tooling depends on them; migrate the consumer or refound the tooling.
-
-## 6. Operational truth where material
-
-Do not stop at compile/runtime startup when the affected root includes operational behavior. Audit only where material, but cover the real concern completely:
-
-```text
-OBSERVABILITY / ALERTING SIGNAL OWNERSHIP
-FAILURE / RECOVERY / RETRY / RESTART
-BACKUP / RESTORE / DATA RECOVERY
-PRIVACY / RETENTION / DELETION LIFECYCLE
-PERFORMANCE / CAPACITY / RESILIENCE
-SUPPLY-CHAIN / DEPENDENCY / ARTIFACT PROVENANCE
-EXTERNAL PROVIDER FAILURE / UNKNOWN RESULT
-JOB/QUEUE REPLAY / IDEMPOTENCY
-```
-
-Do not invent arbitrary SLO/RPO/RTO numbers without a real requirement. But known material operational gaps block a trustworthy baseline.
-
-### 6.1 Material mutation / operational failure contract
-
-For every material mutation or externally consequential operation, prove as applicable:
-
-```text
-ACTOR / TRUSTED CONTEXT
+~~~text
+TRUSTED CONTEXT
 PRECONDITIONS
-ALLOWED STATE
-FORBIDDEN STATE
-COMMAND/ACTION
-STATE TRANSITION
-DURABLE DATA EFFECT
-FINANCIAL EFFECT
-EXTERNAL PROVIDER EFFECT
-IDEMPOTENCY / REPLAY IDENTITY
-TRANSACTION BOUNDARY
-CONCURRENCY / LOCKING
-TIMEOUT
-RETRY / BACKOFF
-PARTIAL FAILURE
-UNKNOWN OUTCOME
+ALLOWED / FORBIDDEN STATE
+IDEMPOTENCY / CONCURRENCY
+TRANSACTION OR DURABLE EFFECT
+TIMEOUT / RETRY / PARTIAL FAILURE
 COMPENSATION / REVERSAL
-AUDIT
+AUDIT / CORRELATION
 CANONICAL READBACK
-CROSS-SURFACE FINAL RESULT
-```
+~~~
 
-```text
-A timeout is not proof of failure.
-A returned success is not proof of durable commitment unless the required readback proves it.
-UNKNOWN MUST REMAIN UNKNOWN UNTIL RECONCILED.
-```
+The concrete semantics come from Governance and source; this lens only checks the chain is complete.
 
-### 6.2 Version-skew and compatibility gate
+## 7. Security and finance escalation
 
-When a contract/schema/event/client/runtime change can coexist with independently deployed consumers, enumerate every deployment combination that can materially occur.
+Authentication, authorization, sessions, secrets, PII, provider credentials, isolation and financial mutation receive heightened evidence. Cleanup never waives truth preservation or reconciliation.
 
-Examples only when the deployment model permits them:
+Development/bootstrap credentials never define normal production Identity policy.
 
-```text
-CURRENT_MOBILE → NEW_BACKEND
-NEW_MOBILE → COMPATIBLE_EXISTING_BACKEND
-CURRENT_CONTROL_PANEL → NEW_BACKEND
-GENERATED_CLIENT_VERSION → CONTRACT_VERSION
-OLD_EVENT_PRODUCER → NEW_CONSUMER
-NEW_EVENT_PRODUCER → COMPATIBLE_OLD_CONSUMER
-LOCAL_CACHE/PERSISTED_CLIENT_SCHEMA → NEW_SERVER_SEMANTICS
-FEATURE_FLAG_OFF/ON SAFE DEFAULT
-ROLL_FORWARD PATH
-ROLLBACK PATH
-```
+## 8. Assurance and test death test
 
-```text
-TEST_ONLY_VERSION_COMBINATIONS_THAT_CAN_EXIST_IN_REAL_DEPLOYMENT
-INDEFINITE_DUAL_SEMANTICS=FORBIDDEN
-COMPATIBILITY_JUST_IN_CASE=FORBIDDEN
-COMPATIBILITY_WINDOW_REQUIRES_OWNER_SCOPE_CUTOVER_CONDITION_REMOVAL_TRIGGER
-```
+Inherited tests, fixtures, mocks, snapshots, guards and workflows may encode losing architecture. Preserve only assurance that still proves a unique current claim; migrate or delete the rest.
 
-Internal consumers under atomic repository control should normally cut over and delete the old path rather than manufacture compatibility.
+CI/custom tooling is not privileged structure. Exact candidate attribution is mandatory for authoritative evidence.
 
-### 6.3 Observability semantics
+## 9. Missing-tool/evidence classification
 
-Material operations must expose enough attributable evidence to reconstruct the operation without leaking sensitive truth.
+When a check cannot run classify:
 
-As applicable:
-
-```text
-CORRELATION_ID
-REQUEST_ID
-ACTOR_ID
-TRUSTED_AUTHORIZATION_SCOPE
-OPERATION/COMMAND_IDENTITY
-IDEMPOTENCY/REPLAY_IDENTITY
-CANONICAL_ERROR_CODE
-STATE_TRANSITION / AUDIT_EVENT
-PROVIDER_PROVENANCE
-LATENCY / FAILURE / RETRY_SIGNAL
-RECONCILIATION_SIGNAL
-PII/SECRET_REDACTION
-```
-
-```text
-LOGGED != AUDITED
-METRIC != BUSINESS_TRUTH
-TRACE != AUTHORIZATION
-OBSERVABILITY MUST NOT BECOME A SECOND STATE AUTHORITY
-```
-
-## 6.4 Semantic external-capability boundaries
-
-External integrations are modeled by stable semantic responsibility, not vendor/general-provider shape.
-
-Examples:
-
-```text
-AUTH_CHALLENGE_ENGINE != DELIVERY_CHANNEL
-FINANCIAL_RAIL != BILLER_FULFILLMENT
-CACHE/COORDINATION != BUSINESS_TRUTH
-VENDOR_ADAPTER != DOMAIN_OWNER
-```
-
-A timeout/unknown external mutation preserves operation identity and reconciliation semantics. Blind cross-provider fallback is forbidden when duplicate effect is possible.
-
-## 7. Security and financial truth
-
-Authentication, authorization, sessions, secrets, PII, provider credentials, isolation and financial mutation receive heightened proof.
-
-```text
-SERVER-SIDE AUTHORITY FOR SECURITY DECISIONS
-NO CLIENT-ONLY AUTHORIZATION
-LEAST PRIVILEGE
-NO SECRET MATERIAL IN REPOSITORY OUTPUTS
-IDEMPOTENT/TRACEABLE FINANCIAL MUTATION WHERE REQUIRED
-NO PARALLEL BALANCE/LEDGER WRITERS
-NO FLOATING FINANCIAL SOURCE OF TRUTH
-AUDITABLE CANONICAL READBACK
-```
-
-Aggressive structural deletion never waives truth-preservation/migration proof for security or money.
-
-Development/bootstrap credentials must not define normal Identity credential policy. Credential/verification strength, abuse controls and rate limits derive from current Identity/Security requirements, not historical development examples.
-
-## 8. Tests are consumers, not truth by themselves
-
-Inherited tests can encode obsolete architecture.
-
-Classify each material test expectation:
-
-```text
-VALID_CANONICAL_SPEC
-OBSOLETE_BEHAVIOR
-DUPLICATE_COVERAGE
-WRONG_LAYER_SPEC
-MISSING_PREVENTION
-BROKEN_TEST_INFRA
-```
-
-Update/delete tests with the refoundation unit. Never weaken a valid assertion merely to obtain green output.
-
-Tests, fixtures, mocks, snapshots and helpers tied only to losing containers must migrate or be deleted in the same unit.
-
-## 9. Tool execution condition classification
-
-A tool can fail independently of Product code. Classify material tool/execution conditions as:
-
-```text
+~~~text
 DIAGNOSIS_BLOCKER
 EXECUTION_FINDING
 DEGRADED_EVIDENCE
-NOT_APPLICABLE
 EVIDENCE_AVAILABLE
-```
+~~~
 
-Only a proven `DIAGNOSIS_BLOCKER` can stop a dependent treatment solely because evidence is missing. `EXECUTION_FINDING` and `DEGRADED_EVIDENCE` do not force the whole campaign to stop when another root is already sufficiently proven.
+Only a proven diagnosis blocker prevents dependent treatment solely because evidence is unavailable. Missing optional evidence does not create campaign-wide waiting when another root remains safely executable.
 
-This preserves speed while keeping missing closure proof visible.
+## 10. Remote evidence and runtime proof
 
-## 10. CI/assurance control-plane refoundation
+Persistent workflows survive only with unique durable baseline value and correct candidate/event semantics. Campaign-only workflows are temporary.
 
-CI is not privileged structure. `.github/**`, assurance scripts, custom guards, scanner adapters and evidence collectors must re-earn existence.
+Rendered/device/runtime proof is distinct from source/config proof. If required evidence is unavailable, keep the corresponding claim open rather than substituting a weaker class.
 
-Audit for:
+## 11. Dependencies and control-path efficiency
 
-```text
-DUPLICATE VERIFICATION AUTHORITY
-PR-ONLY ASSUMPTIONS IN h
-DEFAULT/OLD-BRANCH TRUST
-STALE g/master AUTHORITY
-UNCONSUMED SCANNER OUTPUT
-SUPPRESSION / ALLOW-FAIL MASKING
-DUPLICATE CUSTOM GUARDS
-FAKE HUMAN/COMMENT ATTESTATION USED AS EXECUTION PROOF
-CAMPAIGN-ONLY RESIDUE
-EXCESSIVE INDIRECTION/COST WITHOUT UNIQUE CLAIM
-```
+Every dependency, workspace edge, toolchain pin and custom script needs a current consumer or evidence claim. Remove unused or duplicate tooling after migration.
 
-When the control plane is the root, refound it as one surface rather than patching workflows one-by-one.
+When build/test/CI/runtime tooling is slow, flaky or duplicated, diagnose that control path as a root. Optimize by removing redundant work or using stronger native mechanisms, never by suppressing failures.
 
-Preferred durable shape:
+## 12. Final assurance handoff
 
-```text
-ONE CANONICAL EXACT-CANDIDATE CONTROLLER PER DISTINCT ASSURANCE ROLE
-→ REUSABLE WORKERS WITH UNIQUE CLAIMS
-→ NO PR REQUIREMENT
-→ NO OLD-BRANCH AUTHORITY
-→ FAIL-CLOSED MATERIAL NOT_COVERED
-→ CAMPAIGN-ONLY WORKFLOWS DELETED AFTER USE
-```
+Before handing the affected unit to verification account for:
 
-Do not preserve repository-baseline, PR dispatcher, PR comment evidence or other historical structures unless they independently prove unique required value for the intended canonical repository baseline.
-
-## 11. Verifier/admission-hole law
-
-When a defect was accepted because verification was weak, closure requires fixing both product/structure and detector/admission authority.
-
-If the verifier itself is wrong:
-
-```text
-DEFINE CANONICAL CLAIM
-→ REBUILD VERIFIER
-→ PROVE GOOD CASE PASSES
-→ PROVE KNOWN BAD CASE FAILS
-→ THEN USE IT AS EVIDENCE
-```
-
-Never weaken a gate to obtain green.
-
-## 12. GitHub Actions on the invocation branch
-
-The invocation branch may create, rewrite, run and delete actions as needed within current authority.
-
-Persistent workflows survive only with unique durable baseline value. Diagnostic/campaign workflows are temporary by default.
-
-Every authoritative workflow must prove exact candidate identity and must not depend on PR/default-branch semantics unless an actual external requirement makes that necessary.
-
-If real rendered/device/runtime evidence is required but unavailable:
-
-```text
-CLAIM=NOT_COVERED
-```
-
-Do not replace it with a PR comment or self-attestation.
-
-## 13. Evidence ingestion
-
-Every material tool result must be consumed:
-
-```text
-FINDING
-MATERIALITY
-AFFECTED_CLAIM
-CAUSAL_ROOT/UNIT_MAPPING
-DISPOSITION
-REVERIFY_REQUIREMENT
-LIMITATION
-```
-
-Scanner execution is not finding closure.
-
-## 14. Dependencies and toolchain
-
-Every dependency, workspace edge, toolchain pin and custom script must re-earn existence.
-
-Delete unused dependencies after migration. Consolidate duplicated tooling/libraries when they encode the same responsibility. Remove custom automation when native compiler/test/build/runtime/security tooling gives the same or stronger unique claim more simply.
-
-## 15. Runtime and experience proof
-
-When behavior is runtime-material, static evidence is insufficient.
-
-Prove startup/request/persistence/readback/experience at the highest material boundary affected by the refoundation unit.
-
-For mobile/web, distinguish source/config correctness from actual rendered/device execution; do not claim one as the other.
-
-## 16. Final assurance cleanliness
-
-At fixed point:
-
-```text
-NO_DUPLICATE_MATERIAL_CI_AUTHORITIES
-NO_PR/DEFAULT/OLD_BRANCH_h_TRUST_ASSUMPTIONS
-NO_CAMPAIGN_ONLY_WORKFLOW/TOOL_RESIDUE
-NO_FAKE_EXPERIENCE_ATTESTATION
-NO_UNCONSUMED_MATERIAL_STATIC/SECURITY_FINDINGS
-NO_UNUSED_MATERIAL_DEPENDENCIES
-NO_DUPLICATE_CONTRACT/MIGRATION/RUNTIME_AUTHORITIES
-NO_KNOWN_UNVERIFIED_MATERIAL_DATA/SECURITY/FINANCIAL/OPERATIONAL_CLAIMS
-```
-
-## 17. Engineering control-path efficiency
-
-When build/test/CI/runtime/developer tooling itself is materially slow, flaky, duplicated or expensive, treat the control path as a root-cause surface rather than adding wrappers blindly.
-
-```text
-MEASURE CURRENT COST/FAILURE
-→ TRACE THE ACTUAL CRITICAL PATH
-→ IDENTIFY HIGHEST CAUSAL BOTTLENECK/REDUNDANCY
-→ SIMPLIFY / DELETE / CONSOLIDATE / MOVE TO NATIVE GUARANTEE
-→ MEASURE AGAIN ON THE SAME CLAIM
-```
-
-Required proof:
-
-```text
-ASSURANCE_NOT_WEAKENED
-FAILURE_NOT_SHIFTED_TO_ANOTHER_STAGE/TEAM/SERVICE
-TOTAL_CRITICAL_PATH_COST_NOT_HIDDEN_BY_PARALLEL WASTE
+~~~text
+NO DUPLICATE DATA/CONTRACT/MIGRATION/RUNTIME AUTHORITIES
+NO UNCONSUMED MATERIAL SECURITY/STATIC FINDINGS
+NO KNOWN UNVERIFIED MATERIAL DATA/SECURITY/FINANCIAL/OPERATIONAL CLAIMS
+REQUIRED RUNTIME/DEVICE/RECONCILIATION EVIDENCE ATTRIBUTABLE TO EXACT CANDIDATE
 NO NEW SHADOW SOURCE OF TRUTH
-NO CAMPAIGN-ONLY RESIDUE AFTER PURPOSE ENDS
-```
+~~~
 
-Do not optimize by skipping required evidence, suppressing failures, moving checks to a later slower gate, or running the same semantic check through several wrappers.
+Closure belongs to 04; diagnosis and movement belong to 02 and 05.
