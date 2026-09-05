@@ -31,7 +31,7 @@ No environment may silently introduce alternate business rules, authorization by
 
 ## Database and migration promotion
 
-`data-and-migrations.md` owns migration/data correctness. Delivery owns promotion timing and candidate compatibility.
+`../data-and-migrations.md` owns migration/data correctness. Delivery owns promotion timing and candidate compatibility.
 
 Before a stateful release, prove the applicable migration set/revision, representative upgrade or fresh-install claim, compatibility window for versions that can coexist, destructive-change prerequisites, required backfill/cutover completion and viable recovery/forward-fix path. Ad-hoc console SQL is not the normal production migration authority.
 
