@@ -144,6 +144,10 @@ jobs:
           node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'public_auth_state_enumeration'
           node tools/dev/query-knowledge.mjs journey J1 | grep -F 'SOURCE=governance/product/JOURNEYS.md'
 
+      - name: Verify adversarial agent knowledge contract
+        shell: bash
+        run: node tools/dev/verify-agent-knowledge-contract.mjs
+
       - name: Verify Identity vertical boundaries
         shell: bash
         run: |
