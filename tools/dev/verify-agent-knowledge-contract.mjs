@@ -108,6 +108,11 @@ const cases = [
     mustNotExist: "tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md",
   },
   {
+    id: "legacy_diagnose_plan_retired",
+    question: "May the retired diagnose/implement clean-repository reconstruction plan remain live?",
+    mustNotExist: "plans/diagnose-implementing/clean-repository-reconstruction.md",
+  },
+  {
     id: "legacy_refoundation_package_retired",
     question: "May tools/prompting/bthwani-refoundation remain a fourth live authority package?",
     mustNotExist: "tools/prompting/bthwani-refoundation",
