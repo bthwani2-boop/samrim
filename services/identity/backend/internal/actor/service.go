@@ -488,7 +488,7 @@ func scanRoleView(scan scanner) (domain.ActorRoleView, error) {
 func actorByPhoneTx(ctx context.Context, tx *sql.Tx, phone string) (domain.Actor, error) {
 	return scanActor(func(dest ...any) error {
 		return tx.QueryRowContext(ctx,
-			"SELECT id,phone_e164,COALESCE(username,''),COALESCE(password_hash,''),version FROM identity_actors WHERE phone_e164=$1 FOR UPDATE",
+			"SELECT id,phone_e164,COALESCE(username,''),COALESCE(password_hash,''),security_enabled,version FROM identity_actors WHERE phone_e164=$1 FOR UPDATE",
 			phone).Scan(dest...)
 	})
 }
