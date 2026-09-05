@@ -74,6 +74,6 @@ Durable Product/experience meaning comes from `../product/EXPERIENCE-AND-DESIGN.
 
 For material journeys consider payload size, pagination, repeated fetch/render work, image/media lifecycle, startup/bootstrap cost, interaction responsiveness and weak-device/network behavior. Do not invent arbitrary performance numbers; use authorized requirements or measured evidence.
 
-## Closure
+## Required conformance properties
 
 Client closure requires correct ownership, canonical contract binding/readback, complete applicable states, lifecycle/resource cleanup, security/privacy handling, accessibility/RTL/localization where material, migrated consumers and no local mock/fallback/duplicate state authority tied to the root.

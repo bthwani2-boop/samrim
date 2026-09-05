@@ -267,6 +267,6 @@ For an audit, every applicable delivery control resolves to exactly one of:
 
 Silence, missing evidence or unknown status is never converted to PASS.
 
-## 19. Release closure
+## 19. Release conformance
 
-A release is closed only when the exact released candidate/artifact/binary and materially affected Product/Engineering/Security/Data/Runtime/Delivery claims have current evidence, required rollout/post-release observation is complete, no known material release blocker remains and release identity/evidence are attributable.
+A release is conformant only when the exact released candidate/artifact/binary and materially affected Product/Engineering/Security/Data/Runtime/Delivery claims have current evidence, required rollout/post-release observation is complete, no known material release blocker remains and release identity/evidence are attributable.

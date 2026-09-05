@@ -187,7 +187,7 @@ Reference material should state:
 - whether it is reference-only or an adoption candidate;
 - revalidation needs for mutable license/security/version/platform terms.
 
-## Closure properties
+## Required conformance properties
 
 Applicable knowledge-system closure requires:
 

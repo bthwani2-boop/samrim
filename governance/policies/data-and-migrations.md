@@ -6,9 +6,9 @@ EXECUTION_AUTHORITY: NONE
 CLOSURE_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
-## Data authority
+## Data mutation and integrity policy
 
-Every durable data fact has one canonical owning domain/service and one governed mutation path. Another service may consume a contract-permitted projection/reference but must not directly mutate the owner's tables or recreate the owner's business calculations as independent truth.
+Canonical data ownership is defined by `../architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md`. This policy governs mutation, integrity, migration, backfill, reconciliation and retention behavior. Every durable data fact therefore has one governed mutation path. Another service may consume a contract-permitted projection/reference but must not directly mutate the owner's tables or recreate the owner's business calculations as independent truth.
 
 Each service/database authority owns one migration history. Applied migration identity/order/checksum is immutable; corrections use explicit forward-safe migrations rather than rewriting history for cleanliness.
 
@@ -116,6 +116,6 @@ Before deletion/narrowing prove all remaining readers/writers, legal/audit/finan
 
 For durable-data risk, backup configuration alone is not proof. Establish the applicable restore/PITR/rebuild claim, migration/backfill recovery behavior and representative recovery evidence when operational correctness depends on it. Numeric RPO/RTO values require an authorized operational requirement; do not invent them.
 
-## Closure
+## Required conformance properties
 
-Data closure requires consistent owner/schema/constraints/migration history, correct backfill/reconciliation, canonical readback, migrated consumers, zero superseded authoritative writer and no material duplicate/orphan/drift residue tied to the root.
+Data conformance requires; concrete candidate closure remains Orchestrator authority: consistent owner/schema/constraints/migration history, correct backfill/reconciliation, canonical readback, migrated consumers, zero superseded authoritative writer and no material duplicate/orphan/drift residue tied to the root.
