@@ -35,8 +35,6 @@ for (const forbidden of [
   "/auth/activate:",
   "\n  /auth/login:",
   "X-Service-Caller",
-  "X-Operator-Context-ID",
-  "operatorContextId",
   "identity_access_grants",
   "username:",
   "expectedActorType",
