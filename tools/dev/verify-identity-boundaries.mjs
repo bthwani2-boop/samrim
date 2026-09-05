@@ -332,6 +332,18 @@ const security = read("services/identity/backend/internal/security/values.go");
 if (!security.includes("argon2.IDKey")) failures.push("Identity password hashing is not Argon2id");
 if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identity security implementation");
 
+const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
+for (const required of [
+  "identitySchemaRequirements",
+  "information_schema.columns",
+  "pg_indexes",
+  "required column missing",
+  "required index missing",
+  "identity_sessions_active_idx",
+]) {
+  if (!readiness.includes(required)) failures.push("Identity readiness proof missing " + required);
+}
+
 const migration = read("services/identity/database/migrations/001_identity_activation_sessions.sql");
 for (const required of [
   "security_enabled boolean NOT NULL DEFAULT true",
