@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('app-client', 'app-partner', 'app-captain', 'app-field')]
     [string] $App,
 
     [switch] $ClearCache
@@ -13,9 +12,24 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $AppRoot = Join-Path $RepoRoot ("apps\" + $App)
 $PackageJson = Join-Path $AppRoot 'package.json'
+$ProjectJson = Join-Path $AppRoot 'project.json'
+$MobileConfig = Join-Path $AppRoot 'mobile.config.json'
 
-if (-not (Test-Path -LiteralPath $PackageJson -PathType Leaf)) {
-    throw "Mobile host is not materialized yet: $PackageJson"
+foreach ($required in @($PackageJson, $ProjectJson, $MobileConfig)) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+        throw "Requested mobile host is not a discovered materialized mobile app: $required"
+    }
+}
+
+$project = Get-Content -LiteralPath $ProjectJson -Raw | ConvertFrom-Json
+if (@($project.tags) -notcontains 'type:app') {
+    throw "$App is not tagged as type:app."
+}
+
+$package = Get-Content -LiteralPath $PackageJson -Raw | ConvertFrom-Json
+$startScript = [string] $package.scripts.start
+if ([string]::IsNullOrWhiteSpace($startScript)) {
+    throw "$App package.json does not define scripts.start."
 }
 
 if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
@@ -30,24 +44,15 @@ if ($Unmerged.Count -gt 0) {
     throw ("Repository contains unresolved merge paths: " + ($Unmerged -join ', '))
 }
 
-$Ports = @{
-    'app-client' = 18101
-    'app-partner' = 18102
-    'app-captain' = 18103
-    'app-field' = 18104
-}
-
 $Args = @(
     '--dir', $AppRoot,
-    'exec', 'expo', 'start',
-    '--dev-client',
-    '--port', [string]$Ports[$App]
+    'run', 'start'
 )
 if ($ClearCache) {
-    $Args += '--clear'
+    $Args += @('--', '--clear')
 }
 
 Write-Host ("Starting " + $App + " from " + $AppRoot)
-Write-Host ("Metro port: " + [string]$Ports[$App])
+Write-Host ("Invocation source: " + $PackageJson + " scripts.start")
 & pnpm @Args
 exit $LASTEXITCODE
