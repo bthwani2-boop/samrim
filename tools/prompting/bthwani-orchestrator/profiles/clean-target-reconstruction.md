@@ -129,4 +129,4 @@ For `ACTIVE_SLICE`, closure requires zero unaccounted donor truth capable of cha
 
 For `FULL_TARGET`, closure may require repository-wide material donor disposition.
 
-This profile never declares Product/repository completion. `04-VERIFY-REDIAGNOSE-CLOSE.md` and its routed verification owners do.
+This profile never declares Product/repository completion. `../04-VERIFY-REDIAGNOSE-CLOSE.md` and its routed verification owners do.
