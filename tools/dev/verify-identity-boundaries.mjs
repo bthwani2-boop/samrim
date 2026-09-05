@@ -354,10 +354,11 @@ const activationDelivery = read("services/identity/backend/internal/integrations
 if (activationDelivery.includes("ActorType") || activationDelivery.includes('"actorType"')) {
   failures.push("Identity activation delivery contains retired actorType semantics");
 }
-for (const required of ["Role string", '"role":message.Role']) {
-  if (!activationDelivery.includes(required)) {
-    failures.push("Identity activation delivery missing canonical role semantics: " + required);
-  }
+if (!/type Message struct\s*\{[\s\S]*?\bRole\s+string\b[\s\S]*?\}/.test(activationDelivery)) {
+  failures.push("Identity activation delivery Message must carry canonical role semantics");
+}
+if (!activationDelivery.includes('"role":message.Role')) {
+  failures.push("Identity activation webhook must emit canonical role semantics");
 }
 
 const activation = read("services/identity/backend/internal/activation/service.go");
