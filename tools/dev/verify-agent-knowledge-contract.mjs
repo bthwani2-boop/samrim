@@ -28,7 +28,7 @@ const cases = [
   {
     id: "donor_path_is_not_target_authority",
     question: "May donor topology determine the target path?",
-    source: "tools/prompting/bthwani-refoundation/01-CANONICAL-REPOSITORY-TOPOLOGY.md",
+    source: "tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md",
     mustInclude: ["DONOR_PATH != TARGET_PATH_AUTHORITY"],
   },
   {
