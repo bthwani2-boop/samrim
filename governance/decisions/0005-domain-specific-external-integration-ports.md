@@ -3,6 +3,9 @@
 ARTIFACT_CLASS: DURABLE_DECISION_RATIONALE
 STATUS: ACTIVE
 EXECUTION_AUTHORITY: NONE
+CLOSURE_AUTHORITY: NONE
+IMPLEMENTATION_STATE_AUTHORITY: NONE
+CURRENT_RULE_ROUTING: governance/policies/providers-and-integrations.md
 
 ## Context
 Generic provider abstractions tend to become god services and blur financial, biller, maps, messaging and storage semantics.

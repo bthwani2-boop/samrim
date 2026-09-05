@@ -3,6 +3,9 @@
 ARTIFACT_CLASS: DURABLE_DECISION_RATIONALE
 STATUS: ACTIVE
 EXECUTION_AUTHORITY: NONE
+CLOSURE_AUTHORITY: NONE
+IMPLEMENTATION_STATE_AUTHORITY: NONE
+CURRENT_RULE_ROUTING: governance/architecture/REPOSITORY-TOPOLOGY.md
 
 ## Context
 Generic top-level buckets such as core/shared accumulate unrelated owners and make placement/history look like architecture.

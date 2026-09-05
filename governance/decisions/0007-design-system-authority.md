@@ -3,6 +3,9 @@
 ARTIFACT_CLASS: DURABLE_DECISION_RATIONALE
 STATUS: ACTIVE
 EXECUTION_AUTHORITY: NONE
+CLOSURE_AUTHORITY: NONE
+IMPLEMENTATION_STATE_AUTHORITY: NONE
+CURRENT_RULE_ROUTING: governance/product/EXPERIENCE-AND-DESIGN.md
 
 ## Context
 Generic shared UI buckets mix brand tokens, primitives, domain copy/state and platform-specific implementation, creating duplicate visual authorities.

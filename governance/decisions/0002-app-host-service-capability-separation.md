@@ -3,6 +3,9 @@
 ARTIFACT_CLASS: DURABLE_DECISION_RATIONALE
 STATUS: ACTIVE
 EXECUTION_AUTHORITY: NONE
+CLOSURE_AUTHORITY: NONE
+IMPLEMENTATION_STATE_AUTHORITY: NONE
+CURRENT_RULE_ROUTING: governance/architecture/APP-SERVICE-COMPOSITION.md
 
 ## Context
 Multiple deployable surfaces render the same capabilities. Actor/app-shaped service feature trees create duplicated semantics and cross-surface drift.
