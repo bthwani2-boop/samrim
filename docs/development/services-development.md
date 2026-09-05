@@ -37,3 +37,29 @@ Material mutations define trusted context, preconditions, allowed/forbidden stat
 ## External effects
 
 Preserve external operation identity/provenance. Timeout is not proof of failure; do not blind-fallback an ambiguous mutation.
+
+
+## Internal responsibility shape
+
+Use responsibility-driven internals rather than preserving donor folders or forcing one universal framework. A common shape is:
+
+~~~text
+backend/
+  cmd/<process>/          process startup/composition only
+  internal/
+    <capability>/         domain/application policy
+    transport/http/       decode/trusted-context/validate/call/encode
+    integrations/         cross-service/provider adapters
+    runtime/              process/runtime technical composition
+~~~
+
+Adapt physical folders when cohesion proves a better shape, but preserve these boundaries:
+
+- process entrypoints do not become business mega-modules;
+- HTTP transport does not own SQL, state machines, permission truth or financial policy;
+- repositories/persistence stay behind the owning capability/data boundary;
+- integrations translate to semantic service/provider contracts;
+- one mechanism name such as saga, outbox, worker, cache, retry, handler or controller does not become a top-level Product domain by itself;
+- large mixed files are split by real responsibility, not arbitrary line count.
+
+One service may contain several cohesive capabilities while still owning one public contract/migration/runtime lineage where that is the true deployment/data boundary.
