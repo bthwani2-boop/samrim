@@ -32,6 +32,7 @@ const lifecycleIndex = read("docs/platform-engineering-lifecycle/README.md");
 const agentRouter = read("AGENTS.md");
 const repositoryReadme = read("README.md");
 const contributing = read("CONTRIBUTING.md");
+const securityGuide = read("SECURITY.md");
 const packageJson = JSON.parse(read("package.json"));
 const queryKnowledge = read("tools/dev/query-knowledge.mjs");
 const experienceReference = read("docs/reference/external-systems/experience-design-ui-assurance.md");
@@ -625,6 +626,16 @@ if (/writeFileSync|appendFileSync|createWriteStream/.test(queryKnowledge)) failu
 
 if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(repositoryReadme)) failures.push("README hard-codes temporary branch a as active repository state");
 if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(contributing)) failures.push("CONTRIBUTING hard-codes temporary branch a as active repository state");
+if (contributing.includes("Active refoundation and implementation occurs")) failures.push("CONTRIBUTING encodes refoundation as a permanent active campaign state");
+for (const token of [
+  "DOCUMENT_CLASS: SECURITY_REPORTING_AND_SECRET_HANDLING_GUIDANCE",
+  "EXECUTION_AUTHORITY: NONE",
+  "PRODUCT_AUTHORITY: NONE",
+  "governance/policies/security.md",
+]) {
+  if (!securityGuide.includes(token)) failures.push("SECURITY.md missing authority-boundary token: " + token);
+}
+
 
 
 const lifecycleModules = [
