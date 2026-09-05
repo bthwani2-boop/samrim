@@ -56,6 +56,9 @@ for (const retired of [
   "tools/prompting/bthwani-orchestrator/templates/bthwani-target-qualification.md",
   "tools/prompting/bthwani-orchestrator/templates/required-truth-census.md",
   "tools/prompting/bthwani-orchestrator/templates/donor-zero-loss-accounting.md",
+  "tools/dev/close-foundation-runtime.ps1",
+  "tools/dev/verify-foundation-runtime.ps1",
+  "tools/dev/verify-foundation-local.ps1",
 ]) {
   if (exists(retired)) failures.push("retired knowledge artifact still exists: " + retired);
 }
@@ -68,6 +71,7 @@ const forbiddenCurrentVocabulary = [
   ["legacy Stage-B", /STAGE[_ -]?B/i],
   ["legacy Journey-Ready", /JOURNEY[-_ ]?READY/i],
   ["legacy Foundation Construction", /FOUNDATION[_ -]?CONSTRUCTION/i],
+  ["legacy Foundation stage vocabulary", /\bfoundation\b/i],
   ["retired Operator Context", /\bOperator Context\b|\bOPERATOR_CONTEXT\b/i],
 ];
 for (const file of [...governanceFiles, ...orchestratorFiles, ...currentDocs]) {
@@ -76,6 +80,14 @@ for (const file of [...governanceFiles, ...orchestratorFiles, ...currentDocs]) {
     if (re.test(body)) failures.push(rel(file) + " contains " + label);
   }
 }
+
+
+const packageJsonText = read("package.json");
+for (const token of ["runtime:foundation:", "foundation:runtime:", "foundation:local:"]) {
+  if (packageJsonText.includes(token)) failures.push("package.json retains retired runtime command family: " + token);
+}
+const composeText = read("infra/local/compose/compose.yaml");
+if (/profiles:\s*\[[^\]]*"foundation"/i.test(composeText)) failures.push("compose retains retired foundation profile");
 
 const ownerRecords = [];
 for (const file of governanceFiles) {
