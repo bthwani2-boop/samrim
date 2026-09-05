@@ -44,7 +44,9 @@
     "knowledge:query": "node tools/dev/query-knowledge.mjs",
     "knowledge:verify-agent-contract": "node tools/dev/verify-agent-knowledge-contract.mjs",
     "knowledge:verify-references": "node tools/dev/verify-knowledge-references.mjs",
-    "knowledge:verify:all": "pnpm run knowledge:verify && pnpm run knowledge:verify-references && pnpm run knowledge:verify-agent-contract"
+    "knowledge:verify:all": "pnpm run knowledge:verify && pnpm run knowledge:verify-references && pnpm run knowledge:verify-agent-contract",
+    "docs:verify-config-parity": "node tools/dev/verify-doc-config-parity.mjs",
+    "docs:verify:all": "pnpm run docs:verify-command-parity && pnpm run docs:verify-config-parity"
   },
   "devDependencies": {
     "nx": "23.2.0",
