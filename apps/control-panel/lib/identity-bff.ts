@@ -98,9 +98,9 @@ export async function requestOperatorActivation(phone: string, activationCode: s
   return identityClient().requestManagedActivation({ phone, role: "operator", activationCode });
 }
 
-export async function completeOperatorActivation(phone: string, activationCode: string, verificationCode: string): Promise<ActorIdentity> {
+export async function completeOperatorActivation(phone: string, activationCode: string, verificationCode: string, password: string): Promise<ActorIdentity> {
   const deviceFingerprint = await operatorDeviceFingerprint();
-  const pair = await identityClient().activateManaged({ phone, role: "operator", activationCode, verificationCode, deviceFingerprint });
+  const pair = await identityClient().activateManaged({ phone, role: "operator", activationCode, verificationCode, password, deviceFingerprint });
   await writeTokens(pair, deviceFingerprint);
   return pair.identity;
 }
@@ -109,8 +109,8 @@ export async function issueManagedActivationCode(phone: string, role: ManagedAct
   return identityInternalClient().issueManagedActivationCode({ phoneE164: phone, role });
 }
 
-export async function provisionOperator(phone: string, password: string): Promise<ActorRoleView> {
-  return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator", password });
+export async function provisionOperator(phone: string): Promise<ActorRoleView> {
+  return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" });
 }
 
 export async function readOperatorSession(): Promise<ActorIdentity | null> {

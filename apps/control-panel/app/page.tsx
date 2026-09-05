@@ -46,7 +46,6 @@ async function identityFetch(input: RequestInfo | URL, init?: RequestInit): Prom
 function ManagedAccessPanel() {
   const [role, setRole] = useState<ManagedActivationRole>("partner");
   const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
   const [result, setResult] = useState<ManagedActivationCode | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -54,17 +53,16 @@ function ManagedAccessPanel() {
   async function provisionAndIssue() {
     setBusy(true); setError(""); setResult(null);
     try {
-      const response = await identityFetch("/api/access/managed-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, role, ...(role === "operator" ? { password } : {}) }) });
+      const response = await identityFetch("/api/access/managed-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, role }) });
       if (!response.ok) { setError(await responseMessage(response)); return; }
       setResult((await response.json()) as ManagedActivationCode);
-      setPhone(""); setPassword("");
+      setPhone("");
     } catch { setError("تعذر الوصول إلى خدمات إدارة الهوية. تحقق من تشغيل الحاويات ثم أعد المحاولة."); }
     finally { setBusy(false); }
   }
 
-  const isOperator = role === "operator";
   const roleLabel = role === "partner" ? "الشريك" : role === "captain" ? "الكابتن" : role === "field" ? "الميداني" : "موظف لوحة التحكم";
-  return <section className="access-card" aria-labelledby="managed-access-title"><div className="access-card-heading"><span className="step-chip">وصول محكوم</span><p className="eyebrow">إدارة الأجهزة المهيأة</p><h2 id="managed-access-title">تهيئة مستخدم وإصدار رمز</h2><p className="muted">ابدأ برقم الهاتف والدور. تُهيّئ المنصة الحساب عبر مالك المجال ثم تُصدر رمز تفعيل مرتبطًا به ويُستخدم مرة واحدة.</p></div><div className="access-form"><label className="field-label" htmlFor="managed-role">الدور<select id="managed-role" value={role} onChange={(event) => { setRole(event.target.value as ManagedActivationRole); setResult(null); setError(""); }}><option value="partner">الشريك</option><option value="captain">الكابتن</option><option value="field">الميداني</option><option value="operator">موظف لوحة التحكم</option></select></label><label className="field-label" htmlFor="managed-phone">رقم الهاتف<input id="managed-phone" autoComplete="tel" inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>{isOperator ? <label className="field-label" htmlFor="managed-password">كلمة مرور الموظف<input id="managed-password" autoComplete="new-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} /><span className="field-help">١٢ حرفاً على الأقل</span></label> : null}<button className="button button-primary" disabled={busy || !phone.trim() || (isOperator && password.length < 12)} onClick={() => void provisionAndIssue()}>{busy ? "جارٍ تهيئة الحساب وإصدار الرمز…" : "تهيئة الحساب وإصدار الرمز"}</button></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}{result ? <div className="code-output" role="status"><span className="summary-label">رمز {roleLabel}</span><code>{result.code}</code><p>سيظهر الرمز مرة واحدة فقط. احفظه وسلّمه للقناة الآمنة الخاصة بالدور. تنتهي صلاحيته في {new Date(result.expiresAt).toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}.</p></div> : null}</section>;
+  return <section className="access-card" aria-labelledby="managed-access-title"><div className="access-card-heading"><span className="step-chip">وصول محكوم</span><p className="eyebrow">إدارة الأجهزة المهيأة</p><h2 id="managed-access-title">تهيئة مستخدم وإصدار رمز</h2><p className="muted">ابدأ برقم الهاتف والدور. تُهيّئ المنصة الحساب عبر مالك المجال ثم تُصدر رمز تفعيل مرتبطًا به ويُستخدم مرة واحدة. ينشئ المستخدم كلمة المرور بعد إثبات الهاتف.</p></div><div className="access-form"><label className="field-label" htmlFor="managed-role">الدور<select id="managed-role" value={role} onChange={(event) => { setRole(event.target.value as ManagedActivationRole); setResult(null); setError(""); }}><option value="partner">الشريك</option><option value="captain">الكابتن</option><option value="field">الميداني</option><option value="operator">موظف لوحة التحكم</option></select></label><label className="field-label" htmlFor="managed-phone">رقم الهاتف<input id="managed-phone" autoComplete="tel" inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} /></label><button className="button button-primary" disabled={busy || !phone.trim()} onClick={() => void provisionAndIssue()}>{busy ? "جارٍ تهيئة الحساب وإصدار الرمز…" : "تهيئة الحساب وإصدار الرمز"}</button></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}{result ? <div className="code-output" role="status"><span className="summary-label">رمز {roleLabel}</span><code>{result.code}</code><p>سيظهر الرمز مرة واحدة فقط. احفظه وسلّمه للقناة الآمنة الخاصة بالدور. تنتهي صلاحيته في {new Date(result.expiresAt).toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}.</p></div> : null}</section>;
 }
 
 const visualTokens = {
@@ -84,6 +82,8 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<"login" | "activate">("login");
   const [activationCode, setActivationCode] = useState("");
   const [code, setCode] = useState("");
+  const [activationPassword, setActivationPassword] = useState("");
+  const [activationPasswordConfirmation, setActivationPasswordConfirmation] = useState("");
   const [challengeStarted, setChallengeStarted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -143,7 +143,7 @@ export default function Home() {
       const response = await identityFetch(authMode === "login" ? "/api/auth/login/complete" : "/api/auth/activation/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: authMode === "login" ? JSON.stringify({ phone, code, role: loginRole }) : JSON.stringify({ phone, activationCode, verificationCode: code }),
+        body: authMode === "login" ? JSON.stringify({ phone, code, role: loginRole }) : JSON.stringify({ phone, activationCode, verificationCode: code, password: activationPassword }),
       });
       if (!response.ok) {
         setError(await responseMessage(response));
@@ -152,6 +152,8 @@ export default function Home() {
       const body = (await response.json()) as { identity: ActorIdentity };
       setCode("");
       setActivationCode("");
+      setActivationPassword("");
+      setActivationPasswordConfirmation("");
       setChallengeStarted(false);
       setView({ kind: "authenticated", identity: body.identity });
     } catch {
@@ -204,7 +206,8 @@ export default function Home() {
     return shell(<><section className="workspace-card"><div className="workspace-intro"><span className="success-badge"><span className="success-dot" aria-hidden="true" /> الجلسة نشطة</span><p className="eyebrow">مساحة {view.identity.role === "platform_owner" ? "مالك المنصة" : "المشغل"}</p><h1>أهلاً بك في لوحة التحكم</h1><p className="lead">تم توثيق جلستك بعاملين. يمكنك متابعة الوحدات المصرح بها من هذه المساحة.</p></div><div className="session-summary"><div><span className="summary-label">الدور</span><strong>{view.identity.role === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</strong></div><div><span className="summary-label">السطح</span><strong>{view.identity.surface}</strong></div><div><span className="summary-label">حالة الجلسة</span><strong className="summary-value-success">موثقة</strong></div></div><div className="workspace-note"><span className="note-mark" aria-hidden="true">✓</span><div><strong>الهوية جاهزة</strong><p>لا توجد بيانات تشغيلية معروضة هنا قبل ربط صلاحيات الوحدات؛ لن نعرض أرقاماً تجريبية أو حالة غير مؤكدة.</p></div></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}<button className="button button-secondary" disabled={busy} onClick={() => void logout()}>{busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}</button></section>{view.identity.role === "platform_owner" ? <ManagedAccessPanel /> : null}</>, "workspace-shell");
   }
 
-  const canStart = authMode === "login" ? phone.trim().length > 0 && password.length >= 12 : phone.trim().length > 0 && activationCode.trim().length >= 20;
+  const canStart = authMode === "login" ? phone.trim().length > 0 && password.length >= 12 : phone.trim().length > 0 && activationCode.trim().length === 4;
+  const canCompleteActivation = code.trim().length === 4 && activationPassword.length >= 12 && activationPassword === activationPasswordConfirmation;
   return shell(
     <section className="auth-layout">
       <div className="auth-context">
@@ -221,18 +224,19 @@ export default function Home() {
           <p className="muted">{authMode === "activate" ? "أدخل رمز التفعيل الصادر من مالك المنصة، ثم رمز تحقق الهاتف." : challengeStarted ? "أدخل الرمز الأخير الذي وصلك عبر قناة التحقق المهيأة." : "اختر نوع الحساب واستخدم بيانات الهوية المعتمدة للمتابعة."}</p>
         </div>
         <div className="auth-mode-switch" role="group" aria-label="نوع العملية">
-          <button className={authMode === "login" ? "text-button active" : "text-button"} type="button" disabled={busy || challengeStarted} onClick={() => { setAuthMode("login"); setLoginRole("operator"); setError(""); }}>تسجيل الدخول</button>
-          <button className={authMode === "activate" ? "text-button active" : "text-button"} type="button" disabled={busy || challengeStarted} onClick={() => { setAuthMode("activate"); setLoginRole("operator"); setError(""); }}>تفعيل حساب موظف</button>
+          <button className={authMode === "login" ? "text-button active" : "text-button"} type="button" disabled={busy || challengeStarted} onClick={() => { setAuthMode("login"); setLoginRole("operator"); setActivationPassword(""); setActivationPasswordConfirmation(""); setError(""); }}>تسجيل الدخول</button>
+          <button className={authMode === "activate" ? "text-button active" : "text-button"} type="button" disabled={busy || challengeStarted} onClick={() => { setAuthMode("activate"); setLoginRole("operator"); setPassword(""); setActivationPassword(""); setActivationPasswordConfirmation(""); setError(""); }}>تفعيل حساب موظف</button>
         </div>
         <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void completeLogin(); else void startLogin(); }} noValidate>
           {authMode === "login" && !challengeStarted ? <label className="field-label" htmlFor="control-role">نوع الحساب<select id="control-role" value={loginRole} disabled={busy} onChange={(event) => setLoginRole(event.target.value as ControlPanelRole)}><option value="operator">موظف لوحة التحكم</option><option value="platform_owner">مالك المنصة</option></select></label> : null}
           <label className="field-label" htmlFor="operator-phone">رقم الهاتف<input id="operator-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
-          {authMode === "activate" && !challengeStarted ? <label className="field-label" htmlFor="activation-code">رمز التفعيل<input id="activation-code" autoComplete="one-time-code" value={activationCode} onChange={(event) => setActivationCode(event.target.value.toUpperCase())} placeholder="BTH-…" /></label> : null}
+          {authMode === "activate" && !challengeStarted ? <label className="field-label" htmlFor="activation-code">رمز التفعيل<input id="activation-code" autoComplete="one-time-code" inputMode="numeric" maxLength={4} value={activationCode} onChange={(event) => setActivationCode(event.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="0000" /></label> : null}
           {authMode === "login" && !challengeStarted ? <label className="field-label" htmlFor="operator-password">كلمة المرور<div className="password-field"><input aria-describedby="password-help" autoComplete="current-password" id="operator-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} /><button aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"} className="password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? "إخفاء" : "إظهار"}</button></div><span className="field-help" id="password-help">١٢ حرفاً على الأقل</span></label> : null}
-          {challengeStarted ? <label className="field-label" htmlFor="operator-code">رمز تحقق الهاتف<input aria-describedby="code-help" autoComplete="one-time-code" id="operator-code" inputMode="numeric" maxLength={6} placeholder="000000" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} /></label> : null}
-          {challengeStarted ? <span className="field-help" id="code-help">الرمز مكوّن من ٦ أرقام</span> : null}
+          {challengeStarted ? <label className="field-label" htmlFor="operator-code">رمز تحقق الهاتف<input aria-describedby="code-help" autoComplete="one-time-code" id="operator-code" inputMode="numeric" maxLength={4} placeholder="0000" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 4))} /></label> : null}
+          {challengeStarted ? <span className="field-help" id="code-help">الرمز مكوّن من ٤ أرقام</span> : null}
+          {authMode === "activate" && challengeStarted ? <><label className="field-label" htmlFor="activation-password">إنشاء كلمة المرور<input autoComplete="new-password" id="activation-password" type="password" value={activationPassword} onChange={(event) => setActivationPassword(event.target.value)} /><span className="field-help">١٢ حرفاً على الأقل</span></label><label className="field-label" htmlFor="activation-password-confirmation">تأكيد كلمة المرور<input autoComplete="new-password" id="activation-password-confirmation" type="password" value={activationPasswordConfirmation} onChange={(event) => setActivationPasswordConfirmation(event.target.value)} /></label></> : null}
           {error ? <p className="identity-error" role="alert">{error}</p> : null}
-          {challengeStarted ? <div className="form-actions"><button className="button button-primary" disabled={busy || code.trim().length !== 6} type="submit">{busy ? "جارٍ التحقق…" : authMode === "activate" ? "تفعيل الحساب" : "إكمال تسجيل الدخول"}</button><button className="text-button" disabled={busy} type="button" onClick={() => { setChallengeStarted(false); setCode(""); setError(""); }}>العودة لتعديل البيانات</button></div> : <div className="form-actions"><button className="button button-primary" disabled={busy || !canStart} type="submit">{busy ? "جارٍ بدء التحقق…" : authMode === "activate" ? "إرسال رمز تحقق الهاتف" : "متابعة إلى التحقق الثاني"}</button><p className="security-note"><span aria-hidden="true">⌁</span> {authMode === "activate" ? "رمز التفعيل لا يغني عن رمز تحقق الهاتف" : "يتطلب الدخول كلمة مرور ورمز تحقق ثانياً"}</p></div>}
+          {challengeStarted ? <div className="form-actions"><button className="button button-primary" disabled={busy || (authMode === "activate" ? !canCompleteActivation : code.trim().length !== 4)} type="submit">{busy ? "جارٍ التحقق…" : authMode === "activate" ? "حفظ كلمة المرور وتفعيل الحساب" : "إكمال تسجيل الدخول"}</button><button className="text-button" disabled={busy} type="button" onClick={() => { setChallengeStarted(false); setCode(""); setActivationPassword(""); setActivationPasswordConfirmation(""); setError(""); }}>العودة لتعديل البيانات</button></div> : <div className="form-actions"><button className="button button-primary" disabled={busy || !canStart} type="submit">{busy ? "جارٍ بدء التحقق…" : authMode === "activate" ? "إرسال رمز تحقق الهاتف" : "متابعة إلى التحقق الثاني"}</button><p className="security-note"><span aria-hidden="true">⌁</span> {authMode === "activate" ? "بعد OTP تنشئ كلمة المرور دون رمز تحقق إضافي" : "يتطلب الدخول كلمة مرور ورمز تحقق ثانياً"}</p></div>}
         </form>
       </div>
     </section>,

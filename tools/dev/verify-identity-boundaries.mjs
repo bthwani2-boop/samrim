@@ -99,7 +99,7 @@ for (const [app, role, surface] of [
   if (!page.includes("requestCode") || !page.includes("activate")) {
     failures.push(app + " UI is not bound to one-time managed activation");
   }
-  for (const phrase of ["رمز تفعيل صادر من لوحة التحكم", "رمز تحقق الهاتف", "هذا ليس تسجيل دخول يومياً"]) {
+  for (const phrase of ["رمز تفعيل صادر من لوحة التحكم", "رمز تحقق الهاتف", "تفعيل أولي لمرة واحدة", "لا يوجد رمز تحقق ثانٍ بعد ذلك"]) {
     if (!page.includes(phrase)) failures.push(app + " UI does not distinguish managed activation from phone verification: " + phrase);
   }
   if (!page.includes("currentState")) failures.push(app + " logout must mirror canonical local Identity state");
@@ -308,7 +308,7 @@ if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identit
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [
-  "const SchemaVersion = 5",
+  "const SchemaVersion = 7",
   "CurrentSchemaVersion",
   "migration history is non-contiguous",
   "identity_password_credentials",

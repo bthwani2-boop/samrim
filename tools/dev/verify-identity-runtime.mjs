@@ -93,7 +93,7 @@ function codeFor(challengeId, purpose) {
     .update(Buffer.from([0]))
     .update("challenge-code")
     .digest();
-  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0");
+  return String(digest.readUInt32BE(0) % 10_000).padStart(4, "0");
 }
 
 async function request(method, pathname, options = {}) {
@@ -237,16 +237,35 @@ const captainChallenge = await requestChallenge(
   { phone: sharedPhone, role: "captain", activationCode: captainActivation.code },
   "managed_activate",
 );
+const captainPassword = "Captain-" + suffix + "-Strong-Password";
 const captainPair = await expect("POST", "/auth/managed/activate", 200, {
   body: {
     phone: sharedPhone,
     role: "captain",
     activationCode: captainActivation.code,
     verificationCode: captainChallenge.code,
+    password: captainPassword,
     deviceFingerprint: "device-captain-" + suffix,
   },
 });
 assertSession(captainPair, "captain", "app-captain", actorId);
+const captainLoginPair = await expect("POST", "/auth/managed/login", 200, {
+  body: {
+    phone: sharedPhone,
+    role: "captain",
+    password: captainPassword,
+    deviceFingerprint: "device-captain-login-" + suffix,
+  },
+});
+assertSession(captainLoginPair, "captain", "app-captain", actorId);
+await expect("POST", "/auth/managed/login", 401, {
+  body: {
+    phone: sharedPhone,
+    role: "captain",
+    password: "Wrong-" + captainPassword,
+    deviceFingerprint: "device-captain-wrong-password-" + suffix,
+  },
+});
 const captainRead = await expect(
   "GET",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain",
@@ -259,7 +278,7 @@ assert(typeof captainRead.activatedAt === "string", "managed activation was not 
 const operatorPassword = "Operator-" + suffix + "-Strong-Password";
 const operator = await expect("POST", "/internal/actor-roles/provision", 201, {
   headers: service(platformToken),
-  body: { phoneE164: sharedPhone, role: "operator", password: operatorPassword },
+  body: { phoneE164: sharedPhone, role: "operator" },
 });
 assert(operator.actorId === actorId, "operator provisioning created a second actor");
 await expect("POST", "/internal/actor-roles/provision", 403, {
@@ -282,6 +301,7 @@ const operatorActivationPair = await expect("POST", "/auth/managed/activate", 20
     role: "operator",
     activationCode: operatorActivation.code,
     verificationCode: operatorActivationChallenge.code,
+    password: operatorPassword,
     deviceFingerprint: "device-operator-activation-" + suffix,
   },
 });
@@ -325,13 +345,14 @@ await expect("POST", "/auth/managed/activate", 401, {
   body: {
     phone: sharedPhone,
     role: "captain",
-    activationCode: "BTH-AAAA-AAAA-AAAA-AAAA-AAAA-AA",
-    verificationCode: "000000",
+    activationCode: "0000",
+    verificationCode: "0000",
+    password: captainPassword,
     deviceFingerprint: "device-captain-repeated-" + suffix,
   },
 });
 await expect("POST", "/auth/managed/activation/request", 401, {
-  body: { phone: sharedPhone, role: "captain", activationCode: "BTH-AAAA-AAAA-AAAA-AAAA-AAAA-AA" },
+  body: { phone: sharedPhone, role: "captain", activationCode: "0000" },
 });
 
 // Explicit DSH re-enrollment is the only path that reopens managed activation.
@@ -366,6 +387,7 @@ const reactivatedCaptain = await expect("POST", "/auth/managed/activate", 200, {
     role: "captain",
     activationCode: reactivationCode.code,
     verificationCode: reactivation.code,
+    password: captainPassword + "-Reenrolled",
     deviceFingerprint: "device-captain-reenrolled-" + suffix,
   },
 });
@@ -421,7 +443,7 @@ await expect("POST", "/auth/client/login", 200, {
 // Unknown managed-role requests are non-enumerating but their decoy proof cannot grant a role/session.
 const unknownCaptainPhone = phone();
 await expect("POST", "/auth/managed/activation/request", 401, {
-  body: { phone: unknownCaptainPhone, role: "captain", activationCode: "BTH-AAAA-AAAA-AAAA-AAAA-AAAA-AA" },
+  body: { phone: unknownCaptainPhone, role: "captain", activationCode: "0000" },
 });
 
 // Provider outage must not become an actor/role oracle. Public acknowledgement is independent of delivery outcome.
@@ -447,11 +469,11 @@ try {
   });
   await waitForDeliveryStatus(outageKnownPhone, "managed_activate", "captain", "unknown");
   assert(
-    deliveryStatus(outageUnknownPhone, "managed_activate", "captain") === "suppressed",
-    "decoy challenge invoked delivery provider",
+    deliveryStatus(outageUnknownPhone, "managed_activate", "captain") === "",
+    "invalid activation proof created a delivery record",
   );
 } finally {
-  compose("start", "mailpit");
+  compose("up", "-d", "mailpit");
 }
 await new Promise((resolve) => setTimeout(resolve, 750));
 assert(
@@ -466,7 +488,7 @@ const locked = await requestChallenge(
   { phone: lockedPhone },
   "client_register",
 );
-const wrongCode = locked.code === "000000" ? "000001" : "000000";
+  const wrongCode = locked.code === "0000" ? "0001" : "0000";
 for (let attempt = 0; attempt < 5; attempt++) {
   await expect("POST", "/auth/client/register", 401, {
     body: {

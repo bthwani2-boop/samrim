@@ -5,6 +5,7 @@ import type {
   ManagedActivationCode,
   ManagedActivationCodeIssueRequest,
   ManagedActivationRequest,
+  ManagedPasswordLoginRequest,
   ManagedChallengeRequest,
   OperatorLoginCompleteRequest,
   OperatorLoginStartRequest,
@@ -26,6 +27,7 @@ export type IdentityClient = Readonly<{
   requestClientRegistration(request: PhoneRequest): Promise<Challenge>;
   registerClient(request: ClientCredentialProofRequest): Promise<TokenPair>;
   loginClient(request: PasswordLoginRequest): Promise<TokenPair>;
+  loginManaged(request: ManagedPasswordLoginRequest): Promise<TokenPair>;
   requestClientRecovery(request: PhoneRequest): Promise<Challenge>;
   recoverClient(request: ClientCredentialProofRequest): Promise<TokenPair>;
   requestManagedActivation(request: ManagedChallengeRequest): Promise<Challenge>;
@@ -111,6 +113,7 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     requestClientRegistration: (body) => request("/auth/client/registration/request", { method: "POST", body }),
     registerClient: (body) => request("/auth/client/register", { method: "POST", body }),
     loginClient: (body) => request("/auth/client/login", { method: "POST", body }),
+    loginManaged: (body) => request("/auth/managed/login", { method: "POST", body }),
     requestClientRecovery: (body) => request("/auth/client/recovery/request", { method: "POST", body }),
     recoverClient: (body) => request("/auth/client/recover", { method: "POST", body }),
     requestManagedActivation: (body) => request("/auth/managed/activation/request", { method: "POST", body }),

@@ -29,11 +29,17 @@ func TestIdentityInputNormalization(t *testing.T) {
 	if value, err := NormalizeDeviceFingerprint("device-12345678"); err != nil || value != "device-12345678" {
 		t.Fatalf("valid fingerprint rejected: %q %v", value, err)
 	}
-	if value, err := NormalizeVerificationCode("123456"); err != nil || value != "123456" {
+	if value, err := NormalizeVerificationCode("1234"); err != nil || value != "1234" {
 		t.Fatalf("valid verification code rejected: %q %v", value, err)
 	}
 	if _, err := NormalizeVerificationCode("12345"); err == nil {
 		t.Fatal("invalid verification code accepted")
+	}
+	if value, err := NormalizeActivationCode("0123"); err != nil || value != "0123" {
+		t.Fatalf("valid activation code rejected: %q %v", value, err)
+	}
+	if _, err := NormalizeActivationCode("BTH-AAAA"); err == nil {
+		t.Fatal("legacy activation code accepted")
 	}
 }
 func TestOpaqueSecurityValues(t *testing.T) {
@@ -47,6 +53,16 @@ func TestOpaqueSecurityValues(t *testing.T) {
 	}
 	if HMAC256Hex([]byte("01234567890123456789012345678901"), "a") == HMAC256Hex([]byte("01234567890123456789012345678901"), "b") {
 		t.Fatal("HMAC does not distinguish payloads")
+	}
+}
+
+func TestRandomActivationCodeIsFourDigits(t *testing.T) {
+	code, err := RandomActivationCode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, err := NormalizeActivationCode(code); err != nil || value != code || len(code) != 4 {
+		t.Fatalf("unexpected activation code: %q %v", code, err)
 	}
 }
 

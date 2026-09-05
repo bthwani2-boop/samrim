@@ -32,7 +32,7 @@ func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input dom
 	}
 
 	passwordHash := ""
-	if domain.IsControlPanelRole(role) {
+	if role == "platform_owner" {
 		passwordHash, err = identitysecurity.HashPassword(input.Password)
 		if err != nil {
 			return domain.ActorRoleView{}, domain.ErrInvalidInput
@@ -105,7 +105,7 @@ func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input dom
 		}
 	}
 
-	if domain.IsControlPanelRole(role) {
+	if role == "platform_owner" {
 		var currentHash string
 		err := tx.QueryRowContext(ctx, "SELECT password_hash FROM identity_password_credentials WHERE actor_id=$1 AND role=$2 FOR UPDATE", a.ID, role).Scan(&currentHash)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -267,6 +267,39 @@ WHERE r.actor_id=$1 AND r.role=$2 FOR UPDATE OF r,a`, actorID, role).Scan(&enabl
 		return err
 	}
 	return auditTx(ctx, tx, "actor_role.activated", actorID, actorID, "success", "", map[string]any{"role": role})
+}
+
+func (s *Service) SetManagedPasswordTx(ctx context.Context, tx *sql.Tx, actorID, role, password string) error {
+	role = strings.ToLower(strings.TrimSpace(role))
+	if !domain.IsManagedActivationRole(role) {
+		return domain.ErrForbidden
+	}
+	hash, err := identitysecurity.HashPassword(password)
+	if err != nil {
+		return domain.ErrInvalidInput
+	}
+	var enabled, securityEnabled bool
+	var activated sql.NullTime
+	if err := tx.QueryRowContext(ctx, `SELECT r.enabled,a.security_enabled,r.activated_at
+FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id
+WHERE r.actor_id=$1 AND r.role=$2 FOR UPDATE OF r,a`, actorID, role).Scan(&enabled, &securityEnabled, &activated); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.ErrInvalidActivation
+		}
+		return err
+	}
+	if !enabled || !securityEnabled || !activated.Valid {
+		return domain.ErrInvalidActivation
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_password_credentials(actor_id,role,password_hash,version)
+VALUES($1,$2,$3,1)
+ON CONFLICT (actor_id,role) DO UPDATE SET password_hash=EXCLUDED.password_hash,version=identity_password_credentials.version+1,updated_at=clock_timestamp()`, actorID, role, hash); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL", actorID, role); err != nil {
+		return err
+	}
+	return auditTx(ctx, tx, "credential.password_set", actorID, actorID, "success", "", map[string]any{"role": role})
 }
 
 func (s *Service) ResetClientPasswordTx(ctx context.Context, tx *sql.Tx, actorID, password string) error {

@@ -70,21 +70,33 @@ func (s *Service) RegisterClient(ctx context.Context, input domain.ClientCredent
 }
 
 func (s *Service) LoginClient(ctx context.Context, input domain.PasswordLoginRequest, ipHash string) (domain.TokenPair, error) {
-	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
+	return s.loginPassword(ctx, input.Phone, input.Password, "client", input.DeviceFingerprint, ipHash)
+}
+
+func (s *Service) LoginManaged(ctx context.Context, input domain.ManagedPasswordLoginRequest, ipHash string) (domain.TokenPair, error) {
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	if !domain.IsManagedRole(role) {
+		return domain.TokenPair{}, domain.ErrInvalidInput
+	}
+	return s.loginPassword(ctx, input.Phone, input.Password, role, input.DeviceFingerprint, ipHash)
+}
+
+func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, rawDevice, ipHash string) (domain.TokenPair, error) {
+	phone, err := identitysecurity.NormalizePhoneE164(rawPhone)
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
-	device, err := identitysecurity.NormalizeDeviceFingerprint(input.DeviceFingerprint)
+	device, err := identitysecurity.NormalizeDeviceFingerprint(rawDevice)
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
 	if len(strings.TrimSpace(ipHash)) != 64 {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
-	a, hash, lookupErr := s.actors.PasswordCredential(ctx, phone, "client")
+	a, hash, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
 	if errors.Is(lookupErr, domain.ErrNotFound) {
-		_ = identitysecurity.VerifyPassword(dummyPasswordHash, input.Password)
-		limited, recordErr := s.recordPasswordFailure(ctx, phone, "client", ipHash)
+		_ = identitysecurity.VerifyPassword(dummyPasswordHash, password)
+		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash)
 		if recordErr != nil {
 			return domain.TokenPair{}, recordErr
 		}
@@ -96,8 +108,8 @@ func (s *Service) LoginClient(ctx context.Context, input domain.PasswordLoginReq
 	if lookupErr != nil {
 		return domain.TokenPair{}, lookupErr
 	}
-	if !identitysecurity.VerifyPassword(hash, input.Password) {
-		limited, recordErr := s.recordPasswordFailure(ctx, phone, "client", ipHash)
+	if !identitysecurity.VerifyPassword(hash, password) {
+		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash)
 		if recordErr != nil {
 			return domain.TokenPair{}, recordErr
 		}
@@ -115,17 +127,17 @@ func (s *Service) LoginClient(ctx context.Context, input domain.PasswordLoginReq
 	var enabled, securityEnabled bool
 	if err := tx.QueryRowContext(ctx, `SELECT c.password_hash,r.enabled,a.security_enabled FROM identity_password_credentials c
 JOIN identity_actor_roles r ON r.actor_id=c.actor_id AND r.role=c.role JOIN identity_actors a ON a.id=c.actor_id
-WHERE c.actor_id=$1 AND c.role='client' FOR UPDATE OF c,r,a`, a.ID).Scan(&currentHash, &enabled, &securityEnabled); err != nil || !enabled || !securityEnabled || currentHash != hash {
+WHERE c.actor_id=$1 AND c.role=$2 FOR UPDATE OF c,r,a`, a.ID, role).Scan(&currentHash, &enabled, &securityEnabled); err != nil || !enabled || !securityEnabled || currentHash != hash {
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
-	if err := s.recordPasswordSuccessTx(ctx, tx, phone, "client", ipHash); err != nil {
+	if err := s.recordPasswordSuccessTx(ctx, tx, phone, role, ipHash); err != nil {
 		return domain.TokenPair{}, err
 	}
-	pair, err := s.sessions.CreateTx(ctx, tx, a.ID, "client", device)
+	pair, err := s.sessions.CreateTx(ctx, tx, a.ID, role, device)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	if err := auditTx(ctx, tx, "session.login", a.ID, a.ID, "success", "", map[string]any{"role": "client"}); err != nil {
+	if err := auditTx(ctx, tx, "session.login", a.ID, a.ID, "success", "", map[string]any{"role": role}); err != nil {
 		return domain.TokenPair{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -198,6 +210,9 @@ func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActiv
 			return domain.TokenPair{}, err
 		}
 		if err := s.actors.MarkManagedActivatedTx(ctx, tx, actorID, role); err != nil {
+			return domain.TokenPair{}, err
+		}
+		if err := s.actors.SetManagedPasswordTx(ctx, tx, actorID, role, input.Password); err != nil {
 			return domain.TokenPair{}, err
 		}
 		return s.sessions.CreateTx(ctx, tx, actorID, role, input.DeviceFingerprint)
@@ -606,8 +621,8 @@ func (s *Service) codeFor(challengeID, purpose string) (string, error) {
 	if err != nil || len(bytes) != 4 {
 		return "", domain.ErrUnavailable
 	}
-	value := (uint32(bytes[0])<<24 | uint32(bytes[1])<<16 | uint32(bytes[2])<<8 | uint32(bytes[3])) % 1000000
-	return strconv.FormatUint(uint64(value)+1000000, 10)[1:], nil
+	value := (uint32(bytes[0])<<24 | uint32(bytes[1])<<16 | uint32(bytes[2])<<8 | uint32(bytes[3])) % 10000
+	return strconv.FormatUint(uint64(value)+10000, 10)[1:], nil
 }
 func auditTx(ctx context.Context, tx *sql.Tx, eventType, actorID, principal, outcome, correlationID string, metadata map[string]any) error {
 	if metadata == nil {

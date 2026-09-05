@@ -81,11 +81,19 @@ type PasswordLoginRequest struct {
 	DeviceFingerprint string `json:"deviceFingerprint"`
 }
 
+type ManagedPasswordLoginRequest struct {
+	Phone             string `json:"phone"`
+	Password          string `json:"password"`
+	Role              string `json:"role"`
+	DeviceFingerprint string `json:"deviceFingerprint"`
+}
+
 type ManagedActivationRequest struct {
 	Phone             string `json:"phone"`
 	Role              string `json:"role"`
 	ActivationCode    string `json:"activationCode"`
 	VerificationCode  string `json:"verificationCode"`
+	Password          string `json:"password"`
 	DeviceFingerprint string `json:"deviceFingerprint"`
 }
 
@@ -196,10 +204,6 @@ func RoleAllowedForCaller(caller, role string) bool {
 	default:
 		return false
 	}
-}
-
-func CanIssueManagedActivationCode(caller string) bool {
-	return CanIssueManagedActivationCodeForRole(caller, "operator")
 }
 
 func CanIssueManagedActivationCodeForRole(caller, role string) bool {

@@ -71,12 +71,23 @@ export function requestManagedActivation(phone: string, activationCode: string) 
   return identityClient().requestManagedActivation({ phone, role, activationCode });
 }
 
-export async function activateManagedIdentity(phone: string, activationCode: string, verificationCode: string): Promise<IdentitySessionState> {
+export async function activateManagedIdentity(phone: string, activationCode: string, verificationCode: string, password: string): Promise<IdentitySessionState> {
   const pair = await identityClient().activateManaged({
     phone,
     role,
     activationCode,
     verificationCode,
+    password,
+    deviceFingerprint: await deviceFingerprint(),
+  });
+  return identitySession().adopt(pair);
+}
+
+export async function loginManagedIdentity(phone: string, password: string): Promise<IdentitySessionState> {
+  const pair = await identityClient().loginManaged({
+    phone,
+    role,
+    password,
     deviceFingerprint: await deviceFingerprint(),
   });
   return identitySession().adopt(pair);

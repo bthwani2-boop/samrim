@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 5
+const SchemaVersion = 7
 
 type schemaRequirement struct {
 	table   string
@@ -22,7 +22,7 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_password_credentials", columns: []string{"actor_id", "role", "password_hash", "version", "created_at", "updated_at"}, indexes: []string{"identity_password_credentials_pkey"}},
 	{table: "identity_challenges", columns: []string{"id", "actor_id", "role", "purpose", "phone_e164", "code_hash", "request_ip_hash", "admissible", "status", "attempts", "expires_at", "consumed_at", "created_at", "updated_at"}, indexes: []string{"identity_challenges_pkey", "identity_challenges_one_pending_uq", "identity_challenges_lookup_idx", "identity_challenges_ip_idx"}},
 	{table: "identity_challenge_deliveries", columns: []string{"challenge_id", "provider", "status", "attempts", "started_at", "finished_at", "created_at", "updated_at"}, indexes: []string{"identity_challenge_deliveries_pkey", "identity_challenge_deliveries_pending_idx"}},
-	{table: "identity_managed_activation_codes", columns: []string{"id", "actor_id", "role", "phone_e164", "code_hash", "status", "attempts", "expires_at", "consumed_at", "created_by", "created_at", "updated_at"}, indexes: []string{"identity_managed_activation_codes_pkey", "identity_managed_activation_codes_pending_uq", "identity_managed_activation_codes_hash_uq", "identity_managed_activation_codes_lookup_idx"}},
+	{table: "identity_managed_activation_codes", columns: []string{"id", "actor_id", "role", "phone_e164", "code_hash", "status", "attempts", "expires_at", "consumed_at", "created_by", "created_at", "updated_at"}, indexes: []string{"identity_managed_activation_codes_pkey", "identity_managed_activation_codes_pending_uq", "identity_managed_activation_codes_lookup_idx"}},
 	{table: "identity_sessions", columns: []string{"id", "actor_id", "role", "access_token_hash", "refresh_token_hash", "device_fingerprint_hash", "access_expires_at", "refresh_expires_at", "revoked_at", "compromised_at", "last_used_at", "version", "created_at"}, indexes: []string{"identity_sessions_pkey", "identity_sessions_access_hash_uq", "identity_sessions_refresh_hash_uq", "identity_sessions_actor_role_idx", "identity_sessions_active_idx"}},
 	{table: "identity_refresh_token_history", columns: []string{"session_id", "token_hash", "rotated_at"}, indexes: []string{"identity_refresh_token_history_pkey", "identity_refresh_token_history_hash_uq", "identity_refresh_token_history_session_idx"}},
 	{table: "identity_password_attempts", columns: []string{"id", "phone_e164", "role", "ip_hash", "succeeded", "created_at"}, indexes: []string{"identity_password_attempts_pkey", "identity_password_attempts_subject_idx", "identity_password_attempts_ip_idx"}},

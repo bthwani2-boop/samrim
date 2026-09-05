@@ -42,6 +42,7 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /auth/client/recover", s.recoverClient)
 	mux.HandleFunc("POST /auth/managed/activation/request", s.requestManagedActivation)
 	mux.HandleFunc("POST /auth/managed/activate", s.activateManaged)
+	mux.HandleFunc("POST /auth/managed/login", s.loginManaged)
 	mux.HandleFunc("POST /internal/managed-activation-codes", s.internal(s.issueManagedActivationCode))
 	mux.HandleFunc("POST /auth/operator/login/start", s.startOperatorLogin)
 	mux.HandleFunc("POST /auth/operator/login/complete", s.completeOperatorLogin)
@@ -152,6 +153,18 @@ func (s *Server) activateManaged(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.challenges.ActivateManaged(r.Context(), input)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+func (s *Server) loginManaged(w http.ResponseWriter, r *http.Request) {
+	var input domain.ManagedPasswordLoginRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.challenges.LoginManaged(r.Context(), input, identitysecurity.SHA256Hex(remoteIP(r)))
 	if err != nil {
 		writeDomainError(w, err)
 		return

@@ -23,6 +23,7 @@ const schemaNames = [
   "ManagedActivationCode",
   "ClientCredentialProofRequest",
   "PasswordLoginRequest",
+  "ManagedPasswordLoginRequest",
   "ManagedActivationRequest",
   "OperatorLoginStartRequest",
   "OperatorLoginCompleteRequest",

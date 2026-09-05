@@ -116,7 +116,7 @@ paths:
     post:
       tags: [managed-auth]
       operationId: activateManagedRole
-      description: Consumes the one-time control-surface activation code and the separate phone-verification challenge, permanently records that enrollment, and creates the first role-scoped device-bound session. Repeated activation is not normal login.
+      description: Consumes the one-time control-surface activation code and the separate phone-verification challenge, creates the role-scoped password credential, permanently records that enrollment, and creates the first role-scoped device-bound session. Repeated activation is not normal login.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationRequest" } } }
@@ -124,6 +124,20 @@ paths:
         "200": { $ref: "#/components/responses/TokenPair" }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/managed/login:
+    post:
+      tags: [managed-auth]
+      operationId: loginManagedRole
+      description: Normal re-authentication for an activated partner, captain, or field role is phone plus that role's password credential. A valid stored session is restored instead of requiring login on every app open.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedPasswordLoginRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /auth/operator/login/start:
     post:
@@ -190,7 +204,7 @@ paths:
       tags: [internal-actor-roles]
       operationId: provisionActorRole
       security: [{ internalServiceToken: [] }]
-      description: The authenticated service token determines the caller. Identity alone creates actor_id. DSH may provision partner/captain/field; Platform Control may provision the platform owner or an operator. Control-panel provisioning includes the role-specific password credential; only an operator requires activation before first login.
+      description: The authenticated service token determines the caller. Identity alone creates actor_id. DSH may provision partner/captain/field; Platform Control may provision the platform owner or an operator. Only the platform-owner bootstrap creates a password here; managed roles create their role-scoped password during one-time activation after phone verification.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ProvisionActorRoleRequest" } } }
@@ -423,8 +437,9 @@ components:
           $ref: "#/components/schemas/ManagedActivationRole"
         activationCode:
           type: string
-          minLength: 20
-          maxLength: 64
+          minLength: 4
+          maxLength: 4
+          pattern: "^[0-9]{4}$"
 
     ClientCredentialProofRequest:
       type: object
@@ -435,7 +450,7 @@ components:
           type: string
         code:
           type: string
-          pattern: "^[0-9]{6}$"
+          pattern: "^[0-9]{4}$"
         password:
           type: string
           minLength: 12
@@ -461,10 +476,28 @@ components:
           minLength: 8
           maxLength: 256
 
+    ManagedPasswordLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, password, role, deviceFingerprint]
+      properties:
+        phone:
+          type: string
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+        role:
+          $ref: "#/components/schemas/ManagedActorType"
+        deviceFingerprint:
+          type: string
+          minLength: 8
+          maxLength: 256
+
     ManagedActivationRequest:
       type: object
       additionalProperties: false
-      required: [phone, role, activationCode, verificationCode, deviceFingerprint]
+      required: [phone, role, activationCode, verificationCode, password, deviceFingerprint]
       properties:
         phone:
           type: string
@@ -472,11 +505,16 @@ components:
           $ref: "#/components/schemas/ManagedActivationRole"
         activationCode:
           type: string
-          minLength: 20
-          maxLength: 64
+          minLength: 4
+          maxLength: 4
+          pattern: "^[0-9]{4}$"
         verificationCode:
           type: string
-          pattern: "^[0-9]{6}$"
+          pattern: "^[0-9]{4}$"
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
         deviceFingerprint:
           type: string
           minLength: 8
@@ -505,7 +543,7 @@ components:
           type: string
         code:
           type: string
-          pattern: "^[0-9]{6}$"
+          pattern: "^[0-9]{4}$"
         role:
           $ref: "#/components/schemas/ControlPanelRole"
         deviceFingerprint:

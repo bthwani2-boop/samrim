@@ -4,8 +4,8 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base32"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -18,8 +18,8 @@ import (
 var (
 	phonePattern            = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
 	devicePattern           = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
-	verificationCodePattern = regexp.MustCompile("^[0-9]{6}$")
-	activationCodePattern   = regexp.MustCompile("^BTH[A-Z2-7]{26}$")
+	verificationCodePattern = regexp.MustCompile("^[0-9]{4}$")
+	activationCodePattern   = regexp.MustCompile("^[0-9]{4}$")
 	ErrInvalidValue         = errors.New("invalid identity value")
 )
 
@@ -65,8 +65,7 @@ func NormalizeVerificationCode(raw string) (string, error) {
 }
 
 func NormalizeActivationCode(raw string) (string, error) {
-	code := strings.ToUpper(strings.TrimSpace(raw))
-	code = strings.NewReplacer(" ", "", "-", "").Replace(code)
+	code := strings.TrimSpace(raw)
 	if !activationCodePattern.MatchString(code) {
 		return "", ErrInvalidValue
 	}
@@ -85,12 +84,18 @@ func RandomToken(byteCount int) (string, error) {
 }
 
 func RandomActivationCode() (string, error) {
-	buffer := make([]byte, 16)
-	if _, err := rand.Read(buffer); err != nil {
-		return "", err
+	const bound = uint64(1) << 32
+	limit := bound - (bound % 10000)
+	for {
+		var buffer [4]byte
+		if _, err := rand.Read(buffer[:]); err != nil {
+			return "", err
+		}
+		value := uint64(binary.BigEndian.Uint32(buffer[:]))
+		if value < limit {
+			return fmt.Sprintf("%04d", value%10000), nil
+		}
 	}
-	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buffer)
-	return "BTH-" + encoded[:4] + "-" + encoded[4:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:], nil
 }
 
 func SHA256Hex(value string) string {
