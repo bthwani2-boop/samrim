@@ -154,6 +154,7 @@ for (const { id, body } of sections) {
 
 
 const retiredHumanDomain = ["work", "force"].join("");
+const activeRefoundationBranchPhrase = ["active refoundation", "branch"].join(" ");
 const retiredHumanDomainAuthorityPattern = new RegExp(
   "services/" +
     retiredHumanDomain +
@@ -201,7 +202,14 @@ for (const file of collectMarkdown(durableGovernanceDir)) {
   if (/services\/[^\s/]+\/frontend\//i.test(body)) {
     failures.push("service-owned frontend path residue in durable Governance: " + rel);
   }
-  if (/during the current refoundation campaign|active refoundation branch|stage-b\//i.test(body)) {
+  if (
+    new RegExp(
+      "during the current refoundation campaign|" +
+        activeRefoundationBranchPhrase +
+        "|stage-b/",
+      "i",
+    ).test(body)
+  ) {
     failures.push("current campaign/branch state leaked into durable Governance: " + rel);
   }
 }
@@ -218,7 +226,16 @@ for (const file of branchSensitiveFiles) {
   const body = fs.readFileSync(file, "utf8");
   const rel = path.relative(root, file).split(path.sep).join("/");
   if (/ExpectedBranch\s*=\s*["']a["']/i.test(body)) failures.push("hard-coded branch a default in tooling/docs: " + rel);
-  if (/clean branch\s+`a`|active refoundation branch|branch\s+`a`/i.test(body)) failures.push("hard-coded branch a guidance in durable/current docs: " + rel);
+  if (
+    new RegExp(
+      "clean branch\\s+`a`|" +
+        activeRefoundationBranchPhrase +
+        "|branch\\s+`a`",
+      "i",
+    ).test(body)
+  ) {
+    failures.push("hard-coded branch a guidance in durable/current docs: " + rel);
+  }
   if (/stage-b\/[A-Za-z0-9._/-]+/i.test(body)) failures.push("branch-specific stage-b state leaked into durable/current docs: " + rel);
   if (/git\s+branch\s+--show-current[^\n]*-eq\s*["']a["']/i.test(body)) failures.push("hard-coded branch a comparison in tooling: " + rel);
 }
@@ -573,7 +590,12 @@ for (const adapterPath of agentAdapterPaths) {
     if (!body.includes(token)) failures.push(adapterPath + " missing routing-only token: " + token);
   }
   if (body.split("\n").length > 60) failures.push(adapterPath + " is too large for a routing-only adapter");
-  if (/TARGET_BRANCH:|stage-b\/|active refoundation branch/i.test(body)) {
+  if (
+    new RegExp(
+      "TARGET_BRANCH:|stage-b/|" + activeRefoundationBranchPhrase,
+      "i",
+    ).test(body)
+  ) {
     failures.push(adapterPath + " contains branch/campaign state");
   }
   if (hasNonNoneAuthority(body, ["PRODUCT_AUTHORITY"])) {
