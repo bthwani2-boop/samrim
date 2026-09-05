@@ -2,26 +2,64 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet("identity", "dsh", "wlt")]
     [string]$Service
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$config = @{
-    identity  = @{ Port = "18082"; Path = "services\identity\backend" }
-    dsh       = @{ Port = "58080"; Path = "services\dsh\backend" }
-    wlt       = @{ Port = "18083"; Path = "services\wlt\backend" }
-}[$Service]
+$repo = (Resolve-Path (Join-Path $PSScriptRoot "....")).Path
+$serviceRoot = Join-Path $repo ("services\" + $Service)
+$backendPath = Join-Path $serviceRoot "backend"
+$projectPath = Join-Path $serviceRoot "project.json"
+$goModPath = Join-Path $backendPath "go.mod"
+$apiMainPath = Join-Path $backendPath "cmd\api\main.go"
+$envExamplePath = Join-Path $repo "infra\local\compose\.env.example"
+
+foreach ($required in @($projectPath, $goModPath, $apiMainPath, $envExamplePath)) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+        throw "Requested Go service is not a discovered materialized service: $required"
+    }
+}
+
+$project = Get-Content -LiteralPath $projectPath -Raw | ConvertFrom-Json
+if (@($project.tags) -notcontains "type:service") {
+    throw "$Service is not tagged as type:service."
+}
+if ([string] $project.root -ne ("services/" + $Service)) {
+    throw "$Service project.root does not match services/$Service."
+}
+
+$envKey = "SAMRIM_" + (($Service -replace '[^A-Za-z0-9]', '_').ToUpperInvariant()) + "_PORT"
+$port = $null
+foreach ($line in Get-Content -LiteralPath $envExamplePath) {
+    $trimmed = $line.Trim()
+    if (-not $trimmed -or $trimmed.StartsWith("#")) {
+        continue
+    }
+
+    $parts = $trimmed.Split("=", 2)
+    if ($parts.Count -eq 2 -and $parts[0].Trim() -eq $envKey) {
+        $port = $parts[1].Trim()
+        break
+    }
+}
+
+if (-not $env:PORT -and [string]::IsNullOrWhiteSpace([string] $port)) {
+    throw "No local default port for $Service. Expected $envKey in infra/local/compose/.env.example or an explicit PORT environment variable."
+}
 
 $oldPort = $env:PORT
 try {
     if (-not $env:PORT) {
-        $env:PORT = $config.Port
+        $env:PORT = [string] $port
     }
-    Push-Location (Join-Path $repo $config.Path)
+
+    Write-Host "Service: $Service"
+    Write-Host "Backend: $backendPath"
+    Write-Host "PORT source: $(if ($oldPort) { 'environment' } else { $envExamplePath + ' ' + $envKey })"
+
+    Push-Location $backendPath
     try {
         & go run ./cmd/api
         if ($LASTEXITCODE -ne 0) {
