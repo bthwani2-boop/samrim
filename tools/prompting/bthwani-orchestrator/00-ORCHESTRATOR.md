@@ -321,56 +321,21 @@ An `ACTIVE_SLICE` invocation terminates normally at its proven Level-4 fixed poi
 
 ## 21. Clean-target reconstruction mode
 
-When invocation supplies a donor repository/ref, this section specializes any incompatible single-repository wording above.
+When the invocation supplies `MODE=CLEAN_TARGET_RECONSTRUCTION` plus a separate donor repository/ref, load:
 
-```text
-MODE=CLEAN_TARGET_RECONSTRUCTION
+`profiles/clean-target-reconstruction.md`
+
+before applying donor-specific reconstruction actions.
+
+That profile owns only the two-repository specialization. General scope/recovery/diagnosis/mutation/verification law remains in `01`–`05`; durable target meaning remains in Governance; donor/accounting matrices remain non-authoritative evidence templates.
+
+At constitution level:
+
+~~~text
 TARGET_REPOSITORY = ONLY MUTABLE REPOSITORY
-DONOR_REPOSITORY = READ_ONLY FORENSIC CORPUS
-DONOR_CURRENT_TREE = FORENSIC EVIDENCE
-DONOR_GIT_HISTORY = FORENSIC EVIDENCE
-DONOR_GOVERNANCE = CANDIDATE DURABLE TRUTH
-DONOR_DOCS = CANDIDATE HUMAN KNOWLEDGE
-DONOR_CODE/DB/CONTRACT/RUNTIME/TESTS = IMPLEMENTATION/BEHAVIOR EVIDENCE
-NONE_OF_DONOR = AUTOMATIC TARGET AUTHORITY
-DONOR_VALUE_MAY_NOT_BE_DROPPED_SILENTLY
-```
+DONOR_REPOSITORY  = READ_ONLY FORENSIC CORPUS
+DONOR_VALUE       = MUST BE DISPOSITIONED WHEN MATERIAL
+DONOR_SHAPE       = NEVER AUTOMATIC TARGET AUTHORITY
+~~~
 
-The clean-target campaign is scope-aware:
-
-```text
-PIN_TARGET_HEAD + PIN_DONOR_REF
-→ RECONSTRUCT_AUTHORIZED_PRODUCT_SCOPE
-→ EXHAUST_DONOR_CONE_REQUIRED_BY_AUTHORIZED_SCOPE
-→ EXTRACT/DISPOSITION_REQUIRED_SEMANTIC_ATOMS_FOR_THAT_CONE
-→ BUILD_CURRENT-SHAPE-INDEPENDENT_CANONICAL_TARGET
-→ REHOME/REIMPLEMENT/REGENERATE_REQUIRED_VALUE_IN_TARGET
-→ CONNECT_COMPLETE_AUTHORIZED_VERTICAL_CONES
-→ VERIFY PARITY OR DELIBERATE IMPROVEMENT
-→ DO_NOT_IMPORT LOSERS
-→ FRESH AUTHORIZED-SCOPE RECENSUS
-→ AUTHORIZED_SCOPE_DONOR_CONE_GATE
-→ AUTHORIZED_SCOPE_LEVEL_4_FIXED_POINT
-```
-
-Repository-wide donor current-tree/history exhaustion is required for the `FULL_TARGET` terminal token, not as a precondition to close an independent active slice whose complete donor cone has been exhausted and whose scope-changing unknowns are zero.
-
-Valid donor dispositions are:
-
-```text
-PRESERVE_AS_TRUTH
-REFINE
-MERGE
-REHOME
-REIMPLEMENT
-REGENERATE
-REFERENCE_ONLY
-SUPERSEDE
-REJECT_WITH_REASON
-```
-
-`IGNORED`, `UNKNOWN_AND_SKIPPED`, and deletion-by-omission are forbidden dispositions.
-
-For cross-repository reconstruction, donor losers are not deleted from the donor. They are excluded from the target after required value is extracted. Deletion/cutover laws apply to losing or obsolete structures inside the mutable target repository.
-
-Final completion additionally requires the donor-exhaustion gates owned by `04-VERIFY-REDIAGNOSE-CLOSE.md`.
+Active-slice donor-cone versus full-target donor-exhaustion semantics and source-to-target reconstruction details are defined once in the clean-target profile and verified by `04-VERIFY-REDIAGNOSE-CLOSE.md`.
