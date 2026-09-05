@@ -5,7 +5,7 @@ EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-CURRENT_COMMAND_AUTHORITY: LIVE_REPOSITORY_SCRIPTS_AND_CONFIG
+CURRENT_COMMAND_TRUTH_SOURCE: LIVE_REPOSITORY_SCRIPTS_AND_CONFIG
 
 ## Start here
 
@@ -50,7 +50,7 @@ Read in this order for normal onboarding:
 1. `development/getting-started.md`
 2. `development/repository-map.md`
 3. `development/first-change.md`
-4. `platform-engineering-lifecycle/README.md` — modular human reference map for donor, foundation, delivery, release and operations topics; not an execution sequence
+4. `platform-engineering-lifecycle/README.md` — compact cross-topic routing map; no parallel lifecycle modules
 5. `development/incremental-product-delivery.md` — non-authoritative guidance for implementing an already-authorized small canonical slice without disposable architecture
 
 Then use the focused guide:
@@ -71,6 +71,7 @@ Then use the focused guide:
 - `development/observability-and-debugging.md`
 - `development/ci-and-quality.md`
 - `development/eas.md`
+- `development/release-and-store-submission.md` — release candidate, mobile-store submission, compatibility and controlled launch
 - `development/sentry.md`
 - `development/repository-evidence.md`
 - `development/leanctx.md`
