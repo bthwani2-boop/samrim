@@ -3,7 +3,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
-const cap = read("governance/product/CAPABILITIES.md");
+const capabilityIndex = read("governance/product/CAPABILITIES.md");
 const journeys = read("governance/product/JOURNEYS.md");
 const fixed = read("tools/prompting/bthwani-orchestrator/templates/bthwani-target-qualification.md");
 const platform = read("governance/project/PLATFORM.md");
@@ -101,16 +101,47 @@ function hasNonNoneAuthority(body, names) {
   return false;
 }
 
-const headingRe = /^###\s+([A-Z0-9_]+)\b.*$/gm;
-const headingMatches = [...cap.matchAll(headingRe)];
-const sections = headingMatches.map((m, i) => {
-  const bodyStart = m.index + m[0].length;
-  const bodyEnd = i + 1 < headingMatches.length ? headingMatches[i + 1].index : cap.length;
-  return { id: m[1], body: cap.slice(bodyStart, bodyEnd) };
-});
+const capabilityDir = path.join(root, "governance/product/capabilities");
+const capabilityFiles = collectMarkdown(capabilityDir);
+const capabilitySources = [];
+const sections = [];
+
+for (const file of capabilityFiles) {
+  const body = fs.readFileSync(file, "utf8");
+  const rel = path.relative(root, file).split(path.sep).join("/");
+  const owner = body.match(/^SEMANTIC_OWNER:\s*(\S+)\s*$/m)?.[1];
+  if (!owner) failures.push(rel + " missing SEMANTIC_OWNER");
+  if (owner && owner !== rel) failures.push(rel + " SEMANTIC_OWNER must equal its repository path; found " + owner);
+  if (!body.includes("PARENT_CAPABILITY_INDEX: governance/product/CAPABILITIES.md")) {
+    failures.push(rel + " missing canonical capability-index routing");
+  }
+
+  const matches = [...body.matchAll(/^###\s+([A-Z0-9_]+)\b.*$/gm)];
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    const bodyStart = m.index + m[0].length;
+    const bodyEnd = i + 1 < matches.length ? matches[i + 1].index : body.length;
+    sections.push({ id: m[1], body: body.slice(bodyStart, bodyEnd), source: rel, owner });
+  }
+  capabilitySources.push(body);
+}
+
+const capCorpus = capabilitySources.join("\n");
 const ids = sections.map((x) => x.id);
 const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
 if (duplicates.length) failures.push("duplicate capability IDs: " + [...new Set(duplicates)].join(", "));
+if (capabilityFiles.length !== 6) failures.push("expected six thematic capability owners; found " + capabilityFiles.length);
+
+for (const token of [
+  "ARTIFACT_CLASS: DURABLE_PRODUCT_CAPABILITY_INDEX",
+  "This file owns the **capability taxonomy, semantic-envelope schema, admission/change law and routing only**",
+  "pnpm knowledge:query -- capability <CAPABILITY_ID>",
+]) {
+  if (!capabilityIndex.includes(token)) failures.push("capability index missing routing/non-authority token: " + token);
+}
+if (/^###\s+[A-Z][A-Z0-9_]+\b/m.test(capabilityIndex)) {
+  failures.push("capability index contains capability semantics instead of routing-only content");
+}
 
 for (const id of ["CENTRAL_CATALOG","CART_CHECKOUT","FIELD_OPERATIONS_ASSIGNMENT_READINESS","MARKETING_CAMPAIGNS_LOYALTY","NOTIFICATIONS_COMMUNICATIONS","ANALYTICS_OPERATIONAL_READ_MODELS"]) {
   if (!ids.includes(id)) failures.push("missing required responsibility capability: " + id);
@@ -154,7 +185,6 @@ const checks = [
 for (const { id, body } of sections) {
   for (const [label, test] of checks) if (!test(body)) failures.push(id + " missing semantic envelope field: " + label);
 }
-
 
 const retiredHumanDomain = ["work", "force"].join("");
 const activeRefoundationBranchPhrase = ["active refoundation", "branch"].join(" ");
@@ -387,9 +417,9 @@ if (fs.existsSync(refoundationDir)) {
   }
 }
 
-if (cap.includes("`shared` — required")) failures.push("technical shared layer masquerades as Product surface");
-if (cap.toLowerCase().includes("proven notification capability")) failures.push("notification owner unresolved");
-if (cap.toLowerCase().includes("canonical ownership.** derived analytics/read-model capability")) failures.push("analytics owner unresolved");
+if (capCorpus.includes("`shared` — required")) failures.push("technical shared layer masquerades as Product surface");
+if (capCorpus.toLowerCase().includes("proven notification capability")) failures.push("notification owner unresolved");
+if (capCorpus.toLowerCase().includes("canonical ownership.** derived analytics/read-model capability")) failures.push("analytics owner unresolved");
 
 const coverageSections = journeys.split("\n").filter((line) => line.trim() === "## Capability-to-journey coverage").length;
 if (coverageSections !== 1) failures.push("expected exactly one capability-to-journey matrix; found " + coverageSections);
@@ -738,9 +768,10 @@ if (baselineGoSetupIndex < 0 || baselineFirstGoUseIndex < 0 || baselineGoSetupIn
   failures.push("baseline guard must set up pinned Go before first Go use");
 }
 
-for (const sourcePath of ["governance/product/CAPABILITIES.md", "governance/product/JOURNEYS.md"]) {
+for (const sourcePath of ["governance/product/capabilities", "governance/product/JOURNEYS.md"]) {
   if (!queryKnowledge.includes(sourcePath)) failures.push("knowledge query tool missing canonical source: " + sourcePath);
 }
+if (!queryKnowledge.includes("function capabilityRecords()")) failures.push("knowledge query tool missing split capability-owner discovery");
 if (!queryKnowledge.includes("function governanceOwners()")) failures.push("knowledge query tool missing source-derived Governance owner discovery");
 if (!queryKnowledge.includes('rawId === "owners"')) failures.push("knowledge query tool missing list owners mode");
 if (!queryKnowledge.includes('kind === "owner"')) failures.push("knowledge query tool missing owner lookup mode");
