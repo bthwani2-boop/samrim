@@ -235,6 +235,15 @@ for (const file of collectMarkdown(durableGovernanceDir)) {
   if (requiresSemanticOwner && ownerMatches.length !== 1) {
     failures.push(rel + " must declare exactly one SEMANTIC_OWNER");
   }
+  if (requiresSemanticOwner) {
+    for (const token of [
+      "EXECUTION_AUTHORITY: NONE",
+      "CLOSURE_AUTHORITY: NONE",
+      "IMPLEMENTATION_STATE_AUTHORITY: NONE",
+    ]) {
+      if (!body.includes(token)) failures.push(rel + " missing canonical Governance non-authority metadata: " + token);
+    }
+  }
   if (ownerMatches.length > 1) failures.push(rel + " declares duplicate SEMANTIC_OWNER lines");
   if (ownerMatches.length === 1) {
     const owner = ownerMatches[0];
@@ -312,6 +321,19 @@ for (const file of collectMarkdown(docsDir)) {
 
   if (/^PRODUCT_AUTHORITY:/m.test(body)) failures.push("legacy PRODUCT_AUTHORITY metadata in Docs: " + rel);
   if (/^CURRENT_STATE_AUTHORITY:/m.test(body)) failures.push("legacy CURRENT_STATE_AUTHORITY metadata in Docs: " + rel);
+
+  const allowedDocsAuthorityKeys = new Set([
+    "EXECUTION_AUTHORITY",
+    "PRODUCT_SEMANTIC_AUTHORITY",
+    "CURRENT_IMPLEMENTATION_AUTHORITY",
+    "ADOPTION_AUTHORITY",
+  ]);
+  for (const line of body.split("\n")) {
+    const match = line.match(/^([A-Z][A-Z0-9_]*_AUTHORITY):/);
+    if (match && !allowedDocsAuthorityKeys.has(match[1])) {
+      failures.push(rel + " uses noncanonical Docs authority metadata key: " + match[1] + "; use *_TRUTH_SOURCE for external/current sources");
+    }
+  }
   if (hasNonNoneAuthority(body, ["EXECUTION_AUTHORITY", "PRODUCT_AUTHORITY", "PRODUCT_SEMANTIC_AUTHORITY", "ARCHITECTURE_AUTHORITY", "CLOSURE_AUTHORITY"])) {
     failures.push("Docs claims forbidden normative authority: " + rel);
   }
