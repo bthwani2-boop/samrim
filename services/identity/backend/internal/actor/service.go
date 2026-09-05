@@ -88,7 +88,7 @@ func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input dom
 			}
 			return domain.ActorRoleView{}, err
 		}
-		a = domain.Actor{ID: actorID, PhoneE164: phone, Username: username, PasswordHash: passwordHash, Version: 1}
+		a = domain.Actor{ID: actorID, PhoneE164: phone, Username: username, PasswordHash: passwordHash, SecurityEnabled: true, Version: 1}
 		actorCreated = true
 		if err := auditTx(ctx, tx, "actor.created", actorID, caller, "success", "", nil); err != nil {
 			return domain.ActorRoleView{}, err
@@ -146,7 +146,7 @@ func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input dom
 		return domain.ActorRoleView{}, err
 	}
 	return domain.ActorRoleView{
-		ActorID: a.ID, PhoneE164: a.PhoneE164, Username: a.Username, Role: role, Enabled: enabled,
+		ActorID: a.ID, PhoneE164: a.PhoneE164, Username: a.Username, Role: role, Enabled: enabled, SecurityEnabled: a.SecurityEnabled,
 		ActorVersion: a.Version, RoleVersion: roleVersion, ActorCreated: actorCreated, RoleCreated: roleCreated,
 	}, nil
 }
@@ -171,12 +171,15 @@ func (s *Service) EnsurePublicClientTx(ctx context.Context, tx *sql.Tx, rawPhone
 			actorID, phone); err != nil {
 			return domain.Actor{}, err
 		}
-		a = domain.Actor{ID: actorID, PhoneE164: phone, Version: 1}
+		a = domain.Actor{ID: actorID, PhoneE164: phone, SecurityEnabled: true, Version: 1}
 		if err := auditTx(ctx, tx, "actor.created", actorID, "public-client", "success", "", nil); err != nil {
 			return domain.Actor{}, err
 		}
 	} else if err != nil {
 		return domain.Actor{}, err
+	}
+	if !a.SecurityEnabled {
+		return domain.Actor{}, domain.ErrActorBlocked
 	}
 
 	var enabled bool
@@ -211,7 +214,7 @@ func (s *Service) FindEnabledByPhoneRole(ctx context.Context, rawPhone, rawRole 
 	}
 	a, err := scanActor(func(dest ...any) error {
 		return s.db.QueryRowContext(ctx,
-			"SELECT a.id,a.phone_e164,COALESCE(a.username,''),COALESCE(a.password_hash,''),a.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.phone_e164=$1 AND r.role=$2 AND r.enabled=true",
+			"SELECT a.id,a.phone_e164,COALESCE(a.username,''),COALESCE(a.password_hash,''),a.security_enabled,a.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.phone_e164=$1 AND r.role=$2 AND r.enabled=true AND a.security_enabled=true",
 			phone, role).Scan(dest...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -229,7 +232,7 @@ func (s *Service) GetRole(ctx context.Context, caller, actorID, role string) (do
 	}
 	view, err := scanRoleView(func(dest ...any) error {
 		return s.db.QueryRowContext(ctx,
-			"SELECT a.id,a.phone_e164,COALESCE(a.username,''),r.role,r.enabled,a.version,r.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.id=$1 AND r.role=$2",
+			"SELECT a.id,a.phone_e164,COALESCE(a.username,''),r.role,r.enabled,a.security_enabled,a.version,r.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.id=$1 AND r.role=$2",
 			actorID, role).Scan(dest...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -284,7 +287,7 @@ func (s *Service) Search(ctx context.Context, caller string, input domain.ActorS
 		cursorClause = fmt.Sprintf(" AND (a.phone_e164>$%d OR (a.phone_e164=$%d AND a.id>$%d))", phoneArg, phoneArg, idArg)
 	}
 	args = append(args, limit+1)
-	query := "SELECT a.id,a.phone_e164,COALESCE(a.username,''),r.role,r.enabled,a.version,r.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE " +
+	query := "SELECT a.id,a.phone_e164,COALESCE(a.username,''),r.role,r.enabled,a.security_enabled,a.version,r.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE " +
 		strings.Join(clauses, " AND ") + cursorClause + " ORDER BY a.phone_e164,a.id LIMIT $" + strconv.Itoa(len(args))
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -360,6 +363,56 @@ func (s *Service) SetRoleEnabled(ctx context.Context, caller, actorID, role stri
 	return tx.Commit()
 }
 
+func (s *Service) SetSecurityEnabled(ctx context.Context, caller, actorID string, enabled bool, correlationID string) error {
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	actorID = strings.TrimSpace(actorID)
+	if caller != "platform-control" || actorID == "" {
+		return domain.ErrForbidden
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var current bool
+	var phone string
+	err = tx.QueryRowContext(ctx,
+		"SELECT security_enabled,phone_e164 FROM identity_actors WHERE id=$1 FOR UPDATE",
+		actorID).Scan(&current, &phone)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if current == enabled {
+		return tx.Commit()
+	}
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE identity_actors SET security_enabled=$1,version=version+1,updated_at=clock_timestamp() WHERE id=$2",
+		enabled, actorID); err != nil {
+		return err
+	}
+	if !enabled {
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND revoked_at IS NULL",
+			actorID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE identity_activation_challenges SET status='revoked',updated_at=clock_timestamp() WHERE (actor_id=$1 OR phone_e164=$2) AND status='pending'",
+			actorID, phone); err != nil {
+			return err
+		}
+	}
+	if err := auditTx(ctx, tx, "actor.security_enabled_changed", actorID, caller, "success", correlationID, map[string]any{"securityEnabled": enabled}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Service) ResetOperatorPassword(ctx context.Context, caller, actorID, password, correlationID string) error {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
@@ -418,7 +471,7 @@ type scanner func(dest ...any) error
 
 func scanActor(scan scanner) (domain.Actor, error) {
 	var a domain.Actor
-	if err := scan(&a.ID, &a.PhoneE164, &a.Username, &a.PasswordHash, &a.Version); err != nil {
+	if err := scan(&a.ID, &a.PhoneE164, &a.Username, &a.PasswordHash, &a.SecurityEnabled, &a.Version); err != nil {
 		return domain.Actor{}, err
 	}
 	return a, nil
@@ -426,7 +479,7 @@ func scanActor(scan scanner) (domain.Actor, error) {
 
 func scanRoleView(scan scanner) (domain.ActorRoleView, error) {
 	var view domain.ActorRoleView
-	if err := scan(&view.ActorID, &view.PhoneE164, &view.Username, &view.Role, &view.Enabled, &view.ActorVersion, &view.RoleVersion); err != nil {
+	if err := scan(&view.ActorID, &view.PhoneE164, &view.Username, &view.Role, &view.Enabled, &view.SecurityEnabled, &view.ActorVersion, &view.RoleVersion); err != nil {
 		return domain.ActorRoleView{}, err
 	}
 	return view, nil

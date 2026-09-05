@@ -221,10 +221,10 @@ func (s *Service) Consume(ctx context.Context, input domain.ActivationRequest) (
 		if !actorID.Valid || strings.TrimSpace(actorID.String) == "" {
 			return domain.TokenPair{}, domain.ErrInvalidActivation
 		}
-		var enabled bool
+		var enabled, securityEnabled bool
 		if err := tx.QueryRowContext(ctx,
-			"SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE",
-			actorID.String, role).Scan(&enabled); err != nil || !enabled {
+			"SELECT r.enabled,a.security_enabled FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.actor_id=$1 AND r.role=$2 FOR UPDATE OF r,a",
+			actorID.String, role).Scan(&enabled, &securityEnabled); err != nil || !enabled || !securityEnabled {
 			return domain.TokenPair{}, domain.ErrActorBlocked
 		}
 		resolvedActorID = actorID.String

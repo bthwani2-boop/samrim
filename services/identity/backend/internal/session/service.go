@@ -138,7 +138,7 @@ func (s *Service) ResolveAccessToken(ctx context.Context, accessToken string) (d
 	var actorID, sessionID, role string
 	var expires time.Time
 	err := s.db.QueryRowContext(ctx,
-		"SELECT s.actor_id,s.id,s.role,s.access_expires_at FROM identity_sessions s JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND r.enabled=true",
+		"SELECT s.actor_id,s.id,s.role,s.access_expires_at FROM identity_sessions s JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role JOIN identity_actors a ON a.id=s.actor_id WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND r.enabled=true AND a.security_enabled=true",
 		identitysecurity.SHA256Hex(accessToken)).Scan(&actorID, &sessionID, &role, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ActorIdentity{}, domain.ErrUnauthenticated
@@ -179,6 +179,12 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, err
 	}
 	if !refreshExpiry.After(s.now()) {
+		return domain.TokenPair{}, domain.ErrInvalidRefresh
+	}
+	var securityEnabled bool
+	if err := tx.QueryRowContext(ctx,
+		"SELECT security_enabled FROM identity_actors WHERE id=$1 FOR UPDATE",
+		actorID).Scan(&securityEnabled); err != nil || !securityEnabled {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if !identitysecurity.ConstantTimeHexEqual(deviceHash, identitysecurity.SHA256Hex(device)) {
@@ -355,8 +361,8 @@ func identityOf(actorID, sessionID, role string, expires time.Time) domain.Actor
 func operatorByUsername(ctx context.Context, db *sql.DB, username string) (domain.Actor, error) {
 	var a domain.Actor
 	err := db.QueryRowContext(ctx,
-		"SELECT a.id,a.phone_e164,COALESCE(a.username,''),COALESCE(a.password_hash,''),a.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE lower(a.username)=lower($1) AND r.role='operator' AND r.enabled=true",
-		username).Scan(&a.ID, &a.PhoneE164, &a.Username, &a.PasswordHash, &a.Version)
+		"SELECT a.id,a.phone_e164,COALESCE(a.username,''),COALESCE(a.password_hash,''),a.security_enabled,a.version FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE lower(a.username)=lower($1) AND r.role='operator' AND r.enabled=true AND a.security_enabled=true",
+		username).Scan(&a.ID, &a.PhoneE164, &a.Username, &a.PasswordHash, &a.SecurityEnabled, &a.Version)
 	return a, err
 }
 

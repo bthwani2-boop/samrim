@@ -49,6 +49,8 @@ func New(actors *actor.Service, activations *activation.Service, sessions *sessi
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}", s.internal(s.getRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/disable", s.internal(s.disableRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/enable", s.internal(s.enableRole))
+	mux.HandleFunc("POST /internal/actors/{actorId}/security/disable", s.internal(s.disableActorSecurity))
+	mux.HandleFunc("POST /internal/actors/{actorId}/security/enable", s.internal(s.enableActorSecurity))
 	mux.HandleFunc("POST /internal/actors/{actorId}/operator-password/reset", s.internal(s.resetOperatorPassword))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}/sessions", s.internal(s.listRoleSessions))
 	mux.HandleFunc("DELETE /internal/actors/{actorId}/roles/{role}/sessions/{sessionId}", s.internal(s.revokeRoleSession))
@@ -241,6 +243,25 @@ func (s *Server) enableRole(w http.ResponseWriter, r *http.Request, caller strin
 func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
 	if err := s.actors.SetRoleEnabled(
 		r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled,
+		strings.TrimSpace(r.Header.Get("X-Correlation-ID")),
+	); err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) disableActorSecurity(w http.ResponseWriter, r *http.Request, caller string) {
+	s.setActorSecurityEnabled(w, r, caller, false)
+}
+
+func (s *Server) enableActorSecurity(w http.ResponseWriter, r *http.Request, caller string) {
+	s.setActorSecurityEnabled(w, r, caller, true)
+}
+
+func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
+	if err := s.actors.SetSecurityEnabled(
+		r.Context(), caller, r.PathValue("actorId"), enabled,
 		strings.TrimSpace(r.Header.Get("X-Correlation-ID")),
 	); err != nil {
 		writeDomainError(w, err)

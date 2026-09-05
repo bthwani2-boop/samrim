@@ -7,11 +7,12 @@ import (
 )
 
 type Actor struct {
-	ID           string
-	PhoneE164    string
-	Username     string
-	PasswordHash string
-	Version      int
+	ID              string
+	PhoneE164       string
+	Username        string
+	PasswordHash    string
+	SecurityEnabled bool
+	Version         int
 }
 
 type ActorRole struct {
@@ -25,9 +26,10 @@ type ActorRoleView struct {
 	ActorID      string `json:"actorId"`
 	PhoneE164    string `json:"phoneE164"`
 	Username     string `json:"username,omitempty"`
-	Role         string `json:"role"`
-	Enabled      bool   `json:"enabled"`
-	ActorVersion int    `json:"actorVersion"`
+	Role            string `json:"role"`
+	Enabled         bool   `json:"enabled"`
+	SecurityEnabled bool   `json:"securityEnabled"`
+	ActorVersion    int    `json:"actorVersion"`
 	RoleVersion  int    `json:"roleVersion"`
 	ActorCreated bool   `json:"actorCreated,omitempty"`
 	RoleCreated  bool   `json:"roleCreated,omitempty"`

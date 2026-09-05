@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS identity_actors (
     phone_e164 varchar(16) NOT NULL,
     username varchar(64),
     password_hash text,
+    security_enabled boolean NOT NULL DEFAULT true,
     version integer NOT NULL DEFAULT 1,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
