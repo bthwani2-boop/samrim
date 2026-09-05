@@ -8,6 +8,10 @@ CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 SELF_CERTIFICATION: FORBIDDEN
 LOAD_TRIGGER: WHEN_STRUCTURAL_OR_SUBSTRATE_CLAIMS_ARE_MATERIAL
 
+## 0. Evidence matrix
+
+When a broad proof scaffold is useful, load `../templates/candidate-proof-matrix.md`. It never expands proof scope.
+
 ## 1. Scope
 
 Verify only structural claims material to the current root/affected cone unless `FULL_TARGET` explicitly requires repository-wide proof.

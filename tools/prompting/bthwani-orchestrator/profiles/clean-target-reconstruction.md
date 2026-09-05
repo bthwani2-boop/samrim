@@ -36,7 +36,7 @@ Load:
 
 Durable target topology/ownership comes from Governance, especially:
 - `governance/architecture/REPOSITORY-TOPOLOGY.md`;
-- `governance/architecture/FOUNDATION-AND-JOURNEY-READY-SUBSTRATE.md`;
+- `governance/architecture/PLATFORM-SUBSTRATE.md`;
 - applicable Product/System/architecture/policy owners.
 
 ## Direct-to-canonical construction law

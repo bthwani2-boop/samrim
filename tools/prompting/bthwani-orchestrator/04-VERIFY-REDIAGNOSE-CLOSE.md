@@ -13,7 +13,7 @@ Route proof to one canonical verification owner. This file does not restate deta
 
 - `verify/evidence-falsification.md` — evidence provenance, falsification, proof limits and failure classification.
 - `verify/structural-conformance.md` — structural/substrate/root conformance for the materially affected cone.
-- `verify/unit-fixed-point.md` — semantic execution-unit and authorized-scope fixed-point closure.
+- `verify/unit-and-scope-closure.md` — semantic execution-unit and authorized-scope fixed-point closure.
 
 ## 3. Composition
 
