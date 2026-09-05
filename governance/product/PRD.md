@@ -56,7 +56,7 @@ The standard product surfaces are:
 - `app-field`: assigned field onboarding, verification, readiness, and DSH operational tasks.
 - `control-panel`: governed operator administration and operational control.
 - backend/domain services and their service-owned persistence.
-- generated clients, service-owned capability presentation, design-system primitives, events/jobs and runtime infrastructure required by the above surfaces.
+- generated/public service clients, app-owned surface-specific capability presentation, explicitly admitted host-neutral reusable presentation only when proven, design-system primitives, events/jobs and runtime infrastructure required by the above surfaces.
 
 These are target platform surfaces. An active delivery slice may exercise only the materially required subset. A deployable host may remain technically ready (identity/session/bootstrap/build) while its business semantics are deliberately deferred; do not create fake feature screens merely to make every target surface appear functionally populated.
 
