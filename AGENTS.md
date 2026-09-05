@@ -17,6 +17,19 @@ SOURCE       = current executable implementation/configuration/runtime truth
 DONOR/OSS    = evidence and falsification input, never BThwani authority
 ```
 
+## Selective knowledge loading
+
+Use source-derived queries instead of loading large catalogs when only one semantic unit is needed:
+
+~~~text
+pnpm knowledge:query -- list capabilities
+pnpm knowledge:query -- capability IDENTITY_ACTIVATION_SESSIONS
+pnpm knowledge:query -- list journeys
+pnpm knowledge:query -- journey J1
+~~~
+
+The command prints the canonical source section at runtime and stores no parallel registry. For CLEAN_TARGET_RECONSTRUCTION, also load tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md as the temporary target-specialization profile after the Orchestrator routes it.
+
 ## Mandatory entry sequence for material repository work
 
 1. Pin the exact repository and current working ref/HEAD supplied by the task.
