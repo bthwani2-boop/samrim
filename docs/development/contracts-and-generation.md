@@ -33,4 +33,4 @@ Internal consumers under atomic repository control should normally cut over toge
 
 Generated files are reproducible outputs, not independent authorities. A generated-client mismatch is a contract-lineage defect.
 
-During the current refoundation, the journey-ready target standardizes normal OpenAPI generation rather than maintaining a private restricted parser/generator. The target toolchain is described in `tools/prompting/bthwani-refoundation/targets/contracts-and-protocols.md`; executable manifests/scripts remain the authority for what is actually installed and runnable on the current candidate.
+Journey-ready contract lineage uses ordinary standards-compatible deterministic OpenAPI tooling rather than a private restricted parser/generator when mature tooling can represent the required contract faithfully. `governance/architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` owns the durable lineage rule; executable manifests/scripts remain the authority for the exact generator packages and commands installed on the current candidate.
