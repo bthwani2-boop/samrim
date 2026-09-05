@@ -35,7 +35,6 @@ const documentationPolicy = read("governance/policies/documentation-and-knowledg
 const deliveryPolicy = read("governance/policies/delivery.md");
 const dataPolicy = read("governance/policies/data-and-migrations.md");
 const engineeringPolicy = read("governance/policies/engineering.md");
-const lifecycleIndex = read("docs/platform-engineering-lifecycle/README.md");
 const agentRouter = read("AGENTS.md");
 const repositoryReadme = read("README.md");
 const contributing = read("CONTRIBUTING.md");
