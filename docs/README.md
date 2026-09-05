@@ -7,20 +7,25 @@ CURRENT_COMMAND_AUTHORITY: LIVE_REPOSITORY_SCRIPTS_AND_CONFIG
 
 ## Start here
 
-A developer new to BThwani should read in this order:
+A developer new to BThwani should first read the small durable baseline:
 
 1. `governance/GOVERNANCE.md`
 2. `governance/project/PLATFORM.md`
 3. `governance/project/GLOSSARY.md`
 4. `governance/project/ACTORS-TRUST-AND-SCOPE.md`
 5. `governance/product/PRD.md`
-6. `governance/product/CAPABILITIES.md`
-7. `governance/product/JOURNEYS.md`
-8. `governance/architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md`
-9. `governance/product/FINANCIAL-MODEL.md` when money is affected
-10. `governance/product/EXPERIENCE-AND-DESIGN.md` when a user/operator surface is affected
-11. the applicable engineering policy
-12. `development/getting-started.md`
+6. `governance/architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md`
+7. `development/getting-started.md`
+
+Then load only the Product/policy owners material to the task. Prefer source-derived lookup instead of reading the entire capability/journey catalogs:
+
+~~~text
+pnpm knowledge:query -- capability <CAPABILITY_ID>
+pnpm knowledge:query -- journey <J_ID>
+pnpm knowledge:query -- owner <keyword-or-path>
+~~~
+
+Load `FINANCIAL-MODEL.md` when money is affected, `EXPERIENCE-AND-DESIGN.md` when a user/operator surface is affected, and the applicable engineering policy before changing its responsibility.
 
 ## What Docs owns
 
