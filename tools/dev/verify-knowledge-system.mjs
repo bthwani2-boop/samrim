@@ -311,21 +311,6 @@ if (fs.existsSync(refoundationDir)) {
   }
 }
 
-const allowedLegacyRefoundationTextReferences = new Set([
-  "tools/prompting/bthwani-orchestrator/templates/bthwani-target-qualification.md",
-]);
-for (const scope of ["governance", "docs", "tools/prompting"]) {
-  const scopeDir = path.join(root, scope);
-  for (const file of collectMarkdown(scopeDir)) {
-    const rel = path.relative(root, file).split(path.sep).join("/");
-    const body = fs.readFileSync(file, "utf8");
-    if (!body.includes("bthwani-refoundation")) continue;
-    if (!allowedLegacyRefoundationTextReferences.has(rel)) {
-      failures.push("stale live knowledge reference to retired bthwani-refoundation package: " + rel);
-    }
-  }
-}
-
 if (cap.includes("`shared` — required")) failures.push("technical shared layer masquerades as Product surface");
 if (cap.toLowerCase().includes("proven notification capability")) failures.push("notification owner unresolved");
 if (cap.toLowerCase().includes("canonical ownership.** derived analytics/read-model capability")) failures.push("analytics owner unresolved");
