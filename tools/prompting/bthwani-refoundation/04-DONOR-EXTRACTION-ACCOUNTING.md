@@ -80,7 +80,7 @@ For survivors/reimplementations, account for owner, actors, outcome, states/tran
 For `PRODUCT_BREADTH=ACTIVE_SLICE`, exhaust the complete donor cone that can materially change the active slice, including relevant historical evidence.
 
 ```text
-AUTHORIZED_SLICE_DONOR_CONE_ENUMERATED=PASS
+ACTIVE_SLICE_DONOR_CONE_ACCOUNTING=COMPLETE
 UNINSPECTED_DONOR_HISTORY_MATERIAL_TO_ACTIVE_SLICE=0
 UNACCOUNTED_REQUIRED_SEMANTIC_ATOMS_IN_ACTIVE_SLICE_CONE=0
 UNMAPPED_REQUIRED_DATA/CONTRACT/RUNTIME/SECURITY/FINANCE/UX/TEST_VALUE_IN_CONE=0
