@@ -50,7 +50,7 @@ for (const file of (function collect(dir) {
 }
 
 if (/docker compose/i.test(read("tools/dev/bootstrap.ps1"))) failures.push("bootstrap must remain independent of runtime composition");
-if (!runtimeGuide.includes("Current Foundation commands are derived from")) failures.push("runtime guide must route command truth to package.json");
+if (!runtimeGuide.includes("Current integration-runtime commands are derived from")) failures.push("runtime guide must route command truth to package.json");
 
 if (failures.length) {
   console.error("DOC_CONFIG_PARITY=FAIL");
