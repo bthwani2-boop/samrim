@@ -3,7 +3,9 @@ EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 PARENT_GUIDE: docs/platform-engineering-lifecycle/README.md
 
-# PHASE 3 — Domain, Data, and Runtime Boundary Design
+INTERPRETATION_RULE: HUMAN_REFERENCE_ONLY; MODULE_NUMBER_IS_NOT_EXECUTION_ORDER; CHECKLIST_IS_NOT_CLOSURE_AUTHORITY
+
+# Domain, Data, and Runtime Boundary Design
 
 Only now choose bounded contexts and deployables.
 
@@ -51,7 +53,7 @@ Otherwise do not add it.
 
 ---
 
-# PHASE 4 — Threat Modeling, Privacy, and Compliance Design
+# Threat Modeling, Privacy, and Compliance Design
 
 Security is part of architecture.
 
@@ -99,7 +101,7 @@ Permission requests on mobile must be purpose-limited and requested as late as p
 
 Account deletion, export, retention, and support procedures are Product/data journeys when the platform/store/legal model requires them; they are not store-submission paperwork to add at the end.
 
-### Exit gate
+## Practical validation questions
 
 ```text
 CRITICAL_TRUST_BOUNDARIES_MODELED=YES
@@ -112,7 +114,7 @@ KNOWN_HIGH_RISK_UNMITIGATED_DESIGN_FINDINGS=0
 
 ---
 
-# PHASE 5 — Repository, Toolchain, and CI Foundation
+# Repository, Toolchain, and CI Foundation
 
 Choose repository strategy based on coordinated change patterns and ownership. A monorepo is often effective for a unified multi-surface platform, but only with enforced dependency boundaries.
 
@@ -174,7 +176,7 @@ Privileged credentials must not be exposed to untrusted build code. Pin or other
 
 ---
 
-# PHASE 6 — Environments, Infrastructure, Configuration, and Secrets
+# Environments, Infrastructure, Configuration, and Secrets
 
 Define environment classes early:
 
@@ -212,7 +214,7 @@ Critical providers that could invalidate Product feasibility, cost, policy, or n
 
 ---
 
-# PHASE 7 — Database and Migration Substrate
+# Database and Migration Substrate
 
 Each canonical data owner has one governed migration history and one mutation authority.
 
@@ -257,7 +259,7 @@ Backups are not proven until restore/recovery is exercised at a representative l
 
 ---
 
-# PHASE 8 — Contracts and Generated Bindings
+# Contracts and Generated Bindings
 
 Cross-boundary semantics have one canonical executable provenance.
 
@@ -289,7 +291,7 @@ Public mobile API evolution must assume old clients remain active after a server
 
 ---
 
-# PHASE 9 — Minimal Backend Technical Chassis
+# Minimal Backend Technical Chassis
 
 Every deployable service/process should have only the technical substrate needed for safe operation:
 

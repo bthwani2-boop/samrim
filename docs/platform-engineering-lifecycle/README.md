@@ -21,129 +21,21 @@ Authority remains with:
 
 When this guide conflicts with a canonical semantic owner, executable source, or current official platform rule, this guide is stale and must be corrected.
 
-## 2. Core engineering model
+## 2. How to use this guide
 
-The preferred lifecycle is:
+This directory is a **human reference map**, not a lifecycle state machine. For material repository work, the Orchestrator alone selects stages, execution order, active Product breadth, recovery state, verification gates and closure. Governance alone owns durable Product/System/architecture/policy meaning.
 
-```text
-PIN DONOR EVIDENCE
-+ DEFINE PRODUCT TRUTH
-+ DEFINE NON-GOALS
-+ DEFINE OWNERSHIP / TRUST / DATA BOUNDARIES
-        ↓
-BUILD THE MINIMUM JOURNEY-READY SUBSTRATE
-        ↓
-PROVE IT WITH ONE REPRESENTATIVE REAL VERTICAL SLICE
-        ↓
-DELIVER BUSINESS JOURNEYS VERTICALLY
-        ↓
-HARDEN SECURITY / RELIABILITY / OPERATIONS
-        ↓
-QUALIFY RELEASE CANDIDATES
-        ↓
-BETA / STORE REVIEW / CONTROLLED RELEASE
-        ↓
-PRODUCTION OBSERVATION / SUPPORT / INCIDENT RESPONSE
-        ↓
-CONTINUOUS JOURNEY DELIVERY
-```
-
-The two failure modes to avoid are:
+Use these modules only after resolving the applicable canonical owners. They explain practical questions, techniques, failure modes and evidence examples that may help a developer execute the already-authorized work. Module numbering is reading organization only and does not authorize or sequence a campaign.
 
 ```text
-BUILD_EVERYTHING_HORIZONTALLY
-→ integrate late
-→ discover incompatible assumptions
+MODULE_NUMBER != EXECUTION_PHASE
+DOC_CHECKLIST != CLOSURE_GATE
+DOC_EXAMPLE != PRODUCT_DECISION
+DOC_ORDER != ACTIVE_PRODUCT_SLICE
 ```
 
-and:
+When a module states a durable requirement, the applicable Governance owner is authoritative. When it describes a command/configuration/current implementation fact, executable source is authoritative. When it describes execution movement, proof or closure, the Orchestrator is authoritative.
 
-```text
-BUILD_NO_FOUNDATION
-→ start journeys immediately
-→ refound architecture every week
-```
-
-The target state before broad feature development is a **journey-ready platform**: enough technical substrate exists that the next real journey requires its own Product/UX/domain/data/API/surface/test work, not another repository/auth/config/migration/build-system redesign.
-
-## 3. Product vision, authorized slice, and deferred scope
-
-A complete Product vision and incremental delivery are not opposites.
-
-```text
-TARGET_PRODUCT_VISION
-        !=
-AUTHORIZED_PRODUCT_SCOPE
-        !=
-ACTIVE_PRODUCT_SLICE
-        !=
-CURRENT_IMPLEMENTATION_STATE
-```
-
-Use two independent controls:
-
-```text
-QUALITY DEPTH  = how completely/correctly the authorized work is closed
-PRODUCT BREADTH = how much Product functionality is authorized now
-```
-
-A Level-4-quality slice can therefore be intentionally small.
-
-```text
-SMALL BREADTH
-+ CANONICAL OWNER/DATA/CONTRACT/RUNTIME
-+ COMPLETE REQUIRED SURFACES/READBACK
-+ FAILURE/SECURITY/TEST EVIDENCE
-= VALID VERTICAL INCREMENT
-```
-
-Do not interpret “incremental” as permission to create disposable domain models, `v1` tables, fake APIs, temporary state machines, placeholder Product screens, shadow DTOs, or compatibility structures that must later be refounded.
-
-A surface may also be **host-ready but business-deferred**: its deployable identity, bootstrap, authentication/session binding, shell, runtime configuration, and build proof can exist while its domain features remain deliberately absent.
-
-When an active slice reaches its fixed point:
-
-```text
-FREEZE THE PROVEN BASELINE
-→ RUN CUMULATIVE AFFECTED REGRESSION
-→ STOP PRODUCT EXPANSION
-→ ACTIVATE THE NEXT SLICE DELIBERATELY
-```
-
-Do not auto-activate the next feature simply because it appears next in the long-term roadmap.
-
-### Slice admission gate
-
-Before activating another Product slice, prove:
-
-```text
-PREVIOUS_BASELINE_REQUIRED_EVIDENCE=GREEN
-NEW_SLICE_HAS_CLEAR_PRODUCT_OUTCOME
-CANONICAL_OWNER/WRITER=KNOWN
-NO_SECOND_SOURCE_OF_TRUTH_REQUIRED
-NO_DISPOSABLE_ARCHITECTURE_REQUIRED
-DONOR/EXTERNAL_EVIDENCE_CONE_IS_ACQUIRABLE
-SLICE_CAN_CLOSE_VERTICALLY_AT_REQUIRED_QUALITY_DEPTH
-```
-
-Then implement the new slice and re-run every prior proof invalidated by shared owners, contracts, data, runtime, packages, or hosts.
-
-## 4. Non-negotiable principles
-
-1. **Donor is evidence, not target topology.**
-2. **Product meaning precedes directory structure.**
-3. **One durable fact has one canonical owner and one governed writer.**
-4. **Use the minimum necessary number of deployable/runtime boundaries.**
-5. **Repository strategy and runtime architecture are separate decisions.**
-6. **A capability closes vertically across every materially affected layer and consumer.**
-7. **Security, privacy, data evolution, accessibility, observability, and release engineering start before launch.**
-8. **Static green does not prove runtime correctness; runtime green does not prove security, data migration, financial, or release correctness.**
-9. **Public mobile clients require backward-compatible server evolution across their real support window.**
-10. **External-provider timeout/ambiguity is not success and is not failure until authoritative evidence resolves it.**
-11. **Build and release artifacts require attributable immutable identity and controlled inputs.**
-12. **Mutable store/platform requirements are revalidated at every release.**
-13. **Do not create framework/registry/event-bus/cache/service complexity before a concrete requirement proves it.**
-14. **Parallel development is allowed; partial horizontal closure is not.** Independent journeys may proceed concurrently only when worksets, ownership, migration, integration, and verification boundaries are explicit. Each claimed outcome still closes as a complete vertical unit.
 
 ## 5. Reference baseline
 
@@ -170,11 +62,11 @@ Reference links are listed at the end of this guide.
 
 Continue by need rather than loading the entire lifecycle every time:
 
-1. `01-foundation-scope-and-donor.md` — authority/success definition, donor census, Product capabilities/actors/journeys.
+1. `01-foundation-scope-and-donor.md` — scope vocabulary, donor inspection and Product/actor/journey discovery guidance.
 2. `02-architecture-security-and-technical-foundation.md` — domain/data/runtime boundaries, threat/privacy design, repository/CI, environments, migrations, contracts, backend chassis.
 3. `03-identity-experience-and-journey-ready.md` — Identity/access, UI/UX foundation, app shells, representative walking skeleton and repeatable journey loop.
 4. `04-integrations-finance-and-verification.md` — providers, async work, notifications, financial systems and verification architecture.
 5. `05-build-release-and-operations.md` — secure build, production infrastructure, staging, beta, stores, release choreography, launch/support and continuous delivery.
-6. `06-evidence-gates-and-templates.md` — canonical gates, donor/journey templates, premature-complexity rejection and references.
+6. `06-evidence-gates-and-templates.md` — non-authoritative evidence checklist examples, donor/journey worksheets, complexity questions and references.
 
 These modules are human guidance only. The Orchestrator decides execution/closure and Governance owns durable meaning.

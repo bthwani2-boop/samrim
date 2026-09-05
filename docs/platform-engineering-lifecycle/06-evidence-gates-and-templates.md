@@ -3,9 +3,11 @@ EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 PARENT_GUIDE: docs/platform-engineering-lifecycle/README.md
 
-# Canonical evidence gates
+INTERPRETATION_RULE: HUMAN_REFERENCE_ONLY; MODULE_NUMBER_IS_NOT_EXECUTION_ORDER; CHECKLIST_IS_NOT_CLOSURE_AUTHORITY
 
-## A. Foundation / Journey-Ready Gate
+# Evidence checklist examples
+
+## Foundation / Journey-Ready checklist
 
 ```text
 PRODUCT/ACTOR/OWNER MODEL=DEFINED
@@ -25,7 +27,7 @@ KNOWN_FOUNDATION_DEFECTS=0
 KNOWN_FOUNDATION_PARALLEL_TRUTH=0
 ```
 
-## B. Journey Closure Gate
+## Journey outcome checklist
 
 ```text
 PRODUCT_MEANING=PASS
@@ -47,7 +49,7 @@ RUNTIME/E2E=PASS
 KNOWN_JOURNEY_RESIDUE=0
 ```
 
-## C. Production Readiness Gate
+## Production-readiness checklist
 
 ```text
 EXACT_RELEASE_CANDIDATE_IDENTIFIED=PASS
@@ -63,7 +65,7 @@ STORE/LEGAL_DECLARATIONS=PASS_IF_APPLICABLE
 KNOWN_MATERIAL_RELEASE_BLOCKERS=0
 ```
 
-## D. Store Submission Gate
+## Store-submission checklist
 
 ```text
 FINAL_STORE_BINARY/BUILD_IDENTITY=KNOWN
@@ -81,7 +83,7 @@ BETA_TRACK_EVIDENCE=PASS
 CURRENT_OFFICIAL_STORE_POLICY_REVALIDATED=PASS
 ```
 
-## E. Release Closure Gate
+## Release evidence checklist
 
 ```text
 RELEASED_IDENTITY=ATTRIBUTABLE
@@ -114,7 +116,7 @@ VERIFICATION REQUIRED:
 LOSING DONOR SHAPE TO REJECT:
 ```
 
-This ledger is evidence/analysis, not a second Product authority.
+This ledger is evidence/analysis, not a second Product authority and not an Orchestrator closure ledger.
 
 # Journey Definition template
 
@@ -205,7 +207,7 @@ Google Play / Android:
 - Release tracks: https://support.google.com/googleplay/android-developer/answer/9859348
 - Staged rollouts: https://support.google.com/googleplay/android-developer/answer/6346149
 
-## Final rule
+## Summary
 
 The method can be summarized as:
 

@@ -3,7 +3,9 @@ EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 PARENT_GUIDE: docs/platform-engineering-lifecycle/README.md
 
-# PHASE 0 — Authority, Product Scope, and Success Definition
+INTERPRETATION_RULE: HUMAN_REFERENCE_ONLY; MODULE_NUMBER_IS_NOT_EXECUTION_ORDER; CHECKLIST_IS_NOT_CLOSURE_AUTHORITY
+
+# Authority, Product Scope, and Success Definition
 
 Do not start with framework selection, database tables, or home-screen design.
 
@@ -43,7 +45,7 @@ crash-free session target where actually authorized
 
 Do not invent SLO/RPO/RTO numbers merely to fill a template. Missing numbers that are required for safe operation are a Product/operations decision gap.
 
-### Exit gate
+## Practical validation questions
 
 ```text
 PRODUCT_SCOPE_KNOWN=YES
@@ -56,7 +58,7 @@ KNOWN_REQUIRED_JURISDICTIONAL_REVIEW_IDENTIFIED=YES
 
 ---
 
-# PHASE 1 — Freeze and Census the Donor
+# Freeze and Census the Donor
 
 Pin the donor to an immutable ref/commit and treat it as read-only evidence.
 
@@ -137,7 +139,7 @@ SALVAGE REQUIRED TRUTH
 PRESERVE DONOR CONTAINER
 ```
 
-### Exit gate
+## Practical validation questions
 
 ```text
 DONOR_REF_PINNED=YES
@@ -150,7 +152,7 @@ LICENSE/ASSET_PROVENANCE_GAPS_IDENTIFIED=YES
 
 ---
 
-# PHASE 2 — Product Capabilities, Actors, and Journeys
+# Product Capabilities, Actors, and Journeys
 
 Build a capability model before service decomposition.
 
@@ -212,7 +214,7 @@ later readback
 audit/support visibility
 ```
 
-### Exit gate
+## Practical validation questions
 
 ```text
 UNOWNED_MATERIAL_CAPABILITIES=0

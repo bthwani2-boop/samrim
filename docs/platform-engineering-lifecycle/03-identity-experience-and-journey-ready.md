@@ -3,7 +3,9 @@ EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 PARENT_GUIDE: docs/platform-engineering-lifecycle/README.md
 
-# PHASE 10 — Identity and Access Foundation
+INTERPRETATION_RULE: HUMAN_REFERENCE_ONLY; MODULE_NUMBER_IS_NOT_EXECUTION_ORDER; CHECKLIST_IS_NOT_CLOSURE_AUTHORITY
+
+# Identity and Access Foundation
 
 If most material journeys require authenticated actors, close Identity/access early because all later authorization depends on it.
 
@@ -31,7 +33,7 @@ Authentication proves who the caller is. Business authorization remains with the
 
 ---
 
-# PHASE 11 — UI/UX Foundation and Deployable App Shells
+# UI/UX Foundation and Deployable App Shells
 
 Build a small design/experience foundation before broad business screens:
 
@@ -72,7 +74,7 @@ A shell can be intentionally neutral before business journeys arrive. Avoid fake
 
 ---
 
-# PHASE 12 — Representative Golden Vertical / Walking Skeleton
+# Representative Golden Vertical / Walking Skeleton
 
 Before scaling feature development, prove the architecture with one **real, representative** vertical outcome.
 
@@ -96,9 +98,9 @@ If cross-surface handoff is central to the platform architecture, the walking sk
 
 The goal is not business breadth. The goal is proof that a real journey can enter the new house without refounding the house.
 
-### Journey-ready gate
+## Journey-ready characteristics
 
-A platform is journey-ready only when a new journey does not require reopening foundational decisions such as:
+When assessing the Governance-defined Journey-Ready claim, inspect whether a new protected journey would require reopening material foundational decisions such as:
 
 ```text
 repository topology
@@ -127,7 +129,7 @@ telemetry
 
 ---
 
-# PHASE 13 — Repeatable Journey Delivery Loop
+# Repeatable Journey Delivery Loop
 
 For every real journey:
 
