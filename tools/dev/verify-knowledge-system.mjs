@@ -17,7 +17,11 @@ const glossary = read("governance/project/GLOSSARY.md");
 const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md");
 const scopeAuthority = read("tools/prompting/bthwani-orchestrator/01-SCOPE-AUTHORITY-RULES.md");
 const executionPlaybook = read("tools/prompting/bthwani-orchestrator/05-EXECUTION-PLAYBOOK.md");
-const verificationOwner = read("tools/prompting/bthwani-orchestrator/04-VERIFY-REDIAGNOSE-CLOSE.md");
+const verificationRouter = read("tools/prompting/bthwani-orchestrator/04-VERIFY-REDIAGNOSE-CLOSE.md");
+const verificationEvidence = read("tools/prompting/bthwani-orchestrator/verify/evidence-falsification.md");
+const verificationStructural = read("tools/prompting/bthwani-orchestrator/verify/structural-qualification.md");
+const verificationFixedPoint = read("tools/prompting/bthwani-orchestrator/verify/unit-fixed-point.md");
+const verificationCorpus = [verificationRouter, verificationEvidence, verificationStructural, verificationFixedPoint].join("\n");
 const cleanTargetProfile = read("tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md");
 const composition = read("governance/architecture/APP-SERVICE-COMPOSITION.md");
 const dataContracts = read("governance/architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md");
@@ -469,8 +473,19 @@ if (
 ) {
   failures.push("scope authority missing no-auto-expansion law");
 }
-if (!verificationOwner.includes("BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE")) {
-  failures.push("verification owner missing active-slice Level-4 terminal token");
+if (!verificationFixedPoint.includes("BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE")) {
+  failures.push("unit/fixed-point verification owner missing active-slice Level-4 terminal token");
+}
+if (!verificationRouter.includes("VERIFICATION_FALSIFICATION_CLOSURE_ROUTER")) failures.push("04 verification file is not a pure router");
+for (const [subPath, body, role] of [
+  ["tools/prompting/bthwani-orchestrator/verify/evidence-falsification.md", verificationEvidence, "EVIDENCE_PROVENANCE_FALSIFICATION"],
+  ["tools/prompting/bthwani-orchestrator/verify/structural-qualification.md", verificationStructural, "STRUCTURAL_QUALIFICATION_GATES"],
+  ["tools/prompting/bthwani-orchestrator/verify/unit-fixed-point.md", verificationFixedPoint, "UNIT_AND_FIXED_POINT_CLOSURE"],
+]) {
+  if (!body.includes("ARTIFACT_CLASS: ORCHESTRATOR_VERIFICATION_SUBMODULE")) failures.push(subPath + " missing verification-submodule artifact class");
+  if (!body.includes("OWNER_ROLE: " + role)) failures.push(subPath + " missing canonical verification owner role");
+  if (!body.includes("AUTHORITY_ASSIGNED_BY: 04-VERIFY-REDIAGNOSE-CLOSE.md")) failures.push(subPath + " missing verification-router authority assignment");
+  if (!body.includes("SELF_CERTIFICATION: FORBIDDEN")) failures.push(subPath + " permits or omits self-certification prohibition");
 }
 
 if (!orchestrator.includes("## 6A. Context-loading protocol")) failures.push("orchestrator missing staged context-loading protocol");
