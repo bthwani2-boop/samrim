@@ -3,6 +3,8 @@
 ARTIFACT_CLASS: DURABLE_ARCHITECTURE_GOVERNANCE
 SEMANTIC_OWNER: governance/architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md
 EXECUTION_AUTHORITY: NONE
+CLOSURE_AUTHORITY: NONE
+IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Data authority
 
@@ -61,32 +63,16 @@ Compatibility exists only for deployment combinations that can occur in reality.
 
 A bounded compatibility window requires owner, scope, cutover condition, telemetry/migration evidence where applicable and a deletion trigger.
 
-## External integration model
+## External-integration boundary
 
-A domain expresses the semantic capability it requires. External adapters implement it.
+This architecture owner defines only the cross-boundary rule:
 
-Durable separations include:
+```text
+DOMAIN-OWNED SEMANTIC NEED
+→ EXPLICIT EXECUTABLE CONTRACT/PORT
+→ REPLACEABLE EXTERNAL ADAPTER
+```
 
-- Geo/Maps capability → map/geocoding/routing adapter.
-- Push Delivery → push provider adapter.
-- Email Delivery → email provider adapter.
-- OTP Delivery → channel adapter; Identity owns the challenge.
-- FinancialRail → moves/authorizes external money.
-- BillerGateway → fulfills recharge/bill service.
-- ObjectStoragePort → stores binary/object content.
+It does **not** own provider selection, retry/fallback, callback trust, secret handling, simulator behavior or unknown-result operating policy. Those are owned by `../policies/providers-and-integrations.md` and `../policies/security.md` as applicable.
 
-FinancialRail and BillerGateway are distinct because moving money and fulfilling a bill/recharge are different semantic responsibilities.
-
-## Unknown outcomes
-
-For external mutations:
-
-- `TIMEOUT != FAILURE`
-- `MISSING_CONFIRMATION != SUCCESS`
-- `UNKNOWN MUST REMAIN UNKNOWN UNTIL RECONCILED`
-
-Do not blindly retry an ambiguous mutation through another provider until duplicate external effect is proven impossible.
-
-## Secrets
-
-Provider credentials, signing keys and tokens are secret-store/runtime-binding concerns. They are not ordinary business rows, client configuration or audit payload.
+Provider/vendor names never become bounded-context or contract owners. External integration must preserve the owning domain's contract semantics and one canonical executable provenance.

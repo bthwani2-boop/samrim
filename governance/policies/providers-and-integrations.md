@@ -163,9 +163,9 @@ Provider selection follows `standards-and-quality.md` dependency/adoption law. V
 
 Do not introduce multiple providers merely for architectural flexibility. Multi-provider routing/fallback requires a proven requirement, explicit selection semantics, result provenance, operational ownership and safe unknown-outcome behavior.
 
-## Required closure properties
+## Required conformance properties
 
-For any materially affected provider/integration root, applicable evidence must establish:
+For any materially affected provider/integration responsibility, the implementation must conform to the applicable properties below. Concrete candidate evidence and closure remain Orchestrator authority:
 
 ~~~text
 GENERIC_PROVIDER_GOD_SERVICE=0

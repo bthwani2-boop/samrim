@@ -3,7 +3,15 @@
 ARTIFACT_CLASS: DURABLE_ARCHITECTURE_GOVERNANCE
 SEMANTIC_OWNER: governance/architecture/RUNTIME-AND-CONFIGURATION.md
 EXECUTION_AUTHORITY: NONE
+CLOSURE_AUTHORITY: NONE
+IMPLEMENTATION_STATE_AUTHORITY: NONE
 CURRENT_VALUE_AUTHORITY: EXECUTABLE_CONFIG
+
+## Scope boundary
+
+This file owns durable **runtime/configuration architecture**: configuration classes, placement/ownership of config schemas and environment bindings, infra composition boundaries, development-runtime topology, cache/coordination classification and observability-as-non-authority.
+
+Operational startup/readiness, retry/backpressure, performance, recovery and reliability behavior are owned by `../policies/runtime-reliability.md`. Provider operating behavior is owned by `../policies/providers-and-integrations.md`.
 
 ## Runtime law
 

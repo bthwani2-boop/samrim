@@ -49,7 +49,7 @@ Rate/abuse controls are applied where an operation can materially consume resour
 - Provider webhooks use signature/authentication verification, replay/timestamp protection where supported/required, schema/body limits, stable event identity and idempotent processing.
 - Provider-specific secrets/payloads terminate at their adapter/owner boundary; downstream domains consume governed normalized facts.
 - Missing trusted context, permission, secret, signature, provider identity or security-critical configuration fails closed.
-- Unknown/ambiguous external mutation outcomes remain unresolved/reconcilable; security/reliability uncertainty must not be converted into fabricated success or a second provider attempt that can duplicate the effect.
+- Provider unknown-result/reconciliation semantics are owned by `providers-and-integrations.md`; security requires that ambiguity never bypass authentication, authorization, signature/provenance checks or fail-closed controls.
 
 ## Privacy and data lifecycle
 

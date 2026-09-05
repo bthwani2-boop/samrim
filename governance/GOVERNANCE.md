@@ -54,8 +54,8 @@ A current implementation can reveal drift but does not silently redefine Product
 - `architecture/REPOSITORY-TOPOLOGY.md` — repository taxonomy, physical placement and container-admission law only.
 - `architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md` — semantic owner/writer/readback map.
 - `architecture/APP-SERVICE-COMPOSITION.md` — sole durable owner of deployable-host versus service-capability responsibility/composition.
-- `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` — data/contract/version/integration boundaries.
-- `architecture/RUNTIME-AND-CONFIGURATION.md` — runtime/configuration classes and technical operating boundaries.
+- `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` — data ownership and executable contract/protocol/version boundaries; provider operating policy is routed elsewhere.
+- `architecture/RUNTIME-AND-CONFIGURATION.md` — runtime/configuration classes, placement and infra/development topology; operational reliability behavior is routed elsewhere.
 - `architecture/FOUNDATION-AND-JOURNEY-READY-SUBSTRATE.md` — durable cross-cutting technical substrate required before broad real-journey admission without another foundation refound.
 - `decisions/README.md` — ADR admission and rationale policy.
 
@@ -65,7 +65,7 @@ A current implementation can reveal drift but does not silently redefine Product
 - `policies/architecture-and-fullstack.md` — full-stack structural integrity, dependency direction, shared-code/indirection/naming/negative-space policy; it routes app/service composition and provider semantics to their dedicated owners.
 - `policies/data-and-migrations.md` — data authority, schemas, migrations, backfills, seeds and durable-data evolution.
 - `policies/frontend-and-client.md` — client responsibility, state/readback, accessibility and presentation boundaries.
-- `policies/runtime-reliability.md` — runtime/configuration, external systems, failure/recovery, observability and development-environment invariants.
+- `policies/runtime-reliability.md` — startup/readiness, timeout/backpressure, failure/recovery, observability, performance/capacity and reproducibility behavior; configuration topology/provider semantics stay with their dedicated owners.
 - `policies/security.md` — identity, authorization, credentials, privacy, financial security and untrusted boundaries.
 - `policies/standards-and-quality.md` — standards, testing, dependency/adoption, licensing and assurance adequacy.
 - `policies/providers-and-integrations.md` — semantic provider ports, control/data-plane split, secret references, provenance, retries/fallbacks, webhooks and simulators.

@@ -10,13 +10,10 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 A runtime claim requires evidence from the intended candidate/artifact/process/schema/configuration/profile/endpoint and readback sufficient to exclude stale execution. A configured endpoint, `enabled=true`, green build or container start is not proof that the governed dependency/journey works.
 
-## Configuration ownership
+## Configuration conformance
 
-Distinguish canonical configuration schema/meaning from environment-scoped values. Each material setting has one owner, type/validation, requiredness, security classification and failure behavior.
+Configuration classes, schema/value ownership and infra-binding placement are owned by `../architecture/RUNTIME-AND-CONFIGURATION.md`. This policy owns only the reliability consequence: required invalid/missing security-, finance- or correctness-critical configuration fails closed, and production must not silently activate hidden localhost/dev/legacy fallbacks.
 
-Required invalid/missing security-, finance- or correctness-critical configuration fails closed. Local/staging/production may differ in endpoints, credentials, scale and provider accounts, but must not silently redefine core Product/authorization/financial/state-machine semantics.
-
-No hidden localhost/dev/legacy fallback may activate in production. Secrets never live in client-visible config, source or logs.
 
 ## Startup, health, and readiness
 
@@ -24,13 +21,10 @@ Startup validates required configuration and critical dependency assumptions at 
 
 Distinguish liveness, readiness, dependency/provider health and business-journey health instead of collapsing them into one fake-green signal.
 
-## Providers and external systems
+## Provider/external-system routing
 
-Each integration defines canonical owner, authentication/service identity, request/response contract, timeout, retry/idempotency, rate/quota handling, error normalization, unknown-result behavior, observability, reconciliation/recovery and secret boundary.
+Provider semantic ports, selection, fallback, callbacks, unknown-result handling, simulators and provenance are owned by `providers-and-integrations.md`. This policy contributes only generic reliability behavior such as bounded timeouts, retry amplification control, backpressure, observable stuck work and recovery.
 
-Provider-specific payloads terminate at their adapter/boundary. Provider identity must not leak throughout business logic or decide internal financial/domain authority.
-
-An ambiguous external mutation result is reconciled before another route/provider may move the same governed effect again.
 
 ## Timeouts, retries, backpressure, and failure
 
@@ -60,38 +54,13 @@ Rollback and forward recovery are distinct, especially with data/schema changes 
 
 The system must be reproducible from canonical source plus declared toolchain/dependencies/configuration/generation/migrations, without undocumented machine edits, hidden packages, manually patched databases or stale local artifacts. Local conveniences remain explicitly local.
 
-## Closure
+## Required conformance properties
 
 Runtime/reliability closure requires truthful startup/readiness, validated config ownership, bounded provider/failure semantics, required observability, recovered/reconcilable failure paths, no hidden fallback/shadow runtime authority and same-candidate evidence for the claims made.
 
 
-## Development-environment invariants
+## Development-runtime routing
 
-Daily development may use a hybrid local/managed runtime when it preserves the same semantic contracts. Active code remains local when that gives the fastest feedback; managed stateful services are implementation choices, not domain authorities.
+Development-runtime topology, managed/local service classification, cache/coordination admission and simulator placement are owned by `../architecture/RUNTIME-AND-CONFIGURATION.md`; provider simulators additionally obey `providers-and-integrations.md`.
 
-```text
-DEV_DATABASE_ENGINE = POSTGRESQL/POSTGIS
-DEVELOPMENT_PROVIDER MAY DIFFER FROM PRODUCTION_PROVIDER
-MANAGED_DEV_SERVICE != DOMAIN_AUTHORITY
-SYNTHETIC/TEST_DATA_ONLY_IN_EXTERNAL_DEV_SERVICES
-DECLARED_LOCAL/FULL_RUNTIME MUST REMAIN A REPRODUCIBLE INTEGRATION PATH
-MOCK/SIMULATOR MUST NOT BYPASS REAL AUTHORIZATION/STATE/ACCOUNTING
-```
-
-Provider-specific domain models are forbidden when the stable semantic contract is provider-neutral. Heavy local infrastructure runs on demand unless a real task requires it. Production residency/provider selection is a separate approved policy decision; development convenience does not define it.
-
-
-## Cache, coordination and external-provider operating law
-
-Redis/Valkey or equivalent coordination infrastructure is disabled by default unless a real requirement is proven, such as distributed rate limiting, measured hot-cache need, distributed locking or ephemeral coordination.
-
-```text
-CACHE != BUSINESS_SOURCE_OF_TRUTH
-COORDINATION_STORE != DOMAIN_AUTHORITY
-```
-
-Development may use managed stateful services while active code remains local when that produces the fastest loop, provided the same semantic contracts and reproducible integration path remain valid.
-
-Mocks/simulators may emulate external success, pending, rejection, timeout, delayed result, duplicate callback/reference, invalid signature, provider unavailable, unknown result and reconciliation mismatch. They must never bypass BThwani authorization, accounting, state machines, challenge lifecycle or idempotency.
-
-Unknown external mutations remain unknown/reconcilable until authoritative evidence resolves them. Blind fallback/retry across providers is forbidden when duplicate effect is possible.
+This reliability policy requires only that development choices preserve reproducible integration behavior and do not weaken the same authorization, accounting, state-machine, idempotency, failure and recovery semantics expected by the production contract.
