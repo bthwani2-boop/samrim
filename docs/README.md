@@ -50,8 +50,7 @@ Read in this order for normal onboarding:
 1. `development/getting-started.md`
 2. `development/repository-map.md`
 3. `development/first-change.md`
-4. `platform-engineering-lifecycle/README.md` — compact cross-topic routing map; no parallel lifecycle modules
-5. `development/incremental-product-delivery.md` — non-authoritative guidance for implementing an already-authorized small canonical slice without disposable architecture
+4. `development/incremental-product-delivery.md` — non-authoritative guidance for implementing an already-authorized small canonical slice without disposable architecture
 
 Then use the focused guide:
 
@@ -75,6 +74,25 @@ Then use the focused guide:
 - `development/sentry.md`
 - `development/repository-evidence.md`
 - `development/leanctx.md`
+
+### Lifecycle routing
+
+Use this cross-topic map instead of a parallel lifecycle document tree:
+
+| Question | Canonical route |
+|---|---|
+| Product outcome/actor/journey | PRD + `knowledge:query` capability/journey owner |
+| donor/history truth | `reference/donor-reconstruction-patterns.md`; Orchestrator clean-target profile when executing reconstruction |
+| architecture/ownership/topology | `governance/architecture/**` + focused development guide |
+| code/data/contracts change | applicable Governance policy + focused `development/**` guide |
+| Identity/access | capability owner + actors/trust model + security policy |
+| UX/RTL/accessibility/design | experience/design governance + design-system guide |
+| providers/finance | provider policy + financial model + capability owner |
+| build/store/release | `development/release-and-store-submission.md` + delivery policy + executable build config |
+| incident/recovery | `runbooks/README.md` |
+| current evidence | repository-evidence/CI guides + Orchestrator verification owner when invoked |
+
+Do not create another numbered lifecycle chapter that restates these owners.
 
 ### Runbooks
 

@@ -846,26 +846,14 @@ for (const token of [
 
 
 
-const lifecycleIndexPath = "docs/platform-engineering-lifecycle/README.md";
-const lifecycleIndexBody = read(lifecycleIndexPath);
+const retiredLifecycleDir = path.join(root, "docs/platform-engineering-lifecycle");
+if (fs.existsSync(retiredLifecycleDir)) failures.push("duplicate platform-engineering-lifecycle container still exists");
 for (const token of [
-  "DOCUMENT_CLASS: HUMAN_DEVELOPMENT_AND_OPERATIONS_GUIDANCE",
-  "LIFECYCLE MAP = ROUTING ONLY",
-  "docs/development/release-and-store-submission.md",
+  "## Lifecycle routing",
+  "development/release-and-store-submission.md",
+  "Do not create another numbered lifecycle chapter",
 ]) {
-  if (!lifecycleIndexBody.includes(token)) failures.push(lifecycleIndexPath + " missing canonical lifecycle-router token: " + token);
-}
-for (const retiredLifecycleModule of [
-  "01-foundation-scope-and-donor.md",
-  "02-architecture-security-and-technical-foundation.md",
-  "03-identity-experience-and-journey-ready.md",
-  "04-integrations-finance-and-verification.md",
-  "05-build-release-and-operations.md",
-  "06-evidence-gates-and-templates.md",
-]) {
-  if (fs.existsSync(path.join(root, "docs/platform-engineering-lifecycle", retiredLifecycleModule))) {
-    failures.push("retired duplicate lifecycle module still exists: " + retiredLifecycleModule);
-  }
+  if (!docsIndex.includes(token)) failures.push("docs index missing canonical lifecycle routing token: " + token);
 }
 const releaseStoreGuide = read("docs/development/release-and-store-submission.md");
 for (const token of [
