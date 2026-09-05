@@ -177,10 +177,10 @@ CAMPAIGN_ENGAGED=TRUE
 It remains true until either:
 
 ```text
-LEVEL_4_FIXED_POINT=PASS
+LEVEL_4_FIXED_POINT=PASS_FOR_AUTHORIZED_SCOPE
 ```
 
-or a legitimate stop state makes safe forward execution impossible.
+or a legitimate stop state makes safe forward execution impossible. A proven `ACTIVE_SLICE` fixed point is therefore a valid normal terminal state and does not authorize the next future Product slice.
 
 The campaign may not voluntarily return to idle between commits, units or stages.
 
