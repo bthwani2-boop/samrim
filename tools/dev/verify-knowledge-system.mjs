@@ -57,6 +57,7 @@ const repositoryStructureGuard = read("tools/dev/verify-repository-structure.mjs
 const donorResidueGuard = read("tools/dev/verify-donor-residue.mjs");
 const structuralHygieneGuard = read("tools/dev/verify-structural-hygiene.mjs");
 const failures = [];
+const MAX_KNOWLEDGE_MARKDOWN_BYTES = 24_000;
 
 function collectMarkdown(dir) {
   const out = [];
@@ -78,6 +79,20 @@ function collectTextFiles(dir, extensions) {
     else if (entry.isFile() && extensions.has(path.extname(entry.name).toLowerCase())) out.push(absolute);
   }
   return out;
+}
+
+for (const knowledgeRoot of [
+  path.join(root, "governance"),
+  path.join(root, "docs"),
+  path.join(root, "tools/prompting/bthwani-orchestrator"),
+]) {
+  for (const file of collectMarkdown(knowledgeRoot)) {
+    const bytes = fs.statSync(file).size;
+    if (bytes > MAX_KNOWLEDGE_MARKDOWN_BYTES) {
+      const rel = path.relative(root, file).split(path.sep).join("/");
+      failures.push(rel + " exceeds canonical knowledge-file size limit: " + bytes + " > " + MAX_KNOWLEDGE_MARKDOWN_BYTES);
+    }
+  }
 }
 
 function normalizedLawLine(line) {
@@ -134,7 +149,7 @@ const capCorpus = capabilitySources.join("\n");
 const ids = sections.map((x) => x.id);
 const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
 if (duplicates.length) failures.push("duplicate capability IDs: " + [...new Set(duplicates)].join(", "));
-if (capabilityFiles.length !== 6) failures.push("expected six thematic capability owners; found " + capabilityFiles.length);
+if (capabilityFiles.length !== 13) failures.push("expected thirteen cohesive capability owners; found " + capabilityFiles.length);
 
 for (const token of [
   "ARTIFACT_CLASS: DURABLE_PRODUCT_CAPABILITY_INDEX",
