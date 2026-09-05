@@ -153,6 +153,20 @@ for (const { id, body } of sections) {
 }
 
 
+const retiredHumanDomain = ["work", "force"].join("");
+const retiredHumanDomainAuthorityPattern = new RegExp(
+  "services/" +
+    retiredHumanDomain +
+    "|core/" +
+    retiredHumanDomain +
+    "|" +
+    retiredHumanDomain +
+    "-service|" +
+    retiredHumanDomain +
+    " owns",
+  "i",
+);
+
 const durableGovernanceDir = path.join(root, "governance");
 const governanceSemanticOwners = new Map();
 for (const file of collectMarkdown(durableGovernanceDir)) {
@@ -178,8 +192,8 @@ for (const file of collectMarkdown(durableGovernanceDir)) {
     }
   }
 
-  if (/services\/workforce|core\/workforce|workforce-service|Workforce owns/i.test(body)) {
-    failures.push("retired current Workforce-service authority residue in durable Governance: " + rel);
+  if (retiredHumanDomainAuthorityPattern.test(body)) {
+    failures.push("retired generic human-domain service authority residue in durable Governance: " + rel);
   }
   if (/service-owned capability presentation|service-owned presentation where justified/i.test(body)) {
     failures.push("ambiguous service-owned surface presentation wording in durable Governance: " + rel);

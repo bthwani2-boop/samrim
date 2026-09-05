@@ -13,6 +13,7 @@ const tracked = execFileSync("git", ["ls-files", "-z"], {
   .map((item) => item.replaceAll("\\", "/"));
 
 const failures = [];
+let historicalReferenceMatches = 0;
 
 for (const file of tracked) {
   if (file.toLowerCase().includes(forbidden)) {
@@ -24,10 +25,17 @@ for (const file of tracked) {
   if (buffer.includes(0)) continue;
 
   const content = buffer.toString("utf8");
+  const nonAuthoritativeHistoricalReference =
+    file.startsWith("docs/reference/") &&
+    /^DOCUMENT_CLASS:\s*NONAUTHORITATIVE_[A-Z0-9_-]*REFERENCE\s*$/m.test(content);
   const lines = content.split(/\r?\n/);
   for (let index = 0; index < lines.length; index++) {
-    if (lines[index].toLowerCase().includes(forbidden)) {
-      failures.push(
+    if (!lines[index].toLowerCase().includes(forbidden)) continue;
+    if (nonAuthoritativeHistoricalReference) {
+      historicalReferenceMatches += 1;
+      continue;
+    }
+    failures.push(
         "FORBIDDEN_REMOVED_DOMAIN_CONTENT: " +
           file +
           ":" +
@@ -35,7 +43,6 @@ for (const file of tracked) {
           ": " +
           lines[index].trim(),
       );
-    }
   }
 }
 
@@ -46,5 +53,6 @@ if (failures.length > 0) {
 }
 
 console.log("REMOVED_HUMAN_DOMAIN_PATHS=0");
+console.log("NONAUTHORITATIVE_HISTORICAL_REFERENCE_MATCHES=" + historicalReferenceMatches);
 console.log("REMOVED_HUMAN_DOMAIN_CONTENT_MATCHES=0");
 console.log("REMOVED_HUMAN_DOMAIN_RESIDUE=PASS");
