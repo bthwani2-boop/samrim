@@ -49,6 +49,6 @@ pnpm knowledge:verify:all
 
 Knowledge verification combines canonical ownership/invariant/authority checks, internal Markdown reference/orphan checks and adversarial high-risk agent knowledge-contract checks. CI keeps them separately visible for attribution.
 
-Use current root verification entrypoints such as `pnpm workspace:verify`, repository structure/hygiene checks, docs/knowledge verification and Foundation runtime proof as applicable; exact command truth remains in `package.json`/scripts.
+Use current root verification entrypoints such as `pnpm workspace:verify`, repository structure/hygiene checks, docs/knowledge verification and integration runtime proof as applicable; exact command truth remains in `package.json`/scripts.
 
 Dependency changes require appropriate package/version/license/security/maintenance review. Generated artifacts and lockfile changes remain reproducible and reviewable with their source.
