@@ -9,6 +9,7 @@ const fixed = read("tools/prompting/bthwani-orchestrator/templates/bthwani-targe
 const platform = read("governance/project/PLATFORM.md");
 const systemContext = read("governance/architecture/SYSTEM-CONTEXT.md");
 const topology = read("governance/architecture/REPOSITORY-TOPOLOGY.md");
+const ownershipMap = read("governance/architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md");
 const governanceIndex = read("governance/GOVERNANCE.md");
 const prd = read("governance/product/PRD.md");
 const financialModel = read("governance/product/FINANCIAL-MODEL.md");
@@ -374,6 +375,16 @@ if (!fixed.includes("BTHWANI_JOURNEY_READY_PLATFORM_SUBSTRATE=PASS")) failures.p
 
 if (!prd.includes("app-owned surface-specific capability presentation")) failures.push("PRD does not encode app-owned surface-specific presentation");
 if (!composition.includes("SURFACE_SPECIFIC_FEATURE_UI → APP HOST")) failures.push("app/service composition governance missing canonical surface-specific UI owner");
+if (!composition.includes("inbox/preferences/topic configuration/delivery-attempt records → DSH Notifications capability")) {
+  failures.push("app/service composition governance has unresolved notification record ownership");
+}
+if (!ownershipMap.includes("deployable app hosts and explicitly admitted host-neutral reusable presentation abstractions")) {
+  failures.push("ownership/source-of-truth map has ambiguous Design System presentation consumers");
+}
+if (ownershipMap.includes("deployable/service presentation layers")) {
+  failures.push("ownership/source-of-truth map retains ambiguous service presentation wording");
+}
+
 if (!topology.includes("Surface-specific presentation belongs to app hosts")) failures.push("repository topology does not route surface-specific presentation to app hosts");
 if (/services\/<owner>\/frontend\/<capability>\/presentation\/control-panel/i.test(composition)) failures.push("composition governance contains forbidden service-owned Control Panel feature path");
 
