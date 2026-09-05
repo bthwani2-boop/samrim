@@ -83,6 +83,25 @@ try {
   failures.push("control-panel package.json is invalid");
 }
 
+const controlNextConfigCandidates = [
+  "apps/control-panel/next.config.js",
+  "apps/control-panel/next.config.mjs",
+  "apps/control-panel/next.config.ts",
+  "apps/control-panel/next.config.mts",
+].filter((relative) => fs.existsSync(path.join(root, relative)));
+if (
+  controlNextConfigCandidates.length !== 1 ||
+  controlNextConfigCandidates[0] !== "apps/control-panel/next.config.mjs"
+) {
+  failures.push(
+    "control-panel must have one canonical Next config at apps/control-panel/next.config.mjs",
+  );
+}
+const controlNextConfig = read("apps/control-panel/next.config.mjs");
+if (!controlNextConfig.includes('transpilePackages: ["@bthwani/identity"]')) {
+  failures.push("control-panel Next config must transpile the canonical Identity package");
+}
+
 const bff = read("apps/control-panel/lib/identity-bff.ts");
 for (const required of [
   'from "@bthwani/identity"',
