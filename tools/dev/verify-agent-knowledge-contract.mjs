@@ -45,7 +45,7 @@ const cases = [
     question: "Does a folder or donor service name justify a service boundary?",
     source: "governance/architecture/REPOSITORY-TOPOLOGY.md",
     mustInclude: [
-      `services/<owner>/` container is admitted only when the corresponding semantic responsibility and required lifecycle/storage/API/runtime boundary are already justified
+      "`services/<owner>/` container is admitted only when the corresponding semantic responsibility and required lifecycle/storage/API/runtime boundary are already justified"
     ],
   },
   {
