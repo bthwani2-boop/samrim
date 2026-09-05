@@ -45,7 +45,7 @@ const cases = [
     question: "Does a folder or donor service name justify a service boundary?",
     source: "governance/architecture/REPOSITORY-TOPOLOGY.md",
     mustInclude: [
-      "A service is admitted only when independent semantic responsibility plus the required lifecycle/storage/API/runtime boundary is proven",
+      `services/<owner>/` container is admitted only when the corresponding semantic responsibility and required lifecycle/storage/API/runtime boundary are already justified
     ],
   },
   {
@@ -66,7 +66,7 @@ const cases = [
   {
     id: "identity_public_auth_non_enumeration",
     question: "May public verification/authentication/activation unnecessarily reveal blocked or inadmissible actor state?",
-    source: "governance/product/CAPABILITIES.md",
+    source: "governance/product/capabilities/identity-and-profile.md",
     mustInclude: [
       "Public verification/authentication/activation surfaces are non-enumerating before the caller has proven the applicable identifier",
       "public_auth_state_enumeration",
@@ -75,7 +75,7 @@ const cases = [
   {
     id: "logout_local_state_converges_signed_out",
     question: "May the UI stay authenticated after local credentials are cleared because remote revoke failed?",
-    source: "governance/product/CAPABILITIES.md",
+    source: "governance/product/capabilities/identity-and-profile.md",
     mustInclude: [
       "Once local credentials/cookies are cleared, every consuming host converges to `signed_out` even if remote revocation fails",
       "local_logout_ui_divergence",
@@ -84,7 +84,7 @@ const cases = [
   {
     id: "identity_customer_not_activation_login",
     question: "May customer normal sign-in remain a recurring OTP activation flow?",
-    source: "governance/product/CAPABILITIES.md",
+    source: "governance/product/capabilities/identity-and-profile.md",
     mustInclude: [
       "Customer normal authentication is phone + customer password",
       "customer_activation_login",
@@ -93,7 +93,7 @@ const cases = [
   {
     id: "identity_managed_activation_is_one_time",
     question: "May partner/captain/field ordinary login repeat managed activation?",
-    source: "governance/product/CAPABILITIES.md",
+    source: "governance/product/capabilities/identity-and-profile.md",
     mustInclude: [
       "one-time activation before their first role session",
       "repeated_managed_activation",
@@ -103,7 +103,7 @@ const cases = [
   {
     id: "identity_operator_requires_mfa",
     question: "May an operator session be created from password proof alone?",
-    source: "governance/product/CAPABILITIES.md",
+    source: "governance/product/capabilities/identity-and-profile.md",
     mustInclude: [
       "Operator normal access requires password plus a second authentication factor/challenge",
       "operator_single_factor_session",
@@ -112,7 +112,7 @@ const cases = [
   {
     id: "active_slice_has_real_terminal_token",
     question: "Can a bounded active slice close at Level 4 without activating the full target?",
-    source: "tools/prompting/bthwani-orchestrator/04-VERIFY-REDIAGNOSE-CLOSE.md",
+    source: "tools/prompting/bthwani-orchestrator/verify/unit-fixed-point.md",
     mustInclude: ["BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE"],
   },
   {
@@ -124,10 +124,10 @@ const cases = [
   {
     id: "surface_ui_not_service_frontend",
     question: "Does service business ownership imply services/<owner>/frontend?",
-    source: "governance/architecture/REPOSITORY-TOPOLOGY.md",
+    source: "governance/architecture/APP-SERVICE-COMPOSITION.md",
     mustInclude: [
-      "Surface-specific presentation belongs to app hosts",
-      "it is not predeclared in the canonical service shape",
+      "SURFACE_SPECIFIC_FEATURE_UI → APP HOST",
+      "PREMATURE_SHARED_CAPABILITY_UI → FORBIDDEN",
     ],
   },
   {
