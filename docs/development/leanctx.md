@@ -1,7 +1,8 @@
 # LeanCTX Usage
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
-PRODUCT_AUTHORITY: NONE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
 LeanCTX is an optional local context-reduction tool. The current repository Foundation does not materialize a repository-owned LeanCTX policy, adapter, routing index, or committed LeanCTX configuration.

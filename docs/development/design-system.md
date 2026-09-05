@@ -1,7 +1,9 @@
 # Design System Development
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
-PRODUCT_AUTHORITY: NONE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
 ## Scope
 
@@ -36,7 +38,6 @@ Before adding a primitive/token:
 ## Platform differences
 
 A semantic design token may be shared while web/native component implementation remains platform-specific. Do not force one implementation abstraction where platform behavior differs materially.
-
 
 ## External reference and tooling route
 

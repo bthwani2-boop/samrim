@@ -1,6 +1,9 @@
 # Developer Getting Started
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 CURRENT_COMMAND_AUTHORITY: package.json / pnpm-workspace.yaml / repository scripts
 
 ## Developer reading path
