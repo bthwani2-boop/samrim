@@ -31,7 +31,7 @@ legacy generic human-participant container → extract required facts to their p
 core/platform-control  → Platform Control semantic owner; services/platform-control only if service admission passes
 core/providers         → operation-owning service integration ports/adapters
 shared/ui-kit          → packages/design-system when reusable visual-system admission passes
-shared/control-panel   → app host, Design System or service-owned presentation according to responsibility
+shared/control-panel   → app host by default; Design System for domain-neutral reusable primitives/patterns; no service-owned app-shaped presentation tree
 shared/data-runtime    → precise technical/data owner; never one renamed generic package
 shared/resilience      → proven reusable technical package, owner-local mechanism or mature dependency; no generic policy owner
 apps/<app>/runtime     → direct apps/<app>/ host when runtime is only a pass-through layer
