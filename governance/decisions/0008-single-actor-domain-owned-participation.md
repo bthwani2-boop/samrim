@@ -16,7 +16,7 @@ Client, partner, captain, field and operator are roles/participations of a human
 - One normalized canonical phone resolves to one Identity actor.
 - Actor identity and actor-role admission are separate durable facts.
 - Current Identity role admission is represented directly as an actor↔role binding; no generic grant/entitlement/tenant/context engine is admitted without a proven requirement.
-- Identity owns actor identity, credentials, authentication/verification, high-level actor-role admission, activation proof, and role-scoped sessions.
+- Identity owns actor identity, credentials, Identity-wide security eligibility, authentication/verification, high-level actor-role admission, activation proof, and role-scoped sessions.
 - A session carries one role only. Surface is derived from the canonical role→surface mapping rather than persisted as parallel truth.
 - Client may establish its own `client` role through the public OTP flow. Partner/captain/field roles must be provisioned first by DSH. Operator role is provisioned by Platform Control and authenticates with password, not OTP.
 - The authenticated internal-service credential determines the service principal server-side; a caller-name header does not grant service identity.
@@ -29,6 +29,8 @@ Client, partner, captain, field and operator are roles/participations of a human
 ## Consequences
 
 Role disablement revokes only sessions and pending activation proofs for that actor-role. It must not revoke unrelated roles of the same actor.
+
+Identity-wide security disablement is a separate emergency/security control. It revokes all active sessions and pending activation proofs for the actor while preserving role bindings. Re-enabling security never restores a revoked session; re-authentication is required.
 
 An OTP proves control of the configured communication channel; it never grants a governed partner/captain/field role. Business eligibility remains at DSH.
 
@@ -43,6 +45,8 @@ ACTOR_NE_ROLE=REQUIRED
 ACTOR_NE_OPERATOR_CONTEXT=REQUIRED
 SESSION_SINGLE_ROLE=REQUIRED
 ROLE_DISABLE_REVOKES_ONLY_ROLE=REQUIRED
+GLOBAL_SECURITY_DISABLE_REVOKES_ALL_SESSIONS_WITHOUT_DELETING_ROLES=REQUIRED
+GLOBAL_SECURITY_REENABLE_REQUIRES_REAUTH=REQUIRED
 GOVERNED_ROLE_OTP_SELF_GRANT=FORBIDDEN
 CALLER_HEADER_AS_SERVICE_IDENTITY=FORBIDDEN
 IDENTITY_GENERIC_CONTEXT_OR_TENANT=ABSENT_UNTIL_PROVEN

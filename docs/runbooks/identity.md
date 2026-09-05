@@ -12,6 +12,7 @@ Owner: Identity service operations
 ```text
 actor identity + actor_id            → Identity
 high-level actor-role admission      → Identity
+Identity-wide security eligibility   → Identity
 OTP/password authentication          → Identity
 role-scoped sessions                 → Identity
 DSH participant eligibility/scope    → DSH
@@ -36,6 +37,8 @@ Prefer operation ID, result/error code, HTTP status, duration, correlation ID an
 ## Role disable / recovery
 
 Disabling `actor_id + role` revokes only that role's sessions and pending activations. A provisioning retry never silently re-enables the role; the owner must explicitly enable it.
+
+Global security disable is separate: only the Platform Control service credential may toggle `security_enabled`. Disable revokes all active sessions and pending challenges for the actor without deleting roles. Re-enable never resurrects revoked sessions; every surface must authenticate again.
 
 Operator password reset is Platform-Control-authenticated, audited, replaces the Argon2id credential and revokes existing operator sessions.
 

@@ -220,7 +220,7 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 **Required outcome.** One Identity actor authority serves all required surfaces. DSH/Platform Control explicitly provision only roles they own. Authentication proves the role session without turning role, context, eligibility or business scope into properties of the human actor.
 
 **Primary actors.** customer, partner, captain, field, operator, dsh-service, platform-control-service.
-**Canonical ownership.** Identity owns actor identity, credentials, high-level role admission, OTP/password authentication and role-scoped sessions. DSH owns DSH operational participant/eligibility/business scopes. WLT owns financial truth.
+**Canonical ownership.** Identity owns actor identity, credentials, Identity-wide security eligibility, high-level role admission, OTP/password authentication and role-scoped sessions. DSH owns DSH operational participant/eligibility/business scopes. WLT owns financial truth.
 **Material deployable surfaces.** app-client, app-partner, app-captain, app-field, control-panel.
 
 **Business invariants**
@@ -233,12 +233,13 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - Internal service principal is resolved from its credential, not a caller/context header.
 - Every session has exactly one role; surface is derived from role.
 - Disabling one actor-role revokes only that role's sessions/pending challenges.
+- Identity-wide security disable is distinct from role/DSH lifecycle state: Platform Control may disable authentication globally for an actor, which revokes every active session/pending challenge while preserving role bindings; re-enable requires fresh authentication.
 - Refresh rotates atomically; known replay compromises that session family; an unrelated random refresh cannot revoke it.
 - Refresh is device-fingerprint checked; access remains a short-lived bearer token.
 - Passwords use Argon2id. Login/OTP abuse controls include source throttling without creating a simple username-targeted permanent lockout.
 
 **Forbidden/negative invariants**
-- No actor-global `roles[]`, generic permissions blob, operator context, provisioning fingerprint or creator-service provenance.
+- No actor-global `roles[]`, generic permissions blob, operator context, provisioning fingerprint or creator-service provenance. A minimal `security_enabled` boolean is permitted only as Identity-wide authentication eligibility and must never represent DSH operational lifecycle.
 - No generic AccessGrant/Tenant/generic-human-participant authority without proven independent requirements.
 - No governed role creation through OTP.
 - No provisioning retry silently re-enables a disabled role or mutates another role.
@@ -254,12 +255,13 @@ Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surfac
 - Unknown governed-role OTP cannot create a valid role/session.
 - OTP is short-lived, single-use, attempt-limited, phone/source-throttled and never exposed raw.
 - Client/captain sessions may coexist; disabling captain invalidates captain only.
+- Platform Control global security disable invalidates client/captain/operator sessions for the same actor, DSH cannot invoke it, role bindings remain intact, and re-enable requires new authentication.
 - Operator login works even when that actor has other roles.
 - Password reset invalidates old password/operator sessions but not unrelated-role sessions.
 - Forged caller headers cannot change the principal resolved from a service credential.
 - Generated contract/client/app/database/runtime evidence contains zero legacy Identity context/caller-header authority.
 
-**Named failure classes:** duplicate_actor, role_shaped_actor_id, actor_role_collapse, governed_role_otp_self_grant, silent_role_reenable, cross_role_revocation, consumer_authored_actor_id, service_caller_header_trust, premature_identity_context_or_tenant, operator_otp, account_lockout_dos, activation_replay, refresh_reuse, secret_or_pii_leak, parallel_identity_truth.
+**Named failure classes:** duplicate_actor, role_shaped_actor_id, actor_role_collapse, governed_role_otp_self_grant, silent_role_reenable, cross_role_revocation, missing_global_security_kill_switch, global_security_role_deletion, global_security_session_resurrection, consumer_authored_actor_id, service_caller_header_trust, premature_identity_context_or_tenant, operator_otp, account_lockout_dos, activation_replay, refresh_reuse, secret_or_pii_leak, parallel_identity_truth.
 
 **Actor responsibility envelope**
 - `customer` — self-establishes only client role and authenticates its client session.

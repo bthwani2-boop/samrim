@@ -15,6 +15,6 @@ identity_login_attempts
 identity_security_audit
 ```
 
-The actor row represents human identity only. Roles are separate bindings; sessions are role-scoped. DSH operational state and generic Operator Context/Tenant/permissions are not stored here.
+The actor row represents human identity plus one minimal `security_enabled` authentication-eligibility flag. Roles are separate bindings; sessions are role-scoped. The security flag is not a DSH/domain lifecycle status. DSH operational state and generic Operator Context/Tenant/permissions are not stored here.
 
 The earlier Stage-B actor schema was never integrated or production-authoritative. Migration 001 therefore fails explicitly if that losing schema is detected instead of preserving it with compatibility columns or dual reads. For stale local/non-production Stage-B data, reset the development PostgreSQL volume and apply the canonical schema cleanly. Do not use destructive reset for production data without a separately proven migration plan.

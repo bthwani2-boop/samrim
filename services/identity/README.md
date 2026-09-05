@@ -3,7 +3,7 @@
 STRUCTURAL_STATUS: CANONICAL
 CAPABILITY_IMPLEMENTATION_STATUS: STAGE_B_CANDIDATE_PENDING_EXACT_HEAD_CLOSURE
 
-Identity is the sole creator/owner of the cross-boundary human `actor_id` and owns authentication, credentials, explicit high-level actor-role admission, activation proofs and role-scoped sessions.
+Identity is the sole creator/owner of the cross-boundary human `actor_id` and owns authentication, credentials, minimal Identity-wide security eligibility, explicit high-level actor-role admission, activation proofs and role-scoped sessions.
 
 ```text
 identity_actors
@@ -20,4 +20,4 @@ Internal service identity is resolved from the bearer service credential itself.
 
 Public OTP: client may establish client; partner/captain/field require a pre-existing enabled role; operator OTP is forbidden.
 
-Each session carries exactly one role. Role disablement revokes only that role's sessions/challenges.
+Each session carries exactly one role. Role disablement revokes only that role's sessions/challenges. The actor row also carries one `security_enabled` flag used only as an Identity-wide kill switch: Platform Control may disable it to revoke all actor sessions/challenges; roles remain intact and re-enable requires re-authentication.
