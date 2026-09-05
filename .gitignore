@@ -24,6 +24,8 @@ graphify-out/
 .tmp/
 .cache/
 .local/
+apps/**/.gitignore
+packages/**/.gitignore
 
 # Logs / OS noise
 *.log
@@ -55,3 +57,4 @@ secrets.local.*
 
 # Local-only BThwani materialization
 .bthwani-local/
+node_modules
