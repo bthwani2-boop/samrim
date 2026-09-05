@@ -171,7 +171,9 @@ Before a materially affected structural change is considered complete, inspect i
 
 ## App-host and integration ownership
 
-Deployable apps own route hierarchy, navigation, tabs/shell, deep links, cross-capability composition, bootstrap/session binding, native/OS adapters, app assets and build/deployable configuration. Services/bounded contexts own business/system capability semantics, durable truth, canonical writers, service contracts and reusable capability presentation when justified.
+Deployable apps own route hierarchy, navigation, tabs/shell, deep links, cross-capability composition, bootstrap/session binding, native/OS adapters, app assets, build/deployable configuration and surface-specific feature presentation. Services/bounded contexts own business/system capability semantics, durable truth, canonical writers, service contracts and generated/public client lineage.
+
+Reusable presentation is extracted only after real multi-host reuse proves a stable host-neutral responsibility. It is not a reason to recreate app-shaped frontend ownership under services or to move business authority into a shared package.
 
 ```text
 WHERE_IT_APPEARS != WHO_OWNS_IT
