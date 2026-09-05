@@ -122,7 +122,6 @@ const cases = [
     source: "governance/architecture/FOUNDATION-AND-JOURNEY-READY-SUBSTRATE.md",
     mustInclude: [
       "JOURNEY_READY_PASS",
-      "JOURNEY_READY_PASS",
       "!= NEXT_PRODUCT_SLICE_AUTHORIZED",
     ],
   },
