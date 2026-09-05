@@ -3,6 +3,8 @@
 ARTIFACT_CLASS: DURABLE_DECISION_RATIONALE
 SEMANTIC_OWNER: governance/decisions/README.md
 EXECUTION_AUTHORITY: NONE
+CLOSURE_AUTHORITY: NONE
+IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Purpose
 
@@ -16,7 +18,9 @@ Create an ADR only when the decision is materially cross-cutting or hard to reve
 
 ## Required shape
 
-An ADR records Context, Decision, Alternatives, Consequences and Supersession.
+An ADR records Context, Decision, Alternatives, Consequences and Supersession, and declares `CURRENT_RULE_ROUTING` to the current semantic owner whose rule supersedes the ADR as mutable authority.
+
+ADR numbering is historical identity. Gaps are allowed when an older decision was removed or never admitted; do not renumber surviving ADRs merely to make the sequence contiguous.
 
 ## High-value ADR subjects
 
@@ -30,7 +34,7 @@ Git history remains the archive for ordinary implementation changes. Do not crea
 - `0001-repository-taxonomy.md`
 - `0002-app-host-service-capability-separation.md`
 - `0003-wlt-financial-sovereignty.md`
-- `0008-single-actor-domain-owned-participation.md`
 - `0005-domain-specific-external-integration-ports.md`
 - `0006-service-contract-sovereignty.md`
 - `0007-design-system-authority.md`
+- `0008-single-actor-domain-owned-participation.md`
