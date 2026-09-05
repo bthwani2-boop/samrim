@@ -299,6 +299,18 @@ const docsDir = path.join(root, "docs");
 for (const file of collectMarkdown(docsDir)) {
   const body = fs.readFileSync(file, "utf8");
   const rel = path.relative(root, file).split(path.sep).join("/");
+
+  for (const token of [
+    "DOCUMENT_CLASS:",
+    "EXECUTION_AUTHORITY: NONE",
+    "PRODUCT_SEMANTIC_AUTHORITY: NONE",
+    "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
+  ]) {
+    if (!body.includes(token)) failures.push(rel + " missing canonical Docs metadata: " + token);
+  }
+
+  if (/^PRODUCT_AUTHORITY:/m.test(body)) failures.push("legacy PRODUCT_AUTHORITY metadata in Docs: " + rel);
+  if (/^CURRENT_STATE_AUTHORITY:/m.test(body)) failures.push("legacy CURRENT_STATE_AUTHORITY metadata in Docs: " + rel);
   if (hasNonNoneAuthority(body, ["EXECUTION_AUTHORITY", "PRODUCT_AUTHORITY", "PRODUCT_SEMANTIC_AUTHORITY", "ARCHITECTURE_AUTHORITY", "CLOSURE_AUTHORITY"])) {
     failures.push("Docs claims forbidden normative authority: " + rel);
   }
@@ -314,7 +326,8 @@ for (const file of collectMarkdown(runbookDir)) {
   const body = fs.readFileSync(file, "utf8");
   for (const token of [
     "DOCUMENT_CLASS: OPERATIONAL_RUNBOOK",
-    "PRODUCT_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+    "PRODUCT_SEMANTIC_AUTHORITY: NONE",
     "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
   ]) {
     if (!body.includes(token)) failures.push(rel + " missing runbook non-authority metadata: " + token);
