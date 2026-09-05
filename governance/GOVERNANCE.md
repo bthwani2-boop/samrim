@@ -57,7 +57,7 @@ A current implementation can reveal drift but does not silently redefine Product
 - `architecture/APP-SERVICE-COMPOSITION.md` — sole durable owner of deployable-host versus service-capability responsibility/composition.
 - `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` — data ownership and executable contract/protocol/version boundaries; provider operating policy is routed elsewhere.
 - `architecture/RUNTIME-AND-CONFIGURATION.md` — runtime/configuration classes, placement and infra/development topology; operational reliability behavior is routed elsewhere.
-- `architecture/FOUNDATION-AND-JOURNEY-READY-SUBSTRATE.md` — durable cross-cutting technical substrate required before broad real-journey admission without another foundation refound.
+- `architecture/PLATFORM-SUBSTRATE.md` — durable cross-cutting technical substrate requirements independent of campaign stages or Product-slice ordering.
 - `decisions/README.md` — ADR admission and rationale policy.
 
 ### Engineering policies
