@@ -7,12 +7,12 @@ CURRENT_COMMAND_AUTHORITY: package.json / pnpm-workspace.yaml / repository scrip
 
 Before making a material change:
 
-1. read `governance/project/PLATFORM.md`;
-2. read `governance/product/PRD.md`;
-3. locate the capability in `governance/product/CAPABILITIES.md`;
-4. locate the journey in `governance/product/JOURNEYS.md`;
-5. confirm ownership in `governance/architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md`;
-6. read `repository-map.md` and the applicable development guide.
+1. read `AGENTS.md` for authority routing;
+2. read `governance/project/PLATFORM.md` and `governance/product/PRD.md`;
+3. retrieve only the relevant capability/journey/owner with `pnpm knowledge:query -- ...`;
+4. confirm ownership in `governance/architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md`;
+5. read the applicable policy plus `repository-map.md` and the focused development guide;
+6. inspect live source/history/runtime for current implementation state.
 
 ## Prerequisites
 
@@ -104,7 +104,9 @@ Read the applicable Product and policy owners first:
 
 ```text
 governance/product/PRD.md
-→ governance/product/CAPABILITIES.md
+→ pnpm knowledge:query -- capability <CAPABILITY_ID>
+→ pnpm knowledge:query -- journey <J_ID>
+→ pnpm knowledge:query -- owner <keyword-or-path>
 → FINANCIAL-MODEL.md when applicable
 → EXPERIENCE-AND-DESIGN.md when user/operator facing
 → applicable governance/policies/*
