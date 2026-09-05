@@ -117,6 +117,32 @@ The canonical release source comes from an authorized protected integration/rele
 
 When base/head/merge semantics materially change the tested candidate, the integrated result receives the evidence required for that resulting source identity.
 
+## 7A. Deployable identity preservation during repository refoundation
+
+A repository/path/package refactor must not silently create a new externally recognized deployable identity or detach an existing app/service from required platform lineage.
+
+For every materially affected deployable, classify and preserve or intentionally migrate as applicable:
+
+~~~text
+MOBILE PACKAGE/BUNDLE IDENTIFIER
+EXPO/EAS PROJECT/UPDATE/CREDENTIAL IDENTITY
+URI SCHEME / DEEP-LINK IDENTITY
+SIGNING / ENTITLEMENT BINDINGS
+WEB HOSTING PROJECT / BUILD ROOT / BASE PATH
+PUBLIC OR CALLBACK ENDPOINT IDENTITY
+OBSERVABILITY PROJECT / RELEASE IDENTITY
+EXTERNAL PROVIDER PROJECT / WEBHOOK BINDING
+~~~
+
+A folder move, package rename, workspace flattening or build-root change is not allowed to alter those identities accidentally. If an identity intentionally changes, migration/cutover, compatibility and release evidence must cover the resulting external effect.
+
+~~~text
+REPOSITORY_PATH_CHANGE != DEPLOYABLE_IDENTITY_CHANGE
+DEPLOYABLE_IDENTITY_CHANGE → EXPLICIT_MIGRATION
+~~~
+
+Whether a native rebuild, OTA/update, hosting redeploy or credential rebinding is required is derived from the actual affected platform configuration/fingerprint, not inferred merely from source-folder movement.
+
 ## 8. Controlled build and supply-chain provenance
 
 Release artifacts are produced from controlled attributable source/build inputs, not an untracked developer workspace. Build-critical inputs include as applicable source SHA, lockfiles, toolchain/compiler, base-image digest, build recipe, generated-contract/code inputs, build-time configuration class and native signing inputs.
