@@ -280,6 +280,24 @@ requireTokens("docs/development/mobile/mobile-and-eas.md", [
   "Material real-device operational evidence",
   "process death and restart/resume",
 ]);
+requireTokens("docs/development/runtime/runtime-and-configuration.md", [
+  "Development non-goals and feasibility spikes",
+  "dedicated development VPS",
+  "critical external provider early in an isolated spike",
+]);
+requireTokens("docs/development/quality/quality-and-verification.md", [
+  "Official standards reference routing",
+  "OWASP ASVS",
+  "OWASP MASVS / MASTG / MASWE",
+  "W3C WCAG",
+  "NIST Secure Software Development Framework",
+  "SLSA specification",
+]);
+requireTokens("tools/prompting/bthwani-orchestrator/verify/evidence-falsification.md", [
+  "BLIND_RERUN_UNTIL_GREEN = FORBIDDEN",
+  "FAILURE_SUPPRESSION/ALLOWLIST_TO_MANUFACTURE_GREEN = FORBIDDEN",
+  "No documentation-only closure",
+]);
 
 const focusFiles = collectMarkdown(path.join(root, "tools/prompting/bthwani-orchestrator/focus"));
 for (const file of focusFiles) {
