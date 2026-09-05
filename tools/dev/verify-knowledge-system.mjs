@@ -25,6 +25,10 @@ const lifecycleIndex = read("docs/platform-engineering-lifecycle/README.md");
 const agentRouter = read("AGENTS.md");
 const repositoryReadme = read("README.md");
 const contributing = read("CONTRIBUTING.md");
+const packageJson = JSON.parse(read("package.json"));
+const queryKnowledge = read("tools/dev/query-knowledge.mjs");
+const experienceReference = read("docs/reference/external-systems/experience-design-ui-assurance.md");
+const designGuide = read("docs/development/design-system.md");
 const failures = [];
 
 function collectMarkdown(dir) {
@@ -236,6 +240,13 @@ for (const token of [
 }
 if (!agentRouter.includes("never infer `FULL_TARGET` from `LEVEL_4`")) failures.push("AGENTS.md missing active-slice anti-expansion routing");
 if (!agentRouter.includes("surface-specific feature UI belongs to the consuming app host by default")) failures.push("AGENTS.md missing app-host feature UI routing");
+if (!agentRouter.includes("pnpm knowledge:query -- capability IDENTITY_ACTIVATION_SESSIONS")) failures.push("AGENTS.md missing selective capability-query routing");
+if (packageJson.scripts?.["knowledge:query"] !== "node tools/dev/query-knowledge.mjs") failures.push("package.json missing canonical knowledge:query command");
+for (const sourcePath of ["governance/product/CAPABILITIES.md", "governance/product/JOURNEYS.md"]) {
+  if (!queryKnowledge.includes(sourcePath)) failures.push("knowledge query tool missing canonical source: " + sourcePath);
+}
+if (/writeFileSync|appendFileSync|createWriteStream/.test(queryKnowledge)) failures.push("knowledge query tool writes a parallel knowledge artifact");
+
 if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(repositoryReadme)) failures.push("README hard-codes temporary branch a as active repository state");
 if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(contributing)) failures.push("CONTRIBUTING hard-codes temporary branch a as active repository state");
 
@@ -259,6 +270,25 @@ for (const modulePath of lifecycleModules.slice(1)) {
   const body = read(modulePath);
   if (!body.includes("PARENT_GUIDE: docs/platform-engineering-lifecycle/README.md")) failures.push(modulePath + " missing parent-guide routing metadata");
 }
+
+for (const token of [
+  "DOCUMENT_CLASS: NON_AUTHORITATIVE_EXTERNAL_REFERENCE",
+  "ADOPTION_AUTHORITY: NONE",
+  "Style Dictionary",
+  "Base UI",
+  "React Aria",
+  "Cloudscape",
+  "Storybook",
+  "Playwright",
+  "axe-core",
+  "Maestro",
+  "Lucide",
+  "AXE_GREEN != ACCESSIBILITY_CLOSED",
+]) {
+  if (!experienceReference.includes(token)) failures.push("experience/design reference corpus missing token: " + token);
+}
+if (!designGuide.includes("docs/reference/external-systems/experience-design-ui-assurance.md")) failures.push("design-system guide does not route to experience/UI reference corpus");
+if (!designGuide.includes("PREBUILD_FULL_COMPONENT_CATALOG = FORBIDDEN")) failures.push("design-system guide missing just-in-time component law");
 
 const retiredPlanPath = "tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md";
 if (fs.existsSync(path.join(root, retiredPlanPath))) failures.push("temporary clean-reconstruction campaign plan remains in the live knowledge system");
