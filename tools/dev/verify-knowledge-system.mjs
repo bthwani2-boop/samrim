@@ -11,6 +11,11 @@ const systemContext = read("governance/architecture/SYSTEM-CONTEXT.md");
 const topology = read("governance/architecture/REPOSITORY-TOPOLOGY.md");
 const governanceIndex = read("governance/GOVERNANCE.md");
 const campaignPlan = read("tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md");
+const prd = read("governance/product/PRD.md");
+const glossary = read("governance/project/GLOSSARY.md");
+const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md");
+const appsTarget = read("tools/prompting/bthwani-refoundation/targets/apps-and-composition.md");
+const dshWltTarget = read("tools/prompting/bthwani-refoundation/targets/dsh-wlt.md");
 const failures = [];
 
 function collectMarkdown(dir) {
@@ -148,6 +153,23 @@ if (!governanceIndex.includes("architecture/REPOSITORY-TOPOLOGY.md")) failures.p
 if (campaignPlan.includes("## Current durable-knowledge gaps to close")) failures.push("campaign plan still reports resolved responsibility families as open");
 if (systemContext.includes("explicitly admitted Platform Control are the primary bounded contexts")) failures.push("Platform Control service admission is assumed");
 if (!platform.includes("independent deployable-service admission remains conditional")) failures.push("Platform Control semantic/deployment split missing");
+
+if (!orchestrator.includes("PRODUCT_BREADTH: ACTIVE_SLICE | FULL_TARGET")) failures.push("orchestrator missing explicit Product-breadth invocation");
+if (!orchestrator.includes("AUTO_EXPAND_BEYOND_AUTHORIZED_PRODUCT_SCOPE=FORBIDDEN")) failures.push("orchestrator missing no-auto-expansion law");
+if (!orchestrator.includes("BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE")) failures.push("orchestrator missing active-slice Level-4 terminal token");
+
+if (!prd.includes("## 1B. Target Product vision versus delivery breadth")) failures.push("PRD missing target-vs-active Product breadth law");
+if (prd.includes("The current operational fulfillment-policy modes are")) failures.push("PRD still treats every target fulfillment mode as current operational scope");
+if (!prd.includes("The target supported fulfillment-policy modes are")) failures.push("PRD missing target fulfillment-mode semantics");
+
+for (const term of ["**Partner**", "**Internal Wallet**", "**Ledger**", "**Balance**", "**External Financial Rail / External Wallet Provider**"]) {
+  if (!glossary.includes(term)) failures.push("glossary missing canonical term: " + term);
+}
+
+if (!fixed.includes("BTHWANI_JOURNEY_READY_PLATFORM_SUBSTRATE=PASS")) failures.push("target fixed point missing journey-ready platform-substrate gate");
+if (!appsTarget.includes("apps/control-panel/src/features/<capability>")) failures.push("apps target missing app-owned surface feature placement");
+if (appsTarget.includes("DSH-specific presentation         → services/dsh/frontend")) failures.push("apps target still directs surface-specific DSH presentation into service frontend");
+if (!dshWltTarget.includes("Do not create `services/dsh/frontend/*` or `services/wlt/frontend/*`")) failures.push("DSH/WLT target missing service-frontend non-admission law");
 
 if (failures.length) {
   console.error("KNOWLEDGE_SYSTEM_VERIFY=FAIL");
