@@ -189,7 +189,7 @@ Reference material should state:
 
 ## Required conformance properties
 
-Applicable knowledge-system closure requires:
+Applicable knowledge-system conformance requires:
 
 ~~~text
 GOVERNANCE_ENTRYPOINT=PASS

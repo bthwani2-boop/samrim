@@ -56,7 +56,7 @@ The system must be reproducible from canonical source plus declared toolchain/de
 
 ## Required conformance properties
 
-Runtime/reliability closure requires truthful startup/readiness, validated config ownership, bounded provider/failure semantics, required observability, recovered/reconcilable failure paths, no hidden fallback/shadow runtime authority and same-candidate evidence for the claims made.
+Concrete candidate closure remains Orchestrator authority. Runtime/reliability conformance requires truthful startup/readiness, validated configuration ownership, bounded failure semantics, required observability, recovered/reconcilable failure paths, no hidden fallback/shadow runtime authority and candidate-attributable evidence for the claims made.
 
 
 ## Development-runtime routing

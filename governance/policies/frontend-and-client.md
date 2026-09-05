@@ -76,4 +76,4 @@ For material journeys consider payload size, pagination, repeated fetch/render w
 
 ## Required conformance properties
 
-Client closure requires correct ownership, canonical contract binding/readback, complete applicable states, lifecycle/resource cleanup, security/privacy handling, accessibility/RTL/localization where material, migrated consumers and no local mock/fallback/duplicate state authority tied to the root.
+Concrete candidate closure remains Orchestrator authority. Client conformance requires correct ownership, canonical contract binding/readback, complete applicable states, lifecycle/resource cleanup, security/privacy handling, accessibility/RTL/localization where material, migrated consumers and no local mock/fallback/duplicate state authority tied to the affected responsibility.

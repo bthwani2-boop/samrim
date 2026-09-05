@@ -75,7 +75,7 @@ data element
 - Collect only data required by current Product/contracts and a legitimate current purpose.
 - Restrict reads/projections/exports by purpose, actor, object and business scope; redact fields not required by a consumer.
 - Retain sensitive data only for the governed operational/legal/audit need. A durable retention requirement must have an owner; absence of a material required retention/deletion decision is a governance gap rather than permission to retain forever.
-- Deletion/anonymization must respect canonical ownership, references, legal/audit/financial retention and reconciliation. Deleting a projection does not delete owner truth; deleting owner truth without resolving required consumers/references is not privacy closure.
+- Deletion/anonymization must respect canonical ownership, references, legal/audit/financial retention and reconciliation. Deleting a projection does not delete owner truth; deleting owner truth without resolving required consumers/references is not a conformant privacy/data-lifecycle result.
 - Production PII, credentials, identity documents, precise location history and financial payloads are not ordinary local/staging/test data. Exceptional diagnostic use must be authorized, minimized/sanitized, protected, time-bounded and removed after purpose.
 
 ## Sensitive logging, telemetry, and evidence

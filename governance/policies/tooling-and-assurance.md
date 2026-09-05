@@ -123,7 +123,7 @@ CI, static analyzers, security scanners, code review systems and custom guards a
 
 ~~~text
 TOOL_GREEN != CANONICAL
-CI_GREEN != CLOSED
+CI_GREEN != ORCHESTRATOR_CLOSURE
 MANIFEST_SAYS_OWNER != OWNER_PROVEN
 ~~~
 
@@ -178,7 +178,7 @@ This guidance belongs in `tools/README.md` or an equivalent discoverable human g
 
 ## Required conformance properties
 
-Applicable tooling/assurance conformance requires; concrete candidate closure remains Orchestrator authority:
+Concrete candidate closure remains Orchestrator authority. Applicable tooling/assurance conformance requires:
 
 ~~~text
 TOOLS_PRODUCT_AUTHORITY=0

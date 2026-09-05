@@ -37,7 +37,7 @@ CHANGE INTENT
 -> PRODUCTION / STORE READINESS
 -> DEPLOYMENT / SUBMISSION / ROLLOUT
 -> POST-DEPLOYMENT / POST-RELEASE EVIDENCE
--> RELEASE CLOSED
+-> RELEASE ACCEPTANCE SATISFIED
 ```
 
 A phase is complete only when its exit claims are proven for the exact candidate. Documentation or a previous green run is not technical evidence for a changed candidate.
@@ -103,7 +103,7 @@ Required remote work must:
 - distinguish required FAIL/ERROR/CANCELLED/PENDING/missing evidence from PASS;
 - expose enough attributable output to diagnose failures.
 
-Affected verification is preferred for iteration when applicability is proven; full/deep verification runs when shared authority, risk, closure policy or the verification system itself requires it. A tool being configured is not evidence that it ran successfully.
+Affected verification is preferred for iteration when applicability is proven; full/deep verification runs when shared authority, risk, conformance/evidence policy or the verification system itself requires it. A tool being configured is not evidence that it ran successfully.
 
 ## 7. Pull request, review, and integration
 
