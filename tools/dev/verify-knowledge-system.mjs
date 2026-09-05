@@ -23,6 +23,7 @@ const verificationStructural = read("tools/prompting/bthwani-orchestrator/verify
 const verificationFixedPoint = read("tools/prompting/bthwani-orchestrator/verify/unit-fixed-point.md");
 const verificationCorpus = [verificationRouter, verificationEvidence, verificationStructural, verificationFixedPoint].join("\n");
 const cleanTargetProfile = read("tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md");
+const foundationConstructionProfile = read("tools/prompting/bthwani-orchestrator/profiles/foundation-construction.md");
 const composition = read("governance/architecture/APP-SERVICE-COMPOSITION.md");
 const dataContracts = read("governance/architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md");
 const runtimeArchitecture = read("governance/architecture/RUNTIME-AND-CONFIGURATION.md");
@@ -576,8 +577,14 @@ if (!fixed.includes("BTHWANI_JOURNEY_READY_PLATFORM_SUBSTRATE=PASS")) failures.p
 for (const token of ["STRUCTURAL_FOUNDATION_READY", "PROTECTED_JOURNEY_READY"]) {
   if (!foundationSubstrate.includes(token)) failures.push("foundation/journey-ready governance missing readiness distinction: " + token);
 }
-if (!orchestrator.includes("FOUNDATION_CONSTRUCTION_EXIT_GATE") || !orchestrator.includes("STRUCTURAL_FOUNDATION_READY")) {
-  failures.push("orchestrator missing structural-foundation versus protected-journey-ready distinction");
+if (!orchestrator.includes("profiles/foundation-construction.md")) failures.push("orchestrator root missing foundation-construction profile routing");
+for (const token of [
+  "PROFILE_ROLE: NON_SEMANTIC_FOUNDATION_CONSTRUCTION",
+  "FOUNDATION_CONSTRUCTION_EXIT_GATE",
+  "STRUCTURAL_FOUNDATION_READY",
+  "PROTECTED_JOURNEY_READY",
+]) {
+  if (!foundationConstructionProfile.includes(token)) failures.push("foundation-construction profile missing canonical token: " + token);
 }
 
 if (!prd.includes("app-owned surface-specific capability presentation")) failures.push("PRD does not encode app-owned surface-specific presentation");
