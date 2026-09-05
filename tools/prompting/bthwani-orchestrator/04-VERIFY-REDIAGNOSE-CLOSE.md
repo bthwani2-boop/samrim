@@ -5,6 +5,14 @@ AUTHORITY_ASSIGNED_BY: 00-ORCHESTRATOR.md
 SELF_CERTIFICATION: FORBIDDEN
 LOAD_TRIGGER: BEFORE_VERIFICATION_FALSIFICATION_RECENSUS_OR_CLOSURE
 
+## 0A. BThwani target-qualification checklist
+
+When a verification claim needs the exhaustive BThwani target/substrate/knowledge/docs/tooling gate matrix, load:
+
+`templates/bthwani-target-qualification.md`
+
+The template is evidence scaffolding only. It does not own semantics or closure and may not override this file. Resolve every checklist row against current Governance, current authorized Product scope and exact executable evidence.
+
 ## 1. Evidence proves claims, not activity
 
 ```text
