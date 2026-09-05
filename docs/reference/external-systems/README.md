@@ -618,6 +618,7 @@ The objective is faster and more complete Level-4 refoundation with **less** cus
 - `identity-platform.md` — identity, authorization, notifications, future HR-reference material, feature/configuration and secrets references.
 - `engineering-infrastructure.md` — workflows, observability, storage, API/contracts, integration testing and Go/PostgreSQL engineering candidates.
 - `experience-design-ui-assurance.md` — design tokens, web/native UI primitives, RTL/accessibility, Storybook, Playwright/axe, Maestro, icons and Control Panel UX pattern references.
+- `../donor-reconstruction-patterns.md` — non-authoritative historical donor path/convergence patterns for forensic reconstruction; never current topology authority.
 
 Named AI/model routing is intentionally excluded: model names are transient and do not belong in durable reference policy.
 
