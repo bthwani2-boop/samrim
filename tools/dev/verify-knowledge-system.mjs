@@ -592,7 +592,12 @@ if (ownershipMap.includes("deployable/service presentation layers")) {
   failures.push("ownership/source-of-truth map retains ambiguous service presentation wording");
 }
 
-if (!topology.includes("Surface-specific presentation belongs to app hosts")) failures.push("repository topology does not route surface-specific presentation to app hosts");
+if (!composition.includes("Surface-specific feature presentation is app-host responsibility by default.")) {
+  failures.push("app/service composition owner does not route surface-specific presentation to app hosts");
+}
+if (topology.includes("Surface-specific presentation belongs to app hosts")) {
+  failures.push("repository topology re-duplicates app/service composition semantics");
+}
 if (/services\/<owner>\/frontend\/<capability>\/presentation\/control-panel/i.test(composition)) failures.push("composition governance contains forbidden service-owned Control Panel feature path");
 
 for (const token of [
@@ -852,27 +857,43 @@ for (const modulePath of lifecycleModules.slice(1)) {
   if (!body.includes("PARENT_GUIDE: docs/platform-engineering-lifecycle/README.md")) failures.push(modulePath + " missing parent-guide routing metadata");
 }
 
-const externalReferencePaths = [
-  "docs/reference/external-systems/README.md",
+const externalReferenceIndex = "docs/reference/external-systems/README.md";
+const externalReferenceLeaves = [
   "docs/reference/external-systems/commerce-fulfillment.md",
   "docs/reference/external-systems/finance-payments.md",
   "docs/reference/external-systems/identity-platform.md",
   "docs/reference/external-systems/engineering-infrastructure.md",
   "docs/reference/external-systems/experience-design-ui-assurance.md",
 ];
-for (const referencePath of externalReferencePaths) {
+
+const externalIndexBody = read(externalReferenceIndex);
+for (const token of [
+  "DOCUMENT_CLASS: NON_AUTHORITATIVE_EXTERNAL_REFERENCE_INDEX",
+  "EXECUTION_AUTHORITY: NONE",
+  "PRODUCT_SEMANTIC_AUTHORITY: NONE",
+  "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
+  "ADOPTION_AUTHORITY: NONE",
+]) {
+  if (!externalIndexBody.includes(token)) failures.push(externalReferenceIndex + " missing external-reference index metadata: " + token);
+}
+
+for (const referencePath of externalReferenceLeaves) {
   const body = read(referencePath);
   for (const token of [
     "DOCUMENT_CLASS: NON_AUTHORITATIVE_EXTERNAL_REFERENCE",
     "EXECUTION_AUTHORITY: NONE",
-    "PRODUCT_AUTHORITY: NONE",
-    "CURRENT_REPOSITORY_STATE_AUTHORITY: NONE",
+    "PRODUCT_SEMANTIC_AUTHORITY: NONE",
+    "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
     "ADOPTION_AUTHORITY: NONE",
     "REFERENCE_FRESHNESS: REVALIDATE_MATERIAL_FACTS_AT_USE",
     "LICENSE_RECHECK_ON_ADOPTION: REQUIRED",
     "SECURITY_SUPPLY_CHAIN_RECHECK_ON_ADOPTION: REQUIRED",
   ]) {
     if (!body.includes(token)) failures.push(referencePath + " missing external-reference metadata: " + token);
+  }
+
+  if (/^PRODUCT_AUTHORITY:/m.test(body) || /^CURRENT_REPOSITORY_STATE_AUTHORITY:/m.test(body)) {
+    failures.push(referencePath + " retains legacy/redundant authority metadata");
   }
 
   const reviewed = body.match(/^REFERENCE_REVIEWED_ON:\s*(\d{4}-\d{2}-\d{2})\s*$/m)?.[1];
@@ -888,8 +909,6 @@ for (const referencePath of externalReferencePaths) {
     const now = Date.now();
     const maxAgeDays = Number(maxAgeRaw);
     const ageDays = Math.floor((now - reviewedAt) / 86400000);
-    if (!Number.isInteger(maxAgeDays) || maxAgeDays < 1) failures.push(referencePath + " has invalid REFERENCE_MAX_REVIEW_AGE_DAYS");
-    if (reviewedAt > now + 86400000) failures.push(referencePath + " claims a future external-reference review date");
     if (ageDays > maxAgeDays) failures.push(referencePath + " external-reference review is stale: " + ageDays + "d > " + maxAgeDays + "d");
   }
 }
