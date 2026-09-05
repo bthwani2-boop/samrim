@@ -590,8 +590,21 @@ for (const referencePath of externalReferencePaths) {
   }
 
   const reviewed = body.match(/^REFERENCE_REVIEWED_ON:\s*(\d{4}-\d{2}-\d{2})\s*$/m)?.[1];
+  const maxAgeRaw = body.match(/^REFERENCE_MAX_REVIEW_AGE_DAYS:\s*(\d+)\s*$/m)?.[1];
   if (!reviewed || Number.isNaN(Date.parse(reviewed + "T00:00:00Z"))) {
     failures.push(referencePath + " missing/invalid REFERENCE_REVIEWED_ON date");
+  }
+  if (!maxAgeRaw) {
+    failures.push(referencePath + " missing REFERENCE_MAX_REVIEW_AGE_DAYS");
+  }
+  if (reviewed && maxAgeRaw && !Number.isNaN(Date.parse(reviewed + "T00:00:00Z"))) {
+    const reviewedAt = Date.parse(reviewed + "T00:00:00Z");
+    const now = Date.now();
+    const maxAgeDays = Number(maxAgeRaw);
+    const ageDays = Math.floor((now - reviewedAt) / 86400000);
+    if (!Number.isInteger(maxAgeDays) || maxAgeDays < 1) failures.push(referencePath + " has invalid REFERENCE_MAX_REVIEW_AGE_DAYS");
+    if (reviewedAt > now + 86400000) failures.push(referencePath + " claims a future external-reference review date");
+    if (ageDays > maxAgeDays) failures.push(referencePath + " external-reference review is stale: " + ageDays + "d > " + maxAgeDays + "d");
   }
 }
 
