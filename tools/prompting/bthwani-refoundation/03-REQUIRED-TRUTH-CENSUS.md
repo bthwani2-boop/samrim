@@ -10,6 +10,18 @@ This template forces exhaustive accounting before destructive replacement and be
 
 For every material execution unit, reconstruct/disposition all applicable items.
 
+First record the breadth boundary:
+
+```text
+PRODUCT_BREADTH = ACTIVE_SLICE | FULL_TARGET
+ACTIVE_PRODUCT_SLICE
+AUTHORIZED_PRODUCT_SCOPE
+DEFERRED_TARGET_SCOPE_RELEVANT_TO_CENSUS
+AFFECTED_PREVIOUSLY_PROVEN_REGRESSION_CONE
+```
+
+A target capability outside the authorized Product scope is not treated as missing implementation. It must still be recognized when it changes terminology, ownership, external identity, or future-compatibility decisions for the active slice.
+
 ## Required Product/System truth
 
 ```text
