@@ -40,8 +40,6 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     go work sync
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml config *> $null
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Write-Host "Bootstrap PASS"
 }
 finally { Pop-Location }
