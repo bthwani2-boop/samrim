@@ -52,56 +52,56 @@ financial-provider/rail transaction state
 
 WLT must not be a DSH submodule.
 
-## 3. WLT frontend
+## 3. Service client and app-presentation boundary
 
-Reusable WLT-owned UI/controller/view-model/data-access belongs under:
+DSH/WLT own backend/domain semantics, durable truth, canonical service contracts, and generated/public client lineage.
 
-```text
-services/wlt/frontend/<financial-capability>
-```
-
-Examples:
+Surface-specific feature presentation belongs in the consuming app by default:
 
 ```text
-wallet
-payment
-refund
-settlement
-commission
-payout
-reconciliation
-collateral
+apps/app-client/src/features/<capability>
+apps/app-partner/src/features/<capability>
+apps/app-captain/src/features/<capability>
+apps/app-field/src/features/<capability>      # only when Field slice is active
+apps/control-panel/src/features/<capability>
 ```
 
-WLT frontend consumes WLT contracts/generated bindings and remains host-neutral. It must not import DSH app routes, DSH private implementation, or a specific app host.
+Apps may derive display state and orchestrate request lifecycle, but must not clone DSH/WLT business rules, allowed transitions, financial truth, or authorization.
 
-DSH Checkout may compose WLT Payment without becoming payment authority:
+Do not create `services/dsh/frontend/*` or `services/wlt/frontend/*` merely to mirror business owners into a second presentation topology. Real domain-neutral visual reuse belongs in the Design System. Any future host-neutral business-presentation abstraction requires explicit reuse/admission proof and must not become an app-shaped service tree.
+
+DSH Checkout may consume WLT Payment through WLT's public contract/client without becoming payment authority:
 
 ```text
 DSH owns checkout orchestration
 WLT owns payment state/rules/financial effects
-APP owns route composition
+APP owns route + surface presentation
 ```
 
-## 4. DSH frontend refoundation
+## 4. Donor frontend non-import / extraction
 
-App-shaped DSH feature trees and `frontend/shared` are losing umbrellas after value extraction.
-
-Actor-specific presentation is allowed under a real capability only where material differences exist:
+Donor app-shaped DSH/WLT frontend trees are forensic sources, not target containers.
 
 ```text
-order/
-  presentation/client
-  presentation/partner
-  presentation/captain
-  presentation/control-panel
+services/dsh/frontend/app-client
+services/dsh/frontend/app-partner
+services/dsh/frontend/app-captain
+services/dsh/frontend/app-field
+services/dsh/frontend/control-panel
+services/dsh/frontend/shared
+services/wlt/frontend/*
 ```
 
-Do not duplicate one working presentation merely to mirror actor names.
+For required donor value:
 
-`services/dsh/frontend/wlt-boundary` must not remain a WLT feature tree inside DSH. Move WLT-owned wallet/payment/refund/settlement/commission/payout/etc. value to WLT; retain only genuinely DSH-specific translation/orchestration under an explicit DSH integration boundary.
-
-Generic web/runtime declarations such as CSS-module typings must be owned by the actual web/app/package TypeScript runtime scope, not by DSH merely because they were historically located under `services/dsh/frontend`.
+```text
+BUSINESS SEMANTIC → canonical DSH/WLT backend/contract owner
+SURFACE UX/FEATURE PRESENTATION → applicable app/src/features
+DOMAIN-NEUTRAL VISUAL PRIMITIVE → packages/design-system when reuse is proven
+NATIVE/ROUTE/SHELL BEHAVIOR → app host
+GENERATED API BINDING → canonical service client lineage
+LOSING DONOR CONTAINER → DO NOT IMPORT
+```
 
 ## 5. Capability naming
 
@@ -358,8 +358,9 @@ PARALLEL_SERVICE_MIGRATION_AUTHORITIES
 WLT_REFERENCE_SHADOW_TRUTH
 ACTOR/CONSUMER_SHAPED_WLT_CONTRACT_AUTHORITIES
 PERMANENT_PAYMENT/SETTLEMENT/PAYOUT_OVERLAY_FRAGMENTATION
-WLT_FRONTEND_COUPLING_TO_DSH_OR_APP
+SERVICE_OWNED_APP_SPECIFIC_PRESENTATION_TREES
+WLT_CLIENT_OR_CONTRACT_COUPLING_TO_APP_PRIVATE_INTERNALS
 UNVERIFIED_FINANCIAL_INVARIANTS
-BACKEND↔CONTRACT↔FRONTEND↔APP_PARITY_GAPS
+BACKEND↔CONTRACT↔CLIENT↔APP_PARITY_GAPS
 MISOWNED_GENERIC_WEB_TYPE_DECLARATIONS
 ```
