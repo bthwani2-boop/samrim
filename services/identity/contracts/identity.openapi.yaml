@@ -67,7 +67,7 @@ paths:
     post:
       tags: [auth]
       operationId: activateRoleSession
-      description: Consumes one OTP proof and creates a session only for the requested enabled role.
+      description: Consumes one OTP proof and creates a session only for the requested enabled role. Public admission failures remain non-enumerating and return the generic unauthenticated response.
       requestBody:
         required: true
         content:
@@ -85,8 +85,6 @@ paths:
           $ref: "#/components/responses/Invalid"
         "401":
           $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
 
   /auth/login:
     post:

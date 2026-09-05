@@ -238,6 +238,9 @@ func (s *Service) Consume(ctx context.Context, input domain.ActivationRequest) (
 	resolvedActorID := ""
 	if role == "client" {
 		a, err := s.actors.EnsurePublicClientTx(ctx, tx, phone)
+		if errors.Is(err, domain.ErrActorBlocked) {
+			return domain.TokenPair{}, domain.ErrInvalidActivation
+		}
 		if err != nil {
 			return domain.TokenPair{}, err
 		}
@@ -247,10 +250,17 @@ func (s *Service) Consume(ctx context.Context, input domain.ActivationRequest) (
 			return domain.TokenPair{}, domain.ErrInvalidActivation
 		}
 		var enabled, securityEnabled bool
-		if err := tx.QueryRowContext(ctx,
+		err := tx.QueryRowContext(ctx,
 			"SELECT r.enabled,a.security_enabled FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.actor_id=$1 AND r.role=$2 FOR UPDATE OF r,a",
-			actorID.String, role).Scan(&enabled, &securityEnabled); err != nil || !enabled || !securityEnabled {
-			return domain.TokenPair{}, domain.ErrActorBlocked
+			actorID.String, role).Scan(&enabled, &securityEnabled)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.TokenPair{}, domain.ErrInvalidActivation
+		}
+		if err != nil {
+			return domain.TokenPair{}, err
+		}
+		if !enabled || !securityEnabled {
+			return domain.TokenPair{}, domain.ErrInvalidActivation
 		}
 		resolvedActorID = actorID.String
 	}
