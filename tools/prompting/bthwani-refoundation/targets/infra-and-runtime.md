@@ -105,6 +105,41 @@ Audit duplicate local databases such as separate runtime/local variants for the 
 
 Do not weaken authentication/constraints simply for local convenience.
 
+## 7A. Journey-ready service data substrate
+
+Before the first DSH/WLT business slice, each durable-data-owning service must have a real isolated database identity and migration/readiness path without premature business schema.
+
+For the initial local target, one PostgreSQL server instance may host separate logical databases/users:
+
+```text
+PostgreSQL instance
+├── identity database / identity user
+├── dsh database      / dsh user
+└── wlt database      / wlt user
+```
+
+Required invariant:
+
+```text
+IDENTITY_CREDENTIALS_CANNOT_READ_OR_WRITE_DSH/WLT_PRIVATE_DATA
+DSH_CREDENTIALS_CANNOT_READ_OR_WRITE_WLT/IDENTITY_PRIVATE_DATA
+WLT_CREDENTIALS_CANNOT_READ_OR_WRITE_DSH/IDENTITY_PRIVATE_DATA
+```
+
+Production may choose different physical topology; canonical ownership/isolation remains the same.
+
+DSH/WLT readiness must prove their own required database connectivity/schema prerequisites once persistence is admitted. A generic process-alive response is not sufficient for a service claiming DB readiness.
+
+Use one pinned canonical SQL migration toolchain across service migration lanes; the target implementation choice is `golang-migrate/migrate` unless later evidence proves a stronger fit. Production schema evolution is an explicit deployment/predeploy operation, not arbitrary hidden mutation on API process boot.
+
+```text
+DEVELOPMENT → bootstrap may invoke explicit migrate command
+CI          → fresh database + migrate + tests
+PRODUCTION  → explicit controlled migration/predeploy step
+```
+
+Do not create empty/fake `001_init` business tables or placeholder migrations merely to prove the lane exists.
+
 ## 8. Inactive/readme-only infrastructure
 
 An infrastructure folder that contains only historical explanation that a technology is inactive must re-earn existence.
@@ -153,6 +188,9 @@ TRACKED_SECRET_VALUES=0
 OLD_core_DOCKER_PATHS=0
 OLD_apps/*/runtime_BUILD_PATHS=0
 DUPLICATE_LOCAL_DATABASE_AUTHORITY=0
+CROSS_SERVICE_PRIVATE_DATABASE_ACCESS=0
+SERVICE_DB_READINESS_FAKE_GREEN=0
+PREMATURE_FAKE_BUSINESS_MIGRATIONS=0
 INACTIVE_README_ONLY_INFRA_CONTAINERS=0
 STALE_COMPOSE_FILES/PROFILES/PORTS=0
 ```
