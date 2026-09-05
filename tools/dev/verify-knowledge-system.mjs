@@ -111,11 +111,20 @@ requireTokens("governance/GOVERNANCE.md", [
   "No live ADR tree",
   "architecture/PLATFORM-SUBSTRATE.md",
   "product/capabilities/**/*.md",
+  "Developer reconstruction acceptance",
+  "UNACCOUNTED_MATERIAL_PRODUCT_RESPONSIBILITIES=0",
+  "UNMAPPED_REQUIRED_FAILURE/RECOVERY_SEMANTICS=0",
 ]);
 requireTokens("governance/architecture/PLATFORM-SUBSTRATE.md", [
   "EMPTY_LANE_AS_READINESS_EVIDENCE = FORBIDDEN",
   "REAL_RESPONSIBILITY_PRECEDES_CONTAINER = REQUIRED",
   "does not define a global substrate-completion gate",
+]);
+requireTokens("governance/product/capabilities/access/platform-sovereign-control-plane.md", [
+  "CONTROL_PLANE_READBACK != EFFECTIVE_CONSUMER_APPLICATION",
+  "EMPTY_OR_UNKNOWN_TARGET_SELECTOR = FAIL_CLOSED",
+  "FAILED_HEALTH_GATE != SILENT_STATE_MUTATION",
+  "ROLLBACK_MUST_NOT_OVERWRITE_NEWER_REVISION",
 ]);
 const archPolicy = read("governance/policies/architecture-and-fullstack.md");
 if (/empty canonical contract\/data\/testing lanes/i.test(archPolicy)) failures.push("architecture policy still permits empty readiness lanes");
@@ -249,6 +258,27 @@ requireTokens("tools/prompting/bthwani-orchestrator/profiles/structural-substrat
 requireTokens("tools/prompting/bthwani-orchestrator/verify/unit-and-scope-closure.md", [
   "BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE",
   "There is no global structural phase transition",
+]);
+requireTokens("tools/prompting/bthwani-orchestrator/templates/candidate-proof-matrix.md", [
+  "Complete affected-cone accounting",
+  "Supporting-value accounting",
+  "Full binding chain",
+  "UNACCOUNTED_FAILURE_UNKNOWN_RECOVERY=0",
+]);
+requireTokens("tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md", [
+  "Semantic-atom accounting record",
+  "ACTIVE_SLICE_DONOR_CONE_ACCOUNTING=COMPLETE",
+  "UNINSPECTED_DONOR_HISTORY_MATERIAL_TO_ACTIVE_SLICE=0",
+  "BTHWANI_DONOR_REQUIRED_VALUE_DISPOSITION=PASS",
+]);
+requireTokens("docs/README.md", [
+  "Developer reconstruction and semantic-parity acceptance",
+  "REQUIRED_DEVELOPMENT_GUIDANCE_LOST=0",
+  "REQUIRED_OPERATIONAL_GUIDANCE_LOST=0",
+]);
+requireTokens("docs/development/mobile/mobile-and-eas.md", [
+  "Material real-device operational evidence",
+  "process death and restart/resume",
 ]);
 
 const focusFiles = collectMarkdown(path.join(root, "tools/prompting/bthwani-orchestrator/focus"));
