@@ -40,7 +40,6 @@ const forbiddenLegacyPatterns = [
   { label: "stale LeanCTX repository policy path", regex: /\.agents\/tools\/leanctx\.md/i },
   { label: "stale LeanCTX adapter path", regex: /\bLEAN-CTX\.md\b/i },
   { label: "stale agent routing index", regex: /\.agents\/INDEX\.md/i },
-  { label: "stale AGENTS root path", regex: /\bAGENTS\.md\b/i },
   { label: "stale LeanCTX tracked config", regex: /\.lean-ctx(?:\.toml|-id)\b/i },
   { label: "donor-specific reference pin", regex: /PIN_LIVE_h/i },
   { label: "legacy full runtime command", regex: /runtime:full(?::smoke)?/i },
@@ -82,7 +81,15 @@ function collectMarkdownFiles(root) {
 
 const failures = [];
 
-for (const file of collectMarkdownFiles(docsRoot)) {
+const documentationFiles = [
+  ...collectMarkdownFiles(docsRoot),
+  path.join(repoRoot, "README.md"),
+  path.join(repoRoot, "CONTRIBUTING.md"),
+  path.join(repoRoot, "AGENTS.md"),
+  path.join(repoRoot, "tools", "README.md"),
+].filter((file, index, all) => fs.existsSync(file) && all.indexOf(file) === index);
+
+for (const file of documentationFiles) {
   const relative = path.relative(repoRoot, file).replaceAll("\\", "/");
   const lines = fs.readFileSync(file, "utf8").split("\n");
 
