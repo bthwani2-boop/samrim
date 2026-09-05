@@ -469,19 +469,21 @@ RE_PIN_CURRENT_HEAD
 → EXECUTE_IF_NOT_BLOCKED
 ```
 
-## 14. Final full-repository fixed-point qualification
+## 14. Final fixed-point qualification by authorized breadth
 
-The first empty Stage-B graph is not completion.
+The first empty authorized Stage-B graph is not completion. Re-census and falsify the relevant proof universe from zero.
 
-Run a fresh full-repository adversarial recensus from zero.
+For `PRODUCT_BREADTH=ACTIVE_SLICE`, the proof universe is the authorized slice plus its complete affected/prerequisite/regression cone. For `PRODUCT_BREADTH=FULL_TARGET`, it is the full repository and full governed target.
 
-Final completion requires:
+Repository-wide final completion requires:
 
 ```text
+PRODUCT_BREADTH=FULL_TARGET
 A0_ADMISSION=PASS_OR_SUPERSEDED_BY_FRESHER_FINAL_CENSUS
 A1_FRONTIER=EMPTY
 A2_STRUCTURAL_QUALIFICATION=PASS
 STAGE_B_ROOT_GRAPH=EMPTY
+DEFERRED_TARGET_SCOPE=0
 KNOWN_GARBAGE=0
 KNOWN_LOSERS=0
 KNOWN_ROOTS=0
