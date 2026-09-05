@@ -55,19 +55,9 @@ jobs:
             }
           done
 
-          if [[ -d tools/prompting/bthwani-refoundation ]]; then
-            [[ -f tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md ]] || {
-              echo "::error::Refoundation package exists without its entrypoint"
-              exit 1
-            }
-
-            orchestrator_profile="$(awk -F': ' '/^REFOUNDATION_PROFILE_REVISION:/ {print $2; exit}' tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md)"
-            refoundation_revision="$(awk -F': ' '/^PACKAGE_REVISION:/ {print $2; exit}' tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md)"
-
-            [[ -n "${orchestrator_profile}" && "${orchestrator_profile}" == "${refoundation_revision}" ]] || {
-              echo "::error::Orchestrator/refoundation revision mismatch: orchestrator=${orchestrator_profile:-missing} refoundation=${refoundation_revision:-missing}"
-              exit 1
-            }
+          if [[ -e tools/prompting/bthwani-refoundation ]]; then
+            echo "::error::Retired bthwani-refoundation package must not exist; durable value belongs in Governance/Docs and clean-target execution specialization belongs in the Orchestrator"
+            exit 1
           fi
 
           for root in core shared; do
