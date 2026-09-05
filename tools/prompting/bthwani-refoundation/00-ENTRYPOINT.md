@@ -42,7 +42,7 @@ The target preserves required Product/System/UX/data/security/financial/operatio
 
 ## 2. Mandatory load order
 
-1. Load orchestrator `00` through `05` and materially applicable `focus/*`.
+1. Load orchestrator `00-ORCHESTRATOR.md`, then load `01`–`05` only when their declared `LOAD_TRIGGER` applies; load materially applicable `focus/*` owners before acting on their responsibility.
 2. Load this entrypoint.
 3. Load `01-CANONICAL-REPOSITORY-TOPOLOGY.md`.
 4. Load `02-TARGET-BOUNDARY-MAP.md`.
