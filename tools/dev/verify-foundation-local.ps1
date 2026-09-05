@@ -188,8 +188,8 @@ try {
         node tools/dev/verify-structural-hygiene.mjs
     }
 
-    Run-NativeStep "Docs command parity" {
-        node tools/dev/verify-doc-command-parity.mjs
+    Run-NativeStep "Docs parity" {
+        pnpm run docs:verify:all
     }
 
     Run-NativeStep "Knowledge-system invariants" {
