@@ -120,6 +120,34 @@ No manually maintained DTO/enum/status/allowed-action/operation maps may compete
 
 Derived metadata needed by tooling must be generated.
 
+## 6A. Journey-ready code-generation baseline
+
+Before broad business-journey delivery, contract lineage must be standardized enough that the first new API operation does not require choosing a new client-generation architecture.
+
+For the current TypeScript + Go target, prefer one pinned supported toolchain:
+
+```text
+CANONICAL OPENAPI
+  ├── openapi-typescript → TypeScript schema types
+  ├── openapi-fetch      → typed TypeScript runtime client
+  └── oapi-codegen       → Go models/client/server interfaces as materially required
+```
+
+Tool choice is technical implementation specialization, not Product governance. Versions are pinned in executable manifests/tooling.
+
+Required properties:
+
+```text
+ONE_CANONICAL_OPENAPI_SOURCE_PER_SERVICE=PASS
+GENERATION_IS_DETERMINISTIC=PASS
+GENERATED_DRIFT_CHECK=PASS
+HAND_MAINTAINED_CROSS_BOUNDARY_DTO_MIRRORS=0
+CUSTOM_RESTRICTED_OPENAPI/YAML_PARSER_AS_PRIMARY_GENERATOR=0
+CLIENTS_USE_GENERATED_CONTRACT_TYPES=PASS
+```
+
+DSH/WLT may establish canonical contract roots with only real technical operations before Product capabilities arrive. Do not create fake business operations, DTOs, or empty generated feature packages to make the contract look complete.
+
 ## 7. Protocol primitive admission
 
 A root protocol primitive survives only if:
@@ -160,4 +188,7 @@ HAND_MAINTAINED_GENERATED_MIRRORS=0
 UNRESOLVED_REFS=0
 OLD_core/shared_CONTRACT_PATHS=0
 NONDETERMINISTIC_CLIENT_GENERATION=0
+CUSTOM_PRIMARY_OPENAPI_PARSER/GENERATOR=0
+GENERATED_DRIFT=0
+MANUAL_CROSS_BOUNDARY_DTO_MIRRORS=0
 ```
