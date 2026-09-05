@@ -4,19 +4,23 @@ ARTIFACT_CLASS: TEMPORARY_DERIVED_CAMPAIGN_PLAN
 EXECUTION_AUTHORITY: NONE
 PRODUCT_AUTHORITY: NONE
 TARGET_REPOSITORY: bthwani2-boop/samrim
-TARGET_BRANCH: a
+INTEGRATION_BASE_BRANCH: a
+MUTABLE_WORKING_BRANCH: INVOCATION_SUPPLIED
 TARGET_BASE_SHA_AT_INITIAL_KNOWLEDGE_REFOUNDATION_WRITE: 6ead46747759974712e8e09d92935260552f2976
 DONOR_REPOSITORY: bthwani2-boop/bthwani-suite-next
 DONOR_REF: h
 DONOR_OBSERVED_SHA_AT_INITIAL_AUDIT: 14c2ef2fd5a0ffadda00d307c9dea81d5cf49799
 CAMPAIGN_MODE: CLEAN_TARGET_RECONSTRUCTION
-DELETE_AFTER_LEVEL_4_FIXED_POINT: YES
+DELETE_AFTER_FULL_TARGET_LEVEL_4_FIXED_POINT: YES
+DELETE_AFTER_ACTIVE_SLICE_LEVEL_4_FIXED_POINT: NO
 CURRENT_TARGET_HEAD_IS_ALWAYS_RE_PINNED: REQUIRED
 CURRENT_DONOR_REF_IS_ALWAYS_RE_PINNED: REQUIRED
 
 ## Mission
 
-Build the clean BThwani platform in `samrim/a` while using the donor and its material history as a read-only forensic corpus. Preserve every proven required semantic atom; do not preserve donor topology by default.
+Build the clean BThwani platform toward the protected/integration base `samrim/a` through explicit invocation-supplied working branches while using the donor and its material history as a read-only forensic corpus. Preserve every proven required semantic atom; do not preserve donor topology by default.
+
+Build the **canonical destination from day one**, but authorize Product breadth incrementally. Each active slice closes at Level 4 before the next Product slice is deliberately activated.
 
 ## Authority boundaries
 
@@ -29,18 +33,55 @@ THIS PLAN = temporary current campaign state only
 DONOR = read-only forensic evidence
 ```
 
+## Product-breadth strategy
+
+```text
+TARGET_PRODUCT_VISION
+        !=
+AUTHORIZED_PRODUCT_SCOPE
+        !=
+ACTIVE_PRODUCT_SLICE
+        !=
+CURRENT_IMPLEMENTATION_STATE
+```
+
+The target Product vision remains complete in Governance. This plan records recommended delivery sequencing only; the Orchestrator/invocation is the execution authority.
+
+Default campaign behavior:
+
+```text
+PRODUCT_BREADTH=ACTIVE_SLICE
+COMPLETION_LEVEL=LEVEL_4
+
+AUTO_CONTINUE_WITHIN_ACTIVE_SLICE=YES
+AUTO_EXPAND_TO_DEFERRED_PRODUCT_SCOPE=NO
+```
+
+The engineering rule is:
+
+```text
+SMALL
++ CANONICAL
++ COMPLETE
++ TESTED
+→ FREEZE/REGRESS
+→ DELIBERATELY ACTIVATE ONE MORE SLICE
+```
+
+This is not a disposable MVP strategy. No `simple_*`, `*_v1`, `bootstrap_*`, fake business route/table, shadow DTO, temporary state machine, or speculative framework is admitted merely to make an early slice easier.
+
 ## P0 reconstruction frontier
 
-1. Re-pin target and donor before every coherent batch.
-2. Exhaust current donor tree plus material history that may contain deleted knowledge.
-3. Reconstruct semantic-atom disposition accounting.
-4. Reconstruct capability/journey/ownership/lineage matrices.
-5. Complete Governance coverage without importing campaign state.
+1. Re-pin target working branch and donor before every coherent batch.
+2. Reconstruct the current authorized Product slice before deriving executable work.
+3. Exhaust the donor current/history cone that can materially change that slice; continue repository-wide donor extraction read-only in parallel where useful.
+4. Reconstruct semantic-atom disposition accounting for the active cone.
+5. Keep complete target capability/journey/ownership meaning in Governance without treating target breadth as current execution breadth.
 6. Restore developer/runtime/runbook knowledge to Docs without making Docs a parallel authority.
-7. Build services/apps vertically by semantic capability in the clean target.
+7. Build the active semantic slice vertically, or build genuinely non-semantic journey-ready substrate when that substrate is the authorized objective.
 8. Use maximum-safe parallelism for proven non-overlapping mutation cones with one integration authority.
-9. Verify exact-candidate runtime, repository-platform state and negative space.
-10. Pass donor-exhaustion and target Level-4 fixed-point gates, then delete this plan and temporary refoundation package if no longer consumed.
+9. Verify exact-candidate runtime, repository-platform state, negative space and cumulative regression of affected previously proven slices.
+10. Stop Product expansion at the authorized-scope Level-4 fixed point. Repository-wide donor exhaustion, full target fixed point, and deletion of this plan/package occur only when `PRODUCT_BREADTH=FULL_TARGET` is explicitly authorized and proven.
 
 ## Known donor knowledge-recovery hotspots
 
@@ -71,12 +112,18 @@ Keep detailed matrices ephemeral. Promote only durable Product/System meaning to
 
 ## Completion
 
-This plan cannot declare completion. It may be deleted only after the Orchestrator and target fixed-point gates prove:
+This plan cannot declare implementation completion.
+
+An active slice may close when its donor cone, exact-candidate Level-4 gate and cumulative affected regression pass. The plan itself survives for later slices.
+
+It may be deleted only after explicit full-target closure proves:
 
 ```text
+PRODUCT_BREADTH=FULL_TARGET
 DONOR_EXHAUSTION_GATE=PASS
 BTHWANI_DONOR_REQUIRED_VALUE_DISPOSITION=PASS
-ORCHESTRATOR_LEVEL_4_GATE=PASS
+ORCHESTRATOR_FULL_TARGET_LEVEL_4_GATE=PASS
+DEFERRED_TARGET_SCOPE=0
 NO_CONSUMER_REQUIRES_THIS_PLAN
 ```
 
@@ -132,9 +179,11 @@ DURABLE_REPOSITORY_TOPOLOGY_OWNER
 
 Exit only when no active owner contradicts these laws.
 
-### K1 — Donor semantic exhaustion
+### K1 — Donor semantic extraction
 
-Perform semantic-atom extraction across current donor tree and material history. Build capability/journey/ownership/source-family disposition. Historical deletion/simplification is never treated as proof that meaning was intentionally rejected.
+For each active slice, exhaust the complete donor current/history cone that can change its Product meaning, canonical owner, data/contract/runtime model, external identity, UX, safety or future-compatible structure. Build capability/journey/ownership/source-family disposition for that cone.
+
+Repository-wide semantic-atom exhaustion continues as read-only work and is mandatory before `FULL_TARGET` closure. Historical deletion/simplification is never treated as proof that meaning was intentionally rejected.
 
 ### K2 — Durable Governance closure
 
@@ -178,25 +227,32 @@ PARTIAL SEMANTIC CAPABILITY WAVES
 
 If premature furnishing already exists, preserve proven deployable/technical identity and required non-semantic substrate, remove/defer the semantic implementation, stabilize manifests, then complete and verify Foundation Construction before A2/Stage B.
 
-### B — Vertical capability reconstruction
+### B — Vertical capability / increment reconstruction
 
-For each capability:
+For each explicitly authorized full capability **or named vertical increment**:
 
 ```text
-DONOR CONE EXHAUSTED FOR CAPABILITY
+AUTHORIZED SLICE BOUNDARY EXPLICIT
+→ DONOR CONE EXHAUSTED FOR SLICE
 → REQUIRED TRUTH + TARGET MODEL PROVEN
 → OWNER/DATA/CONTRACT/RUNTIME BUILT
-→ ALL REQUIRED SURFACES/ACTIONS CONNECTED
-→ FAILURE/RECOVERY + SECURITY/FINANCE VERIFIED
+→ ALL SURFACES/ACTIONS REQUIRED BY THE SLICE CONNECTED
+→ FAILURE/RECOVERY + SECURITY/FINANCE VERIFIED WHEN APPLICABLE
+→ CANONICAL READBACK PROVEN
+→ AFFECTED PRIOR-SLICE REGRESSION PASS
 → DONOR LOSERS NOT IMPORTED
 → TARGET LOSERS DELETED
 → NEGATIVE SPACE
-→ CAPABILITY CLOSED
+→ SLICE LEVEL-4 CLOSED
 ```
 
-### F — Full-system fixed point
+A vertical increment may close without implementing the rest of its target capability envelope. It must not be labeled as full-capability closure unless the complete durable envelope is actually implemented.
 
-Fresh donor-exhaustion pass + fresh target full-repository recensus + exact-candidate runtime/repository-platform evidence.
+### F — Fixed points
+
+`ACTIVE_SLICE`: fresh active-scope donor-cone proof + affected-cone recensus/falsification + exact-candidate runtime/repository-platform evidence + cumulative regression.
+
+`FULL_TARGET`: fresh repository-wide donor-exhaustion pass + full target recensus/falsification + exact-candidate runtime/repository-platform evidence + zero deferred target scope.
 
 ## Maximum-safe parallel execution map
 
@@ -216,25 +272,196 @@ INFRA/SHARED CONTRACT/ROOT WORKSPACE        → serialize when it can invalidate
 
 Every mutating lane starts from an exact target base SHA and must reconcile foreign head movement before integration.
 
+## Recommended incremental delivery ladder
+
+This sequence is a **derived recommendation**, not execution authority. A later slice starts only after deliberate activation.
+
+### S0 — Structural Foundation — CLOSED/PROVEN BASELINE
+
+Keep the already-qualified repository/workspace/service-host substrate. Do not reopen it without new contrary evidence.
+
+### S1 — Identity — CURRENT ACTIVE SEMANTIC ROOT
+
+Close the current Identity actor/auth/activation/session/access model completely before unrelated business breadth.
+
+### S1.5 — Journey-Ready Platform Substrate
+
+After Identity closure and before the first DSH business slice, harden only the technical house needed so future journeys do not trigger another foundation rewrite:
+
+```text
+authenticated mobile route shells
+control-panel auth/panel shell
+small UI/UX primitive layer
+Arabic/RTL + accessibility baseline
+DSH/WLT data-owner connectivity/readiness
+standard migration pipeline
+canonical OpenAPI/codegen pipeline
+runtime configuration seams
+minimal service HTTP/observability chassis
+dependency/module-boundary enforcement
+mobile bundle/export/build smoke
+```
+
+No business tables, business routes, fake business screens, generic journey registry, generic workflow engine, event bus, cache, or speculative provider framework belongs in S1.5.
+
+### S2 — Partner + Store kernel
+
+```text
+Partner
+Store
+Partner→Store ownership
+basic profile/status
+operator create/manage
+partner own-scope read
+client active-store read
+```
+
+Defer field onboarding, documents, teams, fleet, payout configuration, publication mega-workflow and advanced commercial UI.
+
+### S3 — Catalog + Discovery kernel
+
+```text
+Category
+Product
+Store assortment
+server-owned price
+availability
+active/inactive
+partner/operator mutation
+client canonical read
+```
+
+Defer proposal/approval/marketing/promotion/recommendation/search sophistication.
+
+### S4 — Cart kernel
+
+One-store cart, canonical assortment/price validation, versioning, idempotency and restart persistence. No promotion/payment breadth.
+
+### S5 — Checkout + Order kernel
+
+Admit exactly one intentionally selected baseline policy path. Recommended first BThwani core path:
+
+```text
+fulfillment_mode = bthwani_delivery
+payment_method   = COD
+```
+
+At this slice, prove order creation/snapshot/idempotency/state legality. Do not claim settlement, payout, full COD accounting, or delivery completion until their later slices exist.
+
+Target-supported `client_pickup` and `partner_delivery` remain deferred and absent from active UI/contract branching until deliberately activated.
+
+### S6 — Partner fulfillment kernel
+
+```text
+placed
+→ accepted/rejected
+→ preparing
+→ ready
+```
+
+Only legal cancellation where the current slice actually requires it. Defer support/rescue, substitutions, notification architecture and advanced exceptions.
+
+### S7 — Manual BThwani captain assignment
+
+Create one canonical Assignment truth. Initially an authorized operator selects an eligible captain manually.
+
+```text
+MANUAL_ASSIGNMENT_NOW
+        ↓
+SAME_CANONICAL_ASSIGNMENT
+        ↑
+AUTOMATIC_DISPATCH_LATER
+```
+
+Do not build proximity, capacity, offers, timeout/reassignment engine or route optimization yet.
+
+### S8 — Basic custody handoff + delivery
+
+Use the smallest real custody proof needed:
+
+```text
+partner confirms handoff readiness
+→ captain confirms receipt/pickup
+→ in_delivery
+→ delivered
+→ client/partner/operator canonical readback
+```
+
+Defer photo/signature/delivery OTP/GPS proof, mismatch/shortage engine, rescue workflow and sophisticated failed-delivery handling until activated.
+
+### S9 — Core cumulative fixed point
+
+Before any expansion wave, prove at least:
+
+```text
+Identity isolation = PASS
+Partner/Store ownership isolation = PASS
+Catalog ownership/server pricing = PASS
+Cart/Order idempotency = PASS
+Order state legality = PASS
+Assignment uniqueness = PASS
+Handoff/custody semantics = PASS
+Delivery persistence = PASS
+Cross-surface readback = PASS
+Restart persistence = PASS
+Negative authorization = PASS
+No mocks/fake business truth = PASS
+No frontend business authority = PASS
+No duplicate SSOT = PASS
+Runtime/E2E/remote evidence = PASS
+Cumulative regression = PASS
+```
+
+Only after S9 is proven should feature breadth expand.
+
+## Deferred expansion waves
+
+Recommended order, each as its own authorized Level-4 vertical slice:
+
+1. `client_pickup` fulfillment.
+2. `partner_delivery`, initially without a full partner-fleet subsystem unless Product needs it.
+3. Minimum WLT slice required by real financial effects, then wallet/payment/refund/settlement/payout/reconciliation breadth progressively; never full WLT by anticipation.
+4. In-app notification inbox → read/unread → push → deep links/preferences/topics/quiet hours.
+5. Support ticket → text conversation → unread/read → attachments → governed order rescue.
+6. Captain availability/eligibility/capacity → offers → timeout/reassignment → automatic dispatch → location/proximity.
+7. Partner teams/fleet/advanced partner operations.
+8. `app-field` business semantics: assignment/result first, then checklist/media/offline/location/escalation incrementally.
+9. Promotions/coupons/ratings/loyalty/marketing/search sophistication.
+10. Advanced Control Panel: fine-grained administration, maker/checker, approval queues, audit explorer, platform-control rollout, advanced analytics/diagnostics.
+
+### app-field disposition before its wave
+
+```text
+DEPLOYABLE_HOST_IDENTITY = PRESERVE
+IDENTITY/SESSION/BOOTSTRAP = READY
+APP_SHELL/BUILD_SMOKE = REQUIRED
+FIELD_BUSINESS_SEMANTICS = DEFERRED
+FAKE_FIELD_FEATURES = FORBIDDEN
+```
+
 ## Current campaign state
 
 This is a derived checkpoint, not closure truth.
 
 | Area | State | Meaning |
 |---|---|---|
-| target repository/branch | ACTIVE | `bthwani2-boop/samrim:a`; current head must be re-pinned before every batch |
+| target repository/integration base | ACTIVE | repository `bthwani2-boop/samrim`; integration base is `a`; mutable working branch is invocation-supplied and must be re-pinned before every batch |
 | donor repository/ref | READ_ONLY_ACTIVE | `bthwani2-boop/bthwani-suite-next:h`; current ref must be re-pinned before evidence use |
 | clean-target orchestration authority | IMPLEMENTED_PENDING_CONTINUOUS_AUDIT | clean-target/zero-loss/exact-head laws introduced; contradiction scans continue |
 | historical donor checkpoint identification | INITIAL_PASS | minimum high-value checkpoints identified; history universe remains open |
-| donor semantic-atom exhaustion | OPEN | no completion claim allowed |
+| active-slice donor cone | REQUIRED_PER_SLICE | each active slice must exhaust its material donor current/history cone before Level-4 closure |
+| repository-wide donor semantic-atom exhaustion | OPEN_FULL_TARGET_ONLY | required for the final `FULL_TARGET` token; not a blocker for an independent slice with complete donor-cone proof |
 | Governance semantic model | COHERENT_PENDING_EXHAUSTION | current 28-capability model is internally mapped/owned with explicit high-risk non-overlap; fresh donor/current exhaustion may still reopen classifications |
 | Docs/current-command parity | CURRENT_TARGET_CLEAN_PENDING_DONOR_EXHAUSTION | current docs/command scan is clean; historical donor-doc semantic exhaustion remains open |
 | Foundation Construction | PASS | exact-current Foundation exit evidence proves canonical substrate, workspace/Go verification, deployable shells, service skeletons, runtime composition, developer tooling, docs parity, CI prevention, and zero known premature semantic furnishing |
 | premature furnishing | REMOVED_AND_VERIFIED | Foundation hosts/services contain structural substrate only; business routes/endpoints/contracts/state machines remain deferred to Stage B |
 | A2 structural qualification | PASS | exact PR candidate `949579518e3f2479826cb86b30c0d40d7ac2e330` passed structural hygiene + full A2 zero-garbage qualification + executable Foundation baseline/runtime proof |
-| Stage B capability reconstruction | IN_PROGRESS_IDENTITY_ROOT | `IDENTITY_ACTIVATION_SESSIONS` is isolated on `stage-b/identity-activation-sessions`; actor/role/session refoundation is not closed until same-actor multi-role, scoped revocation, contract/client cutover and exact-head runtime/CI proof all pass. No next Stage-B root is preselected before fresh recensus. |
-| donor exhaustion gate | OPEN | required before Level 4; donor extraction may continue read-only in parallel |
-| target Level-4 fixed point | OPEN | not claimable yet |
+| Stage B active Product slice | IN_PROGRESS_IDENTITY_ROOT | Identity remains the current semantic slice until exact-head closure. This plan does not authorize the next business slice. |
+| next cross-cutting substrate | RECOMMENDED_AFTER_IDENTITY | Journey-Ready Platform Substrate S1.5; activation remains invocation authority |
+| app-field business scope | DEFERRED | keep deployable host/Identity/app-shell/build readiness only until its explicit post-core slice |
+| target fulfillment modes | TARGET_VISION | `bthwani_delivery`, `client_pickup`, `partner_delivery`; only modes explicitly admitted by the active slice are executable obligations |
+| active-scope Level-4 fixed point | OPEN | current active slice not claimable closed without exact-head evidence |
+| full-target Level-4 fixed point | OPEN | requires explicit `PRODUCT_BREADTH=FULL_TARGET`, repository-wide donor exhaustion and zero deferred target scope |
 
 ## Mandatory contradiction scan
 
@@ -252,6 +479,9 @@ TARGET MODULE SAME-REPOSITORY MOVE/DELETE WORDING MISAPPLIED TO DONOR
 BROKEN LOAD-ORDER/FILE REFERENCES
 DUPLICATE OR UNMAPPED CAPABILITY/JOURNEY
 UNSUPPORTED PASS/COMPLETE/100% CLAIMS
+TARGET_VISION_ACCIDENTALLY_TREATED_AS_ACTIVE_PRODUCT_BREADTH
+DEFERRED_PRODUCT_FEATURE_ACCIDENTALLY_TREATED_AS_EXECUTABLE_ROOT
+ACTIVE_SLICE_INCORRECTLY_CLAIMED_AS_FULL_CAPABILITY_OR_FULL_TARGET
 ```
 
 Any hit is a live defect until reconciled.
