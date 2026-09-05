@@ -16,6 +16,12 @@ It must not own:
 - domain-specific translations/content policy;
 - app routing/navigation.
 
+## Journey-ready baseline
+
+Before broad Product journeys, implement only the small domain-neutral primitives actually required across hosts: typography/text, button/input families, surface/container primitives, status/feedback, loading/empty/error/offline states, and modal/sheet/dialog behavior as real consumers require them.
+
+Do not prebuild domain components such as OrderCard, StoreCard, WalletBalanceCard or CaptainAssignmentCard. Business components start with the consuming app feature and are extracted only after genuine reusable responsibility is proven.
+
 ## Contribution gate
 
 Before adding a primitive/token:
