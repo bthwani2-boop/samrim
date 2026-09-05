@@ -21,11 +21,18 @@ It is not a collection of independent apps, not a separate platform instance per
 
 Surfaces compose capabilities; they do not own domain truth merely because a capability is rendered there.
 
-## Primary actors
+## Primary human roles and personas
 
-Customer, Partner, Captain, Field worker, Operator, plus system/service actors where required.
+One Human Actor may participate through multiple governed Identity roles. Current actor-facing roles/personas are:
 
-Captain affiliation may be BThwani-affiliated or partner-affiliated. Affiliation, authentication identity, operational role and financial identity are separate facts.
+- Customer — Identity role `client`, primarily through `app-client`.
+- Partner member — Identity role `partner`, acting for a Partner Organization through DSH-owned membership/scope, primarily through `app-partner`.
+- Captain — Identity role `captain`, primarily through `app-captain`.
+- Field worker — Identity role `field`, primarily through `app-field`.
+- Operator — Identity role `operator`, primarily through `control-panel`.
+
+System/service actors may exist where required. A Partner itself is an organization, not a Human Actor. Identity role, Product persona, organization affiliation, authorization scope, operational assignment and financial identity are separate facts.
+
 
 ## Fulfillment policy modes
 

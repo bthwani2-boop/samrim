@@ -16,12 +16,11 @@ Partner commercial relationships may use the governed models `COMMISSION`, `SUBS
 
 ## 1A. Product non-goals
 
-BThwani is not a separate platform instance per partner/store and is not a generic multi-tenant SaaS abstraction by default. Partner, Store, Actor, Role, Engagement, Organization, Authorization Scope, Operator Context and Tenant are distinct concepts.
+BThwani is not a separate platform instance per partner/store and is not a generic multi-tenant SaaS abstraction by default. Partner Organization, Store, Human Actor, Identity Role, Product Persona, organization membership, Authorization Scope and Tenant are distinct concepts.
 
 ```text
 PARTNER != TENANT_BY_DEFAULT
 STORE != TENANT_BY_DEFAULT
-OPERATOR_CONTEXT != TENANT
 AUTHORIZATION_SCOPE != ORGANIZATION_ID
 ```
 
@@ -62,19 +61,14 @@ These are target platform surfaces. An active delivery slice may exercise only t
 
 A target capability may exclude a surface when its durable semantics make the exclusion explicit where omission could otherwise be ambiguous. Active-slice execution additionally follows the current authorized Product breadth.
 
-## 3. Actors and trust model
+## 3. Actors, roles, personas and trust
 
-Primary actors are customer, partner, captain, field worker, and operator. Authentication identity, business scope, operational ownership, and financial ownership are separate concepts and must not be conflated.
+The canonical human identity is the **Human Actor**. Customer/client, partner member, captain, field worker and operator are current Identity roles/Product personas of a human actor; they are not separate people or identity records. A **Partner** is a business organization, not a Human Actor. A partner-role actor acts for a Partner Organization only through DSH-owned membership and business authorization scope.
 
-Captain professional affiliation, eligibility, fleet membership and assignment required by fulfillment are DSH operational truth; Identity supplies only actor/authentication/access truth.
+Current role/persona mapping is owned by `project/ACTORS-TRUST-AND-SCOPE.md`; ubiquitous terms are owned by `project/GLOSSARY.md`. This PRD does not create a parallel actor taxonomy.
 
-### Platform context
+Trusted identity comes from authenticated Identity/session state. Fine-grained business scope, permissions, eligibility, assignment and operational context come from the capability that owns the protected truth. Partner Organization and Store are business scopes, not platform-isolation or tenancy boundaries. No client header, query parameter, request body, cached local value, UI selector or generic context field grants identity, role, permission, scope or tenancy.
 
-- Platform Context is the platform isolation boundary.
-- Operator Context is trusted operational/data context within the platform boundary.
-- Partner Organization and Store are business authorization scopes, not platform-isolation contexts.
-- Trusted platform/operator context, where a concrete capability requires it, is server-derived from authenticated identity, governed delegation and canonical owner facts.
-- Operator Context is not automatically an Identity database field or generic request header. A client header, query parameter, request body, cached local value, or UI selection cannot grant or override trusted context.
 
 ## 4. Domain ownership
 
@@ -220,13 +214,10 @@ Every material durable capability defines, when applicable:
 
 Representation-only cleanup must preserve every still-valid semantic statement. Formatting/structure change is not permission to drop Product meaning.
 
-## 7. Unified full-stack implementation rule
+## 7. Product-to-engineering boundary
 
-A product outcome is implemented vertically through the complete materially affected path:
+This PRD and its routed capability/journey owners define durable Product outcomes and invariants. Durable implementation architecture belongs to the applicable `governance/architecture/**` and `governance/policies/**` owners. Execution, evidence and closure belong exclusively to the Orchestrator. This PRD does not define campaign sequencing, closure gates or implementation-state truth.
 
-`surface interaction → controller/view-model → contract adapter/generated client → canonical contract → backend/domain owner → persistence/event/provider effect → canonical readback → affected consumers`
-
-Work is not complete when only one horizontal layer succeeds. When one action changes state consumed by another surface, both the mutation and affected readbacks belong to the same outcome verification.
 
 ## 8. UX and accessibility baseline
 
@@ -238,8 +229,6 @@ Applicable surfaces support Arabic/RTL, localization, accessibility semantics, k
 
 PII is minimized, scoped, redacted and retained according to current policy. Secrets, credentials, tokens, payment instruments and private provider payloads are never ordinary product telemetry or general audit content. Audit/evidence uses stable identifiers and correlation metadata sufficient for investigation without copying unnecessary sensitive data.
 
-## 10. Acceptance model
+## 10. Product acceptance semantics
 
-A capability is accepted only against its current durable capability governance and the exact implementation/runtime candidate being claimed. Static success proves only static claims. Runtime, visual, accessibility, security, finance, isolation, data-migration, CI, release and production claims require their own applicable evidence.
-
-Product acceptance does not itself authorize merge, release or production; delivery authority remains separate.
+Product acceptance means the implemented outcome conforms to the current durable Product/capability/journey meaning. The evidence and closure procedure for a concrete candidate is not owned here; it is resolved through the applicable engineering policies and the Orchestrator.

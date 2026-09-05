@@ -12,17 +12,22 @@ This glossary defines stable platform vocabulary. If implementation naming confl
 
 **Actor** — a human or system participant capable of authenticated/authorized action or consumption.
 
+**Human Actor** — one human identity represented cross-boundary by the permanent Identity-owned `actor_id`; the same Human Actor may hold multiple Identity roles.
+
+**Product Persona** — the user-facing participation label through which a Human Actor performs a journey. A persona does not create a second identity or business owner.
+
 **Role** — a responsibility/permission grouping; not the same as a person, organization or domain assignment.
 
 **Organization** — a business entity such as a partner organization. It is not automatically a tenant.
 
-**Partner** — the commercial/business organization that has the governed relationship with BThwani and may own/manage one or more Stores. A Partner is not an Actor, Store, or Tenant.
+**Partner** / **Partner Organization** — the commercial/business organization that has the governed relationship with BThwani and may own/manage one or more Stores. A Partner is not a Human Actor, Store, Identity Role or Tenant.
+
+**Partner Member** — a Human Actor holding the `partner` Identity role and acting only through DSH-governed membership and Partner/Store authorization scope.
 
 **Store** — an operational commerce location/business scope governed by DSH. A Store is distinct from its owning Partner and is not automatically a Tenant.
 
 **Authorization Scope** — the object/business boundary inside which a permission applies.
 
-**Platform Context** — the platform-level isolation boundary.
 
 **Capability** — a stable semantic responsibility with a canonical owner.
 
@@ -76,6 +81,9 @@ This glossary defines stable platform vocabulary. If implementation naming confl
 
 ```text
 ACTOR_PREFIX != CAPABILITY
+HUMAN_ACTOR != IDENTITY_ROLE
+IDENTITY_ROLE != PRODUCT_PERSONA
+PARTNER_ORGANIZATION != PARTNER_MEMBER
 ROUTE != CAPABILITY
 SCREEN != CAPABILITY
 VENDOR != DOMAIN

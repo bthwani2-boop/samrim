@@ -8,7 +8,19 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Purpose
 
-This owner defines the durable technical meaning of a BThwani platform substrate that is ready to receive real vertical Product journeys without another repository/authentication/configuration/data/contract/build-system refoundation.
+This owner defines the durable technical meaning of a BThwani platform substrate that is ready to receive protected real vertical Product journeys without another repository/authentication/configuration/data/contract/build-system refoundation.
+
+Two different readiness claims must never be conflated:
+
+```text
+STRUCTURAL_FOUNDATION_READY
+= non-semantic repository/workspace/host/service/runtime/tooling substrate proven by the Orchestrator before Stage B
+
+PROTECTED_JOURNEY_READY
+= durable architectural readiness after every materially required prerequisite capability, including Identity when required, has been closed vertically
+```
+
+`STRUCTURAL_FOUNDATION_READY` does not prove Identity or any business capability. `PROTECTED_JOURNEY_READY` is not a pre-Stage-B construction phase. This Governance owner defines the durable architectural consequence only; campaign ordering and closure remain Orchestrator authority.
 
 It does not select the next Product slice and does not claim that the substrate currently exists. Exact implementation and closure are proven from source/runtime/evidence under the Orchestrator.
 

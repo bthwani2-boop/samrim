@@ -29,6 +29,18 @@ IDENTITY_ROLE != DSH_OPERATIONAL_ELIGIBILITY
 
 The existence of an independent semantic axis does not require a generic service/table/header for that axis. Persist it only when a concrete owner and lifecycle require it.
 
+## Canonical human-role-persona mapping
+
+| Human identity | Identity role | Product persona | Primary host | Business-scope owner |
+|---|---|---|---|---|
+| Human Actor | `client` | Customer | `app-client` | DSH for non-authentication business truth |
+| Human Actor | `partner` | Partner member | `app-partner` | DSH Partner/Store membership and scope |
+| Human Actor | `captain` | Captain | `app-captain` | DSH eligibility/assignment/affiliation |
+| Human Actor | `field` | Field worker | `app-field` | DSH eligibility/assignment/readiness |
+| Human Actor | `operator` | Operator | `control-panel` | applicable protected capability; Platform Control only where explicitly assigned |
+
+A Partner Organization is never the Human Actor. Role/persona/host mapping does not grant business scope; server-side owner facts do.
+
 ## Identity role law
 
 Identity creates the one `actor_id`. Current high-level surface roles are explicit actor↔role bindings:
@@ -72,7 +84,7 @@ SERVICE_CALLER_HEADER != SERVICE_IDENTITY
 
 Any contextual authorization dimension must be owned by the capability that proves it and derived from authenticated identity, governed delegation and canonical owner facts. Identity must not fabricate generic isolation scope.
 
-## Primary actor responsibilities
+## Primary role/persona responsibilities
 
 ### Customer
 Consumes discovery/catalog/serviceability, checkout/order, support/tracking and authorized WLT-backed financial readback. Customer input never defines authoritative price, financial amount, serviceability or ownership.
