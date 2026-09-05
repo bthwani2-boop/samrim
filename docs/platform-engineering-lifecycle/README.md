@@ -1,10 +1,12 @@
 # Platform Engineering and Delivery Lifecycle Guide
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_AND_OPERATIONS_GUIDANCE  
-EXECUTION_AUTHORITY: NONE  
-PRODUCT_SEMANTIC_AUTHORITY: NONE  
-CURRENT_IMPLEMENTATION_AUTHORITY: LIVE_REPOSITORY_SOURCE_AND_RUNTIME  
-MUTABLE_EXTERNAL_POLICY_AUTHORITY: CURRENT_OFFICIAL_PLATFORM/STORE_DOCUMENTATION
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_TRUTH_SOURCE: LIVE_REPOSITORY_SOURCE_AND_RUNTIME
+
+MUTABLE_EXTERNAL_POLICY_TRUTH_SOURCE: CURRENT_OFFICIAL_PLATFORM/STORE_DOCUMENTATION
 
 ## 1. Purpose
 
@@ -36,7 +38,6 @@ DOC_ORDER != ACTIVE_PRODUCT_SLICE
 
 When a module states a durable requirement, the applicable Governance owner is authoritative. When it describes a command/configuration/current implementation fact, executable source is authoritative. When it describes execution movement, proof or closure, the Orchestrator is authoritative.
 
-
 ## 5. Reference baseline
 
 Use context-appropriate standards rather than inventing a private assurance system.
@@ -56,7 +57,6 @@ Recommended baseline:
 Reference links are listed at the end of this guide.
 
 ---
-
 
 ## Lifecycle module map
 

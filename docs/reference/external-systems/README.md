@@ -2,7 +2,9 @@
 
 DOCUMENT_CLASS: NON_AUTHORITATIVE_EXTERNAL_REFERENCE
 EXECUTION_AUTHORITY: NONE
-PRODUCT_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+
 CURRENT_REPOSITORY_STATE_AUTHORITY: NONE
 ADOPTION_AUTHORITY: NONE
 REFERENCE_FRESHNESS: REVALIDATE_MATERIAL_FACTS_AT_USE
@@ -10,7 +12,6 @@ REFERENCE_REVIEWED_ON: 2026-09-05
 REFERENCE_MAX_REVIEW_AGE_DAYS: 180
 LICENSE_RECHECK_ON_ADOPTION: REQUIRED
 SECURITY_SUPPLY_CHAIN_RECHECK_ON_ADOPTION: REQUIRED
-
 
 The external corpus exists to falsify BThwani assumptions and discover missing invariants, edge cases, state machines, failure/recovery behavior, security/financial rules and test scenarios. It is not a source of BThwani ownership or implementation state.
 
@@ -309,7 +310,6 @@ RE-RANK
 The goal is maximum semantic coverage with minimum browsing fan-out.
 
 ---
-
 
 ## Adoption and research policy
 
@@ -615,7 +615,6 @@ ADOPT_SMALL_GENERIC_COMPONENTS_WHEN_PROVEN
 ```
 
 The objective is faster and more complete Level-4 refoundation with **less** custom accidental complexity, not replacement of BThwani with someone else’s platform.
-
 
 ## Reference files
 
