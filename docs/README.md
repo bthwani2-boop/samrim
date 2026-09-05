@@ -66,13 +66,13 @@ Then use the focused guide:
 - `development/providers-and-sandboxes.md`
 - `development/mobile.md`
 - `development/control-panel.md`
-- `development/design-system.md`
+- `development/frontend/design-system.md`
 - `development/observability-and-debugging.md`
 - `development/ci-and-quality.md`
 - `development/eas.md`
-- `development/release-and-store-submission.md` — release candidate, mobile-store submission, compatibility and controlled launch
+- `development/release/release-and-store-submission.md` — release candidate, mobile-store submission, compatibility and controlled launch
 - `development/sentry.md`
-- `development/repository-evidence.md`
+- `development/workflow/developer-workflow.md`
 - `development/leanctx.md`
 
 ### Lifecycle routing
@@ -88,7 +88,7 @@ Use this cross-topic map instead of a parallel lifecycle document tree:
 | Identity/access | capability owner + actors/trust model + security policy |
 | UX/RTL/accessibility/design | experience/design governance + design-system guide |
 | providers/finance | provider policy + financial model + capability owner |
-| build/store/release | `development/release-and-store-submission.md` + delivery policy + executable build config |
+| build/store/release | `development/release/release-and-store-submission.md` + delivery policy + executable build config |
 | incident/recovery | `runbooks/README.md` |
 | current evidence | repository-evidence/CI guides + Orchestrator verification owner when invoked |
 
