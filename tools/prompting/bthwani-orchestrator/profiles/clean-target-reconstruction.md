@@ -31,8 +31,8 @@ DONOR_REPOSITORY/DONOR_REF are supplied
 ~~~
 
 Load:
-- `templates/required-truth-census.md` for material destructive/replacement/capability work;
-- `templates/donor-zero-loss-accounting.md` whenever donor value can materially change the active slice or full-target result.
+- `../templates/required-truth-census.md` for material destructive/replacement/capability work;
+- `../templates/donor-zero-loss-accounting.md` whenever donor value can materially change the active slice or full-target result.
 
 Durable target topology/ownership comes from Governance, especially:
 - `governance/architecture/REPOSITORY-TOPOLOGY.md`;

@@ -40,4 +40,4 @@ All API endpoints must come from active runtime configuration rather than hardco
 
 Expo/EAS project identity, Android/iOS identifiers, schemes, runtime/update configuration, and native plugins are deployable identity. Do not change them as incidental cleanup.
 
-For EAS operations use `development/eas.md` and each app's checked-in `eas.json`/Expo project identity. EAS operations do not have a root package-script wrapper in the current Foundation.
+For EAS operations use `eas.md` and each app's checked-in `eas.json`/Expo project identity. EAS operations do not have a root package-script wrapper in the current Foundation.

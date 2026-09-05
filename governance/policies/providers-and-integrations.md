@@ -8,7 +8,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Scope and owner boundary
 
-This policy owns durable provider/integration operating rules that specialize the architectural port model in `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md`, the secret/trust requirements in `security.md`, and runtime/configuration classes in `architecture/RUNTIME-AND-CONFIGURATION.md`.
+This policy owns durable provider/integration operating rules that specialize the architectural port model in `../architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md`, the secret/trust requirements in `security.md`, and runtime/configuration classes in `../architecture/RUNTIME-AND-CONFIGURATION.md`.
 
 It does not create Product capabilities from vendor names and does not make Platform Control, Infra or a generic provider service the execution owner of domain effects.
 

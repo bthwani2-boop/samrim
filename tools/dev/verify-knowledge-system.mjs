@@ -29,7 +29,6 @@ const documentationPolicy = read("governance/policies/documentation-and-knowledg
 const deliveryPolicy = read("governance/policies/delivery.md");
 const dataPolicy = read("governance/policies/data-and-migrations.md");
 const engineeringPolicy = read("governance/policies/engineering.md");
-const lifecycleRouter = read("docs/development/platform-engineering-lifecycle.md");
 const lifecycleIndex = read("docs/platform-engineering-lifecycle/README.md");
 const agentRouter = read("AGENTS.md");
 const repositoryReadme = read("README.md");
@@ -700,8 +699,6 @@ const lifecycleModules = [
 for (const modulePath of lifecycleModules) {
   if (!fs.existsSync(path.join(root, modulePath))) failures.push("missing modular lifecycle document: " + modulePath);
 }
-if (!lifecycleRouter.includes("former monolithic lifecycle guide has been losslessly decomposed")) failures.push("legacy lifecycle path is not a compact router");
-if (lifecycleRouter.split("\n").length > 80) failures.push("legacy lifecycle router has regrown into a monolith");
 if (!lifecycleIndex.includes("## Lifecycle module map")) failures.push("modular lifecycle README missing load-by-need map");
 for (const modulePath of lifecycleModules.slice(1)) {
   const body = read(modulePath);

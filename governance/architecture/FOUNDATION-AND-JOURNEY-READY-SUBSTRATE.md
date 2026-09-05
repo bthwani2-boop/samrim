@@ -79,7 +79,7 @@ Journey-Ready must not depend on:
 - local/surface authentication truth;
 - compatibility authentication paths that are intended to survive indefinitely.
 
-Identity capability semantics remain owned by `product/CAPABILITIES.md` and Security policy.
+Identity capability semantics remain owned by `../product/CAPABILITIES.md` and Security policy.
 
 ## 4. Data-owner substrate
 
@@ -176,7 +176,7 @@ Before broad business-screen development, BThwani has a small canonical experien
 
 Do not prebuild domain cards, dashboards or a complete component catalog before active journeys prove those responsibilities.
 
-Durable experience meaning remains owned by `product/EXPERIENCE-AND-DESIGN.md`.
+Durable experience meaning remains owned by `../product/EXPERIENCE-AND-DESIGN.md`.
 
 ## 10. Dependency and module-boundary enforcement
 

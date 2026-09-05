@@ -25,7 +25,7 @@ pnpm knowledge:query -- journey <J_ID>
 pnpm knowledge:query -- owner <keyword-or-path>
 ~~~
 
-Load `FINANCIAL-MODEL.md` when money is affected, `EXPERIENCE-AND-DESIGN.md` when a user/operator surface is affected, and the applicable engineering policy before changing its responsibility.
+Load `governance/product/FINANCIAL-MODEL.md` when money is affected, `governance/product/EXPERIENCE-AND-DESIGN.md` when a user/operator surface is affected, and the applicable engineering policy before changing its responsibility.
 
 ## What Docs owns
 
