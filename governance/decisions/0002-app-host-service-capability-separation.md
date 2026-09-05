@@ -8,7 +8,7 @@ EXECUTION_AUTHORITY: NONE
 Multiple deployable surfaces render the same capabilities. Actor/app-shaped service feature trees create duplicated semantics and cross-surface drift.
 
 ## Decision
-Apps own routing/navigation/shell/native/deployable composition. Services own reusable capability semantics, canonical writers/contracts and service-owned presentation where justified.
+Apps own routing/navigation/shell/native/deployable composition and surface-specific feature presentation. Services own reusable capability semantics, canonical writers/contracts and generated/public client lineage. A host-neutral presentation abstraction is extracted only when multiple real host consumers and lower total complexity are proven; it must not create an app-shaped service frontend tree.
 
 ## Alternatives
 Let each app own its own business feature implementation; let services own app composition.
