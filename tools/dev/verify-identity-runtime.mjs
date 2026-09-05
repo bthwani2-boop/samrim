@@ -183,6 +183,13 @@ await expect("POST", "/auth/activate", 401, {
   },
 });
 
+for (let attempt = 1; attempt < 5; attempt++) {
+  await requestOtp(unknownCaptainPhone, "captain");
+}
+await expect("POST", "/auth/otp/request", 429, {
+  body: { phone: unknownCaptainPhone, role: "captain" },
+});
+
 // DSH explicitly adds captain and partner roles to the SAME actor.
 const captain = await expect("POST", "/internal/actor-roles/provision", 201, {
   headers: service(dshToken),
@@ -534,6 +541,7 @@ console.log("IDENTITY_ROLE_SCOPED_REVOCATION=PASS");
 console.log("IDENTITY_GLOBAL_SECURITY_DISABLE=PASS");
 console.log("IDENTITY_GLOBAL_SECURITY_REENABLE_REQUIRES_REAUTH=PASS");
 console.log("IDENTITY_GOVERNED_OTP_SELF_GRANT=0");
+console.log("IDENTITY_OTP_DECOY_RATE_ACCOUNTING=PASS");
 console.log("IDENTITY_OPERATOR_PASSWORD_ONLY=PASS");
 console.log("IDENTITY_SERVICE_CREDENTIAL_CALLER=PASS");
 console.log("IDENTITY_ACCOUNT_LOCKOUT_DOS_RESISTANCE=PASS");

@@ -230,6 +230,12 @@ const requestBody = activation.slice(requestStart, issueStart);
 if (requestBody.includes("EnsurePublicClient")) {
   failures.push("public OTP request must not create client actor before proof");
 }
+if (activation.includes("genericChallenge(")) {
+  failures.push("OTP decoy responses must be persisted/rate-accounted rather than bypass throttling");
+}
+if (!activation.includes("activation.decoy_issued") || !activation.includes("if deliveryAllowed")) {
+  failures.push("Identity OTP decoy path must be non-delivering and auditable");
+}
 const consumeStart = activation.indexOf("func (s *Service) Consume(");
 const codeProofIndex = activation.indexOf("ConstantTimeHexEqual(codeHash, expected)", consumeStart);
 const clientCreateIndex = activation.indexOf("EnsurePublicClientTx(ctx, tx, phone)", consumeStart);

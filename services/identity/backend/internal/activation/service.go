@@ -50,7 +50,7 @@ func (s *Service) Request(ctx context.Context, input domain.OtpRequest, ipHash s
 
 	a, err := s.actors.FindEnabledByPhoneRole(ctx, phone, role)
 	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrActorBlocked) {
-		return s.genericChallenge(phone)
+		return s.issue(ctx, domain.Actor{PhoneE164: phone}, role, ipHash)
 	}
 	if err != nil {
 		return domain.ActivationChallenge{}, err
@@ -76,28 +76,32 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, ipHash string
 		}
 	}
 
+	deliveryAllowed := true
 	if role == "client" {
 		var securityEnabled bool
 		err := tx.QueryRowContext(ctx,
 			"SELECT security_enabled FROM identity_actors WHERE phone_e164=$1",
 			a.PhoneE164).Scan(&securityEnabled)
 		if err == nil && !securityEnabled {
-			return s.genericChallenge(a.PhoneE164)
+			deliveryAllowed = false
 		}
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return domain.ActivationChallenge{}, err
 		}
+	} else if a.ID == "" {
+		deliveryAllowed = false
 	} else {
 		var enabled, securityEnabled bool
 		if err := tx.QueryRowContext(ctx,
 			"SELECT r.enabled,a.security_enabled FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.actor_id=$1 AND r.role=$2 FOR UPDATE OF a,r",
 			a.ID, role).Scan(&enabled, &securityEnabled); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return s.genericChallenge(a.PhoneE164)
+				deliveryAllowed = false
+			} else {
+				return domain.ActivationChallenge{}, err
 			}
-			return domain.ActivationChallenge{}, err
 		} else if !enabled || !securityEnabled {
-			return s.genericChallenge(a.PhoneE164)
+			deliveryAllowed = false
 		}
 	}
 
@@ -141,16 +145,22 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, ipHash string
 	if principal == "" {
 		principal = "public-otp"
 	}
-	if err := auditTx(ctx, tx, "activation.issued", a.ID, principal, "success", "", map[string]any{"role": role}); err != nil {
+	eventType := "activation.issued"
+	if !deliveryAllowed {
+		eventType = "activation.decoy_issued"
+	}
+	if err := auditTx(ctx, tx, eventType, a.ID, principal, "success", "", map[string]any{"role": role}); err != nil {
 		return domain.ActivationChallenge{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return domain.ActivationChallenge{}, err
 	}
-	if err := s.sender.Send(ctx, activationdelivery.Message{
-		Phone: a.PhoneE164, Code: code, ActorType: role, Surface: surface, ExpiresAt: expires,
-	}); err != nil {
-		return domain.ActivationChallenge{}, domain.ErrUnavailable
+	if deliveryAllowed {
+		if err := s.sender.Send(ctx, activationdelivery.Message{
+			Phone: a.PhoneE164, Code: code, ActorType: role, Surface: surface, ExpiresAt: expires,
+		}); err != nil {
+			return domain.ActivationChallenge{}, domain.ErrUnavailable
+		}
 	}
 	return domain.ActivationChallenge{ActivationID: activationID, MaskedPhone: identitysecurity.MaskPhone(a.PhoneE164), ExpiresAt: expires}, nil
 }
@@ -261,18 +271,6 @@ func (s *Service) Consume(ctx context.Context, input domain.ActivationRequest) (
 		return domain.TokenPair{}, err
 	}
 	return pair, nil
-}
-
-func (s *Service) genericChallenge(phone string) (domain.ActivationChallenge, error) {
-	id, err := identitysecurity.RandomToken(18)
-	if err != nil {
-		return domain.ActivationChallenge{}, err
-	}
-	return domain.ActivationChallenge{
-		ActivationID: id,
-		MaskedPhone: identitysecurity.MaskPhone(phone),
-		ExpiresAt: s.now().UTC().Add(10 * time.Minute),
-	}, nil
 }
 
 func (s *Service) codeFor(activationID string) (string, error) {
