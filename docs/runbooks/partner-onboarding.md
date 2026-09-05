@@ -1,10 +1,10 @@
 # Partner Onboarding Support Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
-CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-Status: OPERATIONAL_RUNBOOK
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 Owner: DSH partner onboarding
 
 Current capability governance, DSH contracts, Identity/DSH ownership and WLT boundary rules override stale operational details.

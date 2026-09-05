@@ -1,10 +1,10 @@
 # Store Discovery and Governance Operations Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
-CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-Status: OPERATIONAL_RUNBOOK
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 Owner: DSH Operations
 
 Current DSH discovery/publication contracts, capability governance and runtime source override stale route/error/workflow names.

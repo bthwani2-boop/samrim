@@ -1,9 +1,10 @@
 # External Provider Unknown-Outcome Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
-CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 ## Trigger
 
 Use when an externally consequential mutation times out, loses its callback/response, returns an ambiguous result or produces contradictory provider evidence.

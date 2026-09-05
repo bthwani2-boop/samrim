@@ -1,10 +1,10 @@
 # WLT Payment Projection Reconciliation Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
-CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-Status: OPERATIONAL_RUNBOOK
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 Owner: DSH order projection recovery + WLT financial truth
 Durable semantic owners: `governance/product/CAPABILITIES.md` for order/capability behavior and `governance/product/FINANCIAL-MODEL.md` for WLT financial truth.
 

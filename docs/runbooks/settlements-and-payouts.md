@@ -1,9 +1,10 @@
 # Settlements and Payouts Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
-CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 ## Owners
 
 WLT owns settlement, commission, payout, wallet/ledger and reconciliation truth. DSH supplies trusted operational evidence only.

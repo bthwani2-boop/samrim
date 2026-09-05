@@ -1,10 +1,10 @@
 # Payment Sessions Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
-CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-Status: OPERATIONAL_RUNBOOK
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 Owner: WLT financial operations with DSH application-facing projection
 
 Current WLT/DSH contracts, provider configuration, secrets policy and release governance override stale field/route/config names.

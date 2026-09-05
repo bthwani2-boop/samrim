@@ -1,9 +1,10 @@
 # Special Requests and Support/Rescue Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
-CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 ## Trigger
 
 Use for special-request/order-rescue incidents requiring support/operator intervention across DSH and possibly WLT.

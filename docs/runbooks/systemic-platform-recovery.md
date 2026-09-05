@@ -1,9 +1,10 @@
 # Systemic Platform Recovery
-CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
 
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 ## Scope
 
 Routes cross-cutting incidents involving database/migrations, contract/version skew, service startup/readiness, credentials/security, or partial cross-service cutover. Domain-specific state rules remain owned by Governance and executable source.
