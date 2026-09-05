@@ -50,6 +50,18 @@ function collectMarkdown(dir) {
   return out;
 }
 
+function collectTextFiles(dir, extensions) {
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === ".git" || entry.name === "node_modules") continue;
+    const absolute = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...collectTextFiles(absolute, extensions));
+    else if (entry.isFile() && extensions.has(path.extname(entry.name).toLowerCase())) out.push(absolute);
+  }
+  return out;
+}
+
 function normalizedLawLine(line) {
   return line.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -170,12 +182,10 @@ for (const file of collectMarkdown(durableGovernanceDir)) {
 
 const branchSensitiveFiles = [
   ...collectMarkdown(path.join(root, "docs/development")),
+  ...collectTextFiles(path.join(root, "tools/dev"), new Set([".ps1", ".mjs", ".js", ".ts", ".json"])),
   path.join(root, "AGENTS.md"),
   path.join(root, "README.md"),
   path.join(root, "CONTRIBUTING.md"),
-  path.join(root, "tools/dev/doctor.ps1"),
-  path.join(root, "tools/dev/close-foundation-runtime.ps1"),
-  path.join(root, "tools/dev/verify-foundation-local.ps1"),
 ];
 for (const file of branchSensitiveFiles) {
   if (!fs.existsSync(file)) continue;
@@ -184,6 +194,7 @@ for (const file of branchSensitiveFiles) {
   if (/ExpectedBranch\s*=\s*["']a["']/i.test(body)) failures.push("hard-coded branch a default in tooling/docs: " + rel);
   if (/clean branch\s+`a`|active refoundation branch|branch\s+`a`/i.test(body)) failures.push("hard-coded branch a guidance in durable/current docs: " + rel);
   if (/stage-b\/[A-Za-z0-9._/-]+/i.test(body)) failures.push("branch-specific stage-b state leaked into durable/current docs: " + rel);
+  if (/git\s+branch\s+--show-current[^\n]*-eq\s*["']a["']/i.test(body)) failures.push("hard-coded branch a comparison in tooling: " + rel);
 }
 
 const docsDir = path.join(root, "docs");
@@ -198,6 +209,37 @@ for (const file of collectMarkdown(docsDir)) {
 const orchestratorDir = path.join(root, "tools/prompting/bthwani-orchestrator");
 const refoundationDir = path.join(root, "tools/prompting/bthwani-refoundation");
 if (fs.existsSync(refoundationDir)) failures.push("legacy bthwani-refoundation package still exists");
+
+const legacyKnowledgeTokens = [
+  "tools/prompting/bthwani-refoundation",
+  "plans/diagnose-implementing/clean-repository-reconstruction.md",
+];
+const allowedLegacyReferenceFiles = new Set([
+  "tools/prompting/bthwani-orchestrator/templates/bthwani-target-qualification.md",
+  "tools/dev/verify-knowledge-system.mjs",
+  "tools/dev/verify-agent-knowledge-contract.mjs",
+  ".github/workflows/baseline-guard.yml",
+]);
+const legacyScanFiles = [
+  ...collectTextFiles(path.join(root, "governance"), new Set([".md"])),
+  ...collectTextFiles(path.join(root, "docs"), new Set([".md"])),
+  ...collectTextFiles(path.join(root, "tools"), new Set([".md", ".mjs", ".js", ".ts", ".ps1", ".json"])),
+  ...collectTextFiles(path.join(root, ".github"), new Set([".md", ".yml", ".yaml"])),
+  path.join(root, "AGENTS.md"),
+  path.join(root, "CLAUDE.md"),
+  path.join(root, "GEMINI.md"),
+  path.join(root, "README.md"),
+  path.join(root, "CONTRIBUTING.md"),
+];
+for (const file of legacyScanFiles) {
+  if (!fs.existsSync(file)) continue;
+  const rel = path.relative(root, file).split(path.sep).join("/");
+  const body = fs.readFileSync(file, "utf8");
+  if (!legacyKnowledgeTokens.some((token) => body.includes(token))) continue;
+  if (!allowedLegacyReferenceFiles.has(rel)) {
+    failures.push("stale live reference to retired refoundation/plan structure: " + rel);
+  }
+}
 const orchestratorTemplateDir = path.join(orchestratorDir, "templates");
 const orchestratorLawFiles = collectMarkdown(orchestratorDir).filter((file) => !file.startsWith(orchestratorTemplateDir + path.sep));
 const orchestratorLawLines = new Map();
