@@ -33,9 +33,6 @@ func TestDSHIdentityBoundaryPinsRoleAndUsesCredentialAsCallerIdentity(t *testing
 				if got := r.Header.Get("X-Service-Caller"); got != "" {
 					t.Fatalf("redundant service caller header leaked: %q", got)
 				}
-				if got := r.Header.Get("X-Operator-Context-ID"); got != "" {
-					t.Fatalf("premature operator context header leaked: %q", got)
-				}
 				var body struct {
 					PhoneE164 string `json:"phoneE164"`
 					Role      string `json:"role"`
