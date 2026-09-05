@@ -278,6 +278,18 @@ A future target capability may remain deferred without implementation when it is
 
 If a supposed Product deferral actually hides a structural prerequisite, duplicate owner/writer, compatibility bridge, unsafe migration state, or regression required by the active slice, promote that obligation to A0/A1/current-scope work.
 
+## 9A. Discovery order is not execution order
+
+The first severe defect/catastrophe discovered is only a candidate. Root selection remains causal and comparative.
+
+~~~text
+FIRST_CATASTROPHE_FOUND != FIRST_EXECUTED_CATASTROPHE
+FIRST_FAILED_CHECK != HIGHEST_ROOT
+FIRST_FILE_INSPECTED != EXECUTION_UNIT
+~~~
+
+Do not execute a lower discovered defect before proving that no higher prerequisite/superseding root dominates it.
+
 ## 10. Source-of-Defect / Source-of-Fix execution gate
 
 Before material mutation establish:
