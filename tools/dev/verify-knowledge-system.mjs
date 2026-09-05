@@ -154,6 +154,7 @@ for (const file of collectMarkdown(orchestratorDir)) {
 }
 
 const allowedSharedOrchestratorProtocolTokens = new Set([
+  "mode clean target reconstruction",
   "product breadth active slice full target",
   "reconstruct authorized product scope",
   "verify parity or deliberate improvement",
