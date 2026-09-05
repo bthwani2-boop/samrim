@@ -1,7 +1,10 @@
 # CI and Quality
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
-PRODUCT_AUTHORITY: NONE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+
 CURRENT_WORKFLOW_AUTHORITY: .github/workflows and repository scripts
 
 ## Principle
@@ -25,7 +28,6 @@ Dependency changes require exact package/version/license/security/maintenance re
 ## Failure handling
 
 A red workflow is a finding to diagnose; do not suppress/allowlist a failing canonical invariant merely to recover green status.
-
 
 ## Documentation parity
 

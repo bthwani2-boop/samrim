@@ -1,7 +1,10 @@
 # Configuration and Secrets
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
-PRODUCT_AUTHORITY: NONE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+
 CURRENT_VALUE_AUTHORITY: EXECUTABLE_CONFIG
 
 ## Configuration classes
@@ -33,7 +36,6 @@ Development credentials do not define normal Identity security policy.
 ## Rotation/failure
 
 Credential rotation must account for producer/consumer overlap, invalidation and external provider behavior. Missing secret/configuration should fail safely rather than silently selecting an insecure fallback.
-
 
 ## Identity development credentials
 
