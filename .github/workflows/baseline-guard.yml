@@ -135,6 +135,10 @@ jobs:
         shell: bash
         run: node tools/dev/verify-knowledge-system.mjs
 
+      - name: Verify knowledge references and orphan docs
+        shell: bash
+        run: node tools/dev/verify-knowledge-references.mjs
+
       - name: Verify source-derived knowledge queries
         shell: bash
         run: |
