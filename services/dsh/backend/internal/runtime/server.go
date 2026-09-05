@@ -19,6 +19,10 @@ type statusResponse struct {
 }
 
 func Run(service, prefix, defaultPort string) error {
+	return RunWithRoutes(service, prefix, defaultPort, nil)
+}
+
+func RunWithRoutes(service, prefix, defaultPort string, register func(*http.ServeMux)) error {
 	port := strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
 		port = defaultPort
@@ -32,6 +36,9 @@ func Run(service, prefix, defaultPort string) error {
 
 	mux.HandleFunc(prefix+"/health", writeStatus)
 	mux.HandleFunc(prefix+"/readiness", writeStatus)
+	if register != nil {
+		register(mux)
+	}
 
 	server := &http.Server{
 		Addr:              ":" + port,

@@ -13,6 +13,7 @@ for (const route of [
   "/auth/client/recover:",
   "/auth/managed/activation/request:",
   "/auth/managed/activate:",
+  "/internal/managed-activation-codes:",
   "/auth/operator/login/start:",
   "/auth/operator/login/complete:",
   "/auth/refresh:",
@@ -89,9 +90,15 @@ if (operatorStart.includes("#/components/responses/TokenPair")) {
   failures.push("operator password-start route can create a session");
 }
 const managedRequest = schemaBlock("ManagedChallengeRequest", "ClientCredentialProofRequest");
-if (!managedRequest.includes("#/components/schemas/ManagedActorType")) failures.push("managed activation role boundary missing");
+if (!managedRequest.includes("#/components/schemas/ManagedActivationRole")) failures.push("managed activation role boundary missing");
+if (!managedRequest.includes("activationCode:")) failures.push("managed activation request does not require the control-surface code");
+const managedActivation = schemaBlock("ManagedActivationRequest", "OperatorLoginStartRequest");
+if (!managedActivation.includes("verificationCode:")) failures.push("managed activation does not require the separate phone verification code");
+if (!contract.includes("ManagedActivationCode")) failures.push("managed activation code issuance contract missing");
 const managedType = schemaBlock("ManagedActorType", "PhoneRequest");
 if (!managedType.includes("enum: [partner, captain, field]")) failures.push("managed activation roles are incorrect");
+const managedActivationRole = schemaBlock("ManagedActivationRole", "ControlPanelRole");
+if (!managedActivationRole.includes("enum: [partner, captain, field, operator]")) failures.push("operator activation role boundary missing");
 
 if (failures.length) {
   console.error("IDENTITY_CONTRACT_GUARD=FAIL");

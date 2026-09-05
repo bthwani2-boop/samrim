@@ -67,15 +67,16 @@ export function restoreIdentitySession(): Promise<IdentitySessionState> {
   return identitySession().restore();
 }
 
-export function requestManagedActivation(phone: string) {
-  return identityClient().requestManagedActivation({ phone, role });
+export function requestManagedActivation(phone: string, activationCode: string) {
+  return identityClient().requestManagedActivation({ phone, role, activationCode });
 }
 
-export async function activateManagedIdentity(phone: string, code: string): Promise<IdentitySessionState> {
+export async function activateManagedIdentity(phone: string, activationCode: string, verificationCode: string): Promise<IdentitySessionState> {
   const pair = await identityClient().activateManaged({
     phone,
     role,
-    code,
+    activationCode,
+    verificationCode,
     deviceFingerprint: await deviceFingerprint(),
   });
   return identitySession().adopt(pair);

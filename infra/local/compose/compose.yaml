@@ -13,7 +13,7 @@ services:
     volumes:
       - samrim-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $POSTGRES_USER -d $POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -78,6 +78,9 @@ services:
       dockerfile: services/dsh/backend/Dockerfile
     environment:
       PORT: "8080"
+      DSH_IDENTITY_API_BASE_URL: "http://identity:8082"
+      IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"
+      DSH_PLATFORM_CONTROL_SERVICE_TOKEN: "${DSH_PLATFORM_CONTROL_SERVICE_TOKEN}"
     ports:
       - "127.0.0.1:${SAMRIM_DSH_PORT:-58080}:8080"
 

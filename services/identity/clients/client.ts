@@ -2,12 +2,16 @@ import type {
   ActorIdentity,
   Challenge,
   ClientCredentialProofRequest,
+  ManagedActivationCode,
+  ManagedActivationCodeIssueRequest,
   ManagedActivationRequest,
   ManagedChallengeRequest,
   OperatorLoginCompleteRequest,
   OperatorLoginStartRequest,
   PasswordLoginRequest,
   PhoneRequest,
+  ProvisionActorRoleRequest,
+  ActorRoleView,
   RefreshRequest,
   TokenPair,
 } from "./generated/identity-types";
@@ -31,6 +35,11 @@ export type IdentityClient = Readonly<{
   refresh(request: RefreshRequest): Promise<TokenPair>;
   session(accessToken: string): Promise<ActorIdentity>;
   logout(accessToken: string): Promise<void>;
+}>;
+
+export type IdentityInternalClient = Readonly<{
+  issueManagedActivationCode(request: ManagedActivationCodeIssueRequest): Promise<ManagedActivationCode>;
+  provisionActorRole(request: ProvisionActorRoleRequest): Promise<ActorRoleView>;
 }>;
 
 function normalizeBaseUrl(raw: string): string {
@@ -111,5 +120,64 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     refresh: (body) => request("/auth/refresh", { method: "POST", body }),
     session: (accessToken) => request("/auth/session", { method: "GET", token: accessToken }),
     logout: (accessToken) => request("/auth/logout", { method: "POST", token: accessToken }),
+  };
+}
+
+export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: string, timeoutMs = 8_000): IdentityInternalClient {
+  const baseUrl = normalizeBaseUrl(rawBaseUrl);
+  const token = serviceToken.trim();
+  if (token.length < 24) throw new Error("IDENTITY_SERVICE_TOKEN_INVALID");
+
+  return {
+    issueManagedActivationCode: async (body) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        let response: Response;
+        try {
+          response = await fetch(resolveUrl(baseUrl, "/internal/managed-activation-codes"), {
+            method: "POST",
+            headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify(body),
+            ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+            signal: controller.signal,
+          });
+        } catch (error) {
+          throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+        }
+        if (!response.ok) {
+          const parsed = parseErrorPayload(await response.json().catch(() => null));
+          throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+        }
+        return (await response.json()) as ManagedActivationCode;
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+    provisionActorRole: async (body) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        let response: Response;
+        try {
+          response = await fetch(resolveUrl(baseUrl, "/internal/actor-roles/provision"), {
+            method: "POST",
+            headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
+            body: JSON.stringify(body),
+            ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+            signal: controller.signal,
+          });
+        } catch (error) {
+          throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+        }
+        if (!response.ok) {
+          const parsed = parseErrorPayload(await response.json().catch(() => null));
+          throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+        }
+        return (await response.json()) as ActorRoleView;
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
   };
 }

@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -15,10 +16,11 @@ import (
 )
 
 var (
-	phonePattern      = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
-	devicePattern     = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
+	phonePattern            = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
+	devicePattern           = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
 	verificationCodePattern = regexp.MustCompile("^[0-9]{6}$")
-	ErrInvalidValue   = errors.New("invalid identity value")
+	activationCodePattern   = regexp.MustCompile("^BTH[A-Z2-7]{26}$")
+	ErrInvalidValue         = errors.New("invalid identity value")
 )
 
 const (
@@ -62,6 +64,15 @@ func NormalizeVerificationCode(raw string) (string, error) {
 	return code, nil
 }
 
+func NormalizeActivationCode(raw string) (string, error) {
+	code := strings.ToUpper(strings.TrimSpace(raw))
+	code = strings.NewReplacer(" ", "", "-", "").Replace(code)
+	if !activationCodePattern.MatchString(code) {
+		return "", ErrInvalidValue
+	}
+	return code, nil
+}
+
 func RandomToken(byteCount int) (string, error) {
 	if byteCount < 16 {
 		return "", fmt.Errorf("token entropy too small")
@@ -71,6 +82,15 @@ func RandomToken(byteCount int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buffer), nil
+}
+
+func RandomActivationCode() (string, error) {
+	buffer := make([]byte, 16)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buffer)
+	return "BTH-" + encoded[:4] + "-" + encoded[4:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:], nil
 }
 
 func SHA256Hex(value string) string {

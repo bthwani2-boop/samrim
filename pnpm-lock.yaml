@@ -17,6 +17,9 @@ importers:
 
   apps/app-captain:
     dependencies:
+      '@bthwani/design-system':
+        specifier: workspace:*
+        version: link:../../packages/design-system
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
@@ -226,6 +229,9 @@ importers:
 
   apps/app-field:
     dependencies:
+      '@bthwani/design-system':
+        specifier: workspace:*
+        version: link:../../packages/design-system
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
@@ -323,6 +329,9 @@ importers:
 
   apps/app-partner:
     dependencies:
+      '@bthwani/design-system':
+        specifier: workspace:*
+        version: link:../../packages/design-system
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
@@ -420,6 +429,9 @@ importers:
 
   apps/control-panel:
     dependencies:
+      '@bthwani/design-system':
+        specifier: workspace:*
+        version: link:../../packages/design-system
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
@@ -448,6 +460,18 @@ importers:
 
   packages/design-system:
     devDependencies:
+      '@types/react':
+        specifier: 19.2.17
+        version: 19.2.17
+      react:
+        specifier: 19.2.3
+        version: 19.2.3
+      react-native:
+        specifier: 0.86.2
+        version: 0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3)
+      react-native-safe-area-context:
+        specifier: ~5.7.0
+        version: 5.7.0(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       typescript:
         specifier: 6.0.2
         version: 6.0.2

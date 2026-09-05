@@ -228,16 +228,21 @@ await expect("POST", "/internal/actor-roles/provision", 403, {
 });
 
 // Managed activation is one-time and produces a role-scoped device-bound session.
+const captainActivation = await expect("POST", "/internal/managed-activation-codes", 201, {
+  headers: service(platformToken),
+  body: { phoneE164: sharedPhone, role: "captain" },
+});
 const captainChallenge = await requestChallenge(
   "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "captain" },
+  { phone: sharedPhone, role: "captain", activationCode: captainActivation.code },
   "managed_activate",
 );
 const captainPair = await expect("POST", "/auth/managed/activate", 200, {
   body: {
     phone: sharedPhone,
     role: "captain",
-    code: captainChallenge.code,
+    activationCode: captainActivation.code,
+    verificationCode: captainChallenge.code,
     deviceFingerprint: "device-captain-" + suffix,
   },
 });
@@ -262,16 +267,37 @@ await expect("POST", "/internal/actor-roles/provision", 403, {
   body: { phoneE164: phone(), role: "operator", password: operatorPassword },
 });
 
+const operatorActivation = await expect("POST", "/internal/managed-activation-codes", 201, {
+  headers: service(platformToken),
+  body: { phoneE164: sharedPhone, role: "operator" },
+});
+const operatorActivationChallenge = await requestChallenge(
+  "/auth/managed/activation/request",
+  { phone: sharedPhone, role: "operator", activationCode: operatorActivation.code },
+  "managed_activate",
+);
+const operatorActivationPair = await expect("POST", "/auth/managed/activate", 200, {
+  body: {
+    phone: sharedPhone,
+    role: "operator",
+    activationCode: operatorActivation.code,
+    verificationCode: operatorActivationChallenge.code,
+    deviceFingerprint: "device-operator-activation-" + suffix,
+  },
+});
+assertSession(operatorActivationPair, "operator", "control-panel", actorId);
+
 // Password proof alone returns only a challenge; second factor is required to create an operator session.
 const operatorStart = await requestChallenge(
   "/auth/operator/login/start",
-  { phone: sharedPhone, password: operatorPassword },
+  { phone: sharedPhone, role: "operator", password: operatorPassword },
   "operator_mfa",
 );
 assert(!("accessToken" in operatorStart.challenge), "operator password proof returned a session");
 const operatorPair = await expect("POST", "/auth/operator/login/complete", 200, {
   body: {
     phone: sharedPhone,
+    role: "operator",
     code: operatorStart.code,
     deviceFingerprint: "device-operator-" + suffix,
   },
@@ -282,30 +308,30 @@ assertSession(operatorPair, "operator", "control-panel", actorId);
 const unknownOperatorPhone = phone();
 const decoyOperator = await requestChallenge(
   "/auth/operator/login/start",
-  { phone: unknownOperatorPhone, password: "Wrong-" + suffix + "-Password" },
+  { phone: unknownOperatorPhone, role: "operator", password: "Wrong-" + suffix + "-Password" },
   "operator_mfa",
 );
 await expect("POST", "/auth/operator/login/complete", 401, {
   body: {
     phone: unknownOperatorPhone,
+    role: "operator",
     code: decoyOperator.code,
     deviceFingerprint: "device-decoy-operator-" + suffix,
   },
 });
 
 // Managed activation cannot be repeated as ordinary login.
-const repeatedCaptain = await requestChallenge(
-  "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "captain" },
-  "managed_activate",
-);
 await expect("POST", "/auth/managed/activate", 401, {
   body: {
     phone: sharedPhone,
     role: "captain",
-    code: repeatedCaptain.code,
+    activationCode: "BTH-AAAA-AAAA-AAAA-AAAA-AAAA-AA",
+    verificationCode: "000000",
     deviceFingerprint: "device-captain-repeated-" + suffix,
   },
+});
+await expect("POST", "/auth/managed/activation/request", 401, {
+  body: { phone: sharedPhone, role: "captain", activationCode: "BTH-AAAA-AAAA-AAAA-AAAA-AAAA-AA" },
 });
 
 // Explicit DSH re-enrollment is the only path that reopens managed activation.
@@ -325,16 +351,21 @@ await expect("GET", "/auth/session", 401, { token: captainPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: operatorPair.accessToken });
 
+const reactivationCode = await expect("POST", "/internal/managed-activation-codes", 201, {
+  headers: service(dshToken),
+  body: { phoneE164: sharedPhone, role: "captain" },
+});
 const reactivation = await requestChallenge(
   "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "captain" },
+  { phone: sharedPhone, role: "captain", activationCode: reactivationCode.code },
   "managed_activate",
 );
 const reactivatedCaptain = await expect("POST", "/auth/managed/activate", 200, {
   body: {
     phone: sharedPhone,
     role: "captain",
-    code: reactivation.code,
+    activationCode: reactivationCode.code,
+    verificationCode: reactivation.code,
     deviceFingerprint: "device-captain-reenrolled-" + suffix,
   },
 });
@@ -389,18 +420,8 @@ await expect("POST", "/auth/client/login", 200, {
 
 // Unknown managed-role requests are non-enumerating but their decoy proof cannot grant a role/session.
 const unknownCaptainPhone = phone();
-const unknownCaptain = await requestChallenge(
-  "/auth/managed/activation/request",
-  { phone: unknownCaptainPhone, role: "captain" },
-  "managed_activate",
-);
-await expect("POST", "/auth/managed/activate", 401, {
-  body: {
-    phone: unknownCaptainPhone,
-    role: "captain",
-    code: unknownCaptain.code,
-    deviceFingerprint: "device-unknown-captain-" + suffix,
-  },
+await expect("POST", "/auth/managed/activation/request", 401, {
+  body: { phone: unknownCaptainPhone, role: "captain", activationCode: "BTH-AAAA-AAAA-AAAA-AAAA-AAAA-AA" },
 });
 
 // Provider outage must not become an actor/role oracle. Public acknowledgement is independent of delivery outcome.
@@ -410,22 +431,20 @@ await expect("POST", "/internal/actor-roles/provision", 201, {
   headers: service(dshToken),
   body: { phoneE164: outageKnownPhone, role: "captain" },
 });
+const outageActivation = await expect("POST", "/internal/managed-activation-codes", 201, {
+  headers: service(dshToken),
+  body: { phoneE164: outageKnownPhone, role: "captain" },
+});
 compose("stop", "mailpit");
 try {
   const knownOutage = await requestChallenge(
     "/auth/managed/activation/request",
-    { phone: outageKnownPhone, role: "captain" },
+    { phone: outageKnownPhone, role: "captain", activationCode: outageActivation.code },
     "managed_activate",
   );
-  const unknownOutage = await requestChallenge(
-    "/auth/managed/activation/request",
-    { phone: outageUnknownPhone, role: "captain" },
-    "managed_activate",
-  );
-  assert(
-    Object.keys(knownOutage.challenge).sort().join(",") === Object.keys(unknownOutage.challenge).sort().join(","),
-    "provider outage response shape enumerates managed-role admission",
-  );
+  await expect("POST", "/auth/managed/activation/request", 401, {
+    body: { phone: outageUnknownPhone, role: "captain", activationCode: outageActivation.code },
+  });
   await waitForDeliveryStatus(outageKnownPhone, "managed_activate", "captain", "unknown");
   assert(
     deliveryStatus(outageUnknownPhone, "managed_activate", "captain") === "suppressed",
@@ -518,12 +537,13 @@ await expect(
 // Identity-wide security disable remains distinct and invalidates every remaining role session.
 const operatorAfterResetStart = await requestChallenge(
   "/auth/operator/login/start",
-  { phone: sharedPhone, password: newOperatorPassword },
+  { phone: sharedPhone, role: "operator", password: newOperatorPassword },
   "operator_mfa",
 );
 const operatorAfterReset = await expect("POST", "/auth/operator/login/complete", 200, {
   body: {
     phone: sharedPhone,
+    role: "operator",
     code: operatorAfterResetStart.code,
     deviceFingerprint: "device-operator-reset-" + suffix,
   },

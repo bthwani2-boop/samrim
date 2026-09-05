@@ -63,8 +63,9 @@ type PhoneRequest struct {
 }
 
 type ManagedChallengeRequest struct {
-	Phone string `json:"phone"`
-	Role  string `json:"role"`
+	Phone          string `json:"phone"`
+	Role           string `json:"role"`
+	ActivationCode string `json:"activationCode"`
 }
 
 type ClientCredentialProofRequest struct {
@@ -83,18 +84,33 @@ type PasswordLoginRequest struct {
 type ManagedActivationRequest struct {
 	Phone             string `json:"phone"`
 	Role              string `json:"role"`
-	Code              string `json:"code"`
+	ActivationCode    string `json:"activationCode"`
+	VerificationCode  string `json:"verificationCode"`
 	DeviceFingerprint string `json:"deviceFingerprint"`
+}
+
+type ManagedActivationCodeIssueRequest struct {
+	PhoneE164 string `json:"phoneE164"`
+	Role      string `json:"role"`
+}
+
+type ManagedActivationCode struct {
+	Code        string    `json:"code"`
+	MaskedPhone string    `json:"maskedPhone"`
+	Role        string    `json:"role"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 type OperatorLoginStartRequest struct {
 	Phone    string `json:"phone"`
 	Password string `json:"password"`
+	Role     string `json:"role"`
 }
 
 type OperatorLoginCompleteRequest struct {
 	Phone             string `json:"phone"`
 	Code              string `json:"code"`
+	Role              string `json:"role"`
 	DeviceFingerprint string `json:"deviceFingerprint"`
 }
 
@@ -136,10 +152,10 @@ type SessionInfo struct {
 }
 
 const (
-	ChallengeClientRegister = "client_register"
-	ChallengeClientRecover  = "client_recover"
+	ChallengeClientRegister  = "client_register"
+	ChallengeClientRecover   = "client_recover"
 	ChallengeManagedActivate = "managed_activate"
-	ChallengeOperatorMFA    = "operator_mfa"
+	ChallengeOperatorMFA     = "operator_mfa"
 )
 
 var (
@@ -157,11 +173,12 @@ var (
 )
 
 var roleSurface = map[string]string{
-	"client":   "app-client",
-	"partner":  "app-partner",
-	"captain":  "app-captain",
-	"field":    "app-field",
-	"operator": "control-panel",
+	"client":         "app-client",
+	"partner":        "app-partner",
+	"captain":        "app-captain",
+	"field":          "app-field",
+	"operator":       "control-panel",
+	"platform_owner": "control-panel",
 }
 
 func SurfaceForRole(role string) (string, bool) {
@@ -175,7 +192,24 @@ func RoleAllowedForCaller(caller, role string) bool {
 	case "dsh":
 		return role == "partner" || role == "captain" || role == "field"
 	case "platform-control":
-		return role == "operator"
+		return role == "operator" || role == "platform_owner"
+	default:
+		return false
+	}
+}
+
+func CanIssueManagedActivationCode(caller string) bool {
+	return CanIssueManagedActivationCodeForRole(caller, "operator")
+}
+
+func CanIssueManagedActivationCodeForRole(caller, role string) bool {
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch caller {
+	case "dsh":
+		return IsManagedRole(role)
+	case "platform-control":
+		return IsManagedActivationRole(role)
 	default:
 		return false
 	}
@@ -188,4 +222,14 @@ func IsManagedRole(role string) bool {
 	default:
 		return false
 	}
+}
+
+func IsManagedActivationRole(role string) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	return IsManagedRole(role) || role == "operator"
+}
+
+func IsControlPanelRole(role string) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	return role == "operator" || role == "platform_owner"
 }

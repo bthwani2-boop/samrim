@@ -95,14 +95,14 @@ for (const [app, role, surface] of [
   for (const forbidden of ["requestOtp(", "loginClient(", "actorType"]) {
     if (runtime.includes(forbidden)) failures.push(runtimePath + " contains wrong auth flow " + forbidden);
   }
-  const page = read("apps/" + app + "/app/index.tsx");
-  if (!page.includes("requestManagedActivation") || !page.includes("activateManagedIdentity")) {
+  const page = read("packages/design-system/src/native/ManagedIdentityGate.tsx");
+  if (!page.includes("requestCode") || !page.includes("activate")) {
     failures.push(app + " UI is not bound to one-time managed activation");
   }
-  if (!page.includes("التفعيل ليس شاشة دخول يومية")) {
-    failures.push(app + " UI does not distinguish one-time activation from normal session use");
+  for (const phrase of ["رمز تفعيل صادر من لوحة التحكم", "رمز تحقق الهاتف", "هذا ليس تسجيل دخول يومياً"]) {
+    if (!page.includes(phrase)) failures.push(app + " UI does not distinguish managed activation from phone verification: " + phrase);
   }
-  if (!page.includes("currentIdentityState")) failures.push(app + " logout must mirror canonical local Identity state");
+  if (!page.includes("currentState")) failures.push(app + " logout must mirror canonical local Identity state");
 }
 
 const controlPackagePath = "apps/control-panel/package.json";
@@ -116,7 +116,7 @@ const bff = read("apps/control-panel/lib/identity-bff.ts");
 for (const required of [
   "startOperatorLogin",
   "completeOperatorLogin",
-  'identityAuthorizesSurface(pair.identity, "operator", "control-panel")',
+  "isControlPanelIdentity",
   "httpOnly: true",
   'sameSite: "strict" as const',
 ]) {
@@ -132,7 +132,7 @@ for (const route of ["start", "complete"]) {
   requireText("apps/control-panel/app/api/auth/login/" + route + "/route.ts", route === "start" ? "startOperatorLogin" : "completeOperatorLogin");
 }
 const controlPage = read("apps/control-panel/app/page.tsx");
-for (const required of ["/api/auth/login/start", "/api/auth/login/complete", "رمز التحقق الثاني", "جلسة المشغل موثقة بعاملين"]) {
+for (const required of ["/api/auth/login/start", "/api/auth/login/complete", "التحقق الثاني", "تم توثيق جلستك بعاملين"]) {
   if (!controlPage.includes(required)) failures.push("control-panel UI missing MFA flow " + required);
 }
 if (controlPage.includes("username")) failures.push("control-panel still requires username without Product need");
@@ -166,6 +166,7 @@ for (const required of [
   "/auth/operator/login/start:",
   "/auth/operator/login/complete:",
   "/internal/actors/{actorId}/roles/{role}/reenrollment:",
+  "/internal/managed-activation-codes:",
 ]) {
   if (!contract.includes(required)) failures.push("Identity contract missing " + required);
 }
@@ -180,6 +181,7 @@ for (const required of [
   "export type ClientCredentialProofRequest",
   "export type OperatorLoginCompleteRequest",
   "readonly activatedAt?: string;",
+  "export type ManagedActivationCode =",
 ]) {
   if (!generated.includes(required)) failures.push("generated Identity types missing " + required);
 }
@@ -193,7 +195,7 @@ for (const forbidden of [
 }
 
 const domain = read("services/identity/backend/internal/domain/types.go");
-for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole"]) {
+for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole", "CanIssueManagedActivationCode"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
 }
 for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "Roles []string", "Permissions []"]) {
@@ -227,6 +229,8 @@ for (const required of [
   "challenge.decoy_issued",
   "identity_challenges",
   "purpose",
+  "IssueManagedActivationCode",
+  "identity_managed_activation_codes",
 ]) {
   if (!challenge.includes(required)) failures.push("Identity challenge service missing " + required);
 }
@@ -253,11 +257,11 @@ for (const required of [
   "expectedCredentialHash",
   "currentHash",
   "FOR UPDATE OF c,r,a",
-  "ConstantTimeHexEqual(currentHash,expectedCredentialHash)",
+  "ConstantTimeHexEqual(currentHash, expectedCredentialHash)",
 ]) {
   if (!challenge.includes(required)) failures.push("operator MFA issuance is not fenced against credential rotation: " + required);
 }
-if (!challenge.includes("r.ActivatedAt==nil")) failures.push("managed activation does not enforce one-time enrollment state");
+if (!/r\.ActivatedAt\s*==\s*nil/.test(challenge)) failures.push("managed activation does not enforce one-time enrollment state");
 
 const session = read("services/identity/backend/internal/session/service.go");
 for (const required of ["CreateTx", "identity_refresh_token_history", "device_fingerprint_hash", "identityOf(actorID,sessionID,role"]) {
@@ -269,6 +273,7 @@ for (const forbidden of ["func (s *Service) Login(", "PasswordHash", "username",
 
 const migration = read("services/identity/database/migrations/001_identity_authentication.sql");
 const deliveryMigration = read("services/identity/database/migrations/002_identity_challenge_delivery.sql");
+const activationCodeMigration = read("services/identity/database/migrations/003_managed_activation_codes.sql");
 for (const required of [
   "CREATE TABLE identity_challenge_deliveries",
   "status IN ('suppressed','pending','sending','sent','unknown','expired')",
@@ -276,6 +281,9 @@ for (const required of [
   "VALUES (2)",
 ]) {
   if (!deliveryMigration.includes(required)) failures.push("Identity challenge-delivery migration missing " + required);
+}
+for (const required of ["CREATE TABLE identity_managed_activation_codes", "code_hash", "status IN ('pending','consumed','revoked','expired','locked')"]) {
+  if (!activationCodeMigration.includes(required)) failures.push("Identity managed activation-code migration missing " + required);
 }
 
 for (const required of [
@@ -300,10 +308,11 @@ if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identit
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [
-  "const SchemaVersion = 2",
+  "const SchemaVersion = 5",
   "CurrentSchemaVersion",
   "migration history is non-contiguous",
   "identity_password_credentials",
+  "identity_managed_activation_codes",
   "identity_challenges",
   "identity_challenge_deliveries",
   "identity_password_attempts",

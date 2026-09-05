@@ -3,11 +3,17 @@ import { cookies } from "next/headers";
 
 import {
   createIdentityClient,
+  createIdentityInternalClient,
   identityAuthorizesSurface,
   isIdentityClientError,
+  type ActorType,
   type ActorIdentity,
+  type ActorRoleView,
   type Challenge,
   type IdentityClientError,
+  type ManagedActivationCode,
+  type ManagedActivationRole,
+  type ControlPanelRole,
   type TokenPair,
 } from "@bthwani/identity";
 
@@ -24,6 +30,12 @@ function identityBaseUrl(): string {
 
 function identityClient() {
   return createIdentityClient(identityBaseUrl());
+}
+
+function identityInternalClient() {
+  const token = process.env.IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN?.trim();
+  if (!token) throw new Error("IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN_REQUIRED");
+  return createIdentityInternalClient(identityBaseUrl(), token);
 }
 
 function cookieOptions() {
@@ -45,13 +57,21 @@ async function operatorDeviceFingerprint(): Promise<string> {
 }
 
 async function writeTokens(pair: TokenPair, deviceFingerprint: string): Promise<void> {
-  if (!identityAuthorizesSurface(pair.identity, "operator", "control-panel")) {
-    throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
-  }
+	if (!isControlPanelIdentity(pair.identity)) {
+		throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
+	}
   const store = await cookies();
   store.set(accessCookie, pair.accessToken, { ...cookieOptions(), expires: new Date(pair.accessExpiresAt) });
   store.set(refreshCookie, pair.refreshToken, { ...cookieOptions(), maxAge: 7 * 24 * 60 * 60 });
   store.set(deviceCookie, deviceFingerprint, { ...cookieOptions(), maxAge: 365 * 24 * 60 * 60 });
+}
+
+function isControlPanelRole(role: ActorType): role is ControlPanelRole {
+  return role === "operator" || role === "platform_owner";
+}
+
+function isControlPanelIdentity(identity: ActorIdentity): boolean {
+  return isControlPanelRole(identity.role) && identity.surface === "control-panel" && identityAuthorizesSurface(identity, identity.role, "control-panel");
 }
 
 export async function clearOperatorCookies(): Promise<void> {
@@ -61,16 +81,36 @@ export async function clearOperatorCookies(): Promise<void> {
   }
 }
 
-export async function startOperatorLogin(phone: string, password: string): Promise<Challenge> {
+export async function startOperatorLogin(phone: string, password: string, role: ControlPanelRole): Promise<Challenge> {
   await operatorDeviceFingerprint();
-  return identityClient().startOperatorLogin({ phone, password });
+  return identityClient().startOperatorLogin({ phone, password, role });
 }
 
-export async function completeOperatorLogin(phone: string, code: string): Promise<ActorIdentity> {
+export async function completeOperatorLogin(phone: string, code: string, role: ControlPanelRole): Promise<ActorIdentity> {
   const deviceFingerprint = await operatorDeviceFingerprint();
-  const pair = await identityClient().completeOperatorLogin({ phone, code, deviceFingerprint });
+  const pair = await identityClient().completeOperatorLogin({ phone, code, role, deviceFingerprint });
   await writeTokens(pair, deviceFingerprint);
   return pair.identity;
+}
+
+export async function requestOperatorActivation(phone: string, activationCode: string): Promise<Challenge> {
+  await operatorDeviceFingerprint();
+  return identityClient().requestManagedActivation({ phone, role: "operator", activationCode });
+}
+
+export async function completeOperatorActivation(phone: string, activationCode: string, verificationCode: string): Promise<ActorIdentity> {
+  const deviceFingerprint = await operatorDeviceFingerprint();
+  const pair = await identityClient().activateManaged({ phone, role: "operator", activationCode, verificationCode, deviceFingerprint });
+  await writeTokens(pair, deviceFingerprint);
+  return pair.identity;
+}
+
+export async function issueManagedActivationCode(phone: string, role: ManagedActivationRole): Promise<ManagedActivationCode> {
+  return identityInternalClient().issueManagedActivationCode({ phoneE164: phone, role });
+}
+
+export async function provisionOperator(phone: string, password: string): Promise<ActorRoleView> {
+  return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator", password });
 }
 
 export async function readOperatorSession(): Promise<ActorIdentity | null> {
@@ -83,7 +123,7 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   if (accessToken) {
     try {
       const identity = await identityClient().session(accessToken);
-      if (!identityAuthorizesSurface(identity, "operator", "control-panel")) {
+      if (!isControlPanelIdentity(identity)) {
         await clearOperatorCookies();
         return null;
       }
@@ -122,7 +162,7 @@ export async function logoutOperator(): Promise<void> {
     if (!tokenToRevoke && refreshToken && deviceFingerprint) {
       try {
         const pair = await identityClient().refresh({ refreshToken, deviceFingerprint });
-        if (!identityAuthorizesSurface(pair.identity, "operator", "control-panel")) {
+        if (!isControlPanelIdentity(pair.identity)) {
           throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
         }
         tokenToRevoke = pair.accessToken;

@@ -40,6 +40,7 @@ The existence of an independent semantic axis does not require a generic service
 | Human Actor | `captain` | Captain | `app-captain` | DSH eligibility/assignment/affiliation |
 | Human Actor | `field` | Field worker | `app-field` | DSH eligibility/assignment/readiness |
 | Human Actor | `operator` | Operator | `control-panel` | applicable protected capability; Platform Control only where explicitly assigned |
+| Human Actor | `platform_owner` | Platform owner | `control-panel` | Platform Control sovereign administration; fine-grained duties remain capability-owned |
 
 A Partner Organization is never the Human Actor. Role/persona/host mapping does not grant business scope; server-side owner facts do.
 
@@ -53,11 +54,12 @@ partner  → app-partner
 captain  → app-captain
 field    → app-field
 operator → control-panel
+platform_owner → control-panel
 ```
 
 A session is bound to one actor and one role. It does not carry every role held by the human.
 
-Customer self-service may establish only the `client` role after proving phone possession and registering a client credential. DSH provisions partner/captain/field role admission; those governed roles use one-time activation only after admission exists. Platform Control provisions operator role admission; privileged operator sessions require password plus a second factor/challenge in the current baseline.
+Customer self-service may establish only the `client` role after proving phone possession and registering a client credential. DSH provisions partner/captain/field role admission; those governed roles use one-time activation only after admission exists. Platform Control provisions the authorized `platform_owner` bootstrap and `operator` role admission; an operator consumes a phone-bound activation code before first access, while both control-panel roles require password plus a second factor/challenge for normal access.
 
 `actor_id` is the permanent cross-boundary human identifier. Phone is a mutable verified identifier, not the primary identity key; username is optional and must not exist merely as an authentication convention without Product need.
 
@@ -102,6 +104,9 @@ Performs DSH-assigned field/onboarding/verification tasks. Field participant sta
 
 ### Operator
 Authenticates through the operator Identity role and acts only through exact server-side permissions/scopes owned by the applicable administration/domain capability.
+
+### Platform owner
+Authenticates through the `platform_owner` Identity role and is the human control-panel authority allowed to provision employees and issue role-bound activation codes. This role does not become a generic permissions blob; each protected capability still owns its exact duties and approval separation.
 
 ## Approval and separation of duties
 

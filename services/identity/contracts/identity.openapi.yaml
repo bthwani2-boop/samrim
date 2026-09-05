@@ -101,7 +101,7 @@ paths:
     post:
       tags: [managed-auth]
       operationId: requestManagedActivation
-      description: Requests one-time activation proof using a generic non-enumerating acknowledgement. Eligible provider delivery is asynchronous and its outcome is not exposed by this response.
+      description: Validates a one-time activation code issued by an authorized control surface, then requests a separate phone-verification challenge. The two proofs are distinct and neither grants role admission.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedChallengeRequest" } } }
@@ -116,7 +116,7 @@ paths:
     post:
       tags: [managed-auth]
       operationId: activateManagedRole
-      description: Consumes one managed-role activation proof, permanently records that enrollment, and creates the first role-scoped device-bound session. Repeated activation is not normal login.
+      description: Consumes the one-time control-surface activation code and the separate phone-verification challenge, permanently records that enrollment, and creates the first role-scoped device-bound session. Repeated activation is not normal login.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationRequest" } } }
@@ -190,7 +190,7 @@ paths:
       tags: [internal-actor-roles]
       operationId: provisionActorRole
       security: [{ internalServiceToken: [] }]
-      description: The authenticated service token determines the caller. Identity alone creates actor_id. DSH may provision partner/captain/field; Platform Control may provision operator. Operator provisioning includes the operator-only password credential.
+      description: The authenticated service token determines the caller. Identity alone creates actor_id. DSH may provision partner/captain/field; Platform Control may provision the platform owner or an operator. Control-panel provisioning includes the role-specific password credential; only an operator requires activation before first login.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ProvisionActorRoleRequest" } } }
@@ -200,6 +200,23 @@ paths:
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/managed-activation-codes:
+    post:
+      tags: [internal-actor-roles]
+      operationId: issueManagedActivationCode
+      security: [{ internalServiceToken: [] }]
+      description: Issues a single-use activation code for an already admitted, enabled partner/captain/field/operator role. The code is returned once, stored only as a digest, and never creates or grants a role.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationCodeIssueRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ManagedActivationCodeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actor-roles/search:
@@ -373,11 +390,19 @@ components:
 
     ActorType:
       type: string
-      enum: [client, partner, captain, field, operator]
+      enum: [client, partner, captain, field, operator, platform_owner]
 
     ManagedActorType:
       type: string
       enum: [partner, captain, field]
+
+    ManagedActivationRole:
+      type: string
+      enum: [partner, captain, field, operator]
+
+    ControlPanelRole:
+      type: string
+      enum: [operator, platform_owner]
 
     PhoneRequest:
       type: object
@@ -390,12 +415,16 @@ components:
     ManagedChallengeRequest:
       type: object
       additionalProperties: false
-      required: [phone, role]
+      required: [phone, role, activationCode]
       properties:
         phone:
           type: string
         role:
-          $ref: "#/components/schemas/ManagedActorType"
+          $ref: "#/components/schemas/ManagedActivationRole"
+        activationCode:
+          type: string
+          minLength: 20
+          maxLength: 64
 
     ClientCredentialProofRequest:
       type: object
@@ -435,13 +464,17 @@ components:
     ManagedActivationRequest:
       type: object
       additionalProperties: false
-      required: [phone, role, code, deviceFingerprint]
+      required: [phone, role, activationCode, verificationCode, deviceFingerprint]
       properties:
         phone:
           type: string
         role:
-          $ref: "#/components/schemas/ManagedActorType"
-        code:
+          $ref: "#/components/schemas/ManagedActivationRole"
+        activationCode:
+          type: string
+          minLength: 20
+          maxLength: 64
+        verificationCode:
           type: string
           pattern: "^[0-9]{6}$"
         deviceFingerprint:
@@ -452,7 +485,7 @@ components:
     OperatorLoginStartRequest:
       type: object
       additionalProperties: false
-      required: [phone, password]
+      required: [phone, password, role]
       properties:
         phone:
           type: string
@@ -460,17 +493,21 @@ components:
           type: string
           minLength: 12
           maxLength: 128
+        role:
+          $ref: "#/components/schemas/ControlPanelRole"
 
     OperatorLoginCompleteRequest:
       type: object
       additionalProperties: false
-      required: [phone, code, deviceFingerprint]
+      required: [phone, code, role, deviceFingerprint]
       properties:
         phone:
           type: string
         code:
           type: string
           pattern: "^[0-9]{6}$"
+        role:
+          $ref: "#/components/schemas/ControlPanelRole"
         deviceFingerprint:
           type: string
           minLength: 8
@@ -542,11 +579,36 @@ components:
           type: string
         role:
           type: string
-          enum: [partner, captain, field, operator]
+          enum: [partner, captain, field, operator, platform_owner]
         password:
           type: string
           minLength: 12
           maxLength: 128
+
+    ManagedActivationCodeIssueRequest:
+      type: object
+      additionalProperties: false
+      required: [phoneE164, role]
+      properties:
+        phoneE164:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedActivationRole"
+
+    ManagedActivationCode:
+      type: object
+      additionalProperties: false
+      required: [code, maskedPhone, role, expiresAt]
+      properties:
+        code:
+          type: string
+        maskedPhone:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedActivationRole"
+        expiresAt:
+          type: string
+          format: date-time
 
     ActorRoleView:
       type: object
@@ -640,6 +702,9 @@ components:
     ChallengeIssued:
       description: Challenge-shaped acknowledgement. Public decoys use the same shape, raw codes are never exposed, and provider delivery outcome is not reported.
       content: { application/json: { schema: { $ref: "#/components/schemas/Challenge" } } }
+    ManagedActivationCodeIssued:
+      description: One-time managed-role activation code. The plaintext code is returned only in this authorized response and is never stored.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationCode" } } }
     TokenPair:
       description: Role-scoped authenticated session.
       content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } }

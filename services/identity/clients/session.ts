@@ -28,6 +28,7 @@ const roleSurface: Readonly<Record<ActorType, IdentitySurface>> = Object.freeze(
   captain: "app-captain",
   field: "app-field",
   operator: "control-panel",
+  platform_owner: "control-panel",
 });
 
 export function identityRoleSurface(role: ActorType): IdentitySurface {
