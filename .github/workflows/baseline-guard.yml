@@ -242,7 +242,7 @@ jobs:
           if [[ -n "${drift}" ]]; then
             printf '%s\n' "${drift}"
             git diff -- . || true
-            echo "::error::Foundation developer tooling mutated repository state"
+            echo "::error::Integration developer tooling mutated repository state"
             exit 1
           fi
 
