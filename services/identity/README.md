@@ -25,7 +25,7 @@ Operator
 
 Credentials are role-scoped. Customer and operator passwords cannot authenticate each other's roles even when they belong to the same `actor_id`.
 
-Identity does not own DSH participant eligibility/assignment, partner/store membership/business scope, WLT finance, enterprise HR/personnel, a generic permissions engine, Tenant, AccessGrant, or generic Operator Context.
+Identity does not own DSH participant eligibility/assignment, partner/store membership/business scope, WLT finance, enterprise HR/personnel, a generic permissions engine, Tenant, AccessGrant, or cross-domain authorization scope.
 
 Internal service identity is resolved from the bearer service credential itself. DSH manages only partner/captain/field Identity-role admission and explicit re-enrollment authorization; Platform Control manages only operator role/credential intent and Identity-wide security eligibility.
 
