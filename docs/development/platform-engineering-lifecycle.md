@@ -66,7 +66,69 @@ BUILD_NO_FOUNDATION
 
 The target state before broad feature development is a **journey-ready platform**: enough technical substrate exists that the next real journey requires its own Product/UX/domain/data/API/surface/test work, not another repository/auth/config/migration/build-system redesign.
 
-## 3. Non-negotiable principles
+## 3. Product vision, authorized slice, and deferred scope
+
+A complete Product vision and incremental delivery are not opposites.
+
+```text
+TARGET_PRODUCT_VISION
+        !=
+AUTHORIZED_PRODUCT_SCOPE
+        !=
+ACTIVE_PRODUCT_SLICE
+        !=
+CURRENT_IMPLEMENTATION_STATE
+```
+
+Use two independent controls:
+
+```text
+QUALITY DEPTH  = how completely/correctly the authorized work is closed
+PRODUCT BREADTH = how much Product functionality is authorized now
+```
+
+A Level-4-quality slice can therefore be intentionally small.
+
+```text
+SMALL BREADTH
++ CANONICAL OWNER/DATA/CONTRACT/RUNTIME
++ COMPLETE REQUIRED SURFACES/READBACK
++ FAILURE/SECURITY/TEST EVIDENCE
+= VALID VERTICAL INCREMENT
+```
+
+Do not interpret “incremental” as permission to create disposable domain models, `v1` tables, fake APIs, temporary state machines, placeholder Product screens, shadow DTOs, or compatibility structures that must later be refounded.
+
+A surface may also be **host-ready but business-deferred**: its deployable identity, bootstrap, authentication/session binding, shell, runtime configuration, and build proof can exist while its domain features remain deliberately absent.
+
+When an active slice reaches its fixed point:
+
+```text
+FREEZE THE PROVEN BASELINE
+→ RUN CUMULATIVE AFFECTED REGRESSION
+→ STOP PRODUCT EXPANSION
+→ ACTIVATE THE NEXT SLICE DELIBERATELY
+```
+
+Do not auto-activate the next feature simply because it appears next in the long-term roadmap.
+
+### Slice admission gate
+
+Before activating another Product slice, prove:
+
+```text
+PREVIOUS_BASELINE_REQUIRED_EVIDENCE=GREEN
+NEW_SLICE_HAS_CLEAR_PRODUCT_OUTCOME
+CANONICAL_OWNER/WRITER=KNOWN
+NO_SECOND_SOURCE_OF_TRUTH_REQUIRED
+NO_DISPOSABLE_ARCHITECTURE_REQUIRED
+DONOR/EXTERNAL_EVIDENCE_CONE_IS_ACQUIRABLE
+SLICE_CAN_CLOSE_VERTICALLY_AT_REQUIRED_QUALITY_DEPTH
+```
+
+Then implement the new slice and re-run every prior proof invalidated by shared owners, contracts, data, runtime, packages, or hosts.
+
+## 4. Non-negotiable principles
 
 1. **Donor is evidence, not target topology.**
 2. **Product meaning precedes directory structure.**
