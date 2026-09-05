@@ -18,6 +18,9 @@ const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.
 const appsTarget = read("tools/prompting/bthwani-refoundation/targets/apps-and-composition.md");
 const dshWltTarget = read("tools/prompting/bthwani-refoundation/targets/dsh-wlt.md");
 const designTarget = read("tools/prompting/bthwani-refoundation/targets/design-system-and-packages.md");
+const agentRouter = read("AGENTS.md");
+const repositoryReadme = read("README.md");
+const contributing = read("CONTRIBUTING.md");
 const failures = [];
 
 function collectMarkdown(dir) {
@@ -195,6 +198,23 @@ for (const [label, body] of surfacePlacementDeclarations) {
     failures.push(label + " contains forbidden service-owned Control Panel presentation mapping");
   }
 }
+
+
+for (const token of [
+  "ARTIFACT_CLASS: DERIVED_AGENT_ROUTING",
+  "SEMANTIC_AUTHORITY: NONE",
+  "EXECUTION_AUTHORITY: NONE",
+  "CLOSURE_AUTHORITY: NONE",
+  "GOVERNANCE   = durable Product/System/architecture/policy meaning",
+  "ORCHESTRATOR = authorized execution, mutation, recovery, verification and closure",
+  "SOURCE       = current executable implementation/configuration/runtime truth",
+]) {
+  if (!agentRouter.includes(token)) failures.push("AGENTS.md missing routing/non-authority token: " + token);
+}
+if (!agentRouter.includes("never infer `FULL_TARGET` from `LEVEL_4`")) failures.push("AGENTS.md missing active-slice anti-expansion routing");
+if (!agentRouter.includes("surface-specific feature UI belongs to the consuming app host by default")) failures.push("AGENTS.md missing app-host feature UI routing");
+if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(repositoryReadme)) failures.push("README hard-codes temporary branch a as active repository state");
+if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(contributing)) failures.push("CONTRIBUTING hard-codes temporary branch a as active repository state");
 
 if (failures.length) {
   console.error("KNOWLEDGE_SYSTEM_VERIFY=FAIL");
