@@ -129,6 +129,10 @@ function assert(condition, message) {
   if (!condition) fail(message);
 }
 
+function assertFourDigitCode(value, label) {
+  assert(typeof value === "string" && /^[0-9]{4}$/.test(value), label + " is not a four-digit code");
+}
+
 function service(token, extra = {}) {
   return { Authorization: "Bearer " + token, ...extra };
 }
@@ -149,6 +153,7 @@ async function requestChallenge(pathname, body, purpose) {
   const challenge = await expect("POST", pathname, 201, { body });
   assert(typeof challenge.challengeId === "string" && challenge.challengeId.length > 10, "challenge id missing");
   const code = codeFor(challenge.challengeId, purpose);
+  assertFourDigitCode(code, "verification code");
   assert(!JSON.stringify(challenge).includes(code), "raw verification code leaked in public challenge");
   return { challenge, code };
 }
@@ -232,6 +237,7 @@ const captainActivation = await expect("POST", "/internal/managed-activation-cod
   headers: service(platformToken),
   body: { phoneE164: sharedPhone, role: "captain" },
 });
+assertFourDigitCode(captainActivation.code, "captain activation code");
 const captainChallenge = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "captain", activationCode: captainActivation.code },
@@ -290,6 +296,7 @@ const operatorActivation = await expect("POST", "/internal/managed-activation-co
   headers: service(platformToken),
   body: { phoneE164: sharedPhone, role: "operator" },
 });
+assertFourDigitCode(operatorActivation.code, "operator activation code");
 const operatorActivationChallenge = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "operator", activationCode: operatorActivation.code },
@@ -376,6 +383,7 @@ const reactivationCode = await expect("POST", "/internal/managed-activation-code
   headers: service(dshToken),
   body: { phoneE164: sharedPhone, role: "captain" },
 });
+assertFourDigitCode(reactivationCode.code, "re-enrollment activation code");
 const reactivation = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "captain", activationCode: reactivationCode.code },
@@ -457,6 +465,7 @@ const outageActivation = await expect("POST", "/internal/managed-activation-code
   headers: service(dshToken),
   body: { phoneE164: outageKnownPhone, role: "captain" },
 });
+assertFourDigitCode(outageActivation.code, "outage activation code");
 compose("stop", "mailpit");
 try {
   const knownOutage = await requestChallenge(
