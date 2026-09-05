@@ -34,6 +34,7 @@ const packageJson = JSON.parse(read("package.json"));
 const queryKnowledge = read("tools/dev/query-knowledge.mjs");
 const experienceReference = read("docs/reference/external-systems/experience-design-ui-assurance.md");
 const designGuide = read("docs/development/design-system.md");
+const baselineGuard = read(".github/workflows/baseline-guard.yml");
 const doctorScript = read("tools/dev/doctor.ps1");
 const foundationCloseScript = read("tools/dev/close-foundation-runtime.ps1");
 const foundationLocalScript = read("tools/dev/verify-foundation-local.ps1");
@@ -466,6 +467,23 @@ for (const adapterPath of agentAdapterPaths) {
   }
 }
 if (packageJson.scripts?.["knowledge:query"] !== "node tools/dev/query-knowledge.mjs") failures.push("package.json missing canonical knowledge:query command");
+if (packageJson.scripts?.["knowledge:verify:all"] !== "pnpm run knowledge:verify && pnpm run knowledge:verify-references && pnpm run knowledge:verify-agent-contract") {
+  failures.push("package.json missing canonical knowledge:verify:all command");
+}
+if (baselineGuard.includes("REFOUNDATION_PROFILE_REVISION") || baselineGuard.includes("bthwani-refoundation/00-ENTRYPOINT.md")) {
+  failures.push("baseline guard retains retired refoundation compatibility coupling");
+}
+if (!baselineGuard.includes("Retired bthwani-refoundation package must not exist")) {
+  failures.push("baseline guard does not forbid retired refoundation package");
+}
+for (const command of [
+  "node tools/dev/verify-knowledge-system.mjs",
+  "node tools/dev/verify-knowledge-references.mjs",
+  "node tools/dev/verify-agent-knowledge-contract.mjs",
+]) {
+  if (!baselineGuard.includes(command)) failures.push("baseline guard missing knowledge command: " + command);
+}
+
 for (const sourcePath of ["governance/product/CAPABILITIES.md", "governance/product/JOURNEYS.md"]) {
   if (!queryKnowledge.includes(sourcePath)) failures.push("knowledge query tool missing canonical source: " + sourcePath);
 }
@@ -519,6 +537,11 @@ for (const referencePath of externalReferencePaths) {
     "SECURITY_SUPPLY_CHAIN_RECHECK_ON_ADOPTION: REQUIRED",
   ]) {
     if (!body.includes(token)) failures.push(referencePath + " missing external-reference metadata: " + token);
+  }
+
+  const reviewed = body.match(/^REFERENCE_REVIEWED_ON:\s*(\d{4}-\d{2}-\d{2})\s*$/m)?.[1];
+  if (!reviewed || Number.isNaN(Date.parse(reviewed + "T00:00:00Z"))) {
+    failures.push(referencePath + " missing/invalid REFERENCE_REVIEWED_ON date");
   }
 }
 
