@@ -372,6 +372,32 @@ placed
 
 Only legal cancellation where the current slice actually requires it. Defer support/rescue, substitutions, notification architecture and advanced exceptions.
 
+### S6.5 — Minimum captain operational + financial readiness
+
+Before any assignment exists, activate only the captain truths that assignment genuinely requires.
+
+DSH minimum:
+
+```text
+actor_id-linked captain operational participant
+enabled/disabled eligibility
+minimum readiness facts required by current bthwani_delivery policy
+canonical operator readback
+```
+
+Do not create fleet/vehicle/shift/proximity/offer/capacity engines unless the first assignment policy actually requires them.
+
+For the COD path, WLT must also have a legal source for captain exposure capacity. Because collateral cannot be fabricated by operator balance edit or future earnings, use one governed captured-funding path. Development/CI may use a faithful provider simulator/sandbox behind the real WLT state machine; production release requires the applicable real provider/evidence proof before claiming production readiness.
+
+```text
+CAPTURED FUNDING EVIDENCE
+→ WLT LEDGER POSTING
+→ CAPTAIN COLLATERAL/EXPOSURE CAPACITY
+→ DSH CONSUMES ELIGIBILITY ONLY
+```
+
+No direct balance edit, test-only backdoor in production code, or DSH financial mirror is allowed.
+
 ### S7 — Manual BThwani captain assignment + minimum COD exposure
 
 Create one canonical Assignment truth. Initially an authorized operator selects an eligible captain manually.
@@ -450,7 +476,7 @@ Recommended order, each as its own authorized Level-4 vertical slice:
 3. WLT breadth **beyond the already-required core financial kernel**: wallet/read UX, cash-in, external rails, refund workflows, settlement execution, payout and reconciliation progressively. Core order allocation/COD exposure/delivery-created money truth is not deferred when the first COD journey activates it.
 4. In-app notification inbox → read/unread → push → deep links/preferences/topics/quiet hours.
 5. Support ticket → text conversation → unread/read → attachments → governed order rescue.
-6. Captain availability/eligibility/capacity → offers → timeout/reassignment → automatic dispatch → location/proximity.
+6. Captain operational breadth beyond the S6.5 minimum: availability/shift/fleet/vehicle/capacity policy → offers → timeout/reassignment → automatic dispatch → location/proximity.
 7. Partner teams/fleet/advanced partner operations.
 8. `app-field` business semantics: assignment/result first, then checklist/media/offline/location/escalation incrementally.
 9. Promotions/coupons/ratings/loyalty/marketing/search sophistication.
