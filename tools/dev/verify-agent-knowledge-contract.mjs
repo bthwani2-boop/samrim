@@ -23,7 +23,7 @@ const cases = [
   {
     id: "level4_not_future_breadth",
     source: "tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md",
-    include: ["LEVEL_4 defines completion depth, never future Product breadth"],
+    include: ["`LEVEL_4` defines completion depth", "never future Product breadth"],
   },
   {
     id: "causal_not_global_stage",
