@@ -51,4 +51,4 @@ Do not edit the projected payment status directly.
 
 ## Evidence boundary
 
-A reconciled DSH projection is operational evidence only. Financial correctness still requires the applicable WLT/finance evidence, and final closure requires every current same-commit evidence scope and protected approval defined by governance.
+A reconciled DSH projection is operational evidence only. Financial correctness still requires the applicable WLT/finance evidence. Repository/campaign closure remains Orchestrator authority.
