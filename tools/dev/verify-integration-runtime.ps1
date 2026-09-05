@@ -66,4 +66,4 @@ if ($pending.Count -gt 0) {
     exit 1
 }
 
-Write-Host "FOUNDATION_RUNTIME=PASS"
+Write-Host "INTEGRATION_RUNTIME=PASS"
