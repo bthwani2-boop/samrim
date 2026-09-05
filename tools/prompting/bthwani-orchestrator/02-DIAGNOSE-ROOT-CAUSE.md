@@ -65,6 +65,34 @@ REQUIRED_TRUTH
 
 Current topology is evidence, never a design constraint.
 
+## 2A. Authorized-scope filter
+
+Repository-wide diagnosis may discover the complete target and structural risks, but discovery does not equal mutation authorization.
+
+A semantic Product/System candidate is executable during `PRODUCT_BREADTH=ACTIVE_SLICE` only when it is one of:
+
+```text
+THE_ACTIVE_PRODUCT_SLICE ITSELF
+A REAL STRUCTURAL/OWNERSHIP PREREQUISITE THAT BLOCKS THE SLICE
+A SHARED DATA/CONTRACT/RUNTIME/SECURITY/FINANCIAL OWNER THE SLICE ACTUALLY EXERCISES
+A REQUIRED CONSUMER/READBACK OF THE SLICE
+A REGRESSION DEFECT CAUSED OR EXPOSED BY THE SLICE
+A LOSER/COMPATIBILITY RESIDUE INSIDE THE SLICE'S AFFECTED CONE
+```
+
+A future target capability that is merely adjacent, desirable, or described in Governance is classified as:
+
+```text
+DEFERRED_OUTSIDE_AUTHORIZED_PRODUCT_SCOPE
+```
+
+until explicitly activated. That classification is not allowed to hide structural garbage, an unsafe partial cutover, a prerequisite, or a regression inside the active cone.
+
+```text
+DISCOVERED_FUTURE_PRODUCT_BREADTH != EXECUTABLE_FRONTIER
+KNOWN_STRUCTURAL_GARBAGE != VALID_PRODUCT_DEFERRAL
+```
+
 ## 3. Complete tracked accounting
 
 Every tracked artifact receives a current status. `NONMATERIAL` requires proof.
@@ -236,9 +264,18 @@ FIRST_PROVEN_CATASTROPHE != FIRST_EXECUTED_CATASTROPHE
 
 ## 9. Deferral falsification
 
-A candidate mapped to Stage B must prove under `01` that its container and all materially relevant ancestors are canonical and that no structural demolition/refoundation obligation remains.
+Two forms of deferral must never be conflated.
 
-If that proof fails, promote it to A0/A1 structural work.
+```text
+EXPLICIT_FUTURE_PRODUCT_BREADTH_OUTSIDE_AUTHORIZED_SCOPE = VALID
+KNOWN_STRUCTURAL_GARBAGE_OR_UNSAFE_PARTIAL_CUTOVER = INVALID
+```
+
+A candidate mapped to Stage B must prove under `01` that its container and all materially relevant ancestors are canonical and that no structural demolition/refoundation obligation remains **when that candidate is inside the authorized Product scope or is a prerequisite of it**.
+
+A future target capability may remain deferred without implementation when it is outside the authorized Product scope and no part of its absence creates a defect in the active cone.
+
+If a supposed Product deferral actually hides a structural prerequisite, duplicate owner/writer, compatibility bridge, unsafe migration state, or regression required by the active slice, promote that obligation to A0/A1/current-scope work.
 
 ## 10. Source-of-Defect / Source-of-Fix execution gate
 
@@ -274,8 +311,8 @@ Diagnosis must always derive the next executable frontier; it must not end as a 
 
 ```text
 CAUSAL_FRONTIER =
-THE HIGHEST CURRENT PROVEN EXECUTABLE OBLIGATION
-THAT ADVANCES THE CAMPAIGN TOWARD FIXED POINT
+THE HIGHEST CURRENT PROVEN AUTHORIZED EXECUTABLE OBLIGATION
+THAT ADVANCES THE CURRENT AUTHORIZED PRODUCT SCOPE TOWARD ITS FIXED POINT
 ```
 
 After every material mutation or closure:
@@ -288,7 +325,7 @@ REFRESH_INVALIDATED_EVIDENCE
 → DERIVE_NEXT_REQUIRED_ACTION
 ```
 
-If no legitimate blocker exists, the derived action is executable, not advisory.
+If no legitimate blocker exists and the derived action lies inside the authorized Product scope or its proven prerequisite/regression cone, the action is executable, not advisory. An unactivated future capability is not a derivable action.
 
 ```text
 DIAGNOSIS_WITH_EXECUTABLE_FRONTIER
@@ -322,7 +359,7 @@ Preserve required truth in canonical structure; preserve historical shape in his
 
 ## 14. Donor semantic-atom census
 
-In clean-target reconstruction, diagnosis must exhaust both the donor current tree and material history that can contain removed Product/System/UX/data/security/financial/operational/engineering value.
+In clean-target reconstruction, diagnosis must exhaust the donor evidence cone material to the currently authorized Product scope, including relevant history that can contain removed Product/System/UX/data/security/financial/operational/engineering value. Repository-wide donor exhaustion remains mandatory for the explicit `FULL_TARGET` fixed point, not for closing an independent active slice whose material donor cone is exhausted and whose scope-changing unknowns are zero.
 
 A semantic atom is one materially distinct requirement, invariant, ownership rule, state/transition, failure/recovery rule, UX requirement, security/financial constraint, evidence rule or operating procedure. Wording duplication is not a second atom.
 
