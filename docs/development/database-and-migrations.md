@@ -7,6 +7,21 @@ PRODUCT_AUTHORITY: NONE
 
 Database schema expresses durable facts owned by a service; it does not define domain ownership by itself.
 
+## Foundation lane versus journey-ready data substrate
+
+A README-only `database/` lane is sufficient only for the structural Foundation stage where no durable capability has been admitted yet. It is **not** evidence that a service is journey-ready.
+
+Before broad DSH/WLT journeys:
+
+- each data-owning service gets its own database identity/credentials and private storage boundary;
+- local development may use one PostgreSQL server with separate logical databases/users;
+- service readiness proves its own database dependency when persistence is required;
+- cross-service private database access is rejected;
+- the migration command/toolchain is executable before the first business migration exists;
+- do not add fake business tables or empty baseline migrations to manufacture readiness.
+
+The current target standardizes on a pinned `golang-migrate/migrate` SQL migration lane unless later executable evidence justifies a change. Production migration is an explicit deploy/predeploy operation rather than hidden arbitrary schema mutation during API process startup.
+
 ## Migration rules
 
 - one canonical migration authority per service/database;
