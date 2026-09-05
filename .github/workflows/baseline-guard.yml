@@ -147,6 +147,8 @@ jobs:
           node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'SOURCE=governance/product/CAPABILITIES.md'
           node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'public_auth_state_enumeration'
           node tools/dev/query-knowledge.mjs journey J1 | grep -F 'SOURCE=governance/product/JOURNEYS.md'
+          node tools/dev/query-knowledge.mjs list owners | grep -F 'governance/product/FINANCIAL-MODEL.md'
+          node tools/dev/query-knowledge.mjs owner provider | grep -F 'governance/policies/providers-and-integrations.md'
 
       - name: Verify adversarial agent knowledge contract
         shell: bash
