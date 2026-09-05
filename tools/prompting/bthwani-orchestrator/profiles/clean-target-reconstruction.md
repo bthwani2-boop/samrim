@@ -47,8 +47,8 @@ Build required target value directly in the canonical owner location. Never recr
 DONOR_PATH != TARGET_PATH_AUTHORITY
 DONOR_REQUIRED_VALUE → EXTRACT
 TARGET_CANONICAL_OWNER → BUILD/REIMPLEMENT/REGENERATE
-DONOR_LOSER → DO_NOT_IMPORT
-TARGET_LOSER → MIGRATE/CUT_OVER/DELETE
+LOSING_DONOR_CONTAINER → REJECT_FROM_TARGET_AFTER_VALUE_EXTRACTION
+LOSING_TARGET_CONTAINER → FOLLOW_03_MIGRATION/CUTOVER/DELETION_OWNER
 ~~~
 
 Historical/generic donor shapes are translated only after semantic ownership proof. Examples of losing shape classes include generic `core`, `shared`, app-shaped service frontend trees, generic provider/people/data-runtime/resilience buckets and pass-through app runtime parents. The exact destination is derived from current durable ownership; this profile never grants automatic survival to a named destination.
