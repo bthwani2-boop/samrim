@@ -330,6 +330,16 @@ for (const forbidden of ["previous_refresh_token_hash", "operator_context", "sur
   if (session.includes(forbidden)) failures.push("Identity session service contains redundant/legacy state " + forbidden);
 }
 
+const activationDelivery = read("services/identity/backend/internal/integrations/activation/delivery.go");
+if (activationDelivery.includes("ActorType") || activationDelivery.includes('"actorType"')) {
+  failures.push("Identity activation delivery contains retired actorType semantics");
+}
+for (const required of ["Role string", '"role":message.Role']) {
+  if (!activationDelivery.includes(required)) {
+    failures.push("Identity activation delivery missing canonical role semantics: " + required);
+  }
+}
+
 const activation = read("services/identity/backend/internal/activation/service.go");
 const requestStart = activation.indexOf("func (s *Service) Request(");
 const issueStart = activation.indexOf("func (s *Service) issue(", requestStart);

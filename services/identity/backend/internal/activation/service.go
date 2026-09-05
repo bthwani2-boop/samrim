@@ -157,7 +157,7 @@ func (s *Service) issue(ctx context.Context, a domain.Actor, role, ipHash string
 	}
 	if deliveryAllowed {
 		if err := s.sender.Send(ctx, activationdelivery.Message{
-			Phone: a.PhoneE164, Code: code, ActorType: role, Surface: surface, ExpiresAt: expires,
+			Phone: a.PhoneE164, Code: code, Role: role, Surface: surface, ExpiresAt: expires,
 		}); err != nil {
 			return domain.ActivationChallenge{}, domain.ErrUnavailable
 		}

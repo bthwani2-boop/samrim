@@ -17,7 +17,7 @@ import (
 type Message struct {
 	Phone     string
 	Code      string
-	ActorType string
+	Role      string
 	Surface   string
 	ExpiresAt time.Time
 }
@@ -99,7 +99,7 @@ func (w Webhook) Send(ctx context.Context, message Message) error {
 	payload := map[string]any{
 		"phone":message.Phone,
 		"code":message.Code,
-		"actorType":message.ActorType,
+		"role":message.Role,
 		"surface":message.Surface,
 		"expiresAt":message.ExpiresAt.UTC().Format(time.RFC3339),
 	}
