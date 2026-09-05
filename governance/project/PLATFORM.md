@@ -63,7 +63,7 @@ Some capabilities cross several bounded contexts without becoming new sovereign 
 
 - customer profile/preferences, partner-team operations, catalog/publication, ratings/reviews, support and commerce eligibility remain assigned DSH operational capabilities unless Governance explicitly rehomes them;
 - promotions/coupons can span DSH eligibility and WLT financial effect while retaining one owner per fact;
-- notifications and media split source-domain business meaning from replaceable delivery/storage mechanisms;
+- notification source-event meaning remains with the originating domain; DSH Notifications owns current inbox/preferences/topic/delivery-attempt truth; replaceable adapters execute channels; media business authorization remains with its owning domain while object storage is technical infrastructure;
 - search/discovery and analytics are derived/query capabilities and never become authorization, transactional or financial truth;
 - external providers remain adapters behind the operation-owning domain; Platform Control may govern configuration/rollout but does not execute unrelated domain semantics.
 
