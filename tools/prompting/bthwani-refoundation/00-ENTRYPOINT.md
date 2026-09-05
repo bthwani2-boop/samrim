@@ -48,10 +48,9 @@ The target preserves required Product/System/UX/data/security/financial/operatio
 4. Load `02-TARGET-BOUNDARY-MAP.md`.
 5. Load `03-REQUIRED-TRUTH-CENSUS.md`.
 6. Load `04-DONOR-EXTRACTION-ACCOUNTING.md` when a donor repository/ref is supplied.
-7. Load `05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md` when `MODE=CLEAN_TARGET_RECONSTRUCTION`; it is temporary campaign state, never execution/Product authority.
-8. Load every materially applicable `targets/*.md`.
-9. Load `closure/CAPABILITY-CUTOVER-AND-DELETION.md` when replacing any current authority/path/data/contract.
-10. Load `closure/TARGET-FIXED-POINT.md` for structural/capability/final qualification.
+7. Load every materially applicable `targets/*.md`.
+8. Load `closure/CAPABILITY-CUTOVER-AND-DELETION.md` when replacing any current authority/path/data/contract.
+9. Load `closure/TARGET-FIXED-POINT.md` for structural/capability/final qualification.
 
 ## 3. Foundational roles
 
@@ -59,7 +58,6 @@ The target preserves required Product/System/UX/data/security/financial/operatio
 - `02-TARGET-BOUNDARY-MAP.md` — BThwani-specific owner/dependency/boundary consequences.
 - `03-REQUIRED-TRUTH-CENSUS.md` — exhaustive anti-forgetting evidence template; not a law owner.
 - `04-DONOR-EXTRACTION-ACCOUNTING.md` — temporary donor semantic-atom/zero-loss accounting template when a donor is supplied; never Product or execution authority.
-- `05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md` — temporary clean-target campaign plan/frontier inside this package; derived state only, never a second orchestrator or Product authority; delete after verified Level-4 closure.
 - `closure/CAPABILITY-CUTOVER-AND-DELETION.md` — BThwani replacement/cutover specialization inside the active repository.
 - `closure/TARGET-FIXED-POINT.md` — exhaustive BThwani target gates.
 
@@ -72,6 +70,8 @@ Each module specializes target decisions only; general diagnosis/execution/verif
 ## 5. Exact-state and recovery law
 
 This package contains target decisions, not current-state snapshots.
+
+No durable or package-local campaign plan is required. Current frontier/state is reconstructed from exact source/history/evidence under the Orchestrator; recommended incremental Product sequencing belongs to non-authoritative Docs.
 
 At every execution session:
 
