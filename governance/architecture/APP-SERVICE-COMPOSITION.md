@@ -36,11 +36,12 @@ Home, Account, Settings, aggregate Search and similar app sections are compositi
 
 Notification responsibility is split:
 
-- source business event → source domain;
-- delivery/inbox mechanics → notification delivery capability/adapter;
-- OS push/native route → app host.
+- source business event/eligibility → originating domain;
+- inbox/preferences/topic configuration/delivery-attempt records → DSH Notifications capability under the current durable model;
+- vendor/channel execution → replaceable delivery adapter;
+- OS push/deep-link/native route translation → app host.
 
-No app or generic notification infrastructure may become source-domain truth.
+No app, channel adapter or generic notification infrastructure may become source-domain truth. A future independent notification service requires normal service-admission evidence and explicit rehoming; it is not inferred from multi-channel delivery.
 
 ## Search
 
