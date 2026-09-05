@@ -116,6 +116,80 @@ const cases = [
       "hand-maintained mirrors of Product/ownership truth are forbidden",
     ],
   },
+  {
+    id: "journey_ready_is_substrate_not_product_authorization",
+    question: "What does Journey-Ready prove, and does it activate the next Product slice?",
+    source: "governance/architecture/FOUNDATION-AND-JOURNEY-READY-SUBSTRATE.md",
+    mustInclude: [
+      "JOURNEY_READY_PASS",
+      "JOURNEY_READY_PASS",
+      "!= NEXT_PRODUCT_SLICE_AUTHORIZED",
+    ],
+  },
+  {
+    id: "provider_unknown_mutation_cannot_blind_failover",
+    question: "May an unknown external financial mutation be retried through another provider immediately?",
+    source: "governance/policies/providers-and-integrations.md",
+    mustInclude: [
+      "BLIND_FALLBACK_ON_UNKNOWN_MUTATION=0",
+      "QUERY/RECONCILE_ORIGINAL_PROVIDER",
+    ],
+  },
+  {
+    id: "tooling_is_evidence_not_product_authority",
+    question: "May a tool or manifest define Product/architecture ownership?",
+    source: "governance/policies/tooling-and-assurance.md",
+    mustInclude: [
+      "TOOLS != PRODUCT TRUTH",
+      "TOOLS != ARCHITECTURE OWNER",
+      "TOOLS_ARE_EVIDENCE_PRODUCERS_ONLY=PASS",
+    ],
+  },
+  {
+    id: "docs_do_not_own_current_state",
+    question: "Should durable Docs encode active branch/runtime state?",
+    source: "governance/policies/documentation-and-knowledge.md",
+    mustInclude: [
+      "CURRENT STATE → SOURCE/RUNTIME/HISTORY",
+      "CAMPAIGN_STATE_IN_DURABLE_DOCS = FORBIDDEN",
+    ],
+  },
+  {
+    id: "deployable_identity_survives_path_refactor",
+    question: "Does moving an app folder authorize changing its Expo/package/hosting identity?",
+    source: "governance/policies/delivery.md",
+    mustInclude: [
+      "REPOSITORY_PATH_CHANGE != DEPLOYABLE_IDENTITY_CHANGE",
+      "DEPLOYABLE_IDENTITY_CHANGE → EXPLICIT_MIGRATION",
+    ],
+  },
+  {
+    id: "one_data_owner_one_migration_history",
+    question: "May one data owner keep competing migration authorities?",
+    source: "governance/policies/data-and-migrations.md",
+    mustInclude: [
+      "ONE_CANONICAL_MIGRATION_HISTORY",
+      "one globally ordered canonical migration lane",
+    ],
+  },
+  {
+    id: "api_catalog_is_derived_not_manual_authority",
+    question: "May the repository-wide API catalog be a hand-maintained business authority?",
+    source: "governance/architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md",
+    mustInclude: [
+      "REPOSITORY-WIDE API DISCOVERY INDEX → generated/derived or absent",
+      "GENERATED NON-AUTHORITATIVE CATALOG",
+    ],
+  },
+  {
+    id: "design_system_grows_just_in_time",
+    question: "Should BThwani prebuild a full domain component catalog before real consumers?",
+    source: "governance/product/EXPERIENCE-AND-DESIGN.md",
+    mustInclude: [
+      "PREBUILD FULL DOMAIN COMPONENT CATALOG = FORBIDDEN",
+      "DOMAIN_PRODUCT_TRANSLATION = DOMAIN/PRESENTATION OWNER",
+    ],
+  },
 ];
 
 const failures = [];
