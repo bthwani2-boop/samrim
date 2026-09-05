@@ -566,6 +566,22 @@ for (const command of [
   if (!baselineGuard.includes(command)) failures.push("baseline guard missing knowledge command: " + command);
 }
 
+const baselineNodeSetupIndex = baselineGuard.indexOf("- name: Set up Node");
+const baselineFirstNodeCheckIndex = baselineGuard.indexOf("node tools/dev/verify-donor-residue.mjs");
+if (baselineNodeSetupIndex < 0 || baselineFirstNodeCheckIndex < 0 || baselineNodeSetupIndex > baselineFirstNodeCheckIndex) {
+  failures.push("baseline guard must pin Node before the first JavaScript verification step");
+}
+const baselinePnpmInstallIndex = baselineGuard.indexOf("npm install --global pnpm@10.34.0");
+const baselineFirstPnpmUseIndex = baselineGuard.indexOf('[[ "$(pnpm --version)" == "10.34.0" ]]');
+if (baselinePnpmInstallIndex < 0 || baselineFirstPnpmUseIndex < 0 || baselinePnpmInstallIndex > baselineFirstPnpmUseIndex) {
+  failures.push("baseline guard must install pinned pnpm before first pnpm use");
+}
+const baselineGoSetupIndex = baselineGuard.indexOf("- name: Set up Go");
+const baselineFirstGoUseIndex = baselineGuard.indexOf('[[ "$(go version)" == *"go1.27.1"* ]]');
+if (baselineGoSetupIndex < 0 || baselineFirstGoUseIndex < 0 || baselineGoSetupIndex > baselineFirstGoUseIndex) {
+  failures.push("baseline guard must set up pinned Go before first Go use");
+}
+
 for (const sourcePath of ["governance/product/CAPABILITIES.md", "governance/product/JOURNEYS.md"]) {
   if (!queryKnowledge.includes(sourcePath)) failures.push("knowledge query tool missing canonical source: " + sourcePath);
 }
