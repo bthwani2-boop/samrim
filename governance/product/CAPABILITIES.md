@@ -257,6 +257,8 @@ Later increments extend the same canonical model; they must not require temporar
 - Refresh rotates atomically; known replay compromises that session family; an unrelated random refresh cannot revoke it.
 - Refresh is device-fingerprint checked; access remains a short-lived bearer token.
 - Passwords use Argon2id. Login/OTP abuse controls include source throttling without creating a simple username-targeted permanent lockout.
+- Public authentication/activation surfaces are non-enumerating: a valid-looking attempt must not disclose whether an actor/role exists, is disabled, globally security-disabled, or is otherwise no longer admissible. Internal/trusted administration may expose governed status only through its authorized contract.
+- Local sign-out and remote revocation are distinct outcomes. Once local credentials/cookies are cleared, every consuming host must converge to `signed_out` even if remote revocation fails; the remote failure may be reported without restoring authenticated UI state.
 
 **Forbidden/negative invariants**
 - No actor-global `roles[]`, generic permissions blob, operator context, provisioning fingerprint or creator-service provenance. A minimal `security_enabled` boolean is permitted only as Identity-wide authentication eligibility and must never represent DSH operational lifecycle.
@@ -267,6 +269,8 @@ Later increments extend the same canonical model; they must not require temporar
 - No cross-role session revocation.
 - No consumer-authored actor ID, service-caller header or Identity context header grants authority.
 - No execution agent grants product, QA, security, release, or production approval.
+- No public authentication response distinguishes blocked/disabled/non-admissible actor or role state in a way that enables account/state enumeration.
+- No app/control-panel remains visually or behaviorally authenticated after its local session material has been cleared merely because remote logout/revocation failed.
 
 **Acceptance expectations**
 - Readiness fails closed for missing configuration/database/schema/relations, legacy actor columns and clock failure.
@@ -280,8 +284,10 @@ Later increments extend the same canonical model; they must not require temporar
 - Password reset invalidates old password/operator sessions but not unrelated-role sessions.
 - Forged caller headers cannot change the principal resolved from a service credential.
 - Generated contract/client/app/database/runtime evidence contains zero legacy Identity context/caller-header authority.
+- A challenge issued before actor/role/global-security disable cannot be consumed into a session; the public result is a generic unauthenticated failure and no session is created.
+- Mobile hosts and Control Panel transition to `signed_out` after local credential/cookie clearing even when the remote revoke request fails; remote-revocation failure remains separately observable/retriable according to policy.
 
-**Named failure classes:** duplicate_actor, role_shaped_actor_id, actor_role_collapse, governed_role_otp_self_grant, silent_role_reenable, cross_role_revocation, missing_global_security_kill_switch, global_security_role_deletion, global_security_session_resurrection, consumer_authored_actor_id, service_caller_header_trust, premature_identity_context_or_tenant, operator_otp, account_lockout_dos, activation_replay, refresh_reuse, secret_or_pii_leak, parallel_identity_truth.
+**Named failure classes:** duplicate_actor, role_shaped_actor_id, actor_role_collapse, governed_role_otp_self_grant, silent_role_reenable, cross_role_revocation, missing_global_security_kill_switch, global_security_role_deletion, global_security_session_resurrection, consumer_authored_actor_id, service_caller_header_trust, premature_identity_context_or_tenant, operator_otp, account_lockout_dos, activation_replay, refresh_reuse, public_auth_state_enumeration, local_logout_ui_divergence, secret_or_pii_leak, parallel_identity_truth.
 
 **Actor responsibility envelope**
 - `customer` — self-establishes only client role and authenticates its client session.
