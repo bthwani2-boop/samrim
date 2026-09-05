@@ -13,7 +13,7 @@ Logs, metrics and traces are diagnostic/evidence surfaces.
 
 ## Correlation
 
-Material operations should expose applicable correlation/request/actor/operator-context/operation/idempotency identity, canonical error code, state/audit event, provider provenance and retry/reconciliation signals.
+Material operations should expose applicable correlation/request/actor/authorization-scope/operation/idempotency identity, canonical error code, state/audit event, provider provenance and retry/reconciliation signals.
 
 ## Redaction
 
