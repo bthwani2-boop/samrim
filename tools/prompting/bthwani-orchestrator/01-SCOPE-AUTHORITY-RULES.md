@@ -167,32 +167,12 @@ NO_STRUCTURAL_DEMOLITION_TARGET
 
 Without this proof, the obligation remains A0/A1 structural work.
 
-## 7. Continuous engagement authority
+## 7. Continuous-engagement authorization boundary
 
-Once mutation execution begins, the campaign becomes continuously engaged.
+This file does not own no-idle movement or commit/unit transition behavior; those are owned by `05-EXECUTION-PLAYBOOK.md`.
 
-```text
-CAMPAIGN_ENGAGED=TRUE
-```
+Its sole responsibility here is authorization duration: the invocation's Product scope remains the executable authority until either its Level-4 fixed point is proven or a legitimate stop condition in §12 prevents safe forward execution. Reaching a fixed point for `ACTIVE_SLICE` never authorizes an adjacent future Product slice.
 
-It remains true until either:
-
-```text
-LEVEL_4_FIXED_POINT=PASS_FOR_AUTHORIZED_SCOPE
-```
-
-or a legitimate stop state makes safe forward execution impossible. A proven `ACTIVE_SLICE` fixed point is therefore a valid normal terminal state and does not authorize the next future Product slice.
-
-The campaign may not voluntarily return to idle between commits, units or stages.
-
-```text
-COMMIT != PAUSE
-COMMIT != HANDOFF
-COMMIT != PERMISSION_TO_STOP
-UNIT_CLOSED != CAMPAIGN_PAUSE
-STAGE_TRANSITION != CAMPAIGN_PAUSE
-CHECKPOINT != NATURAL_STOP
-```
 
 ## 8. Runtime-state authorization boundary
 
@@ -278,32 +258,10 @@ EXTERNAL_PROVIDER_BLOCKER_THAT_PREVENTS_REQUIRED_PROOF_OR_CUTOVER
 
 Large deletion, many callers, extensive migration, unfamiliar structure, session length, token pressure, commit boundaries, unit boundaries or stage boundaries are not stop states.
 
-## 13. Compliance failure is a live defect
+## 13. Compliance-failure recovery boundary
 
-If execution behavior violates this package, do not merely note the violation.
+Execution-law compliance findings are detected/closed by `04-VERIFY-REDIAGNOSE-CLOSE.md`. When such a finding invalidates current scope/control state, this owner reconstructs the authorized scope, blocker state, open-unit classification and recovery frontier. `05` owns the resulting movement; this file does not maintain a second compliance procedure.
 
-```text
-ORCHESTRATOR_COMPLIANCE_FAILURE
-→ STOP_THE_WRONG_LOCAL_ACTION
-→ RECONSTRUCT_CORRECT_CONTROL_STATE
-→ RETURN_TO_REQUIRED_FRONTIER
-→ EXECUTE_THE_MISSING_REQUIRED_ACTION
-```
-
-Examples:
-
-```text
-PAUSED_WITH_NO_BLOCKER
-MAPPED_BUT_UNTREATED_GARBAGE
-SKIPPED_LOSER_DELETION
-STOPPED_AFTER_COMMIT
-STOPPED_AFTER_UNIT
-WAITED_FOR_NEXT_WITH_DERIVABLE_WORK
-PATCHED_INSIDE_PROVEN_INVALID_CONTAINER
-SELECTED_LOWER_UNIT_WITHOUT_ANCESTOR_EXONERATION
-```
-
-The orchestrator is operational law, not advisory prose.
 
 ## 14. Maximum-safe parallel mutation authority
 

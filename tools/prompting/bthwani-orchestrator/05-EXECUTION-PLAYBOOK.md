@@ -117,53 +117,36 @@ FOUNDATION_CONSTRUCTION_EXIT_GATE=PASS
 → STAGE_B_ONLY_IF_A2_PASS
 ```
 
-## 5. Systemic refoundation traversal
+## 5. Systemic-refoundation movement
 
 ```text
-SELECT_DOMINANT_SYSTEMIC_ROOT
-→ PROVE_COMPLETE_AFFECTED_CONE
-→ SALVAGE_REQUIRED_TRUTH
-→ BUILD/REFOUND_CANONICAL_WINNER
-→ MIGRATE/CUT_OVER
-→ DELETE_LOSERS_AND_COMPAT_RESIDUE
-→ PRUNE
-→ FIX_PREVENTION
-→ VERIFY/FALSIFY
-→ RE_PIN
-→ RE_CENSUS
-→ RE_RANK
+02 EMITS HIGHEST_SAFE_AUTHORIZED_SYSTEMIC_ROOT
+→ 05 ENTERS REFOUNDING/DEMOLISHING AS APPLICABLE
+→ 03 EXECUTES THE COMPLETE MUTATION/CUTOVER/CLEANUP
+→ 05 ENTERS VERIFYING
+→ 04 EMITS VERIFICATION RESULT
+→ 05 ENTERS RECENSUS/DIAGNOSING
+→ 02 EMITS THE NEW RANKED FRONTIER
+→ 05 CONTINUES OR VERIFIES FIXED POINT
 ```
 
-## 6. Capability / explicit vertical-increment traversal
+The demolition/migration/deletion algorithm itself remains owned by `03`.
 
-Prefer the smallest **explicitly authorized vertical semantic unit** that is causally correct. It may be a full capability or a named Product increment, but never a horizontal fragment.
+
+## 6. Capability / explicit vertical-increment movement
 
 ```text
-PRODUCT/SYSTEM MEANING + AUTHORIZED INCREMENT BOUNDARY
-→ ACTOR/JOURNEY/STATE
-→ DATA/STORAGE
-→ CANONICAL WRITER/READER
-→ DOMAIN OWNER
-→ TRANSPORT/EVENT
-→ CONTRACT
-→ GENERATED BINDING
-→ PRESENTATION
-→ APP/HOST COMPOSITION
-→ MATERIAL ACTION
-→ MUTATION/OBSERVATION
-→ PERSISTED/OBSERVABLE READBACK
-→ ALL REQUIRED CONSUMERS
-→ LOSER/RESIDUE DELETION
-→ NEGATIVE SPACE
+AUTHORIZED_VERTICAL_UNIT_SELECTED
+→ 05 ENTERS BUILDING/REFOUNDING
+→ 03 EXECUTES VERTICAL MUTATION COMPLETENESS
+→ 05 ENTERS VERIFYING
+→ 04 VERIFIES THE EXACT UNIT AND AFFECTED CONE
+→ UNIT_CLOSED | VERIFICATION_FAILED | STRUCTURAL_REDIAGNOSIS_REQUIRED
+→ 05 MOVES ACCORDINGLY
 ```
 
-Horizontal all-backend/all-contract/all-frontend/all-app waves are forbidden when they leave the authorized semantic increment partially connected.
+Whether the selected unit is a full capability or an explicit vertical increment is determined by authorized scope plus diagnosis; mutation completeness is owned by `03`; closure is owned by `04`.
 
-```text
-EXPLICIT_VERTICAL_INCREMENT_WITH_COMPLETE_OWNER/DATA/CONTRACT/RUNTIME/READBACK=ALLOWED
-ACCIDENTAL_PARTIAL_CAPABILITY_IMPLEMENTATION=FORBIDDEN
-FULL_CAPABILITY_CLOSED_CLAIM_FROM_INCREMENT=FORBIDDEN
-```
 
 ## 7. Automatic continuation
 
@@ -259,16 +242,10 @@ Do not wait for donor census to become globally complete before building or clos
 
 ## 13. Parallel work-conserving scheduling
 
-Maintain a frontier of proven **authorized** work units. Execute independent mutation cones in parallel when safe; serialize overlapping writers and shared authority. Future target slices outside current Product-breadth authority are not placed on the executable frontier.
+Ask `01-SCOPE-AUTHORITY-RULES.md` for the currently authorized parallel-safe mutation set. Schedule those independent units without inventing new overlap rules here.
 
-```text
-READY_NON_OVERLAPPING_UNIT + AVAILABLE_WORKER → EXECUTE
-OVERLAPPING_OWNER → QUEUE_BEHIND_CURRENT_WRITER
-HIGHER_PROVEN_ROOT → PREEMPT_AT_SAFE_CHECKPOINT
-COMPLETED_UNIT → RE_PIN/RE_CENSUS/RE_RANK
-```
+When any unit changes a shared premise or invalidates another unit's evidence/base, return the affected unit to recovery/reconciliation before further mutation. Completed units re-enter the normal verification → diagnosis → scheduling loop.
 
-One integration authority reconciles all target head movement. No worker may force the shared branch back to its base SHA.
 
 ## 14. Cross-objective non-regression
 

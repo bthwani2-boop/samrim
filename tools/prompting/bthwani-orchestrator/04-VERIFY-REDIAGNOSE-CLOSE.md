@@ -406,17 +406,17 @@ A2_PASS + ONLY_DEFERRED_FUTURE_PRODUCT_ROOTS_REMAIN
 
 ## 11. Stage-B closure
 
-Stage B handles only semantic/product/system roots inside proven canonical structure.
+Stage-B closure applies only to semantic Product/System roots inside proven canonical structure. Each root must satisfy the applicable mutation/cutover/deletion and negative-space claims through current evidence.
 
-Each root must satisfy the same migrate/cutover/delete/admission/negative-space discipline where applicable.
-
-If Stage-B evidence disproves structural canonicality:
+If Stage-B evidence disproves structural canonicality, emit:
 
 ```text
 A2_QUALIFICATION=STALE
-→ RETURN_TO_A0_OR_A1
-→ CONTINUE_CAMPAIGN
+STRUCTURAL_REDIAGNOSIS_REQUIRED
 ```
+
+`05` consumes that result and routes back through diagnosis/mutation as required; this file does not own the continuation transition.
+
 
 ## 12. Falsification
 
@@ -446,19 +446,20 @@ CANONICAL_EFFECT_WITHOUT_REQUIRED_SURFACE_READBACK
 PAUSED_OR_IDLE_EXECUTION_WITH_DERIVABLE_WORK
 ```
 
-## 13. Re-diagnose after every material unit
+## 13. Post-unit evidence refresh
+
+After a material unit changes the candidate, refresh the verification-owned proof state:
 
 ```text
 RE_PIN_CURRENT_HEAD
 → REFRESH_AFFECTED_CENSUS
 → INVALIDATE_AFFECTED_EVIDENCE
-→ REFRESH_STRUCTURAL_SEMANTIC_AUTHORITY_GRAPHS
-→ RE_RUN_NEGATIVE_SPACE
-→ RE_SYNTHESIZE_CURRENT_STAGE_GRAPH
-→ RE_RANK
-→ DERIVE_NEXT_REQUIRED_ACTION
-→ EXECUTE_IF_NOT_BLOCKED
+→ RE_RUN_APPLICABLE_NEGATIVE_SPACE/FALSIFICATION
+→ EMIT_CURRENT_VERIFICATION_RESULT
 ```
+
+Diagnosis/ranking of the refreshed candidate belongs to `02`; invocation of that diagnosis and subsequent movement belong to `05`.
+
 
 ## 14. Final fixed-point qualification by authorized breadth
 

@@ -240,37 +240,24 @@ MUTATION_READY_FOR_VERIFICATION
 If verification closes the unit, `05-EXECUTION-PLAYBOOK.md` owns all continuation mechanics.
 
 
-## 12. Checkpoint law
+## 12. Recovery-safe mutation handoff
 
-A checkpoint is only:
+Checkpoint transition law is owned by `05`. During mutation, this owner must only ensure that any emitted checkpoint is recoverable and does not knowingly strand unsafe mixed writers, partial cutover, untracked migration state or required truth.
 
-```text
-A RECOVERABLE REPOSITORY STATE
-FROM WHICH THE SAME CONTINUOUS CAMPAIGN CAN RESUME EXACTLY
-IF EXECUTION IS FORCIBLY INTERRUPTED
-```
 
-It is not a normal stop boundary.
+## 13. Newly exposed finding interface
 
-If execution capacity exists and there is no legitimate blocker:
+Mutation may expose a condition that changes safety, the canonical target or the affected cone. Do not self-rank that finding here.
 
 ```text
-CHECKPOINT_MUST_CONTINUE
+NEW_MATERIAL_FINDING
+→ STOP_ONLY_THE_UNSAFE_LOCAL_MUTATION_IF_REQUIRED
+→ EMIT_FINDING_WITH_CURRENT_MUTATION_STATE
+→ 02-DIAGNOSE-ROOT-CAUSE.md
 ```
 
-## 13. Deep causal engagement
+`05` owns movement after diagnosis.
 
-Newly exposed work is not an excuse to stop and report a list.
-
-```text
-NEWLY_EXPOSED_CAUSAL_OBLIGATION
-→ CLASSIFY_IN_CURRENT_GRAPH
-→ PROMOTE_IF_HIGHER
-→ RE_RANK
-→ EXECUTE_HIGHEST_REQUIRED_FRONTIER
-```
-
-The campaign follows the chain as deep as required inside the authorized Product scope and its proven prerequisite/regression cone until that scope reaches its fixed point. Adjacent future Product breadth is not part of the chain until explicitly activated.
 
 ## 14. Durable data and external safety
 
@@ -304,14 +291,13 @@ ONE_CANONICAL_SOURCE
 
 Fix source/generator/schema, regenerate, migrate consumers, delete stale outputs.
 
-## 16. Vertical semantic-capability / increment closure
+## 16. Vertical mutation completeness
 
 When a material Product/System capability crosses layers, the execution unit is the complete semantic chain for the **authorized capability or explicit vertical increment** at the highest causally correct root, not an isolated implementation layer.
 
 ```text
 EXPLICIT_VERTICAL_INCREMENT_WITH_COMPLETE_INTEGRITY=ALLOWED
 ACCIDENTAL_PARTIAL_IMPLEMENTATION=FORBIDDEN
-FULL_CAPABILITY_CLOSED_CLAIM_FROM_INCREMENT=FORBIDDEN
 ```
 
 ```text
@@ -334,13 +320,13 @@ PRODUCT/SYSTEM MEANING
 ```
 
 ```text
-BACKEND_SUBPART_GREEN != CAPABILITY_CLOSED
-CONTRACT_SUBPART_GREEN != CAPABILITY_CLOSED
-FRONTEND_SUBPART_GREEN != CAPABILITY_CLOSED
-APP_SUBPART_GREEN != CAPABILITY_CLOSED
+BACKEND_ONLY_MUTATION != VERTICAL_MUTATION_COMPLETE
+CONTRACT_ONLY_MUTATION != VERTICAL_MUTATION_COMPLETE
+FRONTEND_ONLY_MUTATION != VERTICAL_MUTATION_COMPLETE
+APP_ONLY_MUTATION != VERTICAL_MUTATION_COMPLETE
 ```
 
-Do not close layer fragments independently while the material capability chain remains split. A partially connected replacement is `OPEN_CRITICAL`.
+Do not hand off a layer fragment as mutation-complete while the material vertical chain remains split. A partially connected replacement is `OPEN_CRITICAL`; `04` alone decides closure.
 
 This vertical law does not prohibit a Stage-A layer-wide refoundation when a cross-cutting structural layer is itself the proven highest-yield systemic root.
 
@@ -364,17 +350,10 @@ OBSOLETE_EVIDENCE_HELPER
 DO_NOT_CREATE_A_FUTURE_CLEANUP_CAMPAIGN_FOR_RESIDUE_CREATED_BY_THE_CURRENT_FIX
 ```
 
-## 18. Compliance correction
+## 18. Mutation compliance correction
 
-If execution starts beautifying, collecting, deferring or stopping around a proven loser:
+When `04` reports an execution-law defect specifically in mutation behavior, correct only the mutation-owned defect here: stop the wrong local write, restore the canonical writer/cutover/deletion discipline and emit the corrected candidate back to verification. Scope recovery and movement remain with `01` and `05`.
 
-```text
-ORCHESTRATOR_COMPLIANCE_FAILURE
-→ STOP_WRONG_LOCAL_ACTION
-→ ESCALATE_TO_CORRECT_GRANULARITY
-→ EXECUTE_MISSING_DEMOLITION_MIGRATION_DELETION
-→ CONTINUE
-```
 
 ## 19. Clean-target donor reconstruction execution
 
@@ -393,20 +372,12 @@ EXTRACT_REQUIRED_DONOR_VALUE
 
 Never mutate or clean the donor as part of target reconstruction. Donor history remains external forensic evidence.
 
-## 20. Parallel execution, staging and integration safety
+## 20. Parallel-mutation interface
 
-Maximum-safe parallel mutation is permitted only for proven non-overlapping cones. Every mutating worker must be based on an exact target SHA and must own explicit paths/semantic responsibilities.
+Parallel authorization, overlap classification and one-integration-authority rules are owned by `01-SCOPE-AUTHORITY-RULES.md`. This mutation owner accepts only a parallel unit that `01` has classified safe.
 
-```text
-OVERLAPPING_CONE → SERIALIZE
-SHARED_DB/CONTRACT/RUNTIME/EXPORT → SERIALIZE_WRITER
-FOREIGN_HUNK → PRESERVE_AND_RECONCILE
-BLIND_BROAD_STAGE/RESET/CLEAN → FORBIDDEN
-FORCE_REF_UPDATE → FORBIDDEN
-INTEGRATION → ONE_AUTHORITY + EXACT_EXPECTED_HEAD
-```
+For such a unit, preserve its exact base SHA, mutate only its admitted cone, reconcile foreign deltas before integration and return one coherent mutation result. This section does not redefine parallelism policy.
 
-Review intended, generated, deleted, manifest, dependency, runtime, test and governance/doc effects as one coherent mutation cone before integration.
 
 ## 21. Donor versus target deletion law
 

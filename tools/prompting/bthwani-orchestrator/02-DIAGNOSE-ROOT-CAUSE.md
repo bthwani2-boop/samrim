@@ -318,45 +318,28 @@ VALID_BLOCKERS
 
 If a higher Source-of-Fix is proven, descendant patching is forbidden.
 
-## 11. Continuous causal frontier
+## 11. Causal-frontier output
 
-Diagnosis must always derive the next executable frontier; it must not end as a report when execution is authorized.
-
-```text
-CAUSAL_FRONTIER =
-THE HIGHEST CURRENT PROVEN AUTHORIZED EXECUTABLE OBLIGATION
-THAT ADVANCES THE CURRENT AUTHORIZED PRODUCT SCOPE TOWARD ITS FIXED POINT
-```
-
-After every material mutation or closure:
+Whenever diagnosis is invoked on a materially changed candidate, rebuild only the causal facts needed to produce a current ranked frontier:
 
 ```text
-REFRESH_INVALIDATED_EVIDENCE
-→ REFRESH_STRUCTURAL_AND_SEMANTIC_GRAPHS
-→ ABSORB_NEWLY_EXPOSED_CAUSES
-→ RE_RANK
-→ DERIVE_NEXT_REQUIRED_ACTION
+CURRENT_FINDINGS
+→ CURRENT_CAUSAL_GRAPH
+→ ROOT/ANCESTOR RELATIONSHIPS
+→ DOMINANCE/RANK
+→ RANKED_CAUSAL_FRONTIER
+→ HIGHEST_SAFE_AUTHORIZED_ROOT_CANDIDATE_OR_NONE
 ```
 
-If no legitimate blocker exists and the derived action lies inside the authorized Product scope or its proven prerequisite/regression cone, the action is executable, not advisory. An unactivated future capability is not a derivable action.
+This file owns that diagnosis/ranking result. `04` owns evidence recensus/falsification and `05` owns when to invoke diagnosis and how to move after the result.
 
-```text
-DIAGNOSIS_WITH_EXECUTABLE_FRONTIER
-+ NO_BLOCKER
-=> EXECUTION_REQUIRED
-```
 
-## 12. No disconnected-task interpretation
+## 12. One causal graph, not disconnected tasks
 
-The campaign graph is continuous.
+New findings are incorporated into the current causal graph rather than treated as unrelated task tickets. Their relationship to the active root, its ancestors, prerequisites and regressions must be explicit before selection.
 
-```text
-UNIT != INDEPENDENT_TASK
-COMMIT != NEW_OBJECTIVE
-NEW_FINDING != NEW_SESSION_BOUNDARY
-```
+A commit, chat boundary or file boundary never creates a new semantic root. This is a diagnosis rule only; continuation/wait behavior remains owned by `05`.
 
-New findings are absorbed into the current catastrophe/root graph, causally ranked, and executed in order without waiting for a separate human `NEXT`.
 
 ## 13. Git history is forensic recovery, not live preservation
 
