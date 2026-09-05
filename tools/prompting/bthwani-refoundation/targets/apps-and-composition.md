@@ -76,6 +76,7 @@ Apps own:
 Expo Router / Next route tree
 navigation/deep links
 tabs/shell/application composition
+surface-specific feature presentation under app-owned feature folders
 cross-capability page layout/composition
 bootstrap and session binding
 native permissions and OS integration
@@ -219,7 +220,10 @@ Treatment:
 
 ```text
 CENSUS_FEATURE_VALUE
-→ MOVE_DOMAIN/PRESENTATION_TO_SERVICE_CAPABILITIES
+→ MOVE_DOMAIN/BUSINESS SEMANTICS TO CANONICAL SERVICE OWNER
+→ MOVE SURFACE-SPECIFIC FEATURE PRESENTATION TO apps/<host>/src/features/<capability>
+→ KEEP/BUILD SERVICE-OWNED PUBLIC CONTRACT/GENERATED CLIENT LINEAGE
+→ EXTRACT ONLY PROVEN DOMAIN-NEUTRAL REUSABLE UI TO DESIGN SYSTEM
 → MOVE_ROUTE/NAV/PLATFORM/COMPOSITION_TO_APP_ROOT
 → UPDATE_IMPORTS/EXPORTS/ROUTES
 → DELETE_APP_SHAPED_SERVICE_CONTAINER
@@ -227,7 +231,7 @@ CENSUS_FEATURE_VALUE
 → PROVE_OLD_PATH=0
 ```
 
-The app composes semantic exports such as DSH Order/Store/Checkout and WLT Wallet/Payment rather than importing a monolithic `Dsh*Application`.
+The app consumes service public contracts/generated clients and composes its own feature presentation. It must not import a monolithic `Dsh*Application` or recreate service business policy locally.
 
 ## 7. Control Panel
 
@@ -235,13 +239,64 @@ Control Panel is a deployable host, not a shared service/package.
 
 ```text
 navigation/shell/app composition → apps/control-panel
-reusable design primitives        → packages/design-system
-DSH-specific presentation         → services/dsh/frontend/<capability>/presentation/control-panel
-WLT-specific presentation         → services/wlt/frontend/<capability>/presentation/control-panel
-Identity/Platform UI              → their canonical frontend capability owners when reusable
+DSH/WLT/Identity feature UI       → apps/control-panel/src/features/<capability>
+reusable domain-neutral primitives/patterns → packages/design-system
+service API/business semantics    → canonical service owner + public contract/client
 ```
 
-## 8. App closure gate
+Do not create a service-owned Control Panel subtree merely because the screen manipulates that service's truth. Where it appears does not change the business owner; where surface-specific presentation lives does not make the app the business owner.
+
+## 8. Journey-ready host-shell gate
+
+Before broad business-journey delivery, each deployable host must be capable of receiving real feature slices without auth/navigation refoundation.
+
+Mobile target:
+
+```text
+apps/app-X/
+├── app/
+│   ├── _layout.tsx
+│   ├── (auth)/
+│   │   └── sign-in.tsx
+│   └── (app)/
+│       ├── _layout.tsx
+│       └── index.tsx       # neutral authenticated landing until real IA arrives
+└── src/
+    ├── identity/
+    ├── platform/
+    └── features/           # only real implemented features
+```
+
+Control Panel target:
+
+```text
+apps/control-panel/
+├── app/
+│   ├── layout.tsx
+│   ├── (auth)/login/page.tsx
+│   └── (panel)/
+│       ├── layout.tsx
+│       └── page.tsx
+└── src/features/           # only real implemented features
+```
+
+Required substrate:
+
+```text
+SESSION_BOOTSTRAP=PASS
+SIGNED_OUT_ROUTE_BOUNDARY=PASS
+AUTHENTICATED_ROUTE_BOUNDARY=PASS
+THEME/RTL/ACCESSIBILITY_BASELINE=PASS
+ERROR/LOADING/OFFLINE_HOST_STATES=PASS
+RUNTIME_CONFIG_BINDING=PASS
+NO_PREMATURE_BUSINESS_TABS=PASS
+NO_FAKE_BUSINESS_SCREENS=PASS
+NO_RUNTIME_FEATURE/JOURNEY_REGISTRY=PASS
+```
+
+File-based routes and explicit navigation composition are preferred over a magic runtime registry. A new journey may add its own route/feature wiring; it must not require rebuilding the authentication/bootstrap architecture.
+
+## 9. App closure gate
 
 No app is structurally closed while any known instance remains of:
 
@@ -256,6 +311,8 @@ ACCOUNT/HOME/SETTINGS_AS_FALSE_DOMAINS
 GENERIC_SEARCH_AS_FALSE_DOMAIN
 NATIVE_ADAPTER_MISOWNED_BY_DOMAIN
 APP_SHAPED_DSH_EXPORTS
+SERVICE_OWNED_APP_SPECIFIC_PRESENTATION_TREES
+AUTH_AND_BUSINESS_UI_COLLAPSED_IN_SINGLE_TEMPORARY_INDEX_SCREEN_AT_JOURNEY_READY_GATE
 OLD_WORKSPACE/EAS/CI/SCRIPT_PATHS
 UNINTENTIONAL_EAS_PROJECT_IDENTITY_CHANGE
 UNINTENTIONAL_ANDROID_PACKAGE_CHANGE
