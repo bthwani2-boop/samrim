@@ -20,7 +20,7 @@ Before broad DSH/WLT journeys:
 - the migration command/toolchain is executable before the first business migration exists;
 - do not add fake business tables or empty baseline migrations to manufacture readiness.
 
-The current target standardizes on a pinned `golang-migrate/migrate` SQL migration lane unless later executable evidence justifies a change. Production migration is an explicit deploy/predeploy operation rather than hidden arbitrary schema mutation during API process startup.
+Before the first real business migration, select and pin one standards-compatible reproducible SQL migration mechanism in executable manifests/scripts for the service migration lanes. This guide does not pre-authorize a specific package that the repository has not yet adopted. Production migration is an explicit deploy/predeploy operation rather than hidden arbitrary schema mutation during API process startup.
 
 ## Migration rules
 
