@@ -26,6 +26,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
 
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+
       - name: Enforce canonical repository invariants
         shell: bash
         run: |
@@ -149,11 +154,6 @@ jobs:
         run: |
           node tools/dev/generate-identity-types.mjs --check
           node tools/dev/verify-identity-boundaries.mjs
-
-      - name: Set up Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 24.17.0
 
       - name: Install pinned pnpm
         shell: bash
