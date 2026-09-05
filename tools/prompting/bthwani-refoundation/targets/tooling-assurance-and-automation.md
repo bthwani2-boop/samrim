@@ -155,6 +155,35 @@ MANIFEST_SAYS_OWNER != OWNER_PROVEN
 
 Tool outputs must be attributable to exact candidate/source where material and must state what they do not prove.
 
+## 8A. Journey-ready dependency and build assurance
+
+Before broad Product journeys, enforce the architectural dependency laws through the smallest direct mechanisms.
+
+For TypeScript/Nx projects, use Nx's module-boundary enforcement (`@nx/enforce-module-boundaries`) with explicit project tags/constraints for app/service/package scope where it can express the invariant directly.
+
+Required cross-project laws include:
+
+```text
+APP → APP = FORBIDDEN
+SERVICE → APP = FORBIDDEN
+APP → SERVICE PRIVATE INTERNALS = FORBIDDEN
+APP → SERVICE PUBLIC CLIENT/CONTRACT = ALLOWED
+PACKAGE → SERVICE PRIVATE BUSINESS INTERNALS = FORBIDDEN
+CROSS_SERVICE PRIVATE IMPORT = FORBIDDEN
+```
+
+Go boundaries are not proven by the TypeScript linter. Use the smallest repository check based on Go module/import/dependency information to reject cross-service private imports and other cross-language boundary violations. Do not buy or build a broad conformance platform when a direct check proves the law.
+
+Journey-ready build evidence must also exercise actual deployable output:
+
+```text
+ALL FOUR EXPO APPS → EXPORT/BUNDLE OR EQUIVALENT PRODUCTION-JS-BUILD SMOKE
+CONTROL PANEL      → PRODUCTION NEXT BUILD
+GO SERVICES        → BUILD/TEST/VET
+```
+
+Typecheck alone is not evidence that Expo/Next bundling and route/config composition are valid.
+
 ## 9. Tool documentation and discoverability
 
 `tools/README.md` must explain:
@@ -187,4 +216,8 @@ FINAL_KNOWN_DEBT_BASELINES=0
 CAMPAIGN_ONLY_GUARDS/HELPERS=0
 ROOT_SCRIPTS/CI/AGENTS CUT_OVER=PASS
 TOOLS_ARE_EVIDENCE_PRODUCERS_ONLY=PASS
+TS/NX_MODULE_BOUNDARIES=PASS
+GO_CROSS_SERVICE_BOUNDARY_GUARD=PASS
+MOBILE_DEPLOYABLE_BUNDLE_SMOKE=PASS
+CONTROL_PANEL_PRODUCTION_BUILD=PASS
 ```
