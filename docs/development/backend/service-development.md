@@ -59,7 +59,7 @@ Use standards-compatible deterministic tooling such as ordinary OpenAPI generati
 
 Database schema expresses service-owned durable facts; schema alone does not define domain ownership.
 
-Before a persistence-owning service is journey-ready:
+Before a persistence-owning service can claim the currently required persistence path is operational:
 
 - its database identity/credentials and private storage boundary are real;
 - local development may share one PostgreSQL server only through separate logical ownership boundaries;
