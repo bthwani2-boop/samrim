@@ -10,7 +10,7 @@ Use for special-request/order-rescue incidents requiring support/operator interv
 
 ## Diagnose
 
-1. identify canonical order/request and trusted actor/operator context;
+1. identify canonical order/request, authenticated actor and exact server-side authorization scope;
 2. inspect DSH lifecycle/state and allowed rescue actions;
 3. inspect partner/store/captain handoff/assignment facts when relevant;
 4. inspect WLT payment/refund/compensation state separately;
