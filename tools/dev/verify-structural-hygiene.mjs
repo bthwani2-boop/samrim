@@ -167,14 +167,10 @@ for (const file of tracked) {
     }
     if (
       segments[1] === "prompting" &&
-      ["bthwani-orchestrator", "bthwani-refoundation"].includes(segments[2])
+      segments[2] === "bthwani-orchestrator"
     ) {
-      classify(
-        file,
-        segments[2] === "bthwani-orchestrator"
-          ? "orchestration-authority"
-          : "temporary-refoundation-specialization",
-      );
+      classify(file, "orchestration-authority");
+      continue;
     }
   }
 }
