@@ -90,6 +90,44 @@ Directionality primitives/tokens must not be independently reimplemented by each
 
 Accessibility semantics that belong to a domain action remain represented by the domain/presentation owner; the Design System supplies reusable accessible primitives/patterns.
 
+## 4A. Journey-ready visual baseline
+
+Before broad Product journeys, implement only the small reusable visual/interaction substrate that every host genuinely needs. Do not prebuild the future component catalog.
+
+A practical baseline may include, where actually consumed:
+
+```text
+Text / Heading
+Button / IconButton
+TextField / TextArea
+Select / Checkbox / Radio or Switch as platform-appropriate
+Surface / Card / Divider
+Screen / Page Container / Section
+Badge / Status
+Spinner / Skeleton
+Empty / Error / Offline / Forbidden / Unavailable state
+Dialog / Modal / mobile Sheet
+bounded Toast / Notice feedback
+```
+
+This is a baseline family, not a command to create unused components.
+
+Forbidden before a real capability proves need:
+
+```text
+OrderCard
+StoreCard
+WalletBalanceCard
+CaptainAssignmentCard
+ProductCard
+business dashboard widgets
+domain-specific form framework
+```
+
+Business components live first with the consuming app feature. Extract only real domain-neutral reuse; never turn the Design System into a hidden business layer.
+
+Journey-ready proof includes representative RTL/Arabic, accessibility, loading/error/offline, web keyboard/focus and native text/touch behavior for the primitives actually implemented.
+
 ## 5. Cohesion audit of current UI Kit
 
 Large/mixed files such as current appearance/foundation/locales artifacts must be decomposed only by real responsibility.
