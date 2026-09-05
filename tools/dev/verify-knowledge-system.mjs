@@ -40,6 +40,9 @@ const baselineGuard = read(".github/workflows/baseline-guard.yml");
 const doctorScript = read("tools/dev/doctor.ps1");
 const foundationCloseScript = read("tools/dev/close-foundation-runtime.ps1");
 const foundationLocalScript = read("tools/dev/verify-foundation-local.ps1");
+const repositoryStructureGuard = read("tools/dev/verify-repository-structure.mjs");
+const donorResidueGuard = read("tools/dev/verify-donor-residue.mjs");
+const structuralHygieneGuard = read("tools/dev/verify-structural-hygiene.mjs");
 const failures = [];
 
 function collectMarkdown(dir) {
@@ -498,6 +501,31 @@ if (!doctorScript.includes('[string] $ExpectedBranch = ""')) failures.push("doct
 if (!foundationCloseScript.includes('[string] $ExpectedBranch = ""')) failures.push("foundation runtime closure branch check is not invocation-driven");
 if (!foundationLocalScript.includes('[string] $ExpectedBranch = ""')) failures.push("local foundation proof branch check is not invocation-driven");
 if (!foundationLocalScript.includes('$verificationBranch = if ([string]::IsNullOrWhiteSpace($ExpectedBranch))')) failures.push("local foundation proof does not derive verification branch from current candidate");
+
+for (const forbiddenRegistryToken of ["expectedApps", "expectedServices", "expectedPackages", "CANONICAL_APPS", "CANONICAL_SERVICES", "CANONICAL_PACKAGES"]) {
+  if (repositoryStructureGuard.includes(forbiddenRegistryToken)) {
+    failures.push("repository structure guard contains manual project-name registry token: " + forbiddenRegistryToken);
+  }
+}
+for (const requiredDerivedToken of [
+  "function directChildren(rootName)",
+  "function projectFor(rootName, name, expectedTag)",
+  "type:app",
+  "type:service",
+  "type:package",
+  "MANUAL_PROJECT_NAME_REGISTRY=0",
+]) {
+  if (!repositoryStructureGuard.includes(requiredDerivedToken)) {
+    failures.push("repository structure guard missing derived-project discovery token: " + requiredDerivedToken);
+  }
+}
+if (donorResidueGuard.includes("bthwani-refoundation")) {
+  failures.push("donor residue guard still exempts or references retired refoundation package");
+}
+if (structuralHygieneGuard.includes("bthwani-refoundation")) {
+  failures.push("structural hygiene guard still admits retired refoundation package");
+}
+
 
 
 const agentAdapterPaths = ["CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"];
