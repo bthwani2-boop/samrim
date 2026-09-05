@@ -122,4 +122,4 @@ Repository path movement is not automatically a deployable-identity change. An i
 
 A proven authorized-scope fixed point is a normal terminal result. It does not authorize the next future Product slice.
 
-A blocker may stop earlier only under `01-SCOPE-AUTHORITY-RULES.md`.
+A blocker may stop earlier only under `../01-SCOPE-AUTHORITY-RULES.md`.
