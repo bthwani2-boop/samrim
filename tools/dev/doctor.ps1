@@ -1,6 +1,7 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
+    [string] $ExpectedBranch = "",
     [switch] $SkipBranchCheck
 )
 
@@ -19,8 +20,8 @@ function Check([string]$Name, [scriptblock]$Probe, [scriptblock]$Accept) {
 
 Push-Location $repo
 try {
-    if (-not $SkipBranchCheck) {
-        Check "branch" { git branch --show-current } { param($v) $v.Trim() -eq "a" }
+    if (-not $SkipBranchCheck -and -not [string]::IsNullOrWhiteSpace($ExpectedBranch)) {
+        Check "branch" { git branch --show-current } { param($v) $v.Trim() -eq $ExpectedBranch }
     }
     Check "node" { node --version } { param($v) ($v.Trim() -replace '^v','') -eq "24.17.0" }
     Check "pnpm" { pnpm --version } { param($v) $v.Trim() -eq "10.34.0" }
