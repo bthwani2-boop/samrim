@@ -5,8 +5,6 @@ EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-ARCHITECTURE_AUTHORITY: NONE
-
 ## Purpose
 
 This file preserves useful historical extraction patterns discovered while refounding BThwani from the donor repository. It is not a target topology, current repository inventory, migration plan or survival authority.
