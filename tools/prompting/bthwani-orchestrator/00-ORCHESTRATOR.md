@@ -138,13 +138,13 @@ The no-idle state machine and prohibited waiting/recommendation states are owned
 
 ## 6. Canonical execution-law ownership
 
-Exactly nine Orchestrator execution-law modules/focus lenses exist:
+Exactly nine **top-level** Orchestrator execution-law modules/focus lenses exist:
 
 1. `00-ORCHESTRATOR.md` — supreme mission, campaign-stage constitution, foundation-construction admission, invocation/routing, anti-weakening and clean-target mode.
 2. `01-SCOPE-AUTHORITY-RULES.md` — branch/donor authority, Product breadth, foundation survival, Git-history/current-head law, recovery/concurrency, legal stop states, deferral and preemption.
 3. `02-DIAGNOSE-ROOT-CAUSE.md` — A0 census, required truth, inherited-shape-blind canonical modeling, catastrophe/root ranking, Source-of-Defect/Fix and causal frontier.
 4. `03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md` — A1/Stage-B mutation, patch-vs-demolish, migration/cutover, eager deletion/pruning and execution safety.
-5. `04-VERIFY-REDIAGNOSE-CLOSE.md` — A2/evidence/falsification, finding terminality, capability/increment closure, exact-candidate recensus and all terminal Level-4 claims.
+5. `04-VERIFY-REDIAGNOSE-CLOSE.md` — verification/falsification/closure router; detailed proof law is partitioned under `verify/*` without creating another top-level authority.
 6. `05-EXECUTION-PLAYBOOK.md` — no-idle procedural state machine, session traversal, automatic continuation, checkpoint transition, preemption and fixed-point movement.
 7. `focus/code-architecture-organization.md` — execution lens for applying canonical architecture/topology/placement owners during diagnosis, mutation and verification.
 8. `focus/governance-product-design.md` — execution lens for resolving Product/System/actor/journey/UX meaning from applicable Governance owners and applying it end-to-end; it owns no durable Product semantics.
@@ -224,79 +224,45 @@ MODE: CLEAN_TARGET_RECONSTRUCTION
 DONOR_REPOSITORY: <read-only donor repository>
 DONOR_REF: <read-only donor branch/ref>
 OBJECTIVE: AUTO/NEXT | <semantic outcome>
-PRIMARY_FOCUS: AUTO | <focus owner>
+PRIMARY_FOCUS: AUTO | <focus lens>
 RESEARCH: AUTO | INTERNAL_ONLY | EXTERNAL_ALLOWED
 COMPLETION_LEVEL: LEVEL_4
 ```
 
-Load `00` first, then follow the Context-loading protocol in §6A. Load only materially applicable `focus/*` owners, but always before acting on the responsibility they own. When clean-target mode is active, donor fields are evidence inputs only and never mutation authority.
+Load `00` first, then follow the Context-loading protocol in §6A. Load only materially applicable `focus/*` lenses, but always before acting on the responsibility they inspect/apply. When clean-target mode is active, donor fields are evidence inputs only and never mutation authority.
 
 If `PRODUCT_BREADTH` is omitted, it defaults to `ACTIVE_SLICE`. `FULL_TARGET` is never inferred from `COMPLETION_LEVEL=LEVEL_4`. When `PRODUCT_BREADTH=FULL_TARGET`, set `ACTIVE_PRODUCT_SLICE=ALL`.
 
 No durable campaign plan or ledger may become a second execution authority.
 
-## 8. Session entry and recovery
+## 8. Campaign responsibility router
 
+The top-level modules own distinct responsibilities. This constitution does not restate their algorithms.
 
-Exact-head/recovery authority is owned by `01-SCOPE-AUTHORITY-RULES.md`; procedural session reconstruction is owned by `05-EXECUTION-PLAYBOOK.md`.
+| Concern | Sole top-level owner | Required consequence |
+|---|---|---|
+| branch/ref, Product breadth, recovery authority, stop/blocker/parallel authorization | `01-SCOPE-AUTHORITY-RULES.md` | do not mutate outside authorized scope or through an unresolved legitimate blocker |
+| census, required-truth reconstruction, root/ancestor diagnosis and causal ranking | `02-DIAGNOSE-ROOT-CAUSE.md` | select from the current highest safe authorized causal frontier |
+| demolition/refoundation/build, migration/cutover and loser deletion/pruning | `03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md` | establish one canonical winner and remove losing reachability |
+| evidence, falsification, structural/unit/fixed-point closure | `04-VERIFY-REDIAGNOSE-CLOSE.md` + routed `verify/*` submodule | close no claim beyond exact-candidate evidence |
+| runtime-state movement, commit/checkpoint transition and continuation | `05-EXECUTION-PLAYBOOK.md` | continue inside authorized scope until fixed point or legitimate stop |
+| architecture/topology/code-organization application | `focus/code-architecture-organization.md` | apply current Governance architecture owners without inventing semantics |
+| Product/journey/UX/governance application | `focus/governance-product-design.md` | resolve meaning from Governance/current explicit human decisions |
+| data/contracts/runtime/security/finance/assurance application | `focus/data-contracts-runtime-security-quality.md` | apply the relevant Governance/source/evidence owner without shadow truth |
 
-Every new/resumed execution must reconstruct current repository state, authorized Product scope, active/open unit and stale evidence before selecting new work. A new chat/session never implies a new semantic root.
+Stage transitions are protocol results, not additional owners:
 
-## 9. A0 — foundation qualification and systemic-root census
+```text
+A0 DIAGNOSIS / ADMISSION
+→ A1 WHEN A DOMINANT SYSTEMIC ROOT REQUIRES REFOUNDATION
+→ A2 STRUCTURAL QUALIFICATION
+→ STAGE B VERTICAL PRODUCT/SYSTEM WORK
+→ AUTHORIZED-SCOPE FIXED POINT
+```
 
+A failed structural qualification routes back through diagnosis/mutation. A newly exposed material finding is re-diagnosed before selection. A commit/checkpoint preserves recovery only and never grants permission to stop.
 
-A0 diagnosis, repository census, required-truth reconstruction, catastrophe/root ranking and causal-frontier selection are owned by `02-DIAGNOSE-ROOT-CAUSE.md`.
-
-A0 exits only through the evidence gate owned by `04`; discovery order never substitutes for root ranking.
-
-## 10. A1 — dominant systemic refoundation when required
-
-
-A1 demolition/refoundation/migration/cutover/deletion mechanics are owned by `03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md`. A1 is entered only for a proven dominant systemic root and returns to fresh diagnosis/qualification after material mutation.
-
-## 11. Garbage dies immediately
-
-
-Loser/garbage deletion timing and safe dependency exceptions are owned by `03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md`. `00` only requires that proven losing structure never receives keep-by-default protection.
-
-## 12. Commits and checkpoints are not stop boundaries
-
-
-Checkpoint legality is owned jointly by `01` (scope/recovery), `04` (evidence/closure) and `05` (procedural transition). Commits preserve recoverability; they do not create semantic completion or permission to wait while authorized work remains.
-
-## 13. Execution forcing
-
-
-Root executability is decided by `02`; mutation safety/execution by `03`; movement by `05`. Once the highest safe authorized frontier is proven and ranking-changing unknowns are resolved, further non-causal analysis cannot replace execution.
-
-## 14. A2 — adversarial structural qualification
-
-
-A2 evidence, negative-space falsification and structural-exit gates are owned by `04-VERIFY-REDIAGNOSE-CLOSE.md`. Stage B is inaccessible until the exact candidate passes the applicable A2 gate.
-
-## 15. Stage B — vertical capability build/refoundation
-
-
-Stage-B mutation/cutover is owned by `03`; semantic Product/UX meaning comes only from applicable Governance owners/current explicit human decisions; focus lenses apply that meaning without owning it; closure is owned by `04`; traversal by `05`.
-
-The execution unit is the highest causally correct authorized semantic capability or explicit vertical increment, not an isolated backend/frontend/file layer. Stage B never auto-activates deferred target breadth.
-
-## 16. Automatic causal continuation
-
-
-Automatic continuation and newly exposed frontier traversal are owned by `05-EXECUTION-PLAYBOOK.md`. New findings are reclassified/re-ranked inside the current authorized scope before further mutation.
-
-## 17. Legal stop states
-
-
-Legitimate stop states, blocker requirements and forbidden pseudo-stops are owned by `01-SCOPE-AUTHORITY-RULES.md`. Difficulty, migration size, deletion size, unfamiliarity, commit boundaries or stage boundaries are not independently stop authority.
-
-## 18. Operational compliance enforcement
-
-
-Execution-law compliance findings and their closure evidence are owned by `04`, with recovery/control-state handling in `01` and movement in `05`. A process defect is treated as a real finding; it is not excused by a green build or useful code output.
-
-## 19. Anti-weakening invariant
+## 9. Anti-weakening invariant
 
 No future helper, prompt, plan, workflow, adapter or owner may introduce:
 
@@ -322,14 +288,14 @@ LEVEL_4_MEANS_FULL_FUTURE_PRODUCT_BY_DEFAULT
 LIVE_TREE_AS_ARCHIVE
 ```
 
-## 20. Authorized-scope and full-target victory conditions
+## 10. Authorized-scope and full-target victory conditions
 
 
 Exact closure gates and terminal tokens are owned by `04-VERIFY-REDIAGNOSE-CLOSE.md`.
 
 An `ACTIVE_SLICE` invocation terminates normally at its proven Level-4 fixed point and does not authorize the next future slice. Repository-wide completion is valid only for an explicitly authorized `FULL_TARGET` invocation after the full governed target and required donor/accounting universe are exhausted.
 
-## 21. Clean-target reconstruction mode
+## 11. Clean-target reconstruction mode
 
 When the invocation supplies `MODE=CLEAN_TARGET_RECONSTRUCTION` plus a separate donor repository/ref, load:
 
