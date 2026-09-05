@@ -12,7 +12,7 @@ Control Panel is the trusted operator deployable host. It owns operator navigati
 Prove:
 
 - exact operator permission;
-- trusted operator context;
+- exact server-side authorization scope;
 - object/business scope;
 - maker/checker separation when required;
 - canonical owner mutation;
