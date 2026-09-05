@@ -7,43 +7,54 @@ CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
 ## Precedence
 
-Runbooks explain diagnosis, containment, recovery, and operational verification. They do not redefine Product/domain ownership, legal state transitions, financial truth, authorization, or runtime implementation.
-
-Use this precedence:
+Runbooks explain diagnosis, containment, recovery and operational verification. They do not redefine Product/domain ownership, legal state transitions, financial truth, authorization or current implementation.
 
 ```text
-governance durable semantic owner
-→ live executable contracts/code/config/data/runtime
-→ applicable runbook
+GOVERNANCE OWNER
+→ LIVE EXECUTABLE SOURCE / CONTRACT / CONFIG / RUNTIME
+→ APPLICABLE RUNBOOK
 ```
 
-If a runbook conflicts with a live executable path/command, correct the runbook. If implementation conflicts with durable governance, treat it as a Product/architecture finding rather than silently changing the runbook to bless the drift.
+If a runbook conflicts with executable behavior, fix the runbook unless the executable behavior itself violates Governance.
 
-## Runbook map
+## Router
 
-- `identity.md` — Identity availability, sessions/activation, and safe support diagnostics.
-- `client-addresses.md` — client addresses, serviceability, privacy lifecycle, and conflicts.
-- `partner-onboarding.md` — onboarding/readiness/publication support.
-- `stores.md` — store discovery/publication/governance operations.
-- `orders.md` — canonical order operational truth and incident recovery.
-- `checkout-wlt.md` — checkout↔WLT handoff and unknown financial outcome handling.
-- `dispatch.md` — captain offer/assignment/timeout/reassignment operations.
-- `payments.md` — payment sessions/provider webhook/reconciliation safety.
-- `wallet-reconciliation.md` — WLT-backed projection/reconciliation incidents.
-- `settlements-and-payouts.md` — WLT settlement/payout/reconciliation incidents.
-- `provider-unknown-outcomes.md` — ambiguous external mutation/provider outcomes.
-- `special-requests-and-support.md` — special-request and support/rescue incidents.
-- `systemic-platform-recovery.md` — database/migration, contract/version-skew, security/credential, and cross-service recovery routing.
-- `communications-and-media.md` — notification delivery, inbox/push/email/SMS routing, and media/object-storage incidents.
-- `catalog-promotions-ratings.md` — catalog publication, promotion/coupon, and ratings/reviews operational recovery.
+### Access
+- `access/identity.md`
 
-Conditional/future operational patterns that are not executable today live under `../reference/target-operations/`, never beside current runbooks.
+### Commerce
+- `commerce/client-addresses.md`
+- `commerce/stores.md`
+- `commerce/orders.md`
+- `commerce/catalog-promotions-ratings.md`
+- `commerce/special-requests-and-support.md`
 
-Mobile build activation and Sentry setup live under `../development/`, not operational runbooks.
+### Partner
+- `partner/partner-onboarding.md`
+
+### Fulfillment
+- `fulfillment/dispatch.md`
+
+### Communications
+- `communications/communications-and-media.md`
+
+### Finance
+- `finance/checkout-wlt.md`
+- `finance/payments.md`
+- `finance/wallet-reconciliation.md`
+- `finance/settlements-and-payouts.md`
+- `finance/provider-unknown-outcomes.md`
+
+### Platform
+- `platform/systemic-platform-recovery.md`
+
+Conditional/future patterns that are not executable today belong under `../reference/target-operations/`, never in current runbooks.
+
+Mobile/EAS, observability and release procedures belong under `../development/`.
 
 ## Runbook law
 
-Every operational runbook file must declare:
+Every operational runbook declares:
 
 ```text
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
@@ -54,13 +65,13 @@ CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
 A runbook must:
 
-- identify its semantic owner(s);
-- use current public/operational interfaces rather than direct table edits as the normal recovery path;
-- distinguish unknown/pending from failure/success;
-- preserve idempotency/correlation and financial/security evidence;
-- avoid copying secrets or unnecessary PII into tickets/logs;
+- identify the applicable semantic owner(s);
+- use current public/operational interfaces rather than direct table edits as the normal path;
+- distinguish unknown/pending from success/failure;
+- preserve idempotency, correlation and financial/security evidence;
+- avoid secrets and unnecessary PII in logs/tickets;
 - verify canonical readback after recovery;
-- use environment/configured thresholds rather than hardcoded historical numbers;
-- contain no branch/campaign/stage status, Product roadmap, Orchestrator closure gate or hand-maintained current schema/route/table inventory.
+- use current configuration for thresholds rather than historical constants;
+- contain no Product roadmap, Orchestrator stages/closure gates or hand-maintained current route/table/schema registry.
 
-A runbook may mention an implementation path only when operationally useful and must not become a hand-maintained route/table registry.
+A runbook may mention an implementation path only when operationally useful and must not become a second implementation authority.
