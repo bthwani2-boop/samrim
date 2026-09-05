@@ -43,6 +43,8 @@ const forbiddenLegacyPatterns = [
   { label: "stale LeanCTX tracked config", regex: /\.lean-ctx(?:\.toml|-id)\b/i },
   { label: "donor-specific reference pin", regex: /PIN_LIVE_h/i },
   { label: "legacy full runtime command", regex: /runtime:full(?::smoke)?/i },
+  { label: "legacy foundation runtime command", regex: /\b(?:foundation:|runtime:foundation:)\S*/i },
+  { label: "legacy foundation compose profile", regex: /--profile\s+foundation\b/i },
   { label: "legacy verify full command", regex: /verify:full/i },
   { label: "legacy reverse wrapper", regex: /\bpnpm\s+reverse\b/i },
   { label: "legacy mobile eas wrapper", regex: /\bpnpm\s+mobile:eas\b/i },
