@@ -254,11 +254,12 @@ RE_PIN_CURRENT_HEAD
 → INVALIDATE_AFFECTED_EVIDENCE
 → RE_SYNTHESIZE_CURRENT_STAGE_GRAPH
 → RE_RANK
-→ SELECT_NEXT_HIGHEST_EXECUTABLE_UNIT
-→ EXECUTE_IMMEDIATELY
+→ SELECT_NEXT_HIGHEST_AUTHORIZED_EXECUTABLE_UNIT_IF_ANY
+→ EXECUTE_IMMEDIATELY_IF_ONE_EXISTS
+→ OTHERWISE HAND_OFF_TO_AUTHORIZED_SCOPE_FIXED_POINT_VERIFICATION
 ```
 
-No user `NEXT` is required.
+No user `NEXT` is required while authorized work remains. A new future Product slice is not activated by this transition.
 
 ## 12. Checkpoint law
 
@@ -290,7 +291,7 @@ NEWLY_EXPOSED_CAUSAL_OBLIGATION
 → EXECUTE_HIGHEST_REQUIRED_FRONTIER
 ```
 
-The campaign follows the chain as deep as required until the current stage reaches its proven fixed point.
+The campaign follows the chain as deep as required inside the authorized Product scope and its proven prerequisite/regression cone until that scope reaches its fixed point. Adjacent future Product breadth is not part of the chain until explicitly activated.
 
 ## 14. Durable data and external safety
 
@@ -324,9 +325,15 @@ ONE_CANONICAL_SOURCE
 
 Fix source/generator/schema, regenerate, migrate consumers, delete stale outputs.
 
-## 16. Vertical semantic-capability closure
+## 16. Vertical semantic-capability / increment closure
 
-When a material Product/System capability crosses layers, the execution unit is the complete semantic capability chain at the highest causally correct root, not an isolated implementation layer.
+When a material Product/System capability crosses layers, the execution unit is the complete semantic chain for the **authorized capability or explicit vertical increment** at the highest causally correct root, not an isolated implementation layer.
+
+```text
+EXPLICIT_VERTICAL_INCREMENT_WITH_COMPLETE_INTEGRITY=ALLOWED
+ACCIDENTAL_PARTIAL_IMPLEMENTATION=FORBIDDEN
+FULL_CAPABILITY_CLOSED_CLAIM_FROM_INCREMENT=FORBIDDEN
+```
 
 ```text
 PRODUCT/SYSTEM MEANING
