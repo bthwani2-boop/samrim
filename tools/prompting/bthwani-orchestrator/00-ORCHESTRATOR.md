@@ -148,6 +148,14 @@ Exactly nine semantic owners exist:
 
 One material law has one owner. No helper, plan, agent adapter or governance file may create a weaker competing variant.
 
+Cross-owner repetition is allowed only for a **protocol interface token** that must be emitted by one owner and consumed/verified by another (for example a transition arrow, finding terminal class or evidence-state identifier). Repeating explanatory/normative law text in multiple owners is forbidden.
+
+~~~text
+SHARED_PROTOCOL_TOKEN = ALLOWED_REFERENCE
+SHARED_NORMATIVE_DEFINITION = FORBIDDEN
+ONE_PROTOCOL_TOKEN → ONE_DEFINITION + N PRODUCERS/CONSUMERS
+~~~
+
 ## 6A. Context-loading protocol
 
 Do not preload the entire package into every task. Preserve full law coverage through deterministic staged loading:
