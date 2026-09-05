@@ -25,3 +25,22 @@ Dependency changes require exact package/version/license/security/maintenance re
 ## Failure handling
 
 A red workflow is a finding to diagnose; do not suppress/allowlist a failing canonical invariant merely to recover green status.
+
+
+## Knowledge-system verification
+
+For the knowledge layer, use:
+
+~~~text
+pnpm knowledge:verify:all
+~~~
+
+It intentionally combines three independent checks:
+
+1. canonical ownership/invariant/authority/anti-contradiction checks;
+2. internal Markdown reference and orphan-document checks;
+3. adversarial agent knowledge-contract checks for high-risk questions.
+
+A pass from only one layer is not a full knowledge-system pass. CI keeps these steps separately visible for failure attribution even though local development exposes one combined command.
+
+The checks are evidence producers only; they do not self-certify Product/runtime closure.
