@@ -36,6 +36,10 @@ const packageJson = JSON.parse(read("package.json"));
 const queryKnowledge = read("tools/dev/query-knowledge.mjs");
 const experienceReference = read("docs/reference/external-systems/experience-design-ui-assurance.md");
 const designGuide = read("docs/development/design-system.md");
+const docsIndex = read("docs/README.md");
+const gettingStarted = read("docs/development/getting-started.md");
+const firstChangeGuide = read("docs/development/first-change.md");
+const repositoryMapGuide = read("docs/development/repository-map.md");
 const baselineGuard = read(".github/workflows/baseline-guard.yml");
 const doctorScript = read("tools/dev/doctor.ps1");
 const foundationCloseScript = read("tools/dev/close-foundation-runtime.ps1");
@@ -682,6 +686,29 @@ for (const token of [
 }
 if (!designGuide.includes("docs/reference/external-systems/experience-design-ui-assurance.md")) failures.push("design-system guide does not route to experience/UI reference corpus");
 if (!designGuide.includes("PREBUILD_FULL_COMPONENT_CATALOG = FORBIDDEN")) failures.push("design-system guide missing just-in-time component law");
+
+if (!docsIndex.includes("Prefer source-derived lookup instead of reading the entire capability/journey catalogs")) {
+  failures.push("Docs onboarding does not prefer selective capability/journey loading");
+}
+if (!gettingStarted.includes("retrieve only the relevant capability/journey/owner")) {
+  failures.push("getting-started does not use selective knowledge retrieval");
+}
+if (!firstChangeGuide.includes("pnpm knowledge:query -- capability <CAPABILITY_ID>")) {
+  failures.push("first-change guide missing selective capability query");
+}
+if (firstChangeGuide.includes("service frontend/backend")) {
+  failures.push("first-change guide still models a service-owned frontend layer");
+}
+if (!firstChangeGuide.includes("Surface-specific feature UI stays in the app host")) {
+  failures.push("first-change guide missing app-host surface presentation law");
+}
+if (!repositoryMapGuide.includes("cross-repository developer automation/evidence")) {
+  failures.push("repository map does not distinguish cross-repository tooling from owner-local tooling");
+}
+if (repositoryMapGuide.includes("- developer automation → tools.")) {
+  failures.push("repository map overassigns all developer automation to tools/");
+}
+
 
 const retiredPlanPath = "tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md";
 if (fs.existsSync(path.join(root, retiredPlanPath))) failures.push("temporary clean-reconstruction campaign plan remains in the live knowledge system");
