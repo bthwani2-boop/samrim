@@ -14,6 +14,24 @@ Only the repository/branch supplied by the current invocation is mutable unless 
 
 Cross-branch merge, rebase, autosync, blind cherry-pick of historical structure and force-push are forbidden by default. A normal fast-forward update of the invocation branch is allowed when the expected head is still current.
 
+## 1A. Product-breadth authority
+
+Execution breadth is supplied by invocation and is independent of `COMPLETION_LEVEL`.
+
+```text
+PRODUCT_BREADTH=ACTIVE_SLICE  # default when omitted
+PRODUCT_BREADTH=FULL_TARGET   # explicit only
+
+TARGET_PRODUCT_VISION != AUTHORIZED_PRODUCT_SCOPE
+LEVEL_4 != AUTHORIZATION_TO_BUILD_ALL_FUTURE_FEATURES
+```
+
+For `ACTIVE_SLICE`, `ACTIVE_PRODUCT_SLICE` names the currently authorized semantic outcome/increment. The effective mutation scope may expand only to its real structural prerequisites, canonical owners/writers, affected data/contracts/runtime, required consumers/readbacks, security/financial invariants actually exercised, and regression repairs exposed by the change.
+
+Unrelated future capabilities remain outside executable scope until explicitly activated. Their absence is not a blocker and must not be filled with speculative placeholders.
+
+For `FULL_TARGET`, the complete current governed target is authorized and repository-wide fixed-point rules apply.
+
 ## 2. Live tree vs forensic history
 
 ```text
@@ -216,6 +234,9 @@ During execution, maintain an ephemeral control state sufficient to force the ne
 ```text
 EXACT_HEAD_SHA
 CAMPAIGN_ENGAGED
+PRODUCT_BREADTH
+ACTIVE_PRODUCT_SLICE
+AUTHORIZED_PRODUCT_SCOPE
 CURRENT_STAGE
 CURRENT_UNIT
 UNIT_STATE
@@ -263,13 +284,14 @@ RE_PIN_CURRENT_BRANCH
 → RE_CENSUS_INVALIDATED_CONE
 → RE_DIAGNOSE
 → RE_RANK
-→ SELECT_NEXT_HIGHEST_EXECUTABLE_UNIT
-→ EXECUTE_IMMEDIATELY
+→ SELECT_NEXT_HIGHEST_AUTHORIZED_EXECUTABLE_UNIT_IF_ANY
+→ EXECUTE_IMMEDIATELY_IF_ONE_EXISTS
+→ OTHERWISE_VERIFY_AUTHORIZED_SCOPE_FIXED_POINT
 ```
 
-Do not wait for `NEXT`, `CONTINUE`, confirmation or another human prompt when the next action is derivable and authorized.
+Do not wait for `NEXT`, `CONTINUE`, confirmation or another human prompt while executable work remains **inside the already authorized Product scope**.
 
-If a newly exposed causal obligation is higher, absorb or promote it under the current campaign graph and continue.
+If a newly exposed causal prerequisite/regression obligation is higher, absorb or promote it under the current authorized campaign graph and continue. A merely adjacent future capability is not authorized work.
 
 ## 12. Stop states
 
@@ -382,16 +404,18 @@ If target head moves, classify the foreign delta, invalidate only affected evide
 
 ## 17. Objective and focus routing
 
-The campaign remains project-wide even when the current work has a narrower semantic objective.
+The target vision remains project-wide, but mutation authority is bounded by the invocation's Product breadth. An active slice is not permission to ignore higher prerequisites or regressions, and full target vision is not permission to auto-expand an active slice.
 
 ```text
-PROJECT_FRAME = FULL BTHWANI FIXED-POINT CAMPAIGN
-OBJECTIVE = CURRENT SEMANTIC OUTCOME / NEXT DERIVABLE ROOT
+PROJECT_FRAME = FULL BTHWANI TARGET VISION
+PRODUCT_BREADTH = ACTIVE_SLICE | FULL_TARGET
+ACTIVE_PRODUCT_SLICE = CURRENT AUTHORIZED SEMANTIC INCREMENT WHEN PRODUCT_BREADTH=ACTIVE_SLICE
+OBJECTIVE = CURRENT SEMANTIC OUTCOME / NEXT DERIVABLE ROOT INSIDE AUTHORIZED PRODUCT SCOPE
 PRIMARY_FOCUS = LENS PRIORITY, NOT SCOPE EXCLUSION
-EFFECTIVE_SCOPE = OBJECTIVE + COMPLETE AFFECTED CONE + HIGHER ROOTS + REQUIRED CONSUMERS
+EFFECTIVE_SCOPE = AUTHORIZED PRODUCT SLICE + COMPLETE AFFECTED CONE + REQUIRED HIGHER PREREQUISITES + REQUIRED CONSUMERS + AFFECTED PRIOR REGRESSION
 ```
 
-`OBJECTIVE=AUTO/NEXT` means derive the next highest executable frontier from current evidence. A named objective may prioritize a capability/root but cannot exclude a higher prerequisite, shared writer, contract/data/runtime effect, required surface, security/financial invariant or regression cone.
+`OBJECTIVE=AUTO/NEXT` means derive the next highest executable frontier **inside the current authorized Product scope** from current evidence. It never activates the next deferred Product capability by itself. A named objective may prioritize a capability/root but cannot exclude a higher prerequisite, shared writer, contract/data/runtime effect, required surface, security/financial invariant or regression cone that the authorized slice materially requires.
 
 `PRIMARY_FOCUS=AUTO` loads every materially relevant focus owner. A named focus only orders diagnostic attention; it never permits skipping another affected focus.
 
