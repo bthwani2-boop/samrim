@@ -1,7 +1,7 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
-    [string] $ExpectedBranch = "a",
+    [string] $ExpectedBranch = "",
     [switch] $SkipFetch,
     [switch] $SkipRuntime
 )
@@ -136,7 +136,15 @@ try {
     }
 
     Write-Host "Branch: $branch"
-    if ($branch -ne $ExpectedBranch) {
+
+    $verificationBranch = if ([string]::IsNullOrWhiteSpace($ExpectedBranch)) {
+        $branch
+    }
+    else {
+        $ExpectedBranch
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $branch -ne $ExpectedBranch) {
         Fail "Expected branch '$ExpectedBranch', found '$branch'."
     }
 
@@ -144,11 +152,11 @@ try {
 
     if (-not $SkipFetch) {
         Run-NativeStep "Fetch exact remote candidate" {
-            git fetch origin $ExpectedBranch --prune
+            git fetch origin $verificationBranch --prune
         }
 
         $localHead = (& git rev-parse HEAD).Trim()
-        $remoteHead = (& git rev-parse ("origin/" + $ExpectedBranch)).Trim()
+        $remoteHead = (& git rev-parse ("origin/" + $verificationBranch)).Trim()
 
         if ($LASTEXITCODE -ne 0) {
             Fail "Unable to resolve exact local/remote candidate."
@@ -219,7 +227,7 @@ try {
     }
 
     Run-NativeStep "Developer doctor" {
-        pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/doctor.ps1
+        pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/doctor.ps1 -ExpectedBranch $verificationBranch
     }
 
     Run-NativeStep "Developer bootstrap" {
@@ -240,7 +248,7 @@ try {
 
     if (-not $SkipRuntime) {
         Run-NativeStep "Foundation runtime closure" {
-            pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-runtime.ps1
+            pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-foundation-runtime.ps1 -ExpectedBranch $verificationBranch
         }
     }
 
