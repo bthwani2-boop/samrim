@@ -13,6 +13,7 @@ This file owns how the engine moves. It does not redefine Product, architecture,
 ```text
 PIN_CURRENT_HEAD
 → RECONSTRUCT_CURRENT_EXECUTION_STATE
+→ RECONSTRUCT_AUTHORIZED_PRODUCT_SCOPE
 → IDENTIFY_LAST_PROVEN_CLOSED_UNIT
 → IDENTIFY_ACTIVE_OPEN_UNIT
 → INVALIDATE_STALE_EVIDENCE
@@ -111,12 +112,12 @@ SELECT_DOMINANT_SYSTEMIC_ROOT
 → RE_RANK
 ```
 
-## 6. Capability traversal
+## 6. Capability / explicit vertical-increment traversal
 
-Prefer complete vertical semantic capability units:
+Prefer the smallest **explicitly authorized vertical semantic unit** that is causally correct. It may be a full capability or a named Product increment, but never a horizontal fragment.
 
 ```text
-PRODUCT/SYSTEM MEANING
+PRODUCT/SYSTEM MEANING + AUTHORIZED INCREMENT BOUNDARY
 → ACTOR/JOURNEY/STATE
 → DATA/STORAGE
 → CANONICAL WRITER/READER
@@ -134,7 +135,13 @@ PRODUCT/SYSTEM MEANING
 → NEGATIVE SPACE
 ```
 
-Horizontal all-backend/all-contract/all-frontend/all-app waves are forbidden when they leave material capabilities partially connected.
+Horizontal all-backend/all-contract/all-frontend/all-app waves are forbidden when they leave the authorized semantic increment partially connected.
+
+```text
+EXPLICIT_VERTICAL_INCREMENT_WITH_COMPLETE_OWNER/DATA/CONTRACT/RUNTIME/READBACK=ALLOWED
+ACCIDENTAL_PARTIAL_CAPABILITY_IMPLEMENTATION=FORBIDDEN
+FULL_CAPABILITY_CLOSED_CLAIM_FROM_INCREMENT=FORBIDDEN
+```
 
 ## 7. Automatic continuation
 
@@ -148,9 +155,11 @@ NEW_FINDING
 → EXECUTE_HIGHEST_REQUIRED_FRONTIER
 ```
 
-`ASK_NEXT=FORBIDDEN`, `ASK_CONTINUE=FORBIDDEN`, and `WAIT_FOR_CONFIRMATION=FORBIDDEN` when the next action is already authorized and derivable.
+`ASK_NEXT=FORBIDDEN`, `ASK_CONTINUE=FORBIDDEN`, and `WAIT_FOR_CONFIRMATION=FORBIDDEN` when the next action is already authorized and derivable **inside the current Product scope**.
 
-Human input is required only for a genuine stop state or unresolved Product/System decision.
+A deferred future capability is not already authorized. When no executable work remains in the current authorized scope, verify its Level-4 fixed point and terminate that invocation normally rather than activating new Product breadth.
+
+Human input is required only for a genuine stop state, unresolved Product/System decision, or deliberate authorization of a new Product slice after the current one is complete.
 
 ## 8. Commit/checkpoint transition
 
@@ -164,7 +173,8 @@ VERIFY_CURRENT_BRANCH_HEAD
 → RE_CENSUS
 → RE_DIAGNOSE
 → RE_RANK
-→ CONTINUE
+→ CONTINUE_IF_AUTHORIZED_WORK_REMAINS
+→ OTHERWISE_VERIFY_AUTHORIZED_SCOPE_FIXED_POINT
 ```
 
 ## 9. Safe-checkpoint preemption
@@ -182,6 +192,17 @@ ANALYSIS_ONLY_CONTINUATION=FORBIDDEN_UNLESS_IT_CAN_CHANGE_SAFETY_OR_DOMINANCE
 
 ## 11. Fixed-point traversal
 
+For `ACTIVE_SLICE`:
+
+```text
+FRESH_AUTHORIZED_SCOPE_AND_AFFECTED_CONE_RECENSUS_FROM_ZERO
+→ FRESH_FALSIFICATION
+→ EXECUTE_EXPOSED_AUTHORIZED_OBLIGATION
+→ REPEAT
+```
+
+For explicitly authorized `FULL_TARGET`:
+
 ```text
 FRESH_FULL_REPOSITORY_RECENSUS_FROM_ZERO
 → FRESH_FALSIFICATION
@@ -189,7 +210,7 @@ FRESH_FULL_REPOSITORY_RECENSUS_FROM_ZERO
 → REPEAT
 ```
 
-Stop only when Level-4 fixed point is proven or a legitimate blocker prevents safe forward execution.
+Stop normally when the Level-4 fixed point for the authorized scope is proven, or earlier only when a legitimate blocker prevents safe forward execution.
 
 ## 12. Clean-target reconstruction traversal
 
@@ -198,24 +219,25 @@ When a donor repository/ref is supplied, use this progression before normal targ
 ```text
 PIN_TARGET_HEAD
 → PIN_DONOR_REF
-→ CURRENT_DONOR_TREE_CENSUS
-→ MATERIAL_DONOR_HISTORY_CENSUS
-→ SEMANTIC_ATOM_EXTRACTION/DISPOSITION
-→ REQUIRED_TRUTH + JOURNEY + OWNERSHIP MATRICES
+→ RECONSTRUCT_AUTHORIZED_PRODUCT_SCOPE
+→ CURRENT_DONOR_CONE_CENSUS_FOR_AUTHORIZED_SCOPE
+→ MATERIAL_DONOR_HISTORY_CENSUS_FOR_AUTHORIZED_SCOPE
+→ SEMANTIC_ATOM_EXTRACTION/DISPOSITION_FOR_SCOPE
+→ REQUIRED_TRUTH + JOURNEY + OWNERSHIP MATRICES_FOR_SCOPE
 → CANONICAL_TARGET_MODEL
 → FOUNDATION/TARGET BUILD
-→ VERTICAL CAPABILITY RECONSTRUCTION
+→ AUTHORIZED_VERTICAL_RECONSTRUCTION
 → TARGET-INTERNAL MIGRATION/CUTOVER/DELETION
 → DONOR_NON_IMPORT NEGATIVE SPACE
-→ DONOR_EXHAUSTION_GATE
-→ FRESH TARGET FIXED-POINT RECENSUS
+→ AUTHORIZED_SCOPE_DONOR_CONE_GATE
+→ FRESH AUTHORIZED-SCOPE FIXED-POINT RECENSUS
 ```
 
-Do not wait for donor census to become globally complete before building an execution-ready independent root if its required donor cone is exhausted and no higher/root-changing unknown remains. Continue donor extraction in parallel read-only work while non-overlapping target reconstruction proceeds.
+Do not wait for donor census to become globally complete before building or closing an execution-ready independent active slice if its required donor cone is exhausted and no higher/scope-changing unknown remains. Repository-wide donor exhaustion is reserved for `FULL_TARGET` completion. Read-only donor extraction may continue in parallel without expanding target mutation authority.
 
 ## 13. Parallel work-conserving scheduling
 
-Maintain a frontier of proven work units. Execute independent mutation cones in parallel when safe; serialize overlapping writers and shared authority.
+Maintain a frontier of proven **authorized** work units. Execute independent mutation cones in parallel when safe; serialize overlapping writers and shared authority. Future target slices outside current Product-breadth authority are not placed on the executable frontier.
 
 ```text
 READY_NON_OVERLAPPING_UNIT + AVAILABLE_WORKER → EXECUTE
