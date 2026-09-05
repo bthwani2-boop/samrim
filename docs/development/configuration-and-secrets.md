@@ -42,6 +42,6 @@ Identity internal service identity is derived server-side from the configured be
 - `IDENTITY_DSH_SERVICE_TOKEN` → DSH principal;
 - `IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN` → Platform Control principal.
 
-Do not add `X-Service-Caller`, `X-Operator-Context-ID` or a generic Identity tenant/context setting to compensate for missing business authorization modeling. The two service tokens must be distinct and satisfy runtime validation.
+Do not add caller-supplied trust headers or a generic Identity tenant/scope setting to compensate for missing business authorization modeling. The two service tokens must be distinct and satisfy runtime validation.
 
 `IDENTITY_CHALLENGE_HMAC_SECRET` protects purpose-bound verification/challenge-code derivation and is never a client value. `IDENTITY_CHALLENGE_DELIVERY_MODE` selects the configured development/runtime delivery adapter; delivery is not challenge-state authority. Development examples are local-only placeholders, not production secrets.
