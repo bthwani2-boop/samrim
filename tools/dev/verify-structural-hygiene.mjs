@@ -40,6 +40,12 @@ function classify(file, category) {
   classifications.set(file, category);
 }
 
+const rootAgentRoutingAdapters = new Set([
+  "AGENTS.md",
+  "CLAUDE.md",
+  "GEMINI.md",
+]);
+
 const rootFiles = new Set([
   ".editorconfig",
   ".gitattributes",
@@ -80,6 +86,9 @@ const serviceLanes = new Set([
 for (const file of tracked) {
   if (!file.includes("/")) {
     if (rootFiles.has(file)) classify(file, "root-substrate");
+    else if (rootAgentRoutingAdapters.has(file)) {
+      classify(file, "agent-routing-adapter");
+    }
     continue;
   }
 
@@ -157,6 +166,10 @@ for (const file of tracked) {
   }
 
   if (top === "tools") {
+    if (file === "tools/README.md") {
+      classify(file, "tools-orientation");
+      continue;
+    }
     if (segments[1] === "dev") {
       classify(file, "developer-tooling");
       continue;
