@@ -41,6 +41,10 @@ pnpm knowledge:query -- list capabilities
 pnpm knowledge:query -- capability <CAPABILITY_ID>
 pnpm knowledge:query -- list journeys
 pnpm knowledge:query -- journey <J_ID>
+pnpm knowledge:query -- list owners
+pnpm knowledge:query -- owner <keyword-or-path>
+
+pnpm knowledge:verify:all
 ~~~
 
 ## Adding a tool
