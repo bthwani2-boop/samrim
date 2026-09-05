@@ -56,6 +56,7 @@ Terminal states only:
 TREATED_AND_VERIFIED
 FALSE_POSITIVE_PROVEN
 AUTHORIZED_INTENTIONAL_CONDITION
+DEFERRED_OUTSIDE_AUTHORIZED_PRODUCT_SCOPE
 TOOL_LIMITATION_PROVEN
 STALE_OR_SUPERSEDED_WITH_PROOF
 N_A_PROVEN
@@ -66,6 +67,8 @@ LEGITIMATE_BLOCKER
 KNOWN_MAPPED_BUT_UNTREATED_FINDING > 0
 => RELEVANT_STAGE_GATE_FAILS
 ```
+
+`DEFERRED_OUTSIDE_AUTHORIZED_PRODUCT_SCOPE` is terminal only for an `ACTIVE_SLICE` invocation and only for genuine future Product breadth. It cannot hide structural garbage, a prerequisite, affected regression, unsafe partial cutover, or required value in the active cone. It never satisfies a `FULL_TARGET` gate.
 
 ## 3A. Assurance asset classification
 
@@ -213,12 +216,22 @@ GREEN_TESTS_THAT_MISS_DECLARED_AXIS_INTERACTIONS=CLOSURE_INSUFFICIENT
 ```
 
 
-When the execution unit is a material semantic capability, every applicable claim below must pass before closure:
+A Stage-B semantic execution unit may be either a full capability or an explicitly authorized vertical increment. The increment is valid only when its Product meaning and boundary are explicit and every materially affected axis is fully connected.
+
+```text
+EXPLICIT_VERTICAL_INCREMENT=ALLOWED
+ACCIDENTAL_PARTIAL_IMPLEMENTATION=FORBIDDEN
+HORIZONTAL_LAYER_FRAGMENT_AS_CLOSURE=FORBIDDEN
+FULL_CAPABILITY_CLOSED_CLAIM_WHEN_ONLY_INCREMENT_CLOSED=FORBIDDEN
+```
+
+When the execution unit is a material semantic capability **or explicit vertical increment**, every applicable claim below must pass before closure:
 
 ```text
 CANONICAL_CAPABILITY_NAME=PROVEN
-REQUIRED_PRODUCT/SYSTEM_MEANING=ACCOUNTED_FOR
-ACTORS/JOURNEYS/STATES=ACCOUNTED_FOR
+REQUIRED_PRODUCT/SYSTEM_MEANING=ACCOUNTED_FOR_FOR_EXECUTION_UNIT
+AUTHORIZED_INCREMENT_BOUNDARY=EXPLICIT_WHEN_NOT_FULL_CAPABILITY
+ACTORS/JOURNEYS/STATES=ACCOUNTED_FOR_FOR_EXECUTION_UNIT
 CANONICAL_OWNER=PROVEN
 CANONICAL_STORAGE=ACCOUNTED_FOR
 CANONICAL_WRITER=ACCOUNTED_FOR
@@ -228,8 +241,8 @@ CANONICAL_CONTRACT=ACCOUNTED_FOR
 GENERATED_LINEAGE=REPRODUCIBLE
 CANONICAL_PRESENTATION_OWNER=ACCOUNTED_FOR
 APP/HOST_COMPOSITION=ACCOUNTED_FOR
-ALL_MATERIAL_SURFACES=ACCOUNTED_FOR
-ALL_MATERIAL_ACTIONS=BOUND
+ALL_MATERIAL_SURFACES_REQUIRED_BY_EXECUTION_UNIT=ACCOUNTED_FOR
+ALL_MATERIAL_ACTIONS_REQUIRED_BY_EXECUTION_UNIT=BOUND
 CROSS_SERVICE_BOUNDARIES=ACCOUNTED_FOR
 SECURITY=ACCOUNTED_FOR
 FINANCIAL_INVARIANTS=ACCOUNTED_FOR_WHEN_APPLICABLE
@@ -264,12 +277,12 @@ Decorative/non-actionable UI is not counted as an action merely because it rende
 
 ## 7A. No-forgotten-surface gate
 
-Before a material capability/system unit closes:
+Before a material capability/system unit closes, the word `REQUIRED` means required by the authorized execution unit and its complete affected cone, not every future target surface:
 
 ```text
-UNACCOUNTED_REQUIRED_ACTOR_OR_JOURNEY=0
-UNACCOUNTED_REQUIRED_APP_OR_SURFACE_CONSUMER=0
-UNACCOUNTED_REQUIRED_MATERIAL_ACTION=0
+UNACCOUNTED_REQUIRED_ACTOR_OR_JOURNEY_IN_SCOPE=0
+UNACCOUNTED_REQUIRED_APP_OR_SURFACE_CONSUMER_IN_SCOPE=0
+UNACCOUNTED_REQUIRED_MATERIAL_ACTION_IN_SCOPE=0
 REQUIRED_VALUE_STRANDED_IN_LOSER=0
 UNACCOUNTED_OPERATOR_CORRELATION_WHEN_REQUIRED=0
 UNACCOUNTED_FAILURE_UNKNOWN_RECOVERY_SEMANTICS=0
@@ -287,11 +300,12 @@ UNIT_CLOSED
 → RE_CENSUS_REQUIRED
 → RE_DIAGNOSE_REQUIRED
 → RE_RANK_REQUIRED
-→ NEXT_UNIT_SELECTION_REQUIRED
-→ EXECUTION_REQUIRED_IF_NOT_BLOCKED
+→ NEXT_AUTHORIZED_UNIT_SELECTION_REQUIRED
+→ EXECUTION_REQUIRED_IF_AUTHORIZED_WORK_REMAINS
+→ OTHERWISE AUTHORIZED_SCOPE_FIXED_POINT_VERIFICATION_REQUIRED
 ```
 
-A closure result that omits this continuation while work remains is incomplete.
+A closure result that omits continuation while authorized work remains is incomplete. Conversely, activation of a new future Product slice merely to avoid stopping is an orchestration defect.
 
 ## 9. Checkpoint legality
 
@@ -389,11 +403,14 @@ UNCLASSIFIED_TRACKED_ARTIFACTS=0
 UNDISPOSITIONED_TRACKED_ARTIFACTS=0
 ```
 
-A2 pass must transition immediately into Stage B when semantic roots remain.
+A2 pass must transition immediately into Stage B when **authorized** semantic roots remain.
 
 ```text
-A2_PASS + STAGE_B_ROOTS_EXIST
+A2_PASS + AUTHORIZED_STAGE_B_ROOTS_EXIST
 => ENTER_STAGE_B_AND_EXECUTE
+
+A2_PASS + ONLY_DEFERRED_FUTURE_PRODUCT_ROOTS_REMAIN
+=> VERIFY_AUTHORIZED_SCOPE_FIXED_POINT
 ```
 
 ## 11. Stage-B closure
@@ -480,20 +497,53 @@ FRESH_FALSIFICATION=PASS
 LEVEL_4_EVIDENCE_STATE=PASS
 ```
 
-## 15. Only normal stop
+## 15. Normal terminal states
 
-The only normal non-blocked stop is the proven Level-4 fixed point.
+The normal non-blocked stop is the proven Level-4 fixed point **for the authorized Product scope**.
 
-Valid completion token:
+### Active-slice completion
+
+When `PRODUCT_BREADTH=ACTIVE_SLICE`, require:
+
+```text
+AUTHORIZED_PRODUCT_SCOPE=EXPLICIT
+AUTHORIZED_STAGE_B_GRAPH=EMPTY
+KNOWN_MATERIAL_DEFECTS_IN_SCOPE=0
+KNOWN_MATERIAL_UNKNOWNS_IN_SCOPE=0
+KNOWN_PARTIAL_CUTOVERS_IN_SCOPE=0
+KNOWN_COMPAT_RESIDUE_IN_SCOPE=0
+CUMULATIVE_AFFECTED_REGRESSION=PASS
+FRESH_AUTHORIZED_SCOPE_RECENSUS=PASS
+FRESH_AUTHORIZED_SCOPE_FALSIFICATION=PASS
+LEVEL_4_EVIDENCE_STATE=PASS_FOR_AUTHORIZED_SCOPE
+```
+
+Valid token:
+
+```text
+BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE
+EXACT_HEAD_SHA=<immutable sha>
+ACTIVE_PRODUCT_SLICE=<semantic increment>
+AUTHORIZED_SCOPE_LEVEL_4=PASS
+CUMULATIVE_AFFECTED_REGRESSION=PASS
+KNOWN_MATERIAL_DEFECTS_IN_SCOPE=0
+KNOWN_MATERIAL_UNKNOWNS_IN_SCOPE=0
+```
+
+### Full-target completion
+
+Only when `PRODUCT_BREADTH=FULL_TARGET` is explicitly authorized may verification issue:
 
 ```text
 BTHWANI_TRUSTWORTHY_CANONICAL_PLATFORM_REFOUNDATION_COMPLETE
 EXACT_HEAD_SHA=<immutable sha>
+PRODUCT_BREADTH=FULL_TARGET
 CONTINUOUS_CAMPAIGN_EXECUTION=PASS
 A0_HOSTILE_TRIAGE=PASS
 A1_DESTRUCTIVE_REFOUNDATION_FRONTIER=EMPTY
 A2_ADVERSARIAL_STRUCTURAL_QUALIFICATION=PASS
 STAGE_B_ROOT_GRAPH=EMPTY
+DEFERRED_TARGET_SCOPE=0
 LEVEL_4_EVIDENCE_STATE=PASS
 KNOWN_GARBAGE=0
 KNOWN_LOSERS=0
@@ -503,7 +553,7 @@ KNOWN_MATERIAL_UNKNOWNS=0
 KNOWN_ORCHESTRATOR_COMPLIANCE_FAILURES=0
 ```
 
-Anything weaker is a recovery checkpoint, not completion.
+A checkpoint remains non-terminal. A proven active-slice fixed point is not a checkpoint; it is the correct terminal state for a bounded Product-breadth invocation.
 
 ## 16. Evidence acquisition and proof-limit gate
 
@@ -555,9 +605,27 @@ SECURITY ANALYSIS UPLOAD/RESULT STATE
 
 Self-review is not independent review. Do not claim independent approval unless provenance proves it.
 
-## 19. Donor exhaustion gate
+## 19. Donor exhaustion gates
 
-Clean-target reconstruction cannot reach Level 4 until fresh evidence proves:
+Donor evidence is exhausted at two different scopes.
+
+### 19.1 Active-slice donor-cone gate
+
+An `ACTIVE_SLICE` may reach Level 4 when fresh evidence proves:
+
+```text
+DONOR_PINNED_REF=KNOWN
+AUTHORIZED_SLICE_DONOR_CONE_ENUMERATED=PASS
+AUTHORIZED_SLICE_REQUIRED_TRUTH_EXHAUSTED=PASS
+AUTHORIZED_SLICE_DATA/CONTRACT/RUNTIME/SECURITY/UX/TEST_VALUE_DISPOSITION=PASS
+UNINSPECTED_DONOR_HISTORY_MATERIAL_TO_AUTHORIZED_SLICE=0
+UNCLASSIFIED_REQUIRED_TRUTH_IN_AUTHORIZED_SLICE_CONE=0
+UNJUSTIFIED_DONOR_TRUTH_LOSS_IN_AUTHORIZED_SLICE_CONE=0
+```
+
+### 19.2 Full-target donor-exhaustion gate
+
+Repository-wide `FULL_TARGET` completion additionally requires:
 
 ```text
 DONOR_CENSUS=PASS
@@ -580,11 +648,23 @@ UNCLASSIFIED_DONOR_REQUIRED_TRUTH=0
 UNJUSTIFIED_DONOR_TRUTH_LOSS=0
 ```
 
-The gate proves accounting and preservation of required value, not copying. Rejected or superseded donor material is valid only with a recorded reason/evidence.
+Both gates prove accounting and preservation of required value, not copying. Rejected or superseded donor material is valid only with a recorded reason/evidence.
 
-## 20. Clean-target final token extension
+## 20. Clean-target terminal token extension
 
-When `MODE=CLEAN_TARGET_RECONSTRUCTION`, the final token is valid only with:
+When `MODE=CLEAN_TARGET_RECONSTRUCTION`:
+
+For `ACTIVE_SLICE`:
+
+```text
+TARGET_EXACT_HEAD_SHA=<immutable sha>
+DONOR_PINNED_REF=<immutable sha/ref evidence>
+AUTHORIZED_SLICE_DONOR_CONE_GATE=PASS
+UNJUSTIFIED_DONOR_TRUTH_LOSS_IN_SCOPE=0
+AUTHORIZED_SCOPE_LEVEL_4_FIXED_POINT=PASS
+```
+
+For `FULL_TARGET`:
 
 ```text
 TARGET_EXACT_HEAD_SHA=<immutable sha>
