@@ -240,36 +240,63 @@ assertSession(captainPair, "captain", "app-captain", actorId);
 await expect("GET", "/auth/session", 200, { token: captainPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: sharedClientPair.accessToken });
 
-// Scoped disable revokes captain only.
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable", 204, {
-  headers: service(dshToken, { "X-Correlation-ID": "disable-captain-" + suffix }),
-});
-await expect("GET", "/auth/session", 401, { token: captainPair.accessToken });
-await expect("GET", "/auth/session", 200, { token: sharedClientPair.accessToken });
+// Scoped disable revokes captain only. Use the proof-deferred actor so this scenario
+// remains independent from the shared actor's later Identity-wide security OTP budget.
+const proofDeferredCaptainChallenge = await requestOtp(proofDeferredPhone, "captain");
+const proofDeferredCaptainDevice = "device-proof-deferred-captain-" + suffix;
+const proofDeferredCaptainPair = await activate(
+  proofDeferredPhone,
+  "captain",
+  proofDeferredCaptainChallenge,
+  proofDeferredCaptainDevice,
+);
+assertSession(
+  proofDeferredCaptainPair,
+  "captain",
+  "app-captain",
+  proofDeferredCaptain.actorId,
+);
+await expect(
+  "POST",
+  "/internal/actors/" + encodeURIComponent(proofDeferredCaptain.actorId) + "/roles/captain/disable",
+  204,
+  { headers: service(dshToken, { "X-Correlation-ID": "disable-proof-deferred-captain-" + suffix }) },
+);
+await expect("GET", "/auth/session", 401, { token: proofDeferredCaptainPair.accessToken });
+await expect("GET", "/auth/session", 200, { token: proofDeferredClientPair.accessToken });
 await expect("POST", "/internal/actor-roles/provision", 409, {
   headers: service(dshToken),
-  body: { phoneE164: sharedPhone, role: "captain" },
+  body: { phoneE164: proofDeferredPhone, role: "captain" },
 });
-const disabledCaptainChallenge = await requestOtp(sharedPhone, "captain");
+const disabledProofDeferredCaptainChallenge = await requestOtp(proofDeferredPhone, "captain");
 await expect("POST", "/auth/activate", 401, {
   body: {
-    phone: sharedPhone,
+    phone: proofDeferredPhone,
     role: "captain",
-    code: codeFor(disabledCaptainChallenge.activationId),
-    deviceFingerprint: captainDevice,
+    code: codeFor(disabledProofDeferredCaptainChallenge.activationId),
+    deviceFingerprint: proofDeferredCaptainDevice,
   },
 });
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/enable", 204, {
-  headers: service(dshToken),
-});
-const reenabledCaptainChallenge = await requestOtp(sharedPhone, "captain");
-const reenabledCaptainPair = await activate(
-  sharedPhone,
-  "captain",
-  reenabledCaptainChallenge,
-  "device-reenabled-captain-" + suffix,
+await expect(
+  "POST",
+  "/internal/actors/" + encodeURIComponent(proofDeferredCaptain.actorId) + "/roles/captain/enable",
+  204,
+  { headers: service(dshToken) },
 );
-assertSession(reenabledCaptainPair, "captain", "app-captain", actorId);
+const reenabledProofDeferredCaptainChallenge = await requestOtp(proofDeferredPhone, "captain");
+const reenabledProofDeferredCaptainPair = await activate(
+  proofDeferredPhone,
+  "captain",
+  reenabledProofDeferredCaptainChallenge,
+  "device-reenabled-proof-deferred-captain-" + suffix,
+);
+assertSession(
+  reenabledProofDeferredCaptainPair,
+  "captain",
+  "app-captain",
+  proofDeferredCaptain.actorId,
+);
+await expect("GET", "/auth/session", 200, { token: proofDeferredClientPair.accessToken });
 
 // Governed role that was unknown can authenticate only AFTER DSH provisioning.
 const lateCaptain = await expect("POST", "/internal/actor-roles/provision", 201, {
@@ -372,7 +399,7 @@ await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/secur
   headers: service(platformToken, { "X-Correlation-ID": "security-disable-" + suffix }),
 });
 await expect("GET", "/auth/session", 401, { token: sharedClientPair.accessToken });
-await expect("GET", "/auth/session", 401, { token: reenabledCaptainPair.accessToken });
+await expect("GET", "/auth/session", 401, { token: captainPair.accessToken });
 await expect("GET", "/auth/session", 401, { token: resetOperatorPair.accessToken });
 
 const blockedClientChallenge = await requestOtp(sharedPhone, "client");
