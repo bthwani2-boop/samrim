@@ -267,6 +267,13 @@ for (const required of [
 ]) {
   if (!session.includes(required)) failures.push("Identity session service missing " + required);
 }
+if (
+  !session.includes(
+    "WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL AND refresh_expires_at>clock_timestamp() ORDER BY created_at DESC",
+  )
+) {
+  failures.push("Identity active-session readback must exclude refresh-expired sessions");
+}
 for (const forbidden of ["previous_refresh_token_hash", "operator_context", "surfaceAccess", "Roles:", "Permissions:"]) {
   if (session.includes(forbidden)) failures.push("Identity session service contains redundant/legacy state " + forbidden);
 }

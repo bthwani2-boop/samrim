@@ -337,7 +337,7 @@ func (s *Service) ListRole(ctx context.Context, actorID, role string) ([]domain.
 		return nil, domain.ErrInvalidInput
 	}
 	rows, err := s.db.QueryContext(ctx,
-		"SELECT id,role,version,created_at,refresh_expires_at,last_used_at,compromised_at FROM identity_sessions WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL ORDER BY created_at DESC",
+		"SELECT id,role,version,created_at,refresh_expires_at,last_used_at,compromised_at FROM identity_sessions WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL AND refresh_expires_at>clock_timestamp() ORDER BY created_at DESC",
 		strings.TrimSpace(actorID), role)
 	if err != nil {
 		return nil, err
