@@ -26,6 +26,8 @@ pnpm knowledge:query -- list capabilities
 pnpm knowledge:query -- capability IDENTITY_ACTIVATION_SESSIONS
 pnpm knowledge:query -- list journeys
 pnpm knowledge:query -- journey J1
+pnpm knowledge:query -- list owners
+pnpm knowledge:query -- owner financial
 ~~~
 
 The command prints the canonical source section at runtime and stores no parallel registry. For CLEAN_TARGET_RECONSTRUCTION, load tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md after the Orchestrator routes it.
