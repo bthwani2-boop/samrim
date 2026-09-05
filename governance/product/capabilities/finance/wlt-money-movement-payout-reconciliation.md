@@ -1,15 +1,16 @@
-# Money Movement Reconciliation Capabilities
+# Wlt Money Movement Payout Reconciliation
 
 ARTIFACT_CLASS: DURABLE_PRODUCT_CAPABILITY_GOVERNANCE
-SEMANTIC_OWNER: governance/product/capabilities/money-movement-reconciliation.md
+SEMANTIC_OWNER: governance/product/capabilities/finance/wlt-money-movement-payout-reconciliation.md
 EXECUTION_AUTHORITY: NONE
 CLOSURE_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 PARENT_CAPABILITY_INDEX: governance/product/CAPABILITIES.md
+CAPABILITY_ID: WLT_MONEY_MOVEMENT_PAYOUT_RECONCILIATION
 
 ## Scope
 
-This owner defines only the durable capability semantics listed below. Capability taxonomy/schema/admission law remains in `../CAPABILITIES.md`; cross-capability journeys remain in `../JOURNEYS.md`.
+This file is the **sole editable durable semantic owner** of `WLT_MONEY_MOVEMENT_PAYOUT_RECONCILIATION`. Capability taxonomy/schema/admission law remains in `../../CAPABILITIES.md`; cross-capability journey semantics remain in `../../JOURNEYS.md`.
 
 ### WLT_MONEY_MOVEMENT_PAYOUT_RECONCILIATION
 

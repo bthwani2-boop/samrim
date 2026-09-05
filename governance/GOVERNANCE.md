@@ -43,7 +43,7 @@ A current implementation can reveal drift but does not silently redefine Product
 
 - `product/PRD.md` — platform requirements and non-goals.
 - `product/CAPABILITIES.md` — capability taxonomy, semantic-envelope schema, admission/change law and routing only.
-- `product/capabilities/*.md` — sole durable semantic owners for individual capability outcomes, actors/personas, boundaries, states, invariants, failure/recovery and acceptance meaning.
+- `product/capabilities/**/*.md` — one file per capability; sole durable semantic owner for that capability's outcomes, actors/personas, boundaries, states, invariants, failure/recovery and acceptance meaning.
 - `product/JOURNEYS.md` — cross-capability actor/system journeys.
 - `product/FINANCIAL-MODEL.md` — cross-capability WLT/financial model.
 - `product/COMMERCIAL-AND-PARTNER-MODEL.md` — partner/store/commercial relationship model.
