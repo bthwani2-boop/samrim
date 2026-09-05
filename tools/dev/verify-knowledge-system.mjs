@@ -61,6 +61,18 @@ function isGeneralLawLike(line) {
   return letters.length >= 20 && letters === letters.toUpperCase();
 }
 
+function hasNonNoneAuthority(body, names) {
+  const wanted = new Set(names);
+  for (const line of body.split("\n")) {
+    const match = line.match(/^([A-Z_]+):\s*(.*)$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    if (!wanted.has(key)) continue;
+    if (rawValue.trim() !== "NONE") return true;
+  }
+  return false;
+}
+
 const headingRe = /^###\s+([A-Z0-9_]+)\b.*$/gm;
 const headingMatches = [...cap.matchAll(headingRe)];
 const sections = headingMatches.map((m, i) => {
@@ -177,7 +189,7 @@ const docsDir = path.join(root, "docs");
 for (const file of collectMarkdown(docsDir)) {
   const body = fs.readFileSync(file, "utf8");
   const rel = path.relative(root, file).split(path.sep).join("/");
-  if (/^(EXECUTION_AUTHORITY|PRODUCT_AUTHORITY|PRODUCT_SEMANTIC_AUTHORITY|ARCHITECTURE_AUTHORITY|CLOSURE_AUTHORITY):\s*(?!NONE\s*$).+/im.test(body)) {
+  if (hasNonNoneAuthority(body, ["EXECUTION_AUTHORITY", "PRODUCT_AUTHORITY", "PRODUCT_SEMANTIC_AUTHORITY", "ARCHITECTURE_AUTHORITY", "CLOSURE_AUTHORITY"])) {
     failures.push("Docs claims forbidden normative authority: " + rel);
   }
 }
@@ -205,7 +217,7 @@ for (const file of fs.existsSync(orchestratorTemplateDir) ? collectMarkdown(orch
     failures.push(rel + " orchestrator template missing evidence-template artifact class");
   }
   if (!body.includes("GENERAL_LAW_AUTHORITY: NONE")) failures.push(rel + " orchestrator template claims or omits law non-authority");
-  if (/^(EXECUTION_AUTHORITY|PRODUCT_AUTHORITY|CLOSURE_AUTHORITY):\s*(?!NONE\s*$).+/im.test(body)) {
+  if (hasNonNoneAuthority(body, ["EXECUTION_AUTHORITY", "PRODUCT_AUTHORITY", "CLOSURE_AUTHORITY"])) {
     failures.push(rel + " orchestrator template claims forbidden authority");
   }
 }
@@ -446,7 +458,7 @@ for (const adapterPath of agentAdapterPaths) {
   if (/TARGET_BRANCH:|stage-b\/|active refoundation branch/i.test(body)) {
     failures.push(adapterPath + " contains branch/campaign state");
   }
-  if (/^PRODUCT_AUTHORITY:\s*(?!NONE\s*$).+/im.test(body)) {
+  if (hasNonNoneAuthority(body, ["PRODUCT_AUTHORITY"])) {
     failures.push(adapterPath + " claims Product authority");
   }
 }
