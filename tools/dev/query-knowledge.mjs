@@ -63,13 +63,25 @@ function usage(exitCode = 1) {
 
 if (!kind) usage();
 
-const capabilityBody = () => read("governance/product/CAPABILITIES.md");
+function capabilityRecords() {
+  const capabilityRoot = path.join(root, "governance/product/capabilities");
+  const out = [];
+  for (const absolute of collectMarkdown(capabilityRoot)) {
+    const body = fs.readFileSync(absolute, "utf8");
+    const rel = path.relative(root, absolute).split(path.sep).join("/");
+    const owner = body.match(/^SEMANTIC_OWNER:\s*(\S+)\s*$/m)?.[1] ?? rel;
+    for (const section of sections(body, /^###\s+([A-Z0-9_]+)\b.*$/gm)) {
+      out.push({ ...section, source: rel, owner });
+    }
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id));
+}
+
 const journeyBody = () => read("governance/product/JOURNEYS.md");
 
 if (kind === "list") {
   if (rawId === "capabilities") {
-    const values = sections(capabilityBody(), /^###\s+([A-Z0-9_]+)\b.*$/gm);
-    for (const value of values) console.log(value.id);
+    for (const value of capabilityRecords()) console.log(value.id);
     process.exit(0);
   }
   if (rawId === "journeys") {
@@ -90,14 +102,13 @@ if (!rawId) usage();
 
 if (kind === "capability") {
   const wanted = rawId.toUpperCase();
-  const values = sections(capabilityBody(), /^###\s+([A-Z0-9_]+)\b.*$/gm);
-  const value = values.find((item) => item.id === wanted);
+  const value = capabilityRecords().find((item) => item.id === wanted);
   if (!value) {
     console.error("UNKNOWN_CAPABILITY_ID=" + wanted);
     process.exit(2);
   }
-  console.log("SOURCE=governance/product/CAPABILITIES.md");
-  console.log("SEMANTIC_OWNER=governance/product/CAPABILITIES.md#" + wanted.toLowerCase().replaceAll("_", "-"));
+  console.log("SOURCE=" + value.source);
+  console.log("SEMANTIC_OWNER=" + value.owner + "#" + wanted.toLowerCase().replaceAll("_", "-"));
   console.log("");
   console.log(value.body);
   process.exit(0);
