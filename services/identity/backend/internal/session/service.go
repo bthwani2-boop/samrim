@@ -17,6 +17,8 @@ type Service struct {
 	now func() time.Time
 }
 
+const dummyPasswordHash = "$argon2id$v=19$m=65536,t=3,p=2$nl2x4UwETv8mM+eRDPVuvQ$C1rH4q7MVn4IuThQWK4cmDjPmF5HBNafRD7OMiZRpIY"
+
 func New(db *sql.DB) *Service {
 	return &Service{db: db, now: time.Now}
 }
@@ -35,21 +37,14 @@ func (s *Service) Login(ctx context.Context, input domain.LoginRequest, ipHash s
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
 
-	var accountFailures, sourceFailures int
-	if err := s.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM identity_login_attempts WHERE username=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'",
-		username).Scan(&accountFailures); err != nil {
-		return domain.TokenPair{}, err
-	}
-	if err := s.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM identity_login_attempts WHERE ip_hash=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'",
-		ipHash).Scan(&sourceFailures); err != nil {
-		return domain.TokenPair{}, err
-	}
 	a, err := operatorByUsername(ctx, s.db, username)
 	if errors.Is(err, sql.ErrNoRows) {
-		_, _ = s.db.ExecContext(ctx, "INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,false)", username, ipHash)
-		if accountFailures >= 5 || sourceFailures >= 29 {
+		_ = identitysecurity.VerifyPassword(dummyPasswordHash, input.Password)
+		limited, recordErr := s.recordLoginFailure(ctx, username, ipHash)
+		if recordErr != nil {
+			return domain.TokenPair{}, recordErr
+		}
+		if limited {
 			return domain.TokenPair{}, domain.ErrRateLimited
 		}
 		return domain.TokenPair{}, domain.ErrUnauthenticated
@@ -58,8 +53,11 @@ func (s *Service) Login(ctx context.Context, input domain.LoginRequest, ipHash s
 		return domain.TokenPair{}, err
 	}
 	if !identitysecurity.VerifyPassword(a.PasswordHash, input.Password) {
-		_, _ = s.db.ExecContext(ctx, "INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,false)", username, ipHash)
-		if accountFailures >= 5 || sourceFailures >= 29 {
+		limited, recordErr := s.recordLoginFailure(ctx, username, ipHash)
+		if recordErr != nil {
+			return domain.TokenPair{}, recordErr
+		}
+		if limited {
 			return domain.TokenPair{}, domain.ErrRateLimited
 		}
 		return domain.TokenPair{}, domain.ErrUnauthenticated
@@ -94,6 +92,41 @@ func (s *Service) Login(ctx context.Context, input domain.LoginRequest, ipHash s
 		return domain.TokenPair{}, err
 	}
 	return pair, nil
+}
+
+func (s *Service) recordLoginFailure(ctx context.Context, username, ipHash string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, key := range []string{"identity:login-source:" + ipHash, "identity:login-account:" + username} {
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", key); err != nil {
+			return false, err
+		}
+	}
+
+	var accountFailures, sourceFailures int
+	if err := tx.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM identity_login_attempts WHERE username=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'",
+		username).Scan(&accountFailures); err != nil {
+		return false, err
+	}
+	if err := tx.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM identity_login_attempts WHERE ip_hash=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'",
+		ipHash).Scan(&sourceFailures); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO identity_login_attempts(username,ip_hash,succeeded) VALUES($1,$2,false)",
+		username, ipHash); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return accountFailures >= 5 || sourceFailures >= 29, nil
 }
 
 func (s *Service) CreateForActivationTx(ctx context.Context, tx *sql.Tx, actorID, role, deviceFingerprint string) (domain.TokenPair, error) {

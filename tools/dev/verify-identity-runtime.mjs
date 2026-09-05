@@ -420,22 +420,22 @@ const postSecurityOperatorPair = await expect("POST", "/auth/login", 200, {
 });
 assertSession(postSecurityOperatorPair, "operator", "control-panel", actorId);
 
-// Source throttling applies to failed attempts, but cannot turn a noisy/shared source into a denial of correct credentials.
-for (let i = 0; i < 30; i++) {
-  const probe = await request("POST", "/auth/login", {
-    body: {
-      username: "unknown." + suffix + "." + i,
-      password: "Wrong-Unknown-" + suffix + "-" + i,
-      deviceFingerprint: "device-source-throttle-" + suffix,
-    },
-  });
-  if (i < 29 && probe.status !== 401) {
-    fail("source-throttle probe " + i + " returned " + probe.status + ", expected 401");
-  }
-  if (i === 29 && probe.status !== 429) {
-    fail("source-throttle terminal probe returned " + probe.status + ", expected 429");
-  }
-}
+// Concurrent source throttling is serialized, but a noisy/shared source cannot deny correct credentials.
+const sourceThrottleResponses = await Promise.all(
+  Array.from({ length: 40 }, (_, i) =>
+    request("POST", "/auth/login", {
+      body: {
+        username: "unknown." + suffix + "." + i,
+        password: "Wrong-Unknown-" + suffix + "-" + i,
+        deviceFingerprint: "device-source-throttle-" + suffix,
+      },
+    }),
+  ),
+);
+const sourceUnauthorized = sourceThrottleResponses.filter((response) => response.status === 401).length;
+const sourceLimitedCount = sourceThrottleResponses.filter((response) => response.status === 429).length;
+assert(sourceUnauthorized === 29, "concurrent source throttle allowed unexpected unauthenticated count " + sourceUnauthorized);
+assert(sourceLimitedCount === 11, "concurrent source throttle returned unexpected limited count " + sourceLimitedCount);
 const operatorAfterSourceThrottle = await expect("POST", "/auth/login", 200, {
   body: {
     username: operatorUsername,
@@ -538,6 +538,8 @@ console.log("IDENTITY_OPERATOR_PASSWORD_ONLY=PASS");
 console.log("IDENTITY_SERVICE_CREDENTIAL_CALLER=PASS");
 console.log("IDENTITY_ACCOUNT_LOCKOUT_DOS_RESISTANCE=PASS");
 console.log("IDENTITY_LOGIN_SOURCE_DOS_RESISTANCE=PASS");
+console.log("IDENTITY_LOGIN_CONCURRENT_THROTTLE=PASS");
+console.log("IDENTITY_UNKNOWN_USERNAME_DUMMY_HASH=PASS");
 console.log("IDENTITY_PASSWORD_RESET_REVOCATION=PASS");
 console.log("IDENTITY_OTP_PHONE_RATE_LIMIT=PASS");
 console.log("IDENTITY_OTP_SOURCE_RATE_LIMIT=PASS");
