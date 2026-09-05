@@ -17,6 +17,7 @@ const glossary = read("governance/project/GLOSSARY.md");
 const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md");
 const appsTarget = read("tools/prompting/bthwani-refoundation/targets/apps-and-composition.md");
 const dshWltTarget = read("tools/prompting/bthwani-refoundation/targets/dsh-wlt.md");
+const designTarget = read("tools/prompting/bthwani-refoundation/targets/design-system-and-packages.md");
 const failures = [];
 
 function collectMarkdown(dir) {
@@ -175,6 +176,25 @@ if (!fixed.includes("BTHWANI_JOURNEY_READY_PLATFORM_SUBSTRATE=PASS")) failures.p
 if (!appsTarget.includes("apps/control-panel/src/features/<capability>")) failures.push("apps target missing app-owned surface feature placement");
 if (appsTarget.includes("DSH-specific presentation         → services/dsh/frontend")) failures.push("apps target still directs surface-specific DSH presentation into service frontend");
 if (!dshWltTarget.includes("Do not create `services/dsh/frontend/*` or `services/wlt/frontend/*`")) failures.push("DSH/WLT target missing service-frontend non-admission law");
+
+const canonicalControlPanelFeaturePath = "apps/control-panel/src/features/<capability>";
+const forbiddenControlPanelServicePath = "services/<owner>/frontend/<capability>/presentation/control-panel";
+if (!designTarget.includes(canonicalControlPanelFeaturePath)) failures.push("design-system target does not route surface-specific Control Panel feature UI to the app host");
+if (designTarget.includes(forbiddenControlPanelServicePath)) failures.push("design-system target still routes Control Panel feature UI into a service-owned frontend tree");
+if (!appsTarget.includes(canonicalControlPanelFeaturePath) || !dshWltTarget.includes(canonicalControlPanelFeaturePath)) {
+  failures.push("Control Panel feature UI placement is not aligned across app/composition and DSH/WLT target owners");
+}
+
+const surfacePlacementDeclarations = [
+  ["apps target", appsTarget],
+  ["DSH/WLT target", dshWltTarget],
+  ["design-system target", designTarget],
+];
+for (const [label, body] of surfacePlacementDeclarations) {
+  if (/→\s*services\/<owner>\/frontend\/<capability>\/presentation\/control-panel/i.test(body)) {
+    failures.push(label + " contains forbidden service-owned Control Panel presentation mapping");
+  }
+}
 
 if (failures.length) {
   console.error("KNOWLEDGE_SYSTEM_VERIFY=FAIL");
