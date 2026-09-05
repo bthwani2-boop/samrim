@@ -143,7 +143,7 @@ jobs:
         run: |
           set -euo pipefail
           node tools/dev/query-knowledge.mjs list capabilities | grep -Fx 'IDENTITY_ACTIVATION_SESSIONS'
-          node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'SOURCE=governance/product/capabilities/identity-and-profile.md'
+          node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'SOURCE=governance/product/capabilities/access/identity-activation-sessions.md'
           node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'public_auth_state_enumeration'
           node tools/dev/query-knowledge.mjs journey J1 | grep -F 'SOURCE=governance/product/JOURNEYS.md'
           node tools/dev/query-knowledge.mjs list owners | grep -F 'governance/product/FINANCIAL-MODEL.md'

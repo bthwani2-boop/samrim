@@ -136,6 +136,12 @@ for (const file of capabilityFiles) {
   }
 
   const matches = [...body.matchAll(/^###\s+([A-Z0-9_]+)\b.*$/gm)];
+  if (matches.length !== 1) failures.push(rel + " must contain exactly one capability semantic section; found " + matches.length);
+  const declaredCapabilityId = body.match(/^CAPABILITY_ID:\s*([A-Z0-9_]+)\s*$/m)?.[1];
+  if (!declaredCapabilityId) failures.push(rel + " missing CAPABILITY_ID metadata");
+  if (matches.length === 1 && declaredCapabilityId && declaredCapabilityId !== matches[0][1]) {
+    failures.push(rel + " CAPABILITY_ID does not match its sole capability heading: " + declaredCapabilityId + " != " + matches[0][1]);
+  }
   for (let i = 0; i < matches.length; i++) {
     const m = matches[i];
     const bodyStart = m.index + m[0].length;
@@ -149,7 +155,7 @@ const capCorpus = capabilitySources.join("\n");
 const ids = sections.map((x) => x.id);
 const duplicates = ids.filter((id, i) => ids.indexOf(id) !== i);
 if (duplicates.length) failures.push("duplicate capability IDs: " + [...new Set(duplicates)].join(", "));
-if (capabilityFiles.length !== 13) failures.push("expected thirteen cohesive capability owners; found " + capabilityFiles.length);
+if (capabilityFiles.length !== 28) failures.push("expected one canonical owner file per capability (28); found " + capabilityFiles.length);
 
 for (const token of [
   "ARTIFACT_CLASS: DURABLE_PRODUCT_CAPABILITY_INDEX",
