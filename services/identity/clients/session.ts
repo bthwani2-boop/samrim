@@ -124,15 +124,18 @@ export class IdentitySessionManager {
 
   async logout(): Promise<void> {
     const stored = this.tokens ?? parseStoredTokens(await this.storage.getItem(this.key));
-    if (stored) {
-      try {
-        await this.client.logout(stored.accessToken);
-      } catch (error) {
-        if (isIdentityClientError(error) && error.kind === "network") throw error;
+    let remoteError: unknown = null;
+    try {
+      if (stored) await this.client.logout(stored.accessToken);
+    } catch (error) {
+      if (!(isIdentityClientError(error) && error.kind === "http" && error.status === 401)) {
+        remoteError = error;
       }
+    } finally {
+      await this.clearLocal();
+      this.stateValue = { kind: "signed_out" };
     }
-    await this.clearLocal();
-    this.stateValue = { kind: "signed_out" };
+    if (remoteError) throw remoteError;
   }
 
   private async refreshStored(stored: StoredTokens): Promise<IdentitySessionState> {

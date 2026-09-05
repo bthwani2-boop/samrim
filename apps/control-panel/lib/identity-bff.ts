@@ -108,21 +108,19 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
 export async function logoutOperator(): Promise<void> {
   const store = await cookies();
   const accessToken = store.get(accessCookie)?.value;
-  if (!accessToken) {
-    await clearOperatorCookies();
-    return;
-  }
+  let remoteError: unknown = null;
 
   try {
-    await identityClient().logout(accessToken);
-    await clearOperatorCookies();
+    if (accessToken) await identityClient().logout(accessToken);
   } catch (error) {
-    if (isIdentityClientError(error) && error.kind === "http" && error.status === 401) {
-      await clearOperatorCookies();
-      return;
+    if (!(isIdentityClientError(error) && error.kind === "http" && error.status === 401)) {
+      remoteError = error;
     }
-    throw error;
+  } finally {
+    await clearOperatorCookies();
   }
+
+  if (remoteError) throw remoteError;
 }
 
 export function identityHttpStatus(error: unknown): number {
