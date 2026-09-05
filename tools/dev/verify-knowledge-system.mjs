@@ -18,6 +18,10 @@ const appsTarget = read("tools/prompting/bthwani-refoundation/targets/apps-and-c
 const dshWltTarget = read("tools/prompting/bthwani-refoundation/targets/dsh-wlt.md");
 const designTarget = read("tools/prompting/bthwani-refoundation/targets/design-system-and-packages.md");
 const refoundationEntrypoint = read("tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md");
+const composition = read("governance/architecture/APP-SERVICE-COMPOSITION.md");
+const platformControlTarget = read("tools/prompting/bthwani-refoundation/targets/platform-control.md");
+const lifecycleRouter = read("docs/development/platform-engineering-lifecycle.md");
+const lifecycleIndex = read("docs/platform-engineering-lifecycle/README.md");
 const agentRouter = read("AGENTS.md");
 const repositoryReadme = read("README.md");
 const contributing = read("CONTRIBUTING.md");
@@ -162,6 +166,21 @@ if (!orchestrator.includes("PRODUCT_BREADTH: ACTIVE_SLICE | FULL_TARGET")) failu
 if (!orchestrator.includes("AUTO_EXPAND_BEYOND_AUTHORIZED_PRODUCT_SCOPE=FORBIDDEN")) failures.push("orchestrator missing no-auto-expansion law");
 if (!orchestrator.includes("BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE")) failures.push("orchestrator missing active-slice Level-4 terminal token");
 
+if (!orchestrator.includes("## 6A. Context-loading protocol")) failures.push("orchestrator missing staged context-loading protocol");
+if (orchestrator.includes("Then load `00` through `05`")) failures.push("orchestrator still requires unconditional preload of all 00-05 modules");
+const orchestratorLoadTriggers = new Map([
+  ["tools/prompting/bthwani-orchestrator/01-SCOPE-AUTHORITY-RULES.md", "LOAD_TRIGGER: ENTRY_RESUME_SCOPE_AUTHORITY_BEFORE_BRANCH_OR_SCOPE_ACTION"],
+  ["tools/prompting/bthwani-orchestrator/02-DIAGNOSE-ROOT-CAUSE.md", "LOAD_TRIGGER: BEFORE_DIAGNOSIS_OR_ROOT_SELECTION"],
+  ["tools/prompting/bthwani-orchestrator/03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md", "LOAD_TRIGGER: BEFORE_MUTATION_REFOUNDATION_MIGRATION_CUTOVER_OR_DELETION"],
+  ["tools/prompting/bthwani-orchestrator/04-VERIFY-REDIAGNOSE-CLOSE.md", "LOAD_TRIGGER: BEFORE_VERIFICATION_FALSIFICATION_RECENSUS_OR_CLOSURE"],
+  ["tools/prompting/bthwani-orchestrator/05-EXECUTION-PLAYBOOK.md", "LOAD_TRIGGER: WHEN_MULTI_STEP_CAMPAIGN_STATE_RECOVERY_OR_AUTOMATIC_CONTINUATION_APPLIES"],
+]);
+for (const [modulePath, trigger] of orchestratorLoadTriggers) {
+  const body = read(modulePath);
+  if (!body.includes(trigger)) failures.push(modulePath + " missing canonical LOAD_TRIGGER");
+}
+if (!refoundationEntrypoint.includes("declared `LOAD_TRIGGER` applies")) failures.push("refoundation entrypoint does not follow orchestrator staged loading");
+
 if (!prd.includes("## 1B. Target Product vision versus delivery breadth")) failures.push("PRD missing target-vs-active Product breadth law");
 if (prd.includes("The current operational fulfillment-policy modes are")) failures.push("PRD still treats every target fulfillment mode as current operational scope");
 if (!prd.includes("The target supported fulfillment-policy modes are")) failures.push("PRD missing target fulfillment-mode semantics");
@@ -178,6 +197,11 @@ if (!fixed.includes("BTHWANI_JOURNEY_READY_PLATFORM_SUBSTRATE=PASS")) failures.p
 if (!appsTarget.includes("apps/control-panel/src/features/<capability>")) failures.push("apps target missing app-owned surface feature placement");
 if (appsTarget.includes("DSH-specific presentation         → services/dsh/frontend")) failures.push("apps target still directs surface-specific DSH presentation into service frontend");
 if (!dshWltTarget.includes("Do not create `services/dsh/frontend/*` or `services/wlt/frontend/*`")) failures.push("DSH/WLT target missing service-frontend non-admission law");
+
+if (!prd.includes("app-owned surface-specific capability presentation")) failures.push("PRD does not encode app-owned surface-specific presentation");
+if (!composition.includes("SURFACE_SPECIFIC_FEATURE_UI → APP HOST")) failures.push("app/service composition governance missing canonical surface-specific UI owner");
+if (!platformControlTarget.includes("apps/control-panel/src/features/<capability>")) failures.push("Platform Control target does not route surface-specific feature UI to Control Panel app");
+if (platformControlTarget.includes("services/platform-control/frontend/<capability>")) failures.push("Platform Control target still contains service-owned feature presentation path");
 
 const canonicalControlPanelFeaturePath = "apps/control-panel/src/features/<capability>";
 const forbiddenControlPanelServicePath = "services/<owner>/frontend/<capability>/presentation/control-panel";
@@ -215,6 +239,26 @@ if (!agentRouter.includes("surface-specific feature UI belongs to the consuming 
 if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(repositoryReadme)) failures.push("README hard-codes temporary branch a as active repository state");
 if (/\ba\b.*active refoundation|active refoundation.*\ba\b/i.test(contributing)) failures.push("CONTRIBUTING hard-codes temporary branch a as active repository state");
 
+
+const lifecycleModules = [
+  "docs/platform-engineering-lifecycle/README.md",
+  "docs/platform-engineering-lifecycle/01-foundation-scope-and-donor.md",
+  "docs/platform-engineering-lifecycle/02-architecture-security-and-technical-foundation.md",
+  "docs/platform-engineering-lifecycle/03-identity-experience-and-journey-ready.md",
+  "docs/platform-engineering-lifecycle/04-integrations-finance-and-verification.md",
+  "docs/platform-engineering-lifecycle/05-build-release-and-operations.md",
+  "docs/platform-engineering-lifecycle/06-evidence-gates-and-templates.md",
+];
+for (const modulePath of lifecycleModules) {
+  if (!fs.existsSync(path.join(root, modulePath))) failures.push("missing modular lifecycle document: " + modulePath);
+}
+if (!lifecycleRouter.includes("former monolithic lifecycle guide has been losslessly decomposed")) failures.push("legacy lifecycle path is not a compact router");
+if (lifecycleRouter.split("\n").length > 80) failures.push("legacy lifecycle router has regrown into a monolith");
+if (!lifecycleIndex.includes("## Lifecycle module map")) failures.push("modular lifecycle README missing load-by-need map");
+for (const modulePath of lifecycleModules.slice(1)) {
+  const body = read(modulePath);
+  if (!body.includes("PARENT_GUIDE: docs/platform-engineering-lifecycle/README.md")) failures.push(modulePath + " missing parent-guide routing metadata");
+}
 
 const retiredPlanPath = "tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md";
 if (fs.existsSync(path.join(root, retiredPlanPath))) failures.push("temporary clean-reconstruction campaign plan remains in the live knowledge system");
