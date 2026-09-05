@@ -51,6 +51,7 @@ const rootFiles = new Set([
   "README.md",
   "SECURITY.md",
   "go.work",
+  "go.work.sum",
   "nx.json",
   "package.json",
   "pnpm-lock.yaml",

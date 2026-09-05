@@ -45,6 +45,7 @@ jobs:
             pnpm-lock.yaml
             nx.json
             go.work
+            go.work.sum
           )
 
           for path in "${required[@]}"; do
@@ -172,10 +173,10 @@ jobs:
         run: |
           set -euo pipefail
           go work sync
-          drift="$(git status --porcelain -- go.work services/*/backend)"
+          drift="$(git status --porcelain -- go.work go.work.sum services/*/backend)"
           if [[ -n "${drift}" ]]; then
             printf '%s\n' "${drift}"
-            git diff -- go.work services/*/backend || true
+            git diff -- go.work go.work.sum services/*/backend || true
             echo "::error::go work sync changed tracked or untracked Go workspace files"
             exit 1
           fi
