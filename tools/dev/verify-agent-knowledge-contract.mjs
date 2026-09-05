@@ -65,10 +65,10 @@ const cases = [
   },
   {
     id: "identity_public_auth_non_enumeration",
-    question: "May public activation reveal blocked/disabled actor state?",
+    question: "May public verification/authentication/activation unnecessarily reveal blocked or inadmissible actor state?",
     source: "governance/product/CAPABILITIES.md",
     mustInclude: [
-      "Public authentication/activation surfaces are non-enumerating",
+      "Public verification/authentication/activation surfaces are non-enumerating before the caller has proven the applicable identifier",
       "public_auth_state_enumeration",
     ],
   },
@@ -77,8 +77,36 @@ const cases = [
     question: "May the UI stay authenticated after local credentials are cleared because remote revoke failed?",
     source: "governance/product/CAPABILITIES.md",
     mustInclude: [
-      "Once local credentials/cookies are cleared, every consuming host must converge to `signed_out` even if remote revocation fails",
+      "Once local credentials/cookies are cleared, every consuming host converges to `signed_out` even if remote revocation fails",
       "local_logout_ui_divergence",
+    ],
+  },
+  {
+    id: "identity_customer_not_activation_login",
+    question: "May customer normal sign-in remain a recurring OTP activation flow?",
+    source: "governance/product/CAPABILITIES.md",
+    mustInclude: [
+      "Customer normal authentication is phone + customer password",
+      "customer_activation_login",
+    ],
+  },
+  {
+    id: "identity_managed_activation_is_one_time",
+    question: "May partner/captain/field ordinary login repeat managed activation?",
+    source: "governance/product/CAPABILITIES.md",
+    mustInclude: [
+      "one-time activation before their first role session",
+      "repeated_managed_activation",
+      "explicit governed recovery/re-enrollment path",
+    ],
+  },
+  {
+    id: "identity_operator_requires_mfa",
+    question: "May an operator session be created from password proof alone?",
+    source: "governance/product/CAPABILITIES.md",
+    mustInclude: [
+      "Operator normal access requires password plus a second authentication factor/challenge",
+      "operator_single_factor_session",
     ],
   },
   {
