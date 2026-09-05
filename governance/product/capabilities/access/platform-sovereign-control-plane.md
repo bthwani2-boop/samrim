@@ -19,7 +19,7 @@ This file is the **sole editable durable semantic owner** of `PLATFORM_SOVEREIGN
 **Problem severity.** critical
 **Target state.** Every supported platform-control operation is governed, persistent, observable, and reversible.
 **Primary success measure.** governed_platform_changes_and_rollouts_with_complete_readback
-**Guardrail measures.** unauthorized_exposure; role_overlap; direct_writes; stale_overwrite; health_gate_bypass; concurrent_rollout; missing_audit; rollback_without_snapshot; fake_truth
+**Guardrail measures.** unauthorized_exposure; role_overlap; direct_writes; stale_overwrite; health_gate_bypass; concurrent_rollout; missing_audit; rollback_without_snapshot; unknown_target_selector; consumer_application_unverified; fake_truth
 
 **Required outcome.** One persistent control plane provides truthful reads, separated duties, audited changes, health-gated progressive delivery, readback, and safe rollback.
 
@@ -36,6 +36,23 @@ This file is the **sole editable durable semantic owner** of `PLATFORM_SOVEREIGN
 - rollback requires a reason, preserves audit/history, and cannot overwrite a newer revision.
 
 **Boundary/non-overlap.** Platform-wide change-set, feature-flag, rollout, health-gate and rollback semantics are all subcapabilities of this one Platform Control semantic responsibility. No parallel `PLATFORM_CHANGE_SETS` Product owner exists.
+
+**Named subcapability — progressive rollout.** Progressive delivery remains an internal workflow of this capability and obeys all of the following:
+- targeting is explicit and governed; empty, unknown or unresolved target selectors fail closed and are never widened merely to make an operation succeed;
+- create/advance/resume/pause/abort/rollback are accepted only from states allowed by the canonical owner state machine and current revision;
+- pause preserves the current governed target, rollout step/percentage and revision unless a separately governed transition explicitly changes them;
+- a failed health gate blocks advance/resume and must not silently mutate feature/rollout state merely because the check failed;
+- abort/rollback restores the captured governed baseline only through optimistic/revision fencing and never overwrites a newer revision;
+- only one conflicting active rollout may own the same governed target/revision cone;
+- every transition preserves actor, reason/correlation, revision, gate evidence and audit history as applicable;
+- control-plane readback proves the owner state only. It is **not** proof that every intended consumer has applied the effective value; materially affected consumers require observable/effective readback before rollout success or recovery is claimed.
+
+~~~text
+CONTROL_PLANE_READBACK != EFFECTIVE_CONSUMER_APPLICATION
+EMPTY_OR_UNKNOWN_TARGET_SELECTOR = FAIL_CLOSED
+FAILED_HEALTH_GATE != SILENT_STATE_MUTATION
+ROLLBACK_MUST_NOT_OVERWRITE_NEWER_REVISION
+~~~
 
 **Material deployable surfaces.** control-panel.
 
@@ -61,7 +78,10 @@ This file is the **sole editable durable semantic owner** of `PLATFORM_SOVEREIGN
 - All displayed resources use live owner APIs.
 - Operator, approver, applier, and rollout manager are separated.
 - Change and rollout state machines persist readback.
-- Health and revision gates block unsafe progress.
+- Targeting is explicit and unresolved selectors fail closed.
+- Pause/abort/rollback preserve or restore the governed baseline/revision exactly as the owner state machine permits.
+- Health and revision gates block unsafe progress without silently rewriting rollout state.
+- Rollout completion/recovery proves effective behavior on materially affected consumers when consumer application is part of the claim.
 - Every transition is audited.
 - Routine and financial operations stay outside Platform.
 
