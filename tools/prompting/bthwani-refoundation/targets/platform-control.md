@@ -98,7 +98,7 @@ audit
 aggregated health/posture view
 ```
 
-Actual vendor invocation remains under domain-specific integrations as defined in `providers-and-integrations.md`.
+Actual vendor invocation remains under domain-specific integrations as defined by `governance/policies/providers-and-integrations.md`.
 
 Platform Control must never store raw provider credentials in general application tables or expose them through API/frontend/audit state.
 
