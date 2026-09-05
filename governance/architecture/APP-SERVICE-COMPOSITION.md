@@ -12,7 +12,16 @@ Apps do not own durable business, financial or authentication truth merely becau
 
 ## Service capability responsibility
 
-Services own stable capability semantics, business/system rules, canonical writers, durable state, service contracts/events, generated client lineage and reusable capability presentation where justified.
+Services own stable capability semantics, business/system rules, canonical writers, durable state, service contracts/events and generated/public client lineage.
+
+Surface-specific feature presentation is app-host responsibility by default. A host-neutral presentation abstraction may be extracted only after real multi-host reuse is proven, its owner is explicit, and it does not become a second business-truth authority or recreate app-shaped frontend trees inside a service.
+
+```text
+SURFACE_SPECIFIC_FEATURE_UI → APP HOST
+SERVICE → BUSINESS SEMANTICS + CONTRACT + CLIENT LINEAGE
+PREMATURE_SHARED_CAPABILITY_UI → FORBIDDEN
+REAL_PROVEN_HOST_NEUTRAL_REUSE → EXTRACT_TO_SMALLEST_JUSTIFIED_OWNER
+```
 
 ## Composition law
 
