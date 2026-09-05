@@ -47,6 +47,7 @@ services:
 
   identity:
     profiles: ["foundation"]
+    restart: unless-stopped
     build:
       context: ../../..
       dockerfile: services/identity/backend/Dockerfile
@@ -71,6 +72,7 @@ services:
 
   dsh:
     profiles: ["foundation"]
+    restart: unless-stopped
     build:
       context: ../../..
       dockerfile: services/dsh/backend/Dockerfile
@@ -81,6 +83,7 @@ services:
 
   wlt:
     profiles: ["foundation"]
+    restart: unless-stopped
     build:
       context: ../../..
       dockerfile: services/wlt/backend/Dockerfile
