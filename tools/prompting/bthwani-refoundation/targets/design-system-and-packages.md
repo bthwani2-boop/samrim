@@ -176,8 +176,11 @@ genuinely reusable admin/operator visual pattern
 Control Panel shell/navigation/composition
 → apps/control-panel
 
-service/domain-specific Control Panel presentation
-→ services/<owner>/frontend/<capability>/presentation/control-panel
+surface-specific Control Panel feature presentation
+→ apps/control-panel/src/features/<capability>
+
+explicitly proven host-neutral business-presentation abstraction
+→ admitted reusable package/service public presentation entrypoint only when it has multiple real host consumers and does not create an app-shaped service frontend
 ```
 
 Misleading domain-shaped frames with no domain semantics (for example a finance-named frame that is only generic layout) must be renamed/absorbed or deleted rather than preserving historical names.
