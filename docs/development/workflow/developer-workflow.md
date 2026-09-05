@@ -66,10 +66,10 @@ pnpm docs:verify:all
 pnpm knowledge:verify:all
 ```
 
-For the canonical Foundation runtime proof:
+For the canonical integration runtime proof:
 
 ```powershell
-pnpm foundation:runtime:close
+pnpm runtime:integration:close
 ```
 
 Use current `package.json` and repository scripts as command truth; this guide must not become a hand-maintained command registry.
