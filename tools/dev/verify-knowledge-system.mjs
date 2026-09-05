@@ -14,12 +14,17 @@ const prd = read("governance/product/PRD.md");
 const financialModel = read("governance/product/FINANCIAL-MODEL.md");
 const glossary = read("governance/project/GLOSSARY.md");
 const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md");
-const appsTarget = read("tools/prompting/bthwani-refoundation/targets/apps-and-composition.md");
-const dshWltTarget = read("tools/prompting/bthwani-refoundation/targets/dsh-wlt.md");
-const designTarget = read("tools/prompting/bthwani-refoundation/targets/design-system-and-packages.md");
 const cleanTargetProfile = read("tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md");
 const composition = read("governance/architecture/APP-SERVICE-COMPOSITION.md");
-const platformControlTarget = read("tools/prompting/bthwani-refoundation/targets/platform-control.md");
+const dataContracts = read("governance/architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md");
+const runtimeArchitecture = read("governance/architecture/RUNTIME-AND-CONFIGURATION.md");
+const foundationSubstrate = read("governance/architecture/FOUNDATION-AND-JOURNEY-READY-SUBSTRATE.md");
+const experienceDesign = read("governance/product/EXPERIENCE-AND-DESIGN.md");
+const providerPolicy = read("governance/policies/providers-and-integrations.md");
+const toolingPolicy = read("governance/policies/tooling-and-assurance.md");
+const documentationPolicy = read("governance/policies/documentation-and-knowledge.md");
+const deliveryPolicy = read("governance/policies/delivery.md");
+const dataPolicy = read("governance/policies/data-and-migrations.md");
 const lifecycleRouter = read("docs/development/platform-engineering-lifecycle.md");
 const lifecycleIndex = read("docs/platform-engineering-lifecycle/README.md");
 const agentRouter = read("AGENTS.md");
@@ -108,15 +113,6 @@ for (const { id, body } of sections) {
 }
 
 
-const refoundationTargetsDir = path.join(root, "tools/prompting/bthwani-refoundation/targets");
-for (const file of collectMarkdown(refoundationTargetsDir)) {
-  const body = fs.readFileSync(file, "utf8");
-  const rel = path.relative(root, file).split(path.sep).join("/");
-  if (!body.includes("TEMPORARY_TARGET_SPECIALIZATION: YES")) failures.push(rel + " temporary target module missing specialization header");
-  if (!body.includes("GENERAL_EXECUTION_AUTHORITY: NONE")) failures.push(rel + " target module missing execution non-authority marker");
-  if (!body.includes("DURABLE_AUTHORITY: NONE")) failures.push(rel + " target module missing durable non-authority marker");
-}
-
 const durableGovernanceDir = path.join(root, "governance");
 for (const file of collectMarkdown(durableGovernanceDir)) {
   const body = fs.readFileSync(file, "utf8");
@@ -202,12 +198,14 @@ for (const [normalized, occurrences] of orchestratorLawLines) {
     failures.push("cross-owner orchestrator law duplication outside shared protocol allowlist: " + normalized + " @ " + owners.join(", "));
   }
 }
-for (const file of collectMarkdown(refoundationDir)) {
-  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-    if (!isGeneralLawLike(line)) continue;
-    const normalized = normalizedLawLine(line);
-    if (orchestratorLawLines.has(normalized)) {
-      failures.push("general law duplicated in refoundation: " + line.trim() + " @ " + path.relative(root, file).split(path.sep).join("/"));
+if (fs.existsSync(refoundationDir)) {
+  for (const file of collectMarkdown(refoundationDir)) {
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+      if (!isGeneralLawLike(line)) continue;
+      const normalized = normalizedLawLine(line);
+      if (orchestratorLawLines.has(normalized)) {
+        failures.push("general law duplicated in legacy refoundation residue: " + line.trim() + " @ " + path.relative(root, file).split(path.sep).join("/"));
+      }
     }
   }
 }
@@ -270,33 +268,84 @@ for (const term of ["**Partner**", "**Internal Wallet**", "**Ledger**", "**Balan
   if (!glossary.includes(term)) failures.push("glossary missing canonical term: " + term);
 }
 
-if (!fixed.includes("BTHWANI_JOURNEY_READY_PLATFORM_SUBSTRATE=PASS")) failures.push("target fixed point missing journey-ready platform-substrate gate");
-if (!appsTarget.includes("apps/control-panel/src/features/<capability>")) failures.push("apps target missing app-owned surface feature placement");
-if (appsTarget.includes("DSH-specific presentation         → services/dsh/frontend")) failures.push("apps target still directs surface-specific DSH presentation into service frontend");
-if (!dshWltTarget.includes("Do not create `services/dsh/frontend/*` or `services/wlt/frontend/*`")) failures.push("DSH/WLT target missing service-frontend non-admission law");
+if (!fixed.includes("BTHWANI_JOURNEY_READY_PLATFORM_SUBSTRATE=PASS")) failures.push("target qualification checklist missing journey-ready platform-substrate gate");
 
 if (!prd.includes("app-owned surface-specific capability presentation")) failures.push("PRD does not encode app-owned surface-specific presentation");
 if (!composition.includes("SURFACE_SPECIFIC_FEATURE_UI → APP HOST")) failures.push("app/service composition governance missing canonical surface-specific UI owner");
-if (!platformControlTarget.includes("apps/control-panel/src/features/<capability>")) failures.push("Platform Control target does not route surface-specific feature UI to Control Panel app");
-if (platformControlTarget.includes("services/platform-control/frontend/<capability>")) failures.push("Platform Control target still contains service-owned feature presentation path");
+if (!topology.includes("Surface-specific presentation belongs to app hosts")) failures.push("repository topology does not route surface-specific presentation to app hosts");
+if (/services\/<owner>\/frontend\/<capability>\/presentation\/control-panel/i.test(composition)) failures.push("composition governance contains forbidden service-owned Control Panel feature path");
 
-const canonicalControlPanelFeaturePath = "apps/control-panel/src/features/<capability>";
-const forbiddenControlPanelServicePath = "services/<owner>/frontend/<capability>/presentation/control-panel";
-if (!designTarget.includes(canonicalControlPanelFeaturePath)) failures.push("design-system target does not route surface-specific Control Panel feature UI to the app host");
-if (designTarget.includes(forbiddenControlPanelServicePath)) failures.push("design-system target still routes Control Panel feature UI into a service-owned frontend tree");
-if (!appsTarget.includes(canonicalControlPanelFeaturePath) || !dshWltTarget.includes(canonicalControlPanelFeaturePath)) {
-  failures.push("Control Panel feature UI placement is not aligned across app/composition and DSH/WLT target owners");
+for (const token of [
+  "JOURNEY_READY",
+  "DEPLOYABLE_HOST_SHELLS         = PASS",
+  "DATA_OWNER_ISOLATION           = PASS",
+  "STANDARD_MIGRATION_LINEAGE     = PASS",
+  "CANONICAL_CONTRACT_GENERATION  = PASS",
+  "DESIGN/RTL/A11Y_FOUNDATION     = PASS",
+  "PREMATURE_BUSINESS_FURNISHING  = 0",
+]) {
+  if (!foundationSubstrate.includes(token)) failures.push("journey-ready substrate governance missing token: " + token);
 }
 
-const surfacePlacementDeclarations = [
-  ["apps target", appsTarget],
-  ["DSH/WLT target", dshWltTarget],
-  ["design-system target", designTarget],
-];
-for (const [label, body] of surfacePlacementDeclarations) {
-  if (/→\s*services\/<owner>\/frontend\/<capability>\/presentation\/control-panel/i.test(body)) {
-    failures.push(label + " contains forbidden service-owned Control Panel presentation mapping");
-  }
+for (const token of [
+  "REPOSITORY_PATH_CHANGE != DEPLOYABLE_IDENTITY_CHANGE",
+  "DEPLOYABLE_IDENTITY_CHANGE → EXPLICIT_MIGRATION",
+]) {
+  if (!deliveryPolicy.includes(token)) failures.push("delivery policy missing deployable-identity invariant: " + token);
+}
+
+for (const token of [
+  "ONE_DATA_OWNER",
+  "ONE_CANONICAL_MIGRATION_HISTORY",
+  "one globally ordered canonical migration lane",
+]) {
+  if (!dataPolicy.includes(token)) failures.push("data policy missing migration-authority invariant: " + token);
+}
+
+for (const token of [
+  "REPOSITORY-WIDE API DISCOVERY INDEX → generated/derived or absent",
+  "DETERMINISTIC GENERATION",
+  "DRIFT CHECK",
+]) {
+  if (!dataContracts.includes(token)) failures.push("data/contracts governance missing generation/catalog invariant: " + token);
+}
+
+for (const token of [
+  "INFRA BINDS/COMPOSES VALUES",
+  "SERVICE-SPECIFIC PROVIDER SIMULATOR",
+]) {
+  if (!runtimeArchitecture.includes(token)) failures.push("runtime architecture missing infra/simulator ownership token: " + token);
+}
+
+for (const token of [
+  "PREBUILD FULL DOMAIN COMPONENT CATALOG = FORBIDDEN",
+  "REPOSITORY_WIDE_GENERIC_LOCALES_AUTHORITY = FORBIDDEN",
+]) {
+  if (!experienceDesign.includes(token)) failures.push("experience/design governance missing design-system admission token: " + token);
+}
+
+for (const token of [
+  "GENERIC_PROVIDER_GOD_SERVICE=0",
+  "BLIND_FALLBACK_ON_UNKNOWN_MUTATION=0",
+  "WEBHOOK_TRUST/REPLAY/IDEMPOTENCY=PASS_WHEN_APPLICABLE",
+]) {
+  if (!providerPolicy.includes(token)) failures.push("provider/integration policy missing closure token: " + token);
+}
+
+for (const token of [
+  "TOOLS_PRODUCT_AUTHORITY=0",
+  "GUARDS_ENFORCING_LOSING_TOPOLOGY=0",
+  "TOOLS_ARE_EVIDENCE_PRODUCERS_ONLY=PASS",
+]) {
+  if (!toolingPolicy.includes(token)) failures.push("tooling/assurance policy missing closure token: " + token);
+}
+
+for (const token of [
+  "DOCS_PARALLEL_AUTHORITY=0",
+  "KNOWLEDGE_FALSE_GREEN=0",
+  "AGENT_AMBIGUITY=0",
+]) {
+  if (!documentationPolicy.includes(token)) failures.push("documentation/knowledge policy missing closure token: " + token);
 }
 
 
