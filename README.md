@@ -21,6 +21,6 @@ Durable documentation must not hard-code a temporary campaign branch as the perm
 
 ## Secrets
 
-Secret values, signing keys, provider credentials and machine-local bindings are external to Git. Local tooling resolves the external vault through `BTHWANI_SECRETS_ROOT`.
+Secret values, signing keys, provider credentials and machine-local bindings are external to Git. The exact secret source/binding is environment- and deployment-specific; live executable configuration is the authority for what is actually supported.
 
 Do not commit credentials, Firebase service files, signing files, real `.env` files, tokens, or private keys.
