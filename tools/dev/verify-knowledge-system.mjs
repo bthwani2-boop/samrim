@@ -356,6 +356,15 @@ if (!orchestrator.includes("AUTO_EXPAND_BEYOND_AUTHORIZED_PRODUCT_SCOPE=FORBIDDE
 if (!orchestrator.includes("BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE")) failures.push("orchestrator missing active-slice Level-4 terminal token");
 
 if (!orchestrator.includes("## 6A. Context-loading protocol")) failures.push("orchestrator missing staged context-loading protocol");
+for (const token of [
+  "EXECUTION_LAW_PACKAGE_SELF_CONTAINED: YES",
+  "PRODUCT_SEMANTIC_AUTHORITY: NONE",
+  "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
+  "DONOR_TOPOLOGY_AUTHORITY: NONE",
+]) {
+  if (!orchestrator.includes(token)) failures.push("orchestrator missing authority-class metadata: " + token);
+}
+if (orchestrator.includes("PACKAGE_SELF_CONTAINED: YES")) failures.push("orchestrator uses ambiguous package self-contained metadata");
 if (orchestrator.includes("Then load `00` through `05`")) failures.push("orchestrator still requires unconditional preload of all 00-05 modules");
 const orchestratorLoadTriggers = new Map([
   ["tools/prompting/bthwani-orchestrator/01-SCOPE-AUTHORITY-RULES.md", "LOAD_TRIGGER: ENTRY_RESUME_SCOPE_AUTHORITY_BEFORE_BRANCH_OR_SCOPE_ACTION"],
