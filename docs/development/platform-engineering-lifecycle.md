@@ -145,7 +145,7 @@ Then implement the new slice and re-run every prior proof invalidated by shared 
 13. **Do not create framework/registry/event-bus/cache/service complexity before a concrete requirement proves it.**
 14. **Parallel development is allowed; partial horizontal closure is not.** Independent journeys may proceed concurrently only when worksets, ownership, migration, integration, and verification boundaries are explicit. Each claimed outcome still closes as a complete vertical unit.
 
-## 4. Reference baseline
+## 5. Reference baseline
 
 Use context-appropriate standards rather than inventing a private assurance system.
 
