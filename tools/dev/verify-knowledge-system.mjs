@@ -156,7 +156,7 @@ for (const file of collectMarkdown(durableGovernanceDir)) {
   if (/services\/workforce|core\/workforce|workforce-service|Workforce owns/i.test(body)) {
     failures.push("retired current Workforce-service authority residue in durable Governance: " + rel);
   }
-  if (/service-owned capability presentation/i.test(body)) {
+  if (/service-owned capability presentation|service-owned presentation where justified/i.test(body)) {
     failures.push("ambiguous service-owned surface presentation wording in durable Governance: " + rel);
   }
   if (/services\/[^\s/]+\/frontend\//i.test(body)) {
