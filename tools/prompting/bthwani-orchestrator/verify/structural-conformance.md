@@ -36,7 +36,7 @@ This is not a global repository admission gate.
 
 ## 3. Structural-substrate conformance
 
-When `profiles/structural-substrate.md` was activated, verify the materially applicable affected cone:
+When `../profiles/structural-substrate.md` was activated, verify the materially applicable affected cone:
 
 ~~~text
 CANONICAL OWNER/PATH = PASS
