@@ -1,5 +1,13 @@
 # Security Policy
 
+DOCUMENT_CLASS: SECURITY_REPORTING_AND_SECRET_HANDLING_GUIDANCE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_AUTHORITY: NONE
+
+## Authority boundary
+
+This file owns vulnerability-reporting and repository secret-handling guidance only. Durable application/security engineering requirements are owned by `governance/policies/security.md`; current implementation/security state is proven from executable source, configuration, runtime and evidence.
+
 ## Reporting a vulnerability
 
 Do not report security vulnerabilities, credentials, tokens, private keys, personal data, or exploit details in public issues or pull requests.
