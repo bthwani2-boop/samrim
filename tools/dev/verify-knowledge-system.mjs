@@ -12,6 +12,7 @@ const topology = read("governance/architecture/REPOSITORY-TOPOLOGY.md");
 const governanceIndex = read("governance/GOVERNANCE.md");
 const campaignPlan = read("tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md");
 const prd = read("governance/product/PRD.md");
+const financialModel = read("governance/product/FINANCIAL-MODEL.md");
 const glossary = read("governance/project/GLOSSARY.md");
 const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md");
 const appsTarget = read("tools/prompting/bthwani-refoundation/targets/apps-and-composition.md");
@@ -161,6 +162,10 @@ if (!orchestrator.includes("BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE")) fai
 if (!prd.includes("## 1B. Target Product vision versus delivery breadth")) failures.push("PRD missing target-vs-active Product breadth law");
 if (prd.includes("The current operational fulfillment-policy modes are")) failures.push("PRD still treats every target fulfillment mode as current operational scope");
 if (!prd.includes("The target supported fulfillment-policy modes are")) failures.push("PRD missing target fulfillment-mode semantics");
+if (!journeys.includes("## Target journey envelope versus active increment")) failures.push("journey governance missing target-envelope versus active-increment law");
+if (!journeys.includes("TARGET_JOURNEY_ENVELOPE != ACTIVE_JOURNEY_INCREMENT")) failures.push("journey governance missing no-auto-expansion invariant");
+if (!financialModel.includes("## Financial breadth activation law")) failures.push("financial governance missing incremental breadth activation law");
+if (!financialModel.includes("REAL_FINANCIAL_EFFECT_CREATED_BY_ACTIVE_SLICE = CURRENT_WLT_OBLIGATION")) failures.push("financial governance can defer an already-created financial effect");
 
 for (const term of ["**Partner**", "**Internal Wallet**", "**Ledger**", "**Balance**", "**External Financial Rail / External Wallet Provider**"]) {
   if (!glossary.includes(term)) failures.push("glossary missing canonical term: " + term);
