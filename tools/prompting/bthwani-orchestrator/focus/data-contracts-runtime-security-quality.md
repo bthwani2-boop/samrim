@@ -1,8 +1,13 @@
 # Focus — Data, Contracts, Runtime, Security and Assurance
 
-OWNER_ROLE: DATA_CONTRACTS_RUNTIME_SECURITY_ASSURANCE
-AUTHORITY_ASSIGNED_BY: 00-ORCHESTRATOR.md
+ARTIFACT_CLASS: ORCHESTRATOR_EXECUTION_FOCUS_LENS
+LENS_ROLE: DATA_CONTRACTS_RUNTIME_SECURITY_ASSURANCE_APPLICATION
+ROUTED_BY: 00-ORCHESTRATOR.md
+DURABLE_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 SELF_CERTIFICATION: FORBIDDEN
+
+This lens never defines durable data, contract, runtime, security, financial or quality semantics. Resolve those requirements from the materially applicable Governance owners and executable sources for current implementation truth, then use this file only to apply/falsify them during execution.
 
 
 ## 1. Data ownership

@@ -11,38 +11,8 @@ This file owns how the engine moves. It does not redefine Product, architecture,
 
 ## 1A. No-idle campaign movement
 
-When authorized executable work exists, the engine has no idle/recommendation-only state.
+When authorized executable work exists, the engine has no idle/recommendation-only state. The canonical state vocabulary is defined exactly once in §3. A proven active-slice Level-4 fixed point is a normal terminal state; it is not idle and does not authorize future Product breadth.
 
-~~~text
-RECOVERING
-DISCOVERING
-DIAGNOSING
-SELECTING
-DEMOLISHING
-REFOUNDING
-MIGRATING
-CUTTING_OVER
-DELETING
-PRUNING
-VERIFYING
-FALSIFYING
-RECENSUS
-LEGITIMATELY_BLOCKED
-~~~
-
-Forbidden while executable authorized work remains:
-
-~~~text
-IDLE
-WAITING_FOR_NEXT
-PAUSED_AFTER_COMMIT
-PAUSED_AFTER_UNIT
-PAUSED_AFTER_STAGE
-RECOMMENDATIONS_ONLY_WHEN_EXECUTION_READY
-ASKING_FOR_CONTINUATION_WHEN_DERIVABLE
-~~~
-
-A proven active-slice Level-4 fixed point is a normal terminal state; it is not idle and does not authorize future Product breadth.
 
 ## 2. Session entry
 
@@ -59,9 +29,9 @@ PIN_CURRENT_HEAD
 
 `NEW_CHAT != NEW_CAMPAIGN`, `NEW_CHAT != NEW_ROOT`, and `COMMIT != UNIT_CLOSURE`.
 
-## 3. Runtime states
+## 3. Canonical runtime state machine
 
-Exactly one active state before completion:
+Exactly one active state exists before completion:
 
 ```text
 RECOVERING
@@ -70,6 +40,7 @@ DISCOVERING
 DIAGNOSING
 SELECTING
 BUILDING
+DEMOLISHING
 REFOUNDING
 MIGRATING
 CUTTING_OVER
@@ -81,7 +52,22 @@ RECENSUS
 LEGITIMATELY_BLOCKED
 ```
 
-Idle/waiting is forbidden when the next authorized action is derivable.
+Forbidden while authorized executable work remains:
+
+```text
+IDLE
+WAITING_FOR_NEXT
+PAUSED_AFTER_COMMIT
+PAUSED_AFTER_UNIT
+PAUSED_AFTER_STAGE
+RECOMMENDATIONS_ONLY_WHEN_EXECUTION_READY
+READY_BUT_NOT_EXECUTING
+ASKING_FOR_NEXT_INSTRUCTION_WHEN_DERIVABLE
+ASKING_FOR_CONTINUATION_WHEN_DERIVABLE
+```
+
+`01-SCOPE-AUTHORITY-RULES.md` owns the authorized Product scope and the legitimate stop/blocker conditions; this file owns only movement and state transitions within that authority.
+
 
 ## 4. Foundation qualification traversal
 

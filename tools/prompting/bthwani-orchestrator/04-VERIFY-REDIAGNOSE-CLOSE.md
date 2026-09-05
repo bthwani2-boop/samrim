@@ -299,45 +299,27 @@ UNACCOUNTED_FAILURE_UNKNOWN_RECOVERY_SEMANTICS=0
 
 Only fresh evidence may set these to zero.
 
-## 8. Unit closure is a transition, not a stop
+## 8. Unit-closure output interface
 
-When a unit closes, verification must emit the next required control transition:
+This owner decides whether the exact candidate satisfies the applicable unit-closure claims. On success it emits the protocol token:
 
 ```text
 UNIT_CLOSED
-→ RE_PIN_REQUIRED
-→ RE_CENSUS_REQUIRED
-→ RE_DIAGNOSE_REQUIRED
-→ RE_RANK_REQUIRED
-→ NEXT_AUTHORIZED_UNIT_SELECTION_REQUIRED
-→ EXECUTION_REQUIRED_IF_AUTHORIZED_WORK_REMAINS
-→ OTHERWISE AUTHORIZED_SCOPE_FIXED_POINT_VERIFICATION_REQUIRED
 ```
 
-A closure result that omits continuation while authorized work remains is incomplete. Conversely, activation of a new future Product slice merely to avoid stopping is an orchestration defect.
+It does not redefine the continuation sequence. `05-EXECUTION-PLAYBOOK.md` consumes `UNIT_CLOSED` and owns re-pin/re-census/re-diagnosis/re-ranking/next movement; `01-SCOPE-AUTHORITY-RULES.md` owns whether a legitimate stop condition applies.
 
-## 9. Checkpoint legality
 
-A checkpoint is valid only as a recovery point.
+## 9. Checkpoint evidence boundary
 
-It must preserve enough state to reconstruct:
+A checkpoint is not completion evidence by existing. Verification may record the exact candidate/evidence state needed for later recovery, but checkpoint movement and continuation belong to `05`, while legal stop authority belongs to `01`.
 
 ```text
-CURRENT_STAGE
-CURRENT_UNIT
-UNIT_STATE
-RECOVERY_FRONTIER
-MIGRATION_CUTOVER_STATE
-LOSER_DELETION_STATE
-NEXT_REQUIRED_ACTION
+CHECKPOINT != UNIT_CLOSED
+CHECKPOINT != AUTHORIZED_SCOPE_FIXED_POINT
+CHECKPOINT != PERMISSION_TO_STOP
 ```
 
-A checkpoint is never a normal stopping justification.
-
-```text
-CHECKPOINT + NO_BLOCKER + REMAINING_EXECUTABLE_WORK
-=> MUST_CONTINUE
-```
 
 ## 9A. Foundation Construction exit gate
 

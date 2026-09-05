@@ -117,6 +117,8 @@ PRESERVE PROVEN DEPLOYABLE/TECHNICAL IDENTITY AND REQUIRED NON-SEMANTIC SUBSTRAT
 
 The Foundation Construction exit gate is owned by `04-VERIFY-REDIAGNOSE-CLOSE.md`; procedural traversal is owned by `05-EXECUTION-PLAYBOOK.md`.
 
+`FOUNDATION_CONSTRUCTION_EXIT_GATE` proves only `STRUCTURAL_FOUNDATION_READY`: non-semantic substrate readiness for Stage B. It never proves `PROTECTED_JOURNEY_READY`, Identity, or any business capability. Protected Journey-Ready is reached only after materially required prerequisite capabilities are closed vertically during Stage B according to Governance.
+
 ## 3B. Product-breadth authorization and vertical-increment law
 
 
@@ -134,9 +136,9 @@ Continuous movement, automatic continuation and fixed-point traversal are owned 
 
 The no-idle state machine and prohibited waiting/recommendation states are owned by `05-EXECUTION-PLAYBOOK.md`. `00` does not duplicate that state list.
 
-## 6. Canonical package ownership
+## 6. Canonical execution-law ownership
 
-Exactly nine semantic owners exist:
+Exactly nine Orchestrator execution-law modules/focus lenses exist:
 
 1. `00-ORCHESTRATOR.md` — supreme mission, campaign-stage constitution, foundation-construction admission, invocation/routing, anti-weakening and clean-target mode.
 2. `01-SCOPE-AUTHORITY-RULES.md` — branch/donor authority, Product breadth, foundation survival, Git-history/current-head law, recovery/concurrency, legal stop states, deferral and preemption.
@@ -144,11 +146,17 @@ Exactly nine semantic owners exist:
 4. `03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md` — A1/Stage-B mutation, patch-vs-demolish, migration/cutover, eager deletion/pruning and execution safety.
 5. `04-VERIFY-REDIAGNOSE-CLOSE.md` — A2/evidence/falsification, finding terminality, capability/increment closure, exact-candidate recensus and all terminal Level-4 claims.
 6. `05-EXECUTION-PLAYBOOK.md` — no-idle procedural state machine, session traversal, automatic continuation, checkpoint transition, preemption and fixed-point movement.
-7. `focus/code-architecture-organization.md` — architecture/topology/semantic containers/naming/path/file/package/service ownership.
-8. `focus/governance-product-design.md` — product/system truth, actors, journeys, UX and end-to-end meaning.
-9. `focus/data-contracts-runtime-security-quality.md` — database/migrations/contracts/generated/runtime/config/security/finance/tests/CI/dependencies/assurance.
+7. `focus/code-architecture-organization.md` — execution lens for applying canonical architecture/topology/placement owners during diagnosis, mutation and verification.
+8. `focus/governance-product-design.md` — execution lens for resolving Product/System/actor/journey/UX meaning from applicable Governance owners and applying it end-to-end; it owns no durable Product semantics.
+9. `focus/data-contracts-runtime-security-quality.md` — execution lens for applying canonical data/contracts/runtime/security/finance/quality owners and evidence requirements; it owns no durable domain semantics.
 
-One material law has one owner. No helper, plan, agent adapter or governance file may create a weaker competing variant.
+One material execution law has one Orchestrator owner. Focus lenses may apply that law and Governance meaning but may not redefine either. No helper, plan, agent adapter or governance file may create a weaker competing execution variant.
+
+```text
+FOCUS_LENS != DURABLE_SEMANTIC_OWNER
+FOCUS_LENS_PRODUCT_SEMANTIC_AUTHORITY=NONE
+FOCUS_LENS_ARCHITECTURE_SEMANTIC_AUTHORITY=NONE
+```
 
 Cross-owner repetition is allowed only for a **protocol interface token** that must be emitted by one owner and consumed/verified by another (for example a transition arrow, finding terminal class or evidence-state identifier). Repeating explanatory/normative law text in multiple owners is forbidden.
 
@@ -170,15 +178,15 @@ ENTRY / RESUME
 
 DIAGNOSE / SELECT ROOT
 → 02
-→ applicable focus/* owner(s)
+→ applicable focus/* lens(es)
 
 MUTATE / REFOUND / MIGRATE / CUT OVER / DELETE
 → 03
-→ applicable focus/* owner(s)
+→ applicable focus/* lens(es)
 
 VERIFY / FALSIFY / RECENSUS / CLOSE
 → 04
-→ applicable focus/* owner(s)
+→ applicable focus/* lens(es)
 ~~~
 
 A module must be loaded before any action whose law it owns. Conditional loading reduces irrelevant context; it never weakens or bypasses an owner. If a task crosses phases, load the next owner before crossing that phase boundary.
@@ -200,7 +208,7 @@ REPOSITORY: <target repository>
 BRANCH: <target working branch>
 MODE: CANONICAL_PLATFORM_BUILD
 OBJECTIVE: AUTO/NEXT | <semantic outcome>
-PRIMARY_FOCUS: AUTO | <focus owner>
+PRIMARY_FOCUS: AUTO | <focus lens>
 RESEARCH: AUTO | INTERNAL_ONLY | EXTERNAL_ALLOWED
 PRODUCT_BREADTH: ACTIVE_SLICE | FULL_TARGET
 ACTIVE_PRODUCT_SLICE: AUTO/CURRENT | <named semantic increment> | ALL
@@ -269,7 +277,7 @@ A2 evidence, negative-space falsification and structural-exit gates are owned by
 ## 15. Stage B — vertical capability build/refoundation
 
 
-Stage-B mutation/cutover is owned by `03`; semantic Product/UX meaning by applicable Governance/focus owners; closure by `04`; traversal by `05`.
+Stage-B mutation/cutover is owned by `03`; semantic Product/UX meaning comes only from applicable Governance owners/current explicit human decisions; focus lenses apply that meaning without owning it; closure is owned by `04`; traversal by `05`.
 
 The execution unit is the highest causally correct authorized semantic capability or explicit vertical increment, not an isolated backend/frontend/file layer. Stage B never auto-activates deferred target breadth.
 

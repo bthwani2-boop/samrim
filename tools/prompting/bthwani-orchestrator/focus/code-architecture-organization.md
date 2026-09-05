@@ -1,8 +1,13 @@
 # Focus — Code, Architecture and Repository Organization
 
-OWNER_ROLE: CODE_ARCHITECTURE_REPOSITORY_ORGANIZATION
-AUTHORITY_ASSIGNED_BY: 00-ORCHESTRATOR.md
+ARTIFACT_CLASS: ORCHESTRATOR_EXECUTION_FOCUS_LENS
+LENS_ROLE: CODE_ARCHITECTURE_REPOSITORY_ORGANIZATION_APPLICATION
+ROUTED_BY: 00-ORCHESTRATOR.md
+DURABLE_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 SELF_CERTIFICATION: FORBIDDEN
+
+This lens never defines durable BThwani architecture/topology ownership. Resolve durable architecture and placement meaning from the materially applicable `governance/architecture/**` and `governance/policies/**` owners, then use this file only to apply/falsify those owners during execution.
 
 
 ## 1. Structural target

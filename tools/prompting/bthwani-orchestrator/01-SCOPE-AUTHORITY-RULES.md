@@ -194,39 +194,12 @@ STAGE_TRANSITION != CAMPAIGN_PAUSE
 CHECKPOINT != NATURAL_STOP
 ```
 
-## 8. Legal runtime states — no idle state
+## 8. Runtime-state authorization boundary
 
-Before final completion the campaign must be in exactly one actionable state:
+`05-EXECUTION-PLAYBOOK.md` is the sole owner of the exact runtime-state vocabulary and no-idle movement state machine. This file does not maintain a second state list.
 
-```text
-RECOVERING
-DISCOVERING
-DIAGNOSING
-SELECTING
-DEMOLISHING
-REFOUNDING
-MIGRATING
-CUTTING_OVER
-DELETING
-PRUNING
-VERIFYING
-FALSIFYING
-RECENSUS
-LEGITIMATELY_BLOCKED
-```
+This owner decides only whether the current authorized scope may continue or whether a legitimate stop condition in §12 blocks safe forward execution. Any state emitted by `05` must remain inside the invocation's authorized Product scope and obey those stop conditions.
 
-Forbidden pre-completion states:
-
-```text
-IDLE
-WAITING_FOR_NEXT
-PAUSED_AFTER_COMMIT
-PAUSED_AFTER_UNIT
-PAUSED_AFTER_STAGE
-RECOMMENDATIONS_ONLY
-READY_BUT_NOT_EXECUTING
-ASKING_FOR_NEXT_INSTRUCTION_WHEN_DERIVABLE
-```
 
 ## 9. Mandatory ephemeral execution control state
 
@@ -276,23 +249,18 @@ OPEN_SAFE_CHECKPOINT
 
 A checkpoint exists only so execution can recover if forcibly interrupted.
 
-## 11. Automatic continuation after unit closure
+## 11. Continuation authorization after unit closure
 
-When a unit closes:
+When verification emits a closed-unit result, `05-EXECUTION-PLAYBOOK.md` owns the post-closure movement sequence. This file contributes only scope authorization:
 
 ```text
-RE_PIN_CURRENT_BRANCH
-→ RE_CENSUS_INVALIDATED_CONE
-→ RE_DIAGNOSE
-→ RE_RANK
-→ SELECT_NEXT_HIGHEST_AUTHORIZED_EXECUTABLE_UNIT_IF_ANY
-→ EXECUTE_IMMEDIATELY_IF_ONE_EXISTS
-→ OTHERWISE_VERIFY_AUTHORIZED_SCOPE_FIXED_POINT
+NEXT_FRONTIER_INSIDE_AUTHORIZED_PRODUCT_SCOPE → MAY_CONTINUE
+CAUSAL_PREREQUISITE_OR_REGRESSION_INSIDE_AFFECTED_CONE → MAY_CONTINUE
+ADJACENT_FUTURE_PRODUCT_SLICE → NOT_AUTHORIZED_BY_CONTINUATION
 ```
 
-Do not wait for `NEXT`, `CONTINUE`, confirmation or another human prompt while executable work remains **inside the already authorized Product scope**.
+No human confirmation is required for derivable work already authorized by the invocation. Activating a new future Product slice still requires explicit authorization.
 
-If a newly exposed causal prerequisite/regression obligation is higher, absorb or promote it under the current authorized campaign graph and continue. A merely adjacent future capability is not authorized work.
 
 ## 12. Stop states
 

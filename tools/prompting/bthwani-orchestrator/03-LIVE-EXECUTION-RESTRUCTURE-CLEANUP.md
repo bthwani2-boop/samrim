@@ -223,44 +223,22 @@ SALVAGE_REQUIRED_TRUTH
 
 Do not stop after any intermediate step when the next step is safely derivable.
 
-## 10. Commits are recovery checkpoints only
+## 10. Mutation checkpoint boundary
 
-A commit exists to preserve a coherent recoverable state, not to divide the campaign into separate tasks.
+A commit created during mutation is a coherent recovery checkpoint only. This owner ensures the mutation state is recoverable and does not knowingly strand an unsafe partial authority/cutover. Post-commit movement, re-pin, re-census and continuation are owned by `05-EXECUTION-PLAYBOOK.md`.
 
-After every commit:
 
-```text
-VERIFY_REMOTE_CURRENT_BRANCH
-→ RE_PIN
-→ RECONCILE_ANY_HEAD_MOVEMENT
-→ RESUME_SAME_UNIT_FROM_NEXT_REQUIRED_ACTION
-```
+## 11. Mutation-owner terminal interface
 
-Forbidden:
+This file never declares semantic unit closure or selects the next unit. When the canonical mutation/cutover/cleanup work for the active unit is ready for proof, it emits only:
 
 ```text
-COMMIT_THEN_WAIT
-COMMIT_THEN_ASK_CONTINUE
-COMMIT_THEN_SELECT_UNRELATED_WORK
-COMMIT_THEN_DECLARE_PROGRESS_AS_COMPLETION
+MUTATION_READY_FOR_VERIFICATION
+→ 04-VERIFY-REDIAGNOSE-CLOSE.md
 ```
 
-## 11. Unit closure automatically launches the next frontier
+If verification closes the unit, `05-EXECUTION-PLAYBOOK.md` owns all continuation mechanics.
 
-When the active unit passes closure:
-
-```text
-RE_PIN_CURRENT_HEAD
-→ REFRESH_CENSUS
-→ INVALIDATE_AFFECTED_EVIDENCE
-→ RE_SYNTHESIZE_CURRENT_STAGE_GRAPH
-→ RE_RANK
-→ SELECT_NEXT_HIGHEST_AUTHORIZED_EXECUTABLE_UNIT_IF_ANY
-→ EXECUTE_IMMEDIATELY_IF_ONE_EXISTS
-→ OTHERWISE HAND_OFF_TO_AUTHORIZED_SCOPE_FIXED_POINT_VERIFICATION
-```
-
-No user `NEXT` is required while authorized work remains. A new future Product slice is not activated by this transition.
 
 ## 12. Checkpoint law
 

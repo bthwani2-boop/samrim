@@ -1,8 +1,13 @@
 # Focus — Product, End-to-End Design and Governance Truth
 
-OWNER_ROLE: PRODUCT_JOURNEY_EXPERIENCE_GOVERNANCE
-AUTHORITY_ASSIGNED_BY: 00-ORCHESTRATOR.md
+ARTIFACT_CLASS: ORCHESTRATOR_EXECUTION_FOCUS_LENS
+LENS_ROLE: PRODUCT_JOURNEY_EXPERIENCE_GOVERNANCE_APPLICATION
+ROUTED_BY: 00-ORCHESTRATOR.md
+DURABLE_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 SELF_CERTIFICATION: FORBIDDEN
+
+This lens never defines BThwani Product/System/actor/journey/UX meaning. Resolve that meaning from current explicit human decisions and the materially applicable `governance/**` semantic owners, then use this file only to apply/falsify that meaning during execution.
 
 
 ## 1. Product/System truth is required value, not inherited implementation
