@@ -77,11 +77,14 @@ export default function Home() {
     setError("");
     try {
       const response = await fetch("/api/auth/logout", { method: "POST" });
+      // The BFF clears local HttpOnly credentials before reporting any remote
+      // revocation error. Converge the surface to signed_out for every BFF
+      // response, then report a remote failure without resurrecting auth UI.
+      setView({ kind: "signed_out" });
       if (!response.ok) {
         setError(await responseMessage(response));
         return;
       }
-      setView({ kind: "signed_out" });
     } catch {
       setError("تعذر إنهاء الجلسة على الخادم.");
     } finally {

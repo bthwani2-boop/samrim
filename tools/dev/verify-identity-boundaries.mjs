@@ -104,6 +104,35 @@ for (const route of ["login", "session", "logout"]) {
   requireText("apps/control-panel/app/api/auth/" + route + "/route.ts", "identity-bff");
 }
 
+const controlPage = read("apps/control-panel/app/page.tsx");
+const controlLogoutStart = controlPage.indexOf("async function logout()");
+const controlLogoutEnd = controlPage.indexOf("\n  if (view.kind", controlLogoutStart);
+const controlLogoutBody = controlLogoutStart >= 0
+  ? controlPage.slice(controlLogoutStart, controlLogoutEnd >= 0 ? controlLogoutEnd : controlPage.length)
+  : "";
+const controlLogoutFetch = controlLogoutBody.indexOf('fetch("/api/auth/logout"');
+const controlSignedOutTransition = controlLogoutBody.indexOf('setView({ kind: "signed_out" });');
+const controlFailedResponseBranch = controlLogoutBody.indexOf("if (!response.ok)");
+if (
+  controlLogoutFetch < 0 ||
+  controlSignedOutTransition < 0 ||
+  controlFailedResponseBranch < 0 ||
+  !(controlLogoutFetch < controlSignedOutTransition && controlSignedOutTransition < controlFailedResponseBranch)
+) {
+  failures.push(
+    "control-panel logout must converge to signed_out after the BFF response before reporting remote revocation failure",
+  );
+}
+
+const bffLogoutStart = bff.indexOf("export async function logoutOperator()");
+const bffLogoutEnd = bff.indexOf("\nexport function identityHttpStatus", bffLogoutStart);
+const bffLogoutBody = bffLogoutStart >= 0
+  ? bff.slice(bffLogoutStart, bffLogoutEnd >= 0 ? bffLogoutEnd : bff.length)
+  : "";
+if (!bffLogoutBody.includes("finally") || !bffLogoutBody.includes("await clearOperatorCookies()")) {
+  failures.push("control-panel BFF logout must clear local cookies regardless of remote revocation result");
+}
+
 const dsh = read("services/dsh/backend/internal/identityboundary/client.go");
 for (const required of [
   "ProvisionPartner",
