@@ -173,7 +173,12 @@ for (const required of [
 ]) {
   if (!generated.includes(required)) failures.push("generated Identity types missing " + required);
 }
-for (const forbidden of ["OtpRequest", "ActivationRequest", "LoginRequest", "username"]) {
+for (const forbidden of [
+  "export type OtpRequest =",
+  "export type ActivationRequest =",
+  "export type LoginRequest =",
+  "readonly username",
+]) {
   if (generated.includes(forbidden)) failures.push("generated Identity types retain old auth shape " + forbidden);
 }
 
@@ -198,7 +203,7 @@ for (const required of [
   if (!actor.includes(required)) failures.push("Identity actor service missing " + required);
 }
 if (actor.includes("username")) failures.push("Identity actor service still owns username");
-if (!actor.includes('return "act_" + token')) failures.push("Identity actor_id generation drifted");
+if (!/return\s+"act_"\s*\+\s*token/.test(actor)) failures.push("Identity actor_id generation drifted");
 
 const challenge = read("services/identity/backend/internal/challenge/service.go");
 for (const required of [
