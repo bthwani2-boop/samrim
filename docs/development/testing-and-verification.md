@@ -45,4 +45,4 @@ Closing an increment does not prove the remaining target capability breadth. Tes
 
 Search for old writers/readers, stale exports/config, wrappers/aliases, obsolete tests/mocks, duplicate contracts and wrong-owner paths after cutover.
 
-Use the current root verification entrypoints exposed by `package.json`, including `pnpm workspace:verify`, `pnpm repository:verify-structure`, `pnpm repository:verify-hygiene`, `pnpm knowledge:verify`, `pnpm docs:verify-command-parity`, and `pnpm foundation:runtime:close` as applicable. Do not infer retired Foundation-construction commands from historical documentation.
+Use the current root verification entrypoints exposed by `package.json`, including `pnpm workspace:verify`, `pnpm repository:verify-structure`, `pnpm repository:verify-hygiene`, `pnpm knowledge:verify:all`, `pnpm docs:verify-command-parity`, and `pnpm foundation:runtime:close` as applicable. Do not infer retired Foundation-construction commands from historical documentation.
