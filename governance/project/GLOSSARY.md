@@ -24,8 +24,6 @@ This glossary defines stable platform vocabulary. If implementation naming confl
 
 **Platform Context** — the platform-level isolation boundary.
 
-**Operator Context** — trusted server-derived operational/data context for operator work inside the platform boundary.
-
 **Capability** — a stable semantic responsibility with a canonical owner.
 
 **Journey** — an actor/system outcome that may cross multiple capabilities and surfaces.
