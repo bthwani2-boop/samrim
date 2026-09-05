@@ -25,6 +25,7 @@ const toolingPolicy = read("governance/policies/tooling-and-assurance.md");
 const documentationPolicy = read("governance/policies/documentation-and-knowledge.md");
 const deliveryPolicy = read("governance/policies/delivery.md");
 const dataPolicy = read("governance/policies/data-and-migrations.md");
+const engineeringPolicy = read("governance/policies/engineering.md");
 const lifecycleRouter = read("docs/development/platform-engineering-lifecycle.md");
 const lifecycleIndex = read("docs/platform-engineering-lifecycle/README.md");
 const agentRouter = read("AGENTS.md");
@@ -447,6 +448,17 @@ for (const token of [
   "AGENT_AMBIGUITY=0",
 ]) {
   if (!documentationPolicy.includes(token)) failures.push("documentation/knowledge policy missing closure token: " + token);
+}
+
+for (const policyPath of [
+  "providers-and-integrations.md",
+  "tooling-and-assurance.md",
+  "documentation-and-knowledge.md",
+]) {
+  if (!engineeringPolicy.includes(policyPath)) failures.push("engineering policy router missing specialized owner: " + policyPath);
+}
+if (engineeringPolicy.includes("runtime/config/providers")) {
+  failures.push("engineering policy still assigns provider ownership to runtime-reliability");
 }
 
 
