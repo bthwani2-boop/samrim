@@ -4,7 +4,7 @@
 
 `main` is the protected canonical promotion branch. Direct development on `main` is forbidden unless the applicable delivery policy and current human authorization explicitly permit it.
 
-Active refoundation and implementation occurs on the exact working branch supplied by the current invocation and live Git state. Temporary branches may be created only under the applicable Orchestrator branch/mutation rules, with explicit integration ownership and exact-candidate reconciliation before canonical promotion.
+Material refoundation and implementation work occurs on the exact working branch supplied by the current invocation and live Git state. Temporary branches may be created only under the applicable Orchestrator branch/mutation rules, with explicit integration ownership and exact-candidate reconciliation before canonical promotion.
 
 Durable contributor guidance must not encode a temporary campaign branch as permanent repository truth.
 
