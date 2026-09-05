@@ -43,7 +43,8 @@
     "foundation:local:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-foundation-local.ps1",
     "knowledge:query": "node tools/dev/query-knowledge.mjs",
     "knowledge:verify-agent-contract": "node tools/dev/verify-agent-knowledge-contract.mjs",
-    "knowledge:verify-references": "node tools/dev/verify-knowledge-references.mjs"
+    "knowledge:verify-references": "node tools/dev/verify-knowledge-references.mjs",
+    "knowledge:verify:all": "pnpm run knowledge:verify && pnpm run knowledge:verify-references && pnpm run knowledge:verify-agent-contract"
   },
   "devDependencies": {
     "nx": "23.2.0",
