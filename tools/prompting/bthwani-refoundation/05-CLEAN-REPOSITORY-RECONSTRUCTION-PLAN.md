@@ -337,7 +337,7 @@ Defer proposal/approval/marketing/promotion/recommendation/search sophistication
 
 One-store cart, canonical assortment/price validation, versioning, idempotency and restart persistence. No promotion/payment breadth.
 
-### S5 — Checkout + Order kernel
+### S5 — Checkout + Order + minimum WLT allocation kernel
 
 Admit exactly one intentionally selected baseline policy path. Recommended first BThwani core path:
 
@@ -346,7 +346,18 @@ fulfillment_mode = bthwani_delivery
 payment_method   = COD
 ```
 
-At this slice, prove order creation/snapshot/idempotency/state legality. Do not claim settlement, payout, full COD accounting, or delivery completion until their later slices exist.
+Because COD is already financial truth, this slice must activate the **smallest WLT kernel required by the real order** rather than storing a DSH-only payment label.
+
+Required at this point:
+
+```text
+DSH checkout/order snapshot + idempotency + state legality
+→ WLT conserved order payment allocation
+→ one order-linked financial identity/readback
+→ zero DSH-owned ledger/balance/payment shadow truth
+```
+
+No wallet UI, external financial rail, payout engine, refund breadth, or advanced settlement/reconciliation workflow is introduced merely because WLT now participates.
 
 Target-supported `client_pickup` and `partner_delivery` remain deferred and absent from active UI/contract branching until deliberately activated.
 
@@ -361,9 +372,19 @@ placed
 
 Only legal cancellation where the current slice actually requires it. Defer support/rescue, substitutions, notification architecture and advanced exceptions.
 
-### S7 — Manual BThwani captain assignment
+### S7 — Manual BThwani captain assignment + minimum COD exposure
 
 Create one canonical Assignment truth. Initially an authorized operator selects an eligible captain manually.
+
+For COD, assignment is not legal until WLT atomically proves/reserves the order-specific captain COD exposure required by the durable Financial Model:
+
+```text
+ELIGIBLE_ORDER
+→ WLT RESERVE_REQUIRED_COD_EXPOSURE
+→ DSH ALLOW ASSIGNMENT
+```
+
+Then:
 
 ```text
 MANUAL_ASSIGNMENT_NOW
@@ -373,9 +394,9 @@ SAME_CANONICAL_ASSIGNMENT
 AUTOMATIC_DISPATCH_LATER
 ```
 
-Do not build proximity, capacity, offers, timeout/reassignment engine or route optimization yet.
+Do not build proximity, capacity, offers, timeout/reassignment engine, route optimization, generalized collateral UI, or unrelated wallet features yet.
 
-### S8 — Basic custody handoff + delivery
+### S8 — Basic custody handoff + delivery + core financial finalization
 
 Use the smallest real custody proof needed:
 
@@ -386,6 +407,8 @@ partner confirms handoff readiness
 → delivered
 → client/partner/operator canonical readback
 ```
+
+A COD delivery is not closed by DSH state alone. WLT must release or finalize/debit the reserved COD exposure exactly once and create the minimum balanced payable/earning/commission financial facts required by the currently governed commercial model. External payout execution may remain pending/deferred, but the money truth created by delivery may not be postponed or stored in DSH.
 
 Defer photo/signature/delivery OTP/GPS proof, mismatch/shortage engine, rescue workflow and sophisticated failed-delivery handling until activated.
 
@@ -399,6 +422,10 @@ Partner/Store ownership isolation = PASS
 Catalog ownership/server pricing = PASS
 Cart/Order idempotency = PASS
 Order state legality = PASS
+WLT order allocation conservation = PASS
+COD exposure reserve/finalize exactness = PASS
+No DSH financial shadow truth = PASS
+Minimum delivered-order financial postings = PASS
 Assignment uniqueness = PASS
 Handoff/custody semantics = PASS
 Delivery persistence = PASS
@@ -420,7 +447,7 @@ Recommended order, each as its own authorized Level-4 vertical slice:
 
 1. `client_pickup` fulfillment.
 2. `partner_delivery`, initially without a full partner-fleet subsystem unless Product needs it.
-3. Minimum WLT slice required by real financial effects, then wallet/payment/refund/settlement/payout/reconciliation breadth progressively; never full WLT by anticipation.
+3. WLT breadth **beyond the already-required core financial kernel**: wallet/read UX, cash-in, external rails, refund workflows, settlement execution, payout and reconciliation progressively. Core order allocation/COD exposure/delivery-created money truth is not deferred when the first COD journey activates it.
 4. In-app notification inbox → read/unread → push → deep links/preferences/topics/quiet hours.
 5. Support ticket → text conversation → unread/read → attachments → governed order rescue.
 6. Captain availability/eligibility/capacity → offers → timeout/reassignment → automatic dispatch → location/proximity.
