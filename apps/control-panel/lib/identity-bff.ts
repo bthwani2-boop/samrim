@@ -108,13 +108,34 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
 export async function logoutOperator(): Promise<void> {
   const store = await cookies();
   const accessToken = store.get(accessCookie)?.value;
+  const refreshToken = store.get(refreshCookie)?.value;
+  const deviceFingerprint = store.get(deviceCookie)?.value;
   let remoteError: unknown = null;
+  let tokenToRevoke = accessToken;
 
   try {
-    if (accessToken) await identityClient().logout(accessToken);
-  } catch (error) {
-    if (!(isIdentityClientError(error) && error.kind === "http" && error.status === 401)) {
-      remoteError = error;
+    if (!tokenToRevoke && refreshToken && deviceFingerprint) {
+      try {
+        const pair = await identityClient().refresh({ refreshToken, deviceFingerprint });
+        if (!identityAuthorizesSurface(pair.identity, "operator", "control-panel")) {
+          throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
+        }
+        tokenToRevoke = pair.accessToken;
+      } catch (error) {
+        if (!(isIdentityClientError(error) && error.kind === "http" && error.status === 401)) {
+          remoteError = error;
+        }
+      }
+    }
+
+    if (tokenToRevoke && !remoteError) {
+      try {
+        await identityClient().logout(tokenToRevoke);
+      } catch (error) {
+        if (!(isIdentityClientError(error) && error.kind === "http" && error.status === 401)) {
+          remoteError = error;
+        }
+      }
     }
   } finally {
     await clearOperatorCookies();

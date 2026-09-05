@@ -170,6 +170,17 @@ const bffLogoutBody = bffLogoutStart >= 0
 if (!bffLogoutBody.includes("finally") || !bffLogoutBody.includes("await clearOperatorCookies()")) {
   failures.push("control-panel BFF logout must clear local cookies regardless of remote revocation result");
 }
+for (const required of [
+  "refreshToken",
+  "deviceFingerprint",
+  "identityClient().refresh({ refreshToken, deviceFingerprint })",
+  'identityAuthorizesSurface(pair.identity, "operator", "control-panel")',
+  "identityClient().logout(tokenToRevoke)",
+]) {
+  if (!bffLogoutBody.includes(required)) {
+    failures.push("control-panel BFF logout cannot revoke a refresh-capable session after access-cookie expiry: " + required);
+  }
+}
 
 const dsh = read("services/dsh/backend/internal/identityboundary/client.go");
 for (const required of [
