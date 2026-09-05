@@ -1,4 +1,4 @@
-# Runtime, Configuration, Reliability, Observability, and Recovery Policy
+# Runtime Reliability, Observability, Failure, Performance, and Recovery Policy
 
 ARTIFACT_CLASS: DURABLE_RUNTIME_RELIABILITY_POLICY
 SEMANTIC_OWNER: governance/policies/runtime-reliability.md

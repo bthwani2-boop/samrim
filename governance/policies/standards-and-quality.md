@@ -106,7 +106,7 @@ CI, static analyzers, security scanners, reviews and similar systems are **evide
 
 Do not turn ordinary Product engineering into an assurance-control-plane side project merely because one scanner/workflow is imperfect. Repair assurance machinery when it is itself the objective or when a proven indispensable evidence blocker leaves no materially adequate route to the required claim. Never create bypasses or shadow assurance systems.
 
-## Adequacy before completion
+## Required quality conformance
 
 A material change/defect is not standards-grounded complete until evidence supports, as applicable:
 

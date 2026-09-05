@@ -176,9 +176,9 @@ Repository tooling must be discoverable enough that a qualified developer/agent 
 
 This guidance belongs in `tools/README.md` or an equivalent discoverable human guide; that file remains non-authoritative.
 
-## Closure properties
+## Required conformance properties
 
-Applicable tooling/assurance closure requires:
+Applicable tooling/assurance conformance requires; concrete candidate closure remains Orchestrator authority:
 
 ~~~text
 TOOLS_PRODUCT_AUTHORITY=0
