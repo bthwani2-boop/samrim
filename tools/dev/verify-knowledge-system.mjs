@@ -17,7 +17,7 @@ const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.
 const appsTarget = read("tools/prompting/bthwani-refoundation/targets/apps-and-composition.md");
 const dshWltTarget = read("tools/prompting/bthwani-refoundation/targets/dsh-wlt.md");
 const designTarget = read("tools/prompting/bthwani-refoundation/targets/design-system-and-packages.md");
-const refoundationEntrypoint = read("tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md");
+const cleanTargetProfile = read("tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md");
 const composition = read("governance/architecture/APP-SERVICE-COMPOSITION.md");
 const platformControlTarget = read("tools/prompting/bthwani-refoundation/targets/platform-control.md");
 const lifecycleRouter = read("docs/development/platform-engineering-lifecycle.md");
@@ -256,7 +256,7 @@ for (const [modulePath, trigger] of orchestratorLoadTriggers) {
   const body = read(modulePath);
   if (!body.includes(trigger)) failures.push(modulePath + " missing canonical LOAD_TRIGGER");
 }
-if (!refoundationEntrypoint.includes("declared `LOAD_TRIGGER` applies")) failures.push("refoundation entrypoint does not follow orchestrator staged loading");
+if (!cleanTargetProfile.includes("GENERAL_EXECUTION_AUTHORITY: tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md")) failures.push("clean-target profile missing canonical orchestrator authority routing");
 
 if (!prd.includes("## 1B. Target Product vision versus delivery breadth")) failures.push("PRD missing target-vs-active Product breadth law");
 if (prd.includes("The current operational fulfillment-policy modes are")) failures.push("PRD still treats every target fulfillment mode as current operational scope");
@@ -365,7 +365,7 @@ if (!designGuide.includes("PREBUILD_FULL_COMPONENT_CATALOG = FORBIDDEN")) failur
 
 const retiredPlanPath = "tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md";
 if (fs.existsSync(path.join(root, retiredPlanPath))) failures.push("temporary clean-reconstruction campaign plan remains in the live knowledge system");
-if (refoundationEntrypoint.includes("05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md")) failures.push("refoundation entrypoint still depends on the retired campaign plan");
+if (cleanTargetProfile.includes("05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md")) failures.push("clean-target profile depends on the retired campaign plan");
 
 for (const scope of ["governance", "docs", "tools/prompting"]) {
   const scopeDir = path.join(root, scope);
