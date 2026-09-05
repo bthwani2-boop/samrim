@@ -1,7 +1,7 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
-    [string] $ExpectedBranch = "a",
+    [string] $ExpectedBranch = "",
     [switch] $KeepRunning
 )
 
@@ -331,7 +331,7 @@ try {
     Write-Host "Repository: $repo"
     Write-Host "Branch: $branch"
 
-    if ($branch -ne $ExpectedBranch) {
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $branch -ne $ExpectedBranch) {
         Fail "Expected branch '$ExpectedBranch', found '$branch'."
     }
 
