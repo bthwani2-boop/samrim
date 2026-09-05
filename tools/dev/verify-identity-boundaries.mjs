@@ -71,6 +71,16 @@ for (const [app, role, surface] of [
 
   const page = read("apps/" + app + "/app/index.tsx");
   if (!page.includes('from "../src/identity"')) failures.push(app + " UI bypasses its Identity host binding");
+  for (const required of [
+    "requestIdentityActivation",
+    "requestIdentityActivation(phone)",
+    "async function requestCode()",
+    "onPress={requestCode}",
+  ]) {
+    if (!page.includes(required)) {
+      failures.push(app + " activation journey cannot request its canonical OTP: " + required);
+    }
+  }
   if (!page.includes("currentIdentityState")) {
     failures.push(app + " UI must read canonical local Identity state after logout");
   }

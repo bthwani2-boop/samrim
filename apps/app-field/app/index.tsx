@@ -13,6 +13,7 @@ import {
   activateIdentity,
   currentIdentityState,
   logoutIdentity,
+  requestIdentityActivation,
   restoreIdentitySession,
 } from "../src/identity";
 
@@ -48,6 +49,19 @@ export default function IdentityGate() {
   useEffect(() => {
     void restore();
   }, []);
+
+  async function requestCode() {
+    setBusy(true);
+    setError("");
+    try {
+      await requestIdentityActivation(phone);
+      setNotice("تم إرسال رمز التفعيل عبر قناة التطوير المهيأة.");
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function activate() {
     setBusy(true);
@@ -122,6 +136,13 @@ export default function IdentityGate() {
             style={styles.input}
             value={phone}
           />
+          <Pressable
+            disabled={busy || !phone.trim()}
+            onPress={requestCode}
+            style={styles.secondaryButton}
+          >
+            <Text style={styles.secondaryButtonText}>إرسال رمز التفعيل</Text>
+          </Pressable>
           <TextInput
             keyboardType="number-pad"
             maxLength={6}
