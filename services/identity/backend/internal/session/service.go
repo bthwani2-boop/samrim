@@ -70,9 +70,10 @@ func (s *Service) Login(ctx context.Context, input domain.LoginRequest, ipHash s
 	defer func() { _ = tx.Rollback() }()
 
 	var securityEnabled, roleEnabled bool
+	var currentPasswordHash string
 	if err := tx.QueryRowContext(ctx,
-		"SELECT a.security_enabled,r.enabled FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.id=$1 AND r.role='operator' FOR UPDATE OF a,r",
-		a.ID).Scan(&securityEnabled, &roleEnabled); err != nil || !securityEnabled || !roleEnabled {
+		"SELECT a.security_enabled,r.enabled,COALESCE(a.password_hash,'') FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id WHERE a.id=$1 AND r.role='operator' FOR UPDATE OF a,r",
+		a.ID).Scan(&securityEnabled, &roleEnabled, &currentPasswordHash); err != nil || !securityEnabled || !roleEnabled || currentPasswordHash != a.PasswordHash {
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_login_attempts WHERE username=$1 AND succeeded=false", username); err != nil {

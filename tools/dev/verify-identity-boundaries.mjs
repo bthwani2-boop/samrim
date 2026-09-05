@@ -208,6 +208,9 @@ for (const forbidden of ["requestedID", "operatorContextID", "roles,permissions"
 }
 
 const session = read("services/identity/backend/internal/session/service.go");
+if (!session.includes("currentPasswordHash != a.PasswordHash")) {
+  failures.push("Identity login must reject a credential hash changed after pre-transaction verification");
+}
 for (const required of [
   "identity_actor_roles",
   "role,access_token_hash",
