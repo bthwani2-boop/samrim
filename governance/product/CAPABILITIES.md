@@ -18,6 +18,26 @@ CAPABILITY_MEANING != IMPLEMENTATION_INVENTORY
 
 Cross-capability financial rules are owned by `FINANCIAL-MODEL.md`; cross-surface UX rules are owned by `EXPERIENCE-AND-DESIGN.md`.
 
+## Target catalog versus active delivery
+
+This catalog describes the durable semantic envelope of the target platform. Catalog presence does not authorize simultaneous implementation and does not imply that every acceptance expectation is part of the current delivery slice.
+
+```text
+CAPABILITY_IN_TARGET_CATALOG != CURRENTLY_AUTHORIZED_IMPLEMENTATION
+TARGET_CAPABILITY_ENVELOPE != ACTIVE_VERTICAL_INCREMENT
+```
+
+A capability may be delivered through explicitly named vertical increments when each increment is canonical and complete across all materially affected owner/data/contract/runtime/surface/readback axes.
+
+```text
+EXPLICIT_VERTICAL_INCREMENT = ALLOWED
+ACCIDENTAL_PARTIAL_IMPLEMENTATION = FORBIDDEN
+HORIZONTAL_BACKEND/FRONTEND/APP_FRAGMENT = NOT_CLOSED
+FULL_CAPABILITY_CLOSED_CLAIM_WHEN_ONLY_INCREMENT_CLOSED = FORBIDDEN
+```
+
+Later increments extend the same canonical model; they must not require temporary `v1`, `simple`, `bootstrap`, mock, or shadow authorities created solely for an earlier slice.
+
 ## Catalog
 
 ### ADMINISTRATION_ROLES_APPROVALS_AUDIT — الإدارة والأدوار والاعتمادات والتدقيق
