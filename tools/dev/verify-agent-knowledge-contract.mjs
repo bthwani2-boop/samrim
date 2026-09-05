@@ -108,6 +108,11 @@ const cases = [
     mustNotExist: "tools/prompting/bthwani-refoundation/05-CLEAN-REPOSITORY-RECONSTRUCTION-PLAN.md",
   },
   {
+    id: "legacy_refoundation_package_retired",
+    question: "May tools/prompting/bthwani-refoundation remain a fourth live authority package?",
+    mustNotExist: "tools/prompting/bthwani-refoundation",
+  },
+  {
     id: "knowledge_queries_are_derived",
     question: "May a knowledge query tool become a parallel capability/journey registry?",
     source: "governance/policies/standards-and-quality.md",
