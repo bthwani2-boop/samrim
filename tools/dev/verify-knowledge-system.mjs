@@ -152,6 +152,41 @@ for (const file of collectMarkdown(orchestratorDir)) {
     orchestratorLawLines.get(normalized).push(path.relative(root, file).split(path.sep).join("/"));
   }
 }
+
+const allowedSharedOrchestratorProtocolTokens = new Set([
+  "product breadth active slice full target",
+  "reconstruct authorized product scope",
+  "verify parity or deliberate improvement",
+  "authorized scope donor cone gate",
+  "self certification forbidden",
+  "invalidate affected evidence",
+  "select next highest authorized executable unit if any",
+  "execute immediately if one exists",
+  "otherwise verify authorized scope fixed point",
+  "orchestrator compliance failure",
+  "deferred outside authorized product scope",
+  "mapped to pre root catastrophe",
+  "authorized intentional condition",
+  "stale or superseded with proof",
+  "serious alternatives compared",
+  "ranking relevant unknowns 0",
+  "derive next required action",
+  "re synthesize current stage graph",
+  "execute highest required frontier",
+  "accidental partial implementation forbidden",
+  "full capability closed claim from increment forbidden",
+  "canonical writer reader",
+  "persisted observable readback",
+  "unknown must remain unknown until reconciled",
+]);
+
+for (const [normalized, occurrences] of orchestratorLawLines) {
+  const owners = [...new Set(occurrences)];
+  if (owners.length <= 1) continue;
+  if (!allowedSharedOrchestratorProtocolTokens.has(normalized)) {
+    failures.push("cross-owner orchestrator law duplication outside shared protocol allowlist: " + normalized + " @ " + owners.join(", "));
+  }
+}
 for (const file of collectMarkdown(refoundationDir)) {
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     if (!isGeneralLawLike(line)) continue;
