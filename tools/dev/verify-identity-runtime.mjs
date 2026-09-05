@@ -364,6 +364,62 @@ const resetOperatorPair = await expect("POST", "/auth/login", 200, {
 });
 assertSession(resetOperatorPair, "operator", "control-panel", actorId);
 
+// Global Identity security disable is independent from role admission and revokes every active role session.
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 403, {
+  headers: service(dshToken),
+});
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 204, {
+  headers: service(platformToken, { "X-Correlation-ID": "security-disable-" + suffix }),
+});
+await expect("GET", "/auth/session", 401, { token: sharedClientPair.accessToken });
+await expect("GET", "/auth/session", 401, { token: reenabledCaptainPair.accessToken });
+await expect("GET", "/auth/session", 401, { token: resetOperatorPair.accessToken });
+
+const blockedClientChallenge = await requestOtp(sharedPhone, "client");
+await expect("POST", "/auth/activate", 403, {
+  body: {
+    phone: sharedPhone,
+    role: "client",
+    code: codeFor(blockedClientChallenge.activationId),
+    deviceFingerprint: "device-blocked-client-" + suffix,
+  },
+});
+await expect("POST", "/auth/login", 401, {
+  body: {
+    username: operatorUsername,
+    password: newOperatorPassword,
+    deviceFingerprint: "device-blocked-operator-" + suffix,
+  },
+});
+
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/enable", 204, {
+  headers: service(platformToken, { "X-Correlation-ID": "security-enable-" + suffix }),
+});
+const postSecurityClientChallenge = await requestOtp(sharedPhone, "client");
+const postSecurityClientPair = await activate(
+  sharedPhone,
+  "client",
+  postSecurityClientChallenge,
+  "device-post-security-client-" + suffix,
+);
+assertSession(postSecurityClientPair, "client", "app-client", actorId);
+const postSecurityCaptainChallenge = await requestOtp(sharedPhone, "captain");
+const postSecurityCaptainPair = await activate(
+  sharedPhone,
+  "captain",
+  postSecurityCaptainChallenge,
+  "device-post-security-captain-" + suffix,
+);
+assertSession(postSecurityCaptainPair, "captain", "app-captain", actorId);
+const postSecurityOperatorPair = await expect("POST", "/auth/login", 200, {
+  body: {
+    username: operatorUsername,
+    password: newOperatorPassword,
+    deviceFingerprint: "device-post-security-operator-" + suffix,
+  },
+});
+assertSession(postSecurityOperatorPair, "operator", "control-panel", actorId);
+
 // Source throttling applies to failed attempts, but cannot turn a noisy/shared source into a denial of correct credentials.
 for (let i = 0; i < 30; i++) {
   const probe = await request("POST", "/auth/login", {
@@ -475,6 +531,8 @@ console.log("IDENTITY_RUNTIME_SEMANTICS=PASS");
 console.log("IDENTITY_SINGLE_ACTOR_MULTI_ROLE=PASS");
 console.log("IDENTITY_CLIENT_ACTOR_CREATION_AFTER_PROOF=PASS");
 console.log("IDENTITY_ROLE_SCOPED_REVOCATION=PASS");
+console.log("IDENTITY_GLOBAL_SECURITY_DISABLE=PASS");
+console.log("IDENTITY_GLOBAL_SECURITY_REENABLE_REQUIRES_REAUTH=PASS");
 console.log("IDENTITY_GOVERNED_OTP_SELF_GRANT=0");
 console.log("IDENTITY_OPERATOR_PASSWORD_ONLY=PASS");
 console.log("IDENTITY_SERVICE_CREDENTIAL_CALLER=PASS");

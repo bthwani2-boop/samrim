@@ -137,7 +137,7 @@ if (!dshMod.includes("../../identity/clients/go")) {
 }
 
 const goClient = read("services/identity/clients/go/client.go");
-for (const route of ["/internal/actor-roles/provision", "/roles/", "/operator-password/reset"]) {
+for (const route of ["/internal/actor-roles/provision", "/roles/", "/security/", "/operator-password/reset"]) {
   if (!goClient.includes(route)) failures.push("Identity Go client missing canonical route " + route);
 }
 for (const forbidden of [
@@ -155,6 +155,8 @@ const contract = read("services/identity/contracts/identity.openapi.yaml");
 for (const required of [
   "/internal/actor-roles/provision:",
   "/internal/actors/{actorId}/roles/{role}/disable:",
+  "/internal/actors/{actorId}/security/disable:",
+  "/internal/actors/{actorId}/security/enable:",
   "/internal/actors/{actorId}/operator-password/reset:",
   "authenticated service token determines the caller",
   "Identity alone creates actor_id",
@@ -179,6 +181,9 @@ const generated = read("services/identity/clients/generated/identity-types.ts");
 if (!generated.includes("AUTO-GENERATED from services/identity/contracts/identity.openapi.yaml")) {
   failures.push("generated Identity types provenance header missing");
 }
+if (!generated.includes("readonly securityEnabled: boolean;")) {
+  failures.push("generated Identity types missing global security eligibility");
+}
 for (const forbidden of ["ActorStatus", "Permission", "operatorContextId", "roles:", "surfaceAccess", "sessionSurface"]) {
   if (generated.includes(forbidden)) failures.push("generated Identity types contain legacy shape " + forbidden);
 }
@@ -195,7 +200,7 @@ for (const forbidden of ["OperatorContextID", "Roles []string", "Permissions []"
 }
 
 const actor = read("services/identity/backend/internal/actor/service.go");
-for (const required of ['return "act_" + token', "identity_actor_roles", "SetRoleEnabled", "ResetOperatorPassword"]) {
+for (const required of ['return "act_" + token', "identity_actor_roles", "SetRoleEnabled", "SetSecurityEnabled", "ResetOperatorPassword"]) {
   if (!actor.includes(required)) failures.push("Identity actor service missing " + required);
 }
 for (const forbidden of ["requestedID", "operatorContextID", "roles,permissions", "provisioning_fingerprint", "created_by_service"]) {
@@ -246,6 +251,7 @@ if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identit
 
 const migration = read("services/identity/database/migrations/001_identity_activation_sessions.sql");
 for (const required of [
+  "security_enabled boolean NOT NULL DEFAULT true",
   "CREATE TABLE IF NOT EXISTS identity_actor_roles",
   "PRIMARY KEY (actor_id, role)",
   "FOREIGN KEY (actor_id, role) REFERENCES identity_actor_roles(actor_id, role)",

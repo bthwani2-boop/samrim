@@ -8,6 +8,7 @@ servers:
 tags:
   - name: auth
   - name: internal-actor-roles
+  - name: internal-security
   - name: internal-sessions
 
 paths:
@@ -289,6 +290,46 @@ paths:
         "204":
           description: Existing role enabled. No session is created.
 
+  /internal/actors/{actorId}/security/disable:
+    post:
+      tags: [internal-security]
+      operationId: disableActorSecurity
+      security:
+        - internalServiceToken: []
+      description: Platform Control only. Disables Identity-wide authentication for the actor and revokes all active sessions and pending activation challenges without deleting role bindings.
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "204":
+          description: Global Identity security access disabled.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /internal/actors/{actorId}/security/enable:
+    post:
+      tags: [internal-security]
+      operationId: enableActorSecurity
+      security:
+        - internalServiceToken: []
+      description: Platform Control only. Re-enables Identity-wide authentication eligibility without restoring any revoked session.
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "204":
+          description: Global Identity security access enabled; re-authentication is required.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /internal/actors/{actorId}/operator-password/reset:
     post:
       tags: [internal-actor-roles]
@@ -534,7 +575,7 @@ components:
     ActorRoleView:
       type: object
       additionalProperties: false
-      required: [actorId, phoneE164, role, enabled, actorVersion, roleVersion]
+      required: [actorId, phoneE164, role, enabled, securityEnabled, actorVersion, roleVersion]
       properties:
         actorId:
           type: string
@@ -546,6 +587,9 @@ components:
           $ref: "#/components/schemas/ActorType"
         enabled:
           type: boolean
+        securityEnabled:
+          type: boolean
+          description: Identity-wide security eligibility. This is not a domain-operational lifecycle status.
         actorVersion:
           type: integer
           minimum: 1

@@ -18,8 +18,9 @@ type ActorRoleView struct {
 	PhoneE164    string `json:"phoneE164"`
 	Username     string `json:"username,omitempty"`
 	Role         string `json:"role"`
-	Enabled      bool   `json:"enabled"`
-	ActorVersion int    `json:"actorVersion"`
+	Enabled         bool   `json:"enabled"`
+	SecurityEnabled bool   `json:"securityEnabled"`
+	ActorVersion    int    `json:"actorVersion"`
 	RoleVersion  int    `json:"roleVersion"`
 	ActorCreated bool   `json:"actorCreated,omitempty"`
 	RoleCreated  bool   `json:"roleCreated,omitempty"`
@@ -88,6 +89,15 @@ func (c *Client) SetRoleEnabled(ctx context.Context, actorID, role string, enabl
 		action = "enable"
 	}
 	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/roles/" + url.PathEscape(strings.TrimSpace(role)) + "/" + action
+	return c.do(ctx, http.MethodPost, pathname, correlationID, nil, nil)
+}
+
+func (c *Client) SetActorSecurityEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
+	action := "disable"
+	if enabled {
+		action = "enable"
+	}
+	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/security/" + action
 	return c.do(ctx, http.MethodPost, pathname, correlationID, nil, nil)
 }
 
