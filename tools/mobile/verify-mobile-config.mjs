@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
-const apps = ["app-client", "app-partner", "app-captain", "app-field"];
+const appsRoot = path.join(repoRoot, "apps");
 const requiredStringFields = [
   "name",
   "slug",
@@ -14,6 +14,13 @@ const requiredStringFields = [
   "projectId",
 ];
 
+const apps = fs
+  .readdirSync(appsRoot, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .filter((app) => fs.existsSync(path.join(appsRoot, app, "mobile.config.json")))
+  .sort();
+
 const seen = {
   slug: new Map(),
   scheme: new Map(),
@@ -24,12 +31,42 @@ const seen = {
 
 let failed = false;
 
+if (apps.length === 0) {
+  console.error("No mobile hosts discovered from apps/*/mobile.config.json");
+  process.exit(1);
+}
+
 for (const app of apps) {
-  const configPath = path.join(repoRoot, "apps", app, "mobile.config.json");
-  if (!fs.existsSync(configPath)) {
-    console.error(`MISSING ${configPath}`);
+  const appRoot = path.join(appsRoot, app);
+  const configPath = path.join(appRoot, "mobile.config.json");
+  const projectPath = path.join(appRoot, "project.json");
+  const packagePath = path.join(appRoot, "package.json");
+
+  if (!fs.existsSync(projectPath)) {
+    console.error(`${app}: missing project.json`);
     failed = true;
     continue;
+  }
+  if (!fs.existsSync(packagePath)) {
+    console.error(`${app}: missing package.json`);
+    failed = true;
+    continue;
+  }
+
+  const project = JSON.parse(fs.readFileSync(projectPath, "utf8"));
+  if (!Array.isArray(project.tags) || !project.tags.includes("type:app")) {
+    console.error(`${app}: project.json missing type:app`);
+    failed = true;
+  }
+  if (project.root !== `apps/${app}`) {
+    console.error(`${app}: project.root does not match apps/${app}`);
+    failed = true;
+  }
+
+  const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+  if (typeof pkg.scripts?.start !== "string" || pkg.scripts.start.trim().length === 0) {
+    console.error(`${app}: package.json missing mobile start script`);
+    failed = true;
   }
 
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -58,4 +95,4 @@ for (const app of apps) {
 }
 
 if (failed) process.exit(1);
-console.log("MOBILE_CONFIG=PASS");
+console.log("MOBILE_CONFIG=PASS apps=" + apps.join(","));
