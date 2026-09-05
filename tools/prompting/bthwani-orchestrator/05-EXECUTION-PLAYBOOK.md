@@ -43,7 +43,7 @@ RECENSUS
 LEGITIMATELY_BLOCKED
 ~~~
 
-There is no `QUALIFYING_FOUNDATION`, A0/A1/A2 or Stage-B state.
+Structural prerequisite work uses the same state machine; no separate mandatory stage family exists.
 
 ## 4. Root execution movement
 

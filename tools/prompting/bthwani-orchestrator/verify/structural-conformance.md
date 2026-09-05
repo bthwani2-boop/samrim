@@ -16,7 +16,7 @@ When a broad proof scaffold is useful, load `../templates/candidate-proof-matrix
 
 Verify only structural claims material to the current root/affected cone unless `FULL_TARGET` explicitly requires repository-wide proof.
 
-No A0/A1/A2 or pre-Product gate exists.
+No mandatory repository-wide pre-Product gate exists.
 
 ## 2. Root-execution readiness
 
