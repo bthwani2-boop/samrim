@@ -42,6 +42,14 @@ Mobile build activation and Sentry setup live under `../development/`, not opera
 
 ## Runbook law
 
+Every operational runbook file must declare:
+
+```text
+DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
+PRODUCT_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+```
+
 A runbook must:
 
 - identify its semantic owner(s);
@@ -51,6 +59,7 @@ A runbook must:
 - avoid copying secrets or unnecessary PII into tickets/logs;
 - verify canonical readback after recovery;
 - use environment/configured thresholds rather than hardcoded historical numbers;
-- state explicitly when it is target/conditional guidance rather than a currently executable operational procedure.
+- state explicitly when guidance is conditional on an executable owner/mechanism that may not currently exist;
+- contain no branch/campaign/stage status, Product roadmap, Orchestrator closure gate or hand-maintained current schema/route/table inventory.
 
 A runbook may mention an implementation path only when operationally useful and must not become a hand-maintained route/table registry.

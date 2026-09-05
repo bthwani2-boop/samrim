@@ -4,69 +4,45 @@ DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
 PRODUCT_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-Status: STAGE_B_CANDIDATE_RUNBOOK
-Owner: Identity service operations
+## Owners
 
-## Current authority
+Identity owns Human Actor identity/`actor_id`, verified login identifiers, credentials, Identity-wide security eligibility, high-level role admission, authentication/verification/activation/recovery and role-scoped sessions.
 
-```text
-actor identity + actor_id                 -> Identity
-verified phone identifier                 -> Identity
-high-level actor-role admission           -> Identity
-role-scoped password credentials          -> Identity
-purpose-bound verification/challenges     -> Identity
-Identity-wide security eligibility        -> Identity
-role-scoped device-bound sessions         -> Identity
-DSH participant eligibility/scope         -> DSH
-financial truth                           -> WLT
-```
+DSH owns partner/captain/field operational eligibility, assignment, membership and business authorization scope. WLT owns financial truth. Platform Control owns operator-role provisioning and Identity-wide security actions only where Governance assigns them.
 
-Identity has no generic Tenant/AccessGrant/permissions engine and does not invent cross-domain authorization scope.
+This runbook never creates Product/authorization semantics. Current executable contracts/code/config/runtime remain implementation authority.
 
-## Authentication behavior
+## Triage
 
-- Customer registration: phone verification -> client password credential -> client session.
-- Customer normal re-authentication: phone + client password. A valid stored session is restored/refreshed instead of prompting on every app open.
-- Customer recovery: phone verification -> replace only the client credential -> revoke client sessions -> fresh client session.
-- Partner/captain/field: DSH provisions the role first, then one-time managed activation creates the first device-bound role session.
-- Repeating managed activation is not a login mechanism. Lost/revoked managed access requires explicit DSH-authorized re-enrollment.
-- Operator: Platform Control provisions operator role/password; password proof starts a required second-factor challenge and only successful challenge consumption creates the operator session.
-- Passkeys/WebAuthn remain the preferred progressive phishing-resistant target for privileged operator authentication. They are not a mandatory credential for every actor class in the initial baseline.
-- Refresh is device-fingerprint checked and rotates atomically. Access tokens remain short-lived bearer tokens.
+1. Pin the exact candidate/correlation identity relevant to the incident.
+2. Verify Identity health/readiness through the current executable interface.
+3. Classify the incident: customer registration/authentication/recovery; managed-role provisioning/activation/re-enrollment; operator MFA; session refresh/revocation; service authentication; challenge delivery; abuse/rate control.
+4. Resolve the authenticated Human Actor and single active session role server-side.
+5. Verify the canonical role/credential/challenge/session readback and the owning-domain eligibility/scope where business authorization is involved.
+6. Reproduce with sanitized identifiers and masked contact data.
 
-## Signals and sensitive data
+## Safety invariants
 
-Prefer operation/purpose, result/error code, HTTP status, duration, correlation ID and resolved session role. Never record passwords, challenge codes, bearer/refresh tokens, password hashes, service secrets or full sensitive request bodies.
+- A challenge proves the configured verification purpose; it never self-grants partner/captain/field/operator business admission.
+- Managed activation is one-time enrollment, not recurring login.
+- Disabling one actor-role revokes only that role's sessions/pending role proofs; unrelated roles remain independent.
+- Identity-wide security disablement revokes active authentication state without deleting role bindings; re-enable does not resurrect sessions.
+- Operator session creation requires the governed privileged authentication factors; password-only success is not sufficient where MFA is required.
+- Caller-provided headers/body/query/UI state never grant actor identity, role, business scope or service identity.
+- Do not introduce compatibility reads/writes for retired identity schemas merely to preserve stale development data.
 
-## Role disable / re-enrollment / global security
+## Sensitive data
 
-Disabling `actor_id + role` revokes only that role's sessions and pending role challenges. Re-enabling never silently creates a session.
+Prefer operation/purpose, result/error code, HTTP status, duration, correlation ID and resolved session role. Never record passwords, challenge codes, bearer/refresh tokens, password hashes, service/provider secrets or unnecessary sensitive request bodies.
 
-For partner/captain/field, DSH may explicitly authorize re-enrollment. That clears the managed role's enrollment marker and revokes that role's sessions/challenges so one fresh activation can occur. Platform Control cannot authorize DSH-role re-enrollment.
+## Recovery
 
-Global `security_enabled` disable is separate: only Platform Control may toggle it. Disable revokes all active sessions and pending actor-bound challenges without deleting role bindings. Re-enable never resurrects sessions.
+Use only the current canonical owner interfaces and legal transitions. For non-production stale local data that cannot satisfy the current canonical schema, reset/recreate that disposable local data only when the environment is proven non-production. Never apply destructive reset logic to production durable data.
 
-Operator password reset is Platform-Control-authenticated, audited, replaces only the operator credential and revokes operator sessions/pending operator challenges.
+For managed-role access loss, use the owner-authorized re-enrollment/recovery path. For operator access, use the governed privileged credential/MFA recovery path. Never convert activation into a generic bypass login.
 
-## Stale development database
+For ambiguous challenge-delivery results, preserve operation identity and classify the external delivery outcome according to the current provider/runtime contract; do not blindly resend when duplication or admission side channels are material.
 
-Migration 001 is a refounded non-production baseline. It intentionally fails when losing actor-global username/password/context columns are present. For local/non-production development only: stop the stack, reset/remove the stale PostgreSQL development volume, start the stack and rerun the Identity runtime verifier. Do not add dual-read compatibility for discarded unmerged schema. Do not use destructive reset for production data.
+## Verify recovery
 
-## Diagnostic sequence
-
-1. Pin the exact commit/correlation ID.
-2. Check `/identity/health` and `/identity/readiness`.
-3. Verify canonical schema and absence of actor-global credential/context columns.
-4. Classify: customer registration/login/recovery; managed provisioning/activation/re-enrollment; operator password/MFA; refresh/revocation; service auth; delivery; rate/abuse control.
-5. Reproduce with sanitized actor identifiers and masked phone data.
-6. Verify canonical actor-role/credential/challenge/session readback.
-7. Re-run same-actor multi-role, scoped-revocation and second-factor tests.
-
-## Verification boundary
-
-Final closure requires generated-contract checks, boundary/residue checks, Go/workspace verification, full Foundation runtime and `tools/dev/verify-identity-runtime.mjs`, followed by same-commit GitHub baseline/runtime checks. A password-only operator fixture or repeated-activation managed fixture can never count as green proof.
-
-
-## Challenge delivery incident handling
-
-Challenge acknowledgement is independent of provider availability. Inspect `identity_challenge_deliveries` for `suppressed | pending | sending | sent | unknown | expired`. A decoy is `suppressed` and never invokes the provider. A failed/interrupted in-flight send is `unknown`; do not automatically retry an unknown result because duplicate delivery and public admission side channels must remain controlled.
+Confirm canonical Identity readback, affected domain authorization/eligibility readback, revoked/renewed session behavior, negative cross-role cases, sensitive-data hygiene and the exact runtime behavior exercised. Repository/campaign closure is owned by the Orchestrator, not this runbook.

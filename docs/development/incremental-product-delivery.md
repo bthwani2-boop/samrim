@@ -1,138 +1,64 @@
-# Incremental Product Delivery Strategy
+# Incremental Product Delivery Guidance
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDANCE
 EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
-CURRENT_STATE_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
 ## Purpose
 
-This guide explains the preferred way to grow BThwani from a small, proven multi-surface full-stack core into the complete governed target without big-bang feature delivery.
+This guide explains how to reason about a **small authorized Product slice** without turning incremental delivery into disposable architecture or a hidden roadmap.
 
-Durable Product meaning remains in governance/**. The active Product breadth and execution order for a concrete campaign are supplied by the current invocation and controlled by the Orchestrator. This guide never activates a slice by itself.
+Durable Product meaning remains in `governance/**`. The current invocation and Orchestrator own Product breadth, active slice, execution order, recovery, verification and closure. This document never chooses the next feature, fulfillment mode, payment mode, actor surface or rollout sequence.
 
-## Core principle
+## Core discipline
 
-~~~text
-TARGET_PRODUCT_VISION != ACTIVE_PRODUCT_SLICE
+```text
+TARGET_PRODUCT_VISION != AUTHORIZED_PRODUCT_SCOPE
+AUTHORIZED_PRODUCT_SCOPE != CURRENT_IMPLEMENTATION_STATE
+SMALL_BREADTH != TEMPORARY_ARCHITECTURE
+```
 
-SMALL_BREADTH
-+ CANONICAL_OWNERS
-+ REAL_END_TO_END_RUNTIME
-+ LEVEL_4_DEPTH
-= VALID_DELIVERY
-~~~
+For an already-authorized slice:
 
-Do not create simple_*, *_v1, bootstrap_*, fake business routes/tables, shadow DTOs, temporary state machines, empty feature screens or speculative frameworks to make an early slice easier. Build the final canonical owner/model with only the currently admitted behavior.
+- resolve the durable Product/capability/journey owners first;
+- use the final canonical owner/model for the admitted behavior;
+- close the complete materially affected vertical path and required readback;
+- preserve prerequisites, security, financial and data invariants actually exercised;
+- keep future Product breadth absent rather than represented by fake screens, APIs, tables, enum values or compatibility structures;
+- re-run prior evidence invalidated by shared owners/contracts/data/runtime/hosts.
 
-## Preferred expansion sequence
+## What incremental must not mean
 
-The default product-learning sequence is:
+Do not create:
 
-1. Identity/access foundation.
-2. Journey-ready host/runtime/data/contract/design substrate.
-3. Private Partner + Store ownership kernel.
-4. Private Catalog + Assortment kernel.
-5. Minimum serviceability + first governed publication/discovery.
-6. One-store Cart.
-7. Minimum customer delivery address + geofence/serviceability.
-8. Checkout + Order using only the currently admitted fulfillment/payment combination.
-9. Partner fulfillment.
-10. Minimum captain operational/financial readiness required by the active delivery path.
-11. Manual BThwani captain assignment using the same canonical assignment model later automation will consume.
-12. Minimum governed custody handoff.
-13. Delivery completion and any financial finalization already created by that delivery.
-14. Cumulative core fixed point.
+```text
+simple_*
+*_v1
+bootstrap_* BUSINESS MODELS
+FAKE BUSINESS ROUTES/TABLES
+SHADOW DTOs
+TEMPORARY STATE MACHINES
+PLACEHOLDER PRODUCT SCREENS
+SPECULATIVE PROVIDER/FRAMEWORK ABSTRACTIONS
+PARALLEL SOURCES OF TRUTH
+```
 
-This is a recommended learning/dependency order, not a standing authorization to execute the next item.
+A host may be technically ready while its business journeys remain unimplemented. Host readiness does not authorize Product furnishing.
 
-## Initial breadth discipline
+## Slice reasoning questions
 
-For the first commerce/delivery fixed point, prefer one legal path rather than activating every target variant simultaneously. When consistent with current Governance and invocation, the narrow path is:
+Before implementing behavior **already authorized by the invocation**, ask:
 
-~~~text
-fulfillment_mode = bthwani_delivery
-payment_method   = COD
-assignment       = manual operator assignment
-handoff          = minimum governed dual custody confirmation
-~~~
+1. Which durable capability/journey outcome is being delivered?
+2. Which canonical owner/writer/data/contract owns every material effect?
+3. Which surfaces and readbacks are required by this slice?
+4. Which security, financial, migration, provider or compatibility consequences are actually activated?
+5. Which future breadth remains deliberately absent?
+6. What previously proven behavior is invalidated and must be reverified?
 
-The canonical models must remain future-compatible, but inactive future values/features are not exposed in contracts/UI as if implemented.
+These questions help implement an authorized slice; they do not authorize a new one.
 
-## Core fixed-point proof
+## Donor and OSS
 
-Before broad feature expansion, prove at least the materially applicable invariants across the same candidate:
-
-~~~text
-Identity isolation
-Partner/Store isolation
-Catalog ownership
-Publication/serviceability authority
-Server-authoritative pricing
-Address ownership/geofence resolution
-Cart idempotency
-Checkout/Order idempotency
-Order state legality
-No DSH financial mirror
-WLT conservation for any real financial effect
-Assignment uniqueness
-Custody semantics
-Delivery persistence
-Cross-surface canonical readback
-Restart persistence
-Negative authorization
-No fake business truth
-No frontend business authority
-No duplicate SSOT
-Runtime E2E
-Cumulative regression
-~~~
-
-## Deferred expansion
-
-After the core fixed point, activate additional breadth as independent vertical increments only when explicitly authorized. A practical progression is:
-
-1. client_pickup.
-2. partner_delivery.
-3. broader WLT/payment/refund/settlement/payout behavior.
-4. in-app notifications, then push/deep links/preferences as needed.
-5. support/ticketing and later richer messaging.
-6. automated dispatch, capacity, proximity/location and reassignment sophistication.
-7. partner teams/fleet and richer onboarding/readiness.
-8. app-field business journeys.
-9. promotions/coupons/ratings/loyalty/search sophistication.
-10. advanced operator approvals/control-plane/analytics capabilities.
-
-Each increment must reuse canonical owners and survive cumulative regression; it must not fork an alternate model.
-
-## app-field disposition
-
-app-field is a target deployable surface, but its business features are not a prerequisite for the first customer→partner→captain delivery fixed point unless the active onboarding/readiness policy explicitly requires field evidence.
-
-Before its Product wave, it may remain host-ready only:
-
-~~~text
-identity/session
-bootstrap
-runtime configuration
-neutral authenticated shell
-production-like build proof
-~~~
-
-Do not create placeholder Field workflows simply to populate the app.
-
-## Feature-admission test
-
-Before activating a new feature/mode, ask:
-
-1. Is it required by the current Product slice?
-2. Does it create a new owner/state machine/provider/security/financial consequence?
-3. Can the current fixed point be proven without it?
-4. Will adding it now make failure attribution materially harder?
-5. Is its canonical owner/model already clear enough to add without a temporary workaround?
-
-If it is not required and increases independent state/failure breadth, defer it.
-
-## Relationship to OSS and donor material
-
-For each active increment, consult only the donor/OSS evidence cone capable of changing its semantics, owner, edge cases, failure/recovery behavior, UX or tests. Extract applicable truth; do not import donor topology or activate adjacent features merely because a reference product contains them.
+Inspect only the donor/OSS evidence cone capable of changing the authorized slice's semantics, ownership, edge cases, failure/recovery behavior, UX or tests. Extract applicable truth; never import donor topology or activate adjacent features merely because a reference product contains them.
