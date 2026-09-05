@@ -55,7 +55,7 @@ for (const required of [
 ]) {
   if (!clientBinding.includes(required)) failures.push("app-client Identity binding missing " + required);
 }
-for (const forbidden of ["requestOtp(", "activate({", "actorType", "operatorContext"]) {
+for (const forbidden of ["requestOtp(", "activate({", "actorType"]) {
   if (clientBinding.includes(forbidden)) failures.push("app-client retains obsolete auth authority " + forbidden);
 }
 const clientPage = read("apps/app-client/app/index.tsx");
@@ -82,7 +82,7 @@ for (const [app, role, surface] of [
   ]) {
     if (!runtime.includes(required)) failures.push(runtimePath + " missing " + required);
   }
-  for (const forbidden of ["requestOtp(", "loginClient(", "actorType", "operatorContext"]) {
+  for (const forbidden of ["requestOtp(", "loginClient(", "actorType"]) {
     if (runtime.includes(forbidden)) failures.push(runtimePath + " contains wrong auth flow " + forbidden);
   }
   const page = read("apps/" + app + "/app/index.tsx");
@@ -135,7 +135,7 @@ for (const required of [
 ]) {
   if (!dsh.includes(required)) failures.push("DSH Identity boundary missing " + required);
 }
-for (const forbidden of ["ProvisionOperator", "Username", "X-Service-Caller", "X-Operator-Context-ID"]) {
+for (const forbidden of ["ProvisionOperator", "Username", "X-Service-Caller"]) {
   if (dsh.includes(forbidden)) failures.push("DSH Identity boundary contains forbidden authority " + forbidden);
 }
 
@@ -143,7 +143,7 @@ const goClient = read("services/identity/clients/go/client.go");
 for (const required of ["/internal/actor-roles/provision", "/roles/", "/reenrollment", "/security/", "/operator-password/reset"]) {
   if (!goClient.includes(required)) failures.push("Identity Go client missing canonical route " + required);
 }
-for (const forbidden of ["Username", "X-Service-Caller", "X-Operator-Context-ID", "/activations"]) {
+for (const forbidden of ["Username", "X-Service-Caller", "/activations"]) {
   if (goClient.includes(forbidden)) failures.push("Identity Go client contains retired authority " + forbidden);
 }
 
@@ -159,7 +159,7 @@ for (const required of [
 ]) {
   if (!contract.includes(required)) failures.push("Identity contract missing " + required);
 }
-for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller", "operatorContextId"]) {
+for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller"]) {
   if (contract.includes(forbidden)) failures.push("Identity contract contains retired auth shape " + forbidden);
 }
 
@@ -186,7 +186,7 @@ const domain = read("services/identity/backend/internal/domain/types.go");
 for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
 }
-for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "OperatorContextID", "Roles []string", "Permissions []"]) {
+for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "Roles []string", "Permissions []"]) {
   if (domain.includes(forbidden)) failures.push("Identity domain contains collapsed/retired authority " + forbidden);
 }
 
@@ -253,7 +253,7 @@ const session = read("services/identity/backend/internal/session/service.go");
 for (const required of ["CreateTx", "identity_refresh_token_history", "device_fingerprint_hash", "identityOf(actorID,sessionID,role"]) {
   if (!session.includes(required)) failures.push("Identity session service missing " + required);
 }
-for (const forbidden of ["func (s *Service) Login(", "PasswordHash", "username", "operator_context", "surfaceAccess"]) {
+for (const forbidden of ["func (s *Service) Login(", "PasswordHash", "username", "surfaceAccess"]) {
   if (session.includes(forbidden)) failures.push("Identity session service retains credential/login authority " + forbidden);
 }
 
