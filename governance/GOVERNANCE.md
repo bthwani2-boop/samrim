@@ -10,7 +10,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 `governance/**` is the durable semantic constitution of BThwani: Product/System meaning, bounded-context ownership, cross-surface experience, engineering policy, security/privacy, data, runtime/reliability and delivery expectations.
 
-It is not an execution engine, branch controller, CI authority, runtime-state inventory, route/table/operation registry or release approval mechanism. During the current refoundation campaign, execution order, mutation, recovery and closure remain owned exclusively by `tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md`; branch-specific campaign details belong to that temporary execution authority, not durable Governance.
+It is not an execution engine, branch controller, CI authority, runtime-state inventory, route/table/operation registry or release approval mechanism. For material repository mutation, refoundation, recovery, verification or closure work, execution law remains owned by `tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md` and its routed owners; invocation/branch/session state never belongs in durable Governance.
 
 ```text
 GOVERNANCE   = DURABLE MEANING / POLICY / OWNERSHIP
