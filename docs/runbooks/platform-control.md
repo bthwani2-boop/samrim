@@ -15,7 +15,7 @@ Use operationally only when exact-current executable evidence proves a materiali
 Verify:
 
 - exact semantic owner and exact executable writer/runtime;
-- trusted operator context;
+- exact server-side authorization scope;
 - current version;
 - schema/type validation;
 - rollout/audience state when material;
