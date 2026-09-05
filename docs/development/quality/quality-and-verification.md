@@ -30,6 +30,25 @@ Use the smallest sufficient evidence class without substituting weaker proof:
 
 A material capability/increment follows the user/system action through owner, storage, transport, contract, generated binding, presentation, app composition, mutation and persisted/observable readback.
 
+
+## Agent-assisted interactive verification
+
+For materially affected interactive surfaces, use the smallest adequate evidence producer and keep tool choice subordinate to the claim. The Orchestrator owns closure semantics in `tools/prompting/bthwani-orchestrator/verify/surface-runtime-and-journey-proof.md`; this guide only describes current practical tool roles.
+
+Current external operator/agent choices, when installed and appropriate:
+
+- **Web:** prefer Playwright CLI/MCP for agent-driven browser exploration and control; use Playwright Test when a durable repeatable web regression is required.
+- **Mobile:** prefer `agent-device` CLI/MCP for agent-native device exploration, debugging and semantic interaction. It can also provide replay/E2E evidence when that is sufficient for the claim.
+- **Declarative mobile/cross-platform flows:** use Maestro CLI/MCP and YAML Flows when a durable declarative journey suite is the simpler fit.
+- **Android substrate/debugging:** use ADB for device connectivity, app/process state, logs, port/reverse plumbing and other Android-level evidence; ADB alone is not user-journey proof.
+- **Human visual assistance:** Maestro Studio and `scrcpy` may accelerate inspection/authoring/mirroring, but their presence or a manual screenshot is not closure evidence by itself.
+
+Do not duplicate the same material journey in `agent-device` replay and Maestro merely to increase tool count. Keep one durable proof path when it is sufficient; add a second framework only when it proves a materially different risk or is required by an existing owned suite.
+
+MCP is an agent transport/integration mechanism, not a stronger evidence class. A command executed through MCP proves no more than the underlying runtime action/assertion.
+
+Tool versions and availability are environment/configuration facts. Resolve them from the installed binary, lockfile or executable configuration at use time rather than freezing mutable versions in this document. Any durable test/flow placement follows `governance/policies/tooling-and-assurance.md`: app-specific assurance stays with the app lifecycle; genuinely cross-repository assurance belongs under the corresponding cross-repository tooling/test owner.
+
 ## Negative space
 
 After cutover search for old writers/readers, stale exports/config, wrappers/aliases, obsolete tests/mocks, duplicate contracts and wrong-owner paths.

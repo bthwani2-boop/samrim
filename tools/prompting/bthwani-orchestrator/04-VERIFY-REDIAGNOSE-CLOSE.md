@@ -12,6 +12,7 @@ Route proof to one canonical verification owner. This file does not restate deta
 ## 2. Verification submodules
 
 - `verify/evidence-falsification.md` — evidence provenance, falsification, proof limits and failure classification.
+- `verify/surface-runtime-and-journey-proof.md` — rendered web/mobile interaction, journey, cross-surface handoff and real-runtime proof.
 - `verify/structural-conformance.md` — structural/substrate/root conformance for the materially affected cone.
 - `verify/unit-and-scope-closure.md` — semantic execution-unit and authorized-scope fixed-point closure.
 
