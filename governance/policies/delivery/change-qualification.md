@@ -11,7 +11,7 @@ PARENT_POLICY_ROUTER: governance/policies/delivery.md
 
 Before remote promotion, prove the smallest complete evidence set required by the materially affected governance claims. As applicable this includes locked/reproducible dependency/toolchain setup, generation, build/type/lint, domain tests, contracts, database/migration tests, integration, frontend/mobile checks, runtime/journey behavior, security/authorization, accessibility/localization and failure/recovery behavior.
 
-A candidate that only works in an already-mutated developer machine is not locally qualified. Persistent changes follow `data-and-migrations.md`; security/privacy follows `security.md`; runtime/reliability follows `runtime-reliability.md`; frontend/client behavior follows `frontend-and-client.md`.
+A candidate that only works in an already-mutated developer machine is not locally qualified. Persistent changes follow `../data-and-migrations.md`; security/privacy follows `../security.md`; runtime/reliability follows `../runtime-reliability.md`; frontend/client behavior follows `../frontend-and-client.md`.
 
 Known workarounds, duplicate/shadow authority, half migration, undeclared prerequisite or stale affected evidence block local exit.
 
