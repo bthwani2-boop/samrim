@@ -57,6 +57,22 @@ Official source:
 
 Do not copy mutable store requirements into durable Governance.
 
+## Operational go-live readiness
+
+Before a materially risky production/store launch, verify the operational responsibilities needed for the exact candidate are actually ready, as applicable:
+
+- incident/decision owner and escalation path;
+- current runbook for the material failure classes;
+- observability/alerts that identify the affected release/correlation;
+- safe rollback or forward-fix path;
+- migration/restore/reconciliation procedure where durable or financial truth is affected;
+- provider credentials/quota/readiness for the intended environment;
+- support/operator visibility and governed actions needed to investigate real incidents;
+- reviewer/demo access where a platform review requires it;
+- unresolved legal/privacy/compliance decisions identified by the Product/business model are resolved by the appropriate authority rather than guessed by engineering.
+
+A deployment command, store approval, backup checkbox, or monitoring dashboard alone is not operational readiness.
+
 ## Submission, rollout and observation
 
 Submit the exact qualified build/source lineage. Keep reviewer-access services/credentials working when required.
