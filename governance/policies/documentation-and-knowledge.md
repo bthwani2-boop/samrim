@@ -26,12 +26,12 @@ A document may summarize another owner for usability only when the owner remains
 
 ## Canonical-source and size discipline
 
-Every material meaning has one editable canonical source. Indexes, routers, ADRs, Docs, generated views and Orchestrator routers may point to that source but may not maintain a second normative copy.
+Every material meaning has one editable canonical source. Indexes, routers, Docs, generated views and Orchestrator routers may point to that source but may not maintain a second normative copy. Historical rationale belongs in Git history rather than a parallel live rule tree.
 
 ```text
 ONE MATERIAL MEANING → ONE EDITABLE CANONICAL OWNER
 INDEX/ROUTER → ROUTING ONLY
-ADR → RATIONALE + CURRENT_RULE_ROUTING
+HISTORICAL RATIONALE → GIT HISTORY
 DOCS → GUIDANCE ONLY
 DERIVED QUERY/INDEX → REGENERATED OR SOURCE-DERIVED
 ```

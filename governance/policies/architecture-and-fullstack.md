@@ -56,13 +56,13 @@ Canonical structure may be established before Product/System capability implemen
 
 ```text
 STRUCTURAL_SUBSTRATE != SEMANTIC_CAPABILITY
-HORIZONTAL_SUBSTRATE_BUILD = ALLOWED_WHEN_NO_PARTIAL_CAPABILITY_OR_SECOND_AUTHORITY_IS_CREATED
+STRUCTURAL_SUBSTRATE = ALLOWED_ONLY_WHEN_CAUSALLY_REQUIRED_BY_CURRENT_AUTHORIZED_WORK
 HORIZONTAL_CAPABILITY_WAVE = FORBIDDEN
 ```
 
-Examples of structural substrate include workspace/toolchain wiring, deployable host shells and build identity, thin service process startup, health/readiness, empty canonical contract/data/testing lanes, infrastructure composition and verification tooling. Business routes, state machines, service operations, capability-specific contracts, authorization/session semantics and domain workflows are semantic capability implementation and must satisfy vertical full-stack integrity rather than being smuggled into a foundation phase.
+Examples of structural substrate include workspace/toolchain wiring, deployable-host shell/build identity, thin process startup, health/readiness, infrastructure composition and verification tooling **only when a current admitted responsibility consumes them**. Empty contract/data/testing/service lanes are not substrate and are forbidden placeholders. Business routes, state machines, service operations, capability-specific contracts, authorization/session semantics and domain workflows remain semantic capability implementation.
 
-This policy defines the durable architectural distinction only. Active campaign stage/order and closure remain owned by the Orchestrator.
+This policy defines only the durable structural-versus-semantic distinction. It does not define campaign stages or require repository-wide substrate completion before Product work.
 
 ### Explicit vertical increments
 
