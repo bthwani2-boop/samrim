@@ -38,6 +38,8 @@ Rate/abuse controls are applied where an operation can materially consume resour
 - Passwords, OTP/activation codes, tokens, signing keys, service credentials, provider secrets and recovery credentials are never logged or stored in plaintext outside their approved secure store.
 - Session/refresh/revocation/activation behavior is explicit and replay-safe where required.
 - Revoked, expired, suspended or replaced trust must not survive through client cache/local state or an alternate session path.
+- Public login/activation/challenge consumption must not reveal actor/role existence or blocked/disabled/security-disabled admission state. Publicly distinguish only what is required for safe protocol behavior; privileged status inspection belongs to explicitly authorized administration contracts.
+- Local sign-out is complete when local session credentials/cookies are irreversibly cleared and the host converges to signed-out state. Remote session revocation is a separate server-side result; its failure must not resurrect local authentication or leave the UI acting authenticated.
 - Credential comparison/verification and token/cookie/session transport/storage use the owning platform/framework's current secure primitives; do not invent custom cryptography for convenience.
 - Client/mobile/web bundles contain no server secret, privileged provider credential or private signing material.
 
