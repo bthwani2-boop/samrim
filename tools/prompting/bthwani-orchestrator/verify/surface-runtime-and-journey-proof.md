@@ -194,4 +194,4 @@ CORRECT SURFACE/RUNTIME PROVEN
 + NO DUPLICATE ASSURANCE FRAMEWORK INTRODUCED WITHOUT UNIQUE NEED
 ~~~
 
-This module emits evidence results only. Unit/scope closure remains with `unit-and-scope-closure.md`; failure-driven diagnosis returns to `02-DIAGNOSE-ROOT-CAUSE.md`.
+This module emits evidence results only. Unit/scope closure remains with `unit-and-scope-closure.md`; failure-driven diagnosis returns to `../02-DIAGNOSE-ROOT-CAUSE.md`.
