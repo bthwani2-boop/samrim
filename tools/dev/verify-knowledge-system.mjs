@@ -312,8 +312,6 @@ for (const file of fs.existsSync(orchestratorTemplateDir) ? collectMarkdown(orch
 }
 
 const allowedSharedOrchestratorProtocolTokens = new Set([
-  "mode clean target reconstruction",
-  "product breadth active slice full target",
   "invalidate affected evidence",
   "select next highest authorized executable unit if any",
   "execute immediately if one exists",
