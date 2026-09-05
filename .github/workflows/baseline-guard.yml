@@ -55,7 +55,7 @@ jobs:
 
           for path in "${required[@]}"; do
             [[ -e "${path}" ]] || {
-              echo "::error::Required foundation path missing: ${path}"
+              echo "::error::Required repository path missing: ${path}"
               exit 1
             }
           done
@@ -78,7 +78,7 @@ jobs:
           fi
 
           if grep -R -n -E -- '^[[:space:]]*pull_request_target:' .github/workflows; then
-            echo "::error::pull_request_target is forbidden in foundation workflows"
+            echo "::error::pull_request_target is forbidden in baseline workflows"
             exit 1
           fi
 
@@ -232,7 +232,7 @@ jobs:
 
       - name: Verify repository compose configuration
         shell: bash
-        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation config >/dev/null
+        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration config >/dev/null
 
       - name: Verify developer tooling is non-mutating
         shell: bash
@@ -267,7 +267,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation up -d --build
+          docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration up -d --build
 
       - name: Verify repository runtime composition
         shell: bash
@@ -285,10 +285,10 @@ jobs:
           for attempt in $(seq 1 60); do
             ok=1
 
-            docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation exec -T postgres pg_isready -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
+            docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration exec -T postgres pg_isready -h 127.0.0.1 -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
             curl --fail --silent --show-error --max-time 5 http://127.0.0.1:59000/minio/health/live >/dev/null || ok=0
             curl --fail --silent --show-error --max-time 5 http://127.0.0.1:58026/ >/dev/null || ok=0
-            (echo >/dev/tcp/127.0.0.1/58025) >/dev/null 2>&1 || ok=0
+            (: >/dev/tcp/127.0.0.1/58025) >/dev/null 2>&1 || ok=0
 
             verify_json_endpoint identity http://127.0.0.1:18082/identity/health || ok=0
             verify_json_endpoint identity http://127.0.0.1:18082/identity/readiness || ok=0
@@ -304,15 +304,15 @@ jobs:
 
             if [[ "$attempt" -eq 60 ]]; then
               echo "::error::Repository runtime did not become ready"
-              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation ps
-              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation logs --tail 200
+              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration ps
+              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration logs --tail 200
               exit 1
             fi
 
             sleep 2
           done
 
-          mapfile -t running < <(docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation ps --status running --services | sort)
+          mapfile -t running < <(docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration ps --status running --services | sort)
           expected=(dsh identity mailpit minio postgres wlt)
 
           if [[ "${running[*]}" != "${expected[*]}" ]]; then
@@ -344,4 +344,4 @@ jobs:
       - name: Stop repository runtime
         if: always()
         shell: bash
-        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile foundation down --volumes --remove-orphans
+        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration down --volumes --remove-orphans
