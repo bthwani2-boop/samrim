@@ -2,13 +2,15 @@
 
 ## Branch policy
 
-`main` is the protected canonical promotion branch. Direct development on `main` is forbidden after the foundation commit.
+`main` is the protected canonical promotion branch. Direct development on `main` is forbidden unless the applicable delivery policy and current human authorization explicitly permit it.
 
-Active refoundation and implementation occurs on `a`. Temporary branches may be created from `a` for isolated parallel work and must converge back into `a` before canonical promotion.
+Active refoundation and implementation occurs on the exact working branch supplied by the current invocation and live Git state. Temporary branches may be created only under the applicable Orchestrator branch/mutation rules, with explicit integration ownership and exact-candidate reconciliation before canonical promotion.
+
+Durable contributor guidance must not encode a temporary campaign branch as permanent repository truth.
 
 ## Pull requests to main
 
-A pull request targeting `main` must:
+When a pull request is the approved promotion mechanism, a pull request targeting `main` must:
 
 - represent a coherent canonical promotion;
 - pass all required repository checks;
