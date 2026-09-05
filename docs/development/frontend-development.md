@@ -37,6 +37,10 @@ Client validation improves UX but never replaces server/domain validation or aut
 
 Arabic/RTL is a first-class mode. Applicable web/mobile work must account for semantic labels, focus/keyboard behavior, large text, touch targets, directionality and platform constraints.
 
-## Shared presentation
+## Presentation placement and reuse
 
-Use the design system for reusable visual primitives. Domain rules, permissions, financial calculations and business-specific copy/state remain at their semantic owners.
+Surface-specific feature presentation lives with the consuming app by default. It obtains canonical semantics through service public contracts/clients and must not clone business state machines, permissions or financial calculations.
+
+Use the design system for reusable **domain-neutral** visual primitives/patterns. Extract shared presentation only after real multi-host reuse proves a stable responsibility; do not create service-owned app-shaped frontend trees or a generic shared business layer.
+
+Business-specific copy and presentation derivation may live with the app feature, but durable business meaning/state/authorization remains at the semantic service owner.
