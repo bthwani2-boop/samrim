@@ -339,6 +339,10 @@ if (!topology.includes("SEMANTIC_OWNER: governance/architecture/REPOSITORY-TOPOL
 if (!governanceIndex.includes("architecture/REPOSITORY-TOPOLOGY.md")) failures.push("governance index missing durable repository-topology owner");
 if (systemContext.includes("explicitly admitted Platform Control are the primary bounded contexts")) failures.push("Platform Control service admission is assumed");
 if (!platform.includes("independent deployable-service admission remains conditional")) failures.push("Platform Control semantic/deployment split missing");
+if (!platform.includes("DSH Notifications owns current inbox/preferences/topic/delivery-attempt truth")) {
+  failures.push("Platform orientation has unresolved current notification ownership");
+}
+
 
 if (!orchestrator.includes("PRODUCT_BREADTH: ACTIVE_SLICE | FULL_TARGET")) failures.push("orchestrator missing explicit Product-breadth invocation");
 if (!orchestrator.includes("AUTO_EXPAND_BEYOND_AUTHORIZED_PRODUCT_SCOPE=FORBIDDEN")) failures.push("orchestrator missing no-auto-expansion law");
