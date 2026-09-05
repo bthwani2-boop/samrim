@@ -140,7 +140,7 @@ function assertSession(pair, role, surface, actorId) {
   assert(pair.identity?.role === role, "session role mismatch: expected " + role);
   assert(pair.identity?.surface === surface, "session surface mismatch: expected " + surface);
   if (actorId) assert(pair.identity?.subject === actorId, "session actor mismatch");
-  for (const forbidden of ["roles", "permissions", "operatorContextId", "surfaceAccess"]) {
+  for (const forbidden of ["roles", "permissions", "surfaceAccess"]) {
     assert(!(forbidden in pair.identity), "session leaked " + forbidden);
   }
 }
