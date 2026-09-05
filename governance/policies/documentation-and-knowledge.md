@@ -24,6 +24,26 @@ AGENT ROUTER = NON-AUTHORITATIVE NAVIGATION
 
 A document may summarize another owner for usability only when the owner remains clear and the summary does not introduce a competing rule.
 
+## Canonical-source and size discipline
+
+Every material meaning has one editable canonical source. Indexes, routers, ADRs, Docs, generated views and Orchestrator routers may point to that source but may not maintain a second normative copy.
+
+```text
+ONE MATERIAL MEANING → ONE EDITABLE CANONICAL OWNER
+INDEX/ROUTER → ROUTING ONLY
+ADR → RATIONALE + CURRENT_RULE_ROUTING
+DOCS → GUIDANCE ONLY
+DERIVED QUERY/INDEX → REGENERATED OR SOURCE-DERIVED
+```
+
+Canonical knowledge files must remain small enough for selective loading and coherent ownership. A file above **24,000 bytes** is a structural knowledge defect unless it is split into semantically cohesive owners/submodules before acceptance. Do not evade the limit by arbitrary one-section files or repeated boilerplate; split only on real responsibility boundaries.
+
+```text
+MAX_CANONICAL_KNOWLEDGE_MARKDOWN_BYTES=24000
+GIANT_MULTI_RESPONSIBILITY_KNOWLEDGE_FILES=0
+ARBITRARY_FRAGMENTATION=0
+```
+
 ## Governance completeness
 
 Governance is semantically complete when a qualified developer or coding agent can determine, without reverse-engineering accidental implementation structure:
@@ -189,7 +209,7 @@ Reference material should state:
 
 ## Required conformance properties
 
-Applicable knowledge-system conformance requires:
+Concrete candidate closure remains Orchestrator authority. Applicable knowledge-system conformance requires:
 
 ~~~text
 GOVERNANCE_ENTRYPOINT=PASS
