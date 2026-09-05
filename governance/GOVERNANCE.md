@@ -68,6 +68,9 @@ A current implementation can reveal drift but does not silently redefine Product
 - `policies/runtime-reliability.md` — runtime/configuration, external systems, failure/recovery, observability and development-environment invariants.
 - `policies/security.md` — identity, authorization, credentials, privacy, financial security and untrusted boundaries.
 - `policies/standards-and-quality.md` — standards, testing, dependency/adoption, licensing and assurance adequacy.
+- `policies/providers-and-integrations.md` — semantic provider ports, control/data-plane split, secret references, provenance, retries/fallbacks, webhooks and simulators.
+- `policies/tooling-and-assurance.md` — automation/tool placement, derived registries, guard survival, CI/evidence and dependency/build assurance.
+- `policies/documentation-and-knowledge.md` — Governance/Docs/agent authority partition, portability, semantic-parity preservation and knowledge verification.
 - `policies/delivery.md` — candidate identity, promotion, rollout, release, rollback and delivery evidence.
 
 ## One-source laws
