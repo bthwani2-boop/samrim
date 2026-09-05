@@ -15,6 +15,8 @@ const prd = read("governance/product/PRD.md");
 const financialModel = read("governance/product/FINANCIAL-MODEL.md");
 const glossary = read("governance/project/GLOSSARY.md");
 const orchestrator = read("tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md");
+const scopeAuthority = read("tools/prompting/bthwani-orchestrator/01-SCOPE-AUTHORITY-RULES.md");
+const verificationOwner = read("tools/prompting/bthwani-orchestrator/04-VERIFY-REDIAGNOSE-CLOSE.md");
 const cleanTargetProfile = read("tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md");
 const composition = read("governance/architecture/APP-SERVICE-COMPOSITION.md");
 const dataContracts = read("governance/architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md");
@@ -81,6 +83,7 @@ function normalizedLawLine(line) {
 function isGeneralLawLike(line) {
   const t = line.trim();
   if (t.length < 30) return false;
+  if (/^[A-Z][A-Z0-9_]+:\s*/.test(t)) return false;
   if (t.includes("=") || t.includes("!=") || t.startsWith("→")) return true;
   const letters = t.replace(/[^A-Za-z]/g, "");
   return letters.length >= 20 && letters === letters.toUpperCase();
@@ -386,8 +389,15 @@ if (!platform.includes("DSH Notifications owns current inbox/preferences/topic/d
 
 
 if (!orchestrator.includes("PRODUCT_BREADTH: ACTIVE_SLICE | FULL_TARGET")) failures.push("orchestrator missing explicit Product-breadth invocation");
-if (!orchestrator.includes("AUTO_EXPAND_BEYOND_AUTHORIZED_PRODUCT_SCOPE=FORBIDDEN")) failures.push("orchestrator missing no-auto-expansion law");
-if (!orchestrator.includes("BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE")) failures.push("orchestrator missing active-slice Level-4 terminal token");
+if (
+  !scopeAuthority.includes("LEVEL_4 != AUTHORIZATION_TO_BUILD_ALL_FUTURE_FEATURES") ||
+  !scopeAuthority.includes("Unrelated future capabilities remain outside executable scope until explicitly activated.")
+) {
+  failures.push("scope authority missing no-auto-expansion law");
+}
+if (!verificationOwner.includes("BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE")) {
+  failures.push("verification owner missing active-slice Level-4 terminal token");
+}
 
 if (!orchestrator.includes("## 6A. Context-loading protocol")) failures.push("orchestrator missing staged context-loading protocol");
 for (const token of [
@@ -398,7 +408,7 @@ for (const token of [
 ]) {
   if (!orchestrator.includes(token)) failures.push("orchestrator missing authority-class metadata: " + token);
 }
-if (orchestrator.includes("PACKAGE_SELF_CONTAINED: YES")) failures.push("orchestrator uses ambiguous package self-contained metadata");
+if (/^PACKAGE_SELF_CONTAINED:\s*YES\s*$/m.test(orchestrator)) failures.push("orchestrator uses ambiguous package self-contained metadata");
 if (orchestrator.includes("Then load `00` through `05`")) failures.push("orchestrator still requires unconditional preload of all 00-05 modules");
 const orchestratorLoadTriggers = new Map([
   ["tools/prompting/bthwani-orchestrator/01-SCOPE-AUTHORITY-RULES.md", "LOAD_TRIGGER: ENTRY_RESUME_SCOPE_AUTHORITY_BEFORE_BRANCH_OR_SCOPE_ACTION"],
@@ -477,11 +487,13 @@ for (const token of [
   if (!dataContracts.includes(token)) failures.push("data/contracts governance missing generation/catalog invariant: " + token);
 }
 
-for (const token of [
-  "INFRA BINDS/COMPOSES VALUES",
-  "SERVICE-SPECIFIC PROVIDER SIMULATOR",
-]) {
-  if (!runtimeArchitecture.includes(token)) failures.push("runtime architecture missing infra/simulator ownership token: " + token);
+if (!runtimeArchitecture.includes("INFRA BINDS/COMPOSES VALUES")) {
+  failures.push("runtime architecture missing infra binding ownership token");
+}
+if (
+  !/Service-specific provider simulators\/fixtures follow the owning service testing lifecycle/i.test(runtimeArchitecture)
+) {
+  failures.push("runtime architecture missing service-specific provider simulator ownership semantics");
 }
 
 for (const token of [
