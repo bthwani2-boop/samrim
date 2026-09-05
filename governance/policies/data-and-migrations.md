@@ -26,6 +26,22 @@ Use the database to encode durable integrity close to the data when appropriate:
 
 Do not move mutable Product workflow policy into opaque database logic merely because it can be expressed in SQL. Database constraints protect durable invariants; domain/application owners decide governed behavior.
 
+## Migration authority and readiness
+
+Each durable data owner has one globally ordered canonical migration lane unless a separately deployed/storage-owned boundary proves an independent lane is required. Parallel migration authorities for the same database/schema meaning are forbidden.
+
+~~~text
+ONE_DATA_OWNER
+→ ONE_CANONICAL_MIGRATION_HISTORY
+→ ONE_REPRODUCIBLE_MIGRATION_ENTRYPOINT
+~~~
+
+A service that claims database readiness proves its required database/schema prerequisites, not merely that the process is alive.
+
+Production schema evolution is an explicit controlled migration/predeploy responsibility. Development/bootstrap may invoke the same canonical migration mechanism explicitly, but API process startup must not become an arbitrary hidden production schema mutator.
+
+Do not create empty/placeholder business migrations or speculative future tables merely to make a service appear journey-ready.
+
 ## Migration law
 
 For persistent changes prove as applicable:
