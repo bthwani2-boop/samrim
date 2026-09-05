@@ -114,25 +114,50 @@ for (const { id, body } of sections) {
 
 
 const durableGovernanceDir = path.join(root, "governance");
+const governanceSemanticOwners = new Map();
 for (const file of collectMarkdown(durableGovernanceDir)) {
   const body = fs.readFileSync(file, "utf8");
   const rel = path.relative(root, file).split(path.sep).join("/");
+
+  const ownerMatches = [...body.matchAll(/^SEMANTIC_OWNER:\s*(\S+)\s*$/gm)].map((m) => m[1]);
+  const requiresSemanticOwner =
+    rel === "governance/GOVERNANCE.md" ||
+    /^governance\/(project|product|architecture|policies)\/[^/]+\.md$/.test(rel);
+
+  if (requiresSemanticOwner && ownerMatches.length !== 1) {
+    failures.push(rel + " must declare exactly one SEMANTIC_OWNER");
+  }
+  if (ownerMatches.length > 1) failures.push(rel + " declares duplicate SEMANTIC_OWNER lines");
+  if (ownerMatches.length === 1) {
+    const owner = ownerMatches[0];
+    if (owner !== rel) failures.push(rel + " SEMANTIC_OWNER must equal its repository path; found " + owner);
+    if (governanceSemanticOwners.has(owner)) {
+      failures.push("duplicate Governance SEMANTIC_OWNER " + owner + " in " + governanceSemanticOwners.get(owner) + " and " + rel);
+    } else {
+      governanceSemanticOwners.set(owner, rel);
+    }
+  }
+
   if (/services\/workforce|core\/workforce|workforce-service|Workforce owns/i.test(body)) {
     failures.push("retired current Workforce-service authority residue in durable Governance: " + rel);
   }
   if (/service-owned capability presentation/i.test(body)) {
     failures.push("ambiguous service-owned surface presentation wording in durable Governance: " + rel);
   }
+  if (/services\/[^\s/]+\/frontend\//i.test(body)) {
+    failures.push("service-owned frontend path residue in durable Governance: " + rel);
+  }
+  if (/during the current refoundation campaign|active refoundation branch|stage-b\//i.test(body)) {
+    failures.push("current campaign/branch state leaked into durable Governance: " + rel);
+  }
 }
 
-for (const file of collectMarkdown(refoundationTargetsDir)) {
+const docsDir = path.join(root, "docs");
+for (const file of collectMarkdown(docsDir)) {
   const body = fs.readFileSync(file, "utf8");
   const rel = path.relative(root, file).split(path.sep).join("/");
-  if (/services\/workforce|core\/workforce|workforce-service|Workforce owns/i.test(body)) {
-    failures.push("retired current Workforce-service target residue: " + rel);
-  }
-  if (/^\s*→\s*services\/[^/\s]+\/frontend\//im.test(body)) {
-    failures.push("target module directs presentation into a service-owned frontend tree: " + rel);
+  if (/^(EXECUTION_AUTHORITY|PRODUCT_AUTHORITY|PRODUCT_SEMANTIC_AUTHORITY|ARCHITECTURE_AUTHORITY|CLOSURE_AUTHORITY):\s*(?!NONE\s*$).+/im.test(body)) {
+    failures.push("Docs claims forbidden normative authority: " + rel);
   }
 }
 
