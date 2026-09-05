@@ -2,19 +2,23 @@
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
 PRODUCT_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: LIVE_REPOSITORY_SOURCE_AND_RUNTIME
 
 Use this path for a developer's first material change.
 
 ## 1. Read ownership
 
-Start with:
+Start with `AGENTS.md`, then load only the materially applicable semantic owners.
 
-- governance/project/PLATFORM.md
-- governance/product/PRD.md
-- governance/product/CAPABILITIES.md
-- governance/product/JOURNEYS.md
-- governance/architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md
-- applicable policies
+Use source-derived lookup when the task concerns one capability/journey/owner:
+
+~~~text
+pnpm knowledge:query -- capability <CAPABILITY_ID>
+pnpm knowledge:query -- journey <J_ID>
+pnpm knowledge:query -- owner <keyword-or-path>
+~~~
+
+Always include the applicable ownership/policy owner; do not load the whole capability/journey corpus merely by habit.
 
 ## 2. Pin current state
 
@@ -22,7 +26,7 @@ Work from the exact intended repository/branch head. Do not rely on stale local 
 
 ## 3. Define the affected cone
 
-Identify apps, service frontend/backend, database, contract/generated client, runtime/config, tests, docs/governance and external integrations affected by the change.
+Identify consuming app feature/shell work, owning service backend/data/contract/generated-client lineage, runtime/config, tests, docs/governance and external integrations affected by the change. Surface-specific feature UI stays in the app host; service ownership of business truth does not create a service frontend tree.
 
 ## 4. Implement vertically
 
