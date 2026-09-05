@@ -117,6 +117,29 @@ for (const file of collectMarkdown(refoundationTargetsDir)) {
   if (!body.includes("DURABLE_AUTHORITY: NONE")) failures.push(rel + " target module missing durable non-authority marker");
 }
 
+const durableGovernanceDir = path.join(root, "governance");
+for (const file of collectMarkdown(durableGovernanceDir)) {
+  const body = fs.readFileSync(file, "utf8");
+  const rel = path.relative(root, file).split(path.sep).join("/");
+  if (/services\/workforce|core\/workforce|workforce-service|Workforce owns/i.test(body)) {
+    failures.push("retired current Workforce-service authority residue in durable Governance: " + rel);
+  }
+  if (/service-owned capability presentation/i.test(body)) {
+    failures.push("ambiguous service-owned surface presentation wording in durable Governance: " + rel);
+  }
+}
+
+for (const file of collectMarkdown(refoundationTargetsDir)) {
+  const body = fs.readFileSync(file, "utf8");
+  const rel = path.relative(root, file).split(path.sep).join("/");
+  if (/services\/workforce|core\/workforce|workforce-service|Workforce owns/i.test(body)) {
+    failures.push("retired current Workforce-service target residue: " + rel);
+  }
+  if (/^\s*→\s*services\/[^/\s]+\/frontend\//im.test(body)) {
+    failures.push("target module directs presentation into a service-owned frontend tree: " + rel);
+  }
+}
+
 const orchestratorDir = path.join(root, "tools/prompting/bthwani-orchestrator");
 const refoundationDir = path.join(root, "tools/prompting/bthwani-refoundation");
 const orchestratorLawLines = new Map();
