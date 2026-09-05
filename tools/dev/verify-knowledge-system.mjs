@@ -501,6 +501,7 @@ if (!doctorScript.includes('[string] $ExpectedBranch = ""')) failures.push("doct
 if (!foundationCloseScript.includes('[string] $ExpectedBranch = ""')) failures.push("foundation runtime closure branch check is not invocation-driven");
 if (!foundationLocalScript.includes('[string] $ExpectedBranch = ""')) failures.push("local foundation proof branch check is not invocation-driven");
 if (!foundationLocalScript.includes('$verificationBranch = if ([string]::IsNullOrWhiteSpace($ExpectedBranch))')) failures.push("local foundation proof does not derive verification branch from current candidate");
+if (!foundationLocalScript.includes("pnpm run knowledge:verify:all")) failures.push("local foundation proof does not run the complete knowledge verification suite");
 
 for (const forbiddenRegistryToken of ["expectedApps", "expectedServices", "expectedPackages", "CANONICAL_APPS", "CANONICAL_SERVICES", "CANONICAL_PACKAGES"]) {
   if (repositoryStructureGuard.includes(forbiddenRegistryToken)) {
