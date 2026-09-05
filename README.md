@@ -4,10 +4,12 @@ This repository is the canonical BThwani platform repository.
 
 ## Branch model
 
-- `main` — protected canonical foundation and promotion branch.
-- `a` — active refoundation and implementation branch.
-- Temporary implementation branches may branch from `a` and must converge back into `a`.
-- Canonical promotion is performed through a pull request from `a` to `main` after the applicable fixed-point gates pass.
+- `main` — protected canonical promotion branch.
+- Active implementation/refoundation work occurs on the exact working branch supplied by the current invocation and live Git state.
+- Temporary implementation branches are allowed only under the applicable Orchestrator branch/mutation rules and must converge through an explicitly owned integration path.
+- Canonical promotion to `main` occurs only after the applicable exact-candidate fixed-point and delivery gates pass.
+
+Durable documentation must not hard-code a temporary campaign branch as the permanently active branch.
 
 ## Repository roles
 
