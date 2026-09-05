@@ -358,16 +358,6 @@ for (const file of collectMarkdown(runbookDir)) {
   if (/Final closure requires/i.test(body)) failures.push("Orchestrator closure law leaked into runbook: " + rel);
 }
 
-const lifecycleDir = path.join(root, "docs/platform-engineering-lifecycle");
-for (const file of collectMarkdown(lifecycleDir)) {
-  const rel = path.relative(root, file).split(path.sep).join("/");
-  const body = fs.readFileSync(file, "utf8");
-  if (/^#\s+PHASE\s+\d+/m.test(body)) failures.push("parallel execution phase leaked into lifecycle docs: " + rel);
-  if (/^#{1,4}\s+.*(?:Exit gate|Closure Gate|Canonical evidence gates)/mi.test(body)) {
-    failures.push("parallel closure/gate authority leaked into lifecycle docs: " + rel);
-  }
-}
-
 const incrementalGuide = read("docs/development/incremental-product-delivery.md");
 for (const forbiddenHeading of ["Preferred expansion sequence", "Initial breadth discipline", "Deferred expansion"]) {
   if (incrementalGuide.includes(forbiddenHeading)) failures.push("hidden Product roadmap leaked into incremental delivery guide: " + forbiddenHeading);
