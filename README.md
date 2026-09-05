@@ -16,7 +16,8 @@ Durable documentation must not hard-code a temporary campaign branch as the perm
 - `governance/` — durable product, system, architecture, security, quality and delivery meaning.
 - `docs/` — human development and operational guidance.
 - `tools/` — automation, inspection, generation and evidence; not Product Truth.
-- `apps/`, `services/`, `packages/`, `contracts/`, `infra/` — admitted by the canonical refoundation target as implementation is rebuilt.
+- `AGENTS.md` — routing-only entrypoint for coding agents; it never replaces Governance, Orchestrator, Docs or source.
+- `apps/`, `services/`, `packages/`, `contracts/`, `infra/` — executable implementation roots whose durable placement/admission rules come from Governance; their current contents and existence are proven by live source.
 
 ## Secrets
 
