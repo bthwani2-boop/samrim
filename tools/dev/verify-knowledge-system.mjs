@@ -41,6 +41,8 @@ const gettingStarted = read("docs/development/getting-started.md");
 const firstChangeGuide = read("docs/development/first-change.md");
 const repositoryMapGuide = read("docs/development/repository-map.md");
 const baselineGuard = read(".github/workflows/baseline-guard.yml");
+const codeowners = read(".github/CODEOWNERS");
+const pullRequestTemplate = read(".github/pull_request_template.md");
 const doctorScript = read("tools/dev/doctor.ps1");
 const foundationCloseScript = read("tools/dev/close-foundation-runtime.ps1");
 const foundationLocalScript = read("tools/dev/verify-foundation-local.ps1");
@@ -569,6 +571,23 @@ if (packageJson.scripts?.["knowledge:verify:all"] !== "pnpm run knowledge:verify
 if (baselineGuard.includes("REFOUNDATION_PROFILE_REVISION") || baselineGuard.includes("bthwani-refoundation/00-ENTRYPOINT.md")) {
   failures.push("baseline guard retains retired refoundation compatibility coupling");
 }
+for (const route of ["/governance/", "/docs/", "/tools/prompting/"]) {
+  if (!codeowners.includes(route + " @bthwani2-boop")) failures.push("CODEOWNERS missing sensitive knowledge routing: " + route);
+}
+for (const token of [
+  "## Exact candidate and authorized scope",
+  "PRODUCT_BREADTH",
+  "ACTIVE_PRODUCT_SLICE/FULL_TARGET",
+  "## Deployable identity / runtime",
+  "## Dependencies / external references",
+  "Reference selection alone is not adoption approval",
+  "## Docs / knowledge",
+  "## Negative space",
+  "Green tools/CI are not presented as broader closure than they actually prove",
+]) {
+  if (!pullRequestTemplate.includes(token)) failures.push("PR template missing accountability token: " + token);
+}
+
 if (!baselineGuard.includes("Retired bthwani-refoundation package must not exist")) {
   failures.push("baseline guard does not forbid retired refoundation package");
 }
