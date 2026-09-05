@@ -11,6 +11,7 @@ import {
 import type { IdentitySessionState } from "@bthwani/identity";
 import {
   activateIdentity,
+  currentIdentityState,
   logoutIdentity,
   restoreIdentitySession,
 } from "../src/identity";
@@ -67,10 +68,12 @@ export default function IdentityGate() {
     setError("");
     try {
       await logoutIdentity();
-      setState({ kind: "signed_out" });
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
+      // IdentitySessionManager changes its state only after local SecureStore
+      // clearing succeeds. Mirror that canonical state even when remote revoke fails.
+      setState(currentIdentityState());
       setBusy(false);
     }
   }

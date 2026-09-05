@@ -71,6 +71,25 @@ for (const [app, role, surface] of [
 
   const page = read("apps/" + app + "/app/index.tsx");
   if (!page.includes('from "../src/identity"')) failures.push(app + " UI bypasses its Identity host binding");
+  if (!page.includes("currentIdentityState")) {
+    failures.push(app + " UI must read canonical local Identity state after logout");
+  }
+  const mobileLogoutStart = page.indexOf("async function logout()");
+  const mobileLogoutEnd = page.indexOf("\n  if (state.kind", mobileLogoutStart);
+  const mobileLogoutBody = mobileLogoutStart >= 0
+    ? page.slice(mobileLogoutStart, mobileLogoutEnd >= 0 ? mobileLogoutEnd : page.length)
+    : "";
+  const mobileLogoutFinally = mobileLogoutBody.indexOf("finally");
+  const mobileLogoutStateSync = mobileLogoutBody.indexOf("setState(currentIdentityState());");
+  if (
+    mobileLogoutFinally < 0 ||
+    mobileLogoutStateSync < 0 ||
+    mobileLogoutStateSync < mobileLogoutFinally
+  ) {
+    failures.push(
+      app + " logout must mirror canonical IdentitySessionManager state in finally after local-clear/remote-revoke outcome",
+    );
+  }
 }
 
 const controlPackagePath = "apps/control-panel/package.json";
