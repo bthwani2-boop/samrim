@@ -99,6 +99,32 @@ Do not create local token foundations/components that independently encode a mat
 
 Shared UI may own presentation behavior; it never becomes a domain/business/financial truth owner.
 
+## Design-System admission and localization ownership
+
+The shared Design System grows from real cross-surface/domain-neutral need rather than from an attempt to prebuild a complete component catalog.
+
+~~~text
+REAL REUSABLE CONSUMER NEED
+→ SMALLEST DOMAIN-NEUTRAL TOKEN/PRIMITIVE/PATTERN
+→ PLATFORM-APPROPRIATE IMPLEMENTATION
+→ ACCESSIBILITY/RTL EVIDENCE
+→ REUSE
+
+PREBUILD FULL DOMAIN COMPONENT CATALOG = FORBIDDEN
+~~~
+
+Business/domain components begin in the consuming app feature. Extract them only when the extracted responsibility is genuinely reusable and does not carry domain state, authorization, financial meaning or actor-specific policy into the Design System.
+
+The Design System may own generic strings intrinsic to reusable controls/patterns when required for accessibility/interaction. Domain/Product copy and translations remain with their semantic capability/presentation owner.
+
+~~~text
+DESIGN_SYSTEM_GENERIC_COMPONENT_STRING = ALLOWED_WHEN_INTRINSIC
+DOMAIN_PRODUCT_TRANSLATION = DOMAIN/PRESENTATION OWNER
+REPOSITORY_WIDE_GENERIC_LOCALES_AUTHORITY = FORBIDDEN
+~~~
+
+Directionality foundations are shared semantics; individual apps must not independently invent competing RTL/LTR systems. Platform-specific rendering adaptations are allowed when the semantic direction contract remains one.
+
 ## Design asset provenance
 
 Fonts, icons, images, illustrations, motion assets and other material design dependencies require known source/ownership and licensing/provenance compatible with repository/product use. Unknown, incompatible or unverifiable provenance is not an acceptable final-state asset merely because it looks correct.
