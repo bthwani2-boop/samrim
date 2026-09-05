@@ -30,13 +30,13 @@ If a runbook conflicts with a live executable path/command, correct the runbook.
 - `payments.md` — payment sessions/provider webhook/reconciliation safety.
 - `wallet-reconciliation.md` — WLT-backed projection/reconciliation incidents.
 - `settlements-and-payouts.md` — WLT settlement/payout/reconciliation incidents.
-- `platform-control.md` — conditional target guidance; use operationally only after exact-current executable owner/materialization is proven.
 - `provider-unknown-outcomes.md` — ambiguous external mutation/provider outcomes.
 - `special-requests-and-support.md` — special-request and support/rescue incidents.
-- `rollout-recovery.md` — conditional target guidance; use operationally only when the exact-current rollout owner/state machine exists and is proven.
 - `systemic-platform-recovery.md` — database/migration, contract/version-skew, security/credential, and cross-service recovery routing.
 - `communications-and-media.md` — notification delivery, inbox/push/email/SMS routing, and media/object-storage incidents.
 - `catalog-promotions-ratings.md` — catalog publication, promotion/coupon, and ratings/reviews operational recovery.
+
+Conditional/future operational patterns that are not executable today live under `../reference/target-operations/`, never beside current runbooks.
 
 Mobile build activation and Sentry setup live under `../development/`, not operational runbooks.
 
@@ -59,7 +59,6 @@ A runbook must:
 - avoid copying secrets or unnecessary PII into tickets/logs;
 - verify canonical readback after recovery;
 - use environment/configured thresholds rather than hardcoded historical numbers;
-- state explicitly when guidance is conditional on an executable owner/mechanism that may not currently exist;
 - contain no branch/campaign/stage status, Product roadmap, Orchestrator closure gate or hand-maintained current schema/route/table inventory.
 
 A runbook may mention an implementation path only when operationally useful and must not become a hand-maintained route/table registry.

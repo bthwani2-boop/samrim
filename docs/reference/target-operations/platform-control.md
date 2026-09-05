@@ -1,14 +1,13 @@
-# Platform Control Operations Runbook
+# Target Operations Reference — Platform Control
 
-DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
+DOCUMENT_CLASS: NONAUTHORITATIVE_TARGET_OPERATIONS_REFERENCE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
-DOCUMENT_STATUS: CONDITIONAL_TARGET_GUIDANCE
-USE_AS_CURRENT_OPERATIONAL_RUNBOOK: ONLY_AFTER_EXECUTABLE_PLATFORM_CONTROL_MATERIALIZATION
 
-## Trigger
+## Applicability
 
-Use operationally only when exact-current executable evidence proves a materialized owner for the relevant Platform Control semantic responsibility and the governed action/readback being diagnosed. Until then, this file is target recovery guidance and must not imply that `services/platform-control`, contracts, migrations, or a rollout runtime already exist.
+Use this only as a design/recovery reference for a future or conditional Platform Control materialization. It never asserts that a Platform Control service, contract, migration or rollout runtime currently exists. When such a responsibility is executable, current source/runtime plus the applicable operational runbook must govern actual operation.
 
 ## Diagnose
 

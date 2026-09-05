@@ -48,8 +48,8 @@ Read in this order for normal onboarding:
 1. `development/getting-started.md`
 2. `development/repository-map.md`
 3. `development/first-change.md`
-4. `platform-engineering-lifecycle/README.md` — modular end-to-end method from donor forensics and journey-ready foundation through production, mobile-store release, and operations
-5. `development/incremental-product-delivery.md` — non-authoritative strategy for small canonical active slices, core fixed point, and staged feature expansion
+4. `platform-engineering-lifecycle/README.md` — modular human reference map for donor, foundation, delivery, release and operations topics; not an execution sequence
+5. `development/incremental-product-delivery.md` — non-authoritative guidance for implementing an already-authorized small canonical slice without disposable architecture
 
 Then use the focused guide:
 
@@ -84,6 +84,8 @@ Additional cross-cutting recovery guides include `runbooks/systemic-platform-rec
 `reference/external-systems/` contains non-authoritative external research. Reference selection is not dependency adoption.
 
 `reference/donor-reconstruction-patterns.md` preserves non-authoritative historical donor extraction/convergence clues; it is never current topology or implementation authority.
+
+`reference/target-operations/` contains future/conditional operating patterns that are intentionally excluded from current operational runbooks.
 
 ## Staleness rule
 

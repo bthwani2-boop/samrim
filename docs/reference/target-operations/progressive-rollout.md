@@ -1,16 +1,14 @@
-# Progressive Rollout Recovery Runbook
+# Target Operations Reference — Progressive Rollout
 
-DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
-PRODUCT_AUTHORITY: NONE
+DOCUMENT_CLASS: NONAUTHORITATIVE_TARGET_OPERATIONS_REFERENCE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
-DOCUMENT_STATUS: CONDITIONAL_TARGET_GUIDANCE
-USE_AS_CURRENT_OPERATIONAL_RUNBOOK: ONLY_AFTER_EXECUTABLE_ROLLOUT_OWNER_MATERIALIZATION
 
-Status: CONDITIONAL_TARGET_GUIDANCE
-Semantic owner: Platform Control control-plane responsibility
-Executable owner: derive from exact-current implementation; independent `services/platform-control` deployment is not assumed.
+Semantic owner when admitted: Platform Control control-plane responsibility.
+Executable owner: always derive from exact-current implementation; independent `services/platform-control` deployment is never assumed.
 
-Do not use the procedures below as current operational commands until executable evidence proves the current rollout contract/state machine, permission boundary, and canonical writer. If that responsibility is rehomed rather than deployed as Platform Control, operate the rehomed owner.
+The patterns below describe target recovery semantics only. They are not current operational commands and become actionable only after exact executable ownership, contract/state machine and permission boundaries are proven.
 
 ## Ownership
 
