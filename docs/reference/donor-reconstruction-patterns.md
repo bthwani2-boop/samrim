@@ -162,6 +162,72 @@ Useful survival questions:
 - does it reproduce business logic rather than call canonical APIs?
 - can compiler/schema/database/test/runtime evidence enforce the invariant more directly?
 
+## Historical metadata and contract convergence examples
+
+The donor contained several metadata/contract fragment classes that are useful forensic clues but must not survive as manual parallel truth without a unique machine-consumed role.
+
+High-risk metadata examples:
+
+~~~text
+capabilities.ts
+capability-map.ts
+surface-map.ts
+authorization-capabilities.json
+backend-route-classification.json
+service.manifest.ts
+manual operation arrays
+manual capability→permission maps
+manual surface/route capability registries
+backendRuntimeReady / frontendReady style closure fields
+~~~
+
+Disposition pattern:
+
+~~~text
+permission vocabulary / identity semantics → canonical Identity/Security owner
+server authorization enforcement           → owning backend/service
+operationId + declared security metadata    → canonical service contract when contract-level
+surface/app composition metadata            → derived consumer metadata only when required
+runtime/closure declarations                → executable evidence or delete
+empty/duplicate classification artifacts    → delete
+~~~
+
+Historical WLT contract-fragment convergence examples:
+
+~~~text
+payment-session overlay + checkout handoff overlay
+→ payment
+
+settlement-operations + settlement portion of mixed settlement/commission fragments
+→ settlement
+
+commission portion of mixed settlement/commission fragments
+→ commission only when independently justified
+
+payout-destination + payout-failure boundary fragments
+→ payout
+
+commercial-summary + commercial fragments
+→ commercial only if one cohesive responsibility is proven
+
+store-onboarding-fee
+→ commercial or precise fee-policy owner
+
+special-request financial quote fragments
+→ pricing when WLT owns the financial quote semantics
+
+actor-shaped finance fragments
+→ distribute to wallet / commission / payout / other actual financial owner
+
+captain-collateral
+→ collateral
+
+dispatch-financial-eligibility
+→ actual WLT financial eligibility owner
+~~~
+
+These are semantic convergence hints only. Always re-pin donor/current evidence and never assume the historical filenames still exist.
+
 ## Final reference boundary
 
 This file survives only as long as the historical donor patterns materially help forensic reconstruction or future audits.
