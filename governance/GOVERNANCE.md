@@ -51,9 +51,9 @@ A current implementation can reveal drift but does not silently redefine Product
 ### Architecture
 
 - `architecture/SYSTEM-CONTEXT.md` — bounded contexts and dependency direction.
-- `architecture/REPOSITORY-TOPOLOGY.md` — durable repository responsibility taxonomy, placement, and container-admission law.
+- `architecture/REPOSITORY-TOPOLOGY.md` — repository taxonomy, physical placement and container-admission law only.
 - `architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md` — semantic owner/writer/readback map.
-- `architecture/APP-SERVICE-COMPOSITION.md` — deployable-host versus service-capability responsibility.
+- `architecture/APP-SERVICE-COMPOSITION.md` — sole durable owner of deployable-host versus service-capability responsibility/composition.
 - `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` — data/contract/version/integration boundaries.
 - `architecture/RUNTIME-AND-CONFIGURATION.md` — runtime/configuration classes and technical operating boundaries.
 - `architecture/FOUNDATION-AND-JOURNEY-READY-SUBSTRATE.md` — durable cross-cutting technical substrate required before broad real-journey admission without another foundation refound.
@@ -62,7 +62,7 @@ A current implementation can reveal drift but does not silently redefine Product
 ### Engineering policies
 
 - `policies/engineering.md` — universal engineering constitution and owner routing.
-- `policies/architecture-and-fullstack.md` — bounded contexts, dependency direction, app/host vs service ownership, contracts and structural integrity.
+- `policies/architecture-and-fullstack.md` — full-stack structural integrity, dependency direction, shared-code/indirection/naming/negative-space policy; it routes app/service composition and provider semantics to their dedicated owners.
 - `policies/data-and-migrations.md` — data authority, schemas, migrations, backfills, seeds and durable-data evolution.
 - `policies/frontend-and-client.md` — client responsibility, state/readback, accessibility and presentation boundaries.
 - `policies/runtime-reliability.md` — runtime/configuration, external systems, failure/recovery, observability and development-environment invariants.

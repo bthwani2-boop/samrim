@@ -47,15 +47,16 @@ apps/app-field/
 apps/control-panel/
 ```
 
-An app owns route hierarchy, navigation/shell/tabs, deep links, bootstrap/session binding, native/OS adapters, app-specific assets, deployable/build identity and cross-capability page composition. It does not own durable business, financial or authentication truth.
+This file owns their **repository placement and container admission only**. The durable responsibility split between app hosts and service capabilities is owned exclusively by `APP-SERVICE-COMPOSITION.md`.
 
 A pass-through `apps/<app>/runtime/` wrapper with no independent sibling lifecycle is noncanonical. Preserve deployable identity while flattening; path cleanup never authorizes accidental Expo/EAS/package/bundle/scheme/update/hosting identity change.
 
+
 ## Services
 
-A service is admitted only when independent semantic responsibility plus the required lifecycle/storage/API/runtime boundary is proven.
+A `services/<owner>/` container is admitted only when the corresponding semantic responsibility and required lifecycle/storage/API/runtime boundary are already justified by the applicable Governance owner.
 
-Canonical service shape is responsibility-driven:
+Default repository shape:
 
 ```text
 services/<owner>/
@@ -66,11 +67,12 @@ services/<owner>/
   tests/
 ```
 
-This is the default shape, not a requirement to create empty lanes. Surface-specific presentation belongs to app hosts. A future host-neutral reusable presentation container may be admitted only after real multi-host reuse proves an independent responsibility; it is not predeclared in the canonical service shape.
+This is a placement template, not permission to create empty lanes or a statement that every bounded context must be independently deployable. Subdirectories exist only when their technical responsibility is real.
 
-Subdirectories exist only when that responsibility is real. `cmd/*` remains process startup; transport does not own business state machines; integrations translate peer/external boundaries and do not own remote truth.
+Whether presentation belongs to an app host, a service, or a reusable presentation owner is **not defined here**; `APP-SERVICE-COMPOSITION.md` owns that semantic composition rule.
 
-Identity, DSH and WLT are the durable primary bounded-context responsibilities. Platform Control is an admitted semantic control-plane responsibility, but independent deployment as `services/platform-control` remains conditional on executable service-admission proof. Notification, Search or any other peer service is likewise conditional and never inferred from a donor/current folder name.
+Identity, DSH and WLT are durable primary bounded-context responsibilities. Platform Control or any other peer service earns an independent `services/*` deployable only after its executable service-admission evidence is proven; donor/current folder names never grant admission.
+
 
 ## Packages
 

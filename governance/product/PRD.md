@@ -65,7 +65,7 @@ A target capability may exclude a surface when its durable semantics make the ex
 
 The canonical human identity is the **Human Actor**. Customer/client, partner member, captain, field worker and operator are current Identity roles/Product personas of a human actor; they are not separate people or identity records. A **Partner** is a business organization, not a Human Actor. A partner-role actor acts for a Partner Organization only through DSH-owned membership and business authorization scope.
 
-Current role/persona mapping is owned by `project/ACTORS-TRUST-AND-SCOPE.md`; ubiquitous terms are owned by `project/GLOSSARY.md`. This PRD does not create a parallel actor taxonomy.
+Current role/persona mapping is owned by `../project/ACTORS-TRUST-AND-SCOPE.md`; ubiquitous terms are owned by `../project/GLOSSARY.md`. This PRD does not create a parallel actor taxonomy.
 
 Trusted identity comes from authenticated Identity/session state. Fine-grained business scope, permissions, eligibility, assignment and operational context come from the capability that owns the protected truth. Partner Organization and Store are business scopes, not platform-isolation or tenancy boundaries. No client header, query parameter, request body, cached local value, UI selector or generic context field grants identity, role, permission, scope or tenancy.
 

@@ -169,44 +169,15 @@ Compatibility windows require a proven need, owner, bounded scope, cutover condi
 Before a materially affected structural change is considered complete, inspect its negative space for ownerless artifacts, misplaced files, stale imports/exports, dead aliases, duplicate authorities, pass-through wrappers, obsolete dependencies, generated forks, legacy paths and unfinished moves/splits/merges. Known material residue tied to the change remains unresolved.
 
 
-## App-host and integration ownership
+## App-host and integration routing
 
-Deployable apps own route hierarchy, navigation, tabs/shell, deep links, cross-capability composition, bootstrap/session binding, native/OS adapters, app assets, build/deployable configuration and surface-specific feature presentation. Services/bounded contexts own business/system capability semantics, durable truth, canonical writers, service contracts and generated/public client lineage.
+The durable app-host versus service-capability responsibility split is owned by `../architecture/APP-SERVICE-COMPOSITION.md`. This policy does not restate that composition law.
 
-Reusable presentation is extracted only after real multi-host reuse proves a stable host-neutral responsibility. It is not a reason to recreate app-shaped frontend ownership under services or to move business authority into a shared package.
+The durable external-integration/provider behavior is owned by `providers-and-integrations.md`, with cross-boundary contract/data architecture owned by `../architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md`.
 
-```text
-WHERE_IT_APPEARS != WHO_OWNS_IT
-APP_HOST != BUSINESS_CAPABILITY_OWNER
-services → apps = FORBIDDEN
-apps → service public capability entrypoints = ALLOWED
-```
-
-External integrations terminate at domain-specific semantic ports/adapters. A vendor name, provider mechanism or generic Providers container does not become a business owner. Platform Control may own governed cross-platform enablement/configuration only where explicitly assigned; secret values remain in approved runtime secret storage.
+For changes governed by this policy, preserve those owners and verify that full-stack structure does not create a second app/service or provider authority.
 
 
-## Financial rail versus biller fulfillment
+## External semantic-boundary routing
 
-External money movement and external bill/recharge fulfillment are distinct semantic responsibilities:
-
-```text
-FinancialRail
-→ moves or authorizes external money
-
-BillerGateway
-→ fulfills telecom / electricity / water / internet / recharge / other biller service
-```
-
-Do not hide bill/recharge fulfillment inside a generic payment/provider abstraction merely because both depend on an external vendor.
-
-The operation-owning domain defines the semantic port. External vendor adapters implement that port. A vendor or generic Providers container never becomes the domain owner.
-
-For ambiguous external fulfillment or financial mutation:
-
-```text
-TIMEOUT != FAILURE
-MISSING_CONFIRMATION != SUCCESS
-UNKNOWN MUST REMAIN UNKNOWN UNTIL RECONCILED
-```
-
-Do not blindly retry through an alternate provider until duplicate external effect is proven impossible.
+Financial-rail versus biller-fulfillment semantics, provider fallback/unknown outcomes, semantic ports and adapter admission are owned by `providers-and-integrations.md` and the applicable Product/financial owner. This policy contributes only the structural invariant that transport/vendor/mechanism containers must not become alternate business owners.

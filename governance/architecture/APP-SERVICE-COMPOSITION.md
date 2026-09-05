@@ -4,6 +4,10 @@ ARTIFACT_CLASS: DURABLE_ARCHITECTURE_GOVERNANCE
 SEMANTIC_OWNER: governance/architecture/APP-SERVICE-COMPOSITION.md
 EXECUTION_AUTHORITY: NONE
 
+## Ownership boundary
+
+This file is the **sole durable semantic owner** of the deployable-app-host versus service-capability responsibility split. Other Governance files may route here but must not restate the rule as a competing owner.
+
 ## App-host responsibility
 
 Deployable apps own route hierarchy, navigation/tabs/shell, deep links, cross-capability page composition, bootstrap/session binding, native/OS adapters, app-specific assets, deployable/build configuration and host observability/error boundaries.
@@ -23,7 +27,7 @@ PREMATURE_SHARED_CAPABILITY_UI → FORBIDDEN
 REAL_PROVEN_HOST_NEUTRAL_REUSE → EXTRACT_TO_SMALLEST_JUSTIFIED_OWNER
 ```
 
-## Composition law
+## Canonical composition law
 
 - `WHERE_IT_APPEARS != WHO_OWNS_IT`
 - `APP_HOST != BUSINESS_CAPABILITY_OWNER`
