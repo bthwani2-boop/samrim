@@ -27,7 +27,26 @@ AUTHORIZATION_SCOPE != ORGANIZATION_ID
 
 A tenancy boundary is admitted only when Product/System requirements prove independent isolation/lifecycle semantics. BThwani also does not adopt an external commerce, ERP, wallet or identity platform as its Product owner merely because that system is mature or available.
 
-## 2. Required surfaces
+## 1B. Target Product vision versus delivery breadth
+
+This PRD owns durable target Product meaning. It does **not** require every target capability, mode, surface function, or advanced workflow to be implemented in the same delivery slice.
+
+```text
+TARGET_PRODUCT_VISION != ACTIVE_PRODUCT_SLICE
+ACTIVE_PRODUCT_SLICE != CURRENT_IMPLEMENTATION_STATE
+QUALITY_DEPTH != PRODUCT_BREADTH
+```
+
+The Orchestrator/invocation owns which Product slice is currently authorized for implementation. A target feature outside that slice may remain deliberately deferred without being a Product defect.
+
+A deferred target capability must not be represented by fake screens, placeholder business APIs, temporary schemas, shadow state, speculative frameworks, or alternate source-of-truth models. When activated later, it is implemented vertically against the same canonical owners and boundaries.
+
+```text
+SMALL_PRODUCT_BREADTH + CANONICAL_ARCHITECTURE + LEVEL_4_DEPTH = VALID
+TEMPORARY_MVP_ARCHITECTURE_THAT_MUST_BE_REPLACED_LATER = FORBIDDEN
+```
+
+## 2. Target product surfaces
 
 The standard product surfaces are:
 
@@ -39,7 +58,9 @@ The standard product surfaces are:
 - backend/domain services and their service-owned persistence.
 - generated clients, service-owned capability presentation, design-system primitives, events/jobs and runtime infrastructure required by the above surfaces.
 
-A capability may exclude a surface only when the applicable capability governance makes the exclusion explicit when omission could otherwise be ambiguous.
+These are target platform surfaces. An active delivery slice may exercise only the materially required subset. A deployable host may remain technically ready (identity/session/bootstrap/build) while its business semantics are deliberately deferred; do not create fake feature screens merely to make every target surface appear functionally populated.
+
+A target capability may exclude a surface when its durable semantics make the exclusion explicit where omission could otherwise be ambiguous. Active-slice execution additionally follows the current authorized Product breadth.
 
 ## 3. Actors and trust model
 
@@ -94,7 +115,9 @@ ORDER_CREATION begins only after the governed checkout eligibility boundary. One
 
 ### Fulfillment and dispatch
 
-The current operational fulfillment-policy modes are `bthwani_delivery`, `partner_delivery`, and `client_pickup`.
+The target supported fulfillment-policy modes are `bthwani_delivery`, `partner_delivery`, and `client_pickup`.
+
+Support in the target model does not mean simultaneous activation. The current authorized Product slice and executable contract determine which modes are active. A mode outside the active slice must not leak into UI, contracts, branching state machines, providers, or operational dependencies merely to anticipate future breadth.
 
 - `bthwani_delivery` uses BThwani-governed captain dispatch and delivery ownership.
 - `partner_delivery` means the partner owns the fulfillment execution path under the applicable Partner/DSH contracts; partner fleet/operational-participant detail does not create a fourth platform policy mode.
