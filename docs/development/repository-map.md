@@ -2,6 +2,7 @@
 
 DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
 PRODUCT_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: LIVE_REPOSITORY_SOURCE
 
 ## Top-level intent
 
@@ -31,6 +32,6 @@ A file belongs where its durable responsibility is owned, not where it is easies
 - visual primitives → design system;
 - cross-boundary API/event schema → owning executable contract;
 - environment composition → infra;
-- developer automation → tools.
+- cross-repository developer automation/evidence → `tools/`; service/app-specific automation stays with the service/app lifecycle owner unless genuine cross-repository responsibility is proven.
 
 Generic `shared`, `common`, `core`, actor-prefixed capability buckets and mechanism-named domains require explicit proof before admission.
