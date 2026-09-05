@@ -28,7 +28,7 @@ pnpm knowledge:query -- list journeys
 pnpm knowledge:query -- journey J1
 ~~~
 
-The command prints the canonical source section at runtime and stores no parallel registry. For CLEAN_TARGET_RECONSTRUCTION, also load tools/prompting/bthwani-refoundation/00-ENTRYPOINT.md as the temporary target-specialization profile after the Orchestrator routes it.
+The command prints the canonical source section at runtime and stores no parallel registry. For CLEAN_TARGET_RECONSTRUCTION, load tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md after the Orchestrator routes it.
 
 ## Mandatory entry sequence for material repository work
 
