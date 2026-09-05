@@ -1,7 +1,7 @@
 # BThwani Canonical Platform Build and Refoundation Orchestrator
 
-PACKAGE_REVISION: 37
-REFOUNDATION_PROFILE_REVISION: 10
+PACKAGE_REVISION: 38
+REFOUNDATION_PROFILE_REVISION: 11
 PACKAGE_CLASS: PORTABLE_CONTINUOUS_CANONICAL_BUILD_REFOUNDATION_ENGINE
 PROJECT: BTHWANI
 TARGET_BRANCH: INVOCATION_SUPPLIED
@@ -27,7 +27,7 @@ QUALIFY_EXISTING_FOUNDATION
 → DELETE_LOSERS_AND_RESIDUE
 → VERIFY
 → RE_DIAGNOSE
-→ CONTINUE_UNTIL_LEVEL_4_FIXED_POINT
+→ CONTINUE_UNTIL_AUTHORIZED_SCOPE_LEVEL_4_FIXED_POINT
 ```
 
 The engine does not assume that a prepared foundation is bad. It also never treats existence, usage or a green build as proof of canonicality.
@@ -156,6 +156,39 @@ PRESERVE PROVEN DEPLOYABLE/TECHNICAL IDENTITY AND REQUIRED NON-SEMANTIC SUBSTRAT
 
 The Foundation Construction exit gate is owned by `04-VERIFY-REDIAGNOSE-CLOSE.md`; procedural traversal is owned by `05-EXECUTION-PLAYBOOK.md`.
 
+## 3B. Product-breadth authorization and vertical-increment law
+
+Product destination and execution breadth are separate controls.
+
+```text
+TARGET_PRODUCT_VISION != AUTHORIZED_PRODUCT_SCOPE
+AUTHORIZED_PRODUCT_SCOPE != CURRENT_IMPLEMENTATION_STATE
+COMPLETION_DEPTH=LEVEL_4
+PRODUCT_BREADTH=EXPLICIT
+```
+
+By default, execution is authorized only for one active Product/System slice plus the complete causal cone required to make that slice canonical and safe.
+
+```text
+PRODUCT_BREADTH=ACTIVE_SLICE        # safe default
+PRODUCT_BREADTH=FULL_TARGET         # requires explicit invocation
+
+AUTO_CONTINUE_WITHIN_AUTHORIZED_SCOPE=YES
+AUTO_EXPAND_BEYOND_AUTHORIZED_PRODUCT_SCOPE=FORBIDDEN
+```
+
+An active slice may pull in a higher structural prerequisite, canonical owner, data/contract/runtime dependency, security/financial invariant that the slice actually exercises, required consumer/readback, or regression repair exposed by the change. It does not authorize unrelated target capabilities merely because Governance describes them as part of the eventual platform.
+
+Stage B may close an explicitly scoped vertical increment when it is complete across every materially affected owner/data/contract/runtime/surface/readback axis. Accidental horizontal or half-connected implementation remains forbidden.
+
+```text
+EXPLICIT_VERTICAL_INCREMENT_WITH_COMPLETE_INTEGRITY=ALLOWED
+ACCIDENTAL_PARTIAL_IMPLEMENTATION=FORBIDDEN
+CLAIM_FULL_CAPABILITY_CLOSED_WHEN_ONLY_INCREMENT_CLOSED=FORBIDDEN
+```
+
+A future Product capability outside the authorized slice is not a defect merely because it is not implemented yet. Creating placeholders, fake routes, temporary schemas, shadow DTOs, or speculative frameworks for deferred scope is forbidden.
+
 ## 4. Relentless continuous fixed-point law
 
 The moment authorized mutation begins:
@@ -167,7 +200,7 @@ CAMPAIGN_ENGAGED=TRUE
 It remains true until:
 
 ```text
-LEVEL_4_FIXED_POINT=PASS
+LEVEL_4_FIXED_POINT=PASS_FOR_AUTHORIZED_SCOPE
 ```
 
 or a legitimate stop state makes safe forward execution impossible.
@@ -255,6 +288,8 @@ MODE: CANONICAL_PLATFORM_BUILD
 OBJECTIVE: AUTO/NEXT | <semantic outcome>
 PRIMARY_FOCUS: AUTO | <focus owner>
 RESEARCH: AUTO | INTERNAL_ONLY | EXTERNAL_ALLOWED
+PRODUCT_BREADTH: ACTIVE_SLICE | FULL_TARGET
+ACTIVE_PRODUCT_SLICE: AUTO/CURRENT | <named semantic increment> | ALL
 COMPLETION_LEVEL: LEVEL_4
 ```
 
@@ -274,6 +309,8 @@ COMPLETION_LEVEL: LEVEL_4
 
 Then load `00` through `05` and every materially applicable `focus/*` owner. When clean-target mode is active, donor fields are evidence inputs only and never mutation authority.
 
+If `PRODUCT_BREADTH` is omitted, it defaults to `ACTIVE_SLICE`. `FULL_TARGET` is never inferred from `COMPLETION_LEVEL=LEVEL_4`. When `PRODUCT_BREADTH=FULL_TARGET`, set `ACTIVE_PRODUCT_SLICE=ALL`.
+
 No durable campaign plan or ledger may become a second execution authority.
 
 ## 8. Session entry and recovery
@@ -284,6 +321,7 @@ Every new or resumed session begins with:
 PIN_CURRENT_HEAD
 → INSPECT_MATERIAL_HISTORY_AND_ACTUAL_DIFFS
 → RECONSTRUCT_CURRENT_STAGE
+→ RECONSTRUCT_AUTHORIZED_PRODUCT_SCOPE
 → IDENTIFY_LAST_PROVEN_CLOSED_UNIT
 → IDENTIFY_ACTIVE_OPEN_UNIT
 → CLASSIFY_OPEN_CRITICAL_OR_OPEN_SAFE_CHECKPOINT
@@ -492,7 +530,7 @@ If A2 passes and roots remain, enter Stage B immediately.
 Stage B builds or refounds semantic Product/System capabilities inside structurally qualified containers.
 
 ```text
-STAGE_B_CLOSURE_UNIT = HIGHEST_CAUSALLY_CORRECT_SEMANTIC_PRODUCT/SYSTEM_ROOT
+STAGE_B_CLOSURE_UNIT = HIGHEST_CAUSALLY_CORRECT_SEMANTIC_PRODUCT/SYSTEM_ROOT_OR_EXPLICIT_VERTICAL_INCREMENT_INSIDE_AUTHORIZED_SCOPE
 ```
 
 When that root is a material cross-layer capability:
@@ -504,15 +542,18 @@ VERTICAL_CAPABILITY_CLOSURE=REQUIRED
 
 Stage B must not declare isolated backend, contract, frontend or app fragments closed while the material semantic chain remains split.
 
-After each root:
+After each root/increment:
 
 ```text
 VERIFY
 → RE_PIN
 → RE_DIAGNOSE
 → RE_RANK
-→ EXECUTE_NEXT_ROOT
+→ EXECUTE_NEXT_AUTHORIZED_ROOT_OR_INCREMENT_IF_ONE_EXISTS
+→ OTHERWISE_VERIFY_AUTHORIZED_SCOPE_LEVEL_4_FIXED_POINT
 ```
+
+A semantically adjacent but unactivated future capability is not an executable next root. It enters the frontier only after explicit Product-breadth authorization.
 
 If structural invalidity is exposed:
 
@@ -534,7 +575,7 @@ NEWLY_EXPOSED_OBLIGATION
 → EXECUTE_HIGHEST_REQUIRED_FRONTIER
 ```
 
-The campaign follows the causal chain as deeply and broadly as required until fixed point.
+The campaign follows the causal chain as deeply and broadly as required **inside the authorized Product scope and its real prerequisite/regression cone** until that scope reaches fixed point. It must not treat the remaining target vision as automatically authorized work.
 
 ## 17. Legal stop states
 
@@ -615,21 +656,59 @@ STATIC_CATASTROPHE_QUEUE_AS_AUTHORITY
 WAIT_FOR_NEXT_BETWEEN_UNITS
 PAUSE_AFTER_COMMIT_AS_NORMAL_BEHAVIOR
 PAUSE_AFTER_STAGE_AS_NORMAL_BEHAVIOR
+AUTO_EXPAND_BEYOND_AUTHORIZED_PRODUCT_SCOPE
+LEVEL_4_MEANS_FULL_FUTURE_PRODUCT_BY_DEFAULT
 LIVE_TREE_AS_ARCHIVE
 ```
 
-## 20. Final victory condition
+## 20. Authorized-scope and full-target victory conditions
 
-The first empty graph is not completion.
+The first empty graph is not completion. Re-census and falsify the **authorized scope plus every shared prerequisite/regression cone it touched** from zero.
 
-Run fresh full-repository recensus and falsification from zero.
+### 20.1 Active-slice Level-4 fixed point
 
-Final completion requires:
+When `PRODUCT_BREADTH=ACTIVE_SLICE`, normal non-blocked completion occurs when the authorized slice has no remaining executable obligation and all affected previously proven invariants remain green.
+
+```text
+AUTHORIZED_PRODUCT_SCOPE=EXPLICIT
+ACTIVE_PRODUCT_SLICE=EXPLICIT
+AUTHORIZED_STAGE_B_GRAPH=EMPTY
+KNOWN_GARBAGE_IN_AFFECTED_CONE=0
+KNOWN_LOSERS_IN_AFFECTED_CONE=0
+KNOWN_STRUCTURAL_DEFECTS_IN_AFFECTED_CONE=0
+KNOWN_SEMANTIC_DEFECTS_IN_AUTHORIZED_SCOPE=0
+KNOWN_MAPPED_BUT_UNTREATED_FINDINGS_IN_AUTHORIZED_SCOPE=0
+KNOWN_PARTIAL_CUTOVERS_IN_AUTHORIZED_SCOPE=0
+KNOWN_COMPAT_RESIDUE_IN_AUTHORIZED_SCOPE=0
+CUMULATIVE_AFFECTED_REGRESSION=PASS
+FRESH_AUTHORIZED_SCOPE_RECENSUS=PASS
+FRESH_AUTHORIZED_SCOPE_FALSIFICATION=PASS
+LEVEL_4_EVIDENCE_STATE=PASS_FOR_AUTHORIZED_SCOPE
+```
+
+Valid active-slice terminal token:
+
+```text
+BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE
+EXACT_HEAD_SHA=<immutable sha>
+ACTIVE_PRODUCT_SLICE=<semantic increment>
+AUTHORIZED_SCOPE_LEVEL_4=PASS
+CUMULATIVE_AFFECTED_REGRESSION=PASS
+KNOWN_MATERIAL_DEFECTS_IN_SCOPE=0
+KNOWN_MATERIAL_UNKNOWNS_IN_SCOPE=0
+```
+
+Deferred target capabilities remain visible Product destination, not hidden debt. They do not invalidate this token when they were never authorized for the active slice.
+
+### 20.2 Full-target Level-4 fixed point
+
+The repository-wide completion token is valid only when `PRODUCT_BREADTH=FULL_TARGET` was explicitly authorized and the entire target has been exhausted.
 
 ```text
 A1_FRONTIER=EMPTY
 A2_STRUCTURAL_QUALIFICATION=PASS
 STAGE_B_ROOT_GRAPH=EMPTY
+DEFERRED_TARGET_SCOPE=0
 KNOWN_GARBAGE=0
 KNOWN_LOSERS=0
 KNOWN_ROOTS=0
@@ -645,18 +724,18 @@ FRESH_FALSIFICATION=PASS
 LEVEL_4_EVIDENCE_STATE=PASS
 ```
 
-The only normal non-blocked stop is the proven fixed point.
-
-Valid terminal token:
+Valid full-target terminal token:
 
 ```text
 BTHWANI_TRUSTWORTHY_CANONICAL_PLATFORM_REFOUNDATION_COMPLETE
 EXACT_HEAD_SHA=<immutable sha>
+PRODUCT_BREADTH=FULL_TARGET
 CONTINUOUS_CAMPAIGN_EXECUTION=PASS
 A0_HOSTILE_TRIAGE=PASS
 A1_DESTRUCTIVE_REFOUNDATION_FRONTIER=EMPTY
 A2_ADVERSARIAL_STRUCTURAL_QUALIFICATION=PASS
 STAGE_B_ROOT_GRAPH=EMPTY
+DEFERRED_TARGET_SCOPE=0
 LEVEL_4_EVIDENCE_STATE=PASS
 KNOWN_GARBAGE=0
 KNOWN_LOSERS=0
@@ -666,7 +745,7 @@ KNOWN_MATERIAL_UNKNOWNS=0
 KNOWN_ORCHESTRATOR_COMPLIANCE_FAILURES=0
 ```
 
-Anything weaker is a recovery checkpoint, never completion.
+A recovery checkpoint is never completion, but a proven active-slice fixed point is a valid terminal state for an `ACTIVE_SLICE` invocation and must not auto-expand into future Product breadth.
 
 ## 21. Clean-target reconstruction mode
 
@@ -685,22 +764,24 @@ NONE_OF_DONOR = AUTOMATIC TARGET AUTHORITY
 DONOR_VALUE_MAY_NOT_BE_DROPPED_SILENTLY
 ```
 
-The clean-target campaign is:
+The clean-target campaign is scope-aware:
 
 ```text
 PIN_TARGET_HEAD + PIN_DONOR_REF
-→ EXHAUST_DONOR_CURRENT_TREE_AND_MATERIAL_HISTORY
-→ EXTRACT_REQUIRED_SEMANTIC_ATOMS
-→ DISPOSITION_EACH_MATERIAL_ATOM
+→ RECONSTRUCT_AUTHORIZED_PRODUCT_SCOPE
+→ EXHAUST_DONOR_CONE_REQUIRED_BY_AUTHORIZED_SCOPE
+→ EXTRACT/DISPOSITION_REQUIRED_SEMANTIC_ATOMS_FOR_THAT_CONE
 → BUILD_CURRENT-SHAPE-INDEPENDENT_CANONICAL_TARGET
 → REHOME/REIMPLEMENT/REGENERATE_REQUIRED_VALUE_IN_TARGET
-→ CONNECT_COMPLETE_VERTICAL_CAPABILITY_CONES
+→ CONNECT_COMPLETE_AUTHORIZED_VERTICAL_CONES
 → VERIFY PARITY OR DELIBERATE IMPROVEMENT
 → DO_NOT_IMPORT LOSERS
-→ FRESH TARGET RECENSUS
-→ DONOR_EXHAUSTION_GATE
-→ LEVEL_4_FIXED_POINT
+→ FRESH AUTHORIZED-SCOPE RECENSUS
+→ AUTHORIZED_SCOPE_DONOR_CONE_GATE
+→ AUTHORIZED_SCOPE_LEVEL_4_FIXED_POINT
 ```
+
+Repository-wide donor current-tree/history exhaustion is required for the `FULL_TARGET` terminal token, not as a precondition to close an independent active slice whose complete donor cone has been exhausted and whose scope-changing unknowns are zero.
 
 Valid donor dispositions are:
 
