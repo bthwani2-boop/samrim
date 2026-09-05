@@ -126,6 +126,10 @@ jobs:
         shell: bash
         run: node tools/dev/verify-doc-command-parity.mjs
 
+      - name: Verify docs configuration parity
+        shell: bash
+        run: node tools/dev/verify-doc-config-parity.mjs
+
       - name: Verify knowledge-system invariants
         shell: bash
         run: node tools/dev/verify-knowledge-system.mjs
