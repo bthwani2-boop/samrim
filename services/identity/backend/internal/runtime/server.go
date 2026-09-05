@@ -27,7 +27,7 @@ type config struct {
 	port string
 	databaseURL string
 	autoMigrate bool
-	migrationFile string
+	migrationDir string
 	challengeSecret []byte
 	internalTokens map[string]string
 	allowedOrigins map[string]bool
@@ -39,17 +39,27 @@ func Run(_,_,defaultPort string) error {
 	db,err:=sql.Open("postgres",cfg.databaseURL);if err!=nil{return fmt.Errorf("open identity database: %w",err)};defer func(){_ = db.Close()}()
 	db.SetMaxOpenConns(20);db.SetMaxIdleConns(10);db.SetConnMaxLifetime(30*time.Minute)
 	if cfg.autoMigrate {
-		raw,err:=os.ReadFile(cfg.migrationFile);if err!=nil{return fmt.Errorf("read identity migration: %w",err)}
 		ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second);defer cancel()
-		if err:=postgres.Migrate(ctx,db,string(raw));err!=nil{return err}
+		if err:=applyMigrations(ctx,db,cfg.migrationDir);err!=nil{return err}
 	}
 	actors:=actor.New(db);sessions:=session.New(db);challenges:=challenge.New(db,actors,sessions,cfg.challengeSecret,cfg.delivery)
 	readiness:=func()error{ctx,cancel:=context.WithTimeout(context.Background(),3*time.Second);defer cancel();return postgres.Ready(ctx,db)}
 	handler:=identityhttp.New(actors,challenges,sessions,identityhttp.Config{InternalServiceTokens:cfg.internalTokens,AllowedOrigins:cfg.allowedOrigins,Readiness:readiness})
 	server:=&http.Server{Addr:":"+cfg.port,Handler:handler,ReadHeaderTimeout:5*time.Second,ReadTimeout:15*time.Second,WriteTimeout:15*time.Second,IdleTimeout:60*time.Second}
-	ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop();errCh:=make(chan error,1)
-	go func(){log.Printf("identity API listening on %s",server.Addr);errCh<-server.ListenAndServe()}()
-	select{case<-ctx.Done():shutdownCtx,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel();return server.Shutdown(shutdownCtx);case err:=<-errCh:if errors.Is(err,http.ErrServerClosed){return nil};return err}
+	ctx,stop:=signal.NotifyContext(context.Background(),os.Interrupt,syscall.SIGTERM);defer stop()
+	serverErrCh:=make(chan error,1);deliveryErrCh:=make(chan error,1)
+	go func(){log.Printf("identity API listening on %s",server.Addr);serverErrCh<-server.ListenAndServe()}()
+	go func(){deliveryErrCh<-challenges.RunDeliveryWorker(ctx)}()
+	shutdown:=func()error{shutdownCtx,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel();return server.Shutdown(shutdownCtx)}
+	select{
+	case<-ctx.Done():return shutdown()
+	case err:=<-serverErrCh:if errors.Is(err,http.ErrServerClosed){return nil};return err
+	case err:=<-deliveryErrCh:
+		if err==nil&&ctx.Err()!=nil{return shutdown()}
+		_ = shutdown()
+		if err==nil{return errors.New("challenge delivery worker stopped unexpectedly")}
+		return fmt.Errorf("challenge delivery worker: %w",err)
+	}
 }
 
 func loadConfig(defaultPort string)(config,error){
@@ -58,10 +68,10 @@ func loadConfig(defaultPort string)(config,error){
 	tokens:=map[string]string{"dsh":strings.TrimSpace(os.Getenv("IDENTITY_DSH_SERVICE_TOKEN")),"platform-control":strings.TrimSpace(os.Getenv("IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN"))};seen:=map[string]string{}
 	for caller,token:=range tokens{if len(token)<24{return config{},fmt.Errorf("identity internal token for %s is not configured strongly enough",caller)};if previous,exists:=seen[token];exists{return config{},fmt.Errorf("identity internal token is shared by %s and %s",previous,caller)};seen[token]=caller}
 	delivery,err:=loadDelivery();if err!=nil{return config{},err}
-	migrationFile:=strings.TrimSpace(os.Getenv("IDENTITY_MIGRATION_FILE"));if migrationFile==""{migrationFile=filepath.Clean("../database/migrations/001_identity_authentication.sql");if _,err:=os.Stat(migrationFile);err!=nil{migrationFile="/app/migrations/001_identity_authentication.sql"}}
+	migrationDir:=strings.TrimSpace(os.Getenv("IDENTITY_MIGRATION_DIR"));if migrationDir==""{migrationDir=filepath.Clean("../database/migrations");if _,err:=os.Stat(migrationDir);err!=nil{migrationDir="/app/migrations"}}
 	origins:=map[string]bool{};for _,origin:=range strings.Split(env("IDENTITY_CORS_ALLOWED_ORIGINS","http://localhost:13000"),","){origin=strings.TrimSpace(origin);if origin!=""{origins[origin]=true}}
 	if len(origins)==0{return config{},errors.New("IDENTITY_CORS_ALLOWED_ORIGINS is empty")}
-	return config{port:port,databaseURL:databaseURL,autoMigrate:strings.EqualFold(strings.TrimSpace(os.Getenv("IDENTITY_AUTO_MIGRATE")),"true"),migrationFile:migrationFile,challengeSecret:secret,internalTokens:tokens,allowedOrigins:origins,delivery:delivery},nil
+	return config{port:port,databaseURL:databaseURL,autoMigrate:strings.EqualFold(strings.TrimSpace(os.Getenv("IDENTITY_AUTO_MIGRATE")),"true"),migrationDir:migrationDir,challengeSecret:secret,internalTokens:tokens,allowedOrigins:origins,delivery:delivery},nil
 }
 
 func loadDelivery()(challengedelivery.Sender,error){

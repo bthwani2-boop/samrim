@@ -223,6 +223,20 @@ for (const required of [
 if (challenge.includes("EnsurePublicClientTx") || challenge.includes("IsPublicOtpRole")) {
   failures.push("Identity challenge service retains universal OTP activation semantics");
 }
+if (challenge.includes("s.sender.Send(")) failures.push("public challenge request synchronously exposes provider delivery outcome");
+for (const required of ["identity_challenge_deliveries", "deliveryStatus", "s.sender.Provider()"]) {
+  if (!challenge.includes(required)) failures.push("Identity challenge request missing durable async-delivery handoff " + required);
+}
+const deliveryWorker = read("services/identity/backend/internal/challenge/delivery_worker.go");
+for (const required of ["RunDeliveryWorker", "status='sending'", "status='unknown'", "status='suppressed'", "status='expired'", "attempts=1", "s.sender.Send(ctx"]) {
+  if (!deliveryWorker.includes(required)) failures.push("Identity challenge delivery worker missing " + required);
+}
+if (deliveryWorker.includes("attempts=attempts+1")) failures.push("unknown challenge delivery can be blindly retried");
+const deliveryAdapter = read("services/identity/backend/internal/integrations/challenge/delivery.go");
+for (const required of ["Provider() string", 'return "mailpit"', 'return "twilio"', 'return "webhook"']) {
+  if (!deliveryAdapter.includes(required)) failures.push("Identity challenge provider provenance missing " + required);
+}
+
 const operatorStart = challenge.slice(challenge.indexOf("func (s *Service) StartOperatorLogin"), challenge.indexOf("func (s *Service) CompleteOperatorLogin"));
 if (operatorStart.includes("CreateTx(")) failures.push("operator password proof can create a session before MFA");
 for (const required of [
@@ -244,6 +258,16 @@ for (const forbidden of ["func (s *Service) Login(", "PasswordHash", "username",
 }
 
 const migration = read("services/identity/database/migrations/001_identity_authentication.sql");
+const deliveryMigration = read("services/identity/database/migrations/002_identity_challenge_delivery.sql");
+for (const required of [
+  "CREATE TABLE identity_challenge_deliveries",
+  "status IN ('suppressed','pending','sending','sent','unknown','expired')",
+  "attempts BETWEEN 0 AND 1",
+  "VALUES (2)",
+]) {
+  if (!deliveryMigration.includes(required)) failures.push("Identity challenge-delivery migration missing " + required);
+}
+
 for (const required of [
   "CREATE TABLE IF NOT EXISTS identity_password_credentials",
   "CREATE TABLE IF NOT EXISTS identity_challenges",
@@ -265,8 +289,26 @@ if (!security.includes("argon2.IDKey")) failures.push("Identity password hashing
 if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identity security implementation");
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
-for (const required of ["identity_password_credentials", "identity_challenges", "identity_password_attempts", "identity_sessions_active_idx"]) {
+for (const required of [
+  "const SchemaVersion = 2",
+  "CurrentSchemaVersion",
+  "migration history is non-contiguous",
+  "identity_password_credentials",
+  "identity_challenges",
+  "identity_challenge_deliveries",
+  "identity_password_attempts",
+  "identity_sessions_active_idx",
+]) {
   if (!readiness.includes(required)) failures.push("Identity readiness proof missing " + required);
+}
+const migrationRuntime = read("services/identity/backend/internal/runtime/migrations.go");
+for (const required of ["postgres.SchemaVersion", "missing identity migration version", "postgres.Migrate(ctx,db,version"]) {
+  if (!migrationRuntime.includes(required)) failures.push("Identity ordered migration runtime missing " + required);
+}
+const dockerfile = read("services/identity/backend/Dockerfile");
+if (!dockerfile.includes("COPY services/identity/database/migrations /app/migrations") ||
+    !dockerfile.includes("IDENTITY_MIGRATION_DIR=/app/migrations")) {
+  failures.push("Identity image must package the canonical ordered migration directory");
 }
 
 for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.env.example", "services/identity/backend/internal/runtime/server.go"]) {
@@ -276,6 +318,11 @@ for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.en
     failures.push(file + " retains activation-only runtime configuration");
   }
 }
+const runtimeServer = read("services/identity/backend/internal/runtime/server.go");
+for (const required of ["applyMigrations", "RunDeliveryWorker", "deliveryErrCh", "IDENTITY_MIGRATION_DIR"]) {
+  if (!runtimeServer.includes(required)) failures.push("Identity runtime async-delivery lifecycle missing " + required);
+}
+
 
 if (fs.existsSync(path.join(root, "services/identity/backend/internal/activation/service.go"))) {
   failures.push("retired universal activation package remains");

@@ -125,7 +125,7 @@ func (s *Service) CompleteOperatorLogin(ctx context.Context,input domain.Operato
 
 func (s *Service) issue(ctx context.Context,phone,role,purpose,actorID string,admissible bool,expectedCredentialHash,ipHash string)(domain.Challenge,error){
 	ipHash=strings.TrimSpace(ipHash);if len(ipHash)!=64{return domain.Challenge{},domain.ErrInvalidInput}
-	surface,ok:=domain.SurfaceForRole(role);if !ok{return domain.Challenge{},domain.ErrInvalidChallenge}
+	_,ok:=domain.SurfaceForRole(role);if !ok{return domain.Challenge{},domain.ErrInvalidChallenge}
 	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return domain.Challenge{},err};defer func(){_ = tx.Rollback()}()
 	for _,key:=range []string{"identity:challenge-source:"+ipHash,"identity:challenge-phone:"+phone}{if _,err:=tx.ExecContext(ctx,"SELECT pg_advisory_xact_lock(hashtextextended($1,0))",key);err!=nil{return domain.Challenge{},err}}
 	if purpose==domain.ChallengeOperatorMFA&&admissible{
@@ -152,10 +152,11 @@ FOR UPDATE OF c,r,a`,actorID,phone).Scan(&currentHash,&enabled,&securityEnabled)
 	challengeID,err:=identitysecurity.RandomToken(18);if err!=nil{return domain.Challenge{},err};code,err:=s.codeFor(challengeID,purpose);if err!=nil{return domain.Challenge{},err}
 	expires:=s.now().UTC().Add(10*time.Minute);codeHash:=identitysecurity.HMAC256Hex(s.secret,challengeID,purpose,code)
 	if _,err:=tx.ExecContext(ctx,"INSERT INTO identity_challenges(id,actor_id,role,purpose,phone_e164,code_hash,request_ip_hash,admissible,status,attempts,expires_at) VALUES($1,NULLIF($2,''),$3,$4,$5,$6,$7,$8,'pending',0,$9)",challengeID,actorID,role,purpose,phone,codeHash,ipHash,admissible,expires);err!=nil{return domain.Challenge{},err}
+	deliveryStatus:="suppressed";if admissible{deliveryStatus="pending"}
+	if _,err:=tx.ExecContext(ctx,"INSERT INTO identity_challenge_deliveries(challenge_id,provider,status) VALUES($1,$2,$3)",challengeID,s.sender.Provider(),deliveryStatus);err!=nil{return domain.Challenge{},err}
 	eventType:="challenge.issued";if !admissible{eventType="challenge.decoy_issued"};principal:=actorID;if principal==""{principal="public-challenge"}
-	if err:=auditTx(ctx,tx,eventType,actorID,principal,"success","",map[string]any{"role":role,"purpose":purpose});err!=nil{return domain.Challenge{},err}
+	if err:=auditTx(ctx,tx,eventType,actorID,principal,"success","",map[string]any{"role":role,"purpose":purpose,"deliveryProvider":s.sender.Provider(),"deliveryStatus":deliveryStatus});err!=nil{return domain.Challenge{},err}
 	if err:=tx.Commit();err!=nil{return domain.Challenge{},err}
-	if admissible{if err:=s.sender.Send(ctx,challengedelivery.Message{Phone:phone,Code:code,Role:role,Purpose:purpose,Surface:surface,ExpiresAt:expires});err!=nil{return domain.Challenge{},domain.ErrUnavailable}}
 	return domain.Challenge{ChallengeID:challengeID,MaskedPhone:identitysecurity.MaskPhone(phone),ExpiresAt:expires},nil
 }
 

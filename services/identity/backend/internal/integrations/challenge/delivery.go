@@ -23,9 +23,11 @@ type Message struct {
 	ExpiresAt time.Time
 }
 
-type Sender interface { Send(context.Context, Message) error }
+type Sender interface { Provider() string; Send(context.Context, Message) error }
 
 type Mailpit struct { SMTPAddr string; Recipient string }
+
+func (Mailpit) Provider() string { return "mailpit" }
 
 func (m Mailpit) Send(_ context.Context,message Message) error {
 	if strings.TrimSpace(m.SMTPAddr)==""||strings.TrimSpace(m.Recipient)=="" { return errors.New("mailpit delivery is not configured") }
@@ -43,6 +45,8 @@ func (m Mailpit) Send(_ context.Context,message Message) error {
 
 type Twilio struct { AccountSID string; AuthToken string; From string; Client *http.Client }
 
+func (Twilio) Provider() string { return "twilio" }
+
 func (t Twilio) Send(ctx context.Context,message Message) error {
 	if t.Client==nil { t.Client=&http.Client{Timeout:10*time.Second} }
 	if strings.TrimSpace(t.AccountSID)==""||strings.TrimSpace(t.AuthToken)==""||strings.TrimSpace(t.From)=="" { return errors.New("twilio delivery is not configured") }
@@ -56,6 +60,8 @@ func (t Twilio) Send(ctx context.Context,message Message) error {
 }
 
 type Webhook struct { URL string; Token string; Client *http.Client }
+
+func (Webhook) Provider() string { return "webhook" }
 
 func (w Webhook) Send(ctx context.Context,message Message) error {
 	if w.Client==nil { w.Client=&http.Client{Timeout:10*time.Second} }

@@ -9,8 +9,8 @@ FROM alpine:3.22
 RUN apk add --no-cache ca-certificates && addgroup -S identity && adduser -S -G identity identity
 WORKDIR /app
 COPY --from=build /out/api /api
-COPY services/identity/database/migrations/001_identity_authentication.sql /app/migrations/001_identity_authentication.sql
-ENV IDENTITY_MIGRATION_FILE=/app/migrations/001_identity_authentication.sql
+COPY services/identity/database/migrations /app/migrations
+ENV IDENTITY_MIGRATION_DIR=/app/migrations
 USER identity
 EXPOSE 8082
 ENTRYPOINT ["/api"]

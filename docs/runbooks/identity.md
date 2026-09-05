@@ -65,3 +65,8 @@ Migration 001 is a refounded non-production baseline. It intentionally fails whe
 ## Verification boundary
 
 Final closure requires generated-contract checks, boundary/residue checks, Go/workspace verification, full Foundation runtime and `tools/dev/verify-identity-runtime.mjs`, followed by same-commit GitHub baseline/runtime checks. A password-only operator fixture or repeated-activation managed fixture can never count as green proof.
+
+
+## Challenge delivery incident handling
+
+Challenge acknowledgement is independent of provider availability. Inspect `identity_challenge_deliveries` for `suppressed | pending | sending | sent | unknown | expired`. A decoy is `suppressed` and never invokes the provider. A failed/interrupted in-flight send is `unknown`; do not automatically retry an unknown result because duplicate delivery and public admission side channels must remain controlled.

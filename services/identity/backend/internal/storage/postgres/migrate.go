@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 type schemaRequirement struct {
 	table string
@@ -21,22 +21,38 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table:"identity_actor_roles",columns:[]string{"actor_id","role","enabled","activated_at","version","created_at","updated_at"},indexes:[]string{"identity_actor_roles_pkey","identity_actor_roles_role_idx"}},
 	{table:"identity_password_credentials",columns:[]string{"actor_id","role","password_hash","version","created_at","updated_at"},indexes:[]string{"identity_password_credentials_pkey"}},
 	{table:"identity_challenges",columns:[]string{"id","actor_id","role","purpose","phone_e164","code_hash","request_ip_hash","admissible","status","attempts","expires_at","consumed_at","created_at","updated_at"},indexes:[]string{"identity_challenges_pkey","identity_challenges_one_pending_uq","identity_challenges_lookup_idx","identity_challenges_ip_idx"}},
+	{table:"identity_challenge_deliveries",columns:[]string{"challenge_id","provider","status","attempts","started_at","finished_at","created_at","updated_at"},indexes:[]string{"identity_challenge_deliveries_pkey","identity_challenge_deliveries_pending_idx"}},
 	{table:"identity_sessions",columns:[]string{"id","actor_id","role","access_token_hash","refresh_token_hash","device_fingerprint_hash","access_expires_at","refresh_expires_at","revoked_at","compromised_at","last_used_at","version","created_at"},indexes:[]string{"identity_sessions_pkey","identity_sessions_access_hash_uq","identity_sessions_refresh_hash_uq","identity_sessions_actor_role_idx","identity_sessions_active_idx"}},
 	{table:"identity_refresh_token_history",columns:[]string{"session_id","token_hash","rotated_at"},indexes:[]string{"identity_refresh_token_history_pkey","identity_refresh_token_history_hash_uq","identity_refresh_token_history_session_idx"}},
 	{table:"identity_password_attempts",columns:[]string{"id","phone_e164","role","ip_hash","succeeded","created_at"},indexes:[]string{"identity_password_attempts_pkey","identity_password_attempts_subject_idx","identity_password_attempts_ip_idx"}},
 	{table:"identity_security_audit",columns:[]string{"id","event_type","subject_actor_id","principal","outcome","correlation_id","metadata","created_at"},indexes:[]string{"identity_security_audit_pkey","identity_security_audit_subject_idx"}},
 }
 
-func Migrate(ctx context.Context, db *sql.DB, migrationSQL string) error {
-	if migrationSQL == "" { return fmt.Errorf("identity migration is empty") }
-	if _, err := db.ExecContext(ctx, migrationSQL); err != nil { return fmt.Errorf("apply identity canonical migration v1: %w", err) }
+func CurrentSchemaVersion(ctx context.Context,db *sql.DB)(int,error){
+	var relation sql.NullString
+	if err:=db.QueryRowContext(ctx,"SELECT to_regclass('public.identity_schema_migrations')").Scan(&relation);err!=nil{return 0,fmt.Errorf("migration authority lookup: %w",err)}
+	if !relation.Valid||relation.String==""{return 0,nil}
+	rows,err:=db.QueryContext(ctx,"SELECT version FROM identity_schema_migrations ORDER BY version");if err!=nil{return 0,fmt.Errorf("migration history readback: %w",err)};defer func(){_ = rows.Close()}()
+	expected:=1
+	for rows.Next(){var version int;if err:=rows.Scan(&version);err!=nil{return 0,fmt.Errorf("migration history scan: %w",err)};if version!=expected{return 0,fmt.Errorf("migration history is non-contiguous: got %d want %d",version,expected)};expected++}
+	if err:=rows.Err();err!=nil{return 0,fmt.Errorf("migration history rows: %w",err)}
+	return expected-1,nil
+}
+
+func Migrate(ctx context.Context,db *sql.DB,version int,migrationSQL string)error{
+	if migrationSQL==""{return fmt.Errorf("identity migration v%d is empty",version)}
+	current,err:=CurrentSchemaVersion(ctx,db);if err!=nil{return err}
+	if current>=version{return nil}
+	if current!=version-1{return fmt.Errorf("identity migration v%d cannot follow schema v%d",version,current)}
+	if _,err:=db.ExecContext(ctx,migrationSQL);err!=nil{return fmt.Errorf("apply identity canonical migration v%d: %w",version,err)}
+	applied,err:=CurrentSchemaVersion(ctx,db);if err!=nil{return err}
+	if applied!=version{return fmt.Errorf("identity migration v%d did not record canonical version; got %d",version,applied)}
 	return nil
 }
 
 func Ready(ctx context.Context, db *sql.DB) error {
 	if err:=db.PingContext(ctx); err!=nil { return fmt.Errorf("database ping: %w",err) }
-	var version int
-	if err:=db.QueryRowContext(ctx,"SELECT COALESCE(MAX(version),0) FROM identity_schema_migrations").Scan(&version); err!=nil { return fmt.Errorf("migration readback: %w",err) }
+	version,err:=CurrentSchemaVersion(ctx,db);if err!=nil{return err}
 	if version!=SchemaVersion { return fmt.Errorf("migration version mismatch: got %d want %d",version,SchemaVersion) }
 	for _,req:=range identitySchemaRequirements {
 		var resolved sql.NullString

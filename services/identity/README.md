@@ -30,3 +30,8 @@ Identity does not own DSH participant eligibility/assignment, partner/store memb
 Internal service identity is resolved from the bearer service credential itself. DSH manages only partner/captain/field Identity-role admission and explicit re-enrollment authorization; Platform Control manages only operator role/credential intent and Identity-wide security eligibility.
 
 Refresh tokens rotate atomically and remain device-fingerprint bound. Role disable revokes that role only. The actor-level `security_enabled` flag is an Identity-wide emergency authentication kill switch and never represents domain lifecycle state.
+
+
+## Challenge delivery isolation
+
+Public challenge acknowledgement is committed independently from provider delivery. An admissible challenge enters durable `pending` delivery state; a decoy is durably `suppressed`. The service-owned worker performs the external send after the HTTP acknowledgement boundary. An interrupted or failed in-flight attempt becomes `unknown` and is not blindly retried, preventing provider outage/timing from becoming an actor/role admission oracle.

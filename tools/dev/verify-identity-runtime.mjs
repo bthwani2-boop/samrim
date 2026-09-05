@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env-file="))?.slice("--env-file=".length);
@@ -44,6 +45,37 @@ for (const [name, value, minimum] of [
   if (typeof value !== "string" || value.length < minimum) fail(name + " is not configured strongly enough");
 }
 if (dshToken === platformToken) fail("internal service tokens must be distinct");
+
+const composeFile = path.join(root, "infra/local/compose/compose.yaml");
+const composeArgs = ["compose", "--env-file", envFile, "-f", composeFile, "--profile", "foundation"];
+function compose(...args) {
+  return execFileSync("docker", [...composeArgs, ...args], { encoding: "utf8" });
+}
+function sql(query) {
+  return compose(
+    "exec", "-T", "postgres",
+    "psql", "-U", env.SAMRIM_POSTGRES_USER, "-d", env.SAMRIM_POSTGRES_DB,
+    "-Atc", query,
+  ).trim();
+}
+function sqlLiteral(value) {
+  return String(value).replaceAll("'", "''");
+}
+function deliveryStatus(phoneValue, purpose, role) {
+  return sql(
+    "SELECT d.status FROM identity_challenge_deliveries d JOIN identity_challenges c ON c.id=d.challenge_id " +
+    "WHERE c.phone_e164='" + sqlLiteral(phoneValue) + "' AND c.purpose='" + sqlLiteral(purpose) +
+    "' AND c.role='" + sqlLiteral(role) + "' ORDER BY c.created_at DESC LIMIT 1",
+  );
+}
+async function waitForDeliveryStatus(phoneValue, purpose, role, expected) {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (deliveryStatus(phoneValue, purpose, role) === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  fail("challenge delivery did not reach " + expected + " for " + purpose + "/" + role);
+}
+
 
 const suffix = crypto.randomBytes(5).toString("hex");
 let phoneCounter = crypto.randomInt(10_000_000, 80_000_000);
@@ -371,6 +403,43 @@ await expect("POST", "/auth/managed/activate", 401, {
   },
 });
 
+// Provider outage must not become an actor/role oracle. Public acknowledgement is independent of delivery outcome.
+const outageKnownPhone = phone();
+const outageUnknownPhone = phone();
+await expect("POST", "/internal/actor-roles/provision", 201, {
+  headers: service(dshToken),
+  body: { phoneE164: outageKnownPhone, role: "captain" },
+});
+compose("stop", "mailpit");
+try {
+  const knownOutage = await requestChallenge(
+    "/auth/managed/activation/request",
+    { phone: outageKnownPhone, role: "captain" },
+    "managed_activate",
+  );
+  const unknownOutage = await requestChallenge(
+    "/auth/managed/activation/request",
+    { phone: outageUnknownPhone, role: "captain" },
+    "managed_activate",
+  );
+  assert(
+    Object.keys(knownOutage.challenge).sort().join(",") === Object.keys(unknownOutage.challenge).sort().join(","),
+    "provider outage response shape enumerates managed-role admission",
+  );
+  await waitForDeliveryStatus(outageKnownPhone, "managed_activate", "captain", "unknown");
+  assert(
+    deliveryStatus(outageUnknownPhone, "managed_activate", "captain") === "suppressed",
+    "decoy challenge invoked delivery provider",
+  );
+} finally {
+  compose("start", "mailpit");
+}
+await new Promise((resolve) => setTimeout(resolve, 750));
+assert(
+  deliveryStatus(outageKnownPhone, "managed_activate", "captain") === "unknown",
+  "unknown provider outcome was blindly retried after provider recovery",
+);
+
 // Challenge attempt locking is exact.
 const lockedPhone = phone();
 const locked = await requestChallenge(
@@ -484,6 +553,8 @@ console.log("IDENTITY_MANAGED_REENROLLMENT_GOVERNED=PASS");
 console.log("IDENTITY_OPERATOR_MFA_REQUIRED=PASS");
 console.log("IDENTITY_OPERATOR_PASSWORD_ONLY_SESSION=0");
 console.log("IDENTITY_CHALLENGE_DECOY_NON_GRANT=PASS");
+console.log("IDENTITY_PROVIDER_OUTAGE_NON_ENUMERATION=PASS");
+console.log("IDENTITY_DELIVERY_UNKNOWN_NO_BLIND_RETRY=PASS");
 console.log("IDENTITY_ROLE_SCOPED_REVOCATION=PASS");
 console.log("IDENTITY_GLOBAL_SECURITY_DISABLE=PASS");
 console.log("IDENTITY_REFRESH_DEVICE_BINDING=PASS");

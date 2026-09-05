@@ -32,7 +32,7 @@ paths:
     post:
       tags: [client-auth]
       operationId: requestClientRegistrationVerification
-      description: Requests phone verification for client registration without creating an actor before proof.
+      description: Requests phone verification for client registration without creating an actor before proof. Delivery is asynchronous and the acknowledgement does not report provider outcome.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/PhoneRequest" } } }
@@ -74,7 +74,7 @@ paths:
     post:
       tags: [client-auth]
       operationId: requestClientRecoveryVerification
-      description: Requests phone proof for client-password recovery without exposing whether an admissible client credential exists.
+      description: Requests phone proof for client-password recovery without exposing whether an admissible client credential exists. Delivery is asynchronous and the acknowledgement does not report provider outcome.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/PhoneRequest" } } }
@@ -101,7 +101,7 @@ paths:
     post:
       tags: [managed-auth]
       operationId: requestManagedActivation
-      description: Requests one-time activation proof for an already-provisioned enabled partner/captain/field role that is currently eligible for enrollment or governed re-enrollment.
+      description: Requests one-time activation proof using a generic non-enumerating acknowledgement. Eligible provider delivery is asynchronous and its outcome is not exposed by this response.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedChallengeRequest" } } }
@@ -129,7 +129,7 @@ paths:
     post:
       tags: [operator-auth]
       operationId: startOperatorLogin
-      description: Validates the operator password internally and returns a challenge-shaped response. A password proof alone never creates an operator session.
+      description: Validates the operator password internally and returns a challenge-shaped response. A password proof alone never creates an operator session; second-factor delivery is asynchronous and provider outcome is not exposed by this response.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OperatorLoginStartRequest" } } }
@@ -638,7 +638,7 @@ components:
 
   responses:
     ChallengeIssued:
-      description: Challenge-shaped response. Public decoys use the same response shape and never expose raw code.
+      description: Challenge-shaped acknowledgement. Public decoys use the same shape, raw codes are never exposed, and provider delivery outcome is not reported.
       content: { application/json: { schema: { $ref: "#/components/schemas/Challenge" } } }
     TokenPair:
       description: Role-scoped authenticated session.
