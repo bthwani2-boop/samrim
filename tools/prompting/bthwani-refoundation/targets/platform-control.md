@@ -126,17 +126,17 @@ services/platform-control/
 
 ## 7. Frontend and Control Panel
 
-Reusable Platform Control capability presentation may live with the service when it is host-neutral.
-
-Control Panel owns route/shell/composition only:
+Surface-specific Platform Control feature presentation belongs to the consuming app host by default:
 
 ```text
-apps/control-panel
-  ↓ composes
-services/platform-control/frontend/<capability>
+apps/control-panel/src/features/<capability>
+  ↓ consumes
+services/platform-control public contract/client
 ```
 
-Do not move platform-control business/control truth into `apps/control-panel` merely because operators use it there.
+A host-neutral presentation abstraction may be extracted only after multiple real host consumers, explicit ownership and lower total complexity are proven. Do not create `services/platform-control/frontend/<capability>` merely because the business truth is service-owned.
+
+Do not move Platform Control business/control truth into `apps/control-panel` merely because operators use it there; presentation location never changes canonical business ownership.
 
 ## 8. Contracts and generated clients
 
