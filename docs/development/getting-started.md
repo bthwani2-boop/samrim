@@ -58,6 +58,8 @@ The canonical lockfile is committed. Install the exact workspace state with:
 pnpm bootstrap
 ```
 
+`pnpm bootstrap` installs the pinned workspace and synchronizes the Go workspace; it does not require Docker or validate/start the runtime. Runtime composition remains under the dedicated `runtime:*` / Foundation commands below.
+
 For verification without changing declared dependencies or lockfile authority, use the repository verification commands below. Lockfile regeneration is a deliberate manifest-change operation, not a normal bootstrap step.
 
 ## Primary verification
