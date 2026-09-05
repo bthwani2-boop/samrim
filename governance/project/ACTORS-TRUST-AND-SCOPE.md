@@ -16,7 +16,6 @@ ORGANIZATION
 STORE / BUSINESS SCOPE
 OPERATIONAL ROLE / ASSIGNMENT
 AUTHORIZATION SCOPE / PERMISSION
-OPERATOR CONTEXT WHEN A CAPABILITY PROVES IT
 FINANCIAL IDENTITY / WALLET
 ```
 
@@ -25,8 +24,6 @@ No identifier or table row may be overloaded to represent several meanings.
 ```text
 ACTOR != ROLE
 ROLE != BUSINESS_SCOPE
-ACTOR != OPERATOR_CONTEXT
-OPERATOR_CONTEXT != TENANT
 IDENTITY_ROLE != DSH_OPERATIONAL_ELIGIBILITY
 ```
 
@@ -73,7 +70,7 @@ READ_PERMISSION != MUTATION_PERMISSION
 SERVICE_CALLER_HEADER != SERVICE_IDENTITY
 ```
 
-If a future capability proves Operator Context or another contextual authorization dimension, its canonical owner must derive it from authenticated identity, governed delegation and owner facts. Identity must not fabricate a generic `operator_context_id` solely to create isolation.
+Any contextual authorization dimension must be owned by the capability that proves it and derived from authenticated identity, governed delegation and canonical owner facts. Identity must not fabricate generic isolation scope.
 
 ## Primary actor responsibilities
 
