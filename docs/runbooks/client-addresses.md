@@ -1,11 +1,10 @@
 # Client Address Operations Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
+
 EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
-
-Status: OPERATIONAL_RUNBOOK
 Owner: DSH Operations
 
 Current contracts, migrations and runtime source override stale names in this runbook.

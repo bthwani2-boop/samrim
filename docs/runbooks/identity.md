@@ -1,10 +1,10 @@
 # Identity Operations Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
+
 EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
-
 ## Owners
 
 Identity owns Human Actor identity/`actor_id`, verified login identifiers, credentials, Identity-wide security eligibility, high-level role admission, authentication/verification/activation/recovery and role-scoped sessions.

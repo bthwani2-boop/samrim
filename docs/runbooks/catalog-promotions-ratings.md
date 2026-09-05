@@ -1,10 +1,10 @@
 # Catalog, Promotions and Ratings Recovery
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
+
 EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
-
 ## Catalog/publication
 
 When an item/store unexpectedly appears or disappears from discovery, trace canonical catalog identity, approval/publication eligibility, store/serviceability state and derived search/discovery freshness. Do not fix visibility only in the client or search index.

@@ -1,10 +1,10 @@
 # Communications and Media Recovery
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
+
 EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
-
 ## Notification delivery incidents
 
 First distinguish source-domain event truth from delivery failure. Confirm event/correlation identity, delivery policy/preferences, channel adapter and provider result.

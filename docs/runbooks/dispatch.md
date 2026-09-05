@@ -1,11 +1,10 @@
 # Governed Dispatch Operations Runbook
 
 DOCUMENT_CLASS: OPERATIONAL_RUNBOOK
+
 EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
-
-Status: OPERATIONAL_RUNBOOK
 Owner: DSH dispatch operations
 
 Current authority sources: `governance/product/PRD.md`, `governance/policies/engineering.md`, applicable capability governance in `governance/product/CAPABILITIES.md`, and current DSH contracts/implementation. This runbook is operational guidance only.
