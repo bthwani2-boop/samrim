@@ -40,7 +40,7 @@ A service that claims database readiness proves its required database/schema pre
 
 Production schema evolution is an explicit controlled migration/predeploy responsibility. Development/bootstrap may invoke the same canonical migration mechanism explicitly, but API process startup must not become an arbitrary hidden production schema mutator.
 
-Do not create empty/placeholder business migrations or speculative future tables merely to make a service appear journey-ready.
+Do not create empty/placeholder business migrations or speculative future tables merely to make a service appear prepared for future Product work.
 
 ## Migration law
 
