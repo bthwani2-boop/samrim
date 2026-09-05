@@ -60,12 +60,13 @@ Canonical service shape is responsibility-driven:
 ```text
 services/<owner>/
   backend/
-  frontend/      # only when host-neutral reusable capability presentation is justified
   contracts/
   clients/
   database/
   tests/
 ```
+
+This is the default shape, not a requirement to create empty lanes. Surface-specific presentation belongs to app hosts. A future host-neutral reusable presentation container may be admitted only after real multi-host reuse proves an independent responsibility; it is not predeclared in the canonical service shape.
 
 Subdirectories exist only when that responsibility is real. `cmd/*` remains process startup; transport does not own business state machines; integrations translate peer/external boundaries and do not own remote truth.
 
