@@ -12,8 +12,7 @@ const tracked = execFileSync("git", ["ls-files", "-z"], {
   .map((item) => item.replaceAll("\\", "/"));
 
 const excluded = (file) =>
-  file === ".github/workflows/baseline-guard.yml" ||
-  file.startsWith("tools/prompting/bthwani-refoundation/");
+  file === ".github/workflows/baseline-guard.yml";
 
 const donorRepoName = "bthwani-suite" + "-next";
 const patterns = [
@@ -21,9 +20,9 @@ const patterns = [
   { label: "donor repository name", value: donorRepoName },
   { label: "donor Windows path", value: "D:\\" + donorRepoName },
   { label: "old secret path", value: "C:\\" + "bthwani-" + "secrets" },
-  { label: "donor branch authority", value: ["origin", "h"].join("/") },
-  { label: "donor ref pin", value: "RE_PIN_" + "h" },
-  { label: "stale donor head marker", value: "UNKNOWN_CURRENT_" + "h" + "_HEAD" },
+  { label: "retired donor branch residue", value: ["origin", "h"].join("/") },
+  { label: "retired donor ref pin residue", value: "RE_PIN_" + "h" },
+  { label: "retired donor head marker residue", value: "UNKNOWN_CURRENT_" + "h" + "_HEAD" },
   {
     label: "obsolete completion token",
     value:
