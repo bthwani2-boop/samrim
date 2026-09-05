@@ -34,6 +34,9 @@ const packageJson = JSON.parse(read("package.json"));
 const queryKnowledge = read("tools/dev/query-knowledge.mjs");
 const experienceReference = read("docs/reference/external-systems/experience-design-ui-assurance.md");
 const designGuide = read("docs/development/design-system.md");
+const doctorScript = read("tools/dev/doctor.ps1");
+const foundationCloseScript = read("tools/dev/close-foundation-runtime.ps1");
+const foundationLocalScript = read("tools/dev/verify-foundation-local.ps1");
 const failures = [];
 
 function collectMarkdown(dir) {
@@ -150,6 +153,24 @@ for (const file of collectMarkdown(durableGovernanceDir)) {
   if (/during the current refoundation campaign|active refoundation branch|stage-b\//i.test(body)) {
     failures.push("current campaign/branch state leaked into durable Governance: " + rel);
   }
+}
+
+const branchSensitiveFiles = [
+  ...collectMarkdown(path.join(root, "docs/development")),
+  path.join(root, "AGENTS.md"),
+  path.join(root, "README.md"),
+  path.join(root, "CONTRIBUTING.md"),
+  path.join(root, "tools/dev/doctor.ps1"),
+  path.join(root, "tools/dev/close-foundation-runtime.ps1"),
+  path.join(root, "tools/dev/verify-foundation-local.ps1"),
+];
+for (const file of branchSensitiveFiles) {
+  if (!fs.existsSync(file)) continue;
+  const body = fs.readFileSync(file, "utf8");
+  const rel = path.relative(root, file).split(path.sep).join("/");
+  if (/ExpectedBranch\s*=\s*["']a["']/i.test(body)) failures.push("hard-coded branch a default in tooling/docs: " + rel);
+  if (/clean branch\s+`a`|active refoundation branch|branch\s+`a`/i.test(body)) failures.push("hard-coded branch a guidance in durable/current docs: " + rel);
+  if (/stage-b\/[A-Za-z0-9._/-]+/i.test(body)) failures.push("branch-specific stage-b state leaked into durable/current docs: " + rel);
 }
 
 const docsDir = path.join(root, "docs");
@@ -403,6 +424,11 @@ for (const token of [
 if (!agentRouter.includes("never infer `FULL_TARGET` from `LEVEL_4`")) failures.push("AGENTS.md missing active-slice anti-expansion routing");
 if (!agentRouter.includes("surface-specific feature UI belongs to the consuming app host by default")) failures.push("AGENTS.md missing app-host feature UI routing");
 if (!agentRouter.includes("pnpm knowledge:query -- capability IDENTITY_ACTIVATION_SESSIONS")) failures.push("AGENTS.md missing selective capability-query routing");
+if (!doctorScript.includes('[string] $ExpectedBranch = ""')) failures.push("doctor branch check is not invocation-driven");
+if (!foundationCloseScript.includes('[string] $ExpectedBranch = ""')) failures.push("foundation runtime closure branch check is not invocation-driven");
+if (!foundationLocalScript.includes('[string] $ExpectedBranch = ""')) failures.push("local foundation proof branch check is not invocation-driven");
+if (!foundationLocalScript.includes('$verificationBranch = if ([string]::IsNullOrWhiteSpace($ExpectedBranch))')) failures.push("local foundation proof does not derive verification branch from current candidate");
+
 
 const agentAdapterPaths = ["CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"];
 for (const adapterPath of agentAdapterPaths) {
