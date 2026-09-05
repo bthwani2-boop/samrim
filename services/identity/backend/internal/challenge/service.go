@@ -41,7 +41,7 @@ EXISTS(SELECT 1 FROM identity_actor_roles r WHERE r.actor_id=identity_actors.id 
 FROM identity_actors WHERE phone_e164=$1`,phone).Scan(&actorID,&securityEnabled,&hasCredential,&roleDisabled)
 	admissible:=false
 	if errors.Is(err,sql.ErrNoRows){actorID="";admissible=true}else if err!=nil{return domain.Challenge{},err}else{admissible=securityEnabled&&!hasCredential&&!roleDisabled}
-	return s.issue(ctx,phone,"client",domain.ChallengeClientRegister,actorID,admissible,ipHash)
+	return s.issue(ctx,phone,"client",domain.ChallengeClientRegister,actorID,admissible,"",ipHash)
 }
 
 func (s *Service) RegisterClient(ctx context.Context,input domain.ClientCredentialProofRequest)(domain.TokenPair,error){
@@ -77,7 +77,7 @@ func (s *Service) RequestClientRecovery(ctx context.Context,input domain.PhoneRe
 	a,_,lookupErr:=s.actors.PasswordCredential(ctx,phone,"client")
 	admissible:=lookupErr==nil
 	actorID:="";if admissible{actorID=a.ID}else if lookupErr!=nil&&!errors.Is(lookupErr,domain.ErrNotFound){return domain.Challenge{},lookupErr}
-	return s.issue(ctx,phone,"client",domain.ChallengeClientRecover,actorID,admissible,ipHash)
+	return s.issue(ctx,phone,"client",domain.ChallengeClientRecover,actorID,admissible,"",ipHash)
 }
 
 func (s *Service) RecoverClient(ctx context.Context,input domain.ClientCredentialProofRequest)(domain.TokenPair,error){
@@ -94,7 +94,7 @@ func (s *Service) RequestManagedActivation(ctx context.Context,input domain.Mana
 	a,r,lookupErr:=s.actors.ManagedActivationCandidate(ctx,phone,role)
 	admissible:=lookupErr==nil&&r.ActivatedAt==nil
 	actorID:="";if admissible{actorID=a.ID}else if lookupErr!=nil&&!errors.Is(lookupErr,domain.ErrNotFound)&&!errors.Is(lookupErr,domain.ErrActorBlocked){return domain.Challenge{},lookupErr}
-	return s.issue(ctx,phone,role,domain.ChallengeManagedActivate,actorID,admissible,ipHash)
+	return s.issue(ctx,phone,role,domain.ChallengeManagedActivate,actorID,admissible,"",ipHash)
 }
 
 func (s *Service) ActivateManaged(ctx context.Context,input domain.ManagedActivationRequest)(domain.TokenPair,error){
@@ -111,9 +111,9 @@ func (s *Service) StartOperatorLogin(ctx context.Context,input domain.OperatorLo
 	a,hash,lookupErr:=s.actors.PasswordCredential(ctx,phone,"operator")
 	valid:=lookupErr==nil&&identitysecurity.VerifyPassword(hash,input.Password)
 	if errors.Is(lookupErr,domain.ErrNotFound){_ = identitysecurity.VerifyPassword(dummyPasswordHash,input.Password)}else if lookupErr!=nil{return domain.Challenge{},lookupErr}
-	if !valid{limited,recordErr:=s.recordPasswordFailure(ctx,phone,"operator",ipHash);if recordErr!=nil{return domain.Challenge{},recordErr};if limited{return domain.Challenge{},domain.ErrRateLimited};return s.issue(ctx,phone,"operator",domain.ChallengeOperatorMFA,"",false,ipHash)}
+	if !valid{limited,recordErr:=s.recordPasswordFailure(ctx,phone,"operator",ipHash);if recordErr!=nil{return domain.Challenge{},recordErr};if limited{return domain.Challenge{},domain.ErrRateLimited};return s.issue(ctx,phone,"operator",domain.ChallengeOperatorMFA,"",false,"",ipHash)}
 	if err:=s.recordPasswordSuccess(ctx,phone,"operator",ipHash);err!=nil{return domain.Challenge{},err}
-	return s.issue(ctx,phone,"operator",domain.ChallengeOperatorMFA,a.ID,true,ipHash)
+	return s.issue(ctx,phone,"operator",domain.ChallengeOperatorMFA,a.ID,true,hash,ipHash)
 }
 
 func (s *Service) CompleteOperatorLogin(ctx context.Context,input domain.OperatorLoginCompleteRequest)(domain.TokenPair,error){
@@ -123,11 +123,27 @@ func (s *Service) CompleteOperatorLogin(ctx context.Context,input domain.Operato
 	})
 }
 
-func (s *Service) issue(ctx context.Context,phone,role,purpose,actorID string,admissible bool,ipHash string)(domain.Challenge,error){
+func (s *Service) issue(ctx context.Context,phone,role,purpose,actorID string,admissible bool,expectedCredentialHash,ipHash string)(domain.Challenge,error){
 	ipHash=strings.TrimSpace(ipHash);if len(ipHash)!=64{return domain.Challenge{},domain.ErrInvalidInput}
 	surface,ok:=domain.SurfaceForRole(role);if !ok{return domain.Challenge{},domain.ErrInvalidChallenge}
 	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return domain.Challenge{},err};defer func(){_ = tx.Rollback()}()
 	for _,key:=range []string{"identity:challenge-source:"+ipHash,"identity:challenge-phone:"+phone}{if _,err:=tx.ExecContext(ctx,"SELECT pg_advisory_xact_lock(hashtextextended($1,0))",key);err!=nil{return domain.Challenge{},err}}
+	if purpose==domain.ChallengeOperatorMFA&&admissible{
+		var currentHash string
+		var enabled,securityEnabled bool
+		err:=tx.QueryRowContext(ctx,`SELECT c.password_hash,r.enabled,a.security_enabled
+FROM identity_password_credentials c
+JOIN identity_actor_roles r ON r.actor_id=c.actor_id AND r.role=c.role
+JOIN identity_actors a ON a.id=c.actor_id
+WHERE c.actor_id=$1 AND c.role='operator' AND a.phone_e164=$2
+FOR UPDATE OF c,r,a`,actorID,phone).Scan(&currentHash,&enabled,&securityEnabled)
+		if errors.Is(err,sql.ErrNoRows)||!enabled||!securityEnabled||!identitysecurity.ConstantTimeHexEqual(currentHash,expectedCredentialHash){
+			admissible=false
+			actorID=""
+		}else if err!=nil{
+			return domain.Challenge{},err
+		}
+	}
 	var phoneRecent,sourceRecent int
 	if err:=tx.QueryRowContext(ctx,"SELECT COUNT(*) FROM identity_challenges WHERE phone_e164=$1 AND purpose=$2 AND created_at>clock_timestamp()-interval '15 minutes'",phone,purpose).Scan(&phoneRecent);err!=nil{return domain.Challenge{},err}
 	if err:=tx.QueryRowContext(ctx,"SELECT COUNT(*) FROM identity_challenges WHERE request_ip_hash=$1 AND created_at>clock_timestamp()-interval '15 minutes'",ipHash).Scan(&sourceRecent);err!=nil{return domain.Challenge{},err}
