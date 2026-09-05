@@ -276,6 +276,37 @@ Exactly nine semantic owners exist:
 
 One material law has one owner. No helper, plan, agent adapter or governance file may create a weaker competing variant.
 
+## 6A. Context-loading protocol
+
+Do not preload the entire package into every task. Preserve full law coverage through deterministic staged loading:
+
+~~~text
+ENTRY / RESUME
+→ 00
+→ 01
+→ 05 when a multi-step campaign/session state must be reconstructed
+
+DIAGNOSE / SELECT ROOT
+→ 02
+→ applicable focus/* owner(s)
+
+MUTATE / REFOUND / MIGRATE / CUT OVER / DELETE
+→ 03
+→ applicable focus/* owner(s)
+
+VERIFY / FALSIFY / RECENSUS / CLOSE
+→ 04
+→ applicable focus/* owner(s)
+~~~
+
+A module must be loaded before any action whose law it owns. Conditional loading reduces irrelevant context; it never weakens or bypasses an owner. If a task crosses phases, load the next owner before crossing that phase boundary.
+
+~~~text
+NOT_LOADED_BECAUSE_NOT_APPLICABLE = ALLOWED
+NOT_LOADED_TO_AVOID_A_REQUIREMENT = FORBIDDEN
+MATERIAL_OWNER_REQUIRED_BUT_UNLOADED = EXECUTION_DEFECT
+~~~
+
 ## 7. Invocation
 
 Invocation remains intentionally short.
@@ -308,7 +339,7 @@ RESEARCH: AUTO | INTERNAL_ONLY | EXTERNAL_ALLOWED
 COMPLETION_LEVEL: LEVEL_4
 ```
 
-Then load `00` through `05` and every materially applicable `focus/*` owner. When clean-target mode is active, donor fields are evidence inputs only and never mutation authority.
+Load `00` first, then follow the Context-loading protocol in §6A. Load only materially applicable `focus/*` owners, but always before acting on the responsibility they own. When clean-target mode is active, donor fields are evidence inputs only and never mutation authority.
 
 If `PRODUCT_BREADTH` is omitted, it defaults to `ACTIVE_SLICE`. `FULL_TARGET` is never inferred from `COMPLETION_LEVEL=LEVEL_4`. When `PRODUCT_BREADTH=FULL_TARGET`, set `ACTIVE_PRODUCT_SLICE=ALL`.
 
