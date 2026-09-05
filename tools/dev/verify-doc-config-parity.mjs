@@ -101,8 +101,12 @@ for (const file of collectMarkdown(path.join(root, "docs", "development"))) {
   }
 }
 
-if (gettingStarted.includes("Docker only when") && read("tools/dev/bootstrap.ps1").includes("docker compose")) {
-  failures.push("getting-started says Docker is optional for bootstrap but bootstrap still executes docker compose");
+const bootstrapScript = read("tools/dev/bootstrap.ps1");
+if (bootstrapScript.includes("docker compose")) {
+  failures.push("bootstrap must remain independent of Docker runtime composition");
+}
+if (!gettingStarted.includes("it does not require Docker or validate/start the runtime")) {
+  failures.push("getting-started no longer states the Docker-independent bootstrap boundary");
 }
 
 if (failures.length) {
