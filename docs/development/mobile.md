@@ -4,7 +4,7 @@ DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
 EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
-CURRENT_MOBILE_COMMAND_AUTHORITY: package.json + tools/mobile/start-mobile-runtime.ps1 + app-owned mobile.config.json
+CURRENT_MOBILE_COMMAND_TRUTH_SOURCE: package.json + tools/mobile/start-mobile-runtime.ps1 + app-owned mobile.config.json
 
 ## Applications and Metro ports
 

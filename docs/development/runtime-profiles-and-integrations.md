@@ -5,7 +5,7 @@ EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-CURRENT_COMMAND_AUTHORITY: live repository scripts/configuration
+CURRENT_COMMAND_TRUTH_SOURCE: live repository scripts/configuration
 
 ## Runtime profiles
 

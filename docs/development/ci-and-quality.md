@@ -5,7 +5,7 @@ EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-CURRENT_WORKFLOW_AUTHORITY: .github/workflows and repository scripts
+CURRENT_WORKFLOW_TRUTH_SOURCE: .github/workflows and repository scripts
 
 ## Principle
 
