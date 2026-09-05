@@ -64,6 +64,27 @@ Examples of structural substrate include workspace/toolchain wiring, deployable 
 
 This policy defines the durable architectural distinction only. Active campaign stage/order and closure remain owned by the Orchestrator.
 
+### Explicit vertical increments
+
+Product breadth may be delivered incrementally without weakening architectural depth.
+
+```text
+EXPLICITLY_SCOPED_VERTICAL_INCREMENT
++ CANONICAL_OWNER/WRITER
++ COMPLETE_AFFECTED_DATA/CONTRACT/RUNTIME
++ COMPLETE_REQUIRED_SURFACES/READBACK
++ FAILURE/SECURITY/FINANCE_INVARIANTS_WHERE_APPLICABLE
+= VALID_INCREMENT
+
+ACCIDENTAL_PARTIAL_CAPABILITY = INVALID
+HORIZONTAL_LAYER_FRAGMENT_CLAIMED_AS_DONE = INVALID
+TEMPORARY_PARALLEL_TRUTH_FOR_EARLY_SLICE = INVALID
+```
+
+A later increment extends the same canonical ownership model. It may add legal states, routes, contract operations, providers, or surfaces when required, but it must not force replacement of a deliberately temporary domain authority created for an earlier slice.
+
+Closing an increment is not evidence that the full target capability envelope is implemented.
+
 ## Full-stack vertical integrity
 
 A material capability is not proven because a screen, endpoint and table each exist. Valid binding requires:
