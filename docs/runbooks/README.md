@@ -48,7 +48,7 @@ If a runbook conflicts with executable behavior, fix the runbook unless the exec
 ### Platform
 - `platform/systemic-platform-recovery.md`
 
-Conditional/future patterns that are not executable today belong under `../reference/target-operations/`, never in current runbooks.
+Conditional/future mechanisms that are not executable today do not belong in current runbooks. Preserve historical rationale in Git or non-authoritative external/donor reference material only when it still has evidence value.
 
 Mobile/EAS, observability and release procedures belong under `../development/`.
 
