@@ -304,7 +304,9 @@ mobile bundle/export/build smoke
 
 No business tables, business routes, fake business screens, generic journey registry, generic workflow engine, event bus, cache, or speculative provider framework belongs in S1.5.
 
-### S2 — Partner + Store kernel
+### S2 — Private Partner + Store ownership kernel
+
+Establish business ownership without pretending that the store is already public:
 
 ```text
 Partner
@@ -313,29 +315,84 @@ Partner→Store ownership
 basic profile/status
 operator create/manage
 partner own-scope read
-client active-store read
+client visibility = FORBIDDEN
 ```
 
-Defer field onboarding, documents, teams, fleet, payout configuration, publication mega-workflow and advanced commercial UI.
+The initial onboarding increment may use one explicit operator-managed policy that does not require field-assisted evidence when Governance permits it. Field onboarding/documents/review are activated only when the chosen policy requires them. Payout configuration is introduced only before the first commercial/financial action whose model requires it.
 
-### S3 — Catalog + Discovery kernel
+Defer teams, fleet, field workflows, public publication, payout UX and advanced commercial administration.
+
+### S3 — Private Catalog + Assortment kernel
 
 ```text
-Category
+Category / minimal taxonomy needed by the active vertical
 Product
 Store assortment
 server-owned price
 availability
 active/inactive
 partner/operator mutation
-client canonical read
+client visibility = FORBIDDEN UNTIL PUBLICATION GATES PASS
 ```
 
-Defer proposal/approval/marketing/promotion/recommendation/search sophistication.
+Do not implement the full proposal/approval/marketing/recommendation/search envelope. The slice closes only the minimum canonical catalog/assortment lifecycle it explicitly activates.
+
+### S3.5 — Minimum serviceability + first publication/discovery
+
+Only now admit client-visible Store/Catalog truth.
+
+Build the smallest canonical DSH serviceability increment required by the pilot:
+
+```text
+one governed active service zone/policy
+one explicitly enabled fulfillment mode = bthwani_delivery
+store mapped to applicable serviceability truth
+versioned + auditable operator mutation
+fail-closed evaluation
+partner readback of current effect
+```
+
+Then customer visibility is derived only when every **applicable** gate agrees:
+
+```text
+Partner/Store eligible
++ Catalog/assortment eligible
++ Serviceability eligible
+= client-visible store/catalog read
+```
+
+Do not add `partner_delivery`, `client_pickup`, capacity-pressure sophistication, automatic dispatch, route optimization, provider map search, marketing publication or search-index authority in this slice unless a concrete requirement makes one necessary.
 
 ### S4 — Cart kernel
 
-One-store cart, canonical assortment/price validation, versioning, idempotency and restart persistence. No promotion/payment breadth.
+After canonical discovery exists, add one-store cart, canonical assortment/price validation, versioning, idempotency and restart persistence. No promotion/payment breadth.
+
+### S4.5 — Minimum customer delivery address + checkout serviceability proof
+
+Before a `bthwani_delivery` checkout can exist, create the smallest real owned-address increment:
+
+```text
+authenticated client
+→ user-entered address label/text + real device/user coordinates
+→ DSH validates ownership/input
+→ DSH resolves coordinates against canonical active service-area geometry/policy
+→ owned address readback
+→ checkout consumes canonical serviceability result
+```
+
+The client may provide coordinates as input but never a trusted service-area/zone identifier. DSH remains the geofence/serviceability authority.
+
+Required minimum privacy/safety:
+
+```text
+CROSS_ACTOR_ADDRESS_ACCESS=0
+ADDRESS_PII_CLASSIFIED/SCOPED=PASS
+COORDINATE_VALIDATION=PASS
+CLIENT_LOCAL_SERVICEABILITY_TRUTH=0
+RUNTIME_MOCK/FALLBACK_AS_ADDRESS_OR_GEOFENCE_TRUTH=0
+```
+
+Map-provider search/reverse-geocoding, address retention/anonymization automation and richer location UX remain separate later increments unless the active checkout slice genuinely requires them. No fake provider is introduced to simulate production truth.
 
 ### S5 — Checkout + Order + minimum WLT allocation kernel
 
@@ -446,6 +503,9 @@ Before any expansion wave, prove at least:
 Identity isolation = PASS
 Partner/Store ownership isolation = PASS
 Catalog ownership/server pricing = PASS
+Store/Catalog client visibility requires canonical publication gates = PASS
+Serviceability/fulfillment-mode authority = PASS
+Customer address ownership/geofence resolution = PASS
 Cart/Order idempotency = PASS
 Order state legality = PASS
 WLT order allocation conservation = PASS
