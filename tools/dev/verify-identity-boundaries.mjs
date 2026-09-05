@@ -58,9 +58,19 @@ for (const required of [
 for (const forbidden of ["requestOtp(", "activate({", "actorType"]) {
   if (clientBinding.includes(forbidden)) failures.push("app-client retains obsolete auth authority " + forbidden);
 }
-const clientPage = read("apps/app-client/app/index.tsx");
+const clientEntryPath = "apps/app-client/app/index.tsx";
+const clientEntry = read(clientEntryPath);
+let clientPage = clientEntry;
+const clientReexport = clientEntry.match(/^export\s+\{\s*default\s*\}\s+from\s+["']([^"']+)["'];?/m)?.[1];
+if (clientReexport) {
+  const base = path.posix.normalize(path.posix.join(path.posix.dirname(clientEntryPath), clientReexport));
+  const candidates = [base + ".tsx", base + ".ts", base + ".jsx", base + ".js", path.posix.join(base, "index.tsx")];
+  const resolved = candidates.find((candidate) => fs.existsSync(path.join(root, candidate)));
+  if (!resolved) failures.push("app-client entry re-export target cannot be resolved: " + clientReexport);
+  else clientPage = read(resolved);
+}
 for (const required of ["loginClient", "registerClient", "recoverClient", "requestClientRegistration", "requestClientRecovery"]) {
-  if (!clientPage.includes(required)) failures.push("app-client UI missing canonical customer flow " + required);
+  if (!clientPage.includes(required)) failures.push("app-client UI owner missing canonical customer flow " + required);
 }
 if (clientPage.includes("رمز التفعيل") || clientPage.includes("requestIdentityActivation")) {
   failures.push("app-client still presents customer normal auth as activation");
