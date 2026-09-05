@@ -49,6 +49,10 @@ function isIdentityServiceUnavailable(value: unknown): value is IdentityClientEr
   );
 }
 
+function isIdentityUnauthenticated(value: unknown): value is IdentityClientError {
+  return isIdentityClientError(value) && value.kind === "http" && value.status === 401;
+}
+
 function parseStoredTokens(raw: string | null): StoredTokens | null {
   if (!raw) return null;
   try {
@@ -133,10 +137,29 @@ export class IdentitySessionManager {
     const stored = this.tokens ?? parseStoredTokens(await this.storage.getItem(this.key));
     let remoteError: unknown = null;
     try {
-      if (stored) await this.client.logout(stored.accessToken);
-    } catch (error) {
-      if (!(isIdentityClientError(error) && error.kind === "http" && error.status === 401)) {
-        remoteError = error;
+      if (stored) {
+        try {
+          await this.client.logout(stored.accessToken);
+        } catch (error) {
+          if (isIdentityUnauthenticated(error)) {
+            try {
+              const fingerprint = (await this.deviceFingerprint()).trim();
+              if (fingerprint.length < 8) throw new Error("IDENTITY_DEVICE_FINGERPRINT_UNAVAILABLE");
+              const pair = await this.client.refresh({
+                refreshToken: stored.refreshToken,
+                deviceFingerprint: fingerprint,
+              });
+              if (!identityAuthorizesSurface(pair.identity, this.role, this.surface)) {
+                throw new Error("IDENTITY_SESSION_SURFACE_MISMATCH");
+              }
+              await this.client.logout(pair.accessToken);
+            } catch (refreshError) {
+              if (!isIdentityUnauthenticated(refreshError)) remoteError = refreshError;
+            }
+          } else {
+            remoteError = error;
+          }
+        }
       }
     } finally {
       await this.clearLocal();

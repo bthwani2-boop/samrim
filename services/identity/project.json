@@ -13,7 +13,7 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "go test ./... && node ../../../tools/dev/generate-identity-types.mjs --check && node ../tests/contract-guard.test.mjs",
+        "command": "go test ./... && node ../../../tools/dev/generate-identity-types.mjs --check && node ../tests/contract-guard.test.mjs && node --experimental-transform-types ../tests/session-manager.test.mjs",
         "cwd": "services/identity/backend"
       }
     },

@@ -288,6 +288,26 @@ if ((tsSession.match(/isIdentityServiceUnavailable\(error\)/g) || []).length < 2
   failures.push("Identity TS session recovery must preserve local credentials for service failure during restore and refresh");
 }
 
+const tsLogoutStart = tsSession.indexOf("async logout(): Promise<void>");
+const tsLogoutEnd = tsSession.indexOf("\n  private async refreshStored", tsLogoutStart);
+const tsLogoutBody = tsLogoutStart >= 0
+  ? tsSession.slice(tsLogoutStart, tsLogoutEnd >= 0 ? tsLogoutEnd : tsSession.length)
+  : "";
+for (const required of [
+  "isIdentityUnauthenticated(error)",
+  "this.client.refresh({",
+  "refreshToken: stored.refreshToken",
+  "deviceFingerprint: fingerprint",
+  "identityAuthorizesSurface(pair.identity, this.role, this.surface)",
+  "this.client.logout(pair.accessToken)",
+  "await this.clearLocal()",
+  'this.stateValue = { kind: "signed_out" }',
+]) {
+  if (!tsLogoutBody.includes(required)) {
+    failures.push("Identity TS logout cannot revoke a refresh-capable session after access expiry: " + required);
+  }
+}
+
 const domain = read("services/identity/backend/internal/domain/types.go");
 for (const required of ["type ActorRole struct", "type ActorIdentity struct"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
