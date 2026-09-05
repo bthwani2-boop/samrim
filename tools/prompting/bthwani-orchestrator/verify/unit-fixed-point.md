@@ -145,7 +145,7 @@ This owner decides whether the exact candidate satisfies the applicable unit-clo
 UNIT_CLOSED
 ```
 
-It does not redefine the continuation sequence. `05-EXECUTION-PLAYBOOK.md` consumes `UNIT_CLOSED` and owns re-pin/re-census/re-diagnosis/re-ranking/next movement; `01-SCOPE-AUTHORITY-RULES.md` owns whether a legitimate stop condition applies.
+It does not redefine the continuation sequence. `../05-EXECUTION-PLAYBOOK.md` consumes `UNIT_CLOSED` and owns re-pin/re-census/re-diagnosis/re-ranking/next movement; `../01-SCOPE-AUTHORITY-RULES.md` owns whether a legitimate stop condition applies.
 
 ## 9. Checkpoint evidence boundary
 

@@ -14,7 +14,7 @@ This submodule owns structural admission/qualification proof only. It does not d
 
 When a verification claim needs the exhaustive BThwani target/substrate/knowledge/docs/tooling gate matrix, load:
 
-`templates/bthwani-target-qualification.md`
+`../templates/bthwani-target-qualification.md`
 
 The template is evidence scaffolding only. It does not own semantics or closure and may not override this file. Resolve every checklist row against current Governance, current authorized Product scope and exact executable evidence.
 

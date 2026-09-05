@@ -61,7 +61,7 @@ PRESERVE PROVEN DEPLOYABLE/TECHNICAL IDENTITY AND REQUIRED NON-SEMANTIC SUBSTRAT
 → ONLY THEN ENTER STAGE B
 ```
 
-The Foundation Construction exit gate is owned by `04-VERIFY-REDIAGNOSE-CLOSE.md`; procedural traversal is owned by `05-EXECUTION-PLAYBOOK.md`.
+The Foundation Construction exit gate is owned by `../04-VERIFY-REDIAGNOSE-CLOSE.md`; procedural traversal is owned by `../05-EXECUTION-PLAYBOOK.md`.
 
 `FOUNDATION_CONSTRUCTION_EXIT_GATE` proves only `STRUCTURAL_FOUNDATION_READY`: non-semantic substrate readiness for Stage B. It never proves `PROTECTED_JOURNEY_READY`, Identity, or any business capability. Protected Journey-Ready is reached only after materially required prerequisite capabilities are closed vertically during Stage B according to Governance.
 
