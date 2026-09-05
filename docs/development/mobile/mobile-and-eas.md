@@ -30,6 +30,25 @@ API endpoints come from active runtime configuration, not hardcoded screen logic
 
 Expo/EAS project identity, Android/iOS identifiers, schemes, runtime/update configuration and native plugins are deployable identity and must not change as incidental cleanup.
 
+## Material real-device operational evidence
+
+Real-device proof is conditional on the capability actually exercised; do not force every app through irrelevant scenarios.
+
+For mobile journeys whose correctness depends on background execution, location, push/deep links, weak connectivity or long-lived operational sessions—especially captain/field workflows—verify materially applicable behavior on representative real devices across:
+
+- process death and restart/resume;
+- foreground/background transitions;
+- intermittent/weak network and reconnect;
+- OS battery/background restrictions where they can suspend required work;
+- permission deny, revoke and re-grant;
+- foreground/background location semantics when location is required;
+- notification receive/tap/deep-link handoff when notifications are part of the journey;
+- large text and platform accessibility settings;
+- duplicate/retried submission after reconnect or process restoration;
+- canonical server readback after local recovery.
+
+A simulator/emulator, successful bundle, or static typecheck cannot substitute for device evidence when the claim depends on actual OS lifecycle/permission/background behavior.
+
 ## EAS preparation lifecycle
 
 Operate one application at a time unless current tooling explicitly supports broader operation.
