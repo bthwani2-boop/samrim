@@ -846,22 +846,36 @@ for (const token of [
 
 
 
-const lifecycleModules = [
-  "docs/platform-engineering-lifecycle/README.md",
-  "docs/platform-engineering-lifecycle/01-foundation-scope-and-donor.md",
-  "docs/platform-engineering-lifecycle/02-architecture-security-and-technical-foundation.md",
-  "docs/platform-engineering-lifecycle/03-identity-experience-and-journey-ready.md",
-  "docs/platform-engineering-lifecycle/04-integrations-finance-and-verification.md",
-  "docs/platform-engineering-lifecycle/05-build-release-and-operations.md",
-  "docs/platform-engineering-lifecycle/06-evidence-gates-and-templates.md",
-];
-for (const modulePath of lifecycleModules) {
-  if (!fs.existsSync(path.join(root, modulePath))) failures.push("missing modular lifecycle document: " + modulePath);
+const lifecycleIndexPath = "docs/platform-engineering-lifecycle/README.md";
+const lifecycleIndexBody = read(lifecycleIndexPath);
+for (const token of [
+  "DOCUMENT_CLASS: HUMAN_DEVELOPMENT_AND_OPERATIONS_GUIDANCE",
+  "LIFECYCLE MAP = ROUTING ONLY",
+  "docs/development/release-and-store-submission.md",
+]) {
+  if (!lifecycleIndexBody.includes(token)) failures.push(lifecycleIndexPath + " missing canonical lifecycle-router token: " + token);
 }
-if (!lifecycleIndex.includes("## Lifecycle module map")) failures.push("modular lifecycle README missing load-by-need map");
-for (const modulePath of lifecycleModules.slice(1)) {
-  const body = read(modulePath);
-  if (!body.includes("PARENT_GUIDE: docs/platform-engineering-lifecycle/README.md")) failures.push(modulePath + " missing parent-guide routing metadata");
+for (const retiredLifecycleModule of [
+  "01-foundation-scope-and-donor.md",
+  "02-architecture-security-and-technical-foundation.md",
+  "03-identity-experience-and-journey-ready.md",
+  "04-integrations-finance-and-verification.md",
+  "05-build-release-and-operations.md",
+  "06-evidence-gates-and-templates.md",
+]) {
+  if (fs.existsSync(path.join(root, "docs/platform-engineering-lifecycle", retiredLifecycleModule))) {
+    failures.push("retired duplicate lifecycle module still exists: " + retiredLifecycleModule);
+  }
+}
+const releaseStoreGuide = read("docs/development/release-and-store-submission.md");
+for (const token of [
+  "MUTABLE_EXTERNAL_POLICY_TRUTH_SOURCE: CURRENT_OFFICIAL_APPLE_AND_GOOGLE_DOCUMENTATION",
+  "2026-08-31",
+  "API level 36",
+  "12 continuously opted-in testers",
+  "Xcode 26 or later",
+]) {
+  if (!releaseStoreGuide.includes(token)) failures.push("release/store guide missing current canonical token: " + token);
 }
 
 const externalReferenceIndex = "docs/reference/external-systems/README.md";
