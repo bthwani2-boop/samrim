@@ -1,4 +1,4 @@
-# Communications and Insight Capabilities
+# Communications And Insights Capabilities
 
 ARTIFACT_CLASS: DURABLE_PRODUCT_CAPABILITY_GOVERNANCE
 SEMANTIC_OWNER: governance/product/capabilities/communications-and-insights.md
@@ -9,7 +9,7 @@ PARENT_CAPABILITY_INDEX: governance/product/CAPABILITIES.md
 
 ## Scope
 
-This owner defines only the durable capability semantics listed in this file. Cross-cutting capability schema/admission rules are owned by `../CAPABILITIES.md`; journeys remain owned by `../JOURNEYS.md`.
+This owner defines only the durable capability semantics listed below. Capability taxonomy/schema/admission law remains in `../CAPABILITIES.md`; cross-capability journeys remain in `../JOURNEYS.md`.
 
 ### NOTIFICATIONS_COMMUNICATIONS
 
