@@ -193,7 +193,7 @@ try {
     }
 
     Run-NativeStep "Knowledge-system invariants" {
-        node tools/dev/verify-knowledge-system.mjs
+        pnpm run knowledge:verify:all
     }
 
     Run-NativeStep "PowerShell syntax" {
