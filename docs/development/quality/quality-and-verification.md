@@ -40,6 +40,18 @@ A custom guard/script/workflow must enforce a unique durable invariant not alrea
 
 A red workflow is a finding to diagnose, not something to suppress merely to recover green status.
 
+## Official standards reference routing
+
+Use current official sources when a material security, accessibility, supply-chain or secure-development claim depends on them. These links are reference entrypoints, not frozen version authority:
+
+- OWASP ASVS — https://owasp.org/www-project-application-security-verification-standard/
+- OWASP MASVS / MASTG / MASWE — https://mas.owasp.org/MASVS/
+- W3C WCAG — https://www.w3.org/WAI/standards-guidelines/wcag/
+- NIST Secure Software Development Framework (SP 800-218) — https://csrc.nist.gov/pubs/sp/800/218/final
+- SLSA specification — https://slsa.dev/spec/
+
+Revalidate the current applicable version/profile at the decision or release point. External standards constrain engineering assurance; they do not create BThwani Product semantics.
+
 ## Documentation and knowledge verification
 
 ```powershell
