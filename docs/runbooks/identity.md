@@ -21,7 +21,7 @@ DSH participant eligibility/scope         -> DSH
 financial truth                           -> WLT
 ```
 
-Identity has no generic Tenant/Operator-Context/AccessGrant/permissions engine.
+Identity has no generic Tenant/AccessGrant/permissions engine and does not invent cross-domain authorization scope.
 
 ## Authentication behavior
 
