@@ -56,6 +56,7 @@ A current implementation can reveal drift but does not silently redefine Product
 - `architecture/APP-SERVICE-COMPOSITION.md` — deployable-host versus service-capability responsibility.
 - `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` — data/contract/version/integration boundaries.
 - `architecture/RUNTIME-AND-CONFIGURATION.md` — runtime/configuration classes and technical operating boundaries.
+- `architecture/FOUNDATION-AND-JOURNEY-READY-SUBSTRATE.md` — durable cross-cutting technical substrate required before broad real-journey admission without another foundation refound.
 - `decisions/README.md` — ADR admission and rationale policy.
 
 ### Engineering policies
