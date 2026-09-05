@@ -9,6 +9,41 @@ LOAD_TRIGGER: WHEN_MULTI_STEP_CAMPAIGN_STATE_RECOVERY_OR_AUTOMATIC_CONTINUATION_
 
 This file owns how the engine moves. It does not redefine Product, architecture, diagnosis, mutation or verification laws owned elsewhere.
 
+## 1A. No-idle campaign movement
+
+When authorized executable work exists, the engine has no idle/recommendation-only state.
+
+~~~text
+RECOVERING
+DISCOVERING
+DIAGNOSING
+SELECTING
+DEMOLISHING
+REFOUNDING
+MIGRATING
+CUTTING_OVER
+DELETING
+PRUNING
+VERIFYING
+FALSIFYING
+RECENSUS
+LEGITIMATELY_BLOCKED
+~~~
+
+Forbidden while executable authorized work remains:
+
+~~~text
+IDLE
+WAITING_FOR_NEXT
+PAUSED_AFTER_COMMIT
+PAUSED_AFTER_UNIT
+PAUSED_AFTER_STAGE
+RECOMMENDATIONS_ONLY_WHEN_EXECUTION_READY
+ASKING_FOR_CONTINUATION_WHEN_DERIVABLE
+~~~
+
+A proven active-slice Level-4 fixed point is a normal terminal state; it is not idle and does not authorize future Product breadth.
+
 ## 2. Session entry
 
 ```text
