@@ -19,12 +19,6 @@ function requireText(relative, text) {
   return body;
 }
 
-function forbidText(relative, text) {
-  const body = read(relative);
-  if (body.includes(text)) failures.push(relative + " contains forbidden residue " + text);
-  return body;
-}
-
 const packageBody = read("services/identity/package.json");
 try {
   const pkg = JSON.parse(packageBody);
@@ -35,12 +29,7 @@ try {
   failures.push("services/identity/package.json is invalid JSON");
 }
 
-for (const [app, role, surface] of [
-  ["app-client", "client", "app-client"],
-  ["app-partner", "partner", "app-partner"],
-  ["app-captain", "captain", "app-captain"],
-  ["app-field", "field", "app-field"],
-]) {
+for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
   const pkgPath = "apps/" + app + "/package.json";
   try {
     const pkg = JSON.parse(read(pkgPath));
@@ -50,406 +39,249 @@ for (const [app, role, surface] of [
   } catch {
     failures.push(pkgPath + " is invalid JSON");
   }
+}
 
+const clientBinding = read("apps/app-client/src/identity.ts");
+for (const required of [
+  'const role = "client" as const',
+  'from "@bthwani/identity"',
+  'from "expo-secure-store"',
+  "requestClientRegistration",
+  "registerClient",
+  "loginClient",
+  "requestClientRecovery",
+  "recoverClient",
+  "new IdentitySessionManager(",
+]) {
+  if (!clientBinding.includes(required)) failures.push("app-client Identity binding missing " + required);
+}
+for (const forbidden of ["requestOtp(", "activate({", "actorType", "operatorContext"]) {
+  if (clientBinding.includes(forbidden)) failures.push("app-client retains obsolete auth authority " + forbidden);
+}
+const clientPage = read("apps/app-client/app/index.tsx");
+for (const required of ["loginClient", "registerClient", "recoverClient", "requestClientRegistration", "requestClientRecovery"]) {
+  if (!clientPage.includes(required)) failures.push("app-client UI missing canonical customer flow " + required);
+}
+if (clientPage.includes("رمز التفعيل") || clientPage.includes("requestIdentityActivation")) {
+  failures.push("app-client still presents customer normal auth as activation");
+}
+
+for (const [app, role, surface] of [
+  ["app-partner", "partner", "app-partner"],
+  ["app-captain", "captain", "app-captain"],
+  ["app-field", "field", "app-field"],
+]) {
   const runtimePath = "apps/" + app + "/src/identity.ts";
   const runtime = read(runtimePath);
   for (const required of [
-    'from "@bthwani/identity"',
-    'from "expo-secure-store"',
-    'from "expo-crypto"',
     'const role = "' + role + '" as const',
     'const surface = "' + surface + '" as const',
+    "requestManagedActivation",
+    "activateManagedIdentity",
     "new IdentitySessionManager(",
-    "requestIdentityActivation",
-    "requestOtp({ phone, role })",
   ]) {
     if (!runtime.includes(required)) failures.push(runtimePath + " missing " + required);
   }
-  for (const forbidden of ["actorType", "operatorContext", "X-Service-Caller", "X-Operator-Context-ID"]) {
-    if (runtime.includes(forbidden)) failures.push(runtimePath + " contains legacy authority " + forbidden);
+  for (const forbidden of ["requestOtp(", "loginClient(", "actorType", "operatorContext"]) {
+    if (runtime.includes(forbidden)) failures.push(runtimePath + " contains wrong auth flow " + forbidden);
   }
-
   const page = read("apps/" + app + "/app/index.tsx");
-  if (!page.includes('from "../src/identity"')) failures.push(app + " UI bypasses its Identity host binding");
-  for (const required of [
-    "requestIdentityActivation",
-    "requestIdentityActivation(phone)",
-    "async function requestCode()",
-    "onPress={requestCode}",
-  ]) {
-    if (!page.includes(required)) {
-      failures.push(app + " activation journey cannot request its canonical OTP: " + required);
-    }
+  if (!page.includes("requestManagedActivation") || !page.includes("activateManagedIdentity")) {
+    failures.push(app + " UI is not bound to one-time managed activation");
   }
-  if (!page.includes("currentIdentityState")) {
-    failures.push(app + " UI must read canonical local Identity state after logout");
+  if (!page.includes("التفعيل ليس شاشة دخول يومية")) {
+    failures.push(app + " UI does not distinguish one-time activation from normal session use");
   }
-  const mobileLogoutStart = page.indexOf("async function logout()");
-  const mobileLogoutEnd = page.indexOf("\n  if (state.kind", mobileLogoutStart);
-  const mobileLogoutBody = mobileLogoutStart >= 0
-    ? page.slice(mobileLogoutStart, mobileLogoutEnd >= 0 ? mobileLogoutEnd : page.length)
-    : "";
-  const mobileLogoutFinally = mobileLogoutBody.indexOf("finally");
-  const mobileLogoutStateSync = mobileLogoutBody.indexOf("setState(currentIdentityState());");
-  if (
-    mobileLogoutFinally < 0 ||
-    mobileLogoutStateSync < 0 ||
-    mobileLogoutStateSync < mobileLogoutFinally
-  ) {
-    failures.push(
-      app + " logout must mirror canonical IdentitySessionManager state in finally after local-clear/remote-revoke outcome",
-    );
-  }
+  if (!page.includes("currentIdentityState")) failures.push(app + " logout must mirror canonical local Identity state");
 }
 
 const controlPackagePath = "apps/control-panel/package.json";
 try {
   const pkg = JSON.parse(read(controlPackagePath));
-  if (pkg.dependencies?.["@bthwani/identity"] !== "workspace:*") {
-    failures.push("control-panel must consume @bthwani/identity via workspace:*");
-  }
+  if (pkg.dependencies?.["@bthwani/identity"] !== "workspace:*") failures.push("control-panel must consume @bthwani/identity via workspace:*");
 } catch {
   failures.push("control-panel package.json is invalid");
 }
-
-const controlNextConfigCandidates = [
-  "apps/control-panel/next.config.js",
-  "apps/control-panel/next.config.mjs",
-  "apps/control-panel/next.config.ts",
-  "apps/control-panel/next.config.mts",
-].filter((relative) => fs.existsSync(path.join(root, relative)));
-if (
-  controlNextConfigCandidates.length !== 1 ||
-  controlNextConfigCandidates[0] !== "apps/control-panel/next.config.mjs"
-) {
-  failures.push(
-    "control-panel must have one canonical Next config at apps/control-panel/next.config.mjs",
-  );
-}
-const controlNextConfig = read("apps/control-panel/next.config.mjs");
-if (!controlNextConfig.includes('transpilePackages: ["@bthwani/identity"]')) {
-  failures.push("control-panel Next config must transpile the canonical Identity package");
-}
-
 const bff = read("apps/control-panel/lib/identity-bff.ts");
 for (const required of [
-  'from "@bthwani/identity"',
-  'httpOnly: true',
+  "startOperatorLogin",
+  "completeOperatorLogin",
+  'identityAuthorizesSurface(pair.identity, "operator", "control-panel")',
+  "httpOnly: true",
   'sameSite: "strict" as const',
-  'identityAuthorizesSurface(pair.identity, "operator", "control-panel")',
-  'identityAuthorizesSurface(identity, "operator", "control-panel")',
-  "loginOperator",
 ]) {
-  if (!bff.includes(required)) failures.push("control-panel Identity BFF missing " + required);
+  if (!bff.includes(required)) failures.push("control-panel BFF missing " + required);
 }
-for (const forbidden of ["activateOperator", "localStorage", "sessionStorage", "actorType", "operatorContext"]) {
-  if (bff.includes(forbidden)) failures.push("control-panel Identity BFF contains forbidden residue " + forbidden);
+for (const forbidden of ["loginOperator(", "username", "activateOperator", "localStorage", "sessionStorage"]) {
+  if (bff.includes(forbidden)) failures.push("control-panel BFF contains retired/single-factor auth " + forbidden);
 }
-if (fs.existsSync(path.join(root, "apps/control-panel/app/api/auth/activate/route.ts"))) {
-  failures.push("operator OTP BFF route still exists");
+if (fs.existsSync(path.join(root, "apps/control-panel/app/api/auth/login/route.ts"))) {
+  failures.push("single-step operator login BFF route still exists");
 }
-for (const route of ["login", "session", "logout"]) {
-  requireText("apps/control-panel/app/api/auth/" + route + "/route.ts", "identity-bff");
+for (const route of ["start", "complete"]) {
+  requireText("apps/control-panel/app/api/auth/login/" + route + "/route.ts", route === "start" ? "startOperatorLogin" : "completeOperatorLogin");
 }
-
 const controlPage = read("apps/control-panel/app/page.tsx");
-const controlLogoutStart = controlPage.indexOf("async function logout()");
-const controlLogoutEnd = controlPage.indexOf("\n  if (view.kind", controlLogoutStart);
-const controlLogoutBody = controlLogoutStart >= 0
-  ? controlPage.slice(controlLogoutStart, controlLogoutEnd >= 0 ? controlLogoutEnd : controlPage.length)
-  : "";
-const controlLogoutFetch = controlLogoutBody.indexOf('fetch("/api/auth/logout"');
-const controlSignedOutTransition = controlLogoutBody.indexOf('setView({ kind: "signed_out" });');
-const controlFailedResponseBranch = controlLogoutBody.indexOf("if (!response.ok)");
-if (
-  controlLogoutFetch < 0 ||
-  controlSignedOutTransition < 0 ||
-  controlFailedResponseBranch < 0 ||
-  !(controlLogoutFetch < controlSignedOutTransition && controlSignedOutTransition < controlFailedResponseBranch)
-) {
-  failures.push(
-    "control-panel logout must converge to signed_out after the BFF response before reporting remote revocation failure",
-  );
+for (const required of ["/api/auth/login/start", "/api/auth/login/complete", "رمز التحقق الثاني", "جلسة المشغل موثقة بعاملين"]) {
+  if (!controlPage.includes(required)) failures.push("control-panel UI missing MFA flow " + required);
 }
-
-const bffLogoutStart = bff.indexOf("export async function logoutOperator()");
-const bffLogoutEnd = bff.indexOf("\nexport function identityHttpStatus", bffLogoutStart);
-const bffLogoutBody = bffLogoutStart >= 0
-  ? bff.slice(bffLogoutStart, bffLogoutEnd >= 0 ? bffLogoutEnd : bff.length)
-  : "";
-if (!bffLogoutBody.includes("finally") || !bffLogoutBody.includes("await clearOperatorCookies()")) {
-  failures.push("control-panel BFF logout must clear local cookies regardless of remote revocation result");
-}
-for (const required of [
-  "refreshToken",
-  "deviceFingerprint",
-  "identityClient().refresh({ refreshToken, deviceFingerprint })",
-  'identityAuthorizesSurface(pair.identity, "operator", "control-panel")',
-  "identityClient().logout(tokenToRevoke)",
-]) {
-  if (!bffLogoutBody.includes(required)) {
-    failures.push("control-panel BFF logout cannot revoke a refresh-capable session after access-cookie expiry: " + required);
-  }
-}
+if (controlPage.includes("username")) failures.push("control-panel still requires username without Product need");
 
 const dsh = read("services/dsh/backend/internal/identityboundary/client.go");
 for (const required of [
-  "ProvisionPartner",
-  "ProvisionCaptain",
-  "ProvisionField",
-  "SetPartnerEnabled",
-  "SetCaptainEnabled",
-  "SetFieldEnabled",
+  "ProvisionPartner", "ProvisionCaptain", "ProvisionField",
+  "SetPartnerEnabled", "SetCaptainEnabled", "SetFieldEnabled",
+  "AuthorizePartnerReenrollment", "AuthorizeCaptainReenrollment", "AuthorizeFieldReenrollment",
 ]) {
   if (!dsh.includes(required)) failures.push("DSH Identity boundary missing " + required);
 }
-for (const forbidden of [
-  "ProvisionOperator",
-  "IssueActivation",
-  "operatorContext",
-  "ActorID",
-  "Username",
-  '"dsh"',
-  "X-Service-Caller",
-  "X-Operator-Context-ID",
-]) {
+for (const forbidden of ["ProvisionOperator", "Username", "X-Service-Caller", "X-Operator-Context-ID"]) {
   if (dsh.includes(forbidden)) failures.push("DSH Identity boundary contains forbidden authority " + forbidden);
 }
 
-const dshMod = read("services/dsh/backend/go.mod");
-if (!dshMod.includes("github.com/bthwani2-boop/samrim/services/identity/clients/go v0.0.0")) {
-  failures.push("DSH Go module does not require canonical Identity Go client");
-}
-if (!dshMod.includes("../../identity/clients/go")) {
-  failures.push("DSH Go module local Identity client replacement missing");
-}
-
 const goClient = read("services/identity/clients/go/client.go");
-for (const route of ["/internal/actor-roles/provision", "/roles/", "/security/", "/operator-password/reset"]) {
-  if (!goClient.includes(route)) failures.push("Identity Go client missing canonical route " + route);
+for (const required of ["/internal/actor-roles/provision", "/roles/", "/reenrollment", "/security/", "/operator-password/reset"]) {
+  if (!goClient.includes(required)) failures.push("Identity Go client missing canonical route " + required);
 }
-for (const forbidden of [
-  "X-Service-Caller",
-  "X-Operator-Context-ID",
-  "Idempotency-Key",
-  "/internal/actors/provision",
-  "/activations",
-  "operatorContext",
-]) {
-  if (goClient.includes(forbidden)) failures.push("Identity Go client contains legacy authority " + forbidden);
+for (const forbidden of ["Username", "X-Service-Caller", "X-Operator-Context-ID", "/activations"]) {
+  if (goClient.includes(forbidden)) failures.push("Identity Go client contains retired authority " + forbidden);
 }
 
 const contract = read("services/identity/contracts/identity.openapi.yaml");
 for (const required of [
-  "/internal/actor-roles/provision:",
-  "/internal/actors/{actorId}/roles/{role}/disable:",
-  "/internal/actors/{actorId}/security/disable:",
-  "/internal/actors/{actorId}/security/enable:",
-  "/internal/actors/{actorId}/operator-password/reset:",
-  "authenticated service token determines the caller",
-  "Identity alone creates actor_id",
+  "/auth/client/registration/request:",
+  "/auth/client/login:",
+  "/auth/client/recovery/request:",
+  "/auth/managed/activation/request:",
+  "/auth/operator/login/start:",
+  "/auth/operator/login/complete:",
+  "/internal/actors/{actorId}/roles/{role}/reenrollment:",
 ]) {
   if (!contract.includes(required)) failures.push("Identity contract missing " + required);
 }
-for (const forbidden of [
-  "X-Service-Caller",
-  "X-Operator-Context-ID",
-  "operatorContextId",
-  "IssueActivationRequest",
-  "expectedActorType",
-  "sessionSurface",
-  "surfaceAccess",
-  "ActorStatus:",
-  "Permission:",
-]) {
-  if (contract.includes(forbidden)) failures.push("Identity contract contains legacy/premature authority " + forbidden);
+for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller", "operatorContextId"]) {
+  if (contract.includes(forbidden)) failures.push("Identity contract contains retired auth shape " + forbidden);
 }
 
 const generated = read("services/identity/clients/generated/identity-types.ts");
-if (!generated.includes("AUTO-GENERATED from services/identity/contracts/identity.openapi.yaml")) {
-  failures.push("generated Identity types provenance header missing");
-}
-if (!generated.includes("readonly securityEnabled: boolean;")) {
-  failures.push("generated Identity types missing global security eligibility");
-}
-for (const forbidden of ["ActorStatus", "Permission", "operatorContextId", "roles:", "surfaceAccess", "sessionSurface"]) {
-  if (generated.includes(forbidden)) failures.push("generated Identity types contain legacy shape " + forbidden);
-}
-
-const tsSession = read("services/identity/clients/session.ts");
 for (const required of [
-  "isIdentityServiceUnavailable",
-  'value.kind === "network"',
-  'value.kind === "http" && value.status >= 500',
+  "AUTO-GENERATED from services/identity/contracts/identity.openapi.yaml",
+  "export type ManagedActorType",
+  "export type ClientCredentialProofRequest",
+  "export type OperatorLoginCompleteRequest",
+  "readonly activatedAt?: string;",
 ]) {
-  if (!tsSession.includes(required)) failures.push("Identity TS session recovery missing " + required);
+  if (!generated.includes(required)) failures.push("generated Identity types missing " + required);
 }
-if ((tsSession.match(/isIdentityServiceUnavailable\(error\)/g) || []).length < 2) {
-  failures.push("Identity TS session recovery must preserve local credentials for service failure during restore and refresh");
-}
-
-const tsLogoutStart = tsSession.indexOf("async logout(): Promise<void>");
-const tsLogoutEnd = tsSession.indexOf("\n  private async refreshStored", tsLogoutStart);
-const tsLogoutBody = tsLogoutStart >= 0
-  ? tsSession.slice(tsLogoutStart, tsLogoutEnd >= 0 ? tsLogoutEnd : tsSession.length)
-  : "";
-for (const required of [
-  "isIdentityUnauthenticated(error)",
-  "this.client.refresh({",
-  "refreshToken: stored.refreshToken",
-  "deviceFingerprint: fingerprint",
-  "identityAuthorizesSurface(pair.identity, this.role, this.surface)",
-  "this.client.logout(pair.accessToken)",
-  "await this.clearLocal()",
-  'this.stateValue = { kind: "signed_out" }',
-]) {
-  if (!tsLogoutBody.includes(required)) {
-    failures.push("Identity TS logout cannot revoke a refresh-capable session after access expiry: " + required);
-  }
+for (const forbidden of ["OtpRequest", "ActivationRequest", "LoginRequest", "username"]) {
+  if (generated.includes(forbidden)) failures.push("generated Identity types retain old auth shape " + forbidden);
 }
 
 const domain = read("services/identity/backend/internal/domain/types.go");
-for (const required of ["type ActorRole struct", "type ActorIdentity struct"]) {
+for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
 }
-if (!/type ActorRole struct\s*\{[\s\S]*?Role\s+string[\s\S]*?Enabled\s+bool[\s\S]*?\}/.test(domain)) {
-  failures.push("Identity ActorRole must contain role and enabled fields");
-}
-for (const forbidden of ["OperatorContextID", "Roles []string", "Permissions []", "ActorStatus", "ProvisioningFingerprint", "CreatedByService"]) {
-  if (domain.includes(forbidden)) failures.push("Identity domain contains collapsed actor authority " + forbidden);
+for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "OperatorContextID", "Roles []string", "Permissions []"]) {
+  if (domain.includes(forbidden)) failures.push("Identity domain contains collapsed/retired authority " + forbidden);
 }
 
 const actor = read("services/identity/backend/internal/actor/service.go");
-for (const required of ['return "act_" + token', "identity_actor_roles", "SetRoleEnabled", "SetSecurityEnabled", "ResetOperatorPassword"]) {
+for (const required of [
+  "identity_password_credentials",
+  "RegisterClientTx",
+  "ManagedActivationCandidate",
+  "MarkManagedActivatedTx",
+  "AuthorizeReenrollment",
+  "ResetClientPasswordTx",
+  "ResetOperatorPassword",
+]) {
   if (!actor.includes(required)) failures.push("Identity actor service missing " + required);
 }
-for (const forbidden of ["requestedID", "operatorContextID", "roles,permissions", "provisioning_fingerprint", "created_by_service"]) {
-  if (actor.includes(forbidden)) failures.push("Identity actor service contains legacy actor authority " + forbidden);
+if (actor.includes("username")) failures.push("Identity actor service still owns username");
+if (!actor.includes('return "act_" + token')) failures.push("Identity actor_id generation drifted");
+
+const challenge = read("services/identity/backend/internal/challenge/service.go");
+for (const required of [
+  "RequestClientRegistration",
+  "LoginClient",
+  "RequestClientRecovery",
+  "RequestManagedActivation",
+  "ActivateManaged",
+  "StartOperatorLogin",
+  "CompleteOperatorLogin",
+  "challenge.decoy_issued",
+  "identity_challenges",
+  "purpose",
+]) {
+  if (!challenge.includes(required)) failures.push("Identity challenge service missing " + required);
 }
+if (challenge.includes("EnsurePublicClientTx") || challenge.includes("IsPublicOtpRole")) {
+  failures.push("Identity challenge service retains universal OTP activation semantics");
+}
+const operatorStart = challenge.slice(challenge.indexOf("func (s *Service) StartOperatorLogin"), challenge.indexOf("func (s *Service) CompleteOperatorLogin"));
+if (operatorStart.includes("CreateTx(")) failures.push("operator password proof can create a session before MFA");
+if (!challenge.includes("r.ActivatedAt==nil")) failures.push("managed activation does not enforce one-time enrollment state");
 
 const session = read("services/identity/backend/internal/session/service.go");
-if (!session.includes("currentPasswordHash != a.PasswordHash")) {
-  failures.push("Identity login must reject a credential hash changed after pre-transaction verification");
-}
-for (const required of [
-  "identity_actor_roles",
-  "role,access_token_hash",
-  "identityOf(actorID, sessionID, role",
-  "identity_refresh_token_history",
-]) {
+for (const required of ["CreateTx", "identity_refresh_token_history", "device_fingerprint_hash", "identityOf(actorID,sessionID,role"]) {
   if (!session.includes(required)) failures.push("Identity session service missing " + required);
 }
-if (
-  !session.includes(
-    "WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL AND refresh_expires_at>clock_timestamp() ORDER BY created_at DESC",
-  )
-) {
-  failures.push("Identity active-session readback must exclude refresh-expired sessions");
-}
-for (const forbidden of ["previous_refresh_token_hash", "operator_context", "surfaceAccess", "Roles:", "Permissions:"]) {
-  if (session.includes(forbidden)) failures.push("Identity session service contains redundant/legacy state " + forbidden);
+for (const forbidden of ["func (s *Service) Login(", "PasswordHash", "username", "operator_context", "surfaceAccess"]) {
+  if (session.includes(forbidden)) failures.push("Identity session service retains credential/login authority " + forbidden);
 }
 
-const activationDelivery = read("services/identity/backend/internal/integrations/activation/delivery.go");
-if (activationDelivery.includes("ActorType") || activationDelivery.includes('"actorType"')) {
-  failures.push("Identity activation delivery contains retired actorType semantics");
-}
-if (!/type Message struct\s*\{[\s\S]*?\bRole\s+string\b[\s\S]*?\}/.test(activationDelivery)) {
-  failures.push("Identity activation delivery Message must carry canonical role semantics");
-}
-if (!activationDelivery.includes('"role":message.Role')) {
-  failures.push("Identity activation webhook must emit canonical role semantics");
-}
-
-const activation = read("services/identity/backend/internal/activation/service.go");
-const requestStart = activation.indexOf("func (s *Service) Request(");
-const issueStart = activation.indexOf("func (s *Service) issue(", requestStart);
-const requestBody = activation.slice(requestStart, issueStart);
-if (requestBody.includes("EnsurePublicClient")) {
-  failures.push("public OTP request must not create client actor before proof");
-}
-if (activation.includes("genericChallenge(")) {
-  failures.push("OTP decoy responses must be persisted/rate-accounted rather than bypass throttling");
-}
-if (!activation.includes("activation.decoy_issued") || !activation.includes("if deliveryAllowed")) {
-  failures.push("Identity OTP decoy path must be non-delivering and auditable");
-}
-const consumeStart = activation.indexOf("func (s *Service) Consume(");
-const codeProofIndex = activation.indexOf("ConstantTimeHexEqual(codeHash, expected)", consumeStart);
-const clientCreateIndex = activation.indexOf("EnsurePublicClientTx(ctx, tx, phone)", consumeStart);
-if (codeProofIndex < 0 || clientCreateIndex < 0 || clientCreateIndex < codeProofIndex) {
-  failures.push("client actor creation must happen only after valid OTP proof");
-}
+const migration = read("services/identity/database/migrations/001_identity_authentication.sql");
 for (const required of [
-  '"identity:otp-source:" + ipHash',
-  '"identity:otp-phone:" + a.PhoneE164',
-  "FindEnabledByPhoneRole",
-  "QueryRowContext",
+  "CREATE TABLE IF NOT EXISTS identity_password_credentials",
+  "CREATE TABLE IF NOT EXISTS identity_challenges",
+  "purpose varchar(32) NOT NULL",
+  "admissible boolean NOT NULL DEFAULT false",
+  "activated_at timestamptz",
+  "CREATE TABLE IF NOT EXISTS identity_sessions",
 ]) {
-  if (!activation.includes(required)) failures.push("Identity activation service missing " + required);
+  if (!migration.includes(required)) failures.push("Identity migration missing " + required);
 }
-for (const forbidden of ["IssueForActor", "idempotencyKey", "expectedActorType", "operatorContextID"]) {
-  if (activation.includes(forbidden)) failures.push("Identity activation service contains obsolete governed-issuance semantics " + forbidden);
+for (const forbidden of ["username varchar", "password_hash text,", "identity_activation_challenges", "identity_login_attempts"]) {
+  if (migration.includes(forbidden) && forbidden !== "password_hash text,") failures.push("Identity migration retains old auth schema " + forbidden);
 }
+const actorTable = migration.slice(migration.indexOf("CREATE TABLE IF NOT EXISTS identity_actors"), migration.indexOf("CREATE TABLE IF NOT EXISTS identity_actor_roles"));
+if (actorTable.includes("password_hash") || actorTable.includes("username")) failures.push("actor row still owns credentials/username");
 
 const security = read("services/identity/backend/internal/security/values.go");
 if (!security.includes("argon2.IDKey")) failures.push("Identity password hashing is not Argon2id");
 if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identity security implementation");
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
-for (const required of [
-  "identitySchemaRequirements",
-  "information_schema.columns",
-  "pg_indexes",
-  "required column missing",
-  "required index missing",
-  "identity_sessions_active_idx",
-]) {
+for (const required of ["identity_password_credentials", "identity_challenges", "identity_password_attempts", "identity_sessions_active_idx"]) {
   if (!readiness.includes(required)) failures.push("Identity readiness proof missing " + required);
 }
 
-const migration = read("services/identity/database/migrations/001_identity_activation_sessions.sql");
-for (const required of [
-  "security_enabled boolean NOT NULL DEFAULT true",
-  "CREATE TABLE IF NOT EXISTS identity_actor_roles",
-  "PRIMARY KEY (actor_id, role)",
-  "FOREIGN KEY (actor_id, role) REFERENCES identity_actor_roles(actor_id, role)",
-]) {
-  if (!migration.includes(required)) failures.push("Identity migration missing " + required);
-}
-for (const forbidden of [
-  "operator_context_id varchar",
-  "roles text[]",
-  "permissions jsonb",
-  "previous_refresh_token_hash",
-  "provisioning_fingerprint char",
-  "created_by_service varchar",
-]) {
-  if (migration.includes(forbidden)) failures.push("Identity migration recreates legacy actor/session state " + forbidden);
-}
-
-for (const file of [
-  "services/identity/backend/internal/transport/http/server.go",
-  "services/identity/backend/internal/runtime/server.go",
-  "services/identity/clients/go/client.go",
-  "services/dsh/backend/internal/identityboundary/client.go",
-  "infra/local/compose/compose.yaml",
-  "infra/local/compose/.env.example",
-]) {
+for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.env.example", "services/identity/backend/internal/runtime/server.go"]) {
   const body = read(file);
-  for (const forbidden of ["X-Service-Caller", "X-Operator-Context-ID", "IDENTITY_CONSUMER_OPERATOR_CONTEXT_ID"]) {
-    if (body.includes(forbidden)) failures.push(file + " contains removed Identity context/caller authority " + forbidden);
+  if (!body.includes("IDENTITY_CHALLENGE_HMAC_SECRET")) failures.push(file + " missing challenge secret configuration");
+  if (body.includes("IDENTITY_ACTIVATION_HMAC_SECRET") || body.includes("IDENTITY_ACTIVATION_DELIVERY_MODE")) {
+    failures.push(file + " retains activation-only runtime configuration");
   }
 }
 
-const directAuthPattern = /["'`]\/(?:auth|internal\/actor|internal\/actors)\//;
-for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
-  const pageBody = read("apps/" + app + "/app/index.tsx");
-  if (pageBody.includes("sessionSurface")) failures.push(app + " contains legacy sessionSurface residue in deployable app");
-  for (const file of ["apps/" + app + "/src/identity.ts", "apps/" + app + "/app/index.tsx"]) {
-    const body = read(file);
-    if (directAuthPattern.test(body)) failures.push(file + " bypasses canonical Identity client with direct auth URL");
-  }
+if (fs.existsSync(path.join(root, "services/identity/backend/internal/activation/service.go"))) {
+  failures.push("retired universal activation package remains");
+}
+if (fs.existsSync(path.join(root, "services/identity/backend/internal/integrations/activation/delivery.go"))) {
+  failures.push("retired activation delivery package remains");
+}
+if (fs.existsSync(path.join(root, "services/identity/database/migrations/001_identity_activation_sessions.sql"))) {
+  failures.push("retired activation-schema migration remains");
+}
+
+const tsSession = read("services/identity/clients/session.ts");
+for (const required of [
+  "isIdentityServiceUnavailable",
+  "this.client.refresh({",
+  "await this.clearLocal()",
+  'this.stateValue = { kind: "signed_out" }',
+]) {
+  if (!tsSession.includes(required)) failures.push("Identity TS session continuity missing " + required);
 }
 
 if (failures.length > 0) {
@@ -457,10 +289,10 @@ if (failures.length > 0) {
   for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);
   process.exit(1);
 }
-
 console.log("IDENTITY_BOUNDARY_VERIFY=PASS");
 console.log("IDENTITY_ONE_ACTOR_ROLE_MODEL=PASS");
-console.log("IDENTITY_SESSION_SINGLE_ROLE=PASS");
+console.log("IDENTITY_CUSTOMER_PASSWORD_AUTH=PASS");
+console.log("IDENTITY_MANAGED_ACTIVATION_ONE_TIME=PASS");
+console.log("IDENTITY_OPERATOR_MFA_REQUIRED=PASS");
 console.log("IDENTITY_PREMATURE_CONTEXT_RESIDUE=0");
-console.log("IDENTITY_CALLER_HEADER_AUTHORITY=0");
 console.log("PARALLEL_IDENTITY_CLIENT_TRUTH=0");

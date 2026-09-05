@@ -3,48 +3,19 @@ package domain
 import "testing"
 
 func TestCanonicalRoleSurfaceMapping(t *testing.T) {
-	cases := map[string]string{
-		"client":   "app-client",
-		"partner":  "app-partner",
-		"captain":  "app-captain",
-		"field":    "app-field",
-		"operator": "control-panel",
-	}
-	for role, expected := range cases {
-		actual, ok := SurfaceForRole(role)
-		if !ok || actual != expected {
-			t.Fatalf("role %s mapped to %q ok=%v; expected %q", role, actual, ok, expected)
-		}
-	}
-	if _, ok := SurfaceForRole("employee"); ok {
-		t.Fatal("employee must not become an authentication surface role")
-	}
+	cases:=map[string]string{"client":"app-client","partner":"app-partner","captain":"app-captain","field":"app-field","operator":"control-panel"}
+	for role,expected:=range cases{actual,ok:=SurfaceForRole(role);if !ok||actual!=expected{t.Fatalf("role %s mapped to %q ok=%v; expected %q",role,actual,ok,expected)}}
+	if _,ok:=SurfaceForRole("employee");ok{t.Fatal("employee must not become an authentication surface role")}
 }
 
 func TestTrustedCallerRoleAllowlist(t *testing.T) {
-	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"dsh", "field"}, {"platform-control", "operator"}}
-	for _, pair := range allowed {
-		if !RoleAllowedForCaller(pair[0], pair[1]) {
-			t.Fatalf("expected %s to manage %s", pair[0], pair[1])
-		}
-	}
-	denied := [][2]string{{"dsh", "operator"}, {"platform-control", "captain"}, {"platform-control", "client"}, {"browser", "operator"}}
-	for _, pair := range denied {
-		if RoleAllowedForCaller(pair[0], pair[1]) {
-			t.Fatalf("unexpected permission: %s can manage %s", pair[0], pair[1])
-		}
-	}
+	allowed:=[][2]string{{"dsh","partner"},{"dsh","captain"},{"dsh","field"},{"platform-control","operator"}}
+	for _,pair:=range allowed{if !RoleAllowedForCaller(pair[0],pair[1]){t.Fatalf("expected %s to manage %s",pair[0],pair[1])}}
+	denied:=[][2]string{{"dsh","operator"},{"platform-control","captain"},{"platform-control","client"},{"browser","operator"}}
+	for _,pair:=range denied{if RoleAllowedForCaller(pair[0],pair[1]){t.Fatalf("unexpected permission: %s can manage %s",pair[0],pair[1])}}
 }
 
-func TestPublicOtpRoleBoundary(t *testing.T) {
-	for _, role := range []string{"client", "partner", "captain", "field"} {
-		if !IsPublicOtpRole(role) {
-			t.Fatalf("expected OTP authentication for %s", role)
-		}
-	}
-	for _, role := range []string{"operator", "employee", ""} {
-		if IsPublicOtpRole(role) {
-			t.Fatalf("unexpected public OTP role %q", role)
-		}
-	}
+func TestManagedRoleBoundary(t *testing.T) {
+	for _,role:=range []string{"partner","captain","field"}{if !IsManagedRole(role){t.Fatalf("expected managed activation role %s",role)}}
+	for _,role:=range []string{"client","operator","employee",""}{if IsManagedRole(role){t.Fatalf("unexpected managed activation role %q",role)}}
 }

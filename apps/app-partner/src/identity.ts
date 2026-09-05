@@ -32,28 +32,22 @@ function developmentHostUrl(): string | undefined {
   const expoConfig = Constants.expoConfig as (typeof Constants.expoConfig & { hostUri?: string }) | null;
   const raw = expoConfig?.hostUri?.trim();
   if (!raw) return undefined;
-
   const normalized = raw.replace(/^[a-z]+:\/\//i, "");
-  const host = normalized.startsWith("[")
-    ? normalized.slice(0, normalized.indexOf("]") + 1)
-    : normalized.split(":")[0];
+  const host = normalized.startsWith("[") ? normalized.slice(0, normalized.indexOf("]") + 1) : normalized.split(":")[0];
   return host ? "http://" + host + ":18082" : undefined;
 }
 
 function identityBaseUrl(): string {
   const explicit = configuredEnvironmentUrl();
   if (explicit) return explicit;
-
   const development = developmentHostUrl();
   if (development) return development;
-
   throw new Error("IDENTITY_BASE_URL_UNAVAILABLE");
 }
 
 async function deviceFingerprint(): Promise<string> {
   const existing = (await SecureStore.getItemAsync(deviceKey))?.trim();
   if (existing && existing.length >= 8) return existing;
-
   const created = Crypto.randomUUID();
   await SecureStore.setItemAsync(deviceKey, created);
   return created;
@@ -65,14 +59,7 @@ function identityClient(): IdentityClient {
 }
 
 function identitySession(): IdentitySessionManager {
-  sessionValue ??= new IdentitySessionManager(
-    identityClient(),
-    secureStorage,
-    deviceFingerprint,
-    role,
-    surface,
-    namespace,
-  );
+  sessionValue ??= new IdentitySessionManager(identityClient(), secureStorage, deviceFingerprint, role, surface, namespace);
   return sessionValue;
 }
 
@@ -80,19 +67,18 @@ export function restoreIdentitySession(): Promise<IdentitySessionState> {
   return identitySession().restore();
 }
 
-export async function activateIdentity(phone: string, code: string): Promise<IdentitySessionState> {
-  const fingerprint = await deviceFingerprint();
-  const pair = await identityClient().activate({
+export function requestManagedActivation(phone: string) {
+  return identityClient().requestManagedActivation({ phone, role });
+}
+
+export async function activateManagedIdentity(phone: string, code: string): Promise<IdentitySessionState> {
+  const pair = await identityClient().activateManaged({
     phone,
     role,
     code,
-    deviceFingerprint: fingerprint,
+    deviceFingerprint: await deviceFingerprint(),
   });
   return identitySession().adopt(pair);
-}
-
-export function requestIdentityActivation(phone: string) {
-  return identityClient().requestOtp({ phone, role });
 }
 
 export function logoutIdentity(): Promise<void> {

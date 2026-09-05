@@ -23,20 +23,19 @@ func TestNormalizePhoneE164(t *testing.T) {
 }
 
 func TestIdentityInputNormalization(t *testing.T) {
-	if username, err := NormalizeUsername(" Captain.One "); err != nil || username != "captain.one" {
-		t.Fatalf("unexpected username %q err=%v", username, err)
-	}
-	if _, err := NormalizeUsername("Captain One"); err == nil {
-		t.Fatal("username containing spaces accepted")
-	}
 	if _, err := NormalizeDeviceFingerprint("short"); err == nil {
 		t.Fatal("short device fingerprint accepted")
 	}
 	if value, err := NormalizeDeviceFingerprint("device-12345678"); err != nil || value != "device-12345678" {
 		t.Fatalf("valid fingerprint rejected: %q %v", value, err)
 	}
+	if value, err := NormalizeVerificationCode("123456"); err != nil || value != "123456" {
+		t.Fatalf("valid verification code rejected: %q %v", value, err)
+	}
+	if _, err := NormalizeVerificationCode("12345"); err == nil {
+		t.Fatal("invalid verification code accepted")
+	}
 }
-
 func TestOpaqueSecurityValues(t *testing.T) {
 	tokenA, err := RandomToken(32)
 	if err != nil || len(tokenA) < 32 {

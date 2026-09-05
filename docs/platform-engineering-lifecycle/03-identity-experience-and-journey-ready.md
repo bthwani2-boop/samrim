@@ -13,7 +13,8 @@ For an authenticated multi-role platform, verify as applicable:
 
 ```text
 canonical actor identity
-authentication/activation
+actor-class authentication policy
+phone verification / managed activation / normal authentication / recovery separation
 credential lifecycle
 role/admission model
 sessions/refresh/rotation

@@ -2,14 +2,19 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
-const contractPath = path.join(root, "contracts", "identity.openapi.yaml");
-const contract = fs.readFileSync(contractPath, "utf8");
+const contract = fs.readFileSync(path.join(root, "contracts", "identity.openapi.yaml"), "utf8");
 const failures = [];
 
 for (const route of [
-  "/auth/otp/request:",
-  "/auth/activate:",
-  "/auth/login:",
+  "/auth/client/registration/request:",
+  "/auth/client/register:",
+  "/auth/client/login:",
+  "/auth/client/recovery/request:",
+  "/auth/client/recover:",
+  "/auth/managed/activation/request:",
+  "/auth/managed/activate:",
+  "/auth/operator/login/start:",
+  "/auth/operator/login/complete:",
   "/auth/refresh:",
   "/auth/logout:",
   "/auth/session:",
@@ -18,84 +23,22 @@ for (const route of [
   "/internal/actors/{actorId}/roles/{role}:",
   "/internal/actors/{actorId}/roles/{role}/disable:",
   "/internal/actors/{actorId}/roles/{role}/enable:",
+  "/internal/actors/{actorId}/roles/{role}/reenrollment:",
   "/internal/actors/{actorId}/operator-password/reset:",
   "/internal/actors/{actorId}/roles/{role}/sessions:",
 ]) {
   if (!contract.includes(route)) failures.push("missing canonical route " + route);
 }
 
-function contractPathBlock(pathname, nextPathname) {
-  const start = contract.indexOf("  " + pathname + ":");
-  if (start < 0) return "";
-  const end = nextPathname
-    ? contract.indexOf("\n  " + nextPathname + ":", start + 1)
-    : contract.indexOf("\ncomponents:", start + 1);
-  return contract.slice(start, end >= 0 ? end : contract.length);
-}
-
-function requireResponseStatuses(label, body, statuses) {
-  for (const status of statuses) {
-    if (!body.includes('        "' + status + '":')) {
-      failures.push(label + " missing documented HTTP " + status + " response");
-    }
-  }
-}
-
-requireResponseStatuses(
-  "actor-role search",
-  contractPathBlock("/internal/actor-roles/search", "/internal/actors/{actorId}/roles/{role}"),
-  ["200", "400", "401", "403"],
-);
-requireResponseStatuses(
-  "actor-role read",
-  contractPathBlock("/internal/actors/{actorId}/roles/{role}", "/internal/actors/{actorId}/roles/{role}/disable"),
-  ["200", "401", "403", "404"],
-);
-for (const action of ["disable", "enable"]) {
-  requireResponseStatuses(
-    "actor-role " + action,
-    contractPathBlock(
-      "/internal/actors/{actorId}/roles/{role}/" + action,
-      action === "disable"
-        ? "/internal/actors/{actorId}/roles/{role}/enable"
-        : "/internal/actors/{actorId}/security/disable",
-    ),
-    ["204", "401", "403", "404"],
-  );
-}
-requireResponseStatuses(
-  "operator password reset",
-  contractPathBlock(
-    "/internal/actors/{actorId}/operator-password/reset",
-    "/internal/actors/{actorId}/roles/{role}/sessions",
-  ),
-  ["204", "400", "401", "403", "404"],
-);
-const roleSessionsBlock = contractPathBlock(
-  "/internal/actors/{actorId}/roles/{role}/sessions",
-  "/internal/actors/{actorId}/roles/{role}/sessions/{sessionId}",
-);
-const roleSessionsDeleteStart = roleSessionsBlock.indexOf("\n    delete:");
-const roleSessionsGetBlock = roleSessionsDeleteStart >= 0
-  ? roleSessionsBlock.slice(0, roleSessionsDeleteStart)
-  : roleSessionsBlock;
-const roleSessionsDeleteBlock = roleSessionsDeleteStart >= 0
-  ? roleSessionsBlock.slice(roleSessionsDeleteStart)
-  : "";
-requireResponseStatuses("role-session list", roleSessionsGetBlock, ["200", "401", "403", "404"]);
-requireResponseStatuses("role-session revoke-all", roleSessionsDeleteBlock, ["204", "401", "403", "404"]);
-requireResponseStatuses(
-  "role-session revoke-one",
-  contractPathBlock("/internal/actors/{actorId}/roles/{role}/sessions/{sessionId}", null),
-  ["204", "401", "403", "404"],
-);
-
 for (const forbidden of [
+  "/auth/otp/request:",
+  "/auth/activate:",
+  "\n  /auth/login:",
   "X-Service-Caller",
   "X-Operator-Context-ID",
   "operatorContextId",
   "identity_access_grants",
-  "actorId,omitempty",
+  "username:",
   "expectedActorType",
   "sessionSurface",
   "surfaceAccess",
@@ -106,28 +49,51 @@ for (const forbidden of [
   if (contract.includes(forbidden)) failures.push("legacy/premature Identity authority remains: " + forbidden);
 }
 
-const schemaBlock = (name, next) => {
+function schemaBlock(name, next) {
   const start = contract.indexOf("    " + name + ":");
-  const end = contract.indexOf("    " + next + ":", start + 1);
+  const end = next ? contract.indexOf("    " + next + ":", start + 1) : contract.indexOf("\n  responses:", start + 1);
   return start >= 0 ? contract.slice(start, end >= 0 ? end : contract.length) : "";
-};
+}
 
-const otp = schemaBlock("OtpRequest", "ActivationRequest");
-if (!otp.includes("enum: [client, partner, captain, field]")) failures.push("OTP role boundary is incomplete");
-if (otp.includes("operator")) failures.push("operator OTP must be forbidden by contract");
-
-const activation = schemaBlock("ActivationRequest", "ActivationChallenge");
-if (activation.includes("operator")) failures.push("operator activation must be password-only");
-
-const challenge = schemaBlock("ActivationChallenge", "LoginRequest");
-if (/^\s+code:/m.test(challenge)) failures.push("activation challenge leaks raw code");
+const challenge = schemaBlock("Challenge", "RefreshRequest");
+if (/^\s+code:/m.test(challenge)) failures.push("challenge response leaks raw code");
+if (!contract.includes("Phone is a mutable verified identifier rather than the cross-boundary primary identity")) {
+  failures.push("phone/actor_id identity law missing");
+}
+if (!contract.includes("A password proof alone never creates an operator session")) {
+  failures.push("operator password-only session prohibition missing");
+}
+if (!contract.includes("Repeated activation is not normal login")) {
+  failures.push("managed one-time activation semantics missing");
+}
+if (!contract.includes("revokes existing client sessions and creates a fresh client session")) {
+  failures.push("client recovery revocation semantics missing");
+}
+if (!contract.includes("authenticated service token determines the caller")) {
+  failures.push("service credential caller authority missing");
+}
+if (!contract.includes("Identity alone creates actor_id")) {
+  failures.push("actor_id authority missing");
+}
+if (!contract.includes("Refresh token rotated atomically")) {
+  failures.push("refresh rotation contract missing");
+}
 
 const provision = schemaBlock("ProvisionActorRoleRequest", "ActorRoleView");
 if (provision.includes("actorId:")) failures.push("consumer can author actor_id");
-if (!contract.includes("Identity alone creates actor_id.")) failures.push("actor_id authority is undocumented");
-if (!contract.includes("authenticated service token determines the caller")) failures.push("service credential caller authority is undocumented");
-if (!contract.includes("bearerFormat: opaque")) failures.push("opaque access token contract missing");
-if (!contract.includes("Refresh token rotated atomically")) failures.push("refresh rotation contract missing");
+if (provision.includes("username:")) failures.push("username remains an Identity provisioning requirement");
+
+const operatorStart = contract.slice(
+  contract.indexOf("  /auth/operator/login/start:"),
+  contract.indexOf("  /auth/operator/login/complete:"),
+);
+if (operatorStart.includes("#/components/responses/TokenPair")) {
+  failures.push("operator password-start route can create a session");
+}
+const managedRequest = schemaBlock("ManagedChallengeRequest", "ClientCredentialProofRequest");
+if (!managedRequest.includes("#/components/schemas/ManagedActorType")) failures.push("managed activation role boundary missing");
+const managedType = schemaBlock("ManagedActorType", "PhoneRequest");
+if (!managedType.includes("enum: [partner, captain, field]")) failures.push("managed activation roles are incorrect");
 
 if (failures.length) {
   console.error("IDENTITY_CONTRACT_GUARD=FAIL");

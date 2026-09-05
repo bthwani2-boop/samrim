@@ -10,11 +10,17 @@ import {
 
 import type { IdentitySessionState } from "@bthwani/identity";
 import {
-  activateIdentity,
   currentIdentityState,
+  loginClient,
   logoutIdentity,
-  restoreIdentitySession, requestIdentityActivation,
+  recoverClient,
+  registerClient,
+  requestClientRecovery,
+  requestClientRegistration,
+  restoreIdentitySession,
 } from "../src/identity";
+
+type AuthMode = "login" | "register" | "recover";
 
 function messageOf(value: unknown): string {
   if (value && typeof value === "object" && "message" in value) {
@@ -26,8 +32,11 @@ function messageOf(value: unknown): string {
 
 export default function IdentityGate() {
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
+  const [mode, setMode] = useState<AuthMode>("login");
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [proofRequested, setProofRequested] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -49,12 +58,29 @@ export default function IdentityGate() {
     void restore();
   }, []);
 
-  async function requestCode() {
+  function selectMode(next: AuthMode) {
+    setMode(next);
+    setCode("");
+    setPassword("");
+    setProofRequested(false);
+    setError("");
+    setNotice("");
+  }
+
+  async function requestProof() {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
-      await requestIdentityActivation(phone);
-      setNotice("تم إرسال رمز التفعيل عبر قناة التطوير المهيأة.");
+      if (mode === "register") {
+        await requestClientRegistration(phone);
+      } else if (mode === "recover") {
+        await requestClientRecovery(phone);
+      } else {
+        return;
+      }
+      setProofRequested(true);
+      setNotice("تم إرسال رمز التحقق عبر القناة المهيأة.");
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
@@ -62,13 +88,20 @@ export default function IdentityGate() {
     }
   }
 
-  async function activate() {
+  async function submit() {
     setBusy(true);
     setError("");
-    setNotice("");
     try {
-      setState(await activateIdentity(phone, code));
+      if (mode === "login") {
+        setState(await loginClient(phone, password));
+      } else if (mode === "register") {
+        setState(await registerClient(phone, code, password));
+      } else {
+        setState(await recoverClient(phone, code, password));
+      }
       setCode("");
+      setPassword("");
+      setProofRequested(false);
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
@@ -84,8 +117,6 @@ export default function IdentityGate() {
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
-      // IdentitySessionManager changes its state only after local SecureStore
-      // clearing succeeds. Mirror that canonical state even when remote revoke fails.
       setState(currentIdentityState());
       setBusy(false);
     }
@@ -104,9 +135,8 @@ export default function IdentityGate() {
     return (
       <View style={styles.container}>
         <Text style={styles.title}>بثواني</Text>
-        <Text style={styles.status}>الهوية مفعلة</Text>
+        <Text style={styles.status}>تم تسجيل الدخول</Text>
         <Text style={styles.muted}>العميل: {state.identity.subject}</Text>
-        <Text style={styles.muted}>السطح: {state.identity.surface}</Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable disabled={busy} onPress={logout} style={styles.primaryButton}>
           <Text style={styles.primaryButtonText}>{busy ? "جارٍ التنفيذ…" : "تسجيل الخروج"}</Text>
@@ -115,48 +145,82 @@ export default function IdentityGate() {
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>بثواني</Text>
-      <Text style={styles.status}>
-        {state.kind === "service_unavailable" ? "خدمة الهوية غير متاحة" : "تفعيل الهوية"}
-      </Text>
-      {state.kind === "service_unavailable" ? (
+  if (state.kind === "service_unavailable") {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>بثواني</Text>
+        <Text style={styles.status}>خدمة الهوية غير متاحة</Text>
         <Pressable disabled={busy} onPress={restore} style={styles.secondaryButton}>
           <Text style={styles.secondaryButtonText}>إعادة التحقق</Text>
         </Pressable>
-      ) : (
-        <>
-          <TextInput
-            autoCapitalize="none"
-            keyboardType="phone-pad"
-            onChangeText={setPhone}
-            placeholder="+967..."
-            style={styles.input}
-            value={phone}
-          />
+      </View>
+    );
+  }
 
-          <Pressable disabled={busy || !phone.trim()} onPress={requestCode} style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>إرسال رمز التفعيل</Text>
+  const needsProof = mode !== "login";
+  const canSubmit =
+    phone.trim().length > 0 &&
+    password.length >= 12 &&
+    (!needsProof || (proofRequested && code.trim().length === 6));
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>بثواني</Text>
+      <View style={styles.modeRow}>
+        <Pressable onPress={() => selectMode("login")} style={styles.modeButton}>
+          <Text style={styles.secondaryButtonText}>دخول</Text>
+        </Pressable>
+        <Pressable onPress={() => selectMode("register")} style={styles.modeButton}>
+          <Text style={styles.secondaryButtonText}>حساب جديد</Text>
+        </Pressable>
+        <Pressable onPress={() => selectMode("recover")} style={styles.modeButton}>
+          <Text style={styles.secondaryButtonText}>نسيت كلمة المرور</Text>
+        </Pressable>
+      </View>
+
+      <TextInput
+        autoCapitalize="none"
+        keyboardType="phone-pad"
+        onChangeText={setPhone}
+        placeholder="+967..."
+        style={styles.input}
+        value={phone}
+      />
+
+      {needsProof ? (
+        <>
+          <Pressable disabled={busy || !phone.trim()} onPress={requestProof} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>
+              {proofRequested ? "إعادة إرسال رمز التحقق" : "إرسال رمز التحقق"}
+            </Text>
           </Pressable>
           <TextInput
             keyboardType="number-pad"
             maxLength={6}
             onChangeText={setCode}
-            placeholder="رمز التفعيل"
+            placeholder="رمز التحقق"
             secureTextEntry
             style={styles.input}
             value={code}
           />
-          <Pressable
-            disabled={busy || !phone.trim() || code.trim().length !== 6}
-            onPress={activate}
-            style={styles.primaryButton}
-          >
-            <Text style={styles.primaryButtonText}>{busy ? "جارٍ التحقق…" : "تفعيل"}</Text>
-          </Pressable>
         </>
-      )}
+      ) : null}
+
+      <TextInput
+        autoCapitalize="none"
+        autoComplete={mode === "login" ? "current-password" : "new-password"}
+        onChangeText={setPassword}
+        placeholder={mode === "recover" ? "كلمة المرور الجديدة" : "كلمة المرور"}
+        secureTextEntry
+        style={styles.input}
+        value={password}
+      />
+
+      <Pressable disabled={busy || !canSubmit} onPress={submit} style={styles.primaryButton}>
+        <Text style={styles.primaryButtonText}>
+          {busy ? "جارٍ التنفيذ…" : mode === "login" ? "تسجيل الدخول" : mode === "register" ? "إنشاء الحساب" : "تعيين كلمة المرور"}
+        </Text>
+      </Pressable>
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
@@ -164,60 +228,17 @@ export default function IdentityGate() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "stretch",
-    justifyContent: "center",
-    padding: 24,
-    gap: 12,
-  },
-  title: {
-    textAlign: "center",
-    fontSize: 26,
-    fontWeight: "700",
-  },
-  status: {
-    textAlign: "center",
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  muted: {
-    textAlign: "center",
-    fontSize: 14,
-    opacity: 0.7,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-  },
-  primaryButton: {
-    borderRadius: 10,
-    padding: 14,
-    alignItems: "center",
-    backgroundColor: "#111",
-  },
-  primaryButtonText: {
-    color: "#fff",
-    fontWeight: "700",
-  },
-  secondaryButton: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    alignItems: "center",
-  },
-  secondaryButtonText: {
-    fontWeight: "600",
-  },
-  notice: {
-    textAlign: "center",
-    fontSize: 13,
-  },
-  error: {
-    textAlign: "center",
-    fontSize: 13,
-  },
+  container: { flex: 1, alignItems: "stretch", justifyContent: "center", padding: 24, gap: 12 },
+  title: { textAlign: "center", fontSize: 26, fontWeight: "700" },
+  status: { textAlign: "center", fontSize: 17, fontWeight: "600" },
+  muted: { textAlign: "center", fontSize: 14, opacity: 0.7 },
+  modeRow: { flexDirection: "row", gap: 8 },
+  modeButton: { flex: 1, borderWidth: 1, borderRadius: 10, padding: 10, alignItems: "center" },
+  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16 },
+  primaryButton: { borderRadius: 10, padding: 14, alignItems: "center", backgroundColor: "#111" },
+  primaryButtonText: { color: "#fff", fontWeight: "700" },
+  secondaryButton: { borderWidth: 1, borderRadius: 10, padding: 12, alignItems: "center" },
+  secondaryButtonText: { fontWeight: "600", textAlign: "center" },
+  notice: { textAlign: "center", fontSize: 13 },
+  error: { textAlign: "center", fontSize: 13 },
 });

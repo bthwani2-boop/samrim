@@ -14,10 +14,15 @@ const sourceBlobSha = crypto
 const schemaNames = [
   "StatusResponse",
   "ActorType",
-  "OtpRequest",
-  "ActivationRequest",
-  "ActivationChallenge",
-  "LoginRequest",
+  "ManagedActorType",
+  "PhoneRequest",
+  "ManagedChallengeRequest",
+  "ClientCredentialProofRequest",
+  "PasswordLoginRequest",
+  "ManagedActivationRequest",
+  "OperatorLoginStartRequest",
+  "OperatorLoginCompleteRequest",
+  "Challenge",
   "RefreshRequest",
   "ActorIdentity",
   "TokenPair",
@@ -26,7 +31,7 @@ const schemaNames = [
   "ActorRoleSearchPage",
   "PasswordResetRequest",
   "SessionInfo",
-];
+]
 
 const sourceLines = source.split("\n");
 const schemaNameSet = new Set(schemaNames);

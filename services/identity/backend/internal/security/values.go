@@ -16,9 +16,8 @@ import (
 
 var (
 	phonePattern      = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
-	usernamePattern   = regexp.MustCompile("^[a-z0-9][a-z0-9._-]{0,63}$")
 	devicePattern     = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
-	activationPattern = regexp.MustCompile("^[0-9]{6}$")
+	verificationCodePattern = regexp.MustCompile("^[0-9]{6}$")
 	ErrInvalidValue   = errors.New("invalid identity value")
 )
 
@@ -47,14 +46,6 @@ func NormalizePhoneE164(raw string) (string, error) {
 	return phone, nil
 }
 
-func NormalizeUsername(raw string) (string, error) {
-	username := strings.ToLower(strings.TrimSpace(raw))
-	if !usernamePattern.MatchString(username) {
-		return "", ErrInvalidValue
-	}
-	return username, nil
-}
-
 func NormalizeDeviceFingerprint(raw string) (string, error) {
 	fingerprint := strings.TrimSpace(raw)
 	if !devicePattern.MatchString(fingerprint) {
@@ -63,9 +54,9 @@ func NormalizeDeviceFingerprint(raw string) (string, error) {
 	return fingerprint, nil
 }
 
-func NormalizeActivationCode(raw string) (string, error) {
+func NormalizeVerificationCode(raw string) (string, error) {
 	code := strings.TrimSpace(raw)
-	if !activationPattern.MatchString(code) {
+	if !verificationCodePattern.MatchString(code) {
 		return "", ErrInvalidValue
 	}
 	return code, nil

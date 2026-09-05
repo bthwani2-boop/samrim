@@ -10,62 +10,58 @@ Owner: Identity service operations
 ## Current authority
 
 ```text
-actor identity + actor_id            → Identity
-high-level actor-role admission      → Identity
-Identity-wide security eligibility   → Identity
-OTP/password authentication          → Identity
-role-scoped sessions                 → Identity
-DSH participant eligibility/scope    → DSH
-financial truth                      → WLT
+actor identity + actor_id                 -> Identity
+verified phone identifier                 -> Identity
+high-level actor-role admission           -> Identity
+role-scoped password credentials          -> Identity
+purpose-bound verification/challenges     -> Identity
+Identity-wide security eligibility        -> Identity
+role-scoped device-bound sessions         -> Identity
+DSH participant eligibility/scope         -> DSH
+financial truth                           -> WLT
 ```
 
-Identity currently has no generic Tenant/Operator-Context/AccessGrant/permissions engine.
-
-## Required signals
-
-Prefer operation ID, result/error code, HTTP status, duration, correlation ID and resolved session role. Never record passwords, activation codes, bearer/refresh tokens, token hashes, password hashes, service secrets or full sensitive request bodies.
+Identity has no generic Tenant/Operator-Context/AccessGrant/permissions engine.
 
 ## Authentication behavior
 
-- Client OTP may establish client role.
-- Partner/captain/field OTP succeeds only after DSH has provisioned and enabled that role.
-- Operator is password-only.
-- OTP is short-lived, single-use and attempt-limited, with phone/source throttling.
-- Operator login failures are tracked by account and source; abusive sources are throttled without a simple username-only permanent lockout.
-- Refresh is checked against device fingerprint and rotates atomically. Access tokens remain short-lived bearer tokens.
+- Customer registration: phone verification -> client password credential -> client session.
+- Customer normal re-authentication: phone + client password. A valid stored session is restored/refreshed instead of prompting on every app open.
+- Customer recovery: phone verification -> replace only the client credential -> revoke client sessions -> fresh client session.
+- Partner/captain/field: DSH provisions the role first, then one-time managed activation creates the first device-bound role session.
+- Repeating managed activation is not a login mechanism. Lost/revoked managed access requires explicit DSH-authorized re-enrollment.
+- Operator: Platform Control provisions operator role/password; password proof starts a required second-factor challenge and only successful challenge consumption creates the operator session.
+- Passkeys/WebAuthn remain the preferred progressive phishing-resistant target for privileged operator authentication. They are not a mandatory credential for every actor class in the initial baseline.
+- Refresh is device-fingerprint checked and rotates atomically. Access tokens remain short-lived bearer tokens.
 
-## Role disable / recovery
+## Signals and sensitive data
 
-Disabling `actor_id + role` revokes only that role's sessions and pending activations. A provisioning retry never silently re-enables the role; the owner must explicitly enable it.
+Prefer operation/purpose, result/error code, HTTP status, duration, correlation ID and resolved session role. Never record passwords, challenge codes, bearer/refresh tokens, password hashes, service secrets or full sensitive request bodies.
 
-Global security disable is separate: only the Platform Control service credential may toggle `security_enabled`. Disable revokes all active sessions and pending challenges for the actor without deleting roles. Re-enable never resurrects revoked sessions; every surface must authenticate again.
+## Role disable / re-enrollment / global security
 
-Operator password reset is Platform-Control-authenticated, audited, replaces the Argon2id credential and revokes existing operator sessions.
+Disabling `actor_id + role` revokes only that role's sessions and pending role challenges. Re-enabling never silently creates a session.
 
-## Stale Stage-B database
+For partner/captain/field, DSH may explicitly authorize re-enrollment. That clears the managed role's enrollment marker and revokes that role's sessions/challenges so one fresh activation can occur. Platform Control cannot authorize DSH-role re-enrollment.
 
-The discarded pre-refoundation Stage-B schema was never integrated as production truth. Migration 001 intentionally fails if legacy actor columns such as `roles`, `operator_context_id`, `permissions` or actor-global lifecycle fields are present.
+Global `security_enabled` disable is separate: only Platform Control may toggle it. Disable revokes all active sessions and pending actor-bound challenges without deleting role bindings. Re-enable never resurrects sessions.
 
-For local/non-production development only: stop the stack, reset/remove the stale PostgreSQL development volume, start the stack, then rerun the Identity runtime verifier. Do not add compatibility migration/dual-read logic for the discarded unmerged schema. Do not apply destructive reset instructions to production data.
+Operator password reset is Platform-Control-authenticated, audited, replaces only the operator credential and revokes operator sessions/pending operator challenges.
+
+## Stale development database
+
+Migration 001 is a refounded non-production baseline. It intentionally fails when losing actor-global username/password/context columns are present. For local/non-production development only: stop the stack, reset/remove the stale PostgreSQL development volume, start the stack and rerun the Identity runtime verifier. Do not add dual-read compatibility for discarded unmerged schema. Do not use destructive reset for production data.
 
 ## Diagnostic sequence
 
-1. Capture exact commit/correlation ID.
+1. Pin the exact commit/correlation ID.
 2. Check `/identity/health` and `/identity/readiness`.
-3. Check database schema and absence of legacy actor columns.
-4. Classify provisioning/OTP/activation/password/reset/refresh/role/session/service-auth/CORS/rate-limit failure.
+3. Verify canonical schema and absence of actor-global credential/context columns.
+4. Classify: customer registration/login/recovery; managed provisioning/activation/re-enrollment; operator password/MFA; refresh/revocation; service auth; delivery; rate/abuse control.
 5. Reproduce with sanitized actor identifiers and masked phone data.
-6. Verify canonical actor-role/session readback.
-7. Re-run same-actor multi-role and scoped-revocation tests.
-
-## Support rules
-
-- Expired/revoked session → use canonical login/OTP; never restore token manually.
-- Locked activation → request a new challenge after throttling; never reset attempts ad hoc.
-- Wrong DSH eligibility/store/assignment scope → correct DSH owner truth; do not add Identity permissions/context.
-- Wrong Identity role admission → owning service manages the explicit role; do not create another actor.
-- Credential compromise → use governed operator password reset where applicable and verify revocation.
+6. Verify canonical actor-role/credential/challenge/session readback.
+7. Re-run same-actor multi-role, scoped-revocation and second-factor tests.
 
 ## Verification boundary
 
-Final closure requires generated-contract checks, boundary/residue checks, Go/workspace verification, full Foundation runtime and `tools/dev/verify-identity-runtime.mjs`, followed by same-commit GitHub baseline/runtime checks. Isolated-role green fixtures alone are not closure proof.
+Final closure requires generated-contract checks, boundary/residue checks, Go/workspace verification, full Foundation runtime and `tools/dev/verify-identity-runtime.mjs`, followed by same-commit GitHub baseline/runtime checks. A password-only operator fixture or repeated-activation managed fixture can never count as green proof.

@@ -9,30 +9,29 @@ import (
 type Actor struct {
 	ID              string
 	PhoneE164       string
-	Username        string
-	PasswordHash    string
 	SecurityEnabled bool
 	Version         int
 }
 
 type ActorRole struct {
-	ActorID string
-	Role    string
-	Enabled bool
-	Version int
+	ActorID     string
+	Role        string
+	Enabled     bool
+	ActivatedAt *time.Time
+	Version     int
 }
 
 type ActorRoleView struct {
-	ActorID      string `json:"actorId"`
-	PhoneE164    string `json:"phoneE164"`
-	Username     string `json:"username,omitempty"`
-	Role            string `json:"role"`
-	Enabled         bool   `json:"enabled"`
-	SecurityEnabled bool   `json:"securityEnabled"`
-	ActorVersion    int    `json:"actorVersion"`
-	RoleVersion  int    `json:"roleVersion"`
-	ActorCreated bool   `json:"actorCreated,omitempty"`
-	RoleCreated  bool   `json:"roleCreated,omitempty"`
+	ActorID         string     `json:"actorId"`
+	PhoneE164       string     `json:"phoneE164"`
+	Role            string     `json:"role"`
+	Enabled         bool       `json:"enabled"`
+	ActivatedAt     *time.Time `json:"activatedAt,omitempty"`
+	SecurityEnabled bool       `json:"securityEnabled"`
+	ActorVersion    int        `json:"actorVersion"`
+	RoleVersion     int        `json:"roleVersion"`
+	ActorCreated    bool       `json:"actorCreated,omitempty"`
+	RoleCreated     bool       `json:"roleCreated,omitempty"`
 }
 
 type ActorSearchInput struct {
@@ -52,7 +51,6 @@ type ActorSearchPage struct {
 type ProvisionActorRoleInput struct {
 	PhoneE164 string `json:"phoneE164"`
 	Role      string `json:"role"`
-	Username  string `json:"username,omitempty"`
 	Password  string `json:"password,omitempty"`
 }
 
@@ -60,28 +58,50 @@ type PasswordResetRequest struct {
 	Password string `json:"password"`
 }
 
-type ActivationRequest struct {
+type PhoneRequest struct {
+	Phone string `json:"phone"`
+}
+
+type ManagedChallengeRequest struct {
+	Phone string `json:"phone"`
+	Role  string `json:"role"`
+}
+
+type ClientCredentialProofRequest struct {
+	Phone             string `json:"phone"`
+	Code              string `json:"code"`
+	Password          string `json:"password"`
+	DeviceFingerprint string `json:"deviceFingerprint"`
+}
+
+type PasswordLoginRequest struct {
+	Phone             string `json:"phone"`
+	Password          string `json:"password"`
+	DeviceFingerprint string `json:"deviceFingerprint"`
+}
+
+type ManagedActivationRequest struct {
 	Phone             string `json:"phone"`
 	Role              string `json:"role"`
 	Code              string `json:"code"`
 	DeviceFingerprint string `json:"deviceFingerprint"`
 }
 
-type OtpRequest struct {
-	Phone string `json:"phone"`
-	Role  string `json:"role"`
+type OperatorLoginStartRequest struct {
+	Phone    string `json:"phone"`
+	Password string `json:"password"`
 }
 
-type ActivationChallenge struct {
-	ActivationID string    `json:"activationId"`
-	MaskedPhone  string    `json:"maskedPhone"`
-	ExpiresAt    time.Time `json:"expiresAt"`
-}
-
-type LoginRequest struct {
-	Username          string `json:"username"`
-	Password          string `json:"password"`
+type OperatorLoginCompleteRequest struct {
+	Phone             string `json:"phone"`
+	Code              string `json:"code"`
 	DeviceFingerprint string `json:"deviceFingerprint"`
+}
+
+type Challenge struct {
+	ChallengeID string    `json:"challengeId"`
+	MaskedPhone string    `json:"maskedPhone"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 type RefreshRequest struct {
@@ -115,6 +135,13 @@ type SessionInfo struct {
 	CompromisedAt *time.Time `json:"compromisedAt,omitempty"`
 }
 
+const (
+	ChallengeClientRegister = "client_register"
+	ChallengeClientRecover  = "client_recover"
+	ChallengeManagedActivate = "managed_activate"
+	ChallengeOperatorMFA    = "operator_mfa"
+)
+
 var (
 	ErrInvalidInput      = errors.New("invalid input")
 	ErrUnauthenticated   = errors.New("unauthenticated")
@@ -123,6 +150,7 @@ var (
 	ErrConflict          = errors.New("conflict")
 	ErrRateLimited       = errors.New("rate limited")
 	ErrUnavailable       = errors.New("unavailable")
+	ErrInvalidChallenge  = errors.New("invalid challenge")
 	ErrInvalidActivation = errors.New("invalid activation")
 	ErrInvalidRefresh    = errors.New("invalid refresh")
 	ErrActorBlocked      = errors.New("actor blocked")
@@ -153,9 +181,9 @@ func RoleAllowedForCaller(caller, role string) bool {
 	}
 }
 
-func IsPublicOtpRole(role string) bool {
+func IsManagedRole(role string) bool {
 	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "client", "partner", "captain", "field":
+	case "partner", "captain", "field":
 		return true
 	default:
 		return false

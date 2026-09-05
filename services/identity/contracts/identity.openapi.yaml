@@ -1,15 +1,12 @@
 openapi: 3.1.0
 info:
-  title: Samrim Identity API
-  version: 1.0.0-stage-b
-  description: Canonical Identity contract for one actor_id, explicit actor roles, authentication, and role-scoped sessions.
+  title: BThwani Identity API
+  version: 1.0.0
+  description: |
+    Identity alone creates actor_id. Phone is a mutable verified identifier rather than the cross-boundary primary identity.
+    Public customer verification, governed managed-role activation, normal authentication and recovery/re-enrollment are distinct lifecycles.
 servers:
-  - url: http://localhost:18082
-tags:
-  - name: auth
-  - name: internal-actor-roles
-  - name: internal-security
-  - name: internal-sessions
+  - url: http://127.0.0.1:18082
 
 paths:
   /identity/health:
@@ -17,461 +14,350 @@ paths:
       operationId: identityHealth
       responses:
         "200":
-          description: Liveness only.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StatusResponse"
+          description: Process health.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StatusResponse" } } }
 
   /identity/readiness:
     get:
       operationId: identityReadiness
       responses:
         "200":
-          description: Configuration, database, schema, relation, and clock readiness.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StatusResponse"
+          description: Canonical schema is ready.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StatusResponse" } } }
         "503":
-          $ref: "#/components/responses/Unavailable"
+          description: Canonical schema is not ready.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StatusResponse" } } }
 
-  /auth/otp/request:
+  /auth/client/registration/request:
     post:
-      tags: [auth]
-      operationId: requestOtp
-      description: Client may self-provision its client role. Partner, captain and field roles must already exist and be enabled. Operator OTP is forbidden.
+      tags: [client-auth]
+      operationId: requestClientRegistrationVerification
+      description: Requests phone verification for client registration without creating an actor before proof.
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/OtpRequest"
+        content: { application/json: { schema: { $ref: "#/components/schemas/PhoneRequest" } } }
       responses:
-        "201":
-          description: A generic activation challenge response. Governed roles are never granted by this endpoint.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActivationChallenge"
-        "400":
-          $ref: "#/components/responses/Invalid"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "429":
-          $ref: "#/components/responses/RateLimited"
-        "503":
-          $ref: "#/components/responses/Unavailable"
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
 
-  /auth/activate:
+  /auth/client/register:
     post:
-      tags: [auth]
-      operationId: activateRoleSession
-      description: Consumes one OTP proof and creates a session only for the requested enabled role. Public admission failures remain non-enumerating and return the generic unauthenticated response.
+      tags: [client-auth]
+      operationId: registerClient
+      description: Consumes phone-verification proof, creates/reuses the canonical actor, creates the client role and client-only password credential, then creates a client session.
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ActivationRequest"
+        content: { application/json: { schema: { $ref: "#/components/schemas/ClientCredentialProofRequest" } } }
       responses:
-        "200":
-          description: Activation consumed exactly once and a role-scoped session was created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TokenPair"
-        "400":
-          $ref: "#/components/responses/Invalid"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
+        "201": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
-  /auth/login:
+  /auth/client/login:
     post:
-      tags: [auth]
-      operationId: loginOperator
-      description: Password login is currently restricted to the operator role.
+      tags: [client-auth]
+      operationId: loginClient
+      description: Normal customer re-authentication is phone plus the client password credential; a valid stored session is restored instead of requiring login on every app open.
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/LoginRequest"
+        content: { application/json: { schema: { $ref: "#/components/schemas/PasswordLoginRequest" } } }
       responses:
-        "200":
-          description: Authenticated operator session.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TokenPair"
-        "400":
-          $ref: "#/components/responses/Invalid"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "429":
-          $ref: "#/components/responses/RateLimited"
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/client/recovery/request:
+    post:
+      tags: [client-auth]
+      operationId: requestClientRecoveryVerification
+      description: Requests phone proof for client-password recovery without exposing whether an admissible client credential exists.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PhoneRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/client/recover:
+    post:
+      tags: [client-auth]
+      operationId: recoverClient
+      description: Consumes recovery phone proof, replaces only the client credential, revokes existing client sessions and creates a fresh client session.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ClientCredentialProofRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/managed/activation/request:
+    post:
+      tags: [managed-auth]
+      operationId: requestManagedActivation
+      description: Requests one-time activation proof for an already-provisioned enabled partner/captain/field role that is currently eligible for enrollment or governed re-enrollment.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedChallengeRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/managed/activate:
+    post:
+      tags: [managed-auth]
+      operationId: activateManagedRole
+      description: Consumes one managed-role activation proof, permanently records that enrollment, and creates the first role-scoped device-bound session. Repeated activation is not normal login.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/operator/login/start:
+    post:
+      tags: [operator-auth]
+      operationId: startOperatorLogin
+      description: Validates the operator password internally and returns a challenge-shaped response. A password proof alone never creates an operator session.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorLoginStartRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/operator/login/complete:
+    post:
+      tags: [operator-auth]
+      operationId: completeOperatorLogin
+      description: Consumes the required second-factor challenge and only then creates the operator session.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorLoginCompleteRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
 
   /auth/refresh:
     post:
-      tags: [auth]
+      tags: [session]
       operationId: refreshSession
+      description: Refresh token rotated atomically while the exact role remains enabled and the presented device fingerprint still matches.
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RefreshRequest"
+        content: { application/json: { schema: { $ref: "#/components/schemas/RefreshRequest" } } }
       responses:
-        "200":
-          description: Refresh token rotated atomically while the session role remains enabled.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TokenPair"
-        "400":
-          $ref: "#/components/responses/Invalid"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
 
   /auth/logout:
     post:
-      tags: [auth]
+      tags: [session]
       operationId: logoutSession
-      security:
-        - accessToken: []
+      security: [{ accessToken: [] }]
       responses:
-        "204":
-          description: Current session revoked.
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
+        "204": { description: Current session revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
 
   /auth/session:
     get:
-      tags: [auth]
+      tags: [session]
       operationId: readCurrentSession
-      security:
-        - accessToken: []
+      security: [{ accessToken: [] }]
       responses:
         "200":
-          description: Minimal current session identity.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActorIdentity"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
+          description: Current single-role session identity.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ActorIdentity" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
 
   /internal/actor-roles/provision:
     post:
       tags: [internal-actor-roles]
       operationId: provisionActorRole
-      security:
-        - internalServiceToken: []
-      description: The authenticated service token determines the caller. Identity alone creates actor_id. Exact role retries are idempotent; disabled roles are never silently re-enabled.
+      security: [{ internalServiceToken: [] }]
+      description: The authenticated service token determines the caller. Identity alone creates actor_id. DSH may provision partner/captain/field; Platform Control may provision operator. Operator provisioning includes the operator-only password credential.
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ProvisionActorRoleRequest"
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProvisionActorRoleRequest" } } }
       responses:
-        "200":
-          description: Existing canonical actor-role readback.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActorRoleView"
-        "201":
-          description: A canonical actor and/or role was created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActorRoleView"
-        "400":
-          $ref: "#/components/responses/Invalid"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "409":
-          $ref: "#/components/responses/Conflict"
+        "200": { description: Existing exact actor-role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
+        "201": { description: Canonical actor and/or role created., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actor-roles/search:
     get:
       tags: [internal-actor-roles]
       operationId: searchActorRoles
-      security:
-        - internalServiceToken: []
+      security: [{ internalServiceToken: [] }]
       parameters:
-        - name: role
-          in: query
-          required: true
-          description: Must be owned by the authenticated service principal.
-          schema:
-            $ref: "#/components/schemas/ActorType"
-        - name: q
-          in: query
-          schema:
-            type: string
-            maxLength: 100
-        - name: enabled
-          in: query
-          schema:
-            type: boolean
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 25
-        - name: cursor
-          in: query
-          schema:
-            type: string
+        - { name: role, in: query, required: true, schema: { $ref: "#/components/schemas/ActorType" } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: enabled, in: query, schema: { type: boolean } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: cursor, in: query, schema: { type: string } }
       responses:
-        "200":
-          description: Stable role-scoped actor readback.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActorRoleSearchPage"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "400":
-          $ref: "#/components/responses/Invalid"
+        "200": { description: Role-scoped actor readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleSearchPage" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /internal/actors/{actorId}/roles/{role}:
     get:
       tags: [internal-actor-roles]
       operationId: readActorRole
-      security:
-        - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/Role"
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }]
       responses:
-        "200":
-          description: Exact role-scoped actor readback.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ActorRoleView"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
+        "200": { description: Exact actor-role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /internal/actors/{actorId}/roles/{role}/disable:
     post:
       tags: [internal-actor-roles]
       operationId: disableActorRole
-      security:
-        - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/Role"
-        - $ref: "#/components/parameters/CorrelationId"
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }, { $ref: "#/components/parameters/CorrelationId" }]
       responses:
-        "204":
-          description: Role disabled; only sessions and pending activations for that actor-role are revoked.
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "204": { description: Exact role disabled and its sessions/challenges revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /internal/actors/{actorId}/roles/{role}/enable:
     post:
       tags: [internal-actor-roles]
       operationId: enableActorRole
-      security:
-        - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/Role"
-        - $ref: "#/components/parameters/CorrelationId"
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }, { $ref: "#/components/parameters/CorrelationId" }]
       responses:
-        "204":
-          description: Existing role enabled. No session is created.
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "204": { description: Existing role enabled; no session or activation eligibility is silently recreated. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /internal/actors/{actorId}/roles/{role}/reenrollment:
+    post:
+      tags: [internal-actor-roles]
+      operationId: authorizeManagedRoleReenrollment
+      security: [{ internalServiceToken: [] }]
+      description: DSH-only explicit recovery action for partner/captain/field. Revokes that role's sessions and reopens one-time activation eligibility without changing role admission.
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }, { $ref: "#/components/parameters/CorrelationId" }]
+      responses:
+        "204": { description: Managed role is eligible for a fresh one-time activation. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/security/disable:
     post:
       tags: [internal-security]
       operationId: disableActorSecurity
-      security:
-        - internalServiceToken: []
-      description: Platform Control only. Disables Identity-wide authentication for the actor and revokes all active sessions and pending activation challenges without deleting role bindings.
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/CorrelationId"
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/CorrelationId" }]
       responses:
-        "204":
-          description: Global Identity security access disabled.
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "204": { description: Identity-wide authentication disabled and active sessions/challenges revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /internal/actors/{actorId}/security/enable:
     post:
       tags: [internal-security]
       operationId: enableActorSecurity
-      security:
-        - internalServiceToken: []
-      description: Platform Control only. Re-enables Identity-wide authentication eligibility without restoring any revoked session.
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/CorrelationId"
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/CorrelationId" }]
       responses:
-        "204":
-          description: Global Identity security access enabled; re-authentication is required.
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "204": { description: Identity-wide authentication eligibility restored; no session is resurrected. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /internal/actors/{actorId}/operator-password/reset:
     post:
-      tags: [internal-actor-roles]
+      tags: [internal-credentials]
       operationId: resetOperatorPassword
-      security:
-        - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/CorrelationId"
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/CorrelationId" }]
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PasswordResetRequest"
+        content: { application/json: { schema: { $ref: "#/components/schemas/PasswordResetRequest" } } }
       responses:
-        "204":
-          description: Operator credential replaced and existing operator sessions revoked.
-        "400":
-          $ref: "#/components/responses/Invalid"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
+        "204": { description: Operator password replaced; operator sessions and pending operator challenges revoked. }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /internal/actors/{actorId}/roles/{role}/sessions:
     get:
       tags: [internal-sessions]
       operationId: listActorRoleSessions
-      security:
-        - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/Role"
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }]
       responses:
         "200":
           description: Active sessions for the exact actor-role.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/SessionInfo"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SessionInfo" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [internal-sessions]
       operationId: revokeActorRoleSessions
-      security:
-        - internalServiceToken: []
-      parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/Role"
-        - $ref: "#/components/parameters/CorrelationId"
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }, { $ref: "#/components/parameters/CorrelationId" }]
       responses:
-        "204":
-          description: All active sessions for the exact actor-role revoked.
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "204": { description: Active sessions for the exact actor-role revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /internal/actors/{actorId}/roles/{role}/sessions/{sessionId}:
     delete:
       tags: [internal-sessions]
       operationId: revokeActorRoleSession
-      security:
-        - internalServiceToken: []
+      security: [{ internalServiceToken: [] }]
       parameters:
-        - $ref: "#/components/parameters/ActorId"
-        - $ref: "#/components/parameters/Role"
-        - name: sessionId
-          in: path
-          required: true
-          schema:
-            type: string
-        - $ref: "#/components/parameters/CorrelationId"
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/CorrelationId" }
       responses:
-        "204":
-          description: Exact session revoked.
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "204": { description: Exact session revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
 components:
   securitySchemes:
-    accessToken:
-      type: http
-      scheme: bearer
-      bearerFormat: opaque
-    internalServiceToken:
-      type: http
-      scheme: bearer
-      bearerFormat: opaque-service-token
+    accessToken: { type: http, scheme: bearer, bearerFormat: opaque }
+    internalServiceToken: { type: http, scheme: bearer, bearerFormat: opaque-service-token }
 
   parameters:
-    ActorId:
-      name: actorId
-      in: path
-      required: true
-      schema:
-        type: string
-    Role:
-      name: role
-      in: path
-      required: true
-      schema:
-        $ref: "#/components/schemas/ActorType"
-    CorrelationId:
-      name: X-Correlation-ID
-      in: header
-      required: false
-      schema:
-        type: string
-        maxLength: 128
+    ActorId: { name: actorId, in: path, required: true, schema: { type: string } }
+    Role: { name: role, in: path, required: true, schema: { $ref: "#/components/schemas/ActorType" } }
+    CorrelationId: { name: X-Correlation-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
 
   schemas:
     StatusResponse:
@@ -489,7 +375,19 @@ components:
       type: string
       enum: [client, partner, captain, field, operator]
 
-    OtpRequest:
+    ManagedActorType:
+      type: string
+      enum: [partner, captain, field]
+
+    PhoneRequest:
+      type: object
+      additionalProperties: false
+      required: [phone]
+      properties:
+        phone:
+          type: string
+
+    ManagedChallengeRequest:
       type: object
       additionalProperties: false
       required: [phone, role]
@@ -497,46 +395,33 @@ components:
         phone:
           type: string
         role:
-          type: string
-          enum: [client, partner, captain, field]
+          $ref: "#/components/schemas/ManagedActorType"
 
-    ActivationRequest:
+    ClientCredentialProofRequest:
       type: object
       additionalProperties: false
-      required: [phone, role, code, deviceFingerprint]
+      required: [phone, code, password, deviceFingerprint]
       properties:
         phone:
           type: string
-        role:
-          type: string
-          enum: [client, partner, captain, field]
         code:
           type: string
           pattern: "^[0-9]{6}$"
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
         deviceFingerprint:
           type: string
           minLength: 8
           maxLength: 256
 
-    ActivationChallenge:
+    PasswordLoginRequest:
       type: object
       additionalProperties: false
-      required: [activationId, maskedPhone, expiresAt]
+      required: [phone, password, deviceFingerprint]
       properties:
-        activationId:
-          type: string
-        maskedPhone:
-          type: string
-        expiresAt:
-          type: string
-          format: date-time
-
-    LoginRequest:
-      type: object
-      additionalProperties: false
-      required: [username, password, deviceFingerprint]
-      properties:
-        username:
+        phone:
           type: string
         password:
           type: string
@@ -546,6 +431,63 @@ components:
           type: string
           minLength: 8
           maxLength: 256
+
+    ManagedActivationRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, role, code, deviceFingerprint]
+      properties:
+        phone:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedActorType"
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+        deviceFingerprint:
+          type: string
+          minLength: 8
+          maxLength: 256
+
+    OperatorLoginStartRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, password]
+      properties:
+        phone:
+          type: string
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+
+    OperatorLoginCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, code, deviceFingerprint]
+      properties:
+        phone:
+          type: string
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+        deviceFingerprint:
+          type: string
+          minLength: 8
+          maxLength: 256
+
+    Challenge:
+      type: object
+      additionalProperties: false
+      required: [challengeId, maskedPhone, expiresAt]
+      properties:
+        challengeId:
+          type: string
+        maskedPhone:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
 
     RefreshRequest:
       type: object
@@ -601,8 +543,6 @@ components:
         role:
           type: string
           enum: [partner, captain, field, operator]
-        username:
-          type: string
         password:
           type: string
           minLength: 12
@@ -617,15 +557,15 @@ components:
           type: string
         phoneE164:
           type: string
-        username:
-          type: string
         role:
           $ref: "#/components/schemas/ActorType"
         enabled:
           type: boolean
+        activatedAt:
+          type: string
+          format: date-time
         securityEnabled:
           type: boolean
-          description: Identity-wide security eligibility. This is not a domain-operational lifecycle status.
         actorVersion:
           type: integer
           minimum: 1
@@ -695,57 +635,34 @@ components:
         error:
           type: object
           additionalProperties: false
-          required: [code, message]
-          properties:
-            code:
-              type: string
-            message:
-              type: string
 
   responses:
+    ChallengeIssued:
+      description: Challenge-shaped response. Public decoys use the same response shape and never expose raw code.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Challenge" } } }
+    TokenPair:
+      description: Role-scoped authenticated session.
+      content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } }
     Invalid:
       description: Request validation failed.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     Unauthenticated:
       description: Authentication proof failed.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     Forbidden:
       description: Authenticated principal is not authorized for the operation.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     NotFound:
       description: Resource does not exist in the caller-owned role boundary.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     Conflict:
       description: Canonical identity state conflicts with the requested mutation.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     RateLimited:
       description: Attempt limit reached.
       headers:
-        Retry-After:
-          schema:
-            type: integer
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+        Retry-After: { schema: { type: integer } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     Unavailable:
-      description: Identity dependency is unavailable or not ready.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+      description: Identity dependency is unavailable.
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }

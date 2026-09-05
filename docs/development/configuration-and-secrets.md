@@ -44,4 +44,4 @@ Identity internal service identity is derived server-side from the configured be
 
 Do not add `X-Service-Caller`, `X-Operator-Context-ID` or a generic Identity tenant/context setting to compensate for missing business authorization modeling. The two service tokens must be distinct and satisfy runtime validation.
 
-`IDENTITY_ACTIVATION_HMAC_SECRET` protects activation-code derivation and is never a client value. Development examples are local-only placeholders, not production secrets.
+`IDENTITY_CHALLENGE_HMAC_SECRET` protects purpose-bound verification/challenge-code derivation and is never a client value. `IDENTITY_CHALLENGE_DELIVERY_MODE` selects the configured development/runtime delivery adapter; delivery is not challenge-state authority. Development examples are local-only placeholders, not production secrets.
