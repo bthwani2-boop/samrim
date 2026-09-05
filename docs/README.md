@@ -78,6 +78,8 @@ Additional cross-cutting recovery guides include `runbooks/systemic-platform-rec
 
 `reference/external-systems/` contains non-authoritative external research. Reference selection is not dependency adoption.
 
+`reference/donor-reconstruction-patterns.md` preserves non-authoritative historical donor extraction/convergence clues; it is never current topology or implementation authority.
+
 ## Staleness rule
 
 Every documentation change that mentions executable commands/paths/configuration must verify them against the same repository candidate. Historical commands, branch assumptions, deleted paths and implementation inventories must be removed rather than retained as compatibility prose.
