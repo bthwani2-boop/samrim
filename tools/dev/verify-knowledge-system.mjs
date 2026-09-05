@@ -403,6 +403,27 @@ for (const token of [
 if (!agentRouter.includes("never infer `FULL_TARGET` from `LEVEL_4`")) failures.push("AGENTS.md missing active-slice anti-expansion routing");
 if (!agentRouter.includes("surface-specific feature UI belongs to the consuming app host by default")) failures.push("AGENTS.md missing app-host feature UI routing");
 if (!agentRouter.includes("pnpm knowledge:query -- capability IDENTITY_ACTIVATION_SESSIONS")) failures.push("AGENTS.md missing selective capability-query routing");
+
+const agentAdapterPaths = ["CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"];
+for (const adapterPath of agentAdapterPaths) {
+  const body = read(adapterPath);
+  for (const token of [
+    "ADAPTER_CLASS: DERIVED_AGENT_ROUTING",
+    "SEMANTIC_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+    "CLOSURE_AUTHORITY: NONE",
+    "AGENTS.md",
+  ]) {
+    if (!body.includes(token)) failures.push(adapterPath + " missing routing-only token: " + token);
+  }
+  if (body.split("\n").length > 60) failures.push(adapterPath + " is too large for a routing-only adapter");
+  if (/TARGET_BRANCH:|stage-b\/|active refoundation branch/i.test(body)) {
+    failures.push(adapterPath + " contains branch/campaign state");
+  }
+  if (/^PRODUCT_AUTHORITY:\s*(?!NONE\s*$).+/im.test(body)) {
+    failures.push(adapterPath + " claims Product authority");
+  }
+}
 if (packageJson.scripts?.["knowledge:query"] !== "node tools/dev/query-knowledge.mjs") failures.push("package.json missing canonical knowledge:query command");
 for (const sourcePath of ["governance/product/CAPABILITIES.md", "governance/product/JOURNEYS.md"]) {
   if (!queryKnowledge.includes(sourcePath)) failures.push("knowledge query tool missing canonical source: " + sourcePath);
