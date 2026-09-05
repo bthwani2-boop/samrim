@@ -142,14 +142,28 @@ for (const file of collectMarkdown(refoundationTargetsDir)) {
 
 const orchestratorDir = path.join(root, "tools/prompting/bthwani-orchestrator");
 const refoundationDir = path.join(root, "tools/prompting/bthwani-refoundation");
+const orchestratorTemplateDir = path.join(orchestratorDir, "templates");
+const orchestratorLawFiles = collectMarkdown(orchestratorDir).filter((file) => !file.startsWith(orchestratorTemplateDir + path.sep));
 const orchestratorLawLines = new Map();
-for (const file of collectMarkdown(orchestratorDir)) {
+for (const file of orchestratorLawFiles) {
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     if (!isGeneralLawLike(line)) continue;
     const normalized = normalizedLawLine(line);
     if (!normalized) continue;
     if (!orchestratorLawLines.has(normalized)) orchestratorLawLines.set(normalized, []);
     orchestratorLawLines.get(normalized).push(path.relative(root, file).split(path.sep).join("/"));
+  }
+}
+
+for (const file of fs.existsSync(orchestratorTemplateDir) ? collectMarkdown(orchestratorTemplateDir) : []) {
+  const body = fs.readFileSync(file, "utf8");
+  const rel = path.relative(root, file).split(path.sep).join("/");
+  if (!body.includes("ARTIFACT_CLASS: EXECUTION_EVIDENCE_TEMPLATE") && !body.includes("ARTIFACT_CLASS: TEMPORARY_EXECUTION_EVIDENCE_TEMPLATE")) {
+    failures.push(rel + " orchestrator template missing evidence-template artifact class");
+  }
+  if (!body.includes("GENERAL_LAW_AUTHORITY: NONE")) failures.push(rel + " orchestrator template claims or omits law non-authority");
+  if (/^(EXECUTION_AUTHORITY|PRODUCT_AUTHORITY|CLOSURE_AUTHORITY):\s*(?!NONE\s*$).+/im.test(body)) {
+    failures.push(rel + " orchestrator template claims forbidden authority");
   }
 }
 
