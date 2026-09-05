@@ -35,14 +35,15 @@ A current implementation can reveal drift but does not silently redefine Product
 
 ### Project orientation
 
-- `project/PLATFORM.md` — platform classification, surfaces, actors, fulfillment/commercial modes and bounded contexts.
+- `project/PLATFORM.md` — platform classification, target surfaces, human role/persona orientation, fulfillment/commercial modes and bounded contexts.
 - `project/GLOSSARY.md` — ubiquitous language.
 - `project/ACTORS-TRUST-AND-SCOPE.md` — actor/role/engagement/organization/scope/context trust model.
 
 ### Product
 
 - `product/PRD.md` — platform requirements and non-goals.
-- `product/CAPABILITIES.md` — durable capability semantic envelope, outcomes, actors, owner boundaries, state/acceptance/failure semantics and success measures.
+- `product/CAPABILITIES.md` — capability taxonomy, semantic-envelope schema, admission/change law and routing only.
+- `product/capabilities/*.md` — sole durable semantic owners for individual capability outcomes, actors/personas, boundaries, states, invariants, failure/recovery and acceptance meaning.
 - `product/JOURNEYS.md` — cross-capability actor/system journeys.
 - `product/FINANCIAL-MODEL.md` — cross-capability WLT/financial model.
 - `product/COMMERCIAL-AND-PARTNER-MODEL.md` — partner/store/commercial relationship model.
@@ -63,7 +64,7 @@ A current implementation can reveal drift but does not silently redefine Product
 
 - `policies/engineering.md` — universal engineering constitution and owner routing.
 - `policies/architecture-and-fullstack.md` — full-stack structural integrity, dependency direction, shared-code/indirection/naming/negative-space policy; it routes app/service composition and provider semantics to their dedicated owners.
-- `policies/data-and-migrations.md` — data authority, schemas, migrations, backfills, seeds and durable-data evolution.
+- `policies/data-and-migrations.md` — data mutation/integrity, schemas, migrations, backfills, seeds, reconciliation and durable-data evolution; canonical data ownership stays in the ownership map.
 - `policies/frontend-and-client.md` — client responsibility, state/readback, accessibility and presentation boundaries.
 - `policies/runtime-reliability.md` — startup/readiness, timeout/backpressure, failure/recovery, observability, performance/capacity and reproducibility behavior; configuration topology/provider semantics stay with their dedicated owners.
 - `policies/security.md` — identity, authorization, credentials, privacy, financial security and untrusted boundaries.
