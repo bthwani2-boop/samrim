@@ -75,7 +75,24 @@ DEAD_OR_INVALID
 
 For survivors/reimplementations, account for owner, actors, outcome, states/transitions, actions, invariants, failures/recovery, security/finance, data, contract, surfaces, runtime and canonical readback.
 
-## Zero-loss closure
+## Active-slice donor-cone closure
+
+For `PRODUCT_BREADTH=ACTIVE_SLICE`, exhaust the complete donor cone that can materially change the active slice, including relevant historical evidence.
+
+```text
+AUTHORIZED_SLICE_DONOR_CONE_ENUMERATED=PASS
+UNINSPECTED_DONOR_HISTORY_MATERIAL_TO_ACTIVE_SLICE=0
+UNACCOUNTED_REQUIRED_SEMANTIC_ATOMS_IN_ACTIVE_SLICE_CONE=0
+UNMAPPED_REQUIRED_DATA/CONTRACT/RUNTIME/SECURITY/FINANCE/UX/TEST_VALUE_IN_CONE=0
+DONOR_SHAPE_COPIED_WITHOUT_CANONICAL_PROOF=0
+UNJUSTIFIED_DONOR_TRUTH_LOSS_IN_ACTIVE_SLICE_CONE=0
+```
+
+Global donor saturation is not required to close an independent active slice when no uninspected donor area can change its owner, semantics, interfaces, external identity, safety, or future-compatible canonical model.
+
+## Repository-wide zero-loss closure
+
+For explicit `PRODUCT_BREADTH=FULL_TARGET`:
 
 ```text
 DONOR_MATERIAL_HISTORY_INSPECTION=PASS
@@ -91,4 +108,4 @@ BTHWANI_DONOR_REQUIRED_VALUE_DISPOSITION=PASS
 DONOR_SHAPE_COPIED_WITHOUT_CANONICAL_PROOF=0
 ```
 
-This template is deleted after verified repository-wide fixed point; Git history retains the campaign accounting.
+This template is deleted only after verified repository-wide `FULL_TARGET` fixed point; Git history retains the campaign accounting.
