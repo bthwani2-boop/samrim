@@ -64,6 +64,20 @@ FAKE_SUCCESS_BYPASSING_OWNER_STATE_MACHINE = FORBIDDEN
 PRODUCTION_DATA_IN_GENERAL_DEV = FORBIDDEN
 ```
 
+## Development non-goals and feasibility spikes
+
+Daily development intentionally does not require production-like breadth. Unless the active claim proves the need, do not require:
+
+- a dedicated development VPS or every service running in Docker continuously;
+- multiple vendors for one capability merely for architectural completeness;
+- always-on object storage, mail sink, tracing stack or cache when the active work does not consume them;
+- real paid messaging for ordinary developer authentication cycles;
+- cache/coordination infrastructure without a measured or correctness-driven requirement.
+
+A focused/full integration proof may temporarily require any of these; that does not make it a permanent daily dependency.
+
+Conversely, evaluate a critical external provider early in an isolated spike when its API limitations, cost/quota, policy/compliance, native SDK/permission model or failure semantics could invalidate the intended architecture before many capabilities depend on it. Record the result as evidence; provider choice still does not become domain authority.
+
 ## OTP/SMS abuse boundary
 
 Public challenge flows preserve production-grade abuse boundaries even when local delivery is cheap: per-phone/IP/device velocity where applicable, resend cooldown, attempt caps, country/number policy, spend limits when real paid delivery is enabled, challenge supersession policy and no raw OTP persistence/logging.
