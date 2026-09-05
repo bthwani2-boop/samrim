@@ -13,7 +13,7 @@ services:
     volumes:
       - samrim-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $POSTGRES_USER -d $POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -46,7 +46,7 @@ services:
       - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-58026}:8025"
 
   identity:
-    profiles: ["foundation"]
+    profiles: ["integration"]
     restart: unless-stopped
     build:
       context: ../../..
@@ -71,7 +71,7 @@ services:
       - "127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}:8082"
 
   dsh:
-    profiles: ["foundation"]
+    profiles: ["integration"]
     restart: unless-stopped
     build:
       context: ../../..
@@ -82,7 +82,7 @@ services:
       - "127.0.0.1:${SAMRIM_DSH_PORT:-58080}:8080"
 
   wlt:
-    profiles: ["foundation"]
+    profiles: ["integration"]
     restart: unless-stopped
     build:
       context: ../../..
