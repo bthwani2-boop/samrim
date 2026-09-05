@@ -37,7 +37,7 @@ MEANING
 | commission/settlement/payout/reconciliation/COD exposure | WLT | authorized stakeholder/operator reads |
 | cross-platform governed variables/change/rollout state | Platform Control semantic control-plane responsibility when explicitly assigned; independent service deployment remains conditional on executable admission proof | services/apps through validated configuration contracts |
 | deployable route/navigation/shell composition | each app host | local presentation only |
-| design tokens/primitives | Design System technical owner | deployable/service presentation layers |
+| design tokens/primitives | Design System technical owner | deployable app hosts and explicitly admitted host-neutral reusable presentation abstractions; never an app-shaped service feature UI tree |
 | external provider secret value | approved secret store/runtime binding | adapter only; never client/general DB truth |
 | provider operation outcome | operation-owning domain | projections only after owner normalization/reconciliation |
 
