@@ -48,7 +48,7 @@ Treat these as composition/information architecture by default. Do not create ge
 
 ## Notifications
 
-Source business event remains source-domain truth; delivery/inbox mechanics are infrastructure/capability concerns; native push routing belongs to the app host.
+Source business event remains source-domain truth; the DSH Notifications capability owns inbox/preferences/topic/delivery-attempt records; replaceable channel adapters execute transport; native/deep-link route translation belongs to the app host. App route strings do not become durable notification/domain meaning.
 
 ## Search
 
