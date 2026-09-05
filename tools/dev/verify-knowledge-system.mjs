@@ -138,6 +138,7 @@ for (const file of collectMarkdown(refoundationTargetsDir)) {
 
 const orchestratorDir = path.join(root, "tools/prompting/bthwani-orchestrator");
 const refoundationDir = path.join(root, "tools/prompting/bthwani-refoundation");
+if (fs.existsSync(refoundationDir)) failures.push("legacy bthwani-refoundation package still exists");
 const orchestratorTemplateDir = path.join(orchestratorDir, "templates");
 const orchestratorLawFiles = collectMarkdown(orchestratorDir).filter((file) => !file.startsWith(orchestratorTemplateDir + path.sep));
 const orchestratorLawLines = new Map();
@@ -206,6 +207,21 @@ if (fs.existsSync(refoundationDir)) {
       if (orchestratorLawLines.has(normalized)) {
         failures.push("general law duplicated in legacy refoundation residue: " + line.trim() + " @ " + path.relative(root, file).split(path.sep).join("/"));
       }
+    }
+  }
+}
+
+const allowedLegacyRefoundationTextReferences = new Set([
+  "tools/prompting/bthwani-orchestrator/templates/bthwani-target-qualification.md",
+]);
+for (const scope of ["governance", "docs", "tools/prompting"]) {
+  const scopeDir = path.join(root, scope);
+  for (const file of collectMarkdown(scopeDir)) {
+    const rel = path.relative(root, file).split(path.sep).join("/");
+    const body = fs.readFileSync(file, "utf8");
+    if (!body.includes("bthwani-refoundation")) continue;
+    if (!allowedLegacyRefoundationTextReferences.has(rel)) {
+      failures.push("stale live knowledge reference to retired bthwani-refoundation package: " + rel);
     }
   }
 }
