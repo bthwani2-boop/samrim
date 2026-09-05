@@ -44,6 +44,7 @@ pnpm knowledge:query -- journey <J_ID>
 pnpm knowledge:query -- list owners
 pnpm knowledge:query -- owner <keyword-or-path>
 
+pnpm docs:verify:all
 pnpm knowledge:verify:all
 ~~~
 
