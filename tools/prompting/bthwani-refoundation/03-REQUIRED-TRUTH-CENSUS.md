@@ -13,7 +13,7 @@ For every material execution unit, reconstruct/disposition all applicable items.
 First record the breadth boundary:
 
 ```text
-PRODUCT_BREADTH = ACTIVE_SLICE | FULL_TARGET
+INVOCATION_PRODUCT_BREADTH
 ACTIVE_PRODUCT_SLICE
 AUTHORIZED_PRODUCT_SCOPE
 DEFERRED_TARGET_SCOPE_RELEVANT_TO_CENSUS
