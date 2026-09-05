@@ -433,6 +433,37 @@ for (const modulePath of lifecycleModules.slice(1)) {
   if (!body.includes("PARENT_GUIDE: docs/platform-engineering-lifecycle/README.md")) failures.push(modulePath + " missing parent-guide routing metadata");
 }
 
+const externalReferencePaths = [
+  "docs/reference/external-systems/README.md",
+  "docs/reference/external-systems/commerce-fulfillment.md",
+  "docs/reference/external-systems/finance-payments.md",
+  "docs/reference/external-systems/identity-platform.md",
+  "docs/reference/external-systems/engineering-infrastructure.md",
+  "docs/reference/external-systems/experience-design-ui-assurance.md",
+];
+for (const referencePath of externalReferencePaths) {
+  const body = read(referencePath);
+  for (const token of [
+    "DOCUMENT_CLASS: NON_AUTHORITATIVE_EXTERNAL_REFERENCE",
+    "EXECUTION_AUTHORITY: NONE",
+    "PRODUCT_AUTHORITY: NONE",
+    "CURRENT_REPOSITORY_STATE_AUTHORITY: NONE",
+    "ADOPTION_AUTHORITY: NONE",
+    "REFERENCE_FRESHNESS: REVALIDATE_MATERIAL_FACTS_AT_USE",
+    "LICENSE_RECHECK_ON_ADOPTION: REQUIRED",
+    "SECURITY_SUPPLY_CHAIN_RECHECK_ON_ADOPTION: REQUIRED",
+  ]) {
+    if (!body.includes(token)) failures.push(referencePath + " missing external-reference metadata: " + token);
+  }
+}
+
+if (!read("docs/reference/external-systems/README.md").includes("../donor-reconstruction-patterns.md")) {
+  failures.push("external reference index missing donor reconstruction reference");
+}
+if (!read("docs/README.md").includes("reference/donor-reconstruction-patterns.md")) {
+  failures.push("Docs index missing donor reconstruction reference");
+}
+
 for (const token of [
   "DOCUMENT_CLASS: NON_AUTHORITATIVE_EXTERNAL_REFERENCE",
   "ADOPTION_AUTHORITY: NONE",
