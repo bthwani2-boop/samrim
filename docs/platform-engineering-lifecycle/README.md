@@ -16,7 +16,7 @@ Authority remains with:
 
 - `governance/**` for durable Product/System/Engineering meaning;
 - executable source/contracts/configuration for current implementation state;
-- `tools/prompting/bthwani-orchestrator/**` for the active refoundation campaign;
+- `tools/prompting/bthwani-orchestrator/**` for material repository execution, refoundation, recovery, verification and closure work when invoked;
 - current official Apple/Google/platform documentation for mutable store and platform rules.
 
 When this guide conflicts with a canonical semantic owner, executable source, or current official platform rule, this guide is stale and must be corrected.
