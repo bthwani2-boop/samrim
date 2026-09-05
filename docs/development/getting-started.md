@@ -20,9 +20,10 @@ Current root toolchain constraints are:
 
 - Node.js `24.17.0` (`.nvmrc`, `.node-version`);
 - pnpm `10.34.0`;
-- PowerShell 7+ for repository Windows scripts;
+- Go `1.27.1` for the Go workspace/services;
+- PowerShell `7.4+` for repository Windows scripts;
 - Git;
-- Docker only when the selected runtime/integration path requires it;
+- Docker CLI/daemon only when the selected runtime/integration path requires Docker;
 - Android SDK/ADB for physical Android mobile development.
 
 Do not infer a different toolchain from global machine installations when the repository declares a pinned version.
