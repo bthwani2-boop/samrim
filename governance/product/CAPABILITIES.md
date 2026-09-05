@@ -270,7 +270,7 @@ Later increments extend the same canonical model; they must not require temporar
 - No mandatory `username + phone + password` tuple for customer identity.
 - No phone number, username or email as cross-boundary primary identity.
 - No actor-global credential that accidentally allows one role's password to authenticate another role.
-- No actor-global `roles[]`, generic permissions blob, operator context, provisioning fingerprint or creator-service provenance. A minimal `security_enabled` boolean is permitted only as Identity-wide authentication eligibility and must never represent DSH operational lifecycle.
+- No actor-global `roles[]`, generic permissions blob, provisioning fingerprint or creator-service provenance. A minimal `security_enabled` boolean is permitted only as Identity-wide authentication eligibility and must never represent DSH operational lifecycle.
 - No generic AccessGrant/Tenant/generic-human-participant authority without proven independent requirements.
 - No governed role creation through OTP/verification/activation.
 - No repeated managed activation as ordinary login after successful enrollment.
@@ -442,7 +442,7 @@ Later increments extend the same canonical model; they must not require temporar
 ```json
 {
   "preconditions": [
-    "Checkout intent belongs to the same trusted platform/operator context and client required by the current contract.",
+    "Checkout intent belongs to the same server-resolved business scope and client required by the current contract.",
     "Checkout intent is in the financial/operational state allowed for order creation, including COD when applicable.",
     "Cart is active/non-empty and each item has a valid accepted commercial snapshot.",
     "Address, fulfillment mode and serviceability are proven in the checkout intent.",
@@ -521,7 +521,7 @@ Later increments extend the same canonical model; they must not require temporar
 
 ### PARTNER_ONBOARDING_STORE_PUBLICATION
 
-**Problem.** Partner onboarding, first-store readiness, approval and publication must form one governed journey with trusted platform/operator context and explicit Partner/Store ownership instead of disconnected surface-specific records and manual checks. Field-assisted evidence capture and WLT payout setup participate only when the active onboarding policy/commercial model requires them.
+**Problem.** Partner onboarding, first-store readiness, approval and publication must form one governed journey with authenticated actors, server-resolved business scope and explicit Partner/Store ownership instead of disconnected surface-specific records and manual checks. Field-assisted evidence capture and WLT payout setup participate only when the active onboarding policy/commercial model requires them.
 **Problem frequency.** continuous
 **Problem severity.** critical
 **Target state.** Every mutation is trusted-context derived, Partner/Store scoped, authorization-scoped, concurrency-safe, idempotent, audited and readable on required surfaces.
@@ -539,7 +539,7 @@ Later increments extend the same canonical model; they must not require temporar
 **Material deployable surfaces.** app-client, app-partner, control-panel; app-field only for onboarding increments/policies that require field-assisted evidence capture.
 
 **Business invariants**
-- Every partner/onboarding child record belongs to the trusted platform/operator context and explicit Partner/Store business scope required by the current model.
+- Every partner/onboarding child record belongs to the authenticated actor and explicit Partner/Store business scope required by the current model.
 - One partner may own multiple stores, but one store has at most one onboarding owner unless an explicit transfer model says otherwise.
 - Control-panel approval is distinct from field evidence capture.
 - WLT is the sole owner of raw payout destination data.
@@ -547,7 +547,7 @@ Later increments extend the same canonical model; they must not require temporar
 - Every material transition records the actor, trusted context, business scope, correlation, retry and audit data required by current contracts.
 
 **Forbidden/negative invariants**
-- Client-controlled input cannot select trusted platform/operator context.
+- Client-controlled input cannot select or grant trusted business/authorization scope.
 - Missing required trusted context cannot silently fall back inside partner handlers.
 - One Partner/Store scope cannot enumerate, read, link, mutate or infer another unauthorized business scope.
 - A field agent cannot approve their own evidence where separation is required.
@@ -559,7 +559,7 @@ Later increments extend the same canonical model; they must not require temporar
 - A store failing any applicable publication gate cannot appear to clients.
 
 **Acceptance expectations**
-- Platform/operator context is derived only from trusted Identity/server-side context; browser headers, query parameters and request bodies cannot select or override it.
+- Business and authorization scope is derived server-side from authenticated identity plus canonical owner facts; browser headers, query parameters and request bodies cannot grant or override it.
 - Requests requiring trusted context fail closed when it is absent and do not reach partner persistence.
 - Partner lists, details, documents, visits, stores, assignments/scopes, transitions and audit records are read or mutated only within trusted context plus object/business authorization.
 - Cross-scope partner/store identifiers do not disclose ownership details.
@@ -576,9 +576,9 @@ Later increments extend the same canonical model; they must not require temporar
 **Named failure classes:** trusted context selected from client-controlled input, missing trusted context accepted, cross-scope record disclosure/mutation, raw payout data stored or returned by DSH, store ownership silently changed, publication without all applicable gates, approval without required evidence, payload-divergent retry accepted, surface reports success before committed readback.
 
 **Actor responsibility envelope**
-- `field-agent` — When a field-assisted onboarding policy is active, captures and maintains the assigned partner/first-store evidence inside trusted session/assignment scope; permitted: create/edit assigned field-assisted draft, capture first-store profile, upload required documents, submit evidence-bearing visit, submit assigned draft for review; forbidden: approve own evidence, publish store to client, reassign a store owned by another partner, write financial ledger or settlement truth, select or override trusted platform/operator context. No field task is fabricated when the active policy does not require field evidence.
+- `field-agent` — When a field-assisted onboarding policy is active, captures and maintains the assigned partner/first-store evidence inside trusted session/assignment scope; permitted: create/edit assigned field-assisted draft, capture first-store profile, upload required documents, submit evidence-bearing visit, submit assigned draft for review; forbidden: approve own evidence, publish store to client, reassign a store owned by another partner, write financial ledger or settlement truth, select or override trusted business/authorization scope. No field task is fabricated when the active policy does not require field evidence.
 - `partner-owner` — Reads governed activation, readiness, store scope and team state for the authenticated partner business scope.; permitted: read own activation state, read own readiness, read own store scope, manage authorized store team; forbidden: self-approve onboarding, override store publication gates, read raw payout identifiers from DSH, read another partner or store outside authorized scope.
-- `control-operator` — Reviews documents and evidence, links eligible unowned stores, and applies governed activation/publication decisions through trusted operator context.; permitted: review partner documents, read field-visit evidence, link an eligible unowned store, apply allowed partner transitions, read immutable onboarding audit; forbidden: bypass readiness gates, reassign a store owned by another partner, persist raw payout identifiers in DSH, mutate WLT ledger truth, read or mutate records outside trusted operator/business scope.
+- `control-operator` — Reviews documents and evidence, links eligible unowned stores, and applies governed activation/publication decisions through exact server-side permissions and business scope.; permitted: review partner documents, read field-visit evidence, link an eligible unowned store, apply allowed partner transitions, read immutable onboarding audit; forbidden: bypass readiness gates, reassign a store owned by another partner, persist raw payout identifiers in DSH, mutate WLT ledger truth, read or mutate records outside authorized business scope.
 - `client` — Discovers a store only after all applicable publication gates are satisfied.; permitted: discover client-visible store, read public store profile; forbidden: discover hidden or unready store, read partner-private onboarding data.
 
 **Surface semantics**
@@ -671,14 +671,14 @@ Later increments extend the same canonical model; they must not require temporar
 
 ### REPRESENTATIVE_WALLETS_REFERENCE_FINANCE
 
-**Problem.** Client, partner, captain and field actors need one authenticated and operator-context-isolated read-only view of their WLT-owned wallet, balances and ledger references through DSH BFF, while finance operators need permission-scoped lookup without transferring financial ownership to DSH or any frontend.
+**Problem.** Client, partner, captain and field actors need one authenticated actor-scoped read-only view of their WLT-owned wallet, balances and ledger references through DSH BFF, while finance operators need exact permission-scoped lookup without transferring financial ownership to DSH or any frontend.
 **Problem frequency.** continuous
 **Problem severity.** critical
-**Target state.** All actor surfaces use canonical Identity and operator-context-scoped DSH reads backed by WLT financial truth.
-**Primary success measure.** operator-context and actor-scoped wallet and ledger read coverage across required surfaces
-**Guardrail measures.** cross-operator-context financial disclosure count; cross-actor wallet disclosure count; frontend direct WLT financial read count; DSH wallet balance mutation path count; hardcoded actor identifier count; route-contract drift count
+**Target state.** All actor surfaces use canonical Identity and actor/authorization-scoped DSH reads backed by WLT financial truth.
+**Primary success measure.** actor-scoped and permission-scoped wallet and ledger read coverage across required surfaces
+**Guardrail measures.** unauthorized financial disclosure count; cross-actor wallet disclosure count; frontend direct WLT financial read count; DSH wallet balance mutation path count; hardcoded actor identifier count; route-contract drift count
 
-**Required outcome.** Every representative sees an authenticated operator-context-bound WLT-owned wallet and permission-scoped ledger view through DSH, while operators can inspect supported wallets and matching ledgers only inside their Identity operator context without any DSH or frontend balance mutation path.
+**Required outcome.** Every representative sees an authenticated actor-bound WLT-owned wallet and permission-scoped ledger view through DSH, while operators can inspect supported wallets and matching ledgers only within server-authorized actor/business scope without any DSH or frontend balance mutation path.
 
 **Primary actors.** client, partner, captain, field, operator.
 
@@ -691,24 +691,24 @@ Later increments extend the same canonical model; they must not require temporar
 **Business invariants**
 - WLT is the sole owner of wallet and ledger truth.
 - DSH is an authenticated and authorized application facade only.
-- Identity resolves actor and operator context trust.
+- Identity resolves authenticated actor/session trust; each domain owner resolves its own authorization/business scope.
 - Every self-service wallet read is scoped to the resolved actor.
 - Ledger history is append-only financial evidence.
 
 **Forbidden/negative invariants**
 - No DSH table or handler mutates representative wallet balances.
 - No frontend calls internal WLT financial routes directly.
-- No user-facing surface supplies an arbitrary self-service actor id or operator context id.
-- No operator lookup crosses the Identity operator-context boundary.
+- No user-facing surface supplies an arbitrary self-service actor id or trusted authorization scope.
+- No operator lookup crosses the exact server-authorized actor/business scope.
 - No settlement summary is labeled as a wallet balance.
 - No read permission authorizes a money-moving action.
 
 **Acceptance expectations**
 - WLT accepts only supported wallet actor types.
-- DSH derives self-service actor identity and operator context from the authenticated session and never from client-controlled input.
+- DSH derives self-service actor identity from the authenticated session and authorization/business scope from canonical server-side owner facts, never from client-controlled input.
 - Client partner captain and field have canonical own-wallet and own-ledger routes.
-- Control-panel lookup requires finance.read and uses Identity-resolved operator context.
-- WLT repositories scope by operator context before actor type and actor id.
+- Control-panel lookup requires `finance.read` and server-side authorization for the requested actor/business scope.
+- WLT repositories scope by canonical financial ownership and authorized actor/business scope before returning actor-linked wallet or ledger data.
 - Cross-context wallet and ledger reads fail closed without disclosure.
 - Balances are rendered from WLT without local derivation.
 - No DSH or frontend route writes wallet balances or appends ledger truth for this journey.
@@ -717,11 +717,11 @@ Later increments extend the same canonical model; they must not require temporar
 **Named failure classes:** cross_context_read, cross_actor_read, unsupported_actor, hardcoded_actor, direct_wlt_browser_call, local_balance_derivation, wallet_mutation_in_dsh, missing_permission, missing_context, stale_financial_display.
 
 **Actor responsibility envelope**
-- `client` — Authenticated customer reading only their own operator-context-bound wallet and ledger references; permitted: read own wallet status, read own available pending and held balances, read own ledger references, refresh; forbidden: select another actor id, select operator context, mutate balance, append ledger entries, call WLT directly.
-- `partner` — Authenticated partner reading only their own operator-context-bound wallet and reference finance; permitted: read own wallet, read own ledger references, read own settlements commissions and payouts, refresh; forbidden: derive wallet balance from settlements, use a hardcoded partner id, select operator context, mutate balance in DSH, read another partner wallet.
-- `captain` — Authenticated captain reading their operator-context-bound wallet, earnings references, payouts and COD liability; permitted: read own wallet, read own ledger references, read own commissions and payouts, submit governed payout request, perform authorized COD handoff actions; forbidden: read another captain wallet, read another operator-context wallet, mutate balance, complete payout locally, call a provider directly.
-- `field` — Authenticated field actor reading their operator-context-bound wallet, commissions, ledger and payout requests; permitted: read own wallet, read own commissions, read own ledger references, read and submit own payout requests, refresh; forbidden: supply beneficiary identity, select operator context, request more than available balance, mutate wallet balance, read another field actor wallet.
-- `operator` — Permission-scoped finance operator reading representative wallets and ledger references inside the operator context resolved by Identity; permitted: lookup a supported actor wallet in own operator context, filter ledger by actor in own operator context, inspect reference commissions settlements and payouts, audit correlation and update timestamps; forbidden: lookup without finance.read, supply or override operator context id, read another operator-context wallet or ledger, mutate wallet balance, use read permission for a money-moving action, treat DSH as financial truth owner.
+- `client` — Authenticated customer reading only their own actor-bound wallet and ledger references; permitted: read own wallet status, read own available pending and held balances, read own ledger references, refresh; forbidden: select another actor id, grant authorization scope, mutate balance, append ledger entries, call WLT directly.
+- `partner` — Authenticated partner reading only their own actor/business-scoped wallet and reference finance; permitted: read own wallet, read own ledger references, read own settlements commissions and payouts, refresh; forbidden: derive wallet balance from settlements, use a hardcoded partner id, grant authorization scope, mutate balance in DSH, read another partner wallet.
+- `captain` — Authenticated captain reading their actor-scoped wallet, earnings references, payouts and COD liability; permitted: read own wallet, read own ledger references, read own commissions and payouts, submit governed payout request, perform authorized COD handoff actions; forbidden: read another captain wallet, cross authorized financial scope, mutate balance, complete payout locally, call a provider directly.
+- `field` — Authenticated field actor reading their actor-scoped wallet, commissions, ledger and payout requests; permitted: read own wallet, read own commissions, read own ledger references, read and submit own payout requests, refresh; forbidden: supply beneficiary identity, grant authorization scope, request more than available balance, mutate wallet balance, read another field actor wallet.
+- `operator` — Permission-scoped finance operator reading representative wallets and ledger references only within exact server-authorized actor/business scope; permitted: lookup a supported actor wallet when authorized, filter ledger by an authorized actor, inspect reference commissions settlements and payouts, audit correlation and update timestamps; forbidden: lookup without `finance.read`, supply or override trusted authorization scope, read outside authorized financial scope, mutate wallet balance, use read permission for a money-moving action, treat DSH as financial truth owner.
 
 **Surface semantics**
 - `app-client` — required; actors: client; states: loading, success, empty, suspended, frozen, offline, forbidden, error; actions: refresh, inspect ledger.
@@ -729,8 +729,8 @@ Later increments extend the same canonical model; they must not require temporar
 - `app-captain` — required; actors: captain; states: loading, success, empty, suspended, frozen, offline, forbidden, error; actions: refresh, inspect ledger, inspect COD, request payout.
 - `app-field` — required; actors: field; states: loading, success, empty, partial, suspended, frozen, offline, forbidden, validation_error, error; actions: refresh, inspect ledger, inspect commissions, submit payout request.
 - `control-panel` — required; actors: operator; states: idle, loading, success, empty, partial, not_found, forbidden, invalid_actor, offline, error; actions: select actor type, enter actor id, lookup, inspect ledger, refresh.
-- `backend` — required; actors: client, partner, captain, field, operator; states: authenticated, authorized, operator_context_resolved, unsupported_actor, not_found, wlt_unavailable, success; actions: resolve identity, resolve operator context, scope actor, authorize, proxy read, propagate correlation, fail closed.
-- `database` — required; actors: operator; states: operator_context_isolated, unique_actor_wallet, append_only_ledger, currency_bound, auditable; actions: enforce operator-context actor lookup, enforce actor uniqueness, preserve ledger lineage, prevent duplicate payout requests.
+- `backend` — required; actors: client, partner, captain, field, operator; states: authenticated, authorized, authorization_scope_resolved, unsupported_actor, not_found, wlt_unavailable, success; actions: resolve identity, resolve canonical owner scope, scope actor, authorize, proxy read, propagate correlation, fail closed.
+- `database` — required; actors: operator; states: authorization_scope_isolated, unique_actor_wallet, append_only_ledger, currency_bound, auditable; actions: enforce authorized actor/business-scope lookup, enforce actor uniqueness, preserve ledger lineage, prevent duplicate payout requests.
 
 ### SETTLEMENTS_COMMISSIONS
 
@@ -1082,7 +1082,7 @@ Later increments extend the same canonical model; they must not require temporar
 - `app-field` — required; actors: field; states: loading, commission_candidate, earned, destination_unavailable, destination_verified, held, payout_pending, completed, error; actions: read wallet, read commission, read masked payout destination, request FULL_AVAILABLE or SPECIFIED payout, read payout state.
 - `control-panel` — required; actors: finance-operator; states: loading, ready, blocked, needs_action, awaiting_approval, awaiting_execution, awaiting_evidence, awaiting_verification, awaiting_reconciliation, exception, closed, forbidden, error; actions: inspect server-calculated truth, initiate governed destination provision or change, verify or approve when authorized, prepare, approve or reject when authorized, freeze batch, record execution, verify independently, reconcile, resolve exception, close day when gates pass.
 - `backend` — required; actors: client, captain, partner, field, finance-operator, system; states: authenticated, authorized, idempotent, reserved, held, approved, frozen, executed, evidenced, verified, reconciled, completed, unknown_external_result, blocked, exception; actions: derive trusted financial purpose, derive monetary effects from canonical events and policy, resolve payout amount and current verified destination, enforce policy, lock or reserve atomically, post ledger, normalize provider evidence, hold payout, freeze immutable batch, record external execution, reconcile, audit, fail closed.
-- `database` — required; actors: system, finance-operator; states: balanced, append_only, versioned, immutable_when_frozen, reconcilable, auditable, operator_context_isolated; actions: enforce uniqueness, enforce balance invariants, preserve history, reject contradictory replay, prevent in-place mutation of approved or frozen financial facts, preserve destination version provenance.
+- `database` — required; actors: system, finance-operator; states: balanced, append_only, versioned, immutable_when_frozen, reconcilable, auditable, authorization_scope_isolated; actions: enforce uniqueness, enforce balance invariants, preserve history, reject contradictory replay, prevent in-place mutation of approved or frozen financial facts, preserve destination version provenance.
 - technical presentation binding — required implementation evidence; actors: client, captain, partner, field, finance-operator; states: contract_aligned, capability_driven, no_local_truth; actions: render server-owned state, submit non-authoritative user intent, refresh canonical readback.
 
 ### ZONES_SLA_CAPACITY_DELIVERY_MODES
