@@ -330,7 +330,7 @@ WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actor
 	if err != nil {
 		return domain.ManagedActivationCode{}, err
 	}
-	expires := s.now().UTC().Add(30 * time.Minute)
+	expires := s.now().UTC().Add(48 * time.Hour)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_managed_activation_codes(id,actor_id,role,phone_e164,code_hash,status,attempts,expires_at,created_by) VALUES($1,$2,$3,$4,$5,'pending',0,$6,$7)`, id, actorID, role, phone, identitysecurity.SHA256Hex(normalizedCode), expires, strings.ToLower(strings.TrimSpace(caller))); err != nil {
 		return domain.ManagedActivationCode{}, err
 	}

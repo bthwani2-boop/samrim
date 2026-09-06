@@ -135,8 +135,14 @@ function assertSixDigitCode(value, label) {
   assert(typeof value === "string" && /^[0-9]{6}$/.test(value), label + " is not a six-digit code");
 }
 
-function assertOpaqueActivationCode(value, label) {
-  assert(typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value), label + " is not an opaque activation code");
+function assertSixDigitActivationCode(value, label) {
+	assert(typeof value === "string" && /^[0-9]{6}$/.test(value), label + " is not a six-digit activation code");
+}
+
+function assertTwoDayActivationExpiry(value, label) {
+	const expiresAt = Date.parse(value);
+	const hoursRemaining = (expiresAt - Date.now()) / (60 * 60 * 1000);
+	assert(Number.isFinite(expiresAt) && hoursRemaining > 47.5 && hoursRemaining < 48.5, label + " does not expire after two days");
 }
 
 function service(token, extra = {}) {
@@ -247,7 +253,8 @@ const captainActivation = await expect("POST", "/internal/managed-activation-cod
   headers: service(platformToken),
   body: { phoneE164: sharedPhone, role: "captain" },
 });
-assertOpaqueActivationCode(captainActivation.code, "captain activation code");
+assertSixDigitActivationCode(captainActivation.code, "captain activation code");
+assertTwoDayActivationExpiry(captainActivation.expiresAt, "captain activation code");
 const captainChallenge = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "captain", activationCode: captainActivation.code },
@@ -306,7 +313,8 @@ const operatorActivation = await expect("POST", "/internal/managed-activation-co
   headers: service(platformToken),
   body: { phoneE164: sharedPhone, role: "operator" },
 });
-assertOpaqueActivationCode(operatorActivation.code, "operator activation code");
+assertSixDigitActivationCode(operatorActivation.code, "operator activation code");
+assertTwoDayActivationExpiry(operatorActivation.expiresAt, "operator activation code");
 const operatorActivationChallenge = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "operator", activationCode: operatorActivation.code },
@@ -393,7 +401,8 @@ const reactivationCode = await expect("POST", "/internal/managed-activation-code
   headers: service(dshToken),
   body: { phoneE164: sharedPhone, role: "captain" },
 });
-assertOpaqueActivationCode(reactivationCode.code, "re-enrollment activation code");
+assertSixDigitActivationCode(reactivationCode.code, "re-enrollment activation code");
+assertTwoDayActivationExpiry(reactivationCode.expiresAt, "re-enrollment activation code");
 const reactivation = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "captain", activationCode: reactivationCode.code },
@@ -475,7 +484,8 @@ const outageActivation = await expect("POST", "/internal/managed-activation-code
   headers: service(dshToken),
   body: { phoneE164: outageKnownPhone, role: "captain" },
 });
-assertOpaqueActivationCode(outageActivation.code, "outage activation code");
+assertSixDigitActivationCode(outageActivation.code, "outage activation code");
+assertTwoDayActivationExpiry(outageActivation.expiresAt, "outage activation code");
 compose("stop", "mailpit");
 try {
   const knownOutage = await requestChallenge(

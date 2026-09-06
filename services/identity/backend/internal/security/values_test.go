@@ -38,6 +38,9 @@ func TestIdentityInputNormalization(t *testing.T) {
 	if _, err := NormalizeActivationCode("0123"); err == nil {
 		t.Fatal("short activation code accepted")
 	}
+	if _, err := NormalizeActivationCode("A12345"); err == nil {
+		t.Fatal("non-numeric activation code accepted")
+	}
 	activationCode, err := RandomActivationCode()
 	if err != nil {
 		t.Fatal(err)
@@ -60,12 +63,12 @@ func TestOpaqueSecurityValues(t *testing.T) {
 	}
 }
 
-func TestRandomActivationCodeIsOpaque(t *testing.T) {
+func TestRandomActivationCodeIsSixDigits(t *testing.T) {
 	code, err := RandomActivationCode()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value, err := NormalizeActivationCode(code); err != nil || value != code || len(code) != 43 {
+	if value, err := NormalizeActivationCode(code); err != nil || value != code || len(code) != 6 {
 		t.Fatalf("unexpected activation code: %q %v", code, err)
 	}
 }

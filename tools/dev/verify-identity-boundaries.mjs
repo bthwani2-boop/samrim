@@ -178,7 +178,7 @@ for (const required of [
 }
 const sixDigitPatterns = contract.match(/pattern: "\^\[0-9\]\{6\}\$"/g) ?? [];
 if (sixDigitPatterns.length < 3) failures.push("Identity contract must expose six-digit challenge schemas");
-if (!contract.includes('pattern: "^[A-Za-z0-9_-]{43}$"') || !contract.includes("minLength: 43")) failures.push("Identity contract must expose opaque 43-character activation schemas");
+if (!contract.includes('pattern: "^[0-9]{6}$"') || !contract.includes("minLength: 6")) failures.push("Identity contract must expose six-digit activation schemas");
 if (contract.includes('pattern: "^[0-9]{4}$"')) failures.push("Identity contract contains retired four-digit challenge schema");
 if (contract.includes("minLength: 12")) failures.push("Identity contract contains retired twelve-character password minimum");
 for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller"]) {
@@ -316,7 +316,7 @@ if (actorTable.includes("password_hash") || actorTable.includes("username")) fai
 const security = read("services/identity/backend/internal/security/values.go");
 if (!security.includes("argon2.IDKey")) failures.push("Identity password hashing is not Argon2id");
 if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identity security implementation");
-for (const required of ["verificationCodePattern = regexp.MustCompile(\"^[0-9]{6}$\")", "activationCodePattern", "RandomToken(32)", "NormalizePassword", "PasswordAllowed"]) {
+for (const required of ["verificationCodePattern = regexp.MustCompile(\"^[0-9]{6}$\")", "activationCodePattern", "func RandomToken(byteCount int)", "RandomActivationCode()", "NormalizePassword", "PasswordAllowed"]) {
   if (!security.includes(required)) failures.push("Identity security boundary missing " + required);
 }
 const actorService = read("services/identity/backend/internal/actor/service.go");

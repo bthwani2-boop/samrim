@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -20,7 +21,7 @@ var (
 	phonePattern            = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
 	devicePattern           = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
 	verificationCodePattern = regexp.MustCompile("^[0-9]{6}$")
-	activationCodePattern   = regexp.MustCompile("^[A-Za-z0-9_-]{43}$")
+	activationCodePattern   = regexp.MustCompile("^[0-9]{6}$")
 	ErrInvalidValue         = errors.New("invalid identity value")
 )
 
@@ -85,7 +86,11 @@ func RandomToken(byteCount int) (string, error) {
 }
 
 func RandomActivationCode() (string, error) {
-	return RandomToken(32)
+	value, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", value.Int64()), nil
 }
 
 func SHA256Hex(value string) string {
