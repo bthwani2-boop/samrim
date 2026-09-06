@@ -334,6 +334,14 @@ const httpServer = read("services/identity/backend/internal/transport/http/serve
 for (const required of ["/internal/bootstrap/platform-owner", "CanBootstrapPlatformOwner(caller)"]) {
   if (!httpServer.includes(required)) failures.push("Identity platform bootstrap route fence missing " + required);
 }
+if (!httpServer.includes("s.challenges.LoginManaged(r.Context(), input, s.ipHash(r))")) failures.push("managed login is not bound to canonical client IP hashing");
+if (httpServer.includes("SHA256Hex(remoteIP(r))")) failures.push("managed login derives abuse identity from raw peer IP");
+for (const required of ["TrustedProxies        []*net.IPNet", "func (s *Server) isTrustedProxy", "for index := len(chain) - 1; index >= 0; index--"]) {
+  if (!httpServer.includes(required)) failures.push("Identity trusted-proxy boundary missing " + required);
+}
+for (const required of ["net.ParseCIDR(proxy)", "invalid CIDR", "invalid IP"]) {
+  if (!runtimeConfig.includes(required)) failures.push("Identity trusted-proxy configuration missing " + required);
+}
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [

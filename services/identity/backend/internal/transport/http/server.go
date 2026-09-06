@@ -21,7 +21,7 @@ type Config struct {
 	InternalServiceTokens map[string]string
 	AllowedOrigins        map[string]bool
 	AbuseIPSecret         []byte
-	TrustedProxies        map[string]bool
+	TrustedProxies        []*net.IPNet
 	Readiness             func() error
 }
 
@@ -169,7 +169,7 @@ func (s *Server) loginManaged(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.LoginManaged(r.Context(), input, identitysecurity.SHA256Hex(remoteIP(r)))
+	result, err := s.challenges.LoginManaged(r.Context(), input, s.ipHash(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -486,20 +486,46 @@ func (s *Server) ipHash(r *http.Request) string {
 }
 
 func (s *Server) clientIP(r *http.Request) string {
-	peer := remoteIP(r)
-	if !s.config.TrustedProxies[peer] {
-		return peer
+	peer := net.ParseIP(remoteIP(r))
+	if peer == nil || !s.isTrustedProxy(peer) {
+		return remoteIP(r)
 	}
-	for _, candidate := range strings.Split(r.Header.Get("X-Forwarded-For"), ",") {
-		candidate = strings.TrimSpace(candidate)
-		if parsed := net.ParseIP(candidate); parsed != nil {
-			return parsed.String()
+
+	forwarded := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+	if len(forwarded) > 0 && strings.TrimSpace(forwarded[0]) != "" {
+		chain := make([]net.IP, 0, len(forwarded))
+		valid := true
+		for _, candidate := range forwarded {
+			parsed := net.ParseIP(strings.TrimSpace(candidate))
+			if parsed == nil {
+				valid = false
+				break
+			}
+			chain = append(chain, parsed)
+		}
+		if valid {
+			for index := len(chain) - 1; index >= 0; index-- {
+				if !s.isTrustedProxy(chain[index]) {
+					return chain[index].String()
+				}
+			}
 		}
 	}
 	if candidate := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); candidate != nil {
-		return candidate.String()
+		if !s.isTrustedProxy(candidate) {
+			return candidate.String()
+		}
 	}
-	return peer
+	return peer.String()
+}
+
+func (s *Server) isTrustedProxy(candidate net.IP) bool {
+	for _, network := range s.config.TrustedProxies {
+		if network != nil && network.Contains(candidate) {
+			return true
+		}
+	}
+	return false
 }
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

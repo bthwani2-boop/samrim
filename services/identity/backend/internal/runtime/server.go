@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,7 +32,7 @@ type config struct {
 	migrationDir    string
 	challengeSecret []byte
 	abuseIPSecret   []byte
-	trustedProxies  map[string]bool
+	trustedProxies  []*net.IPNet
 	internalTokens  map[string]string
 	allowedOrigins  map[string]bool
 	delivery        challengedelivery.Sender
@@ -160,12 +161,30 @@ func loadConfig(defaultPort string) (config, error) {
 	if len(origins) == 0 {
 		return config{}, errors.New("IDENTITY_CORS_ALLOWED_ORIGINS is empty")
 	}
-	trustedProxies := map[string]bool{}
+	trustedProxies := make([]*net.IPNet, 0)
 	for _, proxy := range strings.Split(os.Getenv("IDENTITY_TRUSTED_PROXY_IPS"), ",") {
 		proxy = strings.TrimSpace(proxy)
-		if proxy != "" {
-			trustedProxies[proxy] = true
+		if proxy == "" {
+			continue
 		}
+		if strings.Contains(proxy, "/") {
+			_, network, err := net.ParseCIDR(proxy)
+			if err != nil {
+				return config{}, fmt.Errorf("IDENTITY_TRUSTED_PROXY_IPS contains invalid CIDR %q", proxy)
+			}
+			trustedProxies = append(trustedProxies, network)
+			continue
+		}
+		ip := net.ParseIP(proxy)
+		if ip == nil {
+			return config{}, fmt.Errorf("IDENTITY_TRUSTED_PROXY_IPS contains invalid IP %q", proxy)
+		}
+		bits := 128
+		if ip.To4() != nil {
+			ip = ip.To4()
+			bits = 32
+		}
+		trustedProxies = append(trustedProxies, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
 	}
 	return config{port: port, databaseURL: databaseURL, autoMigrate: strings.EqualFold(strings.TrimSpace(os.Getenv("IDENTITY_AUTO_MIGRATE")), "true"), migrationDir: migrationDir, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery}, nil
 }
