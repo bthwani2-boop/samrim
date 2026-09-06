@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -123,6 +124,9 @@ func loadConfig(defaultPort string) (config, error) {
 	if databaseURL == "" {
 		return config{}, errors.New("IDENTITY_DATABASE_URL is required")
 	}
+	if err := validateDatabaseTransport(runtimeEnvironment, databaseURL); err != nil {
+		return config{}, err
+	}
 	secret := []byte(strings.TrimSpace(os.Getenv("IDENTITY_CHALLENGE_HMAC_SECRET")))
 	if len(secret) < 32 {
 		return config{}, errors.New("IDENTITY_CHALLENGE_HMAC_SECRET must contain at least 32 bytes")
@@ -210,6 +214,17 @@ func loadConfig(defaultPort string) (config, error) {
 		trustedProxies = append(trustedProxies, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
 	}
 	return config{port: port, databaseURL: databaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery}, nil
+}
+
+func validateDatabaseTransport(runtimeEnvironment, databaseURL string) error {
+	parsed, err := url.Parse(databaseURL)
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Host == "" {
+		return errors.New("IDENTITY_DATABASE_URL must be a valid postgres URL")
+	}
+	if runtimeEnvironment == "production" && parsed.Query().Get("sslmode") != "verify-full" {
+		return errors.New("IDENTITY_DATABASE_URL must use sslmode=verify-full in production")
+	}
+	return nil
 }
 
 func loadDelivery(runtimeEnvironment string) (challengedelivery.Sender, error) {

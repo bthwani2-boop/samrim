@@ -16,9 +16,18 @@ func TestDSHIdentityBoundaryPinsRoleAndUsesCredentialAsCallerIdentity(t *testing
 		role string
 		call func(*Client, context.Context, ActorInput) error
 	}{
-		{name: "partner", role: "partner", call: func(c *Client, ctx context.Context, input ActorInput) error { _, err := c.ProvisionPartner(ctx, input); return err }},
-		{name: "captain", role: "captain", call: func(c *Client, ctx context.Context, input ActorInput) error { _, err := c.ProvisionCaptain(ctx, input); return err }},
-		{name: "field", role: "field", call: func(c *Client, ctx context.Context, input ActorInput) error { _, err := c.ProvisionField(ctx, input); return err }},
+		{name: "partner", role: "partner", call: func(c *Client, ctx context.Context, input ActorInput) error {
+			_, err := c.ProvisionPartner(ctx, input)
+			return err
+		}},
+		{name: "captain", role: "captain", call: func(c *Client, ctx context.Context, input ActorInput) error {
+			_, err := c.ProvisionCaptain(ctx, input)
+			return err
+		}},
+		{name: "field", role: "field", call: func(c *Client, ctx context.Context, input ActorInput) error {
+			_, err := c.ProvisionField(ctx, input)
+			return err
+		}},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
@@ -63,5 +72,20 @@ func TestDSHIdentityBoundaryPinsRoleAndUsesCredentialAsCallerIdentity(t *testing
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestResolveBaseURLUsesHTTPOnlyForLocalEnvironments(t *testing.T) {
+	if got, err := ResolveBaseURL("", "development"); err != nil || got != "http://identity:8082" {
+		t.Fatalf("development default = %q, err=%v", got, err)
+	}
+	if _, err := ResolveBaseURL("http://identity:8082", "production"); err == nil {
+		t.Fatal("production accepted an HTTP Identity URL")
+	}
+	if _, err := ResolveBaseURL("", "production"); err == nil {
+		t.Fatal("production accepted a missing Identity URL")
+	}
+	if got, err := ResolveBaseURL("https://identity.example.com/", "production"); err != nil || got != "https://identity.example.com" {
+		t.Fatalf("production HTTPS URL = %q, err=%v", got, err)
 	}
 }

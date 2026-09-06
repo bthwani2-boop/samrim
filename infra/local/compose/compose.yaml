@@ -82,6 +82,7 @@ services:
       dockerfile: services/dsh/backend/Dockerfile
     environment:
       PORT: "8080"
+      BTHWANI_ENV: "development"
       DSH_IDENTITY_API_BASE_URL: "http://identity:8082"
       IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"
       DSH_PLATFORM_CONTROL_SERVICE_TOKEN: "${DSH_PLATFORM_CONTROL_SERVICE_TOKEN}"

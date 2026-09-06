@@ -7,7 +7,7 @@ import (
 
 func setRuntimeConfigBaseline(t *testing.T) {
 	t.Helper()
-	t.Setenv("IDENTITY_DATABASE_URL", "postgres://identity:test@localhost:5432/identity?sslmode=disable")
+	t.Setenv("IDENTITY_DATABASE_URL", "postgres://identity:test@db.example.com:5432/identity?sslmode=verify-full")
 	t.Setenv("IDENTITY_CHALLENGE_HMAC_SECRET", "01234567890123456789012345678901")
 	t.Setenv("IDENTITY_ABUSE_HMAC_SECRET", "abcdefghijklmnopqrstuvwxyz123456")
 	t.Setenv("IDENTITY_DSH_SERVICE_TOKEN", "dsh-service-token-01234567890123456789")
@@ -42,5 +42,13 @@ func TestProductionRejectsBootstrapSecret(t *testing.T) {
 	t.Setenv("IDENTITY_PLATFORM_BOOTSTRAP_SECRET", "bootstrap-secret-01234567890123456789")
 	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "BOOTSTRAP_SECRET") {
 		t.Fatalf("production bootstrap secret configuration was accepted: %v", err)
+	}
+}
+
+func TestProductionRejectsInsecureDatabaseTransport(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	t.Setenv("IDENTITY_DATABASE_URL", "postgres://identity:test@db.example.com:5432/identity?sslmode=disable")
+	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "sslmode=verify-full") {
+		t.Fatalf("production accepted an insecure database transport: %v", err)
 	}
 }

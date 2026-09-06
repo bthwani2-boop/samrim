@@ -2,6 +2,9 @@ package identityboundary
 
 import (
 	"context"
+	"errors"
+	"net/url"
+	"strings"
 
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -9,6 +12,30 @@ import (
 type ActorInput struct{ PhoneE164 string }
 
 type Client struct{ inner *identityclient.Client }
+
+func ResolveBaseURL(raw, runtimeEnvironment string) (string, error) {
+	environment := strings.ToLower(strings.TrimSpace(runtimeEnvironment))
+	switch environment {
+	case "development", "test", "staging", "production":
+	default:
+		return "", errors.New("BTHWANI_ENV must be development, test, staging, or production")
+	}
+	value := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if value == "" {
+		if environment == "development" || environment == "test" {
+			return "http://identity:8082", nil
+		}
+		return "", errors.New("DSH_IDENTITY_API_BASE_URL is required outside local environments")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", errors.New("DSH_IDENTITY_API_BASE_URL is invalid")
+	}
+	if (environment == "staging" || environment == "production") && parsed.Scheme != "https" {
+		return "", errors.New("DSH_IDENTITY_API_BASE_URL must use HTTPS outside local environments")
+	}
+	return value, nil
+}
 
 func New(baseURL, serviceToken string) (*Client, error) {
 	inner, err := identityclient.New(baseURL, serviceToken)
