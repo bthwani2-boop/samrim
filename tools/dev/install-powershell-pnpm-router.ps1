@@ -46,7 +46,7 @@ function global:pnpm {
         'captain',
         'field',
         'control',
-        'scrcpy'
+        'scr'
     )
 
     if ($args.Count -gt 0 -and $bthwaniCommands -contains [string] $args[0]) {
@@ -73,4 +73,4 @@ Set-Content -LiteralPath $profilePath -Value $newContent -Encoding utf8
 Write-Host "POWERSHELL_PROFILE=$profilePath"
 Write-Host "BTHWANI_REPO=$RepoRoot"
 Write-Host 'BTHWANI_PNPM_ROUTER=INSTALLED'
-Write-Host 'Commands: client, partner, captain, field, control, scrcpy'
+Write-Host 'Commands: client, partner, captain, field, control, scr'
