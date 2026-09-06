@@ -183,7 +183,8 @@ export default function Home() {
         setView({ kind: "unavailable", message: await responseMessage(response) });
         return;
       }
-      const body = (await response.json()) as { identity: ActorIdentity };
+      const body = (await response.json()) as { identity?: ActorIdentity };
+      if (!body.identity) { setError("تعذر قراءة جلسة الهوية بعد التحقق."); return; }
       setView({ kind: "authenticated", identity: body.identity });
     } catch {
       setView({ kind: "unavailable", message: "تعذر الوصول إلى خدمة الهوية. تحقق من تشغيل الخدمة ثم أعد المحاولة." });
@@ -199,14 +200,7 @@ export default function Home() {
     setError("");
     try {
       if (!challengeStarted && controlStep === "phone") {
-        const stateResponse = await identityFetch("/api/auth/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone }) });
-        if (!stateResponse.ok) { setError(await responseMessage(stateResponse)); return; }
-        const resolved = (await stateResponse.json()) as { next?: "password" | "activation" | "suspended" | "unknown"; role?: ControlPanelRole };
-        if (resolved.role) setLoginRole(resolved.role);
-        if (resolved.next === "suspended") { setError("هذا الحساب موقوف حاليًا. راجع الإدارة."); return; }
-        if (resolved.next === "unknown") { setError("لم يتم العثور على حساب موظف مهيأ لهذا الرقم."); return; }
-        const nextStep = resolved.next === "password" ? "password" : "activation";
-        setControlStep(nextStep); setAuthMode(nextStep === "password" ? "login" : "activate");
+        setControlStep(authMode === "activate" ? "activation" : authMode === "recover" ? "recovery" : "password");
         return;
       }
       const response = await identityFetch(authMode === "login" ? "/api/auth/login/start" : authMode === "activate" ? "/api/auth/activation/start" : "/api/auth/recovery/start", {
@@ -241,7 +235,7 @@ export default function Home() {
         setError(await responseMessage(response));
         return;
       }
-      const body = (await response.json()) as { identity: ActorIdentity };
+      const body = (await response.json()) as { identity?: ActorIdentity; status?: string };
       setCode("");
       setActivationCode("");
       setActivationPassword("");
@@ -249,6 +243,13 @@ export default function Home() {
       setRecoveryPassword("");
       setRecoveryPasswordConfirmation("");
       setChallengeStarted(false);
+      if (authMode === "recover") {
+        setError(body.status === "recovery_complete" ? "تم تغيير كلمة المرور. سجّل الدخول الآن باستخدام الكلمة الجديدة." : "اكتملت العملية. سجّل الدخول للمتابعة.");
+        setControlStep("password");
+        setAuthMode("login");
+        return;
+      }
+      if (!body.identity) { setError("تعذر قراءة جلسة الهوية بعد التحقق."); return; }
       setControlStep("phone");
       setView({ kind: "authenticated", identity: body.identity });
     } catch {
@@ -318,10 +319,10 @@ export default function Home() {
           <span className="step-chip">{challengeStarted ? "02 / 02" : "01 / 02"}</span>
           <p className="eyebrow">{controlStep === "activation" ? "تفعيل موظف" : controlStep === "recovery" ? "استرداد موظف" : challengeStarted ? "التحقق الثاني" : "هوية لوحة التحكم"}</p>
           <h2>{controlStep === "phone" ? "ابدأ برقم الهاتف" : controlStep === "activation" ? "تفعيل حساب الموظف" : controlStep === "recovery" ? "استعادة كلمة المرور" : challengeStarted ? "تحقق من الجهاز الثاني" : "تسجيل دخول لوحة التحكم"}</h2>
-          <p className="muted">{controlStep === "phone" ? "سيحدد النظام تلقائيًا الدور والخطوة التالية دون اختيار أو تبويب." : controlStep === "activation" ? "أدخل رمز التفعيل الصادر من مالك المنصة، ثم رمز تحقق الهاتف." : controlStep === "recovery" ? "أثبت ملكية الهاتف برمز تحقق ثم أنشئ كلمة مرور جديدة." : challengeStarted ? "أدخل الرمز الأخير الذي وصلك عبر قناة التحقق المهيأة." : "أدخل كلمة المرور للمتابعة إلى التحقق الثاني."}</p>
+          <p className="muted">{controlStep === "phone" ? "اختر الدور والغرض من الدخول؛ لن نكشف حالة الحساب قبل اكتمال التحقق." : controlStep === "activation" ? "أدخل رمز التفعيل الصادر من مالك المنصة، ثم رمز تحقق الهاتف." : controlStep === "recovery" ? "أثبت ملكية الهاتف برمز تحقق ثم أنشئ كلمة مرور جديدة." : challengeStarted ? "أدخل الرمز الأخير الذي وصلك عبر قناة التحقق المهيأة." : "أدخل كلمة المرور للمتابعة إلى التحقق الثاني."}</p>
         </div>
         <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void completeLogin(); else void startLogin(); }} noValidate>
-          {controlStep !== "phone" && !challengeStarted ? <p className="field-help">تم تحديد الدور تلقائيًا: {loginRole === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</p> : null}
+          {controlStep === "phone" && !challengeStarted ? <><label className="field-label" htmlFor="login-role">الدور<select id="login-role" value={loginRole} disabled={busy} onChange={(event) => setLoginRole(event.target.value as ControlPanelRole)}><option value="operator">موظف لوحة التحكم</option><option value="platform_owner">مالك المنصة</option></select></label>{loginRole === "operator" ? <div className="auth-intent-actions"><button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("activate"); setControlStep("activation"); }}>تفعيل حساب موظف</button><button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("recover"); setControlStep("recovery"); }}>استرداد كلمة المرور</button></div> : null}</> : null}          {controlStep !== "phone" && !challengeStarted ? <p className="field-help">الدور المختار: {loginRole === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</p> : null}
           <label className="field-label" htmlFor="operator-phone">رقم الهاتف<input id="operator-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
           {controlStep === "activation" && !challengeStarted ? <label className="field-label" htmlFor="activation-code">رمز التفعيل<input id="activation-code" autoComplete="one-time-code" inputMode="numeric" maxLength={6} value={activationCode} onChange={(event) => setActivationCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="رمز مكوّن من ٦ أرقام" /></label> : null}
           {controlStep === "password" && !challengeStarted ? <label className="field-label" htmlFor="operator-password">كلمة المرور<div className="password-field"><input aria-describedby="password-help" autoComplete="current-password" id="operator-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} /><button aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"} className="password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? "إخفاء" : "إظهار"}</button></div><span className="field-help" id="password-help">١٥ حرفاً على الأقل</span></label> : null}
@@ -330,7 +331,7 @@ export default function Home() {
           {authMode === "activate" && challengeStarted ? <><label className="field-label" htmlFor="activation-password">إنشاء كلمة المرور<input autoComplete="new-password" id="activation-password" type="password" value={activationPassword} onChange={(event) => setActivationPassword(event.target.value)} /><span className="field-help">١٥ حرفاً على الأقل</span></label><label className="field-label" htmlFor="activation-password-confirmation">تأكيد كلمة المرور<input autoComplete="new-password" id="activation-password-confirmation" type="password" value={activationPasswordConfirmation} onChange={(event) => setActivationPasswordConfirmation(event.target.value)} /></label></> : null}
           {authMode === "recover" && challengeStarted ? <><label className="field-label" htmlFor="recovery-password">كلمة المرور الجديدة<input autoComplete="new-password" id="recovery-password" type="password" value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} /><span className="field-help">١٥ حرفاً على الأقل</span></label><label className="field-label" htmlFor="recovery-password-confirmation">تأكيد كلمة المرور<input autoComplete="new-password" id="recovery-password-confirmation" type="password" value={recoveryPasswordConfirmation} onChange={(event) => setRecoveryPasswordConfirmation(event.target.value)} /></label></> : null}
           {error ? <p className="identity-error" role="alert">{error}</p> : null}
-          {challengeStarted ? <div className="form-actions"><button className="button button-primary" disabled={busy || (authMode === "activate" ? !canCompleteActivation : authMode === "recover" ? !canCompleteRecovery : code.trim().length !== 6)} type="submit">{busy ? "جارٍ التحقق…" : authMode === "activate" ? "حفظ كلمة المرور وتفعيل الحساب" : authMode === "recover" ? "تغيير كلمة المرور والدخول" : "إكمال تسجيل الدخول"}</button><button className="text-button" disabled={busy} type="button" onClick={() => { setChallengeStarted(false); setCode(""); setActivationPassword(""); setActivationPasswordConfirmation(""); setRecoveryPassword(""); setRecoveryPasswordConfirmation(""); setError(""); }}>العودة لتعديل البيانات</button></div> : <div className="form-actions"><button className="button button-primary" disabled={busy || !canStart} type="submit">{busy ? "جارٍ التنفيذ…" : controlStep === "phone" ? "متابعة" : controlStep === "activation" ? "إرسال رمز تحقق الهاتف" : controlStep === "recovery" ? "إرسال رمز الاسترداد" : "متابعة إلى التحقق الثاني"}</button>{controlStep === "password" ? <button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("recover"); setControlStep("recovery"); setError(""); }}>نسيت كلمة المرور؟</button> : null}<p className="security-note"><span aria-hidden="true">⌁</span> {controlStep === "activation" ? "رمز التفعيل ثم رمز تحقق الهاتف" : controlStep === "recovery" ? "سيتم إلغاء الجلسات القديمة بعد تغيير كلمة المرور" : "سيحدد النظام الخطوة المناسبة من رقم الهاتف"}</p></div>}
+          {challengeStarted ? <div className="form-actions"><button className="button button-primary" disabled={busy || (authMode === "activate" ? !canCompleteActivation : authMode === "recover" ? !canCompleteRecovery : code.trim().length !== 6)} type="submit">{busy ? "جارٍ التحقق…" : authMode === "activate" ? "حفظ كلمة المرور وتفعيل الحساب" : authMode === "recover" ? "تغيير كلمة المرور" : "إكمال تسجيل الدخول"}</button><button className="text-button" disabled={busy} type="button" onClick={() => { setChallengeStarted(false); setCode(""); setActivationPassword(""); setActivationPasswordConfirmation(""); setRecoveryPassword(""); setRecoveryPasswordConfirmation(""); setError(""); }}>العودة لتعديل البيانات</button></div> : <div className="form-actions"><button className="button button-primary" disabled={busy || !canStart} type="submit">{busy ? "جارٍ التنفيذ…" : controlStep === "phone" ? "متابعة" : controlStep === "activation" ? "إرسال رمز تحقق الهاتف" : controlStep === "recovery" ? "إرسال رمز الاسترداد" : "متابعة إلى التحقق الثاني"}</button>{controlStep === "password" && loginRole === "operator" ? <button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("recover"); setControlStep("recovery"); setError(""); }}>نسيت كلمة المرور؟</button> : null}<p className="security-note"><span aria-hidden="true">⌁</span> {controlStep === "activation" ? "رمز التفعيل ثم رمز تحقق الهاتف" : controlStep === "recovery" ? "سيتم إلغاء الجلسات القديمة بعد تغيير كلمة المرور" : "اخترت العملية والدور يدويًا؛ لا تظهر حالة الحساب قبل التحقق."}</p></div>}
         </form>
       </div>
     </section>,

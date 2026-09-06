@@ -14,6 +14,7 @@ import {
   type ManagedActivationCode,
   type ManagedActivationRole,
   type ControlPanelRole,
+  type RecoveryResult,
   type TokenPair,
 } from "@bthwani/identity";
 
@@ -115,15 +116,8 @@ export async function requestOperatorRecovery(phone: string): Promise<Challenge>
   return identityClient().requestManagedRecovery({ phone, role: "operator" });
 }
 
-export async function readControlPanelAuthState(phone: string): Promise<Readonly<{ next: "password" | "activation" | "suspended" | "unknown"; role: "operator" | "platform_owner" | "" }>> {
-  return identityClient().controlPanelAuthState({ phone });
-}
-
-export async function completeOperatorRecovery(phone: string, code: string, password: string): Promise<ActorIdentity> {
-  const deviceFingerprint = await operatorDeviceFingerprint();
-  const pair = await identityClient().recoverManaged({ phone, role: "operator", code, password, deviceFingerprint });
-  await writeTokens(pair, deviceFingerprint);
-  return pair.identity;
+export async function completeOperatorRecovery(phone: string, code: string, password: string): Promise<RecoveryResult> {
+  return identityClient().recoverManaged({ phone, role: "operator", code, password });
 }
 
 export async function issueManagedActivationCode(phone: string, role: ManagedActivationRole): Promise<ManagedActivationCode> {

@@ -23,7 +23,7 @@ func New(db *sql.DB) *Service { return &Service{db: db} }
 func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input domain.ProvisionActorRoleInput) (domain.ActorRoleView, error) {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.RoleAllowedForCaller(caller, role) {
+	if !domain.CanProvisionRole(caller, role) {
 		return domain.ActorRoleView{}, domain.ErrForbidden
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.PhoneE164)
@@ -46,7 +46,11 @@ func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input dom
 		return domain.ActorRoleView{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:phone:"+phone); err != nil {
+	lockKey := "identity:phone:" + phone
+	if role == "platform_owner" {
+		lockKey = "identity:bootstrap:platform-owner"
+	}
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", lockKey); err != nil {
 		return domain.ActorRoleView{}, err
 	}
 	if role == "platform_owner" {
@@ -202,73 +206,24 @@ func (s *Service) RegisterClientTx(ctx context.Context, tx *sql.Tx, rawPhone, pa
 	return a, nil
 }
 
-func (s *Service) PasswordCredential(ctx context.Context, rawPhone, role string) (domain.Actor, string, error) {
+func (s *Service) PasswordCredential(ctx context.Context, rawPhone, role string) (domain.Actor, string, int, error) {
 	phone, err := identitysecurity.NormalizePhoneE164(rawPhone)
 	if err != nil {
-		return domain.Actor{}, "", domain.ErrUnauthenticated
+		return domain.Actor{}, "", 0, domain.ErrUnauthenticated
 	}
 	role = strings.ToLower(strings.TrimSpace(role))
 	var a domain.Actor
 	var hash string
-	err = s.db.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,a.security_enabled,a.version,c.password_hash
+	var credentialVersion int
+	err = s.db.QueryRowContext(ctx, `SELECT a.id,a.phone_e164,a.security_enabled,a.version,c.password_hash,c.version
 FROM identity_actors a
 JOIN identity_actor_roles r ON r.actor_id=a.id
 JOIN identity_password_credentials c ON c.actor_id=a.id AND c.role=r.role
-WHERE a.phone_e164=$1 AND r.role=$2 AND r.enabled=true AND a.security_enabled=true AND (r.role='client' OR r.activated_at IS NOT NULL)`, phone, role).Scan(&a.ID, &a.PhoneE164, &a.SecurityEnabled, &a.Version, &hash)
+WHERE a.phone_e164=$1 AND r.role=$2 AND r.enabled=true AND a.security_enabled=true AND (r.role='client' OR r.activated_at IS NOT NULL)`, phone, role).Scan(&a.ID, &a.PhoneE164, &a.SecurityEnabled, &a.Version, &hash, &credentialVersion)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.Actor{}, "", domain.ErrNotFound
+		return domain.Actor{}, "", 0, domain.ErrNotFound
 	}
-	return a, hash, err
-}
-
-func (s *Service) ManagedAuthState(ctx context.Context, rawPhone, role string) (domain.ManagedAuthState, error) {
-	phone, err := identitysecurity.NormalizePhoneE164(rawPhone)
-	if err != nil {
-		return domain.ManagedAuthState{}, domain.ErrInvalidInput
-	}
-	role = strings.ToLower(strings.TrimSpace(role))
-	if !domain.IsManagedActivationRole(role) {
-		return domain.ManagedAuthState{}, domain.ErrInvalidInput
-	}
-	var state domain.ManagedAuthState
-	var activated sql.NullTime
-	err = s.db.QueryRowContext(ctx, `SELECT r.enabled,a.security_enabled,r.activated_at,
-EXISTS(SELECT 1 FROM identity_password_credentials c WHERE c.actor_id=a.id AND c.role=r.role)
-FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id
-WHERE a.phone_e164=$1 AND r.role=$2`, phone, role).Scan(&state.Enabled, &state.SecurityEnabled, &activated, &state.HasCredential)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ManagedAuthState{}, nil
-	}
-	if err != nil {
-		return domain.ManagedAuthState{}, err
-	}
-	state.Exists = true
-	state.Activated = activated.Valid
-	return state, nil
-}
-
-func (s *Service) ControlPanelAuthState(ctx context.Context, rawPhone string) (string, domain.ManagedAuthState, error) {
-	phone, err := identitysecurity.NormalizePhoneE164(rawPhone)
-	if err != nil {
-		return "", domain.ManagedAuthState{}, domain.ErrInvalidInput
-	}
-	var role string
-	var state domain.ManagedAuthState
-	var activated sql.NullTime
-	err = s.db.QueryRowContext(ctx, `SELECT r.role,r.enabled,a.security_enabled,r.activated_at,
-EXISTS(SELECT 1 FROM identity_password_credentials c WHERE c.actor_id=a.id AND c.role=r.role)
-FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id
-WHERE a.phone_e164=$1 AND r.role IN ('platform_owner','operator')
-ORDER BY CASE r.role WHEN 'platform_owner' THEN 0 ELSE 1 END LIMIT 1`, phone).Scan(&role, &state.Enabled, &state.SecurityEnabled, &activated, &state.HasCredential)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", domain.ManagedAuthState{}, nil
-	}
-	if err != nil {
-		return "", domain.ManagedAuthState{}, err
-	}
-	state.Exists = true
-	state.Activated = activated.Valid
-	return role, state, nil
+	return a, hash, credentialVersion, err
 }
 
 func (s *Service) ManagedActivationCandidate(ctx context.Context, rawPhone, role string) (domain.Actor, domain.ActorRole, error) {
@@ -358,6 +313,9 @@ ON CONFLICT (actor_id,role) DO UPDATE SET password_hash=EXCLUDED.password_hash,v
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL", actorID, role); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
+		return err
+	}
 	return auditTx(ctx, tx, "credential.password_set", actorID, actorID, "success", "", map[string]any{"role": role})
 }
 
@@ -375,6 +333,9 @@ func (s *Service) ResetClientPasswordTx(ctx context.Context, tx *sql.Tx, actorID
 		return domain.ErrNotFound
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role='client' AND revoked_at IS NULL", actorID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role='client' AND status='pending'", actorID); err != nil {
 		return err
 	}
 	return auditTx(ctx, tx, "credential.password_reset", actorID, actorID, "success", "", map[string]any{"role": "client"})
@@ -410,6 +371,9 @@ ON CONFLICT (actor_id,role) DO UPDATE SET password_hash=EXCLUDED.password_hash,v
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL", actorID, role); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
+		return err
+	}
 	return auditTx(ctx, tx, "credential.password_reset", actorID, actorID, "success", "", map[string]any{"role": role})
 }
 
@@ -417,7 +381,7 @@ func (s *Service) GetRole(ctx context.Context, caller, actorID, role string) (do
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role = strings.ToLower(strings.TrimSpace(role))
 	actorID = strings.TrimSpace(actorID)
-	if actorID == "" || !domain.RoleAllowedForCaller(caller, role) {
+	if actorID == "" || !domain.CanReadRole(caller, role) {
 		return domain.ActorRoleView{}, domain.ErrForbidden
 	}
 	view, err := scanRoleView(func(dest ...any) error {
@@ -431,7 +395,7 @@ func (s *Service) GetRole(ctx context.Context, caller, actorID, role string) (do
 
 func (s *Service) Search(ctx context.Context, caller string, input domain.ActorSearchInput) (domain.ActorSearchPage, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.RoleAllowedForCaller(caller, role) {
+	if !domain.CanReadRole(caller, role) {
 		return domain.ActorSearchPage{}, domain.ErrForbidden
 	}
 	limit := input.Limit
@@ -507,7 +471,7 @@ func (s *Service) SetRoleEnabledWithReason(ctx context.Context, caller, actorID,
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
 	role = strings.ToLower(strings.TrimSpace(role))
-	if actorID == "" || !domain.RoleAllowedForCaller(caller, role) || len(strings.TrimSpace(reason)) > 500 {
+	if actorID == "" || !domain.CanSetRoleEnabled(caller, role) || len(strings.TrimSpace(reason)) > 500 {
 		return domain.ErrForbidden
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -575,7 +539,7 @@ func (s *Service) AuthorizeReenrollment(ctx context.Context, caller, actorID, ro
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL", actorID, role); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND purpose='managed_activate' AND status='pending'", actorID, role); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_managed_activation_codes SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
@@ -640,7 +604,7 @@ FROM identity_actors a WHERE a.id=$1 FOR UPDATE`, actorID).Scan(&current, &hasPl
 func (s *Service) ResetOperatorPassword(ctx context.Context, caller, actorID, password, correlationID string) error {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
-	if actorID == "" || !domain.RoleAllowedForCaller(caller, "operator") {
+	if actorID == "" || !domain.CanResetCredential(caller, "operator") {
 		return domain.ErrForbidden
 	}
 	hash, err := identitysecurity.HashPassword(password)

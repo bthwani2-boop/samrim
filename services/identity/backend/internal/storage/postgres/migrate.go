@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 9
+const SchemaVersion = 11
 
 type schemaRequirement struct {
 	table   string
@@ -18,9 +18,9 @@ type schemaRequirement struct {
 var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_schema_migrations", columns: []string{"version", "applied_at"}, indexes: []string{"identity_schema_migrations_pkey"}},
 	{table: "identity_actors", columns: []string{"id", "phone_e164", "security_enabled", "version", "created_at", "updated_at"}, indexes: []string{"identity_actors_pkey", "identity_actors_phone_uq"}},
-	{table: "identity_actor_roles", columns: []string{"actor_id", "role", "enabled", "activated_at", "version", "created_at", "updated_at"}, indexes: []string{"identity_actor_roles_pkey", "identity_actor_roles_role_idx"}},
+	{table: "identity_actor_roles", columns: []string{"actor_id", "role", "enabled", "activated_at", "version", "created_at", "updated_at"}, indexes: []string{"identity_actor_roles_pkey", "identity_actor_roles_role_idx", "identity_actor_roles_platform_owner_uq"}},
 	{table: "identity_password_credentials", columns: []string{"actor_id", "role", "password_hash", "version", "created_at", "updated_at"}, indexes: []string{"identity_password_credentials_pkey"}},
-	{table: "identity_challenges", columns: []string{"id", "actor_id", "role", "purpose", "phone_e164", "code_hash", "request_ip_hash", "admissible", "status", "attempts", "expires_at", "consumed_at", "created_at", "updated_at"}, indexes: []string{"identity_challenges_pkey", "identity_challenges_one_pending_uq", "identity_challenges_lookup_idx", "identity_challenges_ip_idx", "identity_challenges_phone_purpose_idx"}},
+	{table: "identity_challenges", columns: []string{"id", "actor_id", "role", "purpose", "phone_e164", "code_hash", "request_ip_hash", "admissible", "credential_version", "status", "attempts", "expires_at", "consumed_at", "created_at", "updated_at"}, indexes: []string{"identity_challenges_pkey", "identity_challenges_one_pending_uq", "identity_challenges_lookup_idx", "identity_challenges_ip_idx", "identity_challenges_phone_purpose_idx"}},
 	{table: "identity_challenge_deliveries", columns: []string{"challenge_id", "provider", "status", "attempts", "started_at", "finished_at", "created_at", "updated_at"}, indexes: []string{"identity_challenge_deliveries_pkey", "identity_challenge_deliveries_pending_idx"}},
 	{table: "identity_managed_activation_codes", columns: []string{"id", "actor_id", "role", "phone_e164", "code_hash", "status", "attempts", "expires_at", "consumed_at", "created_by", "created_at", "updated_at"}, indexes: []string{"identity_managed_activation_codes_pkey", "identity_managed_activation_codes_pending_uq", "identity_managed_activation_codes_lookup_idx"}},
 	{table: "identity_sessions", columns: []string{"id", "actor_id", "role", "access_token_hash", "refresh_token_hash", "device_fingerprint_hash", "access_expires_at", "refresh_expires_at", "absolute_expires_at", "revoked_at", "compromised_at", "last_used_at", "version", "created_at"}, indexes: []string{"identity_sessions_pkey", "identity_sessions_access_hash_uq", "identity_sessions_refresh_hash_uq", "identity_sessions_actor_role_idx", "identity_sessions_active_idx", "identity_sessions_absolute_idx"}},

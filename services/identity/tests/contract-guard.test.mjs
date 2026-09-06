@@ -45,6 +45,8 @@ for (const forbidden of [
   "permissions:",
   "roles:",
   "ActorStatus:",
+  "/auth/managed/state:",
+  "/auth/control-panel/state:",
 ]) {
   if (contract.includes(forbidden)) failures.push("legacy/premature Identity authority remains: " + forbidden);
 }
@@ -77,6 +79,9 @@ if (!contract.includes("Identity alone creates actor_id")) {
 }
 if (!contract.includes("Refresh token rotated atomically")) {
   failures.push("refresh rotation contract missing");
+}
+if (!contract.includes("RecoveryComplete") || !contract.includes("No authenticated session is created")) {
+  failures.push("managed recovery must acknowledge completion without creating a session");
 }
 
 const provision = schemaBlock("ProvisionActorRoleRequest", "ActorRoleView");

@@ -139,34 +139,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
-  /auth/managed/state:
-    post:
-      tags: [managed-auth]
-      operationId: readManagedAuthenticationState
-      description: Returns only the next authentication step for the fixed role and phone supplied by the app surface: password, first activation, suspended, or unknown.
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedAuthStateRequest" } } }
-      responses:
-        "200":
-          description: Next authentication step.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ManagedAuthState" } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-
-  /auth/control-panel/state:
-    post:
-      tags: [operator-auth]
-      operationId: readControlPanelAuthenticationState
-      description: Resolves the control-panel role for a phone and returns the next step without requiring a role selector in the client.
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ControlPanelAuthStateRequest" } } }
-      responses:
-        "200":
-          description: Control-panel authentication state.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ControlPanelAuthState" } } }
-        "400": { $ref: "#/components/responses/Invalid" }
-
   /auth/managed/recovery/request:
     post:
       tags: [managed-auth]
@@ -185,12 +157,12 @@ paths:
     post:
       tags: [managed-auth]
       operationId: recoverManagedRole
-      description: Consumes managed-role phone proof, replaces only that role credential, revokes that role's sessions and creates a fresh role-scoped session.
+      description: Consumes managed-role phone proof, replaces only that role credential, revokes that role's sessions, and returns a completion acknowledgement without creating a session.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedRecoveryRequest" } } }
       responses:
-        "200": { $ref: "#/components/responses/TokenPair" }
+        "200": { $ref: "#/components/responses/RecoveryComplete" }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
 
@@ -522,45 +494,6 @@ components:
         role:
           $ref: "#/components/schemas/ManagedActivationRole"
 
-    ManagedAuthStateRequest:
-      type: object
-      additionalProperties: false
-      required: [phone, role]
-      properties:
-        phone:
-          type: string
-        role:
-          $ref: "#/components/schemas/ManagedActivationRole"
-
-    ManagedAuthState:
-      type: object
-      additionalProperties: false
-      required: [next]
-      properties:
-        next:
-          type: string
-          enum: [password, activation, suspended, unknown]
-
-    ControlPanelAuthStateRequest:
-      type: object
-      additionalProperties: false
-      required: [phone]
-      properties:
-        phone:
-          type: string
-
-    ControlPanelAuthState:
-      type: object
-      additionalProperties: false
-      required: [next, role]
-      properties:
-        next:
-          type: string
-          enum: [password, activation, suspended, unknown]
-        role:
-          type: string
-          enum: [operator, platform_owner, ""]
-
     ClientCredentialProofRequest:
       type: object
       additionalProperties: false
@@ -645,7 +578,7 @@ components:
     ManagedRecoveryRequest:
       type: object
       additionalProperties: false
-      required: [phone, role, code, password, deviceFingerprint]
+      required: [phone, role, code, password]
       properties:
         phone:
           type: string
@@ -660,11 +593,6 @@ components:
           type: string
           minLength: 15
           maxLength: 128
-        deviceFingerprint:
-          type: string
-          minLength: 8
-          maxLength: 256
-
     OperatorLoginStartRequest:
       type: object
       additionalProperties: false
@@ -752,6 +680,15 @@ components:
           format: date-time
         identity:
           $ref: "#/components/schemas/ActorIdentity"
+
+    RecoveryResult:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [recovery_complete]
 
     ProvisionActorRoleRequest:
       type: object
@@ -891,6 +828,9 @@ components:
     TokenPair:
       description: Role-scoped authenticated session.
       content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } }
+    RecoveryComplete:
+      description: Credential recovery completed. No authenticated session is created.
+      content: { application/json: { schema: { $ref: "#/components/schemas/RecoveryResult" } } }
     Invalid:
       description: Request validation failed.
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }

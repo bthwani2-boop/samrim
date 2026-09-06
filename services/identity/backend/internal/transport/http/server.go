@@ -45,8 +45,6 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /auth/managed/activation/request", s.requestManagedActivation)
 	mux.HandleFunc("POST /auth/managed/activate", s.activateManaged)
 	mux.HandleFunc("POST /auth/managed/login", s.loginManaged)
-	mux.HandleFunc("POST /auth/managed/state", s.managedAuthState)
-	mux.HandleFunc("POST /auth/control-panel/state", s.controlPanelAuthState)
 	mux.HandleFunc("POST /auth/managed/recovery/request", s.requestManagedRecovery)
 	mux.HandleFunc("POST /auth/managed/recover", s.recoverManaged)
 	mux.HandleFunc("POST /internal/managed-activation-codes", s.internal(s.issueManagedActivationCode))
@@ -177,52 +175,6 @@ func (s *Server) loginManaged(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
-}
-func (s *Server) managedAuthState(w http.ResponseWriter, r *http.Request) {
-	var input domain.ManagedAuthStateRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	state, err := s.actors.ManagedAuthState(r.Context(), input.Phone, input.Role)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	next := "unknown"
-	if state.Exists {
-		switch {
-		case !state.Enabled || !state.SecurityEnabled:
-			next = "suspended"
-		case !state.Activated || !state.HasCredential:
-			next = "activation"
-		default:
-			next = "password"
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"next": next})
-}
-func (s *Server) controlPanelAuthState(w http.ResponseWriter, r *http.Request) {
-	var input domain.ControlPanelAuthStateRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	role, state, err := s.actors.ControlPanelAuthState(r.Context(), input.Phone)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	next := "unknown"
-	if state.Exists {
-		switch {
-		case !state.Enabled || !state.SecurityEnabled:
-			next = "suspended"
-		case !state.Activated || !state.HasCredential:
-			next = "activation"
-		default:
-			next = "password"
-		}
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"next": next, "role": role})
 }
 func (s *Server) requestManagedRecovery(w http.ResponseWriter, r *http.Request) {
 	var input domain.ManagedRecoveryChallengeRequest

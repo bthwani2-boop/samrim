@@ -10,6 +10,8 @@ const defaultEnv = fs.existsSync(path.join(root, "infra/local/compose/.env"))
   : "infra/local/compose/.env.example";
 const envFile = path.resolve(root, requestedEnv || defaultEnv);
 const runtimeRequestTimeoutMs = 30_000;
+const runtimeHost = process.argv.find((arg) => arg.startsWith("--host="))?.slice("--host=".length) || "127.0.0.1";
+const runtimeSourceIp = process.argv.find((arg) => arg.startsWith("--source-ip="))?.slice("--source-ip=".length) || "198.18.0.1";
 
 function fail(message) {
   console.error("IDENTITY_RUNTIME_SEMANTICS=FAIL");
@@ -32,7 +34,7 @@ function parseEnv(file) {
 
 const env = parseEnv(envFile);
 const port = env.SAMRIM_IDENTITY_PORT || "18082";
-const baseUrl = "http://127.0.0.1:" + port;
+const baseUrl = "http://" + runtimeHost + ":" + port;
 const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
 const abuseSecret = env.IDENTITY_ABUSE_HMAC_SECRET;
 const dshToken = env.IDENTITY_DSH_SERVICE_TOKEN;
@@ -105,6 +107,7 @@ async function request(method, pathname, options = {}) {
       Accept: "application/json",
       ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(options.token ? { Authorization: "Bearer " + options.token } : {}),
+      "X-Forwarded-For": runtimeSourceIp,
       ...(options.headers || {}),
     },
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
@@ -204,6 +207,8 @@ const clientLogin = await expect("POST", "/auth/client/login", 200, {
   body: { phone: sharedPhone, password: customerPassword, deviceFingerprint: "device-client-login-" + suffix },
 });
 assertSession(clientLogin, "client", "app-client", actorId);
+await expect("POST", "/auth/managed/state", 404, { body: { phone: sharedPhone, role: "captain" } });
+await expect("POST", "/auth/control-panel/state", 404, { body: { phone: sharedPhone } });
 
 // Duplicate registration is non-enumerating at request time but cannot overwrite the client credential.
 const duplicateRegistration = await requestChallenge(
@@ -419,6 +424,42 @@ const reactivatedCaptain = await expect("POST", "/auth/managed/activate", 200, {
   },
 });
 assertSession(reactivatedCaptain, "captain", "app-captain", actorId);
+
+// Managed/operator recovery replaces the credential, revokes role sessions, and never creates a session.
+const operatorRecovery = await requestChallenge(
+  "/auth/managed/recovery/request",
+  { phone: sharedPhone, role: "operator" },
+  "managed_recover",
+);
+const recoveredOperatorPassword = "Operator-Recovered-" + suffix + "-Strong-Password";
+const operatorRecoveryResult = await expect("POST", "/auth/managed/recover", 200, {
+  body: { phone: sharedPhone, role: "operator", code: operatorRecovery.code, password: recoveredOperatorPassword },
+});
+assert(operatorRecoveryResult.status === "recovery_complete", "operator recovery did not return the canonical completion result");
+assert(!("accessToken" in operatorRecoveryResult), "operator recovery created an access token");
+await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
+const recoveredOperatorStart = await requestChallenge(
+  "/auth/operator/login/start",
+  { phone: sharedPhone, role: "operator", password: recoveredOperatorPassword },
+  "operator_mfa",
+);
+const recoveredOperatorPair = await expect("POST", "/auth/operator/login/complete", 200, {
+  body: { phone: sharedPhone, role: "operator", code: recoveredOperatorStart.code, deviceFingerprint: "device-operator-recovered-" + suffix },
+});
+assertSession(recoveredOperatorPair, "operator", "control-panel", actorId);
+const staleOperatorStart = await requestChallenge(
+  "/auth/operator/login/start",
+  { phone: sharedPhone, role: "operator", password: recoveredOperatorPassword },
+  "operator_mfa",
+);
+const resetOperatorPassword = "Operator-Reset-" + suffix + "-Strong-Password";
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
+  headers: service(platformToken),
+  body: { password: resetOperatorPassword },
+});
+await expect("POST", "/auth/operator/login/complete", 401, {
+  body: { phone: sharedPhone, role: "operator", code: staleOperatorStart.code, deviceFingerprint: "device-operator-stale-" + suffix },
+});
 
 // Client recovery is a distinct phone-proof path and revokes only client sessions.
 const recoveryPhone = phone();

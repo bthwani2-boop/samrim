@@ -96,7 +96,7 @@ for (const [app, role, surface] of [
     if (runtime.includes(forbidden)) failures.push(runtimePath + " contains wrong auth flow " + forbidden);
   }
   const page = read("packages/design-system/src/native/ManagedIdentityGate.tsx");
-  if (!page.includes("readState") || !page.includes("requestCode") || !page.includes("requestRecovery") || !page.includes("recover") || !page.includes("activate")) {
+  if (!page.includes("chooseIntent") || !page.includes("requestCode") || !page.includes("requestRecovery") || !page.includes("recover") || !page.includes("activate")) {
     failures.push(app + " UI is not bound to one-time managed activation");
   }
   for (const phrase of ["رمز التفعيل", "رمز تحقق الهاتف", "تفعيل أول مرة", "ابدأ برقم الهاتف"]) {
@@ -136,9 +136,10 @@ const controlPage = read("apps/control-panel/app/page.tsx");
 for (const required of ["/api/auth/login/start", "/api/auth/login/complete", "التحقق الثاني", "تم توثيق جلستك بعاملين"]) {
   if (!controlPage.includes(required)) failures.push("control-panel UI missing MFA flow " + required);
 }
-for (const required of ["/api/auth/state", "ابدأ برقم الهاتف", "account-role", "الدور الإداري", "استرداد وإعادة تفعيل الحساب"]) {
+for (const required of ["ابدأ برقم الهاتف", "login-role", "account-role", "الدور الإداري", "استرداد وإعادة تفعيل الحساب"]) {
   if (!controlPage.includes(required)) failures.push("control-panel UI missing separated phone-first login or administrative provisioning flow " + required);
 }
+if (controlPage.includes("/api/auth/state")) failures.push("control-panel UI retains a public authentication-state oracle");
 if (controlPage.includes("ManagedAccessPanel")) failures.push("control-panel retains a shadow managed provisioning panel");
 if (controlPage.includes("username")) failures.push("control-panel still requires username without Product need");
 
@@ -265,10 +266,10 @@ for (const required of ["Provider() string", 'return "mailpit"', 'return "twilio
 const operatorStart = challenge.slice(challenge.indexOf("func (s *Service) StartOperatorLogin"), challenge.indexOf("func (s *Service) CompleteOperatorLogin"));
 if (operatorStart.includes("CreateTx(")) failures.push("operator password proof can create a session before MFA");
 for (const required of [
-  "expectedCredentialHash",
-  "currentHash",
+  "expectedCredentialVersion",
+  "currentVersion",
   "FOR UPDATE OF c,r,a",
-  "ConstantTimeHexEqual(currentHash, expectedCredentialHash)",
+  "credential_version",
 ]) {
   if (!challenge.includes(required)) failures.push("operator MFA issuance is not fenced against credential rotation: " + required);
 }
@@ -336,7 +337,7 @@ for (const required of ["/internal/bootstrap/platform-owner", 'caller != "platfo
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [
-  "const SchemaVersion = 9",
+    "const SchemaVersion = 11",
   "CurrentSchemaVersion",
   "migration history is non-contiguous",
   "identity_password_credentials",

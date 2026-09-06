@@ -48,14 +48,6 @@ type ActorSearchPage struct {
 	NextCursor string          `json:"nextCursor,omitempty"`
 }
 
-type ManagedAuthState struct {
-	Exists          bool
-	Enabled         bool
-	SecurityEnabled bool
-	Activated       bool
-	HasCredential   bool
-}
-
 type ProvisionActorRoleInput struct {
 	PhoneE164 string `json:"phoneE164"`
 	Role      string `json:"role"`
@@ -79,15 +71,6 @@ type ManagedChallengeRequest struct {
 type ManagedRecoveryChallengeRequest struct {
 	Phone string `json:"phone"`
 	Role  string `json:"role"`
-}
-
-type ManagedAuthStateRequest struct {
-	Phone string `json:"phone"`
-	Role  string `json:"role"`
-}
-
-type ControlPanelAuthStateRequest struct {
-	Phone string `json:"phone"`
 }
 
 type ClientCredentialProofRequest struct {
@@ -120,11 +103,10 @@ type ManagedActivationRequest struct {
 }
 
 type ManagedRecoveryRequest struct {
-	Phone             string `json:"phone"`
-	Role              string `json:"role"`
-	Code              string `json:"code"`
-	Password          string `json:"password"`
-	DeviceFingerprint string `json:"deviceFingerprint"`
+	Phone    string `json:"phone"`
+	Role     string `json:"role"`
+	Code     string `json:"code"`
+	Password string `json:"password"`
 }
 
 type ManagedActivationCodeIssueRequest struct {
@@ -178,6 +160,10 @@ type TokenPair struct {
 	Identity     ActorIdentity `json:"identity"`
 }
 
+type RecoveryResult struct {
+	Status string `json:"status"`
+}
+
 type SessionInfo struct {
 	SessionID     string     `json:"sessionId"`
 	Role          string     `json:"role"`
@@ -225,18 +211,39 @@ func SurfaceForRole(role string) (string, bool) {
 	return surface, ok
 }
 
-func RoleAllowedForCaller(caller, role string) bool {
+func CanProvisionRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch strings.ToLower(strings.TrimSpace(caller)) {
 	case "dsh":
-		return role == "partner" || role == "captain" || role == "field"
+		return IsManagedRole(role)
 	case "platform-control":
-		return role == "client" || role == "operator"
+		return role == "operator"
 	case "platform-bootstrap":
 		return role == "platform_owner"
 	default:
 		return false
 	}
+}
+
+func CanReadRole(caller, role string) bool {
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch caller {
+	case "dsh":
+		return IsManagedRole(role)
+	case "platform-control":
+		return role == "client" || role == "operator"
+	default:
+		return false
+	}
+}
+
+func CanSetRoleEnabled(caller, role string) bool {
+	return CanReadRole(caller, role)
+}
+
+func CanResetCredential(caller, role string) bool {
+	return strings.EqualFold(strings.TrimSpace(caller), "platform-control") && strings.EqualFold(strings.TrimSpace(role), "operator")
 }
 
 func CanIssueManagedActivationCodeForRole(caller, role string) bool {

@@ -7,9 +7,7 @@ import type {
   ManagedActivationRequest,
   ManagedRecoveryChallengeRequest,
   ManagedRecoveryRequest,
-  ManagedAuthStateRequest,
-  ManagedAuthState,
-  ControlPanelAuthStateRequest,
+  RecoveryResult,
   ManagedPasswordLoginRequest,
   ManagedChallengeRequest,
   OperatorLoginCompleteRequest,
@@ -40,9 +38,7 @@ export type IdentityClient = Readonly<{
   requestManagedActivation(request: ManagedChallengeRequest): Promise<Challenge>;
   activateManaged(request: ManagedActivationRequest): Promise<TokenPair>;
   requestManagedRecovery(request: ManagedRecoveryChallengeRequest): Promise<Challenge>;
-  recoverManaged(request: ManagedRecoveryRequest): Promise<TokenPair>;
-  managedAuthState(request: ManagedAuthStateRequest): Promise<ManagedAuthState>;
-  controlPanelAuthState(request: ControlPanelAuthStateRequest): Promise<Readonly<{ next: "password" | "activation" | "suspended" | "unknown"; role: "operator" | "platform_owner" | "" }>>;
+  recoverManaged(request: ManagedRecoveryRequest): Promise<RecoveryResult>;
   startOperatorLogin(request: OperatorLoginStartRequest): Promise<Challenge>;
   completeOperatorLogin(request: OperatorLoginCompleteRequest): Promise<TokenPair>;
   refresh(request: RefreshRequest): Promise<TokenPair>;
@@ -134,8 +130,6 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     activateManaged: (body) => request("/auth/managed/activate", { method: "POST", body }),
     requestManagedRecovery: (body) => request("/auth/managed/recovery/request", { method: "POST", body }),
     recoverManaged: (body) => request("/auth/managed/recover", { method: "POST", body }),
-    managedAuthState: (body) => request("/auth/managed/state", { method: "POST", body }),
-    controlPanelAuthState: (body) => request("/auth/control-panel/state", { method: "POST", body }),
     startOperatorLogin: (body) => request("/auth/operator/login/start", { method: "POST", body }),
     completeOperatorLogin: (body) => request("/auth/operator/login/complete", { method: "POST", body }),
     refresh: (body) => request("/auth/refresh", { method: "POST", body }),

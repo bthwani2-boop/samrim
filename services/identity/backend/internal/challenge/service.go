@@ -63,7 +63,7 @@ FROM identity_actors WHERE phone_e164=$1`, phone).Scan(&actorID, &securityEnable
 	} else {
 		admissible = securityEnabled && !hasCredential && !roleDisabled
 	}
-	return s.issue(ctx, phone, "client", domain.ChallengeClientRegister, actorID, admissible, "", ipHash)
+	return s.issue(ctx, phone, "client", domain.ChallengeClientRegister, actorID, admissible, 0, ipHash)
 }
 
 func (s *Service) RegisterClient(ctx context.Context, input domain.ClientCredentialProofRequest) (domain.TokenPair, error) {
@@ -110,7 +110,7 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 	if limited {
 		return domain.TokenPair{}, domain.ErrRateLimited
 	}
-	a, hash, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
+	a, hash, _, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
 	if errors.Is(lookupErr, domain.ErrNotFound) {
 		_ = identitysecurity.VerifyPassword(dummyPasswordHash, password)
 		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash)
@@ -168,7 +168,7 @@ func (s *Service) RequestClientRecovery(ctx context.Context, input domain.PhoneR
 	if err != nil {
 		return domain.Challenge{}, domain.ErrInvalidInput
 	}
-	a, _, lookupErr := s.actors.PasswordCredential(ctx, phone, "client")
+	a, _, _, lookupErr := s.actors.PasswordCredential(ctx, phone, "client")
 	admissible := lookupErr == nil
 	actorID := ""
 	if admissible {
@@ -176,7 +176,7 @@ func (s *Service) RequestClientRecovery(ctx context.Context, input domain.PhoneR
 	} else if lookupErr != nil && !errors.Is(lookupErr, domain.ErrNotFound) {
 		return domain.Challenge{}, lookupErr
 	}
-	return s.issue(ctx, phone, "client", domain.ChallengeClientRecover, actorID, admissible, "", ipHash)
+	return s.issue(ctx, phone, "client", domain.ChallengeClientRecover, actorID, admissible, 0, ipHash)
 }
 
 func (s *Service) RecoverClient(ctx context.Context, input domain.ClientCredentialProofRequest) (domain.TokenPair, error) {
@@ -204,7 +204,7 @@ func (s *Service) RequestManagedRecovery(ctx context.Context, input domain.Manag
 	admissible := false
 	actorID := ""
 	if lookupErr == nil && roleView.ActivatedAt != nil {
-		if _, _, credentialErr := s.actors.PasswordCredential(ctx, phone, role); credentialErr == nil {
+		if _, _, _, credentialErr := s.actors.PasswordCredential(ctx, phone, role); credentialErr == nil {
 			admissible = true
 			actorID = a.ID
 		} else if !errors.Is(credentialErr, domain.ErrNotFound) {
@@ -213,23 +213,27 @@ func (s *Service) RequestManagedRecovery(ctx context.Context, input domain.Manag
 	} else if lookupErr != nil && !errors.Is(lookupErr, domain.ErrNotFound) && !errors.Is(lookupErr, domain.ErrActorBlocked) {
 		return domain.Challenge{}, lookupErr
 	}
-	return s.issue(ctx, phone, role, domain.ChallengeManagedRecover, actorID, admissible, "", ipHash)
+	return s.issue(ctx, phone, role, domain.ChallengeManagedRecover, actorID, admissible, 0, ipHash)
 }
 
-func (s *Service) RecoverManaged(ctx context.Context, input domain.ManagedRecoveryRequest) (domain.TokenPair, error) {
+func (s *Service) RecoverManaged(ctx context.Context, input domain.ManagedRecoveryRequest) (domain.RecoveryResult, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
 	if !domain.IsManagedActivationRole(role) {
-		return domain.TokenPair{}, domain.ErrInvalidInput
+		return domain.RecoveryResult{}, domain.ErrInvalidInput
 	}
-	return s.consume(ctx, input.Phone, role, domain.ChallengeManagedRecover, input.Code, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
+	_, err := s.consume(ctx, input.Phone, role, domain.ChallengeManagedRecover, input.Code, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
 		if actorID == "" {
 			return domain.TokenPair{}, domain.ErrInvalidChallenge
 		}
 		if err := s.actors.ResetManagedPasswordTx(ctx, tx, actorID, role, input.Password); err != nil {
 			return domain.TokenPair{}, err
 		}
-		return s.sessions.CreateTx(ctx, tx, actorID, role, input.DeviceFingerprint)
+		return domain.TokenPair{Identity: domain.ActorIdentity{Subject: actorID}}, nil
 	})
+	if err != nil {
+		return domain.RecoveryResult{}, err
+	}
+	return domain.RecoveryResult{Status: "recovery_complete"}, nil
 }
 
 func (s *Service) RequestManagedActivation(ctx context.Context, input domain.ManagedChallengeRequest, ipHash string) (domain.Challenge, error) {
@@ -252,7 +256,7 @@ func (s *Service) RequestManagedActivation(ctx context.Context, input domain.Man
 	} else if lookupErr != nil && !errors.Is(lookupErr, domain.ErrNotFound) && !errors.Is(lookupErr, domain.ErrActorBlocked) {
 		return domain.Challenge{}, lookupErr
 	}
-	return s.issue(ctx, phone, role, domain.ChallengeManagedActivate, actorID, admissible, "", ipHash)
+	return s.issue(ctx, phone, role, domain.ChallengeManagedActivate, actorID, admissible, 0, ipHash)
 }
 
 func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActivationRequest) (domain.TokenPair, error) {
@@ -429,7 +433,7 @@ func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorL
 	if limited {
 		return domain.Challenge{}, domain.ErrRateLimited
 	}
-	a, hash, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
+	a, hash, credentialVersion, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
 	valid := lookupErr == nil && identitysecurity.VerifyPassword(hash, input.Password)
 	if errors.Is(lookupErr, domain.ErrNotFound) {
 		_ = identitysecurity.VerifyPassword(dummyPasswordHash, input.Password)
@@ -444,12 +448,12 @@ func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorL
 		if limited {
 			return domain.Challenge{}, domain.ErrRateLimited
 		}
-		return s.issue(ctx, phone, role, domain.ChallengeOperatorMFA, "", false, "", ipHash)
+		return s.issue(ctx, phone, role, domain.ChallengeOperatorMFA, "", false, 0, ipHash)
 	}
 	if err := s.recordPasswordSuccess(ctx, phone, role, ipHash); err != nil {
 		return domain.Challenge{}, err
 	}
-	return s.issue(ctx, phone, role, domain.ChallengeOperatorMFA, a.ID, true, hash, ipHash)
+	return s.issue(ctx, phone, role, domain.ChallengeOperatorMFA, a.ID, true, credentialVersion, ipHash)
 }
 
 func (s *Service) CompleteOperatorLogin(ctx context.Context, input domain.OperatorLoginCompleteRequest) (domain.TokenPair, error) {
@@ -465,7 +469,7 @@ func (s *Service) CompleteOperatorLogin(ctx context.Context, input domain.Operat
 	})
 }
 
-func (s *Service) issue(ctx context.Context, phone, role, purpose, actorID string, admissible bool, expectedCredentialHash, ipHash string) (domain.Challenge, error) {
+func (s *Service) issue(ctx context.Context, phone, role, purpose, actorID string, admissible bool, expectedCredentialVersion int, ipHash string) (domain.Challenge, error) {
 	ipHash = strings.TrimSpace(ipHash)
 	if len(ipHash) != 64 {
 		return domain.Challenge{}, domain.ErrInvalidInput
@@ -485,15 +489,15 @@ func (s *Service) issue(ctx context.Context, phone, role, purpose, actorID strin
 		}
 	}
 	if purpose == domain.ChallengeOperatorMFA && admissible {
-		var currentHash string
+		var currentVersion int
 		var enabled, securityEnabled bool
-		err := tx.QueryRowContext(ctx, `SELECT c.password_hash,r.enabled,a.security_enabled
+		err := tx.QueryRowContext(ctx, `SELECT c.version,r.enabled,a.security_enabled
 FROM identity_password_credentials c
 JOIN identity_actor_roles r ON r.actor_id=c.actor_id AND r.role=c.role
 JOIN identity_actors a ON a.id=c.actor_id
 WHERE c.actor_id=$1 AND c.role=$3 AND a.phone_e164=$2
-FOR UPDATE OF c,r,a`, actorID, phone, role).Scan(&currentHash, &enabled, &securityEnabled)
-		if errors.Is(err, sql.ErrNoRows) || !enabled || !securityEnabled || !identitysecurity.ConstantTimeHexEqual(currentHash, expectedCredentialHash) {
+		FOR UPDATE OF c,r,a`, actorID, phone, role).Scan(&currentVersion, &enabled, &securityEnabled)
+		if errors.Is(err, sql.ErrNoRows) || !enabled || !securityEnabled || currentVersion != expectedCredentialVersion {
 			admissible = false
 			actorID = ""
 		} else if err != nil {
@@ -530,7 +534,7 @@ FOR UPDATE OF c,r,a`, actorID, phone, role).Scan(&currentHash, &enabled, &securi
 	}
 	expires := s.now().UTC().Add(10 * time.Minute)
 	codeHash := identitysecurity.HMAC256Hex(s.secret, challengeID, purpose, code)
-	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_challenges(id,actor_id,role,purpose,phone_e164,code_hash,request_ip_hash,admissible,status,attempts,expires_at) VALUES($1,NULLIF($2,''),$3,$4,$5,$6,$7,$8,'pending',0,$9)", challengeID, actorID, role, purpose, phone, codeHash, ipHash, admissible, expires); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_challenges(id,actor_id,role,purpose,phone_e164,code_hash,request_ip_hash,admissible,credential_version,status,attempts,expires_at) VALUES($1,NULLIF($2,''),$3,$4,$5,$6,$7,$8,NULLIF($9,0),'pending',0,$10)", challengeID, actorID, role, purpose, phone, codeHash, ipHash, admissible, expectedCredentialVersion, expires); err != nil {
 		return domain.Challenge{}, err
 	}
 	deliveryStatus := "suppressed"
@@ -581,7 +585,8 @@ func (s *Service) consume(ctx context.Context, rawPhone, role, purpose, rawCode 
 	var attempts int
 	var expires time.Time
 	var admissible bool
-	err = tx.QueryRowContext(ctx, "SELECT id,actor_id,code_hash,attempts,expires_at,admissible FROM identity_challenges WHERE purpose=$1 AND role=$2 AND phone_e164=$3 AND status='pending' ORDER BY created_at DESC LIMIT 1 FOR UPDATE", purpose, role, phone).Scan(&challengeID, &actorID, &codeHash, &attempts, &expires, &admissible)
+	var credentialVersion sql.NullInt64
+	err = tx.QueryRowContext(ctx, "SELECT id,actor_id,code_hash,attempts,expires_at,admissible,credential_version FROM identity_challenges WHERE purpose=$1 AND role=$2 AND phone_e164=$3 AND status='pending' ORDER BY created_at DESC LIMIT 1 FOR UPDATE", purpose, role, phone).Scan(&challengeID, &actorID, &codeHash, &attempts, &expires, &admissible, &credentialVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidChallenge
 	}
@@ -624,6 +629,24 @@ func (s *Service) consume(ctx context.Context, rawPhone, role, purpose, rawCode 
 	resolvedActorID := ""
 	if actorID.Valid {
 		resolvedActorID = actorID.String
+	}
+	if purpose == domain.ChallengeOperatorMFA {
+		var currentVersion int
+		err := tx.QueryRowContext(ctx, `SELECT c.version
+FROM identity_password_credentials c
+JOIN identity_actor_roles r ON r.actor_id=c.actor_id AND r.role=c.role
+JOIN identity_actors a ON a.id=c.actor_id
+WHERE c.actor_id=$1 AND c.role=$2 AND a.phone_e164=$3 AND r.enabled=true AND a.security_enabled=true
+FOR UPDATE OF c,r,a`, resolvedActorID, role, phone).Scan(&currentVersion)
+		if err != nil || !credentialVersion.Valid || int(credentialVersion.Int64) != currentVersion {
+			if _, updateErr := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE id=$1", challengeID); updateErr != nil {
+				return domain.TokenPair{}, updateErr
+			}
+			if commitErr := tx.Commit(); commitErr != nil {
+				return domain.TokenPair{}, commitErr
+			}
+			return domain.TokenPair{}, domain.ErrInvalidChallenge
+		}
 	}
 	pair, err := action(tx, resolvedActorID)
 	if err != nil {

@@ -15,18 +15,32 @@ func TestCanonicalRoleSurfaceMapping(t *testing.T) {
 	}
 }
 
-func TestTrustedCallerRoleAllowlist(t *testing.T) {
-	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"dsh", "field"}, {"platform-control", "client"}, {"platform-control", "operator"}, {"platform-bootstrap", "platform_owner"}}
+func TestTrustedCallerProvisionBoundary(t *testing.T) {
+	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"dsh", "field"}, {"platform-control", "operator"}, {"platform-bootstrap", "platform_owner"}}
 	for _, pair := range allowed {
-		if !RoleAllowedForCaller(pair[0], pair[1]) {
+		if !CanProvisionRole(pair[0], pair[1]) {
 			t.Fatalf("expected %s to manage %s", pair[0], pair[1])
 		}
 	}
-	denied := [][2]string{{"dsh", "operator"}, {"platform-control", "captain"}, {"platform-control", "platform_owner"}, {"browser", "operator"}}
+	denied := [][2]string{{"dsh", "operator"}, {"platform-control", "client"}, {"platform-control", "captain"}, {"platform-control", "platform_owner"}, {"browser", "operator"}}
 	for _, pair := range denied {
-		if RoleAllowedForCaller(pair[0], pair[1]) {
+		if CanProvisionRole(pair[0], pair[1]) {
 			t.Fatalf("unexpected permission: %s can manage %s", pair[0], pair[1])
 		}
+	}
+}
+
+func TestTrustedCallerOperationBoundaries(t *testing.T) {
+	if !CanReadRole("platform-control", "client") || !CanReadRole("dsh", "partner") {
+		t.Fatal("expected role reads inside caller boundaries")
+	}
+	for _, pair := range [][2]string{{"platform-control", "platform_owner"}, {"browser", "operator"}} {
+		if CanReadRole(pair[0], pair[1]) {
+			t.Fatalf("unexpected role read: %s for %s", pair[0], pair[1])
+		}
+	}
+	if !CanResetCredential("platform-control", "operator") || CanResetCredential("platform-control", "client") {
+		t.Fatal("operator credential reset must be operation-scoped")
 	}
 }
 

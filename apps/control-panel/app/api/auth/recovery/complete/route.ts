@@ -9,8 +9,8 @@ export async function POST(request: Request) {
   const password = typeof body?.password === "string" ? body.password : "";
   if (!phone || !/^\d{6}$/.test(code) || password.length < 15) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "phone, code, and password are required" } }, { status: 400 });
   try {
-    const identity = await completeOperatorRecovery(phone, code, password);
-    return NextResponse.json({ identity }, { headers: { "Cache-Control": "no-store" } });
+    const result = await completeOperatorRecovery(phone, code, password);
+    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ error: identityErrorPayload(error) }, { status: identityHttpStatus(error) });
   }

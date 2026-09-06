@@ -76,10 +76,6 @@ export function restoreIdentitySession(): Promise<IdentitySessionState> {
 export function requestManagedActivation(phone: string, activationCode: string) {
   return identityClient().requestManagedActivation({ phone, role, activationCode });
 }
-export async function readManagedAuthState(phone: string): Promise<"password" | "activation" | "suspended" | "unknown"> {
-  return (await identityClient().managedAuthState({ phone, role })).next;
-}
-
 export async function activateManagedIdentity(phone: string, activationCode: string, verificationCode: string, password: string): Promise<IdentitySessionState> {
   const pair = await identityClient().activateManaged({
     phone,
@@ -107,8 +103,8 @@ export function requestManagedRecovery(phone: string) {
 }
 
 export async function recoverManagedIdentity(phone: string, code: string, password: string): Promise<IdentitySessionState> {
-  const pair = await identityClient().recoverManaged({ phone, role, code, password, deviceFingerprint: await deviceFingerprint() });
-  return identitySession().adopt(pair);
+  await identityClient().recoverManaged({ phone, role, code, password });
+  return { kind: "signed_out" };
 }
 
 export function logoutIdentity(): Promise<void> {
