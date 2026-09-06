@@ -97,7 +97,50 @@ function AccountAccessPanel() {
 
   const canIssueActivation = managedRole && status !== null && !status.activated;
   const canIssueRecovery = managedRole && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
-  return <section className="access-card" aria-labelledby="account-access-title"><div className="access-card-heading"><span className="step-chip">حماية الوصول</span><p className="eyebrow">إدارة الحسابات والأدوار</p><h2 id="account-access-title">تهيئة أو إيقاف الحساب</h2><p className="muted">هذه شاشة إدارية مستقلة: اختر الدور ثم ابحث برقم الهاتف. لا تختار الدور في واجهة دخول الشريك أو الكابتن أو الميداني أو الموظف؛ هناك يحدده الرقم تلقائيًا.</p></div><div className="access-form"><label className="field-label" htmlFor="account-role">الدور الإداري<select id="account-role" value={role} disabled={busy} onChange={(event) => { setRole(event.target.value as ActorType); setStatus(null); setError(""); }}><option value="client">العميل</option><option value="partner">الشريك</option><option value="captain">الكابتن</option><option value="field">الميداني</option><option value="operator">موظف لوحة التحكم</option></select></label><label className="field-label" htmlFor="account-phone">رقم الهاتف<input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>{canIssueActivation ? <button className="button button-primary" disabled={busy || !phone.trim() || status.enabled === false} onClick={() => void provision()}>{busy ? "جارٍ تجهيز الحساب…" : status.exists ? "إصدار رمز التفعيل" : "تهيئة الحساب وإصدار الرمز"}</button> : <span className="form-action-placeholder" aria-hidden="true" />}</div>{status ? <div className={`managed-status ${status.enabled && status.securityEnabled ? "managed-status-info" : "managed-status-warning"}`} role="status"><strong>{status.enabled ? "الدور مفعّل" : "الدور موقوف"} · {status.securityEnabled ? "الهوية مسموحة" : "الهوية موقوفة بالكامل"}</strong><p>{status.activated ? "يوجد تسجيل سابق لهذا الدور." : "الدور مهيأ ولم يكتمل تفعيله بعد."}</p>{status.activated && managedRole ? <div className="managed-status managed-status-warning" role="alert"><strong>تم تفعيل هذا الدور من قبل.</strong><p>{canIssueRecovery ? "يمكنك إصدار رمز جديد لاسترداد وإعادة تفعيل الحساب الموجود؛ ستُلغى الجلسات السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>{canIssueRecovery ? <button className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ استرداد الحساب…" : "استرداد وإعادة تفعيل الحساب"}</button> : null}</div> : null}<label className="field-label" htmlFor="access-reason">سبب التغيير<input id="access-reason" maxLength={500} placeholder="مثال: انتهاء التعاقد أو استرداد الجهاز" value={reason} onChange={(event) => setReason(event.target.value)} /></label><div className="managed-status-actions">{status.enabled ? <button className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-role")}>إيقاف الدور</button> : <button className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-role")}>إعادة تفعيل الدور</button>}{status.securityEnabled ? <button className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-identity")}>إيقاف الهوية بالكامل</button> : <button className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-identity")}>إعادة تفعيل الهوية</button>}</div></div> : null}{result ? <div className="code-output" role="status"><span className="summary-label">رمز {roleLabel}</span><code>{result.code}</code><p>سيظهر الرمز مرة واحدة فقط، وتنتهي صلاحيته في {new Date(result.expiresAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}</section>;
+  const activationBlocked = status?.exists === true && status.enabled === false;
+  const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true);
+  return <section className="access-card" aria-labelledby="account-access-title">
+    <div className="access-card-heading">
+      <span className="step-chip">حماية الوصول</span>
+      <p className="eyebrow">إدارة الحسابات والأدوار</p>
+      <h2 id="account-access-title">تهيئة أو إيقاف الحساب</h2>
+      <p className="muted">هذه شاشة إدارية مستقلة: اختر الدور ثم ابحث برقم الهاتف. لا تختار الدور في واجهة دخول الشريك أو الكابتن أو الميداني أو الموظف؛ هناك يحدده الرقم تلقائيًا.</p>
+    </div>
+    <div className="access-form">
+      <label className="field-label" htmlFor="account-role">الدور الإداري
+        <select id="account-role" value={role} disabled={busy} onChange={(event) => { setRole(event.target.value as ActorType); setStatus(null); setError(""); }}>
+          <option value="client">العميل</option><option value="partner">الشريك</option><option value="captain">الكابتن</option><option value="field">الميداني</option><option value="operator">موظف لوحة التحكم</option>
+        </select>
+      </label>
+      <label className="field-label" htmlFor="account-phone">رقم الهاتف
+        <input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} />
+      </label>
+      {canIssueActivation ? <button className="button button-primary" disabled={busy || !phone.trim() || activationBlocked} onClick={() => void provision()}>{busy ? "جارٍ تجهيز الحساب…" : status.exists ? "إصدار رمز التفعيل" : "تهيئة الحساب وإصدار الرمز"}</button> : <span className="form-action-placeholder" aria-hidden="true" />}
+    </div>
+    {status ? <div className={`managed-status ${statusIsHealthy ? "managed-status-info" : "managed-status-warning"}`} role="status">
+      {status.exists ? <>
+        <strong>{status.enabled ? "الدور مفعّل" : "الدور موقوف"} · {status.securityEnabled ? "الهوية مسموحة" : "الهوية موقوفة بالكامل"}</strong>
+        <p>{status.activated ? "يوجد تسجيل سابق لهذا الدور." : "الدور مهيأ ولم يكتمل تفعيله بعد."}</p>
+        {status.activated && managedRole ? <div className="managed-status managed-status-warning" role="alert">
+          <strong>تم تفعيل هذا الدور من قبل.</strong>
+          <p>{canIssueRecovery ? "يمكنك إصدار رمز جديد لاسترداد وإعادة تفعيل الحساب الموجود؛ ستُلغى الجلسات السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
+          {canIssueRecovery ? <button className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ استرداد الحساب…" : "استرداد وإعادة تفعيل الحساب"}</button> : null}
+        </div> : null}
+        <label className="field-label" htmlFor="access-reason">سبب التغيير
+          <input id="access-reason" maxLength={500} placeholder="مثال: انتهاء التعاقد أو استرداد الجهاز" value={reason} onChange={(event) => setReason(event.target.value)} />
+        </label>
+        <div className="managed-status-actions">
+          {status.enabled ? <button className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-role")}>إيقاف الدور</button> : <button className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-role")}>إعادة تفعيل الدور</button>}
+          {status.securityEnabled ? <button className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-identity")}>إيقاف الهوية بالكامل</button> : <button className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-identity")}>إعادة تفعيل الهوية</button>}
+        </div>
+      </> : <>
+        <strong>لا يوجد حساب مهيأ لهذا الدور.</strong>
+        <p>{managedRole ? "يمكنك تهيئة الدور وإصدار رمز التفعيل الأول." : "تسجيل العميل يتم من تطبيق العميل، ولا يُصدر له رمز من هذه الشاشة."}</p>
+      </>}
+    </div> : null}
+    {result ? <div className="code-output" role="status"><span className="summary-label">رمز {roleLabel}</span><code>{result.code}</code><p>سيظهر الرمز مرة واحدة فقط، وتنتهي صلاحيته في {new Date(result.expiresAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}
+    {error ? <p className="identity-error" role="alert">{error}</p> : null}
+  </section>;
 }
 
 const visualTokens = {
