@@ -218,11 +218,13 @@ func CanProvisionRole(caller, role string) bool {
 		return IsManagedRole(role)
 	case "platform-control":
 		return role == "operator"
-	case "platform-bootstrap":
-		return role == "platform_owner"
 	default:
 		return false
 	}
+}
+
+func CanBootstrapPlatformOwner(caller string) bool {
+	return strings.EqualFold(strings.TrimSpace(caller), "platform-bootstrap")
 }
 
 func CanReadRole(caller, role string) bool {

@@ -315,7 +315,7 @@ func (s *Server) provisionRole(w http.ResponseWriter, r *http.Request, caller st
 	writeJSON(w, status, view)
 }
 func (s *Server) bootstrapPlatformOwner(w http.ResponseWriter, r *http.Request, caller string) {
-	if caller != "platform-bootstrap" {
+	if !domain.CanBootstrapPlatformOwner(caller) {
 		writeDomainError(w, domain.ErrForbidden)
 		return
 	}
@@ -323,8 +323,7 @@ func (s *Server) bootstrapPlatformOwner(w http.ResponseWriter, r *http.Request, 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	input.Role = "platform_owner"
-	view, err := s.actors.ProvisionTrusted(r.Context(), caller, input)
+	view, err := s.actors.ProvisionPlatformOwnerBootstrap(r.Context(), caller, input)
 	if err != nil {
 		writeDomainError(w, err)
 		return

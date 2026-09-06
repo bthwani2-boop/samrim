@@ -325,19 +325,19 @@ for (const required of ["SELECT EXISTS(SELECT 1 FROM identity_actor_roles WHERE 
   if (!actorService.includes(required)) failures.push("Identity owner bootstrap fence missing " + required);
 }
 const domainTypes = read("services/identity/backend/internal/domain/types.go");
-for (const required of ["case \"platform-bootstrap\":", "return role == \"platform_owner\""]) {
+for (const required of ["func CanBootstrapPlatformOwner", "return strings.EqualFold(strings.TrimSpace(caller), \"platform-bootstrap\")"]) {
   if (!domainTypes.includes(required)) failures.push("Identity platform bootstrap caller boundary missing " + required);
 }
 const runtimeConfig = read("services/identity/backend/internal/runtime/server.go");
 if (!runtimeConfig.includes('tokens["platform-bootstrap"] = bootstrapToken')) failures.push("Identity platform bootstrap secret is not runtime-configured");
 const httpServer = read("services/identity/backend/internal/transport/http/server.go");
-for (const required of ["/internal/bootstrap/platform-owner", 'caller != "platform-bootstrap"']) {
+for (const required of ["/internal/bootstrap/platform-owner", "CanBootstrapPlatformOwner(caller)"]) {
   if (!httpServer.includes(required)) failures.push("Identity platform bootstrap route fence missing " + required);
 }
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [
-    "const SchemaVersion = 11",
+    "const SchemaVersion = 12",
   "CurrentSchemaVersion",
   "migration history is non-contiguous",
   "identity_password_credentials",
@@ -357,7 +357,7 @@ for (const required of ["role IN ('operator', 'platform_owner')", "refresh_expir
   if (!controlLifetimeMigration.includes(required)) failures.push("Identity control-session lifetime migration missing " + required);
 }
 const migrationRuntime = read("services/identity/backend/internal/runtime/migrations.go");
-for (const required of ["postgres.SchemaVersion", "missing identity migration version", "postgres.Migrate(ctx,db,version"]) {
+for (const required of ["postgres.SchemaVersion", "missing identity migration version", "postgres.Migrate(ctx, db, record.Version", "SynchronizeMigrationHistory"]) {
   if (!migrationRuntime.includes(required)) failures.push("Identity ordered migration runtime missing " + required);
 }
 const dockerfile = read("services/identity/backend/Dockerfile");

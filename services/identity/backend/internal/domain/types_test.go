@@ -16,7 +16,7 @@ func TestCanonicalRoleSurfaceMapping(t *testing.T) {
 }
 
 func TestTrustedCallerProvisionBoundary(t *testing.T) {
-	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"dsh", "field"}, {"platform-control", "operator"}, {"platform-bootstrap", "platform_owner"}}
+	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"dsh", "field"}, {"platform-control", "operator"}}
 	for _, pair := range allowed {
 		if !CanProvisionRole(pair[0], pair[1]) {
 			t.Fatalf("expected %s to manage %s", pair[0], pair[1])
@@ -27,6 +27,12 @@ func TestTrustedCallerProvisionBoundary(t *testing.T) {
 		if CanProvisionRole(pair[0], pair[1]) {
 			t.Fatalf("unexpected permission: %s can manage %s", pair[0], pair[1])
 		}
+	}
+	if !CanBootstrapPlatformOwner("platform-bootstrap") {
+		t.Fatal("bootstrap caller must be allowed on the dedicated bootstrap operation")
+	}
+	if CanBootstrapPlatformOwner("platform-control") {
+		t.Fatal("platform-control must not access the dedicated bootstrap operation")
 	}
 }
 

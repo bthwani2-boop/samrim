@@ -3,11 +3,18 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
 
-const SchemaVersion = 11
+const SchemaVersion = 12
+
+type MigrationRecord struct {
+	Version int
+	Name    string
+	SHA256  string
+}
 
 type schemaRequirement struct {
 	table   string
@@ -16,7 +23,7 @@ type schemaRequirement struct {
 }
 
 var identitySchemaRequirements = []schemaRequirement{
-	{table: "identity_schema_migrations", columns: []string{"version", "applied_at"}, indexes: []string{"identity_schema_migrations_pkey"}},
+	{table: "identity_schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, indexes: []string{"identity_schema_migrations_pkey"}},
 	{table: "identity_actors", columns: []string{"id", "phone_e164", "security_enabled", "version", "created_at", "updated_at"}, indexes: []string{"identity_actors_pkey", "identity_actors_phone_uq"}},
 	{table: "identity_actor_roles", columns: []string{"actor_id", "role", "enabled", "activated_at", "version", "created_at", "updated_at"}, indexes: []string{"identity_actor_roles_pkey", "identity_actor_roles_role_idx", "identity_actor_roles_platform_owner_uq"}},
 	{table: "identity_password_credentials", columns: []string{"actor_id", "role", "password_hash", "version", "created_at", "updated_at"}, indexes: []string{"identity_password_credentials_pkey"}},
@@ -82,6 +89,76 @@ func Migrate(ctx context.Context, db *sql.DB, version int, migrationSQL string) 
 	}
 	if applied != version {
 		return fmt.Errorf("identity migration v%d did not record canonical version; got %d", version, applied)
+	}
+	return nil
+}
+
+func SynchronizeMigrationHistory(ctx context.Context, db *sql.DB, records []MigrationRecord) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("migration history verification transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var count int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_schema_migrations").Scan(&count); err != nil {
+		return fmt.Errorf("migration history count: %w", err)
+	}
+	if count != len(records) {
+		return fmt.Errorf("migration history count mismatch: got %d want %d", count, len(records))
+	}
+	for _, record := range records {
+		var name, sha256 string
+		err := tx.QueryRowContext(ctx, "SELECT name,sha256 FROM identity_schema_migrations WHERE version=$1", record.Version).Scan(&name, &sha256)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("migration history missing version %d", record.Version)
+		}
+		if err != nil {
+			return fmt.Errorf("migration history read version %d: %w", record.Version, err)
+		}
+		if name == "" && sha256 == "" {
+			if _, err := tx.ExecContext(ctx, "UPDATE identity_schema_migrations SET name=$2,sha256=$3 WHERE version=$1", record.Version, record.Name, record.SHA256); err != nil {
+				return fmt.Errorf("migration history backfill version %d: %w", record.Version, err)
+			}
+			continue
+		}
+		if name != record.Name || sha256 != record.SHA256 {
+			return fmt.Errorf("migration history checksum mismatch at v%d: name=%q sha256=%q", record.Version, name, sha256)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "ALTER TABLE identity_schema_migrations ALTER COLUMN name SET NOT NULL, ALTER COLUMN sha256 SET NOT NULL"); err != nil {
+		return fmt.Errorf("migration history constraints: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("migration history verification commit: %w", err)
+	}
+	return nil
+}
+
+func VerifyMigrationHistory(ctx context.Context, db *sql.DB, records []MigrationRecord) error {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("migration history read-only transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var count int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_schema_migrations").Scan(&count); err != nil {
+		return fmt.Errorf("migration history count: %w", err)
+	}
+	if count != len(records) {
+		return fmt.Errorf("migration history count mismatch: got %d want %d", count, len(records))
+	}
+	for _, record := range records {
+		var name, sha256 sql.NullString
+		err := tx.QueryRowContext(ctx, "SELECT name,sha256 FROM identity_schema_migrations WHERE version=$1", record.Version).Scan(&name, &sha256)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("migration history missing version %d", record.Version)
+		}
+		if err != nil {
+			return fmt.Errorf("migration history read version %d: %w", record.Version, err)
+		}
+		if !name.Valid || !sha256.Valid || name.String != record.Name || sha256.String != record.SHA256 {
+			return fmt.Errorf("migration history checksum mismatch at v%d", record.Version)
+		}
 	}
 	return nil
 }

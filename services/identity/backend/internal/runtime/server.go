@@ -50,10 +50,14 @@ func Run(_, _, defaultPort string) error {
 	db.SetMaxOpenConns(20)
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(30 * time.Minute)
+	migrationRecords, err := loadMigrationRecords(cfg.migrationDir)
+	if err != nil {
+		return err
+	}
 	if cfg.autoMigrate {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := applyMigrations(ctx, db, cfg.migrationDir); err != nil {
+		if err := applyMigrations(ctx, db, cfg.migrationDir, migrationRecords); err != nil {
 			return err
 		}
 	}
@@ -64,7 +68,10 @@ func Run(_, _, defaultPort string) error {
 	readiness := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		return postgres.Ready(ctx, db)
+		if err := postgres.Ready(ctx, db); err != nil {
+			return err
+		}
+		return postgres.VerifyMigrationHistory(ctx, db, migrationRecords)
 	}
 	handler := identityhttp.New(actors, challenges, sessions, identityhttp.Config{InternalServiceTokens: cfg.internalTokens, AllowedOrigins: cfg.allowedOrigins, AbuseIPSecret: cfg.abuseIPSecret, TrustedProxies: cfg.trustedProxies, Readiness: readiness})
 	server := &http.Server{Addr: ":" + cfg.port, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}

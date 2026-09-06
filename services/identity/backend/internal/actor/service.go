@@ -21,9 +21,25 @@ type Service struct{ db *sql.DB }
 func New(db *sql.DB) *Service { return &Service{db: db} }
 
 func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input domain.ProvisionActorRoleInput) (domain.ActorRoleView, error) {
+	return s.provisionTrusted(ctx, caller, input, false)
+}
+
+func (s *Service) ProvisionPlatformOwnerBootstrap(ctx context.Context, caller string, input domain.ProvisionActorRoleInput) (domain.ActorRoleView, error) {
+	if !domain.CanBootstrapPlatformOwner(caller) {
+		return domain.ActorRoleView{}, domain.ErrForbidden
+	}
+	input.Role = "platform_owner"
+	return s.provisionTrusted(ctx, caller, input, true)
+}
+
+func (s *Service) provisionTrusted(ctx context.Context, caller string, input domain.ProvisionActorRoleInput, bootstrapOnly bool) (domain.ActorRoleView, error) {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.CanProvisionRole(caller, role) {
+	if bootstrapOnly {
+		if !domain.CanBootstrapPlatformOwner(caller) || role != "platform_owner" {
+			return domain.ActorRoleView{}, domain.ErrForbidden
+		}
+	} else if !domain.CanProvisionRole(caller, role) {
 		return domain.ActorRoleView{}, domain.ErrForbidden
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.PhoneE164)
