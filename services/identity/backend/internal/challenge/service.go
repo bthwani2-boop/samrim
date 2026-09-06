@@ -17,12 +17,25 @@ import (
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 )
 
+type ProviderBudgetConfig struct {
+	MaxPerMinute int
+	MaxPerHour   int
+}
+
+func DefaultProviderBudgetConfig() ProviderBudgetConfig {
+	return ProviderBudgetConfig{
+		MaxPerMinute: 60,
+		MaxPerHour:   500,
+	}
+}
+
 type Service struct {
 	db       *sql.DB
 	actors   *actor.Service
 	sessions *session.Service
 	secret   []byte
 	sender   challengedelivery.Sender
+	budget   ProviderBudgetConfig
 	now      func() time.Time
 }
 
@@ -38,8 +51,17 @@ const (
 	passwordBackoffMaximum       = 2 * time.Second
 )
 
-func New(db *sql.DB, actors *actor.Service, sessions *session.Service, secret []byte, sender challengedelivery.Sender) *Service {
-	return &Service{db: db, actors: actors, sessions: sessions, secret: secret, sender: sender, now: time.Now}
+func New(db *sql.DB, actors *actor.Service, sessions *session.Service, secret []byte, sender challengedelivery.Sender, budget ...ProviderBudgetConfig) *Service {
+	b := DefaultProviderBudgetConfig()
+	if len(budget) > 0 {
+		if budget[0].MaxPerMinute > 0 {
+			b.MaxPerMinute = budget[0].MaxPerMinute
+		}
+		if budget[0].MaxPerHour > 0 {
+			b.MaxPerHour = budget[0].MaxPerHour
+		}
+	}
+	return &Service{db: db, actors: actors, sessions: sessions, secret: secret, sender: sender, budget: b, now: time.Now}
 }
 
 func (s *Service) RequestClientRegistration(ctx context.Context, input domain.PhoneRequest, ipHash string) (domain.Challenge, error) {
@@ -297,7 +319,7 @@ func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActiv
 	})
 }
 
-func (s *Service) IssueOperatorEnrollmentToken(ctx context.Context, input domain.OperatorEnrollmentTokenIssueRequest, caller string) (domain.OperatorEnrollmentToken, error) {
+func (s *Service) IssueOperatorEnrollmentToken(ctx context.Context, input domain.OperatorEnrollmentTokenIssueRequest, caller, actingActorID string) (domain.OperatorEnrollmentToken, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
 	if !domain.CanIssueOperatorEnrollmentTokenForRole(caller, role) {
 		return domain.OperatorEnrollmentToken{}, domain.ErrForbidden
@@ -311,7 +333,7 @@ func (s *Service) IssueOperatorEnrollmentToken(ctx context.Context, input domain
 		return domain.OperatorEnrollmentToken{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:managed-code:"+role+":"+phone); err != nil {
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:operator-enrollment-token:"+role+":"+phone); err != nil {
 		return domain.OperatorEnrollmentToken{}, err
 	}
 	var actorID string
@@ -351,10 +373,20 @@ WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actor
 		return domain.OperatorEnrollmentToken{}, err
 	}
 	expires := s.now().UTC().Add(48 * time.Hour)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_operator_enrollment_tokens(id,actor_id,role,phone_e164,code_hash,status,attempts,expires_at,created_by) VALUES($1,$2,$3,$4,$5,'pending',0,$6,$7)`, id, actorID, role, phone, identitysecurity.SHA256Hex(normalizedCode), expires, strings.ToLower(strings.TrimSpace(caller))); err != nil {
+	createdBy := strings.ToLower(strings.TrimSpace(caller))
+	if strings.TrimSpace(actingActorID) != "" {
+		createdBy = strings.TrimSpace(actingActorID)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_operator_enrollment_tokens(id,actor_id,role,phone_e164,code_hash,status,attempts,expires_at,created_by) VALUES($1,$2,$3,$4,$5,'pending',0,$6,$7)`, id, actorID, role, phone, identitysecurity.SHA256Hex(normalizedCode), expires, createdBy); err != nil {
 		return domain.OperatorEnrollmentToken{}, err
 	}
-	if err := auditTx(ctx, tx, "operator_enrollment_token.issued", actorID, caller, "success", "", map[string]any{"role": role, "expiresAt": expires.UTC().Format(time.RFC3339)}); err != nil {
+	auditPrincipal := caller
+	meta := map[string]any{"role": role, "expiresAt": expires.UTC().Format(time.RFC3339), "workload": caller}
+	if strings.TrimSpace(actingActorID) != "" {
+		auditPrincipal = caller + ":" + strings.TrimSpace(actingActorID)
+		meta["actingActorId"] = strings.TrimSpace(actingActorID)
+	}
+	if err := auditTx(ctx, tx, "operator_enrollment_token.issued", actorID, auditPrincipal, "success", "", meta); err != nil {
 		return domain.OperatorEnrollmentToken{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -373,7 +405,7 @@ func (s *Service) validateEnrollmentToken(ctx context.Context, phone, role, rawC
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:managed-code:"+role+":"+phone); err != nil {
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:operator-enrollment-token:"+role+":"+phone); err != nil {
 		return err
 	}
 	_, err = s.consumeOperatorEnrollmentTokenTx(ctx, tx, phone, role, code, "")

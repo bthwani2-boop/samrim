@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 
+import { colorRoles, lightThemeColors, statusScale } from "@bthwani/design-system";
 import { isIdentityClientError, type IdentitySessionState } from "@bthwani/identity";
 import {
   currentIdentityState,
@@ -27,17 +28,17 @@ type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password";
 
 const colors = {
-  background: "#FFFCF8",
-  border: "#D7E0EA",
-  focus: "#FF500D",
-  muted: "#68778A",
-  navy: "#0A2F5C",
-  orange: "#FF500D",
-  surface: "#FFFFFF",
-  disabled: "#DCE3EB",
-  dangerBackground: "#FFF1F0",
-  danger: "#B42318",
-  noticeBackground: "#FFF6ED",
+  background: lightThemeColors.background,
+  border: lightThemeColors.borderColor,
+  focus: lightThemeColors.focusColor,
+  muted: lightThemeColors.colorMuted,
+  navy: colorRoles.brandStructure,
+  orange: colorRoles.brandAction,
+  surface: lightThemeColors.surface,
+  disabled: lightThemeColors.borderColorStrong,
+  dangerBackground: statusScale.dangerSoft,
+  danger: statusScale.danger,
+  noticeBackground: lightThemeColors.actionSoft,
 };
 
 const modeDetails: Record<AuthMode, { title: string }> = {
@@ -202,6 +203,19 @@ export default function IdentityGate() {
         <Text style={styles.status}>خدمة الهوية غير متاحة</Text>
         <Pressable disabled={busy} onPress={restore} style={styles.secondaryButton}>
           <Text style={styles.secondaryButtonText}>إعادة التحقق</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (state.kind === "refresh_conflict") {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>بثواني</Text>
+        <Text style={styles.status}>تحديث جلسة العميل</Text>
+        <Text style={styles.muted}>تم تجديد بيانات الجلسة من عملية متزامنة. أعد مزامنة الجلسة للمتابعة دون إعادة تسجيل الدخول.</Text>
+        <Pressable disabled={busy} onPress={restore} style={styles.primaryButton}>
+          <Text style={styles.primaryButtonText}>{busy ? "جارٍ المزامنة…" : "مزامنة الجلسة"}</Text>
         </Pressable>
       </View>
     );

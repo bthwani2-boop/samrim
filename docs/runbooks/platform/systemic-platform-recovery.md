@@ -24,26 +24,13 @@ Routes cross-cutting incidents involving database/migrations, contract/version s
 4. Preserve forensic logs and database state snapshots without recording plaintext secrets/PII.
 5. Classify the failure: schema/migration checksum, contract skew, service token/auth, external provider, or storage corruption.
 
-## Executable database restore drill
+## Database recovery & environment reset posture
 
-When a catastrophic database corruption or unrecoverable schema state occurs, execute the following validated drill:
-
-1. **Isolation**: Stop inbound ingress traffic at the load balancer / reverse proxy layer (`503 Service Unavailable`).
-2. **Cluster Stop**: Terminate all application backend service instances (Identity, DSH) to prevent concurrent mutating connections.
-3. **Point-in-Time Recovery (PITR)**:
-   - Identify the exact recovery target timestamp $T_{recover}$ immediately preceding the incident.
-   - Restore PostgreSQL base backup into a pristine volume.
-   - Replay WAL archives up to $T_{recover}$ (`recovery_target_time = '...'`).
-4. **Schema & Data Conformance Drill**:
-   - Start PostgreSQL in read-only maintenance mode.
-   - Run migration schema verifier to assert checksum integrity against the release candidate binary.
-   - Run canonical readback queries across human actors, active role bindings, and verified identifiers.
-5. **Token Fence Invalidation**:
-   - Invalidate all bearer and refresh tokens issued after $T_{recover}$ by bumping the service security epoch.
-6. **Traffic Resumption**:
-   - Start Identity and DSH services.
-   - Verify health and readiness endpoints report `status: "ok"`.
-   - Restore reverse proxy ingress and monitor error logs for 15 minutes.
+1. **Current posture**: There is currently no repository-owned automated Point-in-Time Recovery (PITR), WAL archiving, or production ingress load-balancer isolation mechanism materialized in this codebase; production launch remains blocked until verified production infrastructure, backup automation, and recovery procedures are implemented.
+2. **Current environment recovery procedures**:
+   - **Local/integration environments**: Execute `powershell -ExecutionPolicy Bypass -File tools/dev/close-integration-runtime.ps1` to terminate running containers and volumes, followed by `tools/dev/open-integration-runtime.ps1` to cleanly re-provision and auto-migrate.
+   - **Schema conformance**: Execute `go run ./cmd/schema-verify` in `services/identity/backend` to verify that all committed migrations, columns, constraints, and index checksums match the canonical schema.
+   - **Platform owner lockout recovery**: Execute `go run ./cmd/platform-owner-recover` against `IDENTITY_DATABASE_URL` to atomically reset the platform owner credentials, revoke active sessions and challenges, and log an immutable audit event.
 
 ## Database and migration failure
 

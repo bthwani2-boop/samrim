@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -40,6 +41,7 @@ type config struct {
 	internalTokens         map[string]string
 	allowedOrigins         map[string]bool
 	delivery               challengedelivery.Sender
+	providerBudget         challenge.ProviderBudgetConfig
 }
 
 func Run(_, _, defaultPort string) error {
@@ -86,7 +88,7 @@ func Run(_, _, defaultPort string) error {
 	}
 	actors := actor.New(db)
 	sessions := session.New(db)
-	challenges := challenge.New(db, actors, sessions, cfg.challengeSecret, cfg.delivery)
+	challenges := challenge.New(db, actors, sessions, cfg.challengeSecret, cfg.delivery, cfg.providerBudget)
 	cleaner := lifecycle.New(maintenanceDB, cfg.retention)
 	readiness := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -265,7 +267,22 @@ func loadConfig(defaultPort string) (config, error) {
 		}
 		trustedProxies = append(trustedProxies, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
 	}
-	return config{port: port, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery}, nil
+	budget := challenge.DefaultProviderBudgetConfig()
+	if rawMin := strings.TrimSpace(os.Getenv("IDENTITY_PROVIDER_BUDGET_PER_MINUTE")); rawMin != "" {
+		val, err := strconv.Atoi(rawMin)
+		if err != nil || val <= 0 {
+			return config{}, errors.New("IDENTITY_PROVIDER_BUDGET_PER_MINUTE must be a positive integer")
+		}
+		budget.MaxPerMinute = val
+	}
+	if rawHour := strings.TrimSpace(os.Getenv("IDENTITY_PROVIDER_BUDGET_PER_HOUR")); rawHour != "" {
+		val, err := strconv.Atoi(rawHour)
+		if err != nil || val <= 0 {
+			return config{}, errors.New("IDENTITY_PROVIDER_BUDGET_PER_HOUR must be a positive integer")
+		}
+		budget.MaxPerHour = val
+	}
+	return config{port: port, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget}, nil
 }
 
 func databaseURLUser(raw string) (string, error) {

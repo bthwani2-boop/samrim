@@ -8,8 +8,8 @@ import {
   type IdentitySessionState,
 } from "@bthwani/identity";
 
-const role = "captain" as const;
-const surface = "app-captain" as const;
+export const role = "captain" as const;
+export const surface = "app-captain" as const;
 const namespace = "bthwani.captain";
 
 const runtime = createMobileIdentityRuntime({

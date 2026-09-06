@@ -120,12 +120,12 @@ export async function completeOperatorRecovery(phone: string, code: string, pass
   return identityClient().recoverManaged({ phone, role: "operator", code, password });
 }
 
-export async function issueOperatorEnrollmentToken(phone: string): Promise<OperatorEnrollmentToken> {
-  return identityInternalClient().issueOperatorEnrollmentToken({ phoneE164: phone, role: "operator" });
+export async function issueOperatorEnrollmentToken(phone: string, options?: MutationOptions): Promise<OperatorEnrollmentToken> {
+  return identityInternalClient().issueOperatorEnrollmentToken({ phoneE164: phone, role: "operator" }, options);
 }
 
-export async function provisionOperator(phone: string): Promise<ActorRoleView> {
-  return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" });
+export async function provisionOperator(phone: string, options?: MutationOptions): Promise<ActorRoleView> {
+  return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" }, options);
 }
 
 export async function lookupIdentityRole(phone: string, role: ActorType): Promise<ActorRoleView | null> {

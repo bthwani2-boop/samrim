@@ -201,11 +201,20 @@ func (s *Server) recoverManaged(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) issueOperatorEnrollmentToken(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if caller == "platform-control" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+		return
+	}
 	var input domain.OperatorEnrollmentTokenIssueRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), input, caller)
+	result, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), input, caller, operatorActorID)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -299,11 +308,20 @@ func (s *Server) internal(next internalHandler) http.HandlerFunc {
 }
 
 func (s *Server) provisionRole(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if caller == "platform-control" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+		return
+	}
 	var input domain.ProvisionActorRoleInput
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	view, err := s.actors.ProvisionTrusted(r.Context(), caller, input)
+	view, err := s.actors.ProvisionTrustedWithContext(r.Context(), caller, input, operatorActorID)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -375,32 +393,37 @@ func (s *Server) enableRole(w http.ResponseWriter, r *http.Request, caller strin
 	s.setRoleEnabled(w, r, caller, true)
 }
 func parseExpectedVersion(r *http.Request) (int, error) {
-	val := strings.TrimSpace(r.Header.Get("X-Expected-Version"))
-	if val == "" {
-		val = strings.Trim(strings.TrimSpace(r.Header.Get("If-Match")), "\"")
+	if r.Header.Get("If-Match") != "" {
+		return 0, errors.New("If-Match is forbidden; use canonical X-Expected-Version")
 	}
+	val := strings.TrimSpace(r.Header.Get("X-Expected-Version"))
 	if val == "" {
 		return 0, nil
 	}
 	v, err := strconv.Atoi(val)
-	if err != nil || v < 0 {
-		return 0, errors.New("expected version must be a non-negative integer")
+	if err != nil || v < 1 {
+		return 0, errors.New("expected version must be a positive integer >= 1")
 	}
 	return v, nil
 }
 
 func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
 	expectedVersion, err := parseExpectedVersion(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error()))
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if operatorActorID == "" {
-		operatorActorID = strings.TrimSpace(r.Header.Get("X-Actor-ID"))
-	}
 	if caller == "platform-control" && operatorActorID == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+		return
+	}
+	if caller == "platform-control" && expectedVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for platform-control operations and must be a positive integer >= 1"))
 		return
 	}
 	if err := s.actors.SetRoleEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
@@ -410,7 +433,12 @@ func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller s
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *Server) authorizeReenrollment(w http.ResponseWriter, r *http.Request, caller string) {
-	if err := s.actors.AuthorizeReenrollment(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if err := s.actors.AuthorizeReenrollmentWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -423,17 +451,22 @@ func (s *Server) enableActorSecurity(w http.ResponseWriter, r *http.Request, cal
 	s.setActorSecurityEnabled(w, r, caller, true)
 }
 func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
 	expectedVersion, err := parseExpectedVersion(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error()))
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if operatorActorID == "" {
-		operatorActorID = strings.TrimSpace(r.Header.Get("X-Actor-ID"))
-	}
 	if caller == "platform-control" && operatorActorID == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+		return
+	}
+	if caller == "platform-control" && expectedVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for platform-control operations and must be a positive integer >= 1"))
 		return
 	}
 	if err := s.actors.SetSecurityEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
@@ -443,6 +476,15 @@ func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request,
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *Server) resetOperatorPassword(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if caller == "platform-control" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+		return
+	}
 	var input domain.PasswordResetRequest
 	if !decodeJSON(w, r, &input) {
 		return

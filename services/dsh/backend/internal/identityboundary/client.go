@@ -45,17 +45,26 @@ func New(baseURL, serviceToken string) (*Client, error) {
 	return &Client{inner: inner}, nil
 }
 
-func (c *Client) provision(ctx context.Context, role string, input ActorInput) (identityclient.ActorRoleView, error) {
-	return c.inner.ProvisionRole(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: role})
+func (c *Client) provision(ctx context.Context, role string, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
+	return c.inner.ProvisionRoleWithContext(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: role}, correlationID, operatorActorID)
 }
 func (c *Client) ProvisionPartner(ctx context.Context, input ActorInput) (identityclient.ActorRoleView, error) {
-	return c.provision(ctx, "partner", input)
+	return c.provision(ctx, "partner", input, "", "")
+}
+func (c *Client) ProvisionPartnerWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
+	return c.provision(ctx, "partner", input, correlationID, operatorActorID)
 }
 func (c *Client) ProvisionCaptain(ctx context.Context, input ActorInput) (identityclient.ActorRoleView, error) {
-	return c.provision(ctx, "captain", input)
+	return c.provision(ctx, "captain", input, "", "")
+}
+func (c *Client) ProvisionCaptainWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
+	return c.provision(ctx, "captain", input, correlationID, operatorActorID)
 }
 func (c *Client) ProvisionField(ctx context.Context, input ActorInput) (identityclient.ActorRoleView, error) {
-	return c.provision(ctx, "field", input)
+	return c.provision(ctx, "field", input, "", "")
+}
+func (c *Client) ProvisionFieldWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
+	return c.provision(ctx, "field", input, correlationID, operatorActorID)
 }
 
 func (c *Client) SetPartnerEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
@@ -90,8 +99,14 @@ func (c *Client) AuthorizeFieldReenrollment(ctx context.Context, actorID, correl
 func (c *Client) AuthorizeReenrollment(ctx context.Context, actorID, role, correlationID string) error {
 	return c.inner.AuthorizeReenrollment(ctx, actorID, role, correlationID)
 }
+func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID string) error {
+	return c.inner.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, operatorActorID)
+}
 func (c *Client) AuthorizeReenrollmentByPhone(ctx context.Context, phone, role, correlationID string) error {
 	return c.inner.AuthorizeReenrollmentByPhone(ctx, phone, role, correlationID)
+}
+func (c *Client) AuthorizeReenrollmentByPhoneWithContext(ctx context.Context, phone, role, correlationID, operatorActorID string) error {
+	return c.inner.AuthorizeReenrollmentByPhoneWithContext(ctx, phone, role, correlationID, operatorActorID)
 }
 func (c *Client) LookupRoleByPhone(ctx context.Context, phone, role string) (identityclient.ActorRoleView, error) {
 	return c.inner.LookupRoleByPhone(ctx, role, phone)

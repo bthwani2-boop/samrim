@@ -31,6 +31,8 @@ BEGIN
     ) THEN
         ALTER TABLE identity_operator_enrollment_tokens
             DROP CONSTRAINT identity_managed_activation_code_role_check;
+        DELETE FROM identity_operator_enrollment_tokens
+            WHERE role <> 'operator';
         ALTER TABLE identity_operator_enrollment_tokens
             ADD CONSTRAINT identity_operator_enrollment_token_role_check
             CHECK (role = 'operator');

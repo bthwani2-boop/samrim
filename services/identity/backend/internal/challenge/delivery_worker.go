@@ -73,6 +73,42 @@ func (s *Service) deliverNext(ctx context.Context) (bool, error) {
 	if actorID.Valid {
 		item.actorID = actorID.String
 	}
+	provider := s.sender.Provider()
+	if provider != "mailpit" {
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtext('identity:provider-budget:' || $1))", provider); err != nil {
+			return false, fmt.Errorf("lock provider budget bucket: %w", err)
+		}
+		var countMinute, countHour int
+		row := tx.QueryRowContext(ctx, `
+			SELECT
+				COALESCE(SUM(CASE WHEN created_at > clock_timestamp() - interval '1 minute' THEN 1 ELSE 0 END), 0),
+				COUNT(*)
+			FROM identity_challenge_deliveries
+			WHERE provider = $1 AND status IN ('sent', 'sending', 'unknown') AND created_at > clock_timestamp() - interval '1 hour'`,
+			provider,
+		)
+		if err := row.Scan(&countMinute, &countHour); err != nil {
+			return false, fmt.Errorf("check provider budget: %w", err)
+		}
+		if countMinute >= s.budget.MaxPerMinute || countHour >= s.budget.MaxPerHour {
+			if _, err := tx.ExecContext(ctx, "UPDATE identity_challenge_deliveries SET status='suppressed',finished_at=clock_timestamp(),updated_at=clock_timestamp() WHERE challenge_id=$1 AND status='pending'", item.challengeID); err != nil {
+				return false, err
+			}
+			if err := auditTx(ctx, tx, "challenge.delivery_suppressed", item.actorID, "challenge-delivery", "suppressed", "provider_budget_exceeded", map[string]any{
+				"role":         item.role,
+				"purpose":      item.purpose,
+				"provider":     provider,
+				"count_minute": countMinute,
+				"count_hour":   countHour,
+			}); err != nil {
+				return false, err
+			}
+			if err := tx.Commit(); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenge_deliveries SET status='sending',attempts=1,started_at=clock_timestamp(),updated_at=clock_timestamp() WHERE challenge_id=$1 AND status='pending'", item.challengeID); err != nil {
 		return false, err
 	}
@@ -86,9 +122,6 @@ func (s *Service) deliverNext(ctx context.Context) (bool, error) {
 	surface, ok := domain.SurfaceForRole(item.role)
 	if !ok {
 		return true, s.finishDelivery(ctx, item, "unknown")
-	}
-	if s.isProviderBudgetExceeded(ctx, s.sender.Provider()) {
-		return true, s.finishDelivery(ctx, item, "suppressed")
 	}
 	status := "sent"
 	if err := s.sender.Send(ctx, challengedelivery.Message{Phone: item.phone, Code: code, Role: item.role, Purpose: item.purpose, Surface: surface, ExpiresAt: item.expiresAt}); err != nil {
@@ -122,23 +155,4 @@ func (s *Service) finishDelivery(ctx context.Context, item pendingDelivery, stat
 		return err
 	}
 	return tx.Commit()
-}
-
-func (s *Service) isProviderBudgetExceeded(ctx context.Context, provider string) bool {
-	if provider == "mailpit" {
-		return false
-	}
-	var countMinute, countHour int
-	row := s.db.QueryRowContext(ctx, `
-		SELECT
-			COALESCE(SUM(CASE WHEN created_at > clock_timestamp() - interval '1 minute' THEN 1 ELSE 0 END), 0),
-			COUNT(*)
-		FROM identity_challenge_deliveries
-		WHERE provider = $1 AND status = 'sent' AND created_at > clock_timestamp() - interval '1 hour'`,
-		provider,
-	)
-	if err := row.Scan(&countMinute, &countHour); err != nil {
-		return false
-	}
-	return countMinute >= 60 || countHour >= 500
 }

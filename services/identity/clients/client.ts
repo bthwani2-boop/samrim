@@ -50,11 +50,12 @@ export type IdentityClient = Readonly<{
 export type MutationOptions = Readonly<{
   expectedVersion?: number | undefined;
   operatorActorId?: string | undefined;
+  correlationId?: string | undefined;
 }>;
 
 export type IdentityInternalClient = Readonly<{
-  issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest): Promise<OperatorEnrollmentToken>;
-  provisionActorRole(request: ProvisionActorRoleRequest): Promise<ActorRoleView>;
+  issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest, options?: MutationOptions): Promise<OperatorEnrollmentToken>;
+  provisionActorRole(request: ProvisionActorRoleRequest, options?: MutationOptions): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, correlationId: string, reason: string, options?: MutationOptions): Promise<void>;
   setActorSecurityEnabled(actorId: string, enabled: boolean, correlationId: string, reason: string, options?: MutationOptions): Promise<void>;
@@ -176,7 +177,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
             ...(correlationId.trim() ? { "X-Correlation-ID": correlationId.trim() } : {}),
             ...(reason.trim() ? { "X-Reason": reason.trim() } : {}),
             ...(options?.expectedVersion !== undefined ? { "X-Expected-Version": String(options.expectedVersion) } : {}),
-            ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim(), "X-Actor-ID": options.operatorActorId.trim() } : {}),
+            ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim() } : {}),
           },
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
           signal: controller.signal,
@@ -193,7 +194,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
-  async function issueToken(body: OperatorEnrollmentTokenIssueRequest): Promise<OperatorEnrollmentToken> {
+  async function issueToken(body: OperatorEnrollmentTokenIssueRequest, options?: MutationOptions): Promise<OperatorEnrollmentToken> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -201,7 +202,13 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
       try {
         response = await fetch(resolveUrl(baseUrl, identityOperationPaths.issueOperatorEnrollmentToken.path), {
           method: identityOperationPaths.issueOperatorEnrollmentToken.method,
-          headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + token,
+            ...(options?.correlationId?.trim() ? { "X-Correlation-ID": options.correlationId.trim() } : {}),
+            ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim() } : {}),
+          },
           body: JSON.stringify(body),
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
           signal: controller.signal,
@@ -221,7 +228,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
 
   return {
     issueOperatorEnrollmentToken: issueToken,
-    provisionActorRole: async (body) => {
+    provisionActorRole: async (body, options?: MutationOptions) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -229,7 +236,13 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         try {
           response = await fetch(resolveUrl(baseUrl, identityOperationPaths.provisionActorRole.path), {
             method: identityOperationPaths.provisionActorRole.method,
-            headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + token,
+              ...(options?.correlationId?.trim() ? { "X-Correlation-ID": options.correlationId.trim() } : {}),
+              ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim() } : {}),
+            },
             body: JSON.stringify(body),
             ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
             signal: controller.signal,

@@ -43,14 +43,22 @@ func New(baseURL, serviceToken string) (*Client, error) {
 }
 
 func (c *Client) IssueOperatorEnrollmentToken(ctx context.Context, input OperatorEnrollmentTokenIssueRequest) (OperatorEnrollmentToken, error) {
+	return c.IssueOperatorEnrollmentTokenWithContext(ctx, input, "", "")
+}
+
+func (c *Client) IssueOperatorEnrollmentTokenWithContext(ctx context.Context, input OperatorEnrollmentTokenIssueRequest, correlationID, operatorActorID string) (OperatorEnrollmentToken, error) {
 	var result OperatorEnrollmentToken
-	err := c.do(ctx, IdentityOperationIssueOperatorEnrollmentToken.Method, IdentityOperationIssueOperatorEnrollmentToken.Path, "", input, &result)
+	err := c.doWithContext(ctx, IdentityOperationIssueOperatorEnrollmentToken.Method, IdentityOperationIssueOperatorEnrollmentToken.Path, correlationID, "", operatorActorID, 0, input, &result)
 	return result, err
 }
 
 func (c *Client) ProvisionRole(ctx context.Context, input ProvisionActorRoleRequest) (ActorRoleView, error) {
+	return c.ProvisionRoleWithContext(ctx, input, "", "")
+}
+
+func (c *Client) ProvisionRoleWithContext(ctx context.Context, input ProvisionActorRoleRequest, correlationID, operatorActorID string) (ActorRoleView, error) {
 	var result ActorRoleView
-	err := c.do(ctx, IdentityOperationProvisionActorRole.Method, IdentityOperationProvisionActorRole.Path, "", input, &result)
+	err := c.doWithContext(ctx, IdentityOperationProvisionActorRole.Method, IdentityOperationProvisionActorRole.Path, correlationID, "", operatorActorID, 0, input, &result)
 	return result, err
 }
 func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleView, error) {
@@ -111,10 +119,16 @@ func (c *Client) SetRoleEnabledWithContext(ctx context.Context, actorID, role st
 	return c.doWithContext(ctx, operation.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, nil, nil)
 }
 func (c *Client) AuthorizeReenrollment(ctx context.Context, actorID, role, correlationID string) error {
+	return c.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, "")
+}
+func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID string) error {
 	pathname := identityRoute(IdentityOperationAuthorizeManagedRoleReenrollment.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
-	return c.do(ctx, IdentityOperationAuthorizeManagedRoleReenrollment.Method, pathname, correlationID, nil, nil)
+	return c.doWithContext(ctx, IdentityOperationAuthorizeManagedRoleReenrollment.Method, pathname, correlationID, "", operatorActorID, 0, nil, nil)
 }
 func (c *Client) AuthorizeReenrollmentByPhone(ctx context.Context, phone, role, correlationID string) error {
+	return c.AuthorizeReenrollmentByPhoneWithContext(ctx, phone, role, correlationID, "")
+}
+func (c *Client) AuthorizeReenrollmentByPhoneWithContext(ctx context.Context, phone, role, correlationID, operatorActorID string) error {
 	page, err := c.SearchRoles(ctx, role, phone)
 	if err != nil {
 		return err
@@ -122,7 +136,7 @@ func (c *Client) AuthorizeReenrollmentByPhone(ctx context.Context, phone, role, 
 	if len(page.Items) != 1 || !strings.EqualFold(strings.TrimSpace(page.Items[0].Role), strings.TrimSpace(role)) {
 		return &Error{Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "managed role record not found"}
 	}
-	return c.AuthorizeReenrollment(ctx, page.Items[0].ActorID, role, correlationID)
+	return c.AuthorizeReenrollmentWithContext(ctx, page.Items[0].ActorID, role, correlationID, operatorActorID)
 }
 func (c *Client) SetActorSecurityEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
 	return c.SetActorSecurityEnabledWithReason(ctx, actorID, enabled, correlationID, "")
@@ -185,7 +199,6 @@ func (c *Client) doWithContext(ctx context.Context, method, pathname, correlatio
 	}
 	if strings.TrimSpace(operatorActorID) != "" {
 		req.Header.Set("X-Acting-Actor-ID", strings.TrimSpace(operatorActorID))
-		req.Header.Set("X-Actor-ID", strings.TrimSpace(operatorActorID))
 	}
 	if expectedVersion > 0 {
 		req.Header.Set("X-Expected-Version", fmt.Sprintf("%d", expectedVersion))

@@ -34,8 +34,9 @@ This file is the **sole editable durable semantic owner** of `ADMINISTRATION_ROL
 - Rollback appends an independently approved inverse decision and never deletes the source decision or audit trail.
 
 **Forbidden/negative invariants**
-- No direct role creation/assignment/revocation without governed approval.
-- No maker, beneficiary, or disallowed previous checker approves the affected decision.
+- No unapproved role definition or privileged platform_owner elevation without governed dual approval (maker-checker).
+- Routine partner, captain, and field operational provisioning executes through direct authorized mutation with explicit human attribution, positive optimistic concurrency control, and append-only audit; dual approval is strictly reserved for high-risk administration duties (platform_owner elevation, global control-plane disablement, financial authority, and critical policy changes).
+- No maker, beneficiary, or disallowed previous checker approves the affected high-risk decision.
 - No broad identity role label bypasses exact administration operation permission.
 - No approval queue is readable through unrelated generic permission.
 - No failed-terminal request is replayed, reset, edited, or replaced more than once.
@@ -45,7 +46,8 @@ This file is the **sole editable durable semantic owner** of `ADMINISTRATION_ROL
 
 **Acceptance expectations**
 - Role definitions persist normalized operation permissions and explicit surface scope with control-panel mandatory for administration capability.
-- Role definition and actor role changes use maker-checker approval with canonical role-version conflict protection.
+- High-risk role definition, permission expansion, and platform-owner elevation use maker-checker approval with canonical role-version conflict protection.
+- Routine operational role provisioning (partner, captain, field) and direct role state changes enforce exact caller authorization, human actor attribution (`X-Acting-Actor-ID`), and positive version fencing (`X-Expected-Version >= 1`).
 - A failed-terminal request is recovered only by one atomic supersede-and-replace operation followed by fresh independent approval.
 - Approved assignment or revocation decisions are reversed only through a separate independently approved inverse request.
 - Audit writes avoid raw reason/review-note sensitive values, audit readback is redacted, and ordinary update/delete of audit history is rejected.

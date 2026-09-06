@@ -1,22 +1,13 @@
 import { validateServiceUrl, type ActorRoleView, type ManagedActivationRole } from "@bthwani/identity";
+import { type ManagedRole, type ManagedRoleStatusResponse } from "./generated/dsh-types";
+import { dshOperationPaths } from "./generated/dsh-operations";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
   | Readonly<{ kind: "network"; message: string }>
   | Readonly<{ kind: "config"; message: string }>;
 
-export type ManagedRoleStatus = Readonly<{
-  actorId?: string;
-  exists: boolean;
-  enabled: boolean;
-  activated: boolean;
-  securityEnabled: boolean;
-  recoverable: boolean;
-  state?: string;
-  role: "partner" | "captain" | "field";
-  actorVersion?: number;
-  roleVersion?: number;
-}>;
+export type ManagedRoleStatus = ManagedRoleStatusResponse;
 
 const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field"]);
 
@@ -67,7 +58,11 @@ export function dshHttpStatus(error: unknown): number {
   return error.kind === "network" ? 502 : error.kind === "config" ? 500 : error.status;
 }
 
-export async function provisionManagedRole(phone: string, role: ManagedActivationRole): Promise<ActorRoleView> {
+export async function provisionManagedRole(
+  phone: string,
+  role: ManagedActivationRole,
+  options?: { operatorActorId?: string; correlationId?: string },
+): Promise<ActorRoleView> {
   if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
   const baseUrl = dshBaseUrl();
   const token = dshToken();
@@ -76,13 +71,20 @@ export async function provisionManagedRole(phone: string, role: ManagedActivatio
   try {
     let response: Response;
     try {
-      response = await fetch(`${baseUrl}/dsh/managed-roles/provision`, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      };
+      if (options?.operatorActorId?.trim()) {
+        headers["X-Acting-Actor-ID"] = options.operatorActorId.trim();
+      }
+      if (options?.correlationId?.trim()) {
+        headers["X-Correlation-ID"] = options.correlationId.trim();
+      }
+      response = await fetch(`${baseUrl}${dshOperationPaths.provisionManagedRole.path}`, {
+        method: dshOperationPaths.provisionManagedRole.method,
+        headers,
         body: JSON.stringify({ phoneE164: phone, role }),
         signal: controller.signal,
       });
@@ -109,8 +111,8 @@ export async function lookupManagedRoleStatus(phone: string, role: "partner" | "
     let response: Response;
     try {
       const params = new URLSearchParams({ phoneE164: phone, role });
-      response = await fetch(`${baseUrl}/dsh/managed-roles/status?${params.toString()}`, {
-        method: "GET",
+      response = await fetch(`${baseUrl}${dshOperationPaths.getManagedRoleStatus.path}?${params.toString()}`, {
+        method: dshOperationPaths.getManagedRoleStatus.method,
         headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
         signal: controller.signal,
       });
@@ -127,7 +129,12 @@ export async function lookupManagedRoleStatus(phone: string, role: "partner" | "
   }
 }
 
-export async function authorizeManagedReenrollment(phone: string, role: "partner" | "captain" | "field", correlationId: string): Promise<void> {
+export async function authorizeManagedReenrollment(
+  phone: string,
+  role: "partner" | "captain" | "field",
+  correlationId: string,
+  options?: { operatorActorId?: string },
+): Promise<void> {
   if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
   const baseUrl = dshBaseUrl();
   const token = dshToken();
@@ -136,9 +143,18 @@ export async function authorizeManagedReenrollment(phone: string, role: "partner
   try {
     let response: Response;
     try {
-      response = await fetch(`${baseUrl}/dsh/managed-roles/reenrollment`, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Correlation-ID": correlationId },
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "X-Correlation-ID": correlationId,
+      };
+      if (options?.operatorActorId?.trim()) {
+        headers["X-Acting-Actor-ID"] = options.operatorActorId.trim();
+      }
+      response = await fetch(`${baseUrl}${dshOperationPaths.reenrollManagedRoleByPhone.path}`, {
+        method: dshOperationPaths.reenrollManagedRoleByPhone.method,
+        headers,
         body: JSON.stringify({ phoneE164: phone, role }),
         signal: controller.signal,
       });
@@ -178,13 +194,16 @@ export async function setManagedRoleEnabled(
       };
       if (options?.operatorActorId?.trim()) {
         headers["X-Acting-Actor-ID"] = options.operatorActorId.trim();
-        headers["X-Actor-ID"] = options.operatorActorId.trim();
       }
-      if (options?.expectedVersion !== undefined && options.expectedVersion > 0) {
+      if (options?.expectedVersion !== undefined) {
+        if (!Number.isInteger(options.expectedVersion) || options.expectedVersion < 1) {
+          throw new Error("INVALID_EXPECTED_VERSION");
+        }
         headers["X-Expected-Version"] = String(options.expectedVersion);
       }
-      response = await fetch(`${baseUrl}/dsh/managed-roles/${enabled ? "enable" : "disable"}`, {
-        method: "POST",
+      const operation = enabled ? dshOperationPaths.enableManagedRole : dshOperationPaths.disableManagedRole;
+      response = await fetch(`${baseUrl}${operation.path}`, {
+        method: operation.method,
         headers,
         body: JSON.stringify({ phoneE164: phone, role, reason }),
         signal: controller.signal,

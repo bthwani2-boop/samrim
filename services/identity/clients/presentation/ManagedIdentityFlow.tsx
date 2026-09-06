@@ -6,6 +6,8 @@ import { colorRoles, radius, spacing, statusScale } from "@bthwani/design-system
 import type { IdentitySessionState } from "../index";
 
 export interface ManagedIdentityBinding {
+  role?: "partner" | "captain" | "field";
+  surface?: string;
   restoreIdentitySession: () => Promise<IdentitySessionState>;
   currentIdentityState: () => IdentitySessionState;
   logoutIdentity: () => Promise<void>;
@@ -50,7 +52,13 @@ function BrandHeader() {
   );
 }
 
-export function ManagedIdentityFlow({ roleLabel, binding }: ManagedIdentityFlowProps) {
+export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: ManagedIdentityFlowProps) {
+  if (binding.role && binding.role !== role) {
+    throw new Error(`MANAGED_FLOW_ROLE_MISMATCH: binding role ${binding.role} !== prop role ${role}`);
+  }
+  if (binding.surface && binding.surface !== surface) {
+    throw new Error(`MANAGED_FLOW_SURFACE_MISMATCH: binding surface ${binding.surface} !== prop surface ${surface}`);
+  }
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [step, setStep] = useState<"phone" | "password" | "activation" | "recovery">("phone");

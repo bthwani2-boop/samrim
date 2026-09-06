@@ -53,15 +53,15 @@ Prefer operation/purpose, result/error code, HTTP status, duration, correlation 
 4. **Mass revocation**: For compromised actors, call Platform Control `/internal/actors/{actorId}/security/disable` to revoke all active sessions across all roles atomically.
 
 ### 3. Privileged operator / platform owner lockout recovery
-1. **Diagnosis**: Operator locked out due to expired credential or lost second-factor device.
+1. **Diagnosis**: Operator or platform owner locked out due to expired credential or lost second-factor device.
 2. **Procedure**:
-   - An active `platform_owner` accesses Control Panel to initiate governed operator credential reset (`/internal/actors/{actorId}/roles/operator/reenrollment`).
-   - If all `platform_owner` credentials are lost, invoke the break-glass predeploy CLI tool on a secured host with direct database credentials.
+   - For an operator: An active `platform_owner` accesses Control Panel to initiate governed operator credential reset (`/internal/actors/{actorId}/roles/operator/reenrollment`).
+   - For the platform owner: Invoke the executable administrative recovery tool `go run ./cmd/platform-owner-recover` on a secured administrative host with direct database credentials (`IDENTITY_DATABASE_URL`). This tool runs an atomic database transaction that updates the password hash with Argon2id, revokes all active owner sessions and pending challenges, clears failed password attempts, and writes an immutable audit record.
    - Never inject arbitrary SQL to bypass MFA or grant roles.
 
 ### 4. Bootstrap incident containment & durable completion
 1. **Diagnosis**: Attempted re-bootstrap or concurrent bootstrap conflict.
-2. **Safety rule**: Bootstrap is strictly one-time and protected by a database advisory lock and `identity_bootstrap_completed` durable state.
+2. **Safety rule**: Bootstrap is strictly one-time and protected by a database advisory lock and `identity_bootstrap_state` durable state.
 3. **Containment**: If bootstrap fails halfway, inspect transaction rollback; verify no orphaned owner row exists. Never clear the completion marker in a production database.
 
 ### 5. Migration checksum mismatch resolution
@@ -72,12 +72,11 @@ Prefer operation/purpose, result/error code, HTTP status, duration, correlation 
    - Roll forward with a new incremental migration file (`000XX_...sql`).
    - If in local development, perform a controlled schema reset with `tools/dev/close-integration-runtime.ps1`.
 
-### 6. Database restore & PITR verification
-1. **Restore procedure**: Restore PostgreSQL cluster from immutable WAL/PITR backup snapshot.
-2. **Post-restore canonical verification**:
-   - Run `identity-schema-verify` binary against restored database.
-   - Verify `identity_bootstrap_completed` state matches pre-incident epoch.
-   - Invalidate all inflight session tokens issued between snapshot timestamp and incident time by advancing `token_revocation_epoch`.
+### 6. Database schema verification & restore posture
+1. **Current posture**: No repository-owned automated Point-in-Time Recovery (PITR) or WAL replay drill is currently materialized in this repository; production deployment remains blocked until a proven production backup and restore pipeline is implemented.
+2. **Schema verification**:
+   - Run the executable `schema-verify` binary (`go run ./cmd/schema-verify`) against the target database to verify all committed migrations, columns, constraints, and index checksums match canonical definitions.
+   - Verify `identity_bootstrap_state` row matches expected platform owner actor ID.
    - Readback check: Verify phone-to-actor resolution and role binding counts match audit ledger.
 
 ## Verify recovery

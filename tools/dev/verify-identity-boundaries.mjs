@@ -494,6 +494,55 @@ for (const required of [
   if (!tsSession.includes(required)) failures.push("Identity TS session continuity missing " + required);
 }
 
+// DSH contract and boundaries governance
+const dshOpenApi = read("services/dsh/contracts/dsh.openapi.yaml");
+for (const required of [
+  "/dsh/managed-roles/provision:",
+  "/dsh/managed-roles/status:",
+  "/dsh/managed-roles/disable:",
+  "/dsh/managed-roles/enable:",
+  "/dsh/managed-roles/reenrollment:",
+  "X-Acting-Actor-ID",
+  "X-Expected-Version",
+  "actorVersion",
+  "roleVersion",
+]) {
+  if (!dshOpenApi.includes(required)) failures.push("DSH OpenAPI contract missing " + required);
+}
+for (const forbidden of ["If-Match", "X-Actor-ID"]) {
+  if (dshOpenApi.includes(forbidden)) failures.push("DSH OpenAPI contract retains legacy alias " + forbidden);
+}
+
+const dshBff = read("apps/control-panel/lib/dsh-bff.ts");
+for (const required of [
+  'from "./generated/dsh-types"',
+  'from "./generated/dsh-operations"',
+  "dshOperationPaths.provisionManagedRole",
+  "dshOperationPaths.getManagedRoleStatus",
+  "dshOperationPaths.disableManagedRole",
+  "dshOperationPaths.enableManagedRole",
+  "dshOperationPaths.reenrollManagedRoleByPhone",
+  "X-Acting-Actor-ID",
+  "X-Expected-Version",
+]) {
+  if (!dshBff.includes(required)) failures.push("Control Panel DSH BFF missing " + required);
+}
+for (const forbidden of ['headers["X-Actor-ID"]', 'headers["If-Match"]']) {
+  if (dshBff.includes(forbidden)) failures.push("Control Panel DSH BFF retains legacy alias " + forbidden);
+}
+
+const dshServer = read("services/dsh/backend/internal/managedaccess/server.go");
+for (const required of [
+  "ActorVersion",
+  "RoleVersion",
+  'r.Header.Get("X-Acting-Actor-ID")',
+  'r.Header.Get("X-Expected-Version")',
+  "X-Actor-ID is forbidden; use X-Acting-Actor-ID",
+  "If-Match is forbidden; use X-Expected-Version",
+]) {
+  if (!dshServer.includes(required)) failures.push("DSH managed access server missing " + required);
+}
+
 if (failures.length > 0) {
   console.error("IDENTITY_BOUNDARY_VERIFY=FAIL");
   for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);

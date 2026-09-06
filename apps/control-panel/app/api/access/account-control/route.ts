@@ -44,9 +44,16 @@ export async function POST(request: Request) {
   if (rawExpectedVersion === undefined || rawExpectedVersion === null) {
     return jsonError("PRECONDITION_REQUIRED", "expectedVersion is required for concurrency safety", 428);
   }
-  const expectedVersion = typeof rawExpectedVersion === "number" ? rawExpectedVersion : parseInt(String(rawExpectedVersion), 10);
-  if (isNaN(expectedVersion) || expectedVersion < 0) {
-    return jsonError("INVALID_INPUT", "expectedVersion must be a non-negative integer", 400);
+  let expectedVersion: number;
+  if (typeof rawExpectedVersion === "number") {
+    expectedVersion = rawExpectedVersion;
+  } else if (typeof rawExpectedVersion === "string" && /^[1-9]\d*$/.test(rawExpectedVersion.trim())) {
+    expectedVersion = Number(rawExpectedVersion.trim());
+  } else {
+    return jsonError("INVALID_INPUT", "expectedVersion must be a positive integer >= 1", 400);
+  }
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
+    return jsonError("INVALID_INPUT", "expectedVersion must be a positive integer >= 1", 400);
   }
 
   try {

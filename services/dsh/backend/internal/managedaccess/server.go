@@ -129,6 +129,14 @@ func (s *Server) setEnabledByPhone(w http.ResponseWriter, r *http.Request, enabl
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID is forbidden; use X-Acting-Actor-ID")
+		return
+	}
+	if r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "If-Match is forbidden; use X-Expected-Version")
+		return
+	}
 	var input roleStateRequest
 	if !decodeJSON(w, r, &input) {
 		return
@@ -142,17 +150,20 @@ func (s *Server) setEnabledByPhone(w http.ResponseWriter, r *http.Request, enabl
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
 	if operatorActorID == "" {
-		operatorActorID = strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required for managed role state mutations")
+		return
 	}
-	expectedVersion := 0
-	if rawVer := strings.TrimSpace(r.Header.Get("X-Expected-Version")); rawVer != "" {
-		v, err := strconv.Atoi(rawVer)
-		if err != nil || v < 0 {
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version must be a non-negative integer")
-			return
-		}
-		expectedVersion = v
+	rawVer := strings.TrimSpace(r.Header.Get("X-Expected-Version"))
+	if rawVer == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version is required for managed role state mutations")
+		return
 	}
+	v, err := strconv.Atoi(rawVer)
+	if err != nil || v < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version must be a positive integer >= 1")
+		return
+	}
+	expectedVersion := v
 	if err := s.identity.SetRoleEnabledByPhoneWithContext(r.Context(), phone, role, enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason, operatorActorID, expectedVersion); err != nil {
 		writeIdentityError(w, err)
 		return
@@ -165,6 +176,14 @@ func (s *Server) Ready(ctx context.Context) error { return s.identity.Readiness(
 func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 	if !s.authorized(r) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID is forbidden; use X-Acting-Actor-ID")
+		return
+	}
+	if r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "If-Match is forbidden; use X-Expected-Version")
 		return
 	}
 	var input provisionRequest
@@ -182,17 +201,20 @@ func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+
 	var (
 		view identityclient.ActorRoleView
 		err  error
 	)
 	switch role {
 	case "partner":
-		view, err = s.identity.ProvisionPartner(r.Context(), identityboundary.ActorInput{PhoneE164: phone})
+		view, err = s.identity.ProvisionPartnerWithContext(r.Context(), identityboundary.ActorInput{PhoneE164: phone}, correlationID, operatorActorID)
 	case "captain":
-		view, err = s.identity.ProvisionCaptain(r.Context(), identityboundary.ActorInput{PhoneE164: phone})
+		view, err = s.identity.ProvisionCaptainWithContext(r.Context(), identityboundary.ActorInput{PhoneE164: phone}, correlationID, operatorActorID)
 	case "field":
-		view, err = s.identity.ProvisionField(r.Context(), identityboundary.ActorInput{PhoneE164: phone})
+		view, err = s.identity.ProvisionFieldWithContext(r.Context(), identityboundary.ActorInput{PhoneE164: phone}, correlationID, operatorActorID)
 	}
 	if err != nil {
 		writeIdentityError(w, err)
@@ -213,6 +235,14 @@ func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
 		return
 	}
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID is forbidden; use X-Acting-Actor-ID")
+		return
+	}
+	if r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "If-Match is forbidden; use X-Expected-Version")
+		return
+	}
 	var input reenrollmentRequest
 	if !decodeJSON(w, r, &input) {
 		return
@@ -227,7 +257,9 @@ func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actorId is required")
 		return
 	}
-	if err := s.identity.AuthorizeReenrollment(r.Context(), actorID, role, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	if err := s.identity.AuthorizeReenrollmentWithContext(r.Context(), actorID, role, correlationID, operatorActorID); err != nil {
 		writeIdentityError(w, err)
 		return
 	}
@@ -237,6 +269,14 @@ func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reenrollByPhone(w http.ResponseWriter, r *http.Request) {
 	if !s.authorized(r) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID is forbidden; use X-Acting-Actor-ID")
+		return
+	}
+	if r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "If-Match is forbidden; use X-Expected-Version")
 		return
 	}
 	var input phoneReenrollmentRequest
@@ -253,7 +293,9 @@ func (s *Server) reenrollByPhone(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164 and role are required")
 		return
 	}
-	if err := s.identity.AuthorizeReenrollmentByPhone(r.Context(), phone, role, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	if err := s.identity.AuthorizeReenrollmentByPhoneWithContext(r.Context(), phone, role, correlationID, operatorActorID); err != nil {
 		writeIdentityError(w, err)
 		return
 	}

@@ -21,7 +21,11 @@ type Service struct{ db *sql.DB }
 func New(db *sql.DB) *Service { return &Service{db: db} }
 
 func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input domain.ProvisionActorRoleInput) (domain.ActorRoleView, error) {
-	return s.provisionTrusted(ctx, caller, input, false)
+	return s.ProvisionTrustedWithContext(ctx, caller, input, "")
+}
+
+func (s *Service) ProvisionTrustedWithContext(ctx context.Context, caller string, input domain.ProvisionActorRoleInput, actingActorID string) (domain.ActorRoleView, error) {
+	return s.provisionTrusted(ctx, caller, input, false, actingActorID)
 }
 
 func (s *Service) ProvisionPlatformOwnerBootstrap(ctx context.Context, caller string, input domain.ProvisionActorRoleInput) (domain.ActorRoleView, error) {
@@ -29,10 +33,10 @@ func (s *Service) ProvisionPlatformOwnerBootstrap(ctx context.Context, caller st
 		return domain.ActorRoleView{}, domain.ErrForbidden
 	}
 	input.Role = "platform_owner"
-	return s.provisionTrusted(ctx, caller, input, true)
+	return s.provisionTrusted(ctx, caller, input, true, "")
 }
 
-func (s *Service) provisionTrusted(ctx context.Context, caller string, input domain.ProvisionActorRoleInput, bootstrapOnly bool) (domain.ActorRoleView, error) {
+func (s *Service) provisionTrusted(ctx context.Context, caller string, input domain.ProvisionActorRoleInput, bootstrapOnly bool, actingActorID string) (domain.ActorRoleView, error) {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role := strings.ToLower(strings.TrimSpace(input.Role))
 	if bootstrapOnly {
@@ -99,7 +103,13 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		}
 		a = domain.Actor{ID: actorID, PhoneE164: phone, SecurityEnabled: true, Version: 1}
 		actorCreated = true
-		if err := auditTx(ctx, tx, "actor.created", actorID, caller, "success", "", nil); err != nil {
+		actorAuditPrincipal := caller
+		actorMeta := map[string]any{"workload": caller}
+		if strings.TrimSpace(actingActorID) != "" {
+			actorAuditPrincipal = caller + ":" + strings.TrimSpace(actingActorID)
+			actorMeta["actingActorId"] = strings.TrimSpace(actingActorID)
+		}
+		if err := auditTx(ctx, tx, "actor.created", actorID, actorAuditPrincipal, "success", "", actorMeta); err != nil {
 			return domain.ActorRoleView{}, err
 		}
 	} else if err != nil {
@@ -125,7 +135,13 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 			}
 		}
 		enabled, roleVersion, roleCreated = true, 1, true
-		if err := auditTx(ctx, tx, "actor_role.provisioned", a.ID, caller, "success", "", map[string]any{"role": role}); err != nil {
+		roleAuditPrincipal := caller
+		roleMeta := map[string]any{"role": role, "workload": caller}
+		if strings.TrimSpace(actingActorID) != "" {
+			roleAuditPrincipal = caller + ":" + strings.TrimSpace(actingActorID)
+			roleMeta["actingActorId"] = strings.TrimSpace(actingActorID)
+		}
+		if err := auditTx(ctx, tx, "actor_role.provisioned", a.ID, roleAuditPrincipal, "success", "", roleMeta); err != nil {
 			return domain.ActorRoleView{}, err
 		}
 	} else if err != nil {
@@ -552,6 +568,10 @@ func (s *Service) SetRoleEnabledWithContext(ctx context.Context, caller, actorID
 }
 
 func (s *Service) AuthorizeReenrollment(ctx context.Context, caller, actorID, role, correlationID string) error {
+	return s.AuthorizeReenrollmentWithContext(ctx, caller, actorID, role, correlationID, "")
+}
+
+func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, actorID, role, correlationID, operatorActorID string) error {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
 	role = strings.ToLower(strings.TrimSpace(role))
@@ -586,7 +606,13 @@ func (s *Service) AuthorizeReenrollment(ctx context.Context, caller, actorID, ro
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return err
 	}
-	if err := auditTx(ctx, tx, "actor_role.reenrollment_authorized", actorID, caller, "success", correlationID, map[string]any{"role": role}); err != nil {
+	auditPrincipal := caller
+	meta := map[string]any{"role": role, "workload": caller}
+	if strings.TrimSpace(operatorActorID) != "" {
+		auditPrincipal = caller + ":" + strings.TrimSpace(operatorActorID)
+		meta["operatorActorId"] = strings.TrimSpace(operatorActorID)
+	}
+	if err := auditTx(ctx, tx, "actor_role.reenrollment_authorized", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -690,6 +716,75 @@ func (s *Service) ResetOperatorPassword(ctx context.Context, caller, actorID, pa
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *Service) RecoverPlatformOwner(ctx context.Context, newPhone, newPassword string) (string, error) {
+	if len(newPassword) < 15 {
+		return "", domain.ErrInvalidInput
+	}
+	hash, err := identitysecurity.HashPassword(newPassword)
+	if err != nil {
+		return "", domain.ErrInvalidInput
+	}
+	var phoneE164 string
+	if strings.TrimSpace(newPhone) != "" {
+		phoneE164, err = identitysecurity.NormalizePhoneE164(newPhone)
+		if err != nil {
+			return "", domain.ErrInvalidInput
+		}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var actorID string
+	err = tx.QueryRowContext(ctx, "SELECT platform_owner_actor_id FROM identity_bootstrap_state WHERE id=1").Scan(&actorID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", domain.ErrNotFound
+		}
+		return "", err
+	}
+
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtext('identity:actors:' || $1))", actorID); err != nil {
+		return "", err
+	}
+
+	if phoneE164 != "" {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_actors SET phone_e164=$1, updated_at=clock_timestamp() WHERE id=$2", phoneE164, actorID); err != nil {
+			return "", err
+		}
+	}
+
+	result, err := tx.ExecContext(ctx, "UPDATE identity_password_credentials SET password_hash=$1, version=version+1, updated_at=clock_timestamp() WHERE actor_id=$2 AND role='platform_owner'", hash, actorID)
+	if err != nil {
+		return "", err
+	}
+	count, _ := result.RowsAffected()
+	if count != 1 {
+		return "", domain.ErrNotFound
+	}
+
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()), version=version+1 WHERE actor_id=$1 AND role='platform_owner' AND revoked_at IS NULL", actorID); err != nil {
+		return "", err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked', updated_at=clock_timestamp() WHERE actor_id=$1 AND status='pending'", actorID); err != nil {
+		return "", err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_password_attempts WHERE actor_id=$1", actorID); err != nil {
+		return "", err
+	}
+
+	if err := auditTx(ctx, tx, "actor.platform_owner_emergency_recovery", actorID, "platform-owner-recovery-cli", "success", "", map[string]any{
+		"role":          "platform_owner",
+		"phone_updated": phoneE164 != "",
+	}); err != nil {
+		return "", err
+	}
+
+	return actorID, tx.Commit()
 }
 
 func newActorID() (string, error) {

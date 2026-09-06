@@ -196,9 +196,19 @@ async function requestChallenge(pathname, body, purpose) {
   return { challenge, code };
 }
 
-console.log("Identity runtime candidate: " + baseUrl);
 await expect("GET", "/identity/health", 200);
 await expect("GET", "/identity/readiness", 200);
+
+let platformOwnerActorId = sql("SELECT COALESCE(platform_owner_actor_id, '') FROM identity_bootstrap_state WHERE id=1");
+if (!platformOwnerActorId) {
+  const bootstrapOwnerPhone = phone();
+  const bootstrapped = await expect("POST", "/internal/bootstrap/platform-owner", 201, {
+    headers: service(platformToken),
+    body: { phoneE164: bootstrapOwnerPhone, password: "Bootstrap-" + suffix + "-Strong-Password" },
+  });
+  platformOwnerActorId = bootstrapped.actorId;
+}
+assert(typeof platformOwnerActorId === "string" && platformOwnerActorId.startsWith("act_"), "platform_owner actorId invalid");
 
 // Retired universal OTP/login routes are unreachable.
 await expect("POST", "/auth/otp/request", 404, { body: { phone: phone(), role: "client" } });
@@ -274,11 +284,11 @@ await expect("POST", "/internal/actor-roles/provision", 400, {
   body: { phoneE164: phone(), role: "captain", username: "retired-identifier" },
 });
 await expect("POST", "/internal/actor-roles/provision", 403, {
-  headers: service(platformToken),
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
   body: { phoneE164: phone(), role: "captain" },
 });
 await expect("POST", "/internal/actor-roles/provision", 403, {
-  headers: service(platformToken),
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
   body: { phoneE164: phone(), role: "platform_owner" },
 });
 
@@ -331,7 +341,7 @@ await expect("POST", "/internal/operator-enrollment-tokens", 403, {
 // Operator provisioning is a separate role-scoped credential on the same actor.
 const operatorPassword = "Operator-" + suffix + "-Strong-Password";
 const operator = await expect("POST", "/internal/actor-roles/provision", 201, {
-  headers: service(platformToken),
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
   body: { phoneE164: sharedPhone, role: "operator" },
 });
 assert(operator.actorId === actorId, "operator provisioning created a second actor");
@@ -341,7 +351,7 @@ await expect("POST", "/internal/actor-roles/provision", 403, {
 });
 
 const operatorActivation = await expect("POST", "/internal/operator-enrollment-tokens", 201, {
-  headers: service(platformToken),
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
   body: { phoneE164: sharedPhone, role: "operator" },
 });
 assertEnrollmentToken(operatorActivation.code, "operator enrollment token");
@@ -423,7 +433,7 @@ await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/reenrollment",
   403,
-  { headers: service(platformToken) },
+  { headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }) },
 );
 await expect(
   "POST",
@@ -490,7 +500,7 @@ const staleOperatorStart = await requestChallenge(
 );
 const resetOperatorPassword = "Operator-Reset-" + suffix + "-Strong-Password";
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
-  headers: service(platformToken),
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
   body: { password: resetOperatorPassword },
 });
 await expect("POST", "/auth/operator/login/complete", 401, {
@@ -676,7 +686,7 @@ await expect("GET", "/auth/session", 401, { token: rotated.accessToken });
 // Operator password reset revokes only operator sessions and keeps other roles alive.
 const newOperatorPassword = operatorPassword + "-Reset";
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
-  headers: service(platformToken, { "X-Correlation-ID": "operator-reset-" + suffix }),
+  headers: service(platformToken, { "X-Correlation-ID": "operator-reset-" + suffix, "X-Acting-Actor-ID": platformOwnerActorId }),
   body: { password: newOperatorPassword },
 });
 await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
@@ -716,13 +726,31 @@ const operatorAfterReset = await expect("POST", "/auth/operator/login/complete",
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 403, {
   headers: service(dshToken),
 });
+
+// Negative invariant assertions: missing acting actor, forbidden aliases, invalid version, version conflict
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
+  headers: service(platformToken, { "X-Expected-Version": "1", "X-Reason": "negative test missing actor" }),
+});
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Actor-ID": platformOwnerActorId, "X-Expected-Version": "1", "X-Reason": "negative test legacy actor" }),
+});
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "If-Match": "1", "X-Expected-Version": "1", "X-Reason": "negative test if match" }),
+});
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "0", "X-Reason": "negative test version 0" }),
+});
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 409, {
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "999", "X-Reason": "negative test version conflict" }),
+});
+
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 204, {
-  headers: service(platformToken),
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "1", "X-Reason": "security disable invariant test" }),
 });
 await expect("GET", "/auth/session", 401, { token: clientPair.accessToken });
 await expect("GET", "/auth/session", 401, { token: operatorAfterReset.accessToken });
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/enable", 204, {
-  headers: service(platformToken),
+  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "2", "X-Reason": "security enable invariant test" }),
 });
 await expect("POST", "/auth/client/login", 200, {
   body: { phone: sharedPhone, password: customerPassword, deviceFingerprint: "device-post-security-" + suffix },

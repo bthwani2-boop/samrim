@@ -45,6 +45,9 @@ paths:
       summary: Provision a managed operational role (partner, captain, field)
       security:
         - serviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/ActingActorId"
       requestBody:
         required: true
         content:
@@ -110,8 +113,8 @@ paths:
         - serviceBearer: []
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
-        - $ref: "#/components/parameters/ActingActorId"
-        - $ref: "#/components/parameters/ExpectedVersion"
+        - $ref: "#/components/parameters/ActingActorIdRequired"
+        - $ref: "#/components/parameters/ExpectedVersionRequired"
       requestBody:
         required: true
         content:
@@ -136,8 +139,8 @@ paths:
         - serviceBearer: []
       parameters:
         - $ref: "#/components/parameters/CorrelationId"
-        - $ref: "#/components/parameters/ActingActorId"
-        - $ref: "#/components/parameters/ExpectedVersion"
+        - $ref: "#/components/parameters/ActingActorIdRequired"
+        - $ref: "#/components/parameters/ExpectedVersionRequired"
       requestBody:
         required: true
         content:
@@ -160,6 +163,9 @@ paths:
       summary: Authorize reenrollment for a managed role by phone
       security:
         - serviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/ActingActorId"
       requestBody:
         required: true
         content:
@@ -188,6 +194,8 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/ActingActorId"
       requestBody:
         required: true
         content:
@@ -226,13 +234,27 @@ components:
       schema:
         type: string
         maxLength: 128
+    ActingActorIdRequired:
+      name: X-Acting-Actor-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        maxLength: 128
     ExpectedVersion:
       name: X-Expected-Version
       in: header
       required: false
       schema:
         type: integer
-        minimum: 0
+        minimum: 1
+    ExpectedVersionRequired:
+      name: X-Expected-Version
+      in: header
+      required: true
+      schema:
+        type: integer
+        minimum: 1
 
   schemas:
     StatusResponse:

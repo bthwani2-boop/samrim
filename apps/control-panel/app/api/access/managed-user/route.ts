@@ -31,19 +31,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: { code: "INVALID_INPUT", message: "phone and managed role are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
   try {
+    const correlationId = randomUUID();
+    const mutationOptions = { operatorActorId: identity.subject, correlationId };
     if (recover) {
       if (role === "operator") return NextResponse.json({ error: { code: "RECOVERY_UNSUPPORTED", message: "operator recovery is not available from managed access" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
       const existing = await lookupManagedRoleStatus(phone, role as "partner" | "captain" | "field");
       if (!existing.exists || !existing.activated) return NextResponse.json({ error: { code: "CONFLICT", message: "the managed role is not currently activated" } }, { status: 409, headers: { "Cache-Control": "no-store" } });
-      await authorizeManagedReenrollment(phone, role as "partner" | "captain" | "field", randomUUID());
+      await authorizeManagedReenrollment(phone, role as "partner" | "captain" | "field", correlationId, { operatorActorId: identity.subject });
     }
     if (role === "operator") {
-      await provisionOperator(phone);
+      await provisionOperator(phone, mutationOptions);
     } else {
-      await provisionManagedRole(phone, role as "partner" | "captain" | "field");
+      await provisionManagedRole(phone, role as "partner" | "captain" | "field", mutationOptions);
     }
     if (role === "operator") {
-      const result = await issueOperatorEnrollmentToken(phone);
+      const result = await issueOperatorEnrollmentToken(phone, mutationOptions);
       return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
     }
     return NextResponse.json({ status: recover ? "role_reenrollment_authorized" : "role_provisioned", role }, { status: 200, headers: { "Cache-Control": "no-store" } });

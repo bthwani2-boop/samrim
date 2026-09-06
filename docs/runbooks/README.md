@@ -19,36 +19,15 @@ If a runbook conflicts with executable behavior, fix the runbook unless the exec
 
 ## Router
 
-### Access
-- `access/identity.md`
+Current operational runbooks strictly document active, executable services in the repository. Future domain capabilities (Commerce, Finance, Fulfillment, Communications, Partner Operations) remain governed exclusively under `governance/product/capabilities/` and will introduce operational runbooks only when executable implementations are materialized.
 
-### Commerce
-- `commerce/client-addresses.md`
-- `commerce/stores.md`
-- `commerce/orders.md`
-- `commerce/catalog-promotions-ratings.md`
-- `commerce/special-requests-and-support.md`
-
-### Partner
-- `partner/partner-onboarding.md`
-
-### Fulfillment
-- `fulfillment/dispatch.md`
-
-### Communications
-- `communications/communications-and-media.md`
-
-### Finance
-- `finance/checkout-wlt.md`
-- `finance/payments.md`
-- `finance/wallet-reconciliation.md`
-- `finance/settlements-and-payouts.md`
-- `finance/provider-unknown-outcomes.md`
+### Access & Identity
+- `access/identity.md` — Covers human actor authentication, session management, managed role onboarding/activation, operator reenrollment, emergency recovery, and delivery.
 
 ### Platform
-- `platform/systemic-platform-recovery.md`
+- `platform/systemic-platform-recovery.md` — Covers platform incident response, schema conformance verification, local runtime reset, and emergency containment.
 
-Conditional/future mechanisms that are not executable today do not belong in current runbooks. Preserve historical rationale in Git or non-authoritative external/donor reference material only when it still has evidence value.
+Conditional, speculative, or unbuilt domain operations that are not executable today do not belong in current runbooks.
 
 Mobile/EAS, observability and release procedures belong under `../development/`.
 
