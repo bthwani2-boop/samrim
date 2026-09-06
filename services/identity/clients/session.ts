@@ -76,6 +76,7 @@ export class IdentitySessionManager {
   private readonly key: string;
   private stateValue: IdentitySessionState = { kind: "signed_out" };
   private tokens: StoredTokens | null = null;
+  private refreshInFlight: Promise<IdentitySessionState> | null = null;
 
   constructor(
     private readonly client: IdentityClient,
@@ -170,6 +171,16 @@ export class IdentitySessionManager {
   }
 
   private async refreshStored(stored: StoredTokens): Promise<IdentitySessionState> {
+    if (this.refreshInFlight) return this.refreshInFlight;
+    this.refreshInFlight = this.performRefresh(stored);
+    try {
+      return await this.refreshInFlight;
+    } finally {
+      this.refreshInFlight = null;
+    }
+  }
+
+  private async performRefresh(stored: StoredTokens): Promise<IdentitySessionState> {
     try {
       const fingerprint = (await this.deviceFingerprint()).trim();
       if (fingerprint.length < 8) throw new Error("IDENTITY_DEVICE_FINGERPRINT_UNAVAILABLE");

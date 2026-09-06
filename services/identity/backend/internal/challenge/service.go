@@ -28,6 +28,13 @@ type Service struct {
 
 const dummyPasswordHash = "$argon2id$v=19$m=65536,t=3,p=2$nl2x4UwETv8mM+eRDPVuvQ$C1rH4q7MVn4IuThQWK4cmDjPmF5HBNafRD7OMiZRpIY"
 
+const (
+	passwordAccountFailureLimit = 5
+	passwordSourceFailureLimit  = 30
+	challengePhoneFailureLimit  = 15
+	challengeSourceFailureLimit = 30
+)
+
 func New(db *sql.DB, actors *actor.Service, sessions *session.Service, secret []byte, sender challengedelivery.Sender) *Service {
 	return &Service{db: db, actors: actors, sessions: sessions, secret: secret, sender: sender, now: time.Now}
 }
@@ -35,6 +42,9 @@ func New(db *sql.DB, actors *actor.Service, sessions *session.Service, secret []
 func (s *Service) RequestClientRegistration(ctx context.Context, input domain.PhoneRequest, ipHash string) (domain.Challenge, error) {
 	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
 	if err != nil {
+		return domain.Challenge{}, domain.ErrInvalidInput
+	}
+	if len(ipHash) != 64 {
 		return domain.Challenge{}, domain.ErrInvalidInput
 	}
 	var actorID string
@@ -92,6 +102,13 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 	}
 	if len(strings.TrimSpace(ipHash)) != 64 {
 		return domain.TokenPair{}, domain.ErrInvalidInput
+	}
+	limited, err := s.passwordAdmission(ctx, phone, role, ipHash)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	if limited {
+		return domain.TokenPair{}, domain.ErrRateLimited
 	}
 	a, hash, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
 	if errors.Is(lookupErr, domain.ErrNotFound) {
@@ -364,6 +381,13 @@ func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorL
 	if err != nil {
 		return domain.Challenge{}, domain.ErrInvalidInput
 	}
+	limited, err := s.passwordAdmission(ctx, phone, role, ipHash)
+	if err != nil {
+		return domain.Challenge{}, err
+	}
+	if limited {
+		return domain.Challenge{}, domain.ErrRateLimited
+	}
 	a, hash, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
 	valid := lookupErr == nil && identitysecurity.VerifyPassword(hash, input.Password)
 	if errors.Is(lookupErr, domain.ErrNotFound) {
@@ -442,7 +466,14 @@ FOR UPDATE OF c,r,a`, actorID, phone, role).Scan(&currentHash, &enabled, &securi
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_challenges WHERE request_ip_hash=$1 AND created_at>clock_timestamp()-interval '15 minutes'", ipHash).Scan(&sourceRecent); err != nil {
 		return domain.Challenge{}, err
 	}
-	if phoneRecent >= 5 || sourceRecent >= 20 {
+	var phoneFailures, sourceFailures int
+	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(attempts),0) FROM identity_challenges WHERE phone_e164=$1 AND role=$2 AND purpose=$3 AND created_at>clock_timestamp()-interval '15 minutes'", phone, role, purpose).Scan(&phoneFailures); err != nil {
+		return domain.Challenge{}, err
+	}
+	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(attempts),0) FROM identity_challenges WHERE request_ip_hash=$1 AND created_at>clock_timestamp()-interval '15 minutes'", ipHash).Scan(&sourceFailures); err != nil {
+		return domain.Challenge{}, err
+	}
+	if phoneRecent >= 5 || sourceRecent >= 20 || phoneFailures >= challengePhoneFailureLimit || sourceFailures >= challengeSourceFailureLimit {
 		return domain.Challenge{}, domain.ErrRateLimited
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE phone_e164=$1 AND role=$2 AND purpose=$3 AND status='pending'", phone, role, purpose); err != nil {
@@ -593,7 +624,31 @@ func (s *Service) recordPasswordFailure(ctx context.Context, phone, role, ipHash
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	return accountFailures >= 5 || sourceFailures >= 29, nil
+	return accountFailures+1 >= passwordAccountFailureLimit || sourceFailures+1 >= passwordSourceFailureLimit, nil
+}
+
+func (s *Service) passwordAdmission(ctx context.Context, phone, role, ipHash string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, key := range []string{"identity:password-source:" + ipHash, "identity:password-subject:" + role + ":" + phone} {
+		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", key); err != nil {
+			return false, err
+		}
+	}
+	var accountFailures, sourceFailures int
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE phone_e164=$1 AND role=$2 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'", phone, role).Scan(&accountFailures); err != nil {
+		return false, err
+	}
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE ip_hash=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'", ipHash).Scan(&sourceFailures); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return accountFailures >= passwordAccountFailureLimit || sourceFailures >= passwordSourceFailureLimit, nil
 }
 
 func (s *Service) recordPasswordSuccess(ctx context.Context, phone, role, ipHash string) error {
@@ -621,8 +676,8 @@ func (s *Service) codeFor(challengeID, purpose string) (string, error) {
 	if err != nil || len(bytes) != 4 {
 		return "", domain.ErrUnavailable
 	}
-	value := (uint32(bytes[0])<<24 | uint32(bytes[1])<<16 | uint32(bytes[2])<<8 | uint32(bytes[3])) % 10000
-	return strconv.FormatUint(uint64(value)+10000, 10)[1:], nil
+	value := strconv.FormatUint(uint64((uint32(bytes[0])<<24|uint32(bytes[1])<<16|uint32(bytes[2])<<8|uint32(bytes[3]))%1_000_000), 10)
+	return strings.Repeat("0", 6-len(value)) + value, nil
 }
 func auditTx(ctx context.Context, tx *sql.Tx, eventType, actorID, principal, outcome, correlationID string, metadata map[string]any) error {
 	if metadata == nil {

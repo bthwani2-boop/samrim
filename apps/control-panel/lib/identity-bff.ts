@@ -17,13 +17,18 @@ import {
   type TokenPair,
 } from "@bthwani/identity";
 
-const accessCookie = "bt_identity_access";
-const refreshCookie = "bt_identity_refresh";
-const deviceCookie = "bt_identity_device";
+const cookiePrefix = process.env.NODE_ENV === "production" ? "__Host-" : "";
+const accessCookie = `${cookiePrefix}bt_identity_access`;
+const refreshCookie = `${cookiePrefix}bt_identity_refresh`;
+const deviceCookie = `${cookiePrefix}bt_identity_device`;
+const refreshInFlight = new Map<string, Promise<ActorIdentity | null>>();
 
 function identityBaseUrl(): string {
   const explicit = process.env.IDENTITY_API_BASE_URL?.trim();
-  if (explicit) return explicit;
+  if (explicit) {
+    if (process.env.NODE_ENV === "production" && !explicit.startsWith("https://")) throw new Error("IDENTITY_API_HTTPS_REQUIRED");
+    return explicit;
+  }
   if (process.env.NODE_ENV === "development") return "http://127.0.0.1:18082";
   throw new Error("IDENTITY_API_BASE_URL_REQUIRED");
 }
@@ -119,6 +124,15 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const refreshToken = store.get(refreshCookie)?.value;
   const deviceFingerprint = store.get(deviceCookie)?.value;
   if (!accessToken && !refreshToken) return null;
+  const refreshKey = `${refreshToken ?? ""}:${deviceFingerprint ?? ""}`;
+  const activeRefresh = refreshInFlight.get(refreshKey);
+  if (activeRefresh) return activeRefresh;
+  const result = readOperatorSessionOnce(store, accessToken, refreshToken, deviceFingerprint);
+  refreshInFlight.set(refreshKey, result);
+  try { return await result; } finally { refreshInFlight.delete(refreshKey); }
+}
+
+async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>>, accessToken?: string, refreshToken?: string, deviceFingerprint?: string): Promise<ActorIdentity | null> {
 
   if (accessToken) {
     try {

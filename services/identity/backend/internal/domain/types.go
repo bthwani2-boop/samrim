@@ -200,7 +200,9 @@ func RoleAllowedForCaller(caller, role string) bool {
 	case "dsh":
 		return role == "partner" || role == "captain" || role == "field"
 	case "platform-control":
-		return role == "operator" || role == "platform_owner"
+		return role == "operator"
+	case "platform-bootstrap":
+		return role == "platform_owner"
 	default:
 		return false
 	}

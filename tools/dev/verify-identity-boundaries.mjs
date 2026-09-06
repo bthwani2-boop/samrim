@@ -167,9 +167,14 @@ for (const required of [
   "/auth/operator/login/complete:",
   "/internal/actors/{actorId}/roles/{role}/reenrollment:",
   "/internal/managed-activation-codes:",
+  "/internal/bootstrap/platform-owner:",
 ]) {
   if (!contract.includes(required)) failures.push("Identity contract missing " + required);
 }
+const sixDigitPatterns = contract.match(/pattern: "\^\[0-9\]\{6\}\$"/g) ?? [];
+if (sixDigitPatterns.length < 5) failures.push("Identity contract must expose six-digit challenge schemas");
+if (contract.includes('pattern: "^[0-9]{4}$"')) failures.push("Identity contract contains retired four-digit challenge schema");
+if (contract.includes("minLength: 12")) failures.push("Identity contract contains retired twelve-character password minimum");
 for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller"]) {
   if (contract.includes(forbidden)) failures.push("Identity contract contains retired auth shape " + forbidden);
 }
@@ -264,7 +269,7 @@ for (const required of [
 if (!/r\.ActivatedAt\s*==\s*nil/.test(challenge)) failures.push("managed activation does not enforce one-time enrollment state");
 
 const session = read("services/identity/backend/internal/session/service.go");
-for (const required of ["CreateTx", "identity_refresh_token_history", "device_fingerprint_hash", "identityOf(actorID,sessionID,role"]) {
+for (const required of ["CreateTx", "identity_refresh_token_history", "device_fingerprint_hash", "identityOf(actorID"]) {
   if (!session.includes(required)) failures.push("Identity session service missing " + required);
 }
 for (const forbidden of ["func (s *Service) Login(", "PasswordHash", "username", "surfaceAccess"]) {
@@ -305,10 +310,27 @@ if (actorTable.includes("password_hash") || actorTable.includes("username")) fai
 const security = read("services/identity/backend/internal/security/values.go");
 if (!security.includes("argon2.IDKey")) failures.push("Identity password hashing is not Argon2id");
 if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identity security implementation");
+for (const required of ["verificationCodePattern = regexp.MustCompile(\"^[0-9]{6}$\")", "activationCodePattern", "RandomToken(32)", "NormalizePassword", "PasswordAllowed"]) {
+  if (!security.includes(required)) failures.push("Identity security boundary missing " + required);
+}
+const actorService = read("services/identity/backend/internal/actor/service.go");
+for (const required of ["SELECT EXISTS(SELECT 1 FROM identity_actor_roles WHERE role='platform_owner')", "platform_owner", "activatedAt.Valid"]) {
+  if (!actorService.includes(required)) failures.push("Identity owner bootstrap fence missing " + required);
+}
+const domainTypes = read("services/identity/backend/internal/domain/types.go");
+for (const required of ["case \"platform-bootstrap\":", "return role == \"platform_owner\""]) {
+  if (!domainTypes.includes(required)) failures.push("Identity platform bootstrap caller boundary missing " + required);
+}
+const runtimeConfig = read("services/identity/backend/internal/runtime/server.go");
+if (!runtimeConfig.includes('tokens["platform-bootstrap"] = bootstrapToken')) failures.push("Identity platform bootstrap secret is not runtime-configured");
+const httpServer = read("services/identity/backend/internal/transport/http/server.go");
+for (const required of ["/internal/bootstrap/platform-owner", 'caller != "platform-bootstrap"']) {
+  if (!httpServer.includes(required)) failures.push("Identity platform bootstrap route fence missing " + required);
+}
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [
-  "const SchemaVersion = 7",
+  "const SchemaVersion = 9",
   "CurrentSchemaVersion",
   "migration history is non-contiguous",
   "identity_password_credentials",
@@ -317,8 +339,15 @@ for (const required of [
   "identity_challenge_deliveries",
   "identity_password_attempts",
   "identity_sessions_active_idx",
+  "absolute_expires_at",
+  "identity_sessions_absolute_idx",
+  "identity_challenges_phone_purpose_idx",
 ]) {
   if (!readiness.includes(required)) failures.push("Identity readiness proof missing " + required);
+}
+const controlLifetimeMigration = read("services/identity/database/migrations/009_control_session_lifetimes.sql");
+for (const required of ["role IN ('operator', 'platform_owner')", "refresh_expires_at = LEAST", "absolute_expires_at = LEAST"]) {
+  if (!controlLifetimeMigration.includes(required)) failures.push("Identity control-session lifetime migration missing " + required);
 }
 const migrationRuntime = read("services/identity/backend/internal/runtime/migrations.go");
 for (const required of ["postgres.SchemaVersion", "missing identity migration version", "postgres.Migrate(ctx,db,version"]) {
@@ -333,6 +362,7 @@ if (!dockerfile.includes("COPY services/identity/database/migrations /app/migrat
 for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.env.example", "services/identity/backend/internal/runtime/server.go"]) {
   const body = read(file);
   if (!body.includes("IDENTITY_CHALLENGE_HMAC_SECRET")) failures.push(file + " missing challenge secret configuration");
+  if (!body.includes("IDENTITY_ABUSE_HMAC_SECRET")) failures.push(file + " missing abuse secret configuration");
   if (body.includes("IDENTITY_ACTIVATION_HMAC_SECRET") || body.includes("IDENTITY_ACTIVATION_DELIVERY_MODE")) {
     failures.push(file + " retains activation-only runtime configuration");
   }

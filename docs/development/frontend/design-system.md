@@ -41,3 +41,17 @@ Shared semantic tokens may coexist with platform-specific component implementati
 `docs/reference/external-systems/experience-design-ui-assurance.md` is non-authoritative evidence only.
 
 Potential evaluation routes include Style Dictionary for token transforms, standards-grade web primitives, Storybook-like state workbenches, Playwright/axe-style web verification, Maestro-like mobile E2E and a semantic icon API over a generic icon source. Dependency adoption always returns to current Governance and executable manifests; this guide never authorizes installation.
+
+## Current Arabic-first surface brief
+
+The implementation-facing brief for the current operational surfaces belongs here; durable product meaning remains in `governance/product/EXPERIENCE-AND-DESIGN.md`, and runtime tokens remain in `packages/design-system`.
+
+- Use a warm, quiet work surface (`#FFFCF8`) with white working cards.
+- Use navy (`#0A2F5C`) for structure, hierarchy and readable text.
+- Use orange (`#FF500D`) only for the governed primary action and active focus.
+- Keep the brand signature consistent: a small orange rail, clear navy wordmark, bounded spacing and one dominant action per state.
+- Arabic is the reading lane. Technical identifiers are secondary and never the headline of a successful task.
+- Role apps open with one focused activation surface. Phone, code and the next legal action are visible in sequence.
+- Control-panel sign-in is password first and second factor second; current step, required input, busy state and recovery action are explicit.
+- Recoverable failures are Arabic, actionable and safe to repeat. Raw service errors are not rendered to operators.
+- Mobile surfaces consume semantic tokens from `@bthwani/design-system`; web surfaces mirror the same roles through CSS variables.

@@ -34,11 +34,13 @@ const env = parseEnv(envFile);
 const port = env.SAMRIM_IDENTITY_PORT || "18082";
 const baseUrl = "http://127.0.0.1:" + port;
 const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
+const abuseSecret = env.IDENTITY_ABUSE_HMAC_SECRET;
 const dshToken = env.IDENTITY_DSH_SERVICE_TOKEN;
 const platformToken = env.IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN;
 
 for (const [name, value, minimum] of [
   ["IDENTITY_CHALLENGE_HMAC_SECRET", challengeSecret, 32],
+  ["IDENTITY_ABUSE_HMAC_SECRET", abuseSecret, 32],
   ["IDENTITY_DSH_SERVICE_TOKEN", dshToken, 24],
   ["IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN", platformToken, 24],
 ]) {
@@ -93,7 +95,7 @@ function codeFor(challengeId, purpose) {
     .update(Buffer.from([0]))
     .update("challenge-code")
     .digest();
-  return String(digest.readUInt32BE(0) % 10_000).padStart(4, "0");
+  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0");
 }
 
 async function request(method, pathname, options = {}) {
@@ -129,8 +131,12 @@ function assert(condition, message) {
   if (!condition) fail(message);
 }
 
-function assertFourDigitCode(value, label) {
-  assert(typeof value === "string" && /^[0-9]{4}$/.test(value), label + " is not a four-digit code");
+function assertSixDigitCode(value, label) {
+  assert(typeof value === "string" && /^[0-9]{6}$/.test(value), label + " is not a six-digit code");
+}
+
+function assertOpaqueActivationCode(value, label) {
+  assert(typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value), label + " is not an opaque activation code");
 }
 
 function service(token, extra = {}) {
@@ -153,7 +159,7 @@ async function requestChallenge(pathname, body, purpose) {
   const challenge = await expect("POST", pathname, 201, { body });
   assert(typeof challenge.challengeId === "string" && challenge.challengeId.length > 10, "challenge id missing");
   const code = codeFor(challenge.challengeId, purpose);
-  assertFourDigitCode(code, "verification code");
+  assertSixDigitCode(code, "verification code");
   assert(!JSON.stringify(challenge).includes(code), "raw verification code leaked in public challenge");
   return { challenge, code };
 }
@@ -231,13 +237,17 @@ await expect("POST", "/internal/actor-roles/provision", 403, {
   headers: service(platformToken),
   body: { phoneE164: phone(), role: "captain" },
 });
+await expect("POST", "/internal/actor-roles/provision", 403, {
+  headers: service(platformToken),
+  body: { phoneE164: phone(), role: "platform_owner" },
+});
 
 // Managed activation is one-time and produces a role-scoped device-bound session.
 const captainActivation = await expect("POST", "/internal/managed-activation-codes", 201, {
   headers: service(platformToken),
   body: { phoneE164: sharedPhone, role: "captain" },
 });
-assertFourDigitCode(captainActivation.code, "captain activation code");
+assertOpaqueActivationCode(captainActivation.code, "captain activation code");
 const captainChallenge = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "captain", activationCode: captainActivation.code },
@@ -296,7 +306,7 @@ const operatorActivation = await expect("POST", "/internal/managed-activation-co
   headers: service(platformToken),
   body: { phoneE164: sharedPhone, role: "operator" },
 });
-assertFourDigitCode(operatorActivation.code, "operator activation code");
+assertOpaqueActivationCode(operatorActivation.code, "operator activation code");
 const operatorActivationChallenge = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "operator", activationCode: operatorActivation.code },
@@ -352,14 +362,14 @@ await expect("POST", "/auth/managed/activate", 401, {
   body: {
     phone: sharedPhone,
     role: "captain",
-    activationCode: "0000",
-    verificationCode: "0000",
+    activationCode: "000000",
+    verificationCode: "000000",
     password: captainPassword,
     deviceFingerprint: "device-captain-repeated-" + suffix,
   },
 });
 await expect("POST", "/auth/managed/activation/request", 401, {
-  body: { phone: sharedPhone, role: "captain", activationCode: "0000" },
+  body: { phone: sharedPhone, role: "captain", activationCode: "000000" },
 });
 
 // Explicit DSH re-enrollment is the only path that reopens managed activation.
@@ -383,7 +393,7 @@ const reactivationCode = await expect("POST", "/internal/managed-activation-code
   headers: service(dshToken),
   body: { phoneE164: sharedPhone, role: "captain" },
 });
-assertFourDigitCode(reactivationCode.code, "re-enrollment activation code");
+assertOpaqueActivationCode(reactivationCode.code, "re-enrollment activation code");
 const reactivation = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "captain", activationCode: reactivationCode.code },
@@ -451,7 +461,7 @@ await expect("POST", "/auth/client/login", 200, {
 // Unknown managed-role requests are non-enumerating but their decoy proof cannot grant a role/session.
 const unknownCaptainPhone = phone();
 await expect("POST", "/auth/managed/activation/request", 401, {
-  body: { phone: unknownCaptainPhone, role: "captain", activationCode: "0000" },
+  body: { phone: unknownCaptainPhone, role: "captain", activationCode: "000000" },
 });
 
 // Provider outage must not become an actor/role oracle. Public acknowledgement is independent of delivery outcome.
@@ -465,7 +475,7 @@ const outageActivation = await expect("POST", "/internal/managed-activation-code
   headers: service(dshToken),
   body: { phoneE164: outageKnownPhone, role: "captain" },
 });
-assertFourDigitCode(outageActivation.code, "outage activation code");
+assertOpaqueActivationCode(outageActivation.code, "outage activation code");
 compose("stop", "mailpit");
 try {
   const knownOutage = await requestChallenge(
@@ -497,7 +507,7 @@ const locked = await requestChallenge(
   { phone: lockedPhone },
   "client_register",
 );
-  const wrongCode = locked.code === "0000" ? "0001" : "0000";
+  const wrongCode = locked.code === "000000" ? "000001" : "000000";
 for (let attempt = 0; attempt < 5; attempt++) {
   await expect("POST", "/auth/client/register", 401, {
     body: {
@@ -516,6 +526,28 @@ await expect("POST", "/auth/client/register", 401, {
     deviceFingerprint: "device-locked-" + suffix,
   },
 });
+
+// Reissuing a challenge does not reset the cumulative phone/source attempt budget.
+const budgetPhone = phone();
+for (let round = 0; round < 3; round++) {
+  const reissued = await requestChallenge(
+    "/auth/client/registration/request",
+    { phone: budgetPhone },
+    "client_register",
+  );
+  const reissueWrongCode = reissued.code === "000000" ? "000001" : "000000";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await expect("POST", "/auth/client/register", 401, {
+      body: {
+        phone: budgetPhone,
+        code: reissueWrongCode,
+        password: "Budget-" + suffix + "-Password",
+        deviceFingerprint: "device-budget-" + suffix,
+      },
+    });
+  }
+}
+await expect("POST", "/auth/client/registration/request", 429, { body: { phone: budgetPhone } });
 
 // Refresh remains device-bound, rotates atomically, and detects historical replay.
 const refreshPair = await expect("POST", "/auth/client/login", 200, {

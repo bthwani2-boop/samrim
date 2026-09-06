@@ -29,17 +29,21 @@ func TestIdentityInputNormalization(t *testing.T) {
 	if value, err := NormalizeDeviceFingerprint("device-12345678"); err != nil || value != "device-12345678" {
 		t.Fatalf("valid fingerprint rejected: %q %v", value, err)
 	}
-	if value, err := NormalizeVerificationCode("1234"); err != nil || value != "1234" {
+	if value, err := NormalizeVerificationCode("123456"); err != nil || value != "123456" {
 		t.Fatalf("valid verification code rejected: %q %v", value, err)
 	}
 	if _, err := NormalizeVerificationCode("12345"); err == nil {
 		t.Fatal("invalid verification code accepted")
 	}
-	if value, err := NormalizeActivationCode("0123"); err != nil || value != "0123" {
-		t.Fatalf("valid activation code rejected: %q %v", value, err)
+	if _, err := NormalizeActivationCode("0123"); err == nil {
+		t.Fatal("short activation code accepted")
 	}
-	if _, err := NormalizeActivationCode("BTH-AAAA"); err == nil {
-		t.Fatal("legacy activation code accepted")
+	activationCode, err := RandomActivationCode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, err := NormalizeActivationCode(activationCode); err != nil || value != activationCode {
+		t.Fatalf("valid activation code rejected: %q %v", value, err)
 	}
 }
 func TestOpaqueSecurityValues(t *testing.T) {
@@ -56,14 +60,35 @@ func TestOpaqueSecurityValues(t *testing.T) {
 	}
 }
 
-func TestRandomActivationCodeIsFourDigits(t *testing.T) {
+func TestRandomActivationCodeIsOpaque(t *testing.T) {
 	code, err := RandomActivationCode()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value, err := NormalizeActivationCode(code); err != nil || value != code || len(code) != 4 {
+	if value, err := NormalizeActivationCode(code); err != nil || value != code || len(code) != 43 {
 		t.Fatalf("unexpected activation code: %q %v", code, err)
 	}
+}
+
+func TestPasswordPolicyNormalizesUnicodeAndRejectsWeakValues(t *testing.T) {
+	if PasswordAllowed("123456789012345") {
+		t.Fatal("common password accepted")
+	}
+	if PasswordAllowed("short") {
+		t.Fatal("short password accepted")
+	}
+	if _, err := HashPassword("Cafe\u0301-Long-Password"); err != nil || !VerifyPassword(mustHashPassword(t, "Café-Long-Password"), "Cafe\u0301-Long-Password") {
+		t.Fatal("NFC password normalization failed")
+	}
+}
+
+func mustHashPassword(t *testing.T, password string) string {
+	t.Helper()
+	hash, err := HashPassword(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hash
 }
 
 func TestArgon2idPasswordHashing(t *testing.T) {

@@ -20,6 +20,7 @@ for (const route of [
   "/auth/logout:",
   "/auth/session:",
   "/internal/actor-roles/provision:",
+  "/internal/bootstrap/platform-owner:",
   "/internal/actor-roles/search:",
   "/internal/actors/{actorId}/roles/{role}:",
   "/internal/actors/{actorId}/roles/{role}/disable:",

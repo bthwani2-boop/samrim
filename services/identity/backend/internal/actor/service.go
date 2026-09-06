@@ -49,6 +49,15 @@ func (s *Service) ProvisionTrusted(ctx context.Context, caller string, input dom
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:phone:"+phone); err != nil {
 		return domain.ActorRoleView{}, err
 	}
+	if role == "platform_owner" {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM identity_actor_roles WHERE role='platform_owner')").Scan(&exists); err != nil {
+			return domain.ActorRoleView{}, err
+		}
+		if exists {
+			return domain.ActorRoleView{}, domain.ErrConflict
+		}
+	}
 
 	a, err := actorByPhoneTx(ctx, tx, phone)
 	actorCreated := false

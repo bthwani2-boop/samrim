@@ -23,7 +23,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := serviceruntime.RunWithRoutes("dsh", "/dsh", "58080", managedAccess.Register); err != nil {
+	if err := serviceruntime.RunWithRoutesAndReadiness("dsh", "/dsh", "58080", managedAccess.Register, managedAccess.Ready); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -20,6 +20,8 @@ import (
 type Config struct {
 	InternalServiceTokens map[string]string
 	AllowedOrigins        map[string]bool
+	AbuseIPSecret         []byte
+	TrustedProxies        map[string]bool
 	Readiness             func() error
 }
 
@@ -50,6 +52,7 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /auth/logout", s.logout)
 	mux.HandleFunc("GET /auth/session", s.currentSession)
 	mux.HandleFunc("POST /internal/actor-roles/provision", s.internal(s.provisionRole))
+	mux.HandleFunc("POST /internal/bootstrap/platform-owner", s.internal(s.bootstrapPlatformOwner))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}", s.internal(s.getRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/disable", s.internal(s.disableRole))
@@ -80,7 +83,7 @@ func (s *Server) requestClientRegistration(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.RequestClientRegistration(r.Context(), input, identitysecurity.SHA256Hex(remoteIP(r)))
+	result, err := s.challenges.RequestClientRegistration(r.Context(), input, s.ipHash(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -104,7 +107,7 @@ func (s *Server) loginClient(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.LoginClient(r.Context(), input, identitysecurity.SHA256Hex(remoteIP(r)))
+	result, err := s.challenges.LoginClient(r.Context(), input, s.ipHash(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -116,7 +119,7 @@ func (s *Server) requestClientRecovery(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.RequestClientRecovery(r.Context(), input, identitysecurity.SHA256Hex(remoteIP(r)))
+	result, err := s.challenges.RequestClientRecovery(r.Context(), input, s.ipHash(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -140,7 +143,7 @@ func (s *Server) requestManagedActivation(w http.ResponseWriter, r *http.Request
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.RequestManagedActivation(r.Context(), input, identitysecurity.SHA256Hex(remoteIP(r)))
+	result, err := s.challenges.RequestManagedActivation(r.Context(), input, s.ipHash(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -188,7 +191,7 @@ func (s *Server) startOperatorLogin(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.StartOperatorLogin(r.Context(), input, identitysecurity.SHA256Hex(remoteIP(r)))
+	result, err := s.challenges.StartOperatorLogin(r.Context(), input, s.ipHash(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -274,6 +277,27 @@ func (s *Server) provisionRole(w http.ResponseWriter, r *http.Request, caller st
 	if !decodeJSON(w, r, &input) {
 		return
 	}
+	view, err := s.actors.ProvisionTrusted(r.Context(), caller, input)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	status := http.StatusOK
+	if view.ActorCreated || view.RoleCreated {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, view)
+}
+func (s *Server) bootstrapPlatformOwner(w http.ResponseWriter, r *http.Request, caller string) {
+	if caller != "platform-bootstrap" {
+		writeDomainError(w, domain.ErrForbidden)
+		return
+	}
+	var input domain.ProvisionActorRoleInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.Role = "platform_owner"
 	view, err := s.actors.ProvisionTrusted(r.Context(), caller, input)
 	if err != nil {
 		writeDomainError(w, err)
@@ -430,6 +454,27 @@ func remoteIP(r *http.Request) string {
 		return host
 	}
 	return strings.TrimSpace(r.RemoteAddr)
+}
+
+func (s *Server) ipHash(r *http.Request) string {
+	return identitysecurity.HMAC256Hex(s.config.AbuseIPSecret, "client-ip", s.clientIP(r))
+}
+
+func (s *Server) clientIP(r *http.Request) string {
+	peer := remoteIP(r)
+	if !s.config.TrustedProxies[peer] {
+		return peer
+	}
+	for _, candidate := range strings.Split(r.Header.Get("X-Forwarded-For"), ",") {
+		candidate = strings.TrimSpace(candidate)
+		if parsed := net.ParseIP(candidate); parsed != nil {
+			return parsed.String()
+		}
+	}
+	if candidate := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); candidate != nil {
+		return candidate.String()
+	}
+	return peer
 }
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

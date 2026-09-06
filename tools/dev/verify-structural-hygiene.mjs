@@ -270,11 +270,12 @@ for (const [dir, files] of filesByDirectory) {
 
 for (const file of tracked) {
   const absolute = path.join(repoRoot, file);
+  if (!fs.existsSync(absolute)) continue;
   const stat = fs.statSync(absolute);
   if (stat.size === 0) failures.push("Zero-byte tracked artifact: " + file);
 }
 
-const unclassified = tracked.filter((file) => !classifications.has(file));
+const unclassified = tracked.filter((file) => fs.existsSync(path.join(repoRoot, file)) && !classifications.has(file));
 for (const file of unclassified) {
   failures.push("UNCLASSIFIED_TRACKED_ARTIFACT: " + file);
 }

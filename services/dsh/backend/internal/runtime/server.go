@@ -19,10 +19,14 @@ type statusResponse struct {
 }
 
 func Run(service, prefix, defaultPort string) error {
-	return RunWithRoutes(service, prefix, defaultPort, nil)
+	return RunWithRoutesAndReadiness(service, prefix, defaultPort, nil, nil)
 }
 
 func RunWithRoutes(service, prefix, defaultPort string, register func(*http.ServeMux)) error {
+	return RunWithRoutesAndReadiness(service, prefix, defaultPort, register, nil)
+}
+
+func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register func(*http.ServeMux), readiness func(context.Context) error) error {
 	port := strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
 		port = defaultPort
@@ -33,9 +37,22 @@ func RunWithRoutes(service, prefix, defaultPort string, register func(*http.Serv
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(statusResponse{Service: service, Status: "ok"})
 	}
+	writeReadiness := func(w http.ResponseWriter, r *http.Request) {
+		if readiness != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := readiness(ctx); err != nil {
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(statusResponse{Service: service, Status: "not_ready"})
+				return
+			}
+		}
+		writeStatus(w, r)
+	}
 
 	mux.HandleFunc(prefix+"/health", writeStatus)
-	mux.HandleFunc(prefix+"/readiness", writeStatus)
+	mux.HandleFunc(prefix+"/readiness", writeReadiness)
 	if register != nil {
 		register(mux)
 	}
@@ -44,6 +61,9 @@ func RunWithRoutes(service, prefix, defaultPort string, register func(*http.Serv
 		Addr:              ":" + port,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

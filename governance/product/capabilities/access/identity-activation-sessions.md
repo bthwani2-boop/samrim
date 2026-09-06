@@ -76,6 +76,7 @@ This file is the **sole editable durable semantic owner** of `IDENTITY_ACTIVATIO
 - Client/captain sessions may coexist; disabling captain invalidates captain only.
 - Platform Control global security disable invalidates all role sessions for the same actor, DSH cannot invoke it, role bindings remain intact, and re-enable requires new authentication.
 - Operator password proof alone does not create a session; the required second-factor challenge must also be successfully consumed.
+- Operator normal access requires password plus a second authentication factor/challenge; password-only success is never a privileged session grant.
 - Operator credential reset invalidates operator sessions but not unrelated-role sessions.
 - Forged caller headers cannot change the principal resolved from a service credential.
 - Generated contract/client/app/database/runtime evidence contains zero legacy universal-OTP/client-activation or caller-header authority.

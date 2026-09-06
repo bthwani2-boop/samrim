@@ -204,13 +204,29 @@ paths:
       tags: [internal-actor-roles]
       operationId: provisionActorRole
       security: [{ internalServiceToken: [] }]
-      description: The authenticated service token determines the caller. Identity alone creates actor_id. DSH may provision partner/captain/field; Platform Control may provision the platform owner or an operator. Only the platform-owner bootstrap creates a password here; managed roles create their role-scoped password during one-time activation after phone verification.
+      description: The authenticated service token determines the caller. Identity alone creates actor_id. DSH may provision partner/captain/field; Platform Control may provision an operator. Platform-owner creation is forbidden on this general route and is available only through the one-time platform bootstrap route.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ProvisionActorRoleRequest" } } }
       responses:
         "200": { description: Existing exact actor-role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
         "201": { description: Canonical actor and/or role created., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/bootstrap/platform-owner:
+    post:
+      tags: [internal-actor-roles]
+      operationId: bootstrapPlatformOwner
+      security: [{ internalServiceToken: [] }]
+      description: One-time platform-owner bootstrap. The dedicated bootstrap secret is accepted only while no platform-owner role exists; subsequent attempts and platform-control tokens are rejected.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProvisionActorRoleRequest" } } }
+      responses:
+        "201": { description: Platform owner created., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -439,7 +455,7 @@ components:
           type: string
           minLength: 4
           maxLength: 4
-          pattern: "^[0-9]{4}$"
+          pattern: "^[0-9]{6}$"
 
     ClientCredentialProofRequest:
       type: object
@@ -450,10 +466,10 @@ components:
           type: string
         code:
           type: string
-          pattern: "^[0-9]{4}$"
+          pattern: "^[0-9]{6}$"
         password:
           type: string
-          minLength: 12
+          minLength: 15
           maxLength: 128
         deviceFingerprint:
           type: string
@@ -469,7 +485,7 @@ components:
           type: string
         password:
           type: string
-          minLength: 12
+          minLength: 15
           maxLength: 128
         deviceFingerprint:
           type: string
@@ -485,7 +501,7 @@ components:
           type: string
         password:
           type: string
-          minLength: 12
+          minLength: 15
           maxLength: 128
         role:
           $ref: "#/components/schemas/ManagedActorType"
@@ -507,13 +523,13 @@ components:
           type: string
           minLength: 4
           maxLength: 4
-          pattern: "^[0-9]{4}$"
+          pattern: "^[0-9]{6}$"
         verificationCode:
           type: string
-          pattern: "^[0-9]{4}$"
+          pattern: "^[0-9]{6}$"
         password:
           type: string
-          minLength: 12
+          minLength: 15
           maxLength: 128
         deviceFingerprint:
           type: string
@@ -529,7 +545,7 @@ components:
           type: string
         password:
           type: string
-          minLength: 12
+          minLength: 15
           maxLength: 128
         role:
           $ref: "#/components/schemas/ControlPanelRole"
@@ -543,7 +559,7 @@ components:
           type: string
         code:
           type: string
-          pattern: "^[0-9]{4}$"
+          pattern: "^[0-9]{6}$"
         role:
           $ref: "#/components/schemas/ControlPanelRole"
         deviceFingerprint:
@@ -620,7 +636,7 @@ components:
           enum: [partner, captain, field, operator, platform_owner]
         password:
           type: string
-          minLength: 12
+          minLength: 15
           maxLength: 128
 
     ManagedActivationCodeIssueRequest:
@@ -698,7 +714,7 @@ components:
       properties:
         password:
           type: string
-          minLength: 12
+          minLength: 15
           maxLength: 128
 
     SessionInfo:

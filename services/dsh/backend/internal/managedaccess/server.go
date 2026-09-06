@@ -1,6 +1,7 @@
 package managedaccess
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,11 @@ import (
 type provisionRequest struct {
 	PhoneE164 string `json:"phoneE164"`
 	Role      string `json:"role"`
+}
+
+type reenrollmentRequest struct {
+	ActorID string `json:"actorId"`
+	Role    string `json:"role"`
 }
 
 type Server struct {
@@ -31,7 +37,10 @@ func New(identity *identityboundary.Client, accessToken string) (*Server, error)
 
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/managed-roles/provision", s.provision)
+	mux.HandleFunc("POST /dsh/managed-roles/{actorId}/reenrollment", s.reenroll)
 }
+
+func (s *Server) Ready(ctx context.Context) error { return s.identity.Readiness(ctx) }
 
 func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 	if !s.authorized(r) {
@@ -80,6 +89,35 @@ func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(view)
+}
+
+func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	var input reenrollmentRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "role is required")
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	if role != "partner" && role != "captain" && role != "field" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "role must be partner, captain, or field")
+		return
+	}
+	actorID := strings.TrimSpace(r.PathValue("actorId"))
+	if actorID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actorId is required")
+		return
+	}
+	if err := s.identity.AuthorizeReenrollment(r.Context(), actorID, role, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+		writeIdentityError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) authorized(r *http.Request) bool {

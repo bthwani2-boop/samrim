@@ -5,21 +5,22 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/text/unicode/norm"
 )
 
 var (
 	phonePattern            = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
 	devicePattern           = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
-	verificationCodePattern = regexp.MustCompile("^[0-9]{4}$")
-	activationCodePattern   = regexp.MustCompile("^[0-9]{4}$")
+	verificationCodePattern = regexp.MustCompile("^[0-9]{6}$")
+	activationCodePattern   = regexp.MustCompile("^[A-Za-z0-9_-]{43}$")
 	ErrInvalidValue         = errors.New("invalid identity value")
 )
 
@@ -84,18 +85,7 @@ func RandomToken(byteCount int) (string, error) {
 }
 
 func RandomActivationCode() (string, error) {
-	const bound = uint64(1) << 32
-	limit := bound - (bound % 10000)
-	for {
-		var buffer [4]byte
-		if _, err := rand.Read(buffer[:]); err != nil {
-			return "", err
-		}
-		value := uint64(binary.BigEndian.Uint32(buffer[:]))
-		if value < limit {
-			return fmt.Sprintf("%04d", value%10000), nil
-		}
-	}
+	return RandomToken(32)
 }
 
 func SHA256Hex(value string) string {
@@ -119,7 +109,8 @@ func ConstantTimeHexEqual(a, b string) bool {
 }
 
 func HashPassword(password string) (string, error) {
-	if len(password) < 12 || len(password) > 128 {
+	password = NormalizePassword(password)
+	if !PasswordAllowed(password) {
 		return "", ErrInvalidValue
 	}
 	salt := make([]byte, 16)
@@ -138,10 +129,36 @@ func HashPassword(password string) (string, error) {
 	), nil
 }
 
+func NormalizePassword(password string) string {
+	return norm.NFC.String(password)
+}
+
+func PasswordAllowed(password string) bool {
+	password = NormalizePassword(password)
+	if !utf8.ValidString(password) {
+		return false
+	}
+	length := utf8.RuneCountInString(password)
+	if length < 15 || length > 128 || strings.TrimSpace(password) == "" {
+		return false
+	}
+	return !isCommonPassword(password)
+}
+
+func isCommonPassword(password string) bool {
+	switch strings.ToLower(password) {
+	case "passwordpassword", "123456789012345", "qwertyuiopasdfg", "bthwani-password", "samrim-password":
+		return true
+	default:
+		return false
+	}
+}
+
 func VerifyPassword(encoded, password string) bool {
 	if encoded == "" || password == "" {
 		return false
 	}
+	password = NormalizePassword(password)
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false

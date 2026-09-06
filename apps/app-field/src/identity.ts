@@ -39,7 +39,11 @@ function developmentHostUrl(): string | undefined {
 
 function identityBaseUrl(): string {
   const explicit = configuredEnvironmentUrl();
-  if (explicit) return explicit;
+  if (explicit) {
+    if (process.env.NODE_ENV === "production" && explicit.startsWith("http://")) throw new Error("IDENTITY_BASE_URL_HTTPS_REQUIRED");
+    return explicit;
+  }
+  if (process.env.NODE_ENV !== "development") throw new Error("IDENTITY_BASE_URL_REQUIRED_IN_PRODUCTION");
   const development = developmentHostUrl();
   if (development) return development;
   throw new Error("IDENTITY_BASE_URL_UNAVAILABLE");

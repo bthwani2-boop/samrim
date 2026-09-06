@@ -210,8 +210,8 @@ export default function IdentityGate() {
   const needsProof = mode !== "login";
   const canSubmit =
     phone.trim().length > 0 &&
-    password.length >= 12 &&
-    (!needsProof || (proofRequested && code.trim().length === 4));
+    password.length >= 15 &&
+    (!needsProof || (proofRequested && code.trim().length === 6));
 
   return (
     <KeyboardAvoidingView
@@ -278,11 +278,11 @@ export default function IdentityGate() {
                       <TextInput
                         accessibilityLabel="رمز التحقق"
                         keyboardType="number-pad"
-                        maxLength={4}
+                        maxLength={6}
                         onBlur={() => setFocusedField(null)}
-                        onChangeText={(value) => setCode(value.replace(/\D/g, "").slice(0, 4))}
+                        onChangeText={(value) => setCode(value.replace(/\D/g, "").slice(0, 6))}
                         onFocus={() => setFocusedField("code")}
-                        placeholder="أدخل الرمز المكوّن من 4 أرقام"
+                        placeholder="أدخل الرمز المكوّن من 6 أرقام"
                         placeholderTextColor={colors.muted}
                         style={[styles.input, styles.numericInput, focusedField === "code" && styles.inputFocused]}
                         value={code}
@@ -300,7 +300,7 @@ export default function IdentityGate() {
                         onBlur={() => setFocusedField(null)}
                         onChangeText={setPassword}
                         onFocus={() => setFocusedField("password")}
-                        placeholder="12 حرفًا على الأقل"
+                        placeholder="15 حرفًا على الأقل"
                         placeholderTextColor={colors.muted}
                         secureTextEntry
                         style={[styles.input, focusedField === "password" && styles.inputFocused]}
