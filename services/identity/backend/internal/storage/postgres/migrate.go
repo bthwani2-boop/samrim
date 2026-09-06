@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 12
+const SchemaVersion = 13
 
 type MigrationRecord struct {
 	Version int
@@ -32,7 +32,7 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_managed_activation_codes", columns: []string{"id", "actor_id", "role", "phone_e164", "code_hash", "status", "attempts", "expires_at", "consumed_at", "created_by", "created_at", "updated_at"}, indexes: []string{"identity_managed_activation_codes_pkey", "identity_managed_activation_codes_pending_uq", "identity_managed_activation_codes_lookup_idx"}},
 	{table: "identity_sessions", columns: []string{"id", "actor_id", "role", "access_token_hash", "refresh_token_hash", "device_fingerprint_hash", "access_expires_at", "refresh_expires_at", "absolute_expires_at", "revoked_at", "compromised_at", "last_used_at", "version", "created_at"}, indexes: []string{"identity_sessions_pkey", "identity_sessions_access_hash_uq", "identity_sessions_refresh_hash_uq", "identity_sessions_actor_role_idx", "identity_sessions_active_idx", "identity_sessions_absolute_idx"}},
 	{table: "identity_refresh_token_history", columns: []string{"session_id", "token_hash", "rotated_at"}, indexes: []string{"identity_refresh_token_history_pkey", "identity_refresh_token_history_hash_uq", "identity_refresh_token_history_session_idx"}},
-	{table: "identity_password_attempts", columns: []string{"id", "phone_e164", "role", "ip_hash", "succeeded", "created_at"}, indexes: []string{"identity_password_attempts_pkey", "identity_password_attempts_subject_idx", "identity_password_attempts_ip_idx"}},
+	{table: "identity_password_attempts", columns: []string{"id", "phone_e164", "role", "ip_hash", "succeeded", "reserved", "created_at"}, indexes: []string{"identity_password_attempts_pkey", "identity_password_attempts_subject_idx", "identity_password_attempts_ip_idx"}},
 	{table: "identity_security_audit", columns: []string{"id", "event_type", "subject_actor_id", "principal", "outcome", "correlation_id", "metadata", "created_at"}, indexes: []string{"identity_security_audit_pkey", "identity_security_audit_subject_idx"}},
 }
 
@@ -66,7 +66,7 @@ func CurrentSchemaVersion(ctx context.Context, db *sql.DB) (int, error) {
 	return expected - 1, nil
 }
 
-func Migrate(ctx context.Context, db *sql.DB, version int, migrationSQL string) error {
+func Migrate(ctx context.Context, db *sql.DB, version int, name, sha256, migrationSQL string) error {
 	if migrationSQL == "" {
 		return fmt.Errorf("identity migration v%d is empty", version)
 	}
@@ -82,6 +82,11 @@ func Migrate(ctx context.Context, db *sql.DB, version int, migrationSQL string) 
 	}
 	if _, err := db.ExecContext(ctx, migrationSQL); err != nil {
 		return fmt.Errorf("apply identity canonical migration v%d: %w", version, err)
+	}
+	if version >= 12 {
+		if _, err := db.ExecContext(ctx, "INSERT INTO identity_schema_migrations(version,name,sha256) VALUES($1,$2,$3) ON CONFLICT (version) DO NOTHING", version, name, sha256); err != nil {
+			return fmt.Errorf("record identity canonical migration v%d: %w", version, err)
+		}
 	}
 	applied, err := CurrentSchemaVersion(ctx, db)
 	if err != nil {

@@ -190,6 +190,12 @@ const registration = await requestChallenge(
   { phone: sharedPhone },
   "client_register",
 );
+const repeatedRegistration = await requestChallenge(
+  "/auth/client/registration/request",
+  { phone: sharedPhone },
+  "client_register",
+);
+assert(repeatedRegistration.challenge.challengeId === registration.challenge.challengeId, "active challenge request was not idempotent");
 const clientPair = await expect("POST", "/auth/client/register", 201, {
   body: {
     phone: sharedPhone,

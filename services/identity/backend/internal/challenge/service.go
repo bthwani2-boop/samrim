@@ -29,10 +29,13 @@ type Service struct {
 const dummyPasswordHash = "$argon2id$v=19$m=65536,t=3,p=2$nl2x4UwETv8mM+eRDPVuvQ$C1rH4q7MVn4IuThQWK4cmDjPmF5HBNafRD7OMiZRpIY"
 
 const (
-	passwordAccountFailureLimit = 5
-	passwordSourceFailureLimit  = 30
-	challengePhoneFailureLimit  = 15
-	challengeSourceFailureLimit = 30
+	passwordSubjectRiskThreshold = 5
+	passwordSourceFailureLimit   = 30
+	challengePhoneFailureLimit   = 15
+	challengeSourceFailureLimit  = 30
+	challengeResendCooldown      = time.Minute
+	passwordBackoffStep          = 250 * time.Millisecond
+	passwordBackoffMaximum       = 2 * time.Second
 )
 
 func New(db *sql.DB, actors *actor.Service, sessions *session.Service, secret []byte, sender challengedelivery.Sender) *Service {
@@ -103,17 +106,20 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 	if len(strings.TrimSpace(ipHash)) != 64 {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
-	limited, err := s.passwordAdmission(ctx, phone, role, ipHash)
+	limited, backoff, reservationID, err := s.passwordAdmission(ctx, phone, role, ipHash)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
 	if limited {
 		return domain.TokenPair{}, domain.ErrRateLimited
 	}
+	if err := waitPasswordBackoff(ctx, backoff); err != nil {
+		return domain.TokenPair{}, err
+	}
 	a, hash, _, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
 	if errors.Is(lookupErr, domain.ErrNotFound) {
 		_ = identitysecurity.VerifyPassword(dummyPasswordHash, password)
-		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash)
+		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash, reservationID)
 		if recordErr != nil {
 			return domain.TokenPair{}, recordErr
 		}
@@ -123,10 +129,11 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
 	if lookupErr != nil {
+		_, _ = s.recordPasswordFailure(ctx, phone, role, ipHash, reservationID)
 		return domain.TokenPair{}, lookupErr
 	}
 	if !identitysecurity.VerifyPassword(hash, password) {
-		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash)
+		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash, reservationID)
 		if recordErr != nil {
 			return domain.TokenPair{}, recordErr
 		}
@@ -145,9 +152,12 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 	if err := tx.QueryRowContext(ctx, `SELECT c.password_hash,r.enabled,a.security_enabled FROM identity_password_credentials c
 JOIN identity_actor_roles r ON r.actor_id=c.actor_id AND r.role=c.role JOIN identity_actors a ON a.id=c.actor_id
 WHERE c.actor_id=$1 AND c.role=$2 FOR UPDATE OF c,r,a`, a.ID, role).Scan(&currentHash, &enabled, &securityEnabled); err != nil || !enabled || !securityEnabled || currentHash != hash {
+		if reservationID > 0 {
+			_, _ = tx.ExecContext(ctx, "UPDATE identity_password_attempts SET reserved=false WHERE id=$1 AND succeeded=false", reservationID)
+		}
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
-	if err := s.recordPasswordSuccessTx(ctx, tx, phone, role, ipHash); err != nil {
+	if err := s.recordPasswordSuccessTx(ctx, tx, phone, role, ipHash, reservationID); err != nil {
 		return domain.TokenPair{}, err
 	}
 	pair, err := s.sessions.CreateTx(ctx, tx, a.ID, role, device)
@@ -426,12 +436,15 @@ func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorL
 	if err != nil {
 		return domain.Challenge{}, domain.ErrInvalidInput
 	}
-	limited, err := s.passwordAdmission(ctx, phone, role, ipHash)
+	limited, backoff, reservationID, err := s.passwordAdmission(ctx, phone, role, ipHash)
 	if err != nil {
 		return domain.Challenge{}, err
 	}
 	if limited {
 		return domain.Challenge{}, domain.ErrRateLimited
+	}
+	if err := waitPasswordBackoff(ctx, backoff); err != nil {
+		return domain.Challenge{}, err
 	}
 	a, hash, credentialVersion, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
 	valid := lookupErr == nil && identitysecurity.VerifyPassword(hash, input.Password)
@@ -441,7 +454,7 @@ func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorL
 		return domain.Challenge{}, lookupErr
 	}
 	if !valid {
-		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash)
+		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash, reservationID)
 		if recordErr != nil {
 			return domain.Challenge{}, recordErr
 		}
@@ -450,7 +463,7 @@ func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorL
 		}
 		return s.issue(ctx, phone, role, domain.ChallengeOperatorMFA, "", false, 0, ipHash)
 	}
-	if err := s.recordPasswordSuccess(ctx, phone, role, ipHash); err != nil {
+	if err := s.recordPasswordSuccess(ctx, phone, role, ipHash, reservationID); err != nil {
 		return domain.Challenge{}, err
 	}
 	return s.issue(ctx, phone, role, domain.ChallengeOperatorMFA, a.ID, true, credentialVersion, ipHash)
@@ -487,6 +500,21 @@ func (s *Service) issue(ctx context.Context, phone, role, purpose, actorID strin
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", key); err != nil {
 			return domain.Challenge{}, err
 		}
+	}
+	var existingID string
+	var existingExpiry, existingCreated time.Time
+	err = tx.QueryRowContext(ctx, `SELECT id,expires_at,created_at
+FROM identity_challenges
+WHERE phone_e164=$1 AND role=$2 AND purpose=$3 AND status='pending'
+ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, phone, role, purpose).Scan(&existingID, &existingExpiry, &existingCreated)
+	if err == nil && s.now().UTC().Sub(existingCreated) < challengeResendCooldown {
+		if err := tx.Commit(); err != nil {
+			return domain.Challenge{}, err
+		}
+		return domain.Challenge{ChallengeID: existingID, MaskedPhone: identitysecurity.MaskPhone(phone), ExpiresAt: existingExpiry}, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return domain.Challenge{}, err
 	}
 	if purpose == domain.ChallengeOperatorMFA && admissible {
 		var currentVersion int
@@ -664,7 +692,7 @@ FOR UPDATE OF c,r,a`, resolvedActorID, role, phone).Scan(&currentVersion)
 	return pair, nil
 }
 
-func (s *Service) recordPasswordFailure(ctx context.Context, phone, role, ipHash string) (bool, error) {
+func (s *Service) recordPasswordFailure(ctx context.Context, phone, role, ipHash string, reservationID int64) (bool, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -682,56 +710,96 @@ func (s *Service) recordPasswordFailure(ctx context.Context, phone, role, ipHash
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE ip_hash=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'", ipHash).Scan(&sourceFailures); err != nil {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded) VALUES($1,$2,$3,false)", phone, role, ipHash); err != nil {
+	if reservationID > 0 {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_password_attempts SET reserved=false WHERE id=$1 AND succeeded=false", reservationID); err != nil {
+			return false, err
+		}
+	} else if _, err := tx.ExecContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded,reserved) VALUES($1,$2,$3,false,false)", phone, role, ipHash); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	return accountFailures+1 >= passwordAccountFailureLimit || sourceFailures+1 >= passwordSourceFailureLimit, nil
+	return sourceFailures >= passwordSourceFailureLimit, nil
 }
 
-func (s *Service) passwordAdmission(ctx context.Context, phone, role, ipHash string) (bool, error) {
+func (s *Service) passwordAdmission(ctx context.Context, phone, role, ipHash string) (bool, time.Duration, int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, err
+		return false, 0, 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	for _, key := range []string{"identity:password-source:" + ipHash, "identity:password-subject:" + role + ":" + phone} {
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", key); err != nil {
-			return false, err
+			return false, 0, 0, err
 		}
 	}
 	var accountFailures, sourceFailures int
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE phone_e164=$1 AND role=$2 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'", phone, role).Scan(&accountFailures); err != nil {
-		return false, err
+		return false, 0, 0, err
 	}
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE ip_hash=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'", ipHash).Scan(&sourceFailures); err != nil {
-		return false, err
+		return false, 0, 0, err
+	}
+	if sourceFailures >= passwordSourceFailureLimit {
+		if err := tx.Commit(); err != nil {
+			return false, 0, 0, err
+		}
+		return true, 0, 0, nil
+	}
+	var reservationID int64
+	if err := tx.QueryRowContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded,reserved) VALUES($1,$2,$3,false,true) RETURNING id", phone, role, ipHash).Scan(&reservationID); err != nil {
+		return false, 0, 0, err
 	}
 	if err := tx.Commit(); err != nil {
-		return false, err
+		return false, 0, 0, err
 	}
-	return accountFailures >= passwordAccountFailureLimit || sourceFailures >= passwordSourceFailureLimit, nil
+	backoff := time.Duration(0)
+	if accountFailures >= passwordSubjectRiskThreshold {
+		backoff = time.Duration(accountFailures-passwordSubjectRiskThreshold+1) * passwordBackoffStep
+		if backoff > passwordBackoffMaximum {
+			backoff = passwordBackoffMaximum
+		}
+	}
+	return false, backoff, reservationID, nil
 }
 
-func (s *Service) recordPasswordSuccess(ctx context.Context, phone, role, ipHash string) error {
+func (s *Service) recordPasswordSuccess(ctx context.Context, phone, role, ipHash string, reservationID int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := s.recordPasswordSuccessTx(ctx, tx, phone, role, ipHash); err != nil {
+	if err := s.recordPasswordSuccessTx(ctx, tx, phone, role, ipHash, reservationID); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
-func (s *Service) recordPasswordSuccessTx(ctx context.Context, tx *sql.Tx, phone, role, ipHash string) error {
-	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_password_attempts WHERE phone_e164=$1 AND role=$2 AND succeeded=false", phone, role); err != nil {
+func (s *Service) recordPasswordSuccessTx(ctx context.Context, tx *sql.Tx, phone, role, ipHash string, reservationID int64) error {
+	if reservationID > 0 {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_password_attempts SET succeeded=true,reserved=false WHERE id=$1 AND succeeded=false", reservationID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_password_attempts WHERE phone_e164=$1 AND role=$2 AND succeeded=false AND reserved=false", phone, role); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded) VALUES($1,$2,$3,true)", phone, role, ipHash)
+	_, err := tx.ExecContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded,reserved) VALUES($1,$2,$3,true,false)", phone, role, ipHash)
 	return err
+}
+
+func waitPasswordBackoff(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Service) codeFor(challengeID, purpose string) (string, error) {

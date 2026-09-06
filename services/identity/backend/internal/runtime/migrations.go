@@ -76,7 +76,7 @@ func applyMigrations(ctx context.Context, db *sql.DB, directory string, records 
 		if err != nil {
 			return fmt.Errorf("read identity migration v%d: %w", record.Version, err)
 		}
-		if err := postgres.Migrate(ctx, db, record.Version, string(raw)); err != nil {
+		if err := postgres.Migrate(ctx, db, record.Version, record.Name, record.SHA256, string(raw)); err != nil {
 			return err
 		}
 	}

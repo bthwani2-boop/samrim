@@ -345,7 +345,7 @@ for (const required of ["net.ParseCIDR(proxy)", "invalid CIDR", "invalid IP"]) {
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [
-    "const SchemaVersion = 12",
+    "const SchemaVersion = 13",
   "CurrentSchemaVersion",
   "migration history is non-contiguous",
   "identity_password_credentials",
@@ -365,9 +365,14 @@ for (const required of ["role IN ('operator', 'platform_owner')", "refresh_expir
   if (!controlLifetimeMigration.includes(required)) failures.push("Identity control-session lifetime migration missing " + required);
 }
 const migrationRuntime = read("services/identity/backend/internal/runtime/migrations.go");
-for (const required of ["postgres.SchemaVersion", "missing identity migration version", "postgres.Migrate(ctx, db, record.Version", "SynchronizeMigrationHistory"]) {
+for (const required of ["postgres.SchemaVersion", "missing identity migration version", "postgres.Migrate(ctx, db, record.Version, record.Name, record.SHA256", "SynchronizeMigrationHistory"]) {
   if (!migrationRuntime.includes(required)) failures.push("Identity ordered migration runtime missing " + required);
 }
+const challengeService = read("services/identity/backend/internal/challenge/service.go");
+for (const required of ["reserved", "RETURNING id", "waitPasswordBackoff", "challengeResendCooldown", "status='pending'"]) {
+  if (!challengeService.includes(required)) failures.push("Identity abuse boundary missing " + required);
+}
+if (challengeService.includes("accountFailures >= passwordAccountFailureLimit")) failures.push("Identity password auth still hard-locks a subject by failure count");
 const dockerfile = read("services/identity/backend/Dockerfile");
 if (!dockerfile.includes("COPY services/identity/database/migrations /app/migrations") ||
     !dockerfile.includes("IDENTITY_MIGRATION_DIR=/app/migrations")) {
