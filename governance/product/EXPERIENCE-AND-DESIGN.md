@@ -61,14 +61,28 @@ Copy must not claim success, service health, balance, eligibility or completion 
 
 Current BThwani visual direction is a calm operational commerce/control environment: warm neutral work surfaces, navy for trusted structure/content and orange for governed primary action.
 
-Current core palette decisions are:
+Current brand and light-foundation anchors are:
 
-- trusted structure/primary text: `#0A2F5C`;
-- governed primary action: `#FF500D`;
-- warm background: `#FFFCF8`;
-- primary surface: `#FFFFFF`.
+- trusted structure/primary text in light appearance: `#0A2F5C`;
+- governed primary-action brand anchor: `#FF500D`;
+- light background: `#FFFCF8`;
+- light primary surface: `#FFFFFF`.
 
-Semantic success/warning/danger/info/border/focus roles must be expressed through the shared semantic token system rather than copied raw values per surface. Brand changes update this durable authority and then the runtime token implementation; runtime drift does not redefine the brand.
+Semantic success/warning/danger/info/border/focus roles must be expressed through the shared semantic token system rather than copied raw values per surface. Brand changes update this durable authority and then the runtime token implementation; runtime drift does not redefine the brand. Raw light-foundation values must not be hardcoded as cross-theme component truth.
+
+## Light and dark appearance
+
+Light and dark are first-class supported appearance modes for BThwani interactive surfaces. They are presentation variants of one Product/UX meaning, not separate experiences or authorities.
+
+~~~text
+ONE SEMANTIC ROLE → LIGHT VALUE + DARK VALUE
+ONE PRODUCT STATE/ACTION → SAME MEANING/AUTHORITY/PRIORITY IN BOTH MODES
+ONE COMPONENT/PATTERN → THEME THROUGH SHARED SEMANTIC TOKENS
+~~~
+
+Do not implement dark appearance by mechanical color inversion, per-screen token forks, duplicated components or alternate Product copy. Both modes must preserve materially applicable contrast, focus visibility, state distinction, icon/media legibility, overlays/elevation and platform chrome while retaining the same authorization, navigation, feedback and recovery semantics.
+
+Appearance choice is presentation state and must not become domain/business truth. The concrete runtime selection/persistence mechanism belongs to the client/design-system implementation. Any materially affected surface or shared component whose rendering can vary by appearance must be proven in both supported modes before its visual/theme claim closes.
 
 Arabic is the primary reading lane. Current typography uses an Arabic-first sans lane and a distinct Latin/technical lane; runtime font loading/fallback implementation may evolve without changing this semantic requirement.
 

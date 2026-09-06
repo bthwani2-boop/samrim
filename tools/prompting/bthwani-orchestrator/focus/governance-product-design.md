@@ -74,7 +74,7 @@ Repair the highest material root and reverify affected consumers. Do not preserv
 
 ## 7. Accessibility, localization and performance
 
-Load EXPERIENCE-AND-DESIGN.md plus applicable frontend policy. Verify only material RTL/LTR, semantics, keyboard/focus, touch/large text, responsive behavior, loading/perceived performance and platform conventions. This lens does not invent thresholds.
+Load EXPERIENCE-AND-DESIGN.md plus applicable frontend policy. Verify only material RTL/LTR, light/dark appearance, semantics, keyboard/focus, touch/large text, responsive behavior, loading/perceived performance and platform conventions. This lens does not invent thresholds.
 
 ## 8. Representation preservation
 

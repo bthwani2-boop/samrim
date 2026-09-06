@@ -21,8 +21,9 @@ Before adding a primitive/token:
 2. define semantic rather than page-specific purpose;
 3. preserve web/native differences where behavior diverges;
 4. verify RTL/LTR;
-5. verify accessibility;
-6. avoid a second token/brand authority.
+5. verify Light/Dark appearance where rendering is affected;
+6. verify accessibility;
+7. avoid a second token/brand authority.
 
 ```text
 REAL_CONSUMER_NEED
@@ -46,9 +47,9 @@ Potential evaluation routes include Style Dictionary for token transforms, stand
 
 The implementation-facing brief for the current operational surfaces belongs here; durable product meaning remains in `governance/product/EXPERIENCE-AND-DESIGN.md`, and runtime tokens remain in `packages/design-system`.
 
-- Use a warm, quiet work surface (`#FFFCF8`) with white working cards.
-- Use navy (`#0A2F5C`) for structure, hierarchy and readable text.
-- Use orange (`#FF500D`) only for the governed primary action and active focus.
+- Light appearance uses a warm, quiet work surface (`#FFFCF8`) with white working cards (`#FFFFFF`).
+- Dark appearance uses the same semantic surface/content/action roles through the shared theme tokens; do not invert colors mechanically or add page-local dark palettes.
+- Navy (`#0A2F5C`) and orange (`#FF500D`) are brand/light anchors; consume semantic roles so theme-specific values can preserve contrast and state meaning.
 - Keep the brand signature consistent: a small orange rail, clear navy wordmark, bounded spacing and one dominant action per state.
 - Arabic is the reading lane. Technical identifiers are secondary and never the headline of a successful task.
 - Role apps open with one focused activation surface. Phone, code and the next legal action are visible in sequence.
