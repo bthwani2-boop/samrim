@@ -46,10 +46,7 @@ function global:pnpm {
         'captain',
         'field',
         'control',
-        'scrcpy',
-        'dsh',
-        'wlt',
-        'identity'
+        'scrcpy'
     )
 
     if ($args.Count -gt 0 -and $bthwaniCommands -contains [string] $args[0]) {
@@ -77,4 +74,4 @@ Set-Content -LiteralPath $profilePath -Value $newContent -Encoding utf8
 Write-Host "POWERSHELL_PROFILE=$profilePath"
 Write-Host "BTHWANI_REPO=$RepoRoot"
 Write-Host 'BTHWANI_PNPM_ROUTER=INSTALLED'
-Write-Host 'Commands now route from any PowerShell directory: client, partner, captain, field, control, scrcpy, dsh, wlt, identity.'
+Write-Host 'Commands now route from any PowerShell directory: client, partner, captain, field, control, scrcpy.'
