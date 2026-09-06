@@ -32,7 +32,7 @@ A screenshot is valid primary evidence only for a visual claim it can actually p
 
 ## 3. Tool-selection law
 
-Select the smallest adequate existing evidence producer for the claim.
+Select the smallest adequate existing evidence producer for the claim. Resolve current concrete tool roles from executable configuration and `docs/development/quality/quality-and-verification.md`; this module intentionally keeps mutable vendor/tool names out of execution law.
 
 ~~~text
 CLAIM
@@ -139,6 +139,8 @@ OPEN CORRECT RUNTIME
 ~~~
 
 Do not continue acting on stale element references after a material screen/navigation change when the selected tool requires refreshed state.
+
+An in-scope defect discovered here is not a reporting stop: return it to `../02-DIAGNOSE-ROOT-CAUSE.md`; after treatment through `../03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md`, re-run the material proof on the resulting exact candidate.
 
 ## 9. Failure classification
 

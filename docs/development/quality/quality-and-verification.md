@@ -35,7 +35,7 @@ A material capability/increment follows the user/system action through owner, st
 
 For materially affected interactive surfaces, use the smallest adequate evidence producer and keep tool choice subordinate to the claim. The Orchestrator owns closure semantics in `tools/prompting/bthwani-orchestrator/verify/surface-runtime-and-journey-proof.md`; this guide only describes current practical tool roles.
 
-Current external operator/agent choices, when installed and appropriate:
+Current concrete tool roles for that Orchestrator agent loop, when installed and appropriate:
 
 - **Web:** prefer Playwright CLI/MCP for agent-driven browser exploration and control; use Playwright Test when a durable repeatable web regression is required.
 - **Mobile:** prefer `agent-device` CLI/MCP for agent-native device exploration, debugging and semantic interaction. It can also provide replay/E2E evidence when that is sufficient for the claim.
