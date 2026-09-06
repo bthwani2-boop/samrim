@@ -24,3 +24,16 @@ func TestCalculateAccessExpiryUsesAccessLifetimeWhenSafe(t *testing.T) {
 		t.Fatalf("access expiry = %s, want 15 minute access lifetime", got)
 	}
 }
+
+func TestWithinRefreshRaceGraceAcceptsRecentHistoryOnly(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+	if !withinRefreshRaceGrace(now, now.Add(-refreshRaceGrace)) {
+		t.Fatal("refresh history at the grace boundary should be stale-safe")
+	}
+	if withinRefreshRaceGrace(now, now.Add(-(refreshRaceGrace + time.Nanosecond))) {
+		t.Fatal("refresh history outside the grace window should be replay-compromising")
+	}
+	if withinRefreshRaceGrace(now, now.Add(time.Nanosecond)) {
+		t.Fatal("future refresh history should not be stale-safe")
+	}
+}

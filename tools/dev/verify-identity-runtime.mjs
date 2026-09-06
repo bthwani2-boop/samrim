@@ -573,7 +573,7 @@ assert(
 // Start the independent abuse-budget slice from a fresh source identity. The actor, credentials,
 // and persisted state remain the same; this prevents the long semantic journey from self-triggering
 // the production source budget before the dedicated lockout assertions run.
-runtimeSourceIp = "198.19.0.1";
+runtimeSourceIp = "198.19.0." + crypto.randomInt(2, 254);
 
 // Challenge attempt locking is exact.
 const lockedPhone = phone();
@@ -637,10 +637,21 @@ await expect("POST", "/auth/refresh", 401, {
   body: { refreshToken: randomRefresh, deviceFingerprint: "device-refresh-" + suffix },
 });
 await expect("GET", "/auth/session", 200, { token: refreshPair.accessToken });
+const concurrentRefreshes = await Promise.all([
+  request("POST", "/auth/refresh", { body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: "device-refresh-" + suffix } }),
+  request("POST", "/auth/refresh", { body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: "device-refresh-" + suffix } }),
+]);
+const concurrentSuccesses = concurrentRefreshes.filter((response) => response.status === 200);
+const concurrentFailures = concurrentRefreshes.filter((response) => response.status === 401);
+assert(concurrentSuccesses.length === 1 && concurrentFailures.length === 1, "concurrent refresh did not produce one rotation and one stale rejection");
+const concurrentRotated = concurrentSuccesses[0].body;
+assert(typeof concurrentRotated?.refreshToken === "string", "concurrent refresh did not return a rotated token");
+await expect("GET", "/auth/session", 200, { token: concurrentRotated.accessToken });
 const rotated = await expect("POST", "/auth/refresh", 200, {
-  body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: "device-refresh-" + suffix },
+  body: { refreshToken: concurrentRotated.refreshToken, deviceFingerprint: "device-refresh-" + suffix },
 });
 assert(rotated.refreshToken !== refreshPair.refreshToken, "refresh token did not rotate");
+await new Promise((resolve) => setTimeout(resolve, 5_500));
 await expect("POST", "/auth/refresh", 401, {
   body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: "device-refresh-" + suffix },
 });
@@ -716,5 +727,6 @@ console.log("IDENTITY_DELIVERY_UNKNOWN_NO_BLIND_RETRY=PASS");
 console.log("IDENTITY_ROLE_SCOPED_REVOCATION=PASS");
 console.log("IDENTITY_GLOBAL_SECURITY_DISABLE=PASS");
 console.log("IDENTITY_REFRESH_DEVICE_BINDING=PASS");
+console.log("IDENTITY_REFRESH_CONCURRENT_STALE=PASS");
 console.log("IDENTITY_REFRESH_REPLAY_COMPROMISE=PASS");
 console.log("IDENTITY_RAW_CHALLENGE_CODE_LEAK=0");

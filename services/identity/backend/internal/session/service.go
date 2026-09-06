@@ -17,6 +17,8 @@ type Service struct {
 	now func() time.Time
 }
 
+const refreshRaceGrace = 5 * time.Second
+
 func New(db *sql.DB) *Service { return &Service{db: db, now: time.Now} }
 
 func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, deviceFingerprint string) (domain.TokenPair, error) {
@@ -121,11 +123,21 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if !identitysecurity.ConstantTimeHexEqual(currentHash, presentedHash) {
-		var exists bool
-		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM identity_refresh_token_history WHERE session_id=$1 AND token_hash=$2)", sessionID, presentedHash).Scan(&exists); err != nil {
+		var rotatedAt time.Time
+		err := tx.QueryRowContext(ctx, "SELECT rotated_at FROM identity_refresh_token_history WHERE session_id=$1 AND token_hash=$2", sessionID, presentedHash).Scan(&rotatedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.TokenPair{}, domain.ErrInvalidRefresh
+		}
+		if err != nil {
 			return domain.TokenPair{}, err
 		}
-		if !exists {
+		if withinRefreshRaceGrace(now, rotatedAt) {
+			if err := auditTx(ctx, tx, "session.refresh_stale", actorID, actorID, "stale", "", map[string]any{"sessionId": sessionID, "role": role}); err != nil {
+				return domain.TokenPair{}, err
+			}
+			if err := tx.Commit(); err != nil {
+				return domain.TokenPair{}, err
+			}
 			return domain.TokenPair{}, domain.ErrInvalidRefresh
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=clock_timestamp(),compromised_at=clock_timestamp(),version=version+1 WHERE id=$1", sessionID); err != nil {
@@ -280,6 +292,12 @@ func calculateAccessExpiry(now, absolute time.Time) time.Time {
 	}
 	return candidate
 }
+
+func withinRefreshRaceGrace(now, rotatedAt time.Time) bool {
+	age := now.Sub(rotatedAt)
+	return age >= 0 && age <= refreshRaceGrace
+}
+
 func auditTx(ctx context.Context, tx *sql.Tx, eventType, actorID, principal, outcome, correlationID string, metadata map[string]any) error {
 	if metadata == nil {
 		metadata = map[string]any{}
