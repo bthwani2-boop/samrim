@@ -25,7 +25,9 @@ let sessionValue: IdentitySessionManager | null = null;
 
 function configuredEnvironmentUrl(): string | undefined {
   const value = process.env.EXPO_PUBLIC_IDENTITY_API_URL?.trim();
-  return value || undefined;
+  if (!value) return undefined;
+  if (process.env.NODE_ENV === "development" && /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3})(?::|\/|$)/i.test(value)) return undefined;
+  return value;
 }
 
 function developmentHostUrl(): string | undefined {
