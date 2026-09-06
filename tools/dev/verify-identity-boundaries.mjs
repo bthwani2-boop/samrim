@@ -392,7 +392,7 @@ for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.en
   }
 }
 const runtimeServer = read("services/identity/backend/internal/runtime/server.go");
-for (const required of ["applyMigrations", "RunDeliveryWorker", "deliveryErrCh", "IDENTITY_MIGRATION_DIR"]) {
+for (const required of ["applyMigrations", "RunDeliveryWorker", "deliveryErrCh", "IDENTITY_MIGRATION_DIR", "BTHWANI_ENV", "IDENTITY_AUTO_MIGRATE is forbidden in production", "mailpit challenge delivery is forbidden outside local environments"]) {
   if (!runtimeServer.includes(required)) failures.push("Identity runtime async-delivery lifecycle missing " + required);
 }
 

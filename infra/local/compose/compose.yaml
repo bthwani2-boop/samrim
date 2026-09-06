@@ -58,6 +58,7 @@ services:
         condition: service_started
     environment:
       PORT: "8082"
+      BTHWANI_ENV: "development"
       IDENTITY_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       IDENTITY_AUTO_MIGRATE: "true"
       IDENTITY_CHALLENGE_HMAC_SECRET: "${IDENTITY_CHALLENGE_HMAC_SECRET}"

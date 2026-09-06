@@ -113,6 +113,12 @@ func Run(_, _, defaultPort string) error {
 
 func loadConfig(defaultPort string) (config, error) {
 	port := env("PORT", defaultPort)
+	runtimeEnvironment := strings.ToLower(strings.TrimSpace(os.Getenv("BTHWANI_ENV")))
+	switch runtimeEnvironment {
+	case "development", "test", "staging", "production":
+	default:
+		return config{}, errors.New("BTHWANI_ENV must be development, test, staging, or production")
+	}
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		return config{}, errors.New("IDENTITY_DATABASE_URL is required")
@@ -127,6 +133,13 @@ func loadConfig(defaultPort string) (config, error) {
 	}
 	tokens := map[string]string{"dsh": strings.TrimSpace(os.Getenv("IDENTITY_DSH_SERVICE_TOKEN")), "platform-control": strings.TrimSpace(os.Getenv("IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN"))}
 	bootstrapToken := strings.TrimSpace(os.Getenv("IDENTITY_PLATFORM_BOOTSTRAP_SECRET"))
+	autoMigrate := strings.EqualFold(strings.TrimSpace(os.Getenv("IDENTITY_AUTO_MIGRATE")), "true")
+	if runtimeEnvironment == "production" && autoMigrate {
+		return config{}, errors.New("IDENTITY_AUTO_MIGRATE is forbidden in production")
+	}
+	if runtimeEnvironment == "production" && bootstrapToken != "" {
+		return config{}, errors.New("IDENTITY_PLATFORM_BOOTSTRAP_SECRET is forbidden in production runtime")
+	}
 	if bootstrapToken != "" {
 		tokens["platform-bootstrap"] = bootstrapToken
 	}
@@ -140,7 +153,7 @@ func loadConfig(defaultPort string) (config, error) {
 		}
 		seen[token] = caller
 	}
-	delivery, err := loadDelivery()
+	delivery, err := loadDelivery(runtimeEnvironment)
 	if err != nil {
 		return config{}, err
 	}
@@ -151,10 +164,20 @@ func loadConfig(defaultPort string) (config, error) {
 			migrationDir = "/app/migrations"
 		}
 	}
+	originConfig := strings.TrimSpace(os.Getenv("IDENTITY_CORS_ALLOWED_ORIGINS"))
+	if originConfig == "" {
+		if runtimeEnvironment == "production" || runtimeEnvironment == "staging" {
+			return config{}, errors.New("IDENTITY_CORS_ALLOWED_ORIGINS is required outside local environments")
+		}
+		originConfig = "http://localhost:13000"
+	}
 	origins := map[string]bool{}
-	for _, origin := range strings.Split(env("IDENTITY_CORS_ALLOWED_ORIGINS", "http://localhost:13000"), ",") {
+	for _, origin := range strings.Split(originConfig, ",") {
 		origin = strings.TrimSpace(origin)
 		if origin != "" {
+			if runtimeEnvironment == "production" && (strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1")) {
+				return config{}, errors.New("localhost CORS origins are forbidden in production")
+			}
 			origins[origin] = true
 		}
 	}
@@ -186,12 +209,15 @@ func loadConfig(defaultPort string) (config, error) {
 		}
 		trustedProxies = append(trustedProxies, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
 	}
-	return config{port: port, databaseURL: databaseURL, autoMigrate: strings.EqualFold(strings.TrimSpace(os.Getenv("IDENTITY_AUTO_MIGRATE")), "true"), migrationDir: migrationDir, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery}, nil
+	return config{port: port, databaseURL: databaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery}, nil
 }
 
-func loadDelivery() (challengedelivery.Sender, error) {
+func loadDelivery(runtimeEnvironment string) (challengedelivery.Sender, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("IDENTITY_CHALLENGE_DELIVERY_MODE"))) {
 	case "mailpit":
+		if runtimeEnvironment == "production" || runtimeEnvironment == "staging" {
+			return nil, errors.New("mailpit challenge delivery is forbidden outside local environments")
+		}
 		addr := strings.TrimSpace(os.Getenv("IDENTITY_MAILPIT_SMTP_ADDR"))
 		recipient := strings.TrimSpace(os.Getenv("IDENTITY_MAILPIT_RECIPIENT"))
 		if addr == "" || recipient == "" {

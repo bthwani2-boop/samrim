@@ -48,8 +48,8 @@ func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actorID, role, devic
 		return domain.TokenPair{}, err
 	}
 	now := s.now().UTC()
-	accessExpiry := now.Add(15 * time.Minute)
 	absoluteExpiry := now.Add(sessionAbsoluteLifetime(role))
+	accessExpiry := calculateAccessExpiry(now, absoluteExpiry)
 	refreshExpiry := calculateRefreshExpiry(now, absoluteExpiry)
 	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_sessions(id,actor_id,role,access_token_hash,refresh_token_hash,device_fingerprint_hash,access_expires_at,refresh_expires_at,absolute_expires_at,last_used_at,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)", sessionID, actorID, role, identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(refreshRandom), identitysecurity.SHA256Hex(device), accessExpiry, refreshExpiry, absoluteExpiry, now); err != nil {
 		return domain.TokenPair{}, err
@@ -148,7 +148,7 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, err
 	}
 	now = s.now().UTC()
-	accessExpiry := now.Add(15 * time.Minute)
+	accessExpiry := calculateAccessExpiry(now, absoluteExpiry)
 	nextRefreshExpiry := calculateRefreshExpiry(now, absoluteExpiry)
 	if !nextRefreshExpiry.After(now) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
@@ -266,6 +266,14 @@ func sessionIdleLifetime(role string) time.Duration {
 }
 func calculateRefreshExpiry(now, absolute time.Time) time.Time {
 	candidate := now.Add(7 * 24 * time.Hour)
+	limit := absolute.Add(-time.Second)
+	if candidate.After(limit) {
+		return limit
+	}
+	return candidate
+}
+func calculateAccessExpiry(now, absolute time.Time) time.Time {
+	candidate := now.Add(15 * time.Minute)
 	limit := absolute.Add(-time.Second)
 	if candidate.After(limit) {
 		return limit
