@@ -27,16 +27,18 @@ import (
 )
 
 type config struct {
-	port            string
-	databaseURL     string
-	autoMigrate     bool
-	migrationDir    string
-	challengeSecret []byte
-	abuseIPSecret   []byte
-	trustedProxies  []*net.IPNet
-	internalTokens  map[string]string
-	allowedOrigins  map[string]bool
-	delivery        challengedelivery.Sender
+	port                   string
+	databaseURL            string
+	maintenanceDatabaseURL string
+	autoMigrate            bool
+	migrationDir           string
+	retention              lifecycle.RetentionConfig
+	challengeSecret        []byte
+	abuseIPSecret          []byte
+	trustedProxies         []*net.IPNet
+	internalTokens         map[string]string
+	allowedOrigins         map[string]bool
+	delivery               challengedelivery.Sender
 }
 
 func Run(_, _, defaultPort string) error {
@@ -49,6 +51,14 @@ func Run(_, _, defaultPort string) error {
 		return fmt.Errorf("open identity database: %w", err)
 	}
 	defer func() { _ = db.Close() }()
+	maintenanceDB := db
+	if cfg.maintenanceDatabaseURL != cfg.databaseURL {
+		maintenanceDB, err = sql.Open("postgres", cfg.maintenanceDatabaseURL)
+		if err != nil {
+			return fmt.Errorf("open identity maintenance database: %w", err)
+		}
+		defer func() { _ = maintenanceDB.Close() }()
+	}
 	db.SetMaxOpenConns(20)
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(30 * time.Minute)
@@ -66,7 +76,7 @@ func Run(_, _, defaultPort string) error {
 	actors := actor.New(db)
 	sessions := session.New(db)
 	challenges := challenge.New(db, actors, sessions, cfg.challengeSecret, cfg.delivery)
-	cleaner := lifecycle.New(db)
+	cleaner := lifecycle.New(maintenanceDB, cfg.retention)
 	readiness := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -125,6 +135,20 @@ func loadConfig(defaultPort string) (config, error) {
 		return config{}, errors.New("IDENTITY_DATABASE_URL is required")
 	}
 	if err := validateDatabaseTransport(runtimeEnvironment, databaseURL); err != nil {
+		return config{}, err
+	}
+	maintenanceDatabaseURL := strings.TrimSpace(os.Getenv("IDENTITY_MAINTENANCE_DATABASE_URL"))
+	if maintenanceDatabaseURL == "" {
+		if runtimeEnvironment == "staging" || runtimeEnvironment == "production" {
+			return config{}, errors.New("IDENTITY_MAINTENANCE_DATABASE_URL is required outside local environments")
+		}
+		maintenanceDatabaseURL = databaseURL
+	}
+	if err := validateDatabaseTransport(runtimeEnvironment, maintenanceDatabaseURL); err != nil {
+		return config{}, fmt.Errorf("maintenance database: %w", err)
+	}
+	retention, err := lifecycle.ConfigFromEnvironment(os.Getenv, runtimeEnvironment == "staging" || runtimeEnvironment == "production")
+	if err != nil {
 		return config{}, err
 	}
 	secret := []byte(strings.TrimSpace(os.Getenv("IDENTITY_CHALLENGE_HMAC_SECRET")))
@@ -213,7 +237,7 @@ func loadConfig(defaultPort string) (config, error) {
 		}
 		trustedProxies = append(trustedProxies, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
 	}
-	return config{port: port, databaseURL: databaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery}, nil
+	return config{port: port, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery}, nil
 }
 
 func validateDatabaseTransport(runtimeEnvironment, databaseURL string) error {

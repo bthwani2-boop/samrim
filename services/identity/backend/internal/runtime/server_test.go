@@ -8,6 +8,7 @@ import (
 func setRuntimeConfigBaseline(t *testing.T) {
 	t.Helper()
 	t.Setenv("IDENTITY_DATABASE_URL", "postgres://identity:test@db.example.com:5432/identity?sslmode=verify-full")
+	t.Setenv("IDENTITY_MAINTENANCE_DATABASE_URL", "postgres://identity_maintenance:test@db.example.com:5432/identity?sslmode=verify-full")
 	t.Setenv("IDENTITY_CHALLENGE_HMAC_SECRET", "01234567890123456789012345678901")
 	t.Setenv("IDENTITY_ABUSE_HMAC_SECRET", "abcdefghijklmnopqrstuvwxyz123456")
 	t.Setenv("IDENTITY_DSH_SERVICE_TOKEN", "dsh-service-token-01234567890123456789")
@@ -19,6 +20,12 @@ func setRuntimeConfigBaseline(t *testing.T) {
 	t.Setenv("IDENTITY_CHALLENGE_WEBHOOK_TOKEN", "webhook-token-01234567890123456789")
 	t.Setenv("IDENTITY_AUTO_MIGRATE", "false")
 	t.Setenv("BTHWANI_ENV", "production")
+	t.Setenv("IDENTITY_RETENTION_CHALLENGE_DAYS", "30")
+	t.Setenv("IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS", "30")
+	t.Setenv("IDENTITY_RETENTION_ACTIVATION_DAYS", "30")
+	t.Setenv("IDENTITY_RETENTION_SESSION_DAYS", "90")
+	t.Setenv("IDENTITY_RETENTION_AUDIT_DAYS", "365")
+	t.Setenv("IDENTITY_RETENTION_BATCH_SIZE", "500")
 }
 
 func TestProductionRejectsMailpit(t *testing.T) {
@@ -50,5 +57,13 @@ func TestProductionRejectsInsecureDatabaseTransport(t *testing.T) {
 	t.Setenv("IDENTITY_DATABASE_URL", "postgres://identity:test@db.example.com:5432/identity?sslmode=disable")
 	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "sslmode=verify-full") {
 		t.Fatalf("production accepted an insecure database transport: %v", err)
+	}
+}
+
+func TestProductionRequiresMaintenanceDatabase(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	t.Setenv("IDENTITY_MAINTENANCE_DATABASE_URL", "")
+	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "MAINTENANCE_DATABASE_URL") {
+		t.Fatalf("production accepted a missing maintenance database: %v", err)
 	}
 }
