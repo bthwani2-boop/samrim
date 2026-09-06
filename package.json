@@ -12,7 +12,7 @@
     "partner": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-partner",
     "captain": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-captain",
     "field": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-field",
-    "scrcpy": "scrcpy",
+    "scrcpy": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-scrcpy.ps1",
     "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
     "control": "nx run control-panel:dev",
     "dsh": "nx run dsh:serve",
