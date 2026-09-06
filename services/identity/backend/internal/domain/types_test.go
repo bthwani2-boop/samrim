@@ -78,12 +78,6 @@ func TestManagedActivationRoleBoundary(t *testing.T) {
 
 func TestManagedActivationCodeIssuerBoundary(t *testing.T) {
 	allowed := [][2]string{
-		{"dsh", "partner"},
-		{"dsh", "captain"},
-		{"dsh", "field"},
-		{"platform-control", "partner"},
-		{"platform-control", "captain"},
-		{"platform-control", "field"},
 		{"platform-control", "operator"},
 	}
 	for _, pair := range allowed {
@@ -92,6 +86,12 @@ func TestManagedActivationCodeIssuerBoundary(t *testing.T) {
 		}
 	}
 	denied := [][2]string{
+		{"dsh", "partner"},
+		{"dsh", "captain"},
+		{"dsh", "field"},
+		{"platform-control", "partner"},
+		{"platform-control", "captain"},
+		{"platform-control", "field"},
 		{"dsh", "operator"},
 		{"dsh", "platform_owner"},
 		{"platform-control", "platform_owner"},

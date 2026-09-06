@@ -37,8 +37,11 @@ export async function POST(request: Request) {
     } else {
       await provisionManagedRole(phone, role as "partner" | "captain" | "field");
     }
-    const result = await issueManagedActivationCode(phone, role as ManagedActivationRole);
-    return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
+    if (role === "operator") {
+      const result = await issueManagedActivationCode(phone);
+      return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
+    }
+    return NextResponse.json({ status: recover ? "role_reenrollment_authorized" : "role_provisioned", role }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (isDshClientError(error)) {
       return NextResponse.json({ error: dshErrorPayload(error) }, { status: dshHttpStatus(error), headers: { "Cache-Control": "no-store" } });

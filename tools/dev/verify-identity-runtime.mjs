@@ -11,7 +11,7 @@ const defaultEnv = fs.existsSync(path.join(root, "infra/local/compose/.env"))
 const envFile = path.resolve(root, requestedEnv || defaultEnv);
 const runtimeRequestTimeoutMs = 30_000;
 const runtimeHost = process.argv.find((arg) => arg.startsWith("--host="))?.slice("--host=".length) || "127.0.0.1";
-const runtimeSourceIp = process.argv.find((arg) => arg.startsWith("--source-ip="))?.slice("--source-ip=".length) || "198.18.0.1";
+let runtimeSourceIp = process.argv.find((arg) => arg.startsWith("--source-ip="))?.slice("--source-ip=".length) || "198.18.0.1";
 
 function fail(message) {
   console.error("IDENTITY_RUNTIME_SEMANTICS=FAIL");
@@ -71,6 +71,13 @@ function deliveryStatus(phoneValue, purpose, role) {
     "WHERE c.phone_e164='" + sqlLiteral(phoneValue) + "' AND c.purpose='" + sqlLiteral(purpose) +
     "' AND c.role='" + sqlLiteral(role) + "' ORDER BY c.created_at DESC LIMIT 1",
   );
+}
+function deliveryCount(phoneValue, purpose, role) {
+  return Number(sql(
+    "SELECT count(*) FROM identity_challenge_deliveries d JOIN identity_challenges c ON c.id=d.challenge_id " +
+    "WHERE c.phone_e164='" + sqlLiteral(phoneValue) + "' AND c.purpose='" + sqlLiteral(purpose) +
+    "' AND c.role='" + sqlLiteral(role) + "'",
+  ));
 }
 async function waitForDeliveryStatus(phoneValue, purpose, role, expected) {
   for (let attempt = 0; attempt < 50; attempt++) {
@@ -138,8 +145,8 @@ function assertSixDigitCode(value, label) {
   assert(typeof value === "string" && /^[0-9]{6}$/.test(value), label + " is not a six-digit code");
 }
 
-function assertSixDigitActivationCode(value, label) {
-	assert(typeof value === "string" && /^[0-9]{6}$/.test(value), label + " is not a six-digit activation code");
+function assertEnrollmentToken(value, label) {
+	assert(typeof value === "string" && /^[A-Za-z0-9_-]{24,256}$/.test(value), label + " is not a high-entropy enrollment token");
 }
 
 function assertTwoDayActivationExpiry(value, label) {
@@ -259,16 +266,10 @@ await expect("POST", "/internal/actor-roles/provision", 403, {
   body: { phoneE164: phone(), role: "platform_owner" },
 });
 
-// Managed activation is one-time and produces a role-scoped device-bound session.
-const captainActivation = await expect("POST", "/internal/managed-activation-codes", 201, {
-  headers: service(platformToken),
-  body: { phoneE164: sharedPhone, role: "captain" },
-});
-assertSixDigitActivationCode(captainActivation.code, "captain activation code");
-assertTwoDayActivationExpiry(captainActivation.expiresAt, "captain activation code");
+// DSH provisioning plus phone proof is sufficient for one-time managed enrollment.
 const captainChallenge = await requestChallenge(
   "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "captain", activationCode: captainActivation.code },
+  { phone: sharedPhone, role: "captain" },
   "managed_activate",
 );
 const captainPassword = "Captain-" + suffix + "-Strong-Password";
@@ -276,7 +277,6 @@ const captainPair = await expect("POST", "/auth/managed/activate", 200, {
   body: {
     phone: sharedPhone,
     role: "captain",
-    activationCode: captainActivation.code,
     verificationCode: captainChallenge.code,
     password: captainPassword,
     deviceFingerprint: "device-captain-" + suffix,
@@ -307,6 +307,10 @@ const captainRead = await expect(
   { headers: service(dshToken) },
 );
 assert(typeof captainRead.activatedAt === "string", "managed activation was not durably recorded");
+await expect("POST", "/internal/managed-activation-codes", 403, {
+  headers: service(dshToken),
+  body: { phoneE164: sharedPhone, role: "captain" },
+});
 
 // Operator provisioning is a separate role-scoped credential on the same actor.
 const operatorPassword = "Operator-" + suffix + "-Strong-Password";
@@ -324,8 +328,8 @@ const operatorActivation = await expect("POST", "/internal/managed-activation-co
   headers: service(platformToken),
   body: { phoneE164: sharedPhone, role: "operator" },
 });
-assertSixDigitActivationCode(operatorActivation.code, "operator activation code");
-assertTwoDayActivationExpiry(operatorActivation.expiresAt, "operator activation code");
+assertEnrollmentToken(operatorActivation.code, "operator enrollment token");
+assertTwoDayActivationExpiry(operatorActivation.expiresAt, "operator enrollment token");
 const operatorActivationChallenge = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "operator", activationCode: operatorActivation.code },
@@ -381,15 +385,22 @@ await expect("POST", "/auth/managed/activate", 401, {
   body: {
     phone: sharedPhone,
     role: "captain",
-    activationCode: "000000",
     verificationCode: "000000",
     password: captainPassword,
     deviceFingerprint: "device-captain-repeated-" + suffix,
   },
 });
-await expect("POST", "/auth/managed/activation/request", 401, {
-  body: { phone: sharedPhone, role: "captain", activationCode: "000000" },
-});
+const repeatedCaptainDeliveryCount = deliveryCount(sharedPhone, "managed_activate", "captain");
+await requestChallenge(
+  "/auth/managed/activation/request",
+  { phone: sharedPhone, role: "captain" },
+  "managed_activate",
+);
+assert(
+  deliveryCount(sharedPhone, "managed_activate", "captain") === repeatedCaptainDeliveryCount + 1,
+  "repeated managed enrollment did not persist one canonical decoy challenge",
+);
+assert(deliveryStatus(sharedPhone, "managed_activate", "captain") === "suppressed", "repeated managed enrollment was not suppressed");
 
 // Explicit DSH re-enrollment is the only path that reopens managed activation.
 await expect(
@@ -404,26 +415,29 @@ await expect(
   204,
   { headers: service(dshToken, { "X-Correlation-ID": "captain-reenroll-" + suffix }) },
 );
+const reenrolledCaptain = await expect(
+  "GET",
+  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain",
+  200,
+  { headers: service(dshToken) },
+);
+assert(reenrolledCaptain.activatedAt === null || reenrolledCaptain.activatedAt === undefined, "DSH reenrollment did not reopen the managed role");
+assert(reenrolledCaptain.enabled === true && reenrolledCaptain.securityEnabled === true, "DSH reenrollment left the managed role unavailable: " + JSON.stringify(reenrolledCaptain));
 await expect("GET", "/auth/session", 401, { token: captainPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: operatorPair.accessToken });
 
-const reactivationCode = await expect("POST", "/internal/managed-activation-codes", 201, {
-  headers: service(dshToken),
-  body: { phoneE164: sharedPhone, role: "captain" },
-});
-assertSixDigitActivationCode(reactivationCode.code, "re-enrollment activation code");
-assertTwoDayActivationExpiry(reactivationCode.expiresAt, "re-enrollment activation code");
 const reactivation = await requestChallenge(
   "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "captain", activationCode: reactivationCode.code },
+  { phone: sharedPhone, role: "captain" },
   "managed_activate",
 );
+const reactivationState = sql("SELECT admissible::text || ':' || COALESCE(actor_id,'') || ':' || status FROM identity_challenges WHERE id='" + sqlLiteral(reactivation.challenge.challengeId) + "'");
+assert(reactivationState === "true:" + actorId + ":pending", "reenrollment challenge was not admissible: " + reactivationState);
 const reactivatedCaptain = await expect("POST", "/auth/managed/activate", 200, {
   body: {
     phone: sharedPhone,
     role: "captain",
-    activationCode: reactivationCode.code,
     verificationCode: reactivation.code,
     password: captainPassword + "-Reenrolled",
     deviceFingerprint: "device-captain-reenrolled-" + suffix,
@@ -516,9 +530,12 @@ await expect("POST", "/auth/client/login", 200, {
 
 // Unknown managed-role requests are non-enumerating but their decoy proof cannot grant a role/session.
 const unknownCaptainPhone = phone();
-await expect("POST", "/auth/managed/activation/request", 401, {
-  body: { phone: unknownCaptainPhone, role: "captain", activationCode: "000000" },
-});
+const unknownCaptainChallenge = await requestChallenge(
+  "/auth/managed/activation/request",
+  { phone: unknownCaptainPhone, role: "captain" },
+  "managed_activate",
+);
+assert(deliveryStatus(unknownCaptainPhone, "managed_activate", "captain") === "suppressed", "unknown managed enrollment was not suppressed");
 
 // Provider outage must not become an actor/role oracle. Public acknowledgement is independent of delivery outcome.
 const outageKnownPhone = phone();
@@ -527,26 +544,22 @@ await expect("POST", "/internal/actor-roles/provision", 201, {
   headers: service(dshToken),
   body: { phoneE164: outageKnownPhone, role: "captain" },
 });
-const outageActivation = await expect("POST", "/internal/managed-activation-codes", 201, {
-  headers: service(dshToken),
-  body: { phoneE164: outageKnownPhone, role: "captain" },
-});
-assertSixDigitActivationCode(outageActivation.code, "outage activation code");
-assertTwoDayActivationExpiry(outageActivation.expiresAt, "outage activation code");
 compose("stop", "mailpit");
 try {
   const knownOutage = await requestChallenge(
     "/auth/managed/activation/request",
-    { phone: outageKnownPhone, role: "captain", activationCode: outageActivation.code },
+    { phone: outageKnownPhone, role: "captain" },
     "managed_activate",
   );
-  await expect("POST", "/auth/managed/activation/request", 401, {
-    body: { phone: outageUnknownPhone, role: "captain", activationCode: outageActivation.code },
-  });
+  const unknownOutage = await requestChallenge(
+    "/auth/managed/activation/request",
+    { phone: outageUnknownPhone, role: "captain" },
+    "managed_activate",
+  );
   await waitForDeliveryStatus(outageKnownPhone, "managed_activate", "captain", "unknown");
   assert(
-    deliveryStatus(outageUnknownPhone, "managed_activate", "captain") === "",
-    "invalid activation proof created a delivery record",
+    deliveryStatus(outageUnknownPhone, "managed_activate", "captain") === "suppressed",
+    "unknown managed enrollment was not suppressed",
   );
 } finally {
   compose("up", "-d", "mailpit");
@@ -556,6 +569,11 @@ assert(
   deliveryStatus(outageKnownPhone, "managed_activate", "captain") === "unknown",
   "unknown provider outcome was blindly retried after provider recovery",
 );
+
+// Start the independent abuse-budget slice from a fresh source identity. The actor, credentials,
+// and persisted state remain the same; this prevents the long semantic journey from self-triggering
+// the production source budget before the dedicated lockout assertions run.
+runtimeSourceIp = "198.19.0.1";
 
 // Challenge attempt locking is exact.
 const lockedPhone = phone();

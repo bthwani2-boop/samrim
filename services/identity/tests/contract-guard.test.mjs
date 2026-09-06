@@ -97,13 +97,15 @@ if (operatorStart.includes("#/components/responses/TokenPair")) {
 }
 const managedRequest = schemaBlock("ManagedChallengeRequest", "ClientCredentialProofRequest");
 if (!managedRequest.includes("#/components/schemas/ManagedActivationRole")) failures.push("managed activation role boundary missing");
-if (!managedRequest.includes("activationCode:")) failures.push("managed activation request does not require the control-surface code");
-if (!managedRequest.includes("minLength: 6") || !managedRequest.includes('pattern: "^[0-9]{6}$"')) failures.push("managed activation code must be six numeric digits");
+if (!managedRequest.includes("activationCode:")) failures.push("managed activation request token schema missing");
+if (!managedRequest.includes("minLength: 24") || !managedRequest.includes('pattern: "^[A-Za-z0-9_-]{24,256}$"')) failures.push("managed activation token must be high entropy");
 const managedActivation = schemaBlock("ManagedActivationRequest", "OperatorLoginStartRequest");
 if (!managedActivation.includes("verificationCode:")) failures.push("managed activation does not require the separate phone verification code");
-if (!managedActivation.includes("minLength: 6") || !managedActivation.includes('pattern: "^[0-9]{6}$"')) failures.push("managed activation request must accept the six-digit control-surface code");
-if (!managedActivation.includes("minLength: 6") || !managedActivation.includes('pattern: "^[0-9]{6}$"')) failures.push("managed activation request must require a six-digit phone code");
+if (!managedActivation.includes("minLength: 24") || !managedActivation.includes('pattern: "^[A-Za-z0-9_-]{24,256}$"')) failures.push("operator enrollment token must be high entropy");
+if (!managedActivation.includes("verificationCode:") || !managedActivation.includes('pattern: "^[0-9]{6}$"')) failures.push("managed activation request must require a six-digit phone code");
 if (!contract.includes("ManagedActivationCode")) failures.push("managed activation code issuance contract missing");
+const enrollmentIssue = schemaBlock("ManagedActivationCodeIssueRequest", "ManagedActivationCode");
+if (!enrollmentIssue.includes("enum: [operator]")) failures.push("operator enrollment token issuance is not role-scoped");
 const managedType = schemaBlock("ManagedActorType", "PhoneRequest");
 if (!managedType.includes("enum: [partner, captain, field]")) failures.push("managed activation roles are incorrect");
 const managedActivationRole = schemaBlock("ManagedActivationRole", "ControlPanelRole");

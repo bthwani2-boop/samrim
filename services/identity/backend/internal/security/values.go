@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -21,7 +20,7 @@ var (
 	phonePattern            = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
 	devicePattern           = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
 	verificationCodePattern = regexp.MustCompile("^[0-9]{6}$")
-	activationCodePattern   = regexp.MustCompile("^[0-9]{6}$")
+	enrollmentTokenPattern  = regexp.MustCompile("^[A-Za-z0-9_-]{24,256}$")
 	ErrInvalidValue         = errors.New("invalid identity value")
 )
 
@@ -66,12 +65,12 @@ func NormalizeVerificationCode(raw string) (string, error) {
 	return code, nil
 }
 
-func NormalizeActivationCode(raw string) (string, error) {
-	code := strings.TrimSpace(raw)
-	if !activationCodePattern.MatchString(code) {
+func NormalizeEnrollmentToken(raw string) (string, error) {
+	token := strings.TrimSpace(raw)
+	if !enrollmentTokenPattern.MatchString(token) {
 		return "", ErrInvalidValue
 	}
-	return code, nil
+	return token, nil
 }
 
 func RandomToken(byteCount int) (string, error) {
@@ -85,12 +84,8 @@ func RandomToken(byteCount int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buffer), nil
 }
 
-func RandomActivationCode() (string, error) {
-	value, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%06d", value.Int64()), nil
+func RandomEnrollmentToken() (string, error) {
+	return RandomToken(24)
 }
 
 func SHA256Hex(value string) string {

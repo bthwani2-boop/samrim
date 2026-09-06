@@ -12,7 +12,6 @@ import {
   type Challenge,
   type IdentityClientError,
   type ManagedActivationCode,
-  type ManagedActivationRole,
   type ControlPanelRole,
   type RecoveryResult,
   type TokenPair,
@@ -120,8 +119,8 @@ export async function completeOperatorRecovery(phone: string, code: string, pass
   return identityClient().recoverManaged({ phone, role: "operator", code, password });
 }
 
-export async function issueManagedActivationCode(phone: string, role: ManagedActivationRole): Promise<ManagedActivationCode> {
-  return identityInternalClient().issueManagedActivationCode({ phoneE164: phone, role });
+export async function issueManagedActivationCode(phone: string): Promise<ManagedActivationCode> {
+  return identityInternalClient().issueManagedActivationCode({ phoneE164: phone, role: "operator" });
 }
 
 export async function provisionOperator(phone: string): Promise<ActorRoleView> {

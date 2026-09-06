@@ -255,8 +255,10 @@ func (s *Service) RequestManagedActivation(ctx context.Context, input domain.Man
 	if err != nil {
 		return domain.Challenge{}, domain.ErrInvalidInput
 	}
-	if err := s.validateManagedActivationCode(ctx, phone, role, input.ActivationCode); err != nil {
-		return domain.Challenge{}, err
+	if domain.RequiresEnrollmentToken(role) {
+		if err := s.validateEnrollmentToken(ctx, phone, role, input.ActivationCode); err != nil {
+			return domain.Challenge{}, err
+		}
 	}
 	a, r, lookupErr := s.actors.ManagedActivationCandidate(ctx, phone, role)
 	admissible := lookupErr == nil && r.ActivatedAt == nil
@@ -278,8 +280,10 @@ func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActiv
 		if actorID == "" {
 			return domain.TokenPair{}, domain.ErrInvalidActivation
 		}
-		if _, err := s.consumeManagedActivationCodeTx(ctx, tx, input.Phone, role, input.ActivationCode, actorID); err != nil {
-			return domain.TokenPair{}, err
+		if domain.RequiresEnrollmentToken(role) {
+			if _, err := s.consumeManagedActivationCodeTx(ctx, tx, input.Phone, role, input.ActivationCode, actorID); err != nil {
+				return domain.TokenPair{}, err
+			}
 		}
 		if err := s.actors.MarkManagedActivatedTx(ctx, tx, actorID, role); err != nil {
 			return domain.TokenPair{}, err
@@ -336,11 +340,11 @@ WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actor
 	if err != nil {
 		return domain.ManagedActivationCode{}, err
 	}
-	rawCode, err := identitysecurity.RandomActivationCode()
+	rawCode, err := identitysecurity.RandomEnrollmentToken()
 	if err != nil {
 		return domain.ManagedActivationCode{}, err
 	}
-	normalizedCode, err := identitysecurity.NormalizeActivationCode(rawCode)
+	normalizedCode, err := identitysecurity.NormalizeEnrollmentToken(rawCode)
 	if err != nil {
 		return domain.ManagedActivationCode{}, err
 	}
@@ -357,8 +361,8 @@ WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actor
 	return domain.ManagedActivationCode{Code: rawCode, MaskedPhone: identitysecurity.MaskPhone(phone), Role: role, ExpiresAt: expires}, nil
 }
 
-func (s *Service) validateManagedActivationCode(ctx context.Context, phone, role, rawCode string) error {
-	code, err := identitysecurity.NormalizeActivationCode(rawCode)
+func (s *Service) validateEnrollmentToken(ctx context.Context, phone, role, rawCode string) error {
+	code, err := identitysecurity.NormalizeEnrollmentToken(rawCode)
 	if err != nil {
 		return domain.ErrInvalidActivation
 	}
@@ -385,7 +389,7 @@ func (s *Service) consumeManagedActivationCodeTx(ctx context.Context, tx *sql.Tx
 	if err != nil {
 		return "", domain.ErrInvalidActivation
 	}
-	code, err := identitysecurity.NormalizeActivationCode(rawCode)
+	code, err := identitysecurity.NormalizeEnrollmentToken(rawCode)
 	if err != nil {
 		return "", domain.ErrInvalidActivation
 	}
@@ -503,11 +507,17 @@ func (s *Service) issue(ctx context.Context, phone, role, purpose, actorID strin
 	}
 	var existingID string
 	var existingExpiry, existingCreated time.Time
-	err = tx.QueryRowContext(ctx, `SELECT id,expires_at,created_at
+	var existingAdmissible bool
+	var existingActorID sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT id,expires_at,created_at,admissible,actor_id
 FROM identity_challenges
 WHERE phone_e164=$1 AND role=$2 AND purpose=$3 AND status='pending'
-ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, phone, role, purpose).Scan(&existingID, &existingExpiry, &existingCreated)
-	if err == nil && s.now().UTC().Sub(existingCreated) < challengeResendCooldown {
+	ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, phone, role, purpose).Scan(&existingID, &existingExpiry, &existingCreated, &existingAdmissible, &existingActorID)
+	existingActor := ""
+	if existingActorID.Valid {
+		existingActor = existingActorID.String
+	}
+	if err == nil && s.now().UTC().Sub(existingCreated) < challengeResendCooldown && existingAdmissible == admissible && existingActor == actorID {
 		if err := tx.Commit(); err != nil {
 			return domain.Challenge{}, err
 		}

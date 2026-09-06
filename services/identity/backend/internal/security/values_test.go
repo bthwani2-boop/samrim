@@ -35,18 +35,18 @@ func TestIdentityInputNormalization(t *testing.T) {
 	if _, err := NormalizeVerificationCode("12345"); err == nil {
 		t.Fatal("invalid verification code accepted")
 	}
-	if _, err := NormalizeActivationCode("0123"); err == nil {
-		t.Fatal("short activation code accepted")
+	if _, err := NormalizeEnrollmentToken("0123"); err == nil {
+		t.Fatal("short enrollment token accepted")
 	}
-	if _, err := NormalizeActivationCode("A12345"); err == nil {
-		t.Fatal("non-numeric activation code accepted")
+	if _, err := NormalizeEnrollmentToken("A12345"); err == nil {
+		t.Fatal("short enrollment token accepted")
 	}
-	activationCode, err := RandomActivationCode()
+	enrollmentToken, err := RandomEnrollmentToken()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value, err := NormalizeActivationCode(activationCode); err != nil || value != activationCode {
-		t.Fatalf("valid activation code rejected: %q %v", value, err)
+	if value, err := NormalizeEnrollmentToken(enrollmentToken); err != nil || value != enrollmentToken {
+		t.Fatalf("valid enrollment token rejected: %q %v", value, err)
 	}
 }
 func TestOpaqueSecurityValues(t *testing.T) {
@@ -63,13 +63,13 @@ func TestOpaqueSecurityValues(t *testing.T) {
 	}
 }
 
-func TestRandomActivationCodeIsSixDigits(t *testing.T) {
-	code, err := RandomActivationCode()
+func TestRandomEnrollmentTokenIsHighEntropy(t *testing.T) {
+	token, err := RandomEnrollmentToken()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value, err := NormalizeActivationCode(code); err != nil || value != code || len(code) != 6 {
-		t.Fatalf("unexpected activation code: %q %v", code, err)
+	if value, err := NormalizeEnrollmentToken(token); err != nil || value != token || len(token) < 24 {
+		t.Fatalf("unexpected enrollment token: %q %v", token, err)
 	}
 }
 

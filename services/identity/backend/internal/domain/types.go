@@ -65,7 +65,7 @@ type PhoneRequest struct {
 type ManagedChallengeRequest struct {
 	Phone          string `json:"phone"`
 	Role           string `json:"role"`
-	ActivationCode string `json:"activationCode"`
+	ActivationCode string `json:"activationCode,omitempty"`
 }
 
 type ManagedRecoveryChallengeRequest struct {
@@ -96,7 +96,7 @@ type ManagedPasswordLoginRequest struct {
 type ManagedActivationRequest struct {
 	Phone             string `json:"phone"`
 	Role              string `json:"role"`
-	ActivationCode    string `json:"activationCode"`
+	ActivationCode    string `json:"activationCode,omitempty"`
 	VerificationCode  string `json:"verificationCode"`
 	Password          string `json:"password"`
 	DeviceFingerprint string `json:"deviceFingerprint"`
@@ -251,14 +251,11 @@ func CanResetCredential(caller, role string) bool {
 func CanIssueManagedActivationCodeForRole(caller, role string) bool {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role = strings.ToLower(strings.TrimSpace(role))
-	switch caller {
-	case "dsh":
-		return IsManagedRole(role)
-	case "platform-control":
-		return IsManagedActivationRole(role)
-	default:
-		return false
-	}
+	return caller == "platform-control" && role == "operator"
+}
+
+func RequiresEnrollmentToken(role string) bool {
+	return strings.EqualFold(strings.TrimSpace(role), "operator")
 }
 
 func IsManagedRole(role string) bool {

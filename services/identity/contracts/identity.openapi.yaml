@@ -472,7 +472,7 @@ components:
     ManagedChallengeRequest:
       type: object
       additionalProperties: false
-      required: [phone, role, activationCode]
+      required: [phone, role]
       properties:
         phone:
           type: string
@@ -480,9 +480,10 @@ components:
           $ref: "#/components/schemas/ManagedActivationRole"
         activationCode:
           type: string
-          minLength: 6
-          maxLength: 6
-          pattern: "^[0-9]{6}$"
+          description: Required only for operator enrollment; platform-issued high-entropy token.
+          minLength: 24
+          maxLength: 256
+          pattern: "^[A-Za-z0-9_-]{24,256}$"
 
     ManagedRecoveryChallengeRequest:
       type: object
@@ -550,7 +551,7 @@ components:
     ManagedActivationRequest:
       type: object
       additionalProperties: false
-      required: [phone, role, activationCode, verificationCode, password, deviceFingerprint]
+      required: [phone, role, verificationCode, password, deviceFingerprint]
       properties:
         phone:
           type: string
@@ -558,9 +559,10 @@ components:
           $ref: "#/components/schemas/ManagedActivationRole"
         activationCode:
           type: string
-          minLength: 6
-          maxLength: 6
-          pattern: "^[0-9]{6}$"
+          description: Required only for operator enrollment; platform-issued high-entropy token.
+          minLength: 24
+          maxLength: 256
+          pattern: "^[A-Za-z0-9_-]{24,256}$"
         verificationCode:
           type: string
           minLength: 6
@@ -713,7 +715,8 @@ components:
         phoneE164:
           type: string
         role:
-          $ref: "#/components/schemas/ManagedActivationRole"
+          type: string
+          enum: [operator]
 
     ManagedActivationCode:
       type: object
@@ -722,6 +725,7 @@ components:
       properties:
         code:
           type: string
+          description: High-entropy operator enrollment token; shown once.
         maskedPhone:
           type: string
         role:

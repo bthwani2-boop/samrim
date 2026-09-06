@@ -99,9 +99,10 @@ for (const [app, role, surface] of [
   if (!page.includes("chooseIntent") || !page.includes("requestCode") || !page.includes("requestRecovery") || !page.includes("recover") || !page.includes("activate")) {
     failures.push(app + " UI is not bound to one-time managed activation");
   }
-  for (const phrase of ["رمز التفعيل", "رمز تحقق الهاتف", "تفعيل أول مرة", "ابدأ برقم الهاتف"]) {
+  for (const phrase of ["أثبت رقم الهاتف", "رمز تحقق الهاتف", "تفعيل أول مرة", "ابدأ برقم الهاتف"]) {
     if (!page.includes(phrase)) failures.push(app + " UI does not distinguish managed activation from phone verification: " + phrase);
   }
+  if (page.includes("activationCode") || page.includes("رمز التفعيل")) failures.push(app + " managed enrollment retains redundant control-surface activation secret");
   if (page.includes("auth-mode-switch") || page.includes("<select")) failures.push(app + " managed auth must resolve the next step from phone without tabs or role selectors");
   if (!page.includes("currentState")) failures.push(app + " logout must mirror canonical local Identity state");
 }
@@ -207,7 +208,7 @@ for (const forbidden of [
 }
 
 const domain = read("services/identity/backend/internal/domain/types.go");
-for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole", "CanIssueManagedActivationCode"]) {
+for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole", "CanIssueManagedActivationCode", "RequiresEnrollmentToken"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
 }
 for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "Roles []string", "Permissions []"]) {
@@ -318,7 +319,7 @@ const security = read("services/identity/backend/internal/security/values.go");
 const passwordBlocklist = read("services/identity/backend/internal/security/password_blocklist.go");
 if (!security.includes("argon2.IDKey")) failures.push("Identity password hashing is not Argon2id");
 if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identity security implementation");
-for (const required of ["verificationCodePattern = regexp.MustCompile(\"^[0-9]{6}$\")", "activationCodePattern", "func RandomToken(byteCount int)", "RandomActivationCode()", "NormalizePassword", "PasswordAllowed"]) {
+for (const required of ["verificationCodePattern = regexp.MustCompile(\"^[0-9]{6}$\")", "enrollmentTokenPattern", "func RandomToken(byteCount int)", "RandomEnrollmentToken()", "NormalizePassword", "PasswordAllowed"]) {
   if (!security.includes(required)) failures.push("Identity security boundary missing " + required);
 }
 for (const required of ["passwordBlocklistVersion", "commonPasswordBlocklistV1", "PasswordBlocklistVersion", "control-panel-password"]) {
