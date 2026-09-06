@@ -67,3 +67,11 @@ func TestProductionRequiresMaintenanceDatabase(t *testing.T) {
 		t.Fatalf("production accepted a missing maintenance database: %v", err)
 	}
 }
+
+func TestProductionRequiresSeparateDatabasePrincipals(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	t.Setenv("IDENTITY_MAINTENANCE_DATABASE_URL", "postgres://identity:test@db.example.com:5432/identity?sslmode=verify-full")
+	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "distinct database principals") {
+		t.Fatalf("production accepted a shared database principal: %v", err)
+	}
+}

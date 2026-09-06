@@ -28,6 +28,7 @@ import (
 
 type config struct {
 	port                   string
+	runtimeEnvironment     string
 	databaseURL            string
 	maintenanceDatabaseURL string
 	autoMigrate            bool
@@ -58,6 +59,16 @@ func Run(_, _, defaultPort string) error {
 			return fmt.Errorf("open identity maintenance database: %w", err)
 		}
 		defer func() { _ = maintenanceDB.Close() }()
+	}
+	if cfg.runtimeEnvironment == "staging" || cfg.runtimeEnvironment == "production" {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := postgres.VerifyRuntimePrivileges(ctx, db); err != nil {
+			return err
+		}
+		if err := postgres.VerifyMaintenancePrivileges(ctx, maintenanceDB); err != nil {
+			return err
+		}
 	}
 	db.SetMaxOpenConns(20)
 	db.SetMaxIdleConns(10)
@@ -146,6 +157,19 @@ func loadConfig(defaultPort string) (config, error) {
 	}
 	if err := validateDatabaseTransport(runtimeEnvironment, maintenanceDatabaseURL); err != nil {
 		return config{}, fmt.Errorf("maintenance database: %w", err)
+	}
+	if runtimeEnvironment == "staging" || runtimeEnvironment == "production" {
+		databaseUser, err := databaseURLUser(databaseURL)
+		if err != nil {
+			return config{}, err
+		}
+		maintenanceUser, err := databaseURLUser(maintenanceDatabaseURL)
+		if err != nil {
+			return config{}, fmt.Errorf("maintenance database: %w", err)
+		}
+		if databaseUser == maintenanceUser {
+			return config{}, errors.New("IDENTITY_DATABASE_URL and IDENTITY_MAINTENANCE_DATABASE_URL must use distinct database principals outside local environments")
+		}
 	}
 	retention, err := lifecycle.ConfigFromEnvironment(os.Getenv, runtimeEnvironment == "staging" || runtimeEnvironment == "production")
 	if err != nil {
@@ -237,7 +261,15 @@ func loadConfig(defaultPort string) (config, error) {
 		}
 		trustedProxies = append(trustedProxies, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
 	}
-	return config{port: port, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery}, nil
+	return config{port: port, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery}, nil
+}
+
+func databaseURLUser(raw string) (string, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.User == nil || strings.TrimSpace(parsed.User.Username()) == "" {
+		return "", errors.New("database URL must include a named database principal outside local environments")
+	}
+	return strings.TrimSpace(parsed.User.Username()), nil
 }
 
 func validateDatabaseTransport(runtimeEnvironment, databaseURL string) error {

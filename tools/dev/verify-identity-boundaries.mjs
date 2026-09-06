@@ -365,6 +365,10 @@ for (const required of [
 ]) {
   if (!readiness.includes(required)) failures.push("Identity readiness proof missing " + required);
 }
+const privilegeBoundary = read("services/identity/backend/internal/storage/postgres/privileges.go");
+for (const required of ["VerifyRuntimePrivileges", "VerifyMaintenancePrivileges", "identity_security_audit", "has_schema_privilege", "has_database_privilege"]) {
+  if (!privilegeBoundary.includes(required)) failures.push("Identity database privilege boundary missing " + required);
+}
 const controlLifetimeMigration = read("services/identity/database/migrations/009_control_session_lifetimes.sql");
 for (const required of ["role IN ('operator', 'platform_owner')", "refresh_expires_at = LEAST", "absolute_expires_at = LEAST"]) {
   if (!controlLifetimeMigration.includes(required)) failures.push("Identity control-session lifetime migration missing " + required);
