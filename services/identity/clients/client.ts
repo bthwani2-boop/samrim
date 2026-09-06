@@ -13,6 +13,8 @@ import type {
   PhoneRequest,
   ProvisionActorRoleRequest,
   ActorRoleView,
+  ActorRoleSearchPage,
+  ActorType,
   RefreshRequest,
   TokenPair,
 } from "./generated/identity-types";
@@ -42,6 +44,7 @@ export type IdentityClient = Readonly<{
 export type IdentityInternalClient = Readonly<{
   issueManagedActivationCode(request: ManagedActivationCodeIssueRequest): Promise<ManagedActivationCode>;
   provisionActorRole(request: ProvisionActorRoleRequest): Promise<ActorRoleView>;
+  searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
 }>;
 
 function normalizeBaseUrl(raw: string): string {
@@ -178,6 +181,31 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
           throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
         }
         return (await response.json()) as ActorRoleView;
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+    searchActorRoles: async (role, query, enabled = true) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        let response: Response;
+        try {
+          const params = new URLSearchParams({ role, q: query, enabled: String(enabled), limit: "2" });
+          response = await fetch(resolveUrl(baseUrl, "/internal/actor-roles/search?" + params.toString()), {
+            method: "GET",
+            headers: { Accept: "application/json", Authorization: "Bearer " + token },
+            ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+            signal: controller.signal,
+          });
+        } catch (error) {
+          throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+        }
+        if (!response.ok) {
+          const parsed = parseErrorPayload(await response.json().catch(() => null));
+          throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+        }
+        return (await response.json()) as ActorRoleSearchPage;
       } finally {
         clearTimeout(timeout);
       }

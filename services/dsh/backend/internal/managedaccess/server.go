@@ -22,6 +22,19 @@ type reenrollmentRequest struct {
 	Role    string `json:"role"`
 }
 
+type phoneReenrollmentRequest struct {
+	PhoneE164 string `json:"phoneE164"`
+	Role      string `json:"role"`
+}
+
+type roleStatusResponse struct {
+	Exists      bool   `json:"exists"`
+	Enabled     bool   `json:"enabled"`
+	Activated   bool   `json:"activated"`
+	Recoverable bool   `json:"recoverable"`
+	Role        string `json:"role"`
+}
+
 type Server struct {
 	identity    *identityboundary.Client
 	accessToken []byte
@@ -37,7 +50,37 @@ func New(identity *identityboundary.Client, accessToken string) (*Server, error)
 
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/managed-roles/provision", s.provision)
+	mux.HandleFunc("GET /dsh/managed-roles/status", s.statusByPhone)
+	mux.HandleFunc("POST /dsh/managed-roles/reenrollment", s.reenrollByPhone)
 	mux.HandleFunc("POST /dsh/managed-roles/{actorId}/reenrollment", s.reenroll)
+}
+
+func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("role")))
+	if role != "partner" && role != "captain" && role != "field" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "role must be partner, captain, or field")
+		return
+	}
+	phone := strings.TrimSpace(r.URL.Query().Get("phoneE164"))
+	if phone == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164 and role are required")
+		return
+	}
+	view, err := s.identity.LookupRoleByPhone(r.Context(), phone, role)
+	if err != nil {
+		var identityErr *identityclient.Error
+		if errors.As(err, &identityErr) && identityErr.Status == http.StatusNotFound {
+			writeRoleStatus(w, roleStatusResponse{Role: role, Recoverable: true})
+			return
+		}
+		writeIdentityError(w, err)
+		return
+	}
+	writeRoleStatus(w, roleStatusResponse{Exists: true, Enabled: view.Enabled, Activated: view.ActivatedAt != nil, Recoverable: true, Role: role})
 }
 
 func (s *Server) Ready(ctx context.Context) error { return s.identity.Readiness(ctx) }
@@ -120,6 +163,35 @@ func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) reenrollByPhone(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	var input phoneReenrollmentRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164 and role are required")
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	if role != "partner" && role != "captain" && role != "field" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "role must be partner, captain, or field")
+		return
+	}
+	phone := strings.TrimSpace(input.PhoneE164)
+	if phone == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164 and role are required")
+		return
+	}
+	if err := s.identity.AuthorizeReenrollmentByPhone(r.Context(), phone, role, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+		writeIdentityError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) authorized(r *http.Request) bool {
 	value := strings.TrimSpace(r.Header.Get("Authorization"))
 	const prefix = "Bearer "
@@ -148,4 +220,10 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+func writeRoleStatus(w http.ResponseWriter, status roleStatusResponse) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(status)
 }

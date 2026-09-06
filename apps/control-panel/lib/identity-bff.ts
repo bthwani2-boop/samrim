@@ -118,6 +118,13 @@ export async function provisionOperator(phone: string): Promise<ActorRoleView> {
   return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" });
 }
 
+export async function lookupIdentityRole(phone: string, role: ManagedActivationRole): Promise<ActorRoleView | null> {
+  const page = await identityInternalClient().searchActorRoles(role, phone, true);
+  if (page.items.length === 0) return null;
+  if (page.items.length !== 1) throw new Error("IDENTITY_AMBIGUOUS_ROLE_MATCH");
+  return page.items[0] ?? null;
+}
+
 export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const store = await cookies();
   const accessToken = store.get(accessCookie)?.value;

@@ -26,6 +26,12 @@ type ActorRoleView struct {
 	RoleCreated     bool       `json:"roleCreated,omitempty"`
 }
 
+type ActorSearchPage struct {
+	Items      []ActorRoleView `json:"items"`
+	Limit      int             `json:"limit"`
+	NextCursor string          `json:"nextCursor,omitempty"`
+}
+
 type ProvisionActorRoleRequest struct {
 	PhoneE164 string `json:"phoneE164"`
 	Role      string `json:"role"`
@@ -76,6 +82,29 @@ func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleV
 	err := c.do(ctx, http.MethodGet, pathname, "", nil, &result)
 	return result, err
 }
+func (c *Client) SearchRoles(ctx context.Context, role, query string) (ActorSearchPage, error) {
+	params := url.Values{}
+	params.Set("role", strings.TrimSpace(role))
+	params.Set("q", strings.TrimSpace(query))
+	params.Set("enabled", "true")
+	params.Set("limit", "2")
+	var result ActorSearchPage
+	err := c.do(ctx, http.MethodGet, "/internal/actor-roles/search?"+params.Encode(), "", nil, &result)
+	return result, err
+}
+func (c *Client) LookupRoleByPhone(ctx context.Context, role, phone string) (ActorRoleView, error) {
+	page, err := c.SearchRoles(ctx, role, phone)
+	if err != nil {
+		return ActorRoleView{}, err
+	}
+	if len(page.Items) == 0 {
+		return ActorRoleView{}, &Error{Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "managed role record not found"}
+	}
+	if len(page.Items) != 1 {
+		return ActorRoleView{}, &Error{Status: http.StatusConflict, Code: "CONFLICT", Message: "managed role lookup is ambiguous"}
+	}
+	return page.Items[0], nil
+}
 func (c *Client) SetRoleEnabled(ctx context.Context, actorID, role string, enabled bool, correlationID string) error {
 	action := "disable"
 	if enabled {
@@ -87,6 +116,16 @@ func (c *Client) SetRoleEnabled(ctx context.Context, actorID, role string, enabl
 func (c *Client) AuthorizeReenrollment(ctx context.Context, actorID, role, correlationID string) error {
 	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/roles/" + url.PathEscape(strings.TrimSpace(role)) + "/reenrollment"
 	return c.do(ctx, http.MethodPost, pathname, correlationID, nil, nil)
+}
+func (c *Client) AuthorizeReenrollmentByPhone(ctx context.Context, phone, role, correlationID string) error {
+	page, err := c.SearchRoles(ctx, role, phone)
+	if err != nil {
+		return err
+	}
+	if len(page.Items) != 1 || !strings.EqualFold(strings.TrimSpace(page.Items[0].Role), strings.TrimSpace(role)) {
+		return &Error{Status: http.StatusNotFound, Code: "NOT_FOUND", Message: "managed role record not found"}
+	}
+	return c.AuthorizeReenrollment(ctx, page.Items[0].ActorID, role, correlationID)
 }
 func (c *Client) SetActorSecurityEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
 	action := "disable"

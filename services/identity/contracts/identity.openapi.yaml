@@ -453,9 +453,9 @@ components:
           $ref: "#/components/schemas/ManagedActivationRole"
         activationCode:
           type: string
-          minLength: 4
-          maxLength: 4
-          pattern: "^[0-9]{6}$"
+          minLength: 43
+          maxLength: 43
+          pattern: "^[A-Za-z0-9_-]{43}$"
 
     ClientCredentialProofRequest:
       type: object
@@ -521,11 +521,13 @@ components:
           $ref: "#/components/schemas/ManagedActivationRole"
         activationCode:
           type: string
-          minLength: 4
-          maxLength: 4
-          pattern: "^[0-9]{6}$"
+          minLength: 43
+          maxLength: 43
+          pattern: "^[A-Za-z0-9_-]{43}$"
         verificationCode:
           type: string
+          minLength: 6
+          maxLength: 6
           pattern: "^[0-9]{6}$"
         password:
           type: string

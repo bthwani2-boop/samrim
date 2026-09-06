@@ -93,8 +93,11 @@ if (operatorStart.includes("#/components/responses/TokenPair")) {
 const managedRequest = schemaBlock("ManagedChallengeRequest", "ClientCredentialProofRequest");
 if (!managedRequest.includes("#/components/schemas/ManagedActivationRole")) failures.push("managed activation role boundary missing");
 if (!managedRequest.includes("activationCode:")) failures.push("managed activation request does not require the control-surface code");
+if (!managedRequest.includes("minLength: 43") || !managedRequest.includes('pattern: "^[A-Za-z0-9_-]{43}$"')) failures.push("managed activation code must be opaque and 43 characters");
 const managedActivation = schemaBlock("ManagedActivationRequest", "OperatorLoginStartRequest");
 if (!managedActivation.includes("verificationCode:")) failures.push("managed activation does not require the separate phone verification code");
+if (!managedActivation.includes("minLength: 43") || !managedActivation.includes('pattern: "^[A-Za-z0-9_-]{43}$"')) failures.push("managed activation request must accept the opaque control-surface code");
+if (!managedActivation.includes("minLength: 6") || !managedActivation.includes('pattern: "^[0-9]{6}$"')) failures.push("managed activation request must require a six-digit phone code");
 if (!contract.includes("ManagedActivationCode")) failures.push("managed activation code issuance contract missing");
 const managedType = schemaBlock("ManagedActorType", "PhoneRequest");
 if (!managedType.includes("enum: [partner, captain, field]")) failures.push("managed activation roles are incorrect");

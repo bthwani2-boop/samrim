@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { ActorIdentity, ControlPanelRole, ManagedActivationCode, ManagedActivationRole } from "@bthwani/identity";
 import { colorRoles } from "@bthwani/design-system";
@@ -24,6 +24,7 @@ async function responseMessage(response: Response): Promise<string> {
   const code = typeof body?.error?.code === "string" ? body.error.code : "";
   switch (code) {
     case "CONFLICT": return "هذا الحساب مفعّل مسبقًا أو توجد حالة تفعيل قائمة لهذا الدور.";
+    case "RECOVERY_UNSUPPORTED": return "استرداد موظف لوحة التحكم يتم من أدوات إدارة المشغل المخصصة.";
     case "NOT_FOUND": return "لم يتم العثور على سجل الدور المطلوب.";
     case "FORBIDDEN": return "لا تملك الصلاحية لتنفيذ هذه العملية لهذا الدور.";
     case "INVALID_INPUT": return "راجع رقم الهاتف والبيانات المطلوبة ثم حاول مرة أخرى.";
@@ -44,46 +45,70 @@ async function identityFetch(input: RequestInfo | URL, init?: RequestInit): Prom
   }
 }
 
+type ManagedRoleStatus = Readonly<{
+  kind: "idle" | "checking" | "new" | "pending" | "activated" | "error";
+  recoverable?: boolean;
+}>;
+
 function ManagedAccessPanel() {
   const [role, setRole] = useState<ManagedActivationRole>("partner");
   const [phone, setPhone] = useState("");
   const [result, setResult] = useState<ManagedActivationCode | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [lookup, setLookup] = useState<ManagedRoleStatus>({ kind: "idle" });
+  const lookupRequest = useRef(0);
 
-  async function provisionAndIssue() {
+  useEffect(() => {
+    const value = phone.trim();
+    const requestId = ++lookupRequest.current;
+    setResult(null);
+    setError("");
+    if (value.length < 5) {
+      setLookup({ kind: "idle" });
+      return;
+    }
+    setLookup({ kind: "checking" });
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams({ phone: value, role });
+          const response = await identityFetch(`/api/access/managed-user/status?${params.toString()}`);
+          if (requestId !== lookupRequest.current) return;
+          if (!response.ok) {
+            setLookup({ kind: "error" });
+            setError(await responseMessage(response));
+            return;
+          }
+          const status = (await response.json()) as { exists?: boolean; activated?: boolean; recoverable?: boolean };
+          if (!status.exists) setLookup({ kind: "new" });
+          else if (status.activated) setLookup({ kind: "activated", recoverable: status.recoverable !== false });
+          else setLookup({ kind: "pending" });
+        } catch {
+          if (requestId !== lookupRequest.current) return;
+          setLookup({ kind: "error" });
+          setError("تعذر التحقق من حالة الرقم حاليًا. يمكنك إعادة المحاولة بعد اكتمال إدخاله.");
+        }
+      })();
+    }, 450);
+    return () => window.clearTimeout(timeout);
+  }, [phone, role]);
+
+  async function provisionAndIssue(recover = false) {
     setBusy(true); setError(""); setResult(null);
     try {
-      const response = await identityFetch("/api/access/managed-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, role }) });
+      const response = await identityFetch("/api/access/managed-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, role, recover }) });
       if (!response.ok) { setError(await responseMessage(response)); return; }
       setResult((await response.json()) as ManagedActivationCode);
       setPhone("");
+      setLookup({ kind: "idle" });
     } catch { setError("تعذر الوصول إلى خدمات إدارة الهوية. تحقق من تشغيل الحاويات ثم أعد المحاولة."); }
     finally { setBusy(false); }
   }
 
   const roleLabel = role === "partner" ? "الشريك" : role === "captain" ? "الكابتن" : role === "field" ? "الميداني" : "موظف لوحة التحكم";
-  return <section className="access-card" aria-labelledby="managed-access-title"><div className="access-card-heading"><span className="step-chip">وصول محكوم</span><p className="eyebrow">إدارة الأجهزة المهيأة</p><h2 id="managed-access-title">تهيئة مستخدم وإصدار رمز</h2><p className="muted">ابدأ برقم الهاتف والدور. تُهيّئ المنصة الحساب عبر مالك المجال ثم تُصدر رمز تفعيل مرتبطًا به ويُستخدم مرة واحدة. ينشئ المستخدم كلمة المرور بعد إثبات الهاتف.</p></div><div className="access-form"><label className="field-label" htmlFor="managed-role">الدور<select id="managed-role" value={role} onChange={(event) => { setRole(event.target.value as ManagedActivationRole); setResult(null); setError(""); }}><option value="partner">الشريك</option><option value="captain">الكابتن</option><option value="field">الميداني</option><option value="operator">موظف لوحة التحكم</option></select></label><label className="field-label" htmlFor="managed-phone">رقم الهاتف<input id="managed-phone" autoComplete="tel" inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} /></label><button className="button button-primary" disabled={busy || !phone.trim()} onClick={() => void provisionAndIssue()}>{busy ? "جارٍ تهيئة الحساب وإصدار الرمز…" : "تهيئة الحساب وإصدار الرمز"}</button></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}{result ? <div className="code-output" role="status"><span className="summary-label">رمز {roleLabel}</span><code>{result.code}</code><p>سيظهر الرمز مرة واحدة فقط. احفظه وسلّمه للقناة الآمنة الخاصة بالدور. تنتهي صلاحيته في {new Date(result.expiresAt).toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}.</p></div> : null}</section>;
-}
-
-function ManagedRecoveryPanel() {
-  const [role, setRole] = useState<"partner" | "captain" | "field">("partner");
-  const [actorId, setActorId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  async function authorizeReenrollment() {
-    setBusy(true); setMessage(""); setError("");
-    try {
-      const response = await identityFetch("/api/access/managed-user/reenrollment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actorId, role }) });
-      if (!response.ok) { setError(await responseMessage(response)); return; }
-      setMessage("تم فتح إعادة التفعيل المحكومة. أصدر رمزًا جديدًا من لوحة الوصول ثم سلّمه عبر القناة الآمنة.");
-    } catch { setError("تعذر الوصول إلى خدمة إعادة التفعيل. تحقق من تشغيل الحاويات ثم أعد المحاولة."); }
-    finally { setBusy(false); }
-  }
-
-  return <section className="access-card" aria-labelledby="managed-recovery-title"><div className="access-card-heading"><span className="step-chip">استرداد محكوم</span><p className="eyebrow">إعادة تفعيل جهاز</p><h2 id="managed-recovery-title">فتح إعادة التسجيل</h2><p className="muted">يتطلب هذا الإجراء معرّف actor من سجل الهوية، ويُسجّل بمعرّف ارتباط جديد قبل إصدار رمز تفعيل جديد.</p></div><div className="access-form"><label className="field-label" htmlFor="recovery-role">الدور<select id="recovery-role" value={role} onChange={(event) => setRole(event.target.value as typeof role)}><option value="partner">الشريك</option><option value="captain">الكابتن</option><option value="field">الميداني</option></select></label><label className="field-label" htmlFor="recovery-actor">معرّف الهوية<input id="recovery-actor" autoComplete="off" value={actorId} onChange={(event) => setActorId(event.target.value)} /></label><button className="button button-secondary" disabled={busy || !actorId.trim()} onClick={() => void authorizeReenrollment()}>{busy ? "جارٍ فتح إعادة التفعيل…" : "فتح إعادة التفعيل"}</button></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}{message ? <p className="workspace-note" role="status">{message}</p> : null}</section>;
+  const submitLabel = lookup.kind === "pending" ? "إصدار رمز التفعيل" : "تهيئة الحساب وإصدار الرمز";
+  return <section className="access-card" aria-labelledby="managed-access-title"><div className="access-card-heading"><span className="step-chip">إدارة وصول موحّدة</span><p className="eyebrow">إدارة الأجهزة المهيأة</p><h2 id="managed-access-title">تهيئة أو استرداد الحساب</h2><p className="muted">أدخل رقم الهاتف والدور مرة واحدة. تتحقق المنصة تلقائيًا من حالة الحساب؛ فإذا كان مفعّلًا تعرض لك استرداده وإعادة تفعيله بدل إنشاء مسار مكرر.</p></div><div className="access-form"><label className="field-label" htmlFor="managed-role">الدور<select id="managed-role" value={role} disabled={busy} onChange={(event) => { setRole(event.target.value as ManagedActivationRole); setResult(null); setError(""); }}><option value="partner">الشريك</option><option value="captain">الكابتن</option><option value="field">الميداني</option><option value="operator">موظف لوحة التحكم</option></select></label><label className="field-label" htmlFor="managed-phone">رقم الهاتف<input id="managed-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>{lookup.kind !== "activated" ? <button className="button button-primary" disabled={busy || !phone.trim() || lookup.kind === "checking"} onClick={() => void provisionAndIssue()}>{busy ? "جارٍ تجهيز الحساب وإصدار الرمز…" : submitLabel}</button> : <span className="form-action-placeholder" aria-hidden="true" />}</div>{lookup.kind === "checking" ? <p className="managed-status managed-status-info" role="status">جارٍ التحقق من حالة الحساب…</p> : null}{lookup.kind === "pending" ? <p className="managed-status managed-status-info" role="status"><strong>الحساب مهيأ ولم يُفعّل بعد.</strong> سيُصدر له رمز التفعيل الأول من الزر أعلاه.</p> : null}{lookup.kind === "activated" ? <div className={`managed-status ${lookup.recoverable ? "managed-status-warning" : "managed-status-info"}`} role="alert"><strong>تم تفعيل هذا الحساب من قبل.</strong><p>{lookup.recoverable ? "هل تريد استرداد وإعادة تفعيل حساب موجود؟ ستُلغى الجلسات السابقة وتُصدر صلاحية تفعيل جديدة." : "هذا الدور مفعّل، لكن استرداده لا يتم من هذا المسار."}</p>{lookup.recoverable ? <div className="managed-status-actions"><button className="button button-primary" disabled={busy} onClick={() => void provisionAndIssue(true)}>{busy ? "جارٍ استرداد الحساب وإصدار الرمز…" : "نعم، استرداد وإعادة التفعيل"}</button><button className="text-button" disabled={busy} onClick={() => { setPhone(""); setLookup({ kind: "idle" }); }}>إلغاء وتغيير الرقم</button></div> : null}</div> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}{result ? <div className="code-output" role="status"><span className="summary-label">رمز {roleLabel}</span><code>{result.code}</code><p>سيظهر الرمز مرة واحدة فقط. احفظه وسلّمه للقناة الآمنة الخاصة بالدور. تنتهي صلاحيته في {new Date(result.expiresAt).toLocaleTimeString("ar-YE", { hour: "2-digit", minute: "2-digit" })}.</p></div> : null}</section>;
 }
 
 const visualTokens = {
@@ -224,7 +249,7 @@ export default function Home() {
   }
 
   if (view.kind === "authenticated") {
-    return shell(<><section className="workspace-card"><div className="workspace-intro"><span className="success-badge"><span className="success-dot" aria-hidden="true" /> الجلسة نشطة</span><p className="eyebrow">مساحة {view.identity.role === "platform_owner" ? "مالك المنصة" : "المشغل"}</p><h1>أهلاً بك في لوحة التحكم</h1><p className="lead">تم توثيق جلستك بعاملين. يمكنك متابعة الوحدات المصرح بها من هذه المساحة.</p></div><div className="session-summary"><div><span className="summary-label">الدور</span><strong>{view.identity.role === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</strong></div><div><span className="summary-label">السطح</span><strong>{view.identity.surface}</strong></div><div><span className="summary-label">حالة الجلسة</span><strong className="summary-value-success">موثقة</strong></div></div><div className="workspace-note"><span className="note-mark" aria-hidden="true">✓</span><div><strong>الهوية جاهزة</strong><p>لا توجد بيانات تشغيلية معروضة هنا قبل ربط صلاحيات الوحدات؛ لن نعرض أرقاماً تجريبية أو حالة غير مؤكدة.</p></div></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}<button className="button button-secondary" disabled={busy} onClick={() => void logout()}>{busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}</button></section>{view.identity.role === "platform_owner" ? <><ManagedAccessPanel /><ManagedRecoveryPanel /></> : null}</>, "workspace-shell");
+    return shell(<><section className="workspace-card"><div className="workspace-intro"><span className="success-badge"><span className="success-dot" aria-hidden="true" /> الجلسة نشطة</span><p className="eyebrow">مساحة {view.identity.role === "platform_owner" ? "مالك المنصة" : "المشغل"}</p><h1>أهلاً بك في لوحة التحكم</h1><p className="lead">تم توثيق جلستك بعاملين. يمكنك متابعة الوحدات المصرح بها من هذه المساحة.</p></div><div className="session-summary"><div><span className="summary-label">الدور</span><strong>{view.identity.role === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</strong></div><div><span className="summary-label">السطح</span><strong>{view.identity.surface}</strong></div><div><span className="summary-label">حالة الجلسة</span><strong className="summary-value-success">موثقة</strong></div></div><div className="workspace-note"><span className="note-mark" aria-hidden="true">✓</span><div><strong>الهوية جاهزة</strong><p>لا توجد بيانات تشغيلية معروضة هنا قبل ربط صلاحيات الوحدات؛ لن نعرض أرقاماً تجريبية أو حالة غير مؤكدة.</p></div></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}<button className="button button-secondary" disabled={busy} onClick={() => void logout()}>{busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}</button></section>{view.identity.role === "platform_owner" ? <ManagedAccessPanel /> : null}</>, "workspace-shell");
   }
 
   const canStart = authMode === "login" ? phone.trim().length > 0 && password.length >= 15 : phone.trim().length > 0 && activationCode.trim().length === 43;

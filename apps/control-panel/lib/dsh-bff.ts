@@ -5,6 +5,14 @@ type DshClientError =
   | Readonly<{ kind: "network"; message: string }>
   | Readonly<{ kind: "config"; message: string }>;
 
+export type ManagedRoleStatus = Readonly<{
+  exists: boolean;
+  enabled: boolean;
+  activated: boolean;
+  recoverable: boolean;
+  role: "partner" | "captain" | "field";
+}>;
+
 const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field"]);
 
 function dshBaseUrl(): string {
@@ -83,7 +91,7 @@ export async function provisionManagedRole(phone: string, role: ManagedActivatio
   }
 }
 
-export async function authorizeManagedReenrollment(actorId: string, role: "partner" | "captain" | "field", correlationId: string): Promise<void> {
+export async function lookupManagedRoleStatus(phone: string, role: "partner" | "captain" | "field"): Promise<ManagedRoleStatus> {
   if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
   const baseUrl = dshBaseUrl();
   const token = dshToken();
@@ -92,10 +100,38 @@ export async function authorizeManagedReenrollment(actorId: string, role: "partn
   try {
     let response: Response;
     try {
-      response = await fetch(`${baseUrl}/dsh/managed-roles/${encodeURIComponent(actorId)}/reenrollment`, {
+      const params = new URLSearchParams({ phoneE164: phone, role });
+      response = await fetch(`${baseUrl}/dsh/managed-roles/status?${params.toString()}`, {
+        method: "GET",
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      });
+    } catch (error) {
+      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
+    }
+    if (!response.ok) {
+      const parsed = parseErrorPayload(await response.json().catch(() => null));
+      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
+    }
+    return (await response.json()) as ManagedRoleStatus;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function authorizeManagedReenrollment(phone: string, role: "partner" | "captain" | "field", correlationId: string): Promise<void> {
+  if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
+  const baseUrl = dshBaseUrl();
+  const token = dshToken();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}/dsh/managed-roles/reenrollment`, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Correlation-ID": correlationId },
-        body: JSON.stringify({ actorId, role }),
+        body: JSON.stringify({ phoneE164: phone, role }),
         signal: controller.signal,
       });
     } catch (error) {

@@ -150,7 +150,7 @@ for (const forbidden of ["ProvisionOperator", "Username", "X-Service-Caller"]) {
 }
 
 const goClient = read("services/identity/clients/go/client.go");
-for (const required of ["/internal/actor-roles/provision", "/roles/", "/reenrollment", "/security/", "/operator-password/reset"]) {
+for (const required of ["/internal/actor-roles/provision", "/internal/actor-roles/search", "/roles/", "/reenrollment", "/security/", "/operator-password/reset", "AuthorizeReenrollmentByPhone"]) {
   if (!goClient.includes(required)) failures.push("Identity Go client missing canonical route " + required);
 }
 for (const forbidden of ["Username", "X-Service-Caller", "/activations"]) {
@@ -172,7 +172,8 @@ for (const required of [
   if (!contract.includes(required)) failures.push("Identity contract missing " + required);
 }
 const sixDigitPatterns = contract.match(/pattern: "\^\[0-9\]\{6\}\$"/g) ?? [];
-if (sixDigitPatterns.length < 5) failures.push("Identity contract must expose six-digit challenge schemas");
+if (sixDigitPatterns.length < 3) failures.push("Identity contract must expose six-digit challenge schemas");
+if (!contract.includes('pattern: "^[A-Za-z0-9_-]{43}$"') || !contract.includes("minLength: 43")) failures.push("Identity contract must expose opaque 43-character activation schemas");
 if (contract.includes('pattern: "^[0-9]{4}$"')) failures.push("Identity contract contains retired four-digit challenge schema");
 if (contract.includes("minLength: 12")) failures.push("Identity contract contains retired twelve-character password minimum");
 for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller"]) {

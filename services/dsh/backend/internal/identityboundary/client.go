@@ -53,4 +53,10 @@ func (c *Client) AuthorizeFieldReenrollment(ctx context.Context, actorID, correl
 func (c *Client) AuthorizeReenrollment(ctx context.Context, actorID, role, correlationID string) error {
 	return c.inner.AuthorizeReenrollment(ctx, actorID, role, correlationID)
 }
+func (c *Client) AuthorizeReenrollmentByPhone(ctx context.Context, phone, role, correlationID string) error {
+	return c.inner.AuthorizeReenrollmentByPhone(ctx, phone, role, correlationID)
+}
+func (c *Client) LookupRoleByPhone(ctx context.Context, phone, role string) (identityclient.ActorRoleView, error) {
+	return c.inner.LookupRoleByPhone(ctx, role, phone)
+}
 func (c *Client) Readiness(ctx context.Context) error { return c.inner.Readiness(ctx) }
