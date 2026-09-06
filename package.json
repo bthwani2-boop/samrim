@@ -14,7 +14,7 @@
     "field": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App app-field",
     "scrcpy": "scrcpy",
     "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
-    "control": "nx run control-panel:dev",
+    "control": "pnpm --dir apps/control-panel dev",
     "dsh": "nx run dsh:serve",
     "wlt": "nx run wlt:serve",
     "identity": "nx run identity:serve",
