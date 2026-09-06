@@ -191,6 +191,47 @@ func (s *Service) RecoverClient(ctx context.Context, input domain.ClientCredenti
 	})
 }
 
+func (s *Service) RequestManagedRecovery(ctx context.Context, input domain.ManagedRecoveryChallengeRequest, ipHash string) (domain.Challenge, error) {
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	if !domain.IsManagedActivationRole(role) {
+		return domain.Challenge{}, domain.ErrForbidden
+	}
+	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
+	if err != nil {
+		return domain.Challenge{}, domain.ErrInvalidInput
+	}
+	a, roleView, lookupErr := s.actors.ManagedActivationCandidate(ctx, phone, role)
+	admissible := false
+	actorID := ""
+	if lookupErr == nil && roleView.ActivatedAt != nil {
+		if _, _, credentialErr := s.actors.PasswordCredential(ctx, phone, role); credentialErr == nil {
+			admissible = true
+			actorID = a.ID
+		} else if !errors.Is(credentialErr, domain.ErrNotFound) {
+			return domain.Challenge{}, credentialErr
+		}
+	} else if lookupErr != nil && !errors.Is(lookupErr, domain.ErrNotFound) && !errors.Is(lookupErr, domain.ErrActorBlocked) {
+		return domain.Challenge{}, lookupErr
+	}
+	return s.issue(ctx, phone, role, domain.ChallengeManagedRecover, actorID, admissible, "", ipHash)
+}
+
+func (s *Service) RecoverManaged(ctx context.Context, input domain.ManagedRecoveryRequest) (domain.TokenPair, error) {
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	if !domain.IsManagedActivationRole(role) {
+		return domain.TokenPair{}, domain.ErrInvalidInput
+	}
+	return s.consume(ctx, input.Phone, role, domain.ChallengeManagedRecover, input.Code, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
+		if actorID == "" {
+			return domain.TokenPair{}, domain.ErrInvalidChallenge
+		}
+		if err := s.actors.ResetManagedPasswordTx(ctx, tx, actorID, role, input.Password); err != nil {
+			return domain.TokenPair{}, err
+		}
+		return s.sessions.CreateTx(ctx, tx, actorID, role, input.DeviceFingerprint)
+	})
+}
+
 func (s *Service) RequestManagedActivation(ctx context.Context, input domain.ManagedChallengeRequest, ipHash string) (domain.Challenge, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
 	if !domain.IsManagedActivationRole(role) {

@@ -139,6 +139,61 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "429": { $ref: "#/components/responses/RateLimited" }
 
+  /auth/managed/state:
+    post:
+      tags: [managed-auth]
+      operationId: readManagedAuthenticationState
+      description: Returns only the next authentication step for the fixed role and phone supplied by the app surface: password, first activation, suspended, or unknown.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedAuthStateRequest" } } }
+      responses:
+        "200":
+          description: Next authentication step.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ManagedAuthState" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+
+  /auth/control-panel/state:
+    post:
+      tags: [operator-auth]
+      operationId: readControlPanelAuthenticationState
+      description: Resolves the control-panel role for a phone and returns the next step without requiring a role selector in the client.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ControlPanelAuthStateRequest" } } }
+      responses:
+        "200":
+          description: Control-panel authentication state.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ControlPanelAuthState" } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+
+  /auth/managed/recovery/request:
+    post:
+      tags: [managed-auth]
+      operationId: requestManagedRecoveryVerification
+      description: Requests phone proof for password recovery of an already activated partner, captain, field, or operator role without exposing whether an admissible credential exists.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedRecoveryChallengeRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/managed/recover:
+    post:
+      tags: [managed-auth]
+      operationId: recoverManagedRole
+      description: Consumes managed-role phone proof, replaces only that role credential, revokes that role's sessions and creates a fresh role-scoped session.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedRecoveryRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
   /auth/operator/login/start:
     post:
       tags: [operator-auth]
@@ -457,6 +512,55 @@ components:
           maxLength: 43
           pattern: "^[A-Za-z0-9_-]{43}$"
 
+    ManagedRecoveryChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, role]
+      properties:
+        phone:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedActivationRole"
+
+    ManagedAuthStateRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, role]
+      properties:
+        phone:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedActivationRole"
+
+    ManagedAuthState:
+      type: object
+      additionalProperties: false
+      required: [next]
+      properties:
+        next:
+          type: string
+          enum: [password, activation, suspended, unknown]
+
+    ControlPanelAuthStateRequest:
+      type: object
+      additionalProperties: false
+      required: [phone]
+      properties:
+        phone:
+          type: string
+
+    ControlPanelAuthState:
+      type: object
+      additionalProperties: false
+      required: [next, role]
+      properties:
+        next:
+          type: string
+          enum: [password, activation, suspended, unknown]
+        role:
+          type: string
+          enum: [operator, platform_owner, ""]
+
     ClientCredentialProofRequest:
       type: object
       additionalProperties: false
@@ -525,6 +629,29 @@ components:
           maxLength: 43
           pattern: "^[A-Za-z0-9_-]{43}$"
         verificationCode:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: "^[0-9]{6}$"
+        password:
+          type: string
+          minLength: 15
+          maxLength: 128
+        deviceFingerprint:
+          type: string
+          minLength: 8
+          maxLength: 256
+
+    ManagedRecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [phone, role, code, password, deviceFingerprint]
+      properties:
+        phone:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedActivationRole"
+        code:
           type: string
           minLength: 6
           maxLength: 6

@@ -45,6 +45,10 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /auth/managed/activation/request", s.requestManagedActivation)
 	mux.HandleFunc("POST /auth/managed/activate", s.activateManaged)
 	mux.HandleFunc("POST /auth/managed/login", s.loginManaged)
+	mux.HandleFunc("POST /auth/managed/state", s.managedAuthState)
+	mux.HandleFunc("POST /auth/control-panel/state", s.controlPanelAuthState)
+	mux.HandleFunc("POST /auth/managed/recovery/request", s.requestManagedRecovery)
+	mux.HandleFunc("POST /auth/managed/recover", s.recoverManaged)
 	mux.HandleFunc("POST /internal/managed-activation-codes", s.internal(s.issueManagedActivationCode))
 	mux.HandleFunc("POST /auth/operator/login/start", s.startOperatorLogin)
 	mux.HandleFunc("POST /auth/operator/login/complete", s.completeOperatorLogin)
@@ -168,6 +172,76 @@ func (s *Server) loginManaged(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.challenges.LoginManaged(r.Context(), input, identitysecurity.SHA256Hex(remoteIP(r)))
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+func (s *Server) managedAuthState(w http.ResponseWriter, r *http.Request) {
+	var input domain.ManagedAuthStateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	state, err := s.actors.ManagedAuthState(r.Context(), input.Phone, input.Role)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	next := "unknown"
+	if state.Exists {
+		switch {
+		case !state.Enabled || !state.SecurityEnabled:
+			next = "suspended"
+		case !state.Activated || !state.HasCredential:
+			next = "activation"
+		default:
+			next = "password"
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"next": next})
+}
+func (s *Server) controlPanelAuthState(w http.ResponseWriter, r *http.Request) {
+	var input domain.ControlPanelAuthStateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	role, state, err := s.actors.ControlPanelAuthState(r.Context(), input.Phone)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	next := "unknown"
+	if state.Exists {
+		switch {
+		case !state.Enabled || !state.SecurityEnabled:
+			next = "suspended"
+		case !state.Activated || !state.HasCredential:
+			next = "activation"
+		default:
+			next = "password"
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"next": next, "role": role})
+}
+func (s *Server) requestManagedRecovery(w http.ResponseWriter, r *http.Request) {
+	var input domain.ManagedRecoveryChallengeRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.challenges.RequestManagedRecovery(r.Context(), input, s.ipHash(r))
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+func (s *Server) recoverManaged(w http.ResponseWriter, r *http.Request) {
+	var input domain.ManagedRecoveryRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.challenges.RecoverManaged(r.Context(), input)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -350,7 +424,7 @@ func (s *Server) enableRole(w http.ResponseWriter, r *http.Request, caller strin
 	s.setRoleEnabled(w, r, caller, true)
 }
 func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
-	if err := s.actors.SetRoleEnabled(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+	if err := s.actors.SetRoleEnabledWithReason(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason"))); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -370,7 +444,7 @@ func (s *Server) enableActorSecurity(w http.ResponseWriter, r *http.Request, cal
 	s.setActorSecurityEnabled(w, r, caller, true)
 }
 func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
-	if err := s.actors.SetSecurityEnabled(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+	if err := s.actors.SetSecurityEnabledWithReason(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason"))); err != nil {
 		writeDomainError(w, err)
 		return
 	}

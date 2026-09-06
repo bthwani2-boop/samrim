@@ -27,12 +27,20 @@ type phoneReenrollmentRequest struct {
 	Role      string `json:"role"`
 }
 
+type roleStateRequest struct {
+	PhoneE164 string `json:"phoneE164"`
+	Role      string `json:"role"`
+	Reason    string `json:"reason"`
+}
+
 type roleStatusResponse struct {
-	Exists      bool   `json:"exists"`
-	Enabled     bool   `json:"enabled"`
-	Activated   bool   `json:"activated"`
-	Recoverable bool   `json:"recoverable"`
-	Role        string `json:"role"`
+	ActorID         string `json:"actorId,omitempty"`
+	Exists          bool   `json:"exists"`
+	Enabled         bool   `json:"enabled"`
+	Activated       bool   `json:"activated"`
+	SecurityEnabled bool   `json:"securityEnabled"`
+	Recoverable     bool   `json:"recoverable"`
+	Role            string `json:"role"`
 }
 
 type Server struct {
@@ -51,6 +59,8 @@ func New(identity *identityboundary.Client, accessToken string) (*Server, error)
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/managed-roles/provision", s.provision)
 	mux.HandleFunc("GET /dsh/managed-roles/status", s.statusByPhone)
+	mux.HandleFunc("POST /dsh/managed-roles/disable", s.disableByPhone)
+	mux.HandleFunc("POST /dsh/managed-roles/enable", s.enableByPhone)
 	mux.HandleFunc("POST /dsh/managed-roles/reenrollment", s.reenrollByPhone)
 	mux.HandleFunc("POST /dsh/managed-roles/{actorId}/reenrollment", s.reenroll)
 }
@@ -80,7 +90,39 @@ func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
 		writeIdentityError(w, err)
 		return
 	}
-	writeRoleStatus(w, roleStatusResponse{Exists: true, Enabled: view.Enabled, Activated: view.ActivatedAt != nil, Recoverable: true, Role: role})
+	writeRoleStatus(w, roleStatusResponse{ActorID: view.ActorID, Exists: true, Enabled: view.Enabled, Activated: view.ActivatedAt != nil, SecurityEnabled: view.SecurityEnabled, Recoverable: view.Enabled && view.ActivatedAt != nil, Role: role})
+}
+
+func (s *Server) disableByPhone(w http.ResponseWriter, r *http.Request) {
+	s.setEnabledByPhone(w, r, false)
+}
+func (s *Server) enableByPhone(w http.ResponseWriter, r *http.Request) {
+	s.setEnabledByPhone(w, r, true)
+}
+func (s *Server) setEnabledByPhone(w http.ResponseWriter, r *http.Request, enabled bool) {
+	if !s.authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	var input roleStateRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164, role, and reason are required")
+		return
+	}
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	phone := strings.TrimSpace(input.PhoneE164)
+	reason := strings.TrimSpace(input.Reason)
+	if (role != "partner" && role != "captain" && role != "field") || phone == "" || len(reason) < 5 || len(reason) > 500 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164, managed role, and a reason of 5 to 500 characters are required")
+		return
+	}
+	if err := s.identity.SetRoleEnabledByPhone(r.Context(), phone, role, enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason); err != nil {
+		writeIdentityError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) Ready(ctx context.Context) error { return s.identity.Readiness(ctx) }

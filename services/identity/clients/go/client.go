@@ -92,8 +92,17 @@ func (c *Client) SearchRoles(ctx context.Context, role, query string) (ActorSear
 	err := c.do(ctx, http.MethodGet, "/internal/actor-roles/search?"+params.Encode(), "", nil, &result)
 	return result, err
 }
+func (c *Client) SearchRolesAnyState(ctx context.Context, role, query string) (ActorSearchPage, error) {
+	params := url.Values{}
+	params.Set("role", strings.TrimSpace(role))
+	params.Set("q", strings.TrimSpace(query))
+	params.Set("limit", "2")
+	var result ActorSearchPage
+	err := c.do(ctx, http.MethodGet, "/internal/actor-roles/search?"+params.Encode(), "", nil, &result)
+	return result, err
+}
 func (c *Client) LookupRoleByPhone(ctx context.Context, role, phone string) (ActorRoleView, error) {
-	page, err := c.SearchRoles(ctx, role, phone)
+	page, err := c.SearchRolesAnyState(ctx, role, phone)
 	if err != nil {
 		return ActorRoleView{}, err
 	}
@@ -106,12 +115,15 @@ func (c *Client) LookupRoleByPhone(ctx context.Context, role, phone string) (Act
 	return page.Items[0], nil
 }
 func (c *Client) SetRoleEnabled(ctx context.Context, actorID, role string, enabled bool, correlationID string) error {
+	return c.SetRoleEnabledWithReason(ctx, actorID, role, enabled, correlationID, "")
+}
+func (c *Client) SetRoleEnabledWithReason(ctx context.Context, actorID, role string, enabled bool, correlationID, reason string) error {
 	action := "disable"
 	if enabled {
 		action = "enable"
 	}
 	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/roles/" + url.PathEscape(strings.TrimSpace(role)) + "/" + action
-	return c.do(ctx, http.MethodPost, pathname, correlationID, nil, nil)
+	return c.doWithReason(ctx, http.MethodPost, pathname, correlationID, reason, nil, nil)
 }
 func (c *Client) AuthorizeReenrollment(ctx context.Context, actorID, role, correlationID string) error {
 	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/roles/" + url.PathEscape(strings.TrimSpace(role)) + "/reenrollment"
@@ -128,12 +140,15 @@ func (c *Client) AuthorizeReenrollmentByPhone(ctx context.Context, phone, role, 
 	return c.AuthorizeReenrollment(ctx, page.Items[0].ActorID, role, correlationID)
 }
 func (c *Client) SetActorSecurityEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
+	return c.SetActorSecurityEnabledWithReason(ctx, actorID, enabled, correlationID, "")
+}
+func (c *Client) SetActorSecurityEnabledWithReason(ctx context.Context, actorID string, enabled bool, correlationID, reason string) error {
 	action := "disable"
 	if enabled {
 		action = "enable"
 	}
 	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/security/" + action
-	return c.do(ctx, http.MethodPost, pathname, correlationID, nil, nil)
+	return c.doWithReason(ctx, http.MethodPost, pathname, correlationID, reason, nil, nil)
 }
 func (c *Client) ResetOperatorPassword(ctx context.Context, actorID, password, correlationID string) error {
 	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/operator-password/reset"
@@ -144,6 +159,9 @@ func (c *Client) Readiness(ctx context.Context) error {
 }
 
 func (c *Client) do(ctx context.Context, method, pathname, correlationID string, body any, target any) error {
+	return c.doWithReason(ctx, method, pathname, correlationID, "", body, target)
+}
+func (c *Client) doWithReason(ctx context.Context, method, pathname, correlationID, reason string, body any, target any) error {
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -163,6 +181,9 @@ func (c *Client) do(ctx context.Context, method, pathname, correlationID string,
 	}
 	if strings.TrimSpace(correlationID) != "" {
 		req.Header.Set("X-Correlation-ID", strings.TrimSpace(correlationID))
+	}
+	if strings.TrimSpace(reason) != "" {
+		req.Header.Set("X-Reason", strings.TrimSpace(reason))
 	}
 	response, err := c.http.Do(req)
 	if err != nil {

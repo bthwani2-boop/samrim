@@ -48,6 +48,14 @@ type ActorSearchPage struct {
 	NextCursor string          `json:"nextCursor,omitempty"`
 }
 
+type ManagedAuthState struct {
+	Exists          bool
+	Enabled         bool
+	SecurityEnabled bool
+	Activated       bool
+	HasCredential   bool
+}
+
 type ProvisionActorRoleInput struct {
 	PhoneE164 string `json:"phoneE164"`
 	Role      string `json:"role"`
@@ -66,6 +74,20 @@ type ManagedChallengeRequest struct {
 	Phone          string `json:"phone"`
 	Role           string `json:"role"`
 	ActivationCode string `json:"activationCode"`
+}
+
+type ManagedRecoveryChallengeRequest struct {
+	Phone string `json:"phone"`
+	Role  string `json:"role"`
+}
+
+type ManagedAuthStateRequest struct {
+	Phone string `json:"phone"`
+	Role  string `json:"role"`
+}
+
+type ControlPanelAuthStateRequest struct {
+	Phone string `json:"phone"`
 }
 
 type ClientCredentialProofRequest struct {
@@ -93,6 +115,14 @@ type ManagedActivationRequest struct {
 	Role              string `json:"role"`
 	ActivationCode    string `json:"activationCode"`
 	VerificationCode  string `json:"verificationCode"`
+	Password          string `json:"password"`
+	DeviceFingerprint string `json:"deviceFingerprint"`
+}
+
+type ManagedRecoveryRequest struct {
+	Phone             string `json:"phone"`
+	Role              string `json:"role"`
+	Code              string `json:"code"`
 	Password          string `json:"password"`
 	DeviceFingerprint string `json:"deviceFingerprint"`
 }
@@ -163,6 +193,7 @@ const (
 	ChallengeClientRegister  = "client_register"
 	ChallengeClientRecover   = "client_recover"
 	ChallengeManagedActivate = "managed_activate"
+	ChallengeManagedRecover  = "managed_recover"
 	ChallengeOperatorMFA     = "operator_mfa"
 )
 
@@ -200,7 +231,7 @@ func RoleAllowedForCaller(caller, role string) bool {
 	case "dsh":
 		return role == "partner" || role == "captain" || role == "field"
 	case "platform-control":
-		return role == "operator"
+		return role == "client" || role == "operator"
 	case "platform-bootstrap":
 		return role == "platform_owner"
 	default:

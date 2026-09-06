@@ -110,6 +110,22 @@ export async function completeOperatorActivation(phone: string, activationCode: 
   return pair.identity;
 }
 
+export async function requestOperatorRecovery(phone: string): Promise<Challenge> {
+  await operatorDeviceFingerprint();
+  return identityClient().requestManagedRecovery({ phone, role: "operator" });
+}
+
+export async function readControlPanelAuthState(phone: string): Promise<Readonly<{ next: "password" | "activation" | "suspended" | "unknown"; role: "operator" | "platform_owner" | "" }>> {
+  return identityClient().controlPanelAuthState({ phone });
+}
+
+export async function completeOperatorRecovery(phone: string, code: string, password: string): Promise<ActorIdentity> {
+  const deviceFingerprint = await operatorDeviceFingerprint();
+  const pair = await identityClient().recoverManaged({ phone, role: "operator", code, password, deviceFingerprint });
+  await writeTokens(pair, deviceFingerprint);
+  return pair.identity;
+}
+
 export async function issueManagedActivationCode(phone: string, role: ManagedActivationRole): Promise<ManagedActivationCode> {
   return identityInternalClient().issueManagedActivationCode({ phoneE164: phone, role });
 }
@@ -118,11 +134,27 @@ export async function provisionOperator(phone: string): Promise<ActorRoleView> {
   return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" });
 }
 
-export async function lookupIdentityRole(phone: string, role: ManagedActivationRole): Promise<ActorRoleView | null> {
-  const page = await identityInternalClient().searchActorRoles(role, phone, true);
+export async function lookupIdentityRole(phone: string, role: ActorType): Promise<ActorRoleView | null> {
+  const page = await identityInternalClient().searchActorRoles(role, phone);
   if (page.items.length === 0) return null;
   if (page.items.length !== 1) throw new Error("IDENTITY_AMBIGUOUS_ROLE_MATCH");
   return page.items[0] ?? null;
+}
+
+function missingIdentityRole(): IdentityClientError {
+  return { kind: "http", status: 404, code: "NOT_FOUND", message: "identity role record not found" };
+}
+
+export async function setIdentityRoleEnabled(phone: string, role: ActorType, enabled: boolean, reason: string): Promise<void> {
+  const record = await lookupIdentityRole(phone, role);
+  if (!record) throw missingIdentityRole();
+  await identityInternalClient().setActorRoleEnabled(record.actorId, role, enabled, randomUUID(), reason);
+}
+
+export async function setIdentitySecurityEnabled(phone: string, role: ActorType, enabled: boolean, reason: string): Promise<void> {
+  const record = await lookupIdentityRole(phone, role);
+  if (!record) throw missingIdentityRole();
+  await identityInternalClient().setActorSecurityEnabled(record.actorId, enabled, randomUUID(), reason);
 }
 
 export async function readOperatorSession(): Promise<ActorIdentity | null> {

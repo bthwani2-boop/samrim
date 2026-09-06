@@ -96,12 +96,13 @@ for (const [app, role, surface] of [
     if (runtime.includes(forbidden)) failures.push(runtimePath + " contains wrong auth flow " + forbidden);
   }
   const page = read("packages/design-system/src/native/ManagedIdentityGate.tsx");
-  if (!page.includes("requestCode") || !page.includes("activate")) {
+  if (!page.includes("readState") || !page.includes("requestCode") || !page.includes("requestRecovery") || !page.includes("recover") || !page.includes("activate")) {
     failures.push(app + " UI is not bound to one-time managed activation");
   }
-  for (const phrase of ["رمز تفعيل صادر من لوحة التحكم", "رمز تحقق الهاتف", "تفعيل أولي لمرة واحدة", "لا يوجد رمز تحقق ثانٍ بعد ذلك"]) {
+  for (const phrase of ["رمز التفعيل", "رمز تحقق الهاتف", "تفعيل أول مرة", "ابدأ برقم الهاتف"]) {
     if (!page.includes(phrase)) failures.push(app + " UI does not distinguish managed activation from phone verification: " + phrase);
   }
+  if (page.includes("auth-mode-switch") || page.includes("<select")) failures.push(app + " managed auth must resolve the next step from phone without tabs or role selectors");
   if (!page.includes("currentState")) failures.push(app + " logout must mirror canonical local Identity state");
 }
 
@@ -135,6 +136,10 @@ const controlPage = read("apps/control-panel/app/page.tsx");
 for (const required of ["/api/auth/login/start", "/api/auth/login/complete", "التحقق الثاني", "تم توثيق جلستك بعاملين"]) {
   if (!controlPage.includes(required)) failures.push("control-panel UI missing MFA flow " + required);
 }
+for (const required of ["/api/auth/state", "ابدأ برقم الهاتف", "account-role", "الدور الإداري", "استرداد وإعادة تفعيل الحساب"]) {
+  if (!controlPage.includes(required)) failures.push("control-panel UI missing separated phone-first login or administrative provisioning flow " + required);
+}
+if (controlPage.includes("ManagedAccessPanel")) failures.push("control-panel retains a shadow managed provisioning panel");
 if (controlPage.includes("username")) failures.push("control-panel still requires username without Product need");
 
 const dsh = read("services/dsh/backend/internal/identityboundary/client.go");

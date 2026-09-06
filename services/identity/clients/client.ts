@@ -5,6 +5,11 @@ import type {
   ManagedActivationCode,
   ManagedActivationCodeIssueRequest,
   ManagedActivationRequest,
+  ManagedRecoveryChallengeRequest,
+  ManagedRecoveryRequest,
+  ManagedAuthStateRequest,
+  ManagedAuthState,
+  ControlPanelAuthStateRequest,
   ManagedPasswordLoginRequest,
   ManagedChallengeRequest,
   OperatorLoginCompleteRequest,
@@ -34,6 +39,10 @@ export type IdentityClient = Readonly<{
   recoverClient(request: ClientCredentialProofRequest): Promise<TokenPair>;
   requestManagedActivation(request: ManagedChallengeRequest): Promise<Challenge>;
   activateManaged(request: ManagedActivationRequest): Promise<TokenPair>;
+  requestManagedRecovery(request: ManagedRecoveryChallengeRequest): Promise<Challenge>;
+  recoverManaged(request: ManagedRecoveryRequest): Promise<TokenPair>;
+  managedAuthState(request: ManagedAuthStateRequest): Promise<ManagedAuthState>;
+  controlPanelAuthState(request: ControlPanelAuthStateRequest): Promise<Readonly<{ next: "password" | "activation" | "suspended" | "unknown"; role: "operator" | "platform_owner" | "" }>>;
   startOperatorLogin(request: OperatorLoginStartRequest): Promise<Challenge>;
   completeOperatorLogin(request: OperatorLoginCompleteRequest): Promise<TokenPair>;
   refresh(request: RefreshRequest): Promise<TokenPair>;
@@ -45,6 +54,8 @@ export type IdentityInternalClient = Readonly<{
   issueManagedActivationCode(request: ManagedActivationCodeIssueRequest): Promise<ManagedActivationCode>;
   provisionActorRole(request: ProvisionActorRoleRequest): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
+  setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, correlationId: string, reason: string): Promise<void>;
+  setActorSecurityEnabled(actorId: string, enabled: boolean, correlationId: string, reason: string): Promise<void>;
 }>;
 
 function normalizeBaseUrl(raw: string): string {
@@ -121,6 +132,10 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     recoverClient: (body) => request("/auth/client/recover", { method: "POST", body }),
     requestManagedActivation: (body) => request("/auth/managed/activation/request", { method: "POST", body }),
     activateManaged: (body) => request("/auth/managed/activate", { method: "POST", body }),
+    requestManagedRecovery: (body) => request("/auth/managed/recovery/request", { method: "POST", body }),
+    recoverManaged: (body) => request("/auth/managed/recover", { method: "POST", body }),
+    managedAuthState: (body) => request("/auth/managed/state", { method: "POST", body }),
+    controlPanelAuthState: (body) => request("/auth/control-panel/state", { method: "POST", body }),
     startOperatorLogin: (body) => request("/auth/operator/login/start", { method: "POST", body }),
     completeOperatorLogin: (body) => request("/auth/operator/login/complete", { method: "POST", body }),
     refresh: (body) => request("/auth/refresh", { method: "POST", body }),
@@ -133,6 +148,35 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
   const baseUrl = normalizeBaseUrl(rawBaseUrl);
   const token = serviceToken.trim();
   if (token.length < 24) throw new Error("IDENTITY_SERVICE_TOKEN_INVALID");
+
+  async function requestNoContent(pathname: string, correlationId: string, reason: string): Promise<void> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(resolveUrl(baseUrl, pathname), {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: "Bearer " + token,
+            ...(correlationId.trim() ? { "X-Correlation-ID": correlationId.trim() } : {}),
+            ...(reason.trim() ? { "X-Reason": reason.trim() } : {}),
+          },
+          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+      }
+      if (!response.ok) {
+        const parsed = parseErrorPayload(await response.json().catch(() => null));
+        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 
   return {
     issueManagedActivationCode: async (body) => {
@@ -185,13 +229,14 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
-    searchActorRoles: async (role, query, enabled = true) => {
+    searchActorRoles: async (role, query, enabled) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
         let response: Response;
         try {
-          const params = new URLSearchParams({ role, q: query, enabled: String(enabled), limit: "2" });
+          const params = new URLSearchParams({ role, q: query, limit: "2" });
+          if (enabled !== undefined) params.set("enabled", String(enabled));
           response = await fetch(resolveUrl(baseUrl, "/internal/actor-roles/search?" + params.toString()), {
             method: "GET",
             headers: { Accept: "application/json", Authorization: "Bearer " + token },
@@ -210,5 +255,15 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
+    setActorRoleEnabled: (actorId, role, enabled, correlationId, reason) => requestNoContent(
+      "/internal/actors/" + encodeURIComponent(actorId.trim()) + "/roles/" + encodeURIComponent(role) + "/" + (enabled ? "enable" : "disable"),
+      correlationId,
+      reason,
+    ),
+    setActorSecurityEnabled: (actorId, enabled, correlationId, reason) => requestNoContent(
+      "/internal/actors/" + encodeURIComponent(actorId.trim()) + "/security/" + (enabled ? "enable" : "disable"),
+      correlationId,
+      reason,
+    ),
   };
 }

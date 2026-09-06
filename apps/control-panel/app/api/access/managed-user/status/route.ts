@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
-import type { ManagedActivationRole } from "@bthwani/identity";
+import type { ActorType } from "@bthwani/identity";
 import { identityErrorPayload, identityHttpStatus, lookupIdentityRole, readOperatorSession } from "../../../../../lib/identity-bff";
 import { dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus } from "../../../../../lib/dsh-bff";
 
-const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field", "operator"]);
+const managedRoles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
 
 export async function GET(request: Request) {
   const identity = await readOperatorSession();
@@ -14,21 +14,23 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const phone = (params.get("phone") ?? "").trim();
   const role = (params.get("role") ?? "").trim().toLowerCase();
-  if (!phone || !managedRoles.has(role as ManagedActivationRole)) {
+  if (!phone || !managedRoles.has(role as ActorType)) {
     return NextResponse.json({ error: { code: "INVALID_INPUT", message: "phone and managed role are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   }
 
   try {
-    if (role !== "operator") {
+    if (role === "partner" || role === "captain" || role === "field") {
       const status = await lookupManagedRoleStatus(phone, role as "partner" | "captain" | "field");
       return NextResponse.json(status, { headers: { "Cache-Control": "no-store" } });
     }
-    const record = await lookupIdentityRole(phone, role as ManagedActivationRole);
+    const record = await lookupIdentityRole(phone, role as ActorType);
     return NextResponse.json({
+      actorId: record?.actorId,
       exists: Boolean(record),
       enabled: record?.enabled ?? false,
       activated: Boolean(record?.activatedAt),
-      recoverable: role !== "operator",
+      securityEnabled: record?.securityEnabled ?? false,
+      recoverable: Boolean(record?.enabled && record?.activatedAt),
       role,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

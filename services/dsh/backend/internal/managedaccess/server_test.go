@@ -120,7 +120,7 @@ func TestStatusByPhoneReadsCanonicalIdentityState(t *testing.T) {
 		if r.Method != http.MethodGet || r.URL.Path != "/internal/actor-roles/search" {
 			t.Fatalf("unexpected identity request: %s %s", r.Method, r.URL.Path)
 		}
-		if r.URL.Query().Get("role") != "captain" || r.URL.Query().Get("enabled") != "true" {
+		if r.URL.Query().Get("role") != "captain" || r.URL.Query().Get("enabled") != "" {
 			t.Fatalf("unexpected identity search query: %s", r.URL.RawQuery)
 		}
 		w.Header().Set("Content-Type", "application/json")
