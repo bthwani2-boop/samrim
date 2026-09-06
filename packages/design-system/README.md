@@ -6,4 +6,7 @@ This package owns reusable design tokens, semantic themes, directionality primit
 
 It must not own product/domain strings, business rules, permissions, durable state, app-specific native configuration, or service-specific presentation semantics.
 
-The first refoundation slice intentionally contains only the donor-proven token and theme kernel. Mixed legacy UI-kit responsibilities such as application appearance persistence and repository-wide localization are not admitted by this slice.
+The package provides the reusable token and theme kernel. Application
+appearance persistence, repository-wide localization, product strings, and
+domain behavior remain owned by the appropriate host or capability. Add a
+primitive or component only when it proves cross-surface value.

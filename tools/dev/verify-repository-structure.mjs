@@ -6,10 +6,11 @@ const repoRoot = path.resolve(import.meta.dirname, "../..");
 const tracked = execFileSync("git", ["ls-files", "-z"], {
   cwd: repoRoot,
   encoding: "utf8",
-})
+  })
   .split("\0")
   .filter(Boolean)
-  .map((item) => item.replaceAll("\\", "/"));
+  .map((item) => item.replaceAll("\\", "/"))
+  .filter((item) => fs.existsSync(path.join(repoRoot, item)));
 
 const trackedSet = new Set(tracked);
 const failures = [];
@@ -167,8 +168,9 @@ for (const service of serviceNames) {
   for (const lane of ["contracts/", "database/", "tests/"]) {
     const laneFiles = tracked.filter((item) => item.startsWith(base + lane));
     if (laneFiles.length > 0) {
+      const materialLaneFiles = laneFiles.filter((item) => !item.endsWith("/README.md"));
       assert(
-        laneFiles.some((item) => item !== base + lane),
+        materialLaneFiles.length > 0,
         service + " has an empty admitted lane: " + lane,
       );
     }

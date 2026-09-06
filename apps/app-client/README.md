@@ -2,10 +2,13 @@
 
 Customer-facing deployable application host.
 
-## Current stage
+Purpose: customer-facing deployable application host.
 
-This root is intentionally Foundation-only. It currently owns only the deployable shell, Expo/EAS/native identity, minimal routing/bootstrap, app assets, and build/runtime configuration required to prove the host can exist independently.
+Boundary: this host owns its Expo/EAS/native identity, routing and
+composition, app assets, and runtime configuration. Identity, DSH, and WLT
+own their respective service semantics; the host consumes their public
+contracts and canonical readback.
 
-Business routes, DSH/WLT capabilities, Identity session semantics, and cross-capability composition are deferred until Stage B after the Foundation Construction and A2 gates pass.
-
-The existing native dependency set is preserved during Foundation Construction where it is part of the already established development-build fingerprint; dependency reduction requires explicit deployable-identity/fingerprint evidence rather than incidental cleanup.
+Use the app project manifest and executable source for the current route,
+build, and dependency surface. Add a product route only with an authorized
+journey and its complete service/readback path.

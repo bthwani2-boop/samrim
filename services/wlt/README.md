@@ -1,18 +1,14 @@
 # WLT Service
 
-STRUCTURAL_STATUS: FOUNDATION_ONLY
-CAPABILITY_IMPLEMENTATION_STATUS: DEFERRED_UNTIL_STAGE_B
-MIGRATION_STATUS: REQUIRED_TRUTH_NOT_YET_CUT_OVER
+Purpose: canonical bounded-context owner for wallet and financial
+capabilities.
 
-Canonical bounded-context owner for wallet and financial capabilities.
+Boundary: WLT alone owns financial truth, including ledger, payment, refund,
+commission, payout, settlement, reconciliation, idempotency, concurrency, and
+financial readback when those responsibilities are admitted. Apps and DSH may
+only express intent or consume governed readback.
 
-Prepared canonical rooms:
-
-- `backend/` — financial runtime, canonical writers/readers, and server enforcement.
-- `contracts/` — WLT-owned financial wire contract authority.
-- `database/` — one canonical migration/schema lane.
-- `tests/` — financial invariant and service verification.
-
-Financial truth must not be duplicated into app hosts, generic packages, DSH compatibility layers, or mutable shadow projections.
-
-This structure is not financial closure; ledger, payment, refund, commission, payout, settlement, reconciliation, COD, idempotency, concurrency, and readback truth must still be migrated and proven capability-by-capability.
+Financial truth must not be duplicated into app hosts, generic packages, DSH
+compatibility layers, or mutable shadow projections. Material WLT contracts,
+data migrations, and verification are created only with the responsibility
+they prove; empty readiness lanes are forbidden.

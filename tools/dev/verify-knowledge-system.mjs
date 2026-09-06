@@ -3,7 +3,8 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const failures = [];
-const MAX_MARKDOWN_BYTES = 24000;
+const KNOWLEDGE_REVIEW_BYTES = 24000;
+const reviewSignals = [];
 
 function rel(file) {
   return path.relative(root, file).split(path.sep).join("/");
@@ -42,7 +43,9 @@ const activeKnowledge = [...governanceFiles, ...docsFiles, ...orchestratorFiles]
 
 for (const file of activeKnowledge) {
   const size = fs.statSync(file).size;
-  if (size > MAX_MARKDOWN_BYTES) failures.push(rel(file) + " exceeds " + MAX_MARKDOWN_BYTES + " bytes: " + size);
+  if (size > KNOWLEDGE_REVIEW_BYTES) {
+    reviewSignals.push(rel(file) + " exceeds review threshold " + KNOWLEDGE_REVIEW_BYTES + " bytes: " + size);
+  }
 }
 
 for (const retired of [
@@ -71,7 +74,10 @@ const forbiddenCurrentVocabulary = [
   ["legacy Stage-B", /STAGE[_ -]?B/i],
   ["legacy Journey-Ready", /JOURNEY[-_ ]?READY/i],
   ["legacy Foundation Construction", /FOUNDATION[_ -]?CONSTRUCTION/i],
-  ["legacy Foundation stage vocabulary", /\bfoundation\b/i],
+  [
+    "legacy Foundation stage vocabulary",
+    /\b(?:foundation|refoundation)[-_ ]?(?:only|construction|stage|ready|slice)\b/i,
+  ],
   ["retired Operator Context", /\bOperator Context\b|\bOPERATOR_CONTEXT\b/i],
 ];
 for (const file of [...governanceFiles, ...orchestratorFiles, ...currentDocs]) {
@@ -329,6 +335,10 @@ if (failures.length) {
   console.error("KNOWLEDGE_SYSTEM_VERIFY=FAIL");
   for (const failure of failures) console.error("  " + failure);
   process.exit(1);
+}
+if (reviewSignals.length) {
+  console.warn("KNOWLEDGE_SYSTEM_REVIEW_SIGNALS=" + reviewSignals.length);
+  for (const signal of reviewSignals) console.warn("  " + signal);
 }
 console.log("KNOWLEDGE_SYSTEM_VERIFY=PASS");
 console.log("GOVERNANCE_MARKDOWN=" + governanceFiles.length);

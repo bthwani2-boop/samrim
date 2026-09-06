@@ -1,8 +1,5 @@
 # Identity Service
 
-STRUCTURAL_STATUS: CANONICAL
-CAPABILITY_IMPLEMENTATION_STATUS: STAGE_B_CANDIDATE_PENDING_EXACT_HEAD_CLOSURE
-
 Identity is the sole creator/owner of the permanent cross-boundary human `actor_id`. Phone is a mutable verified login identifier, never the database identity. High-level surface roles remain explicit actor↔role bindings and each session carries exactly one role.
 
 Authentication policy is intentionally actor-class specific:

@@ -18,7 +18,8 @@ const records = execFileSync("git", ["ls-files", "-s", "-z"], {
       stage: match[3],
       file: match[4].replaceAll("\\", "/"),
     };
-  });
+  })
+  .filter((record) => fs.existsSync(path.join(repoRoot, record.file)));
 
 const tracked = records.map((record) => record.file);
 const failures = [];
@@ -65,23 +66,34 @@ const rootFiles = new Set([
   "tsconfig.base.json",
 ]);
 
-const apps = new Set([
-  "app-client",
-  "app-partner",
-  "app-captain",
-  "app-field",
-  "control-panel",
-]);
+const projectRecords = tracked
+  .filter((file) => /(^|\/)project\.json$/.test(file))
+  .map((file) => {
+    try {
+      return { file, project: JSON.parse(fs.readFileSync(path.join(repoRoot, file), "utf8")) };
+    } catch (error) {
+      failures.push("Invalid project manifest: " + file + " (" + error.message + ")");
+      return null;
+    }
+  })
+  .filter(Boolean);
 
-const services = new Set(["identity", "dsh", "wlt"]);
-const serviceLanes = new Set([
-  "backend",
-  "clients",
-  "contracts",
-  "database",
-  "frontend",
-  "tests",
-]);
+function projectNames(top, tag) {
+  return new Set(
+    projectRecords
+      .filter(({ project }) => project.root?.startsWith(top + "/") && project.tags?.includes(tag))
+      .map(({ project }) => project.root.slice(top.length + 1).split("/")[0]),
+  );
+}
+
+const apps = projectNames("apps", "type:app");
+const services = projectNames("services", "type:service");
+const serviceLanes = new Set(
+  tracked
+    .filter((file) => file.startsWith("services/"))
+    .map((file) => file.split("/")[2])
+    .filter(Boolean),
+);
 
 for (const file of tracked) {
   if (!file.includes("/")) {
@@ -246,25 +258,9 @@ for (const file of tracked) {
   }
 }
 
-const admittedReadmeOnlyDirectories = new Set([
-  "contracts",
-  "services/dsh/contracts",
-  "services/dsh/database",
-  "services/dsh/tests",
-  "services/identity/clients",
-  "services/identity/contracts",
-  "services/identity/database",
-  "services/identity/tests",
-  "services/wlt/contracts",
-  "services/wlt/database",
-  "services/wlt/tests",
-]);
-
 for (const [dir, files] of filesByDirectory) {
   if (files.length !== 1) continue;
   if (files[0] !== dir + "/README.md") continue;
-  if (admittedReadmeOnlyDirectories.has(dir)) continue;
-
   failures.push("Unadmitted README-only container: " + dir);
 }
 
@@ -300,7 +296,7 @@ console.log("KNOWN_DEAD_TRACKED_FILES=0");
 console.log("KNOWN_DEAD_TRACKED_DIRECTORIES=0");
 console.log("TRACKED_SYMLINKS_OR_SUBMODULES=0");
 console.log("FORBIDDEN_HISTORICAL_TEMP_PATHS=0");
-console.log("UNADMITTED_README_ONLY_CONTAINERS=0");
+console.log("README_ONLY_CONTAINERS=0");
 console.log("GENERATED_BUILD_OUTPUT_TRACKED=0");
 console.log("STRUCTURAL_HYGIENE=PASS");
 console.log("CLASSIFICATION_COUNTS=" + JSON.stringify(counts));

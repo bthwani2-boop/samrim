@@ -1,20 +1,22 @@
 # Services
 
-STRUCTURAL_STATUS: CANONICAL_FOUNDATION_READY
-FUNCTIONAL_STATUS: NOT_IMPLIED_BY_STRUCTURE
+Canonical bounded-context services live here. Each service owns a distinct
+system responsibility and its executable runtime, durable writers, contracts,
+data evolution, and verification only when those responsibilities are real.
 
-Canonical bounded-context services live here.
-
-Current admitted service roots:
+Service roots:
 
 - `services/identity`
 - `services/dsh`
 - `services/wlt`
 
-A service root is a prepared canonical house, not proof that its inherited capability truth has already been migrated or closed.
-
-Only proven responsibility rooms are materialized. Do not create generic `shared`, `common`, `core`, `utils`, compatibility, or actor-shaped service containers.
+A service directory is not a promise that every possible capability room
+exists. Only proven responsibility rooms are materialized. Do not create
+generic `shared`, `common`, `core`, `utils`, compatibility, or actor-shaped
+service containers.
 
 A service may own backend runtime, canonical writers, service-owned contracts, generated/public clients, durable database evolution, service-owned reusable presentation, and service-level verification only when those responsibilities are proven.
 
-Service-to-app dependency is forbidden. Apps consume explicit service/package/contract boundaries.
+Service-to-app dependency is forbidden. Apps consume explicit
+service/package/contract boundaries. Use each service's project manifest and
+source tree as the current implementation authority.
