@@ -13,35 +13,6 @@ import (
 	"time"
 )
 
-type ActorRoleView struct {
-	ActorID         string     `json:"actorId"`
-	PhoneE164       string     `json:"phoneE164"`
-	Role            string     `json:"role"`
-	Enabled         bool       `json:"enabled"`
-	ActivatedAt     *time.Time `json:"activatedAt,omitempty"`
-	SecurityEnabled bool       `json:"securityEnabled"`
-	ActorVersion    int        `json:"actorVersion"`
-	RoleVersion     int        `json:"roleVersion"`
-	ActorCreated    bool       `json:"actorCreated,omitempty"`
-	RoleCreated     bool       `json:"roleCreated,omitempty"`
-}
-
-type ActorSearchPage struct {
-	Items      []ActorRoleView `json:"items"`
-	Limit      int             `json:"limit"`
-	NextCursor string          `json:"nextCursor,omitempty"`
-}
-
-type ProvisionActorRoleRequest struct {
-	PhoneE164 string `json:"phoneE164"`
-	Role      string `json:"role"`
-	Password  string `json:"password,omitempty"`
-}
-
-type PasswordResetRequest struct {
-	Password string `json:"password"`
-}
-
 type Error struct {
 	Status  int
 	Code    string
@@ -73,32 +44,32 @@ func New(baseURL, serviceToken string) (*Client, error) {
 
 func (c *Client) ProvisionRole(ctx context.Context, input ProvisionActorRoleRequest) (ActorRoleView, error) {
 	var result ActorRoleView
-	err := c.do(ctx, http.MethodPost, "/internal/actor-roles/provision", "", input, &result)
+	err := c.do(ctx, IdentityOperationProvisionActorRole.Method, IdentityOperationProvisionActorRole.Path, "", input, &result)
 	return result, err
 }
 func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleView, error) {
 	var result ActorRoleView
-	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/roles/" + url.PathEscape(strings.TrimSpace(role))
-	err := c.do(ctx, http.MethodGet, pathname, "", nil, &result)
+	pathname := identityRoute(IdentityOperationReadActorRole.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
+	err := c.do(ctx, IdentityOperationReadActorRole.Method, pathname, "", nil, &result)
 	return result, err
 }
-func (c *Client) SearchRoles(ctx context.Context, role, query string) (ActorSearchPage, error) {
+func (c *Client) SearchRoles(ctx context.Context, role, query string) (ActorRoleSearchPage, error) {
 	params := url.Values{}
 	params.Set("role", strings.TrimSpace(role))
 	params.Set("q", strings.TrimSpace(query))
 	params.Set("enabled", "true")
 	params.Set("limit", "2")
-	var result ActorSearchPage
-	err := c.do(ctx, http.MethodGet, "/internal/actor-roles/search?"+params.Encode(), "", nil, &result)
+	var result ActorRoleSearchPage
+	err := c.do(ctx, IdentityOperationSearchActorRoles.Method, IdentityOperationSearchActorRoles.Path+"?"+params.Encode(), "", nil, &result)
 	return result, err
 }
-func (c *Client) SearchRolesAnyState(ctx context.Context, role, query string) (ActorSearchPage, error) {
+func (c *Client) SearchRolesAnyState(ctx context.Context, role, query string) (ActorRoleSearchPage, error) {
 	params := url.Values{}
 	params.Set("role", strings.TrimSpace(role))
 	params.Set("q", strings.TrimSpace(query))
 	params.Set("limit", "2")
-	var result ActorSearchPage
-	err := c.do(ctx, http.MethodGet, "/internal/actor-roles/search?"+params.Encode(), "", nil, &result)
+	var result ActorRoleSearchPage
+	err := c.do(ctx, IdentityOperationSearchActorRoles.Method, IdentityOperationSearchActorRoles.Path+"?"+params.Encode(), "", nil, &result)
 	return result, err
 }
 func (c *Client) LookupRoleByPhone(ctx context.Context, role, phone string) (ActorRoleView, error) {
@@ -118,16 +89,16 @@ func (c *Client) SetRoleEnabled(ctx context.Context, actorID, role string, enabl
 	return c.SetRoleEnabledWithReason(ctx, actorID, role, enabled, correlationID, "")
 }
 func (c *Client) SetRoleEnabledWithReason(ctx context.Context, actorID, role string, enabled bool, correlationID, reason string) error {
-	action := "disable"
+	operation := IdentityOperationDisableActorRole
 	if enabled {
-		action = "enable"
+		operation = IdentityOperationEnableActorRole
 	}
-	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/roles/" + url.PathEscape(strings.TrimSpace(role)) + "/" + action
-	return c.doWithReason(ctx, http.MethodPost, pathname, correlationID, reason, nil, nil)
+	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
+	return c.doWithReason(ctx, operation.Method, pathname, correlationID, reason, nil, nil)
 }
 func (c *Client) AuthorizeReenrollment(ctx context.Context, actorID, role, correlationID string) error {
-	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/roles/" + url.PathEscape(strings.TrimSpace(role)) + "/reenrollment"
-	return c.do(ctx, http.MethodPost, pathname, correlationID, nil, nil)
+	pathname := identityRoute(IdentityOperationAuthorizeManagedRoleReenrollment.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
+	return c.do(ctx, IdentityOperationAuthorizeManagedRoleReenrollment.Method, pathname, correlationID, nil, nil)
 }
 func (c *Client) AuthorizeReenrollmentByPhone(ctx context.Context, phone, role, correlationID string) error {
 	page, err := c.SearchRoles(ctx, role, phone)
@@ -143,19 +114,26 @@ func (c *Client) SetActorSecurityEnabled(ctx context.Context, actorID string, en
 	return c.SetActorSecurityEnabledWithReason(ctx, actorID, enabled, correlationID, "")
 }
 func (c *Client) SetActorSecurityEnabledWithReason(ctx context.Context, actorID string, enabled bool, correlationID, reason string) error {
-	action := "disable"
+	operation := IdentityOperationDisableActorSecurity
 	if enabled {
-		action = "enable"
+		operation = IdentityOperationEnableActorSecurity
 	}
-	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/security/" + action
-	return c.doWithReason(ctx, http.MethodPost, pathname, correlationID, reason, nil, nil)
+	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
+	return c.doWithReason(ctx, operation.Method, pathname, correlationID, reason, nil, nil)
 }
 func (c *Client) ResetOperatorPassword(ctx context.Context, actorID, password, correlationID string) error {
-	pathname := "/internal/actors/" + url.PathEscape(strings.TrimSpace(actorID)) + "/operator-password/reset"
-	return c.do(ctx, http.MethodPost, pathname, correlationID, PasswordResetRequest{Password: password}, nil)
+	pathname := identityRoute(IdentityOperationResetOperatorPassword.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
+	return c.do(ctx, IdentityOperationResetOperatorPassword.Method, pathname, correlationID, PasswordResetRequest{Password: password}, nil)
 }
 func (c *Client) Readiness(ctx context.Context) error {
-	return c.do(ctx, http.MethodGet, "/identity/readiness", "", nil, nil)
+	return c.do(ctx, IdentityOperationIdentityReadiness.Method, IdentityOperationIdentityReadiness.Path, "", nil, nil)
+}
+
+func identityRoute(template string, replacements ...string) string {
+	for index := 0; index+1 < len(replacements); index += 2 {
+		template = strings.ReplaceAll(template, "{"+replacements[index]+"}", replacements[index+1])
+	}
+	return template
 }
 
 func (c *Client) do(ctx context.Context, method, pathname, correlationID string, body any, target any) error {

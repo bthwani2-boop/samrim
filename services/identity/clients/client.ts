@@ -21,6 +21,7 @@ import type {
   RefreshRequest,
   TokenPair,
 } from "./generated/identity-types";
+import { identityOperationPaths } from "./generated/identity-operations";
 
 export type IdentityClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -118,23 +119,23 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
   }
 
   return {
-    health: () => request("/identity/health", { method: "GET" }),
-    readiness: () => request("/identity/readiness", { method: "GET", acceptStatuses: [503] }),
-    requestClientRegistration: (body) => request("/auth/client/registration/request", { method: "POST", body }),
-    registerClient: (body) => request("/auth/client/register", { method: "POST", body }),
-    loginClient: (body) => request("/auth/client/login", { method: "POST", body }),
-    loginManaged: (body) => request("/auth/managed/login", { method: "POST", body }),
-    requestClientRecovery: (body) => request("/auth/client/recovery/request", { method: "POST", body }),
-    recoverClient: (body) => request("/auth/client/recover", { method: "POST", body }),
-    requestManagedActivation: (body) => request("/auth/managed/activation/request", { method: "POST", body }),
-    activateManaged: (body) => request("/auth/managed/activate", { method: "POST", body }),
-    requestManagedRecovery: (body) => request("/auth/managed/recovery/request", { method: "POST", body }),
-    recoverManaged: (body) => request("/auth/managed/recover", { method: "POST", body }),
-    startOperatorLogin: (body) => request("/auth/operator/login/start", { method: "POST", body }),
-    completeOperatorLogin: (body) => request("/auth/operator/login/complete", { method: "POST", body }),
-    refresh: (body) => request("/auth/refresh", { method: "POST", body }),
-    session: (accessToken) => request("/auth/session", { method: "GET", token: accessToken }),
-    logout: (accessToken) => request("/auth/logout", { method: "POST", token: accessToken }),
+    health: () => request(identityOperationPaths.identityHealth.path, { method: identityOperationPaths.identityHealth.method }),
+    readiness: () => request(identityOperationPaths.identityReadiness.path, { method: identityOperationPaths.identityReadiness.method, acceptStatuses: [503] }),
+    requestClientRegistration: (body) => request(identityOperationPaths.requestClientRegistrationVerification.path, { method: identityOperationPaths.requestClientRegistrationVerification.method, body }),
+    registerClient: (body) => request(identityOperationPaths.registerClient.path, { method: identityOperationPaths.registerClient.method, body }),
+    loginClient: (body) => request(identityOperationPaths.loginClient.path, { method: identityOperationPaths.loginClient.method, body }),
+    loginManaged: (body) => request(identityOperationPaths.loginManagedRole.path, { method: identityOperationPaths.loginManagedRole.method, body }),
+    requestClientRecovery: (body) => request(identityOperationPaths.requestClientRecoveryVerification.path, { method: identityOperationPaths.requestClientRecoveryVerification.method, body }),
+    recoverClient: (body) => request(identityOperationPaths.recoverClient.path, { method: identityOperationPaths.recoverClient.method, body }),
+    requestManagedActivation: (body) => request(identityOperationPaths.requestManagedActivation.path, { method: identityOperationPaths.requestManagedActivation.method, body }),
+    activateManaged: (body) => request(identityOperationPaths.activateManagedRole.path, { method: identityOperationPaths.activateManagedRole.method, body }),
+    requestManagedRecovery: (body) => request(identityOperationPaths.requestManagedRecoveryVerification.path, { method: identityOperationPaths.requestManagedRecoveryVerification.method, body }),
+    recoverManaged: (body) => request(identityOperationPaths.recoverManagedRole.path, { method: identityOperationPaths.recoverManagedRole.method, body }),
+    startOperatorLogin: (body) => request(identityOperationPaths.startOperatorLogin.path, { method: identityOperationPaths.startOperatorLogin.method, body }),
+    completeOperatorLogin: (body) => request(identityOperationPaths.completeOperatorLogin.path, { method: identityOperationPaths.completeOperatorLogin.method, body }),
+    refresh: (body) => request(identityOperationPaths.refreshSession.path, { method: identityOperationPaths.refreshSession.method, body }),
+    session: (accessToken) => request(identityOperationPaths.readCurrentSession.path, { method: identityOperationPaths.readCurrentSession.method, token: accessToken }),
+    logout: (accessToken) => request(identityOperationPaths.logoutSession.path, { method: identityOperationPaths.logoutSession.method, token: accessToken }),
   };
 }
 
@@ -179,8 +180,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
       try {
         let response: Response;
         try {
-          response = await fetch(resolveUrl(baseUrl, "/internal/managed-activation-codes"), {
-            method: "POST",
+          response = await fetch(resolveUrl(baseUrl, identityOperationPaths.issueManagedActivationCode.path), {
+            method: identityOperationPaths.issueManagedActivationCode.method,
             headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
             body: JSON.stringify(body),
             ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
@@ -204,8 +205,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
       try {
         let response: Response;
         try {
-          response = await fetch(resolveUrl(baseUrl, "/internal/actor-roles/provision"), {
-            method: "POST",
+          response = await fetch(resolveUrl(baseUrl, identityOperationPaths.provisionActorRole.path), {
+            method: identityOperationPaths.provisionActorRole.method,
             headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
             body: JSON.stringify(body),
             ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
@@ -231,8 +232,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         try {
           const params = new URLSearchParams({ role, q: query, limit: "2" });
           if (enabled !== undefined) params.set("enabled", String(enabled));
-          response = await fetch(resolveUrl(baseUrl, "/internal/actor-roles/search?" + params.toString()), {
-            method: "GET",
+          response = await fetch(resolveUrl(baseUrl, identityOperationPaths.searchActorRoles.path + "?" + params.toString()), {
+            method: identityOperationPaths.searchActorRoles.method,
             headers: { Accept: "application/json", Authorization: "Bearer " + token },
             ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
             signal: controller.signal,
