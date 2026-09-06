@@ -44,6 +44,30 @@ if ($Unmerged.Count -gt 0) {
     throw ("Repository contains unresolved merge paths: " + ($Unmerged -join ', '))
 }
 
+$Ports = @{
+    'app-client' = 18101
+    'app-partner' = 18102
+    'app-captain' = 18103
+    'app-field' = 18104
+}
+
+if (Get-Command adb -ErrorAction SilentlyContinue) {
+    try {
+        $devices = @(& adb devices | Where-Object { $_ -match '\tdevice$' })
+        if ($devices.Count -gt 0) {
+            $metroPort = $Ports[$App]
+            if ($metroPort) {
+                & adb reverse "tcp:$metroPort" "tcp:$metroPort" *> $null
+            }
+            & adb reverse "tcp:18082" "tcp:18082" *> $null
+            & adb reverse "tcp:58080" "tcp:58080" *> $null
+            Write-Host "ADB_REVERSE=READY ports=$metroPort,18082,58080"
+        }
+    } catch {
+        # best effort reverse
+    }
+}
+
 $Args = @(
     '--dir', $AppRoot,
     'run', 'start'

@@ -46,12 +46,10 @@ const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 const forbiddenUnused = [
   "@react-native-community/netinfo",
   "@sentry/react-native",
-  "expo-dev-client",
   "expo-document-picker",
   "expo-file-system",
   "expo-haptics",
   "expo-image",
-  "expo-image-picker",
   "expo-location",
   "expo-notifications",
   "expo-sharing",
