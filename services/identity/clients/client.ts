@@ -2,8 +2,8 @@ import type {
   ActorIdentity,
   Challenge,
   ClientCredentialProofRequest,
-  ManagedActivationCode,
-  ManagedActivationCodeIssueRequest,
+  OperatorEnrollmentToken,
+  OperatorEnrollmentTokenIssueRequest,
   ManagedActivationRequest,
   ManagedRecoveryChallengeRequest,
   ManagedRecoveryRequest,
@@ -52,12 +52,8 @@ export type MutationOptions = Readonly<{
   operatorActorId?: string | undefined;
 }>;
 
-export type OperatorEnrollmentToken = ManagedActivationCode;
-export type IssueOperatorEnrollmentTokenRequest = ManagedActivationCodeIssueRequest;
-
 export type IdentityInternalClient = Readonly<{
-  issueOperatorEnrollmentToken(request: IssueOperatorEnrollmentTokenRequest): Promise<OperatorEnrollmentToken>;
-  issueManagedActivationCode(request: ManagedActivationCodeIssueRequest): Promise<ManagedActivationCode>;
+  issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest): Promise<OperatorEnrollmentToken>;
   provisionActorRole(request: ProvisionActorRoleRequest): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, correlationId: string, reason: string, options?: MutationOptions): Promise<void>;
@@ -180,7 +176,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
             ...(correlationId.trim() ? { "X-Correlation-ID": correlationId.trim() } : {}),
             ...(reason.trim() ? { "X-Reason": reason.trim() } : {}),
             ...(options?.expectedVersion !== undefined ? { "X-Expected-Version": String(options.expectedVersion) } : {}),
-            ...(options?.operatorActorId?.trim() ? { "X-Actor-ID": options.operatorActorId.trim() } : {}),
+            ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim(), "X-Actor-ID": options.operatorActorId.trim() } : {}),
           },
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
           signal: controller.signal,
@@ -197,14 +193,14 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
-  async function issueToken(body: ManagedActivationCodeIssueRequest): Promise<ManagedActivationCode> {
+  async function issueToken(body: OperatorEnrollmentTokenIssueRequest): Promise<OperatorEnrollmentToken> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       let response: Response;
       try {
-        response = await fetch(resolveUrl(baseUrl, identityOperationPaths.issueManagedActivationCode.path), {
-          method: identityOperationPaths.issueManagedActivationCode.method,
+        response = await fetch(resolveUrl(baseUrl, identityOperationPaths.issueOperatorEnrollmentToken.path), {
+          method: identityOperationPaths.issueOperatorEnrollmentToken.method,
           headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
           body: JSON.stringify(body),
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
@@ -217,7 +213,7 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         const parsed = parseErrorPayload(await response.json().catch(() => null));
         throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
       }
-      return (await response.json()) as ManagedActivationCode;
+      return (await response.json()) as OperatorEnrollmentToken;
     } finally {
       clearTimeout(timeout);
     }
@@ -225,7 +221,6 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
 
   return {
     issueOperatorEnrollmentToken: issueToken,
-    issueManagedActivationCode: issueToken,
     provisionActorRole: async (body) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);

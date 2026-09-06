@@ -13,7 +13,7 @@ for (const route of [
   "/auth/client/recover:",
   "/auth/managed/activation/request:",
   "/auth/managed/activate:",
-  "/internal/managed-activation-codes:",
+  "/internal/operator-enrollment-tokens:",
   "/auth/operator/login/start:",
   "/auth/operator/login/complete:",
   "/auth/refresh:",
@@ -103,8 +103,10 @@ const managedActivation = schemaBlock("ManagedActivationRequest", "OperatorLogin
 if (!managedActivation.includes("verificationCode:")) failures.push("managed activation does not require the separate phone verification code");
 if (!managedActivation.includes("minLength: 24") || !managedActivation.includes('pattern: "^[A-Za-z0-9_-]{24,256}$"')) failures.push("operator enrollment token must be high entropy");
 if (!managedActivation.includes("verificationCode:") || !managedActivation.includes('pattern: "^[0-9]{6}$"')) failures.push("managed activation request must require a six-digit phone code");
-if (!contract.includes("ManagedActivationCode")) failures.push("managed activation code issuance contract missing");
-const enrollmentIssue = schemaBlock("ManagedActivationCodeIssueRequest", "ManagedActivationCode");
+if (!contract.includes("OperatorEnrollmentToken")) failures.push("operator enrollment token issuance contract missing");
+if (contract.includes("ManagedActivationCode")) failures.push("contract still references retired ManagedActivationCode");
+if (contract.includes("/internal/managed-activation-codes:")) failures.push("contract still references retired /internal/managed-activation-codes");
+const enrollmentIssue = schemaBlock("OperatorEnrollmentTokenIssueRequest", "OperatorEnrollmentToken");
 if (!enrollmentIssue.includes("enum: [operator]")) failures.push("operator enrollment token issuance is not role-scoped");
 const managedType = schemaBlock("ManagedActorType", "PhoneRequest");
 if (!managedType.includes("enum: [partner, captain, field]")) failures.push("managed activation roles are incorrect");

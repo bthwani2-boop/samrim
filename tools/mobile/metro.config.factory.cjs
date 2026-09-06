@@ -67,10 +67,17 @@ function assertWindowsWatchmanAvailable(projectRoot) {
 }
 
 function createSamrimMetroConfig(projectRoot) {
-  const { getSentryExpoConfig } = require(
-    require.resolve("@sentry/react-native/metro", { paths: [projectRoot] }),
-  );
-  const config = getSentryExpoConfig(projectRoot);
+  let config;
+  try {
+    const sentryPath = require.resolve("@sentry/react-native/metro", { paths: [projectRoot] });
+    const { getSentryExpoConfig } = require(sentryPath);
+    config = getSentryExpoConfig(projectRoot);
+  } catch {
+    const { getDefaultConfig } = require(
+      require.resolve("expo/metro-config", { paths: [projectRoot] }),
+    );
+    config = getDefaultConfig(projectRoot);
+  }
 
   if (process.platform === "win32") {
     assertWindowsWatchmanAvailable(projectRoot);

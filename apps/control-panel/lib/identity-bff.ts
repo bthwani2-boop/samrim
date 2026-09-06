@@ -11,7 +11,7 @@ import {
   type ActorRoleView,
   type Challenge,
   type IdentityClientError,
-  type ManagedActivationCode,
+  type OperatorEnrollmentToken,
   type MutationOptions,
   type ControlPanelRole,
   type RecoveryResult,
@@ -120,8 +120,8 @@ export async function completeOperatorRecovery(phone: string, code: string, pass
   return identityClient().recoverManaged({ phone, role: "operator", code, password });
 }
 
-export async function issueManagedActivationCode(phone: string): Promise<ManagedActivationCode> {
-  return identityInternalClient().issueManagedActivationCode({ phoneE164: phone, role: "operator" });
+export async function issueOperatorEnrollmentToken(phone: string): Promise<OperatorEnrollmentToken> {
+  return identityInternalClient().issueOperatorEnrollmentToken({ phoneE164: phone, role: "operator" });
 }
 
 export async function provisionOperator(phone: string): Promise<ActorRoleView> {
@@ -203,7 +203,20 @@ async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>
     if (isIdentityClientError(error)) {
       if (error.kind === "network") throw error;
       if (error.code === "REFRESH_STALE") {
-        return null;
+        for (let attempt = 0; attempt < 4; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+          const freshStore = await cookies();
+          const freshAccessToken = freshStore.get(accessCookie)?.value;
+          if (freshAccessToken) {
+            try {
+              const current = await identityClient().session(freshAccessToken);
+              if (isControlPanelIdentity(current)) return current;
+            } catch {
+              // continue
+            }
+          }
+        }
+        throw new Error("REFRESH_CONFLICT_RETRY");
       }
     }
     await clearOperatorCookies();

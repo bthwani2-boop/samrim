@@ -9,6 +9,7 @@ import (
 	"time"
 
 	serviceruntime "github.com/bthwani2-boop/samrim/services/identity/backend/internal/runtime"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/storage/postgres"
 )
 
 func main() {
@@ -35,5 +36,5 @@ func main() {
 	if err := serviceruntime.RunMigrations(ctx, environment, databaseURL, directory); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("identity migrations verified at schema v%d", 13)
+	log.Printf("identity migrations verified at schema v%d", postgres.SchemaVersion)
 }

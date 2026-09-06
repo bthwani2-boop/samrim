@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { ActorIdentity, ActorType, ControlPanelRole, ManagedActivationCode } from "@bthwani/identity";
+import type { ActorIdentity, ActorType, ControlPanelRole, OperatorEnrollmentToken } from "@bthwani/identity";
 import { colorRoles } from "@bthwani/design-system";
 
 type ViewState =
@@ -49,8 +49,8 @@ function AccountAccessPanel() {
   const [role, setRole] = useState<ActorType>("partner");
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
-  const [status, setStatus] = useState<{ exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string } | null>(null);
-  const [result, setResult] = useState<ManagedActivationCode | null>(null);
+  const [status, setStatus] = useState<{ exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number } | null>(null);
+  const [result, setResult] = useState<OperatorEnrollmentToken | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const requestId = useRef(0);
@@ -65,7 +65,7 @@ function AccountAccessPanel() {
         const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: value, role })}`);
         if (id !== requestId.current) return;
         if (!response.ok) { setStatus(null); setError(await responseMessage(response)); return; }
-        setStatus(await response.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string });
+        setStatus(await response.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number });
       } catch { if (id === requestId.current) { setStatus(null); setError("تعذر التحقق من حالة الرقم حاليًا."); } }
     })(), 450);
     return () => window.clearTimeout(timeout);
@@ -80,23 +80,37 @@ function AccountAccessPanel() {
       const response = await identityFetch("/api/access/managed-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, role, recover }) });
       if (!response.ok) { setError(await responseMessage(response)); return; }
       const payload = await response.json();
-      setResult(role === "operator" ? payload as ManagedActivationCode : null); setStatus(null);
+      setResult(role === "operator" ? payload as OperatorEnrollmentToken : null); setStatus(null);
     } catch { setError("تعذر الوصول إلى خدمات إدارة الهوية."); } finally { setBusy(false); }
   }
 
   async function changeAccess(action: "disable-role" | "enable-role" | "disable-identity" | "enable-identity") {
     if (reason.trim().length < 5) { setError("اكتب سببًا واضحًا من 5 أحرف على الأقل قبل تغيير الحالة."); return; }
+    const expectedVersion = action.includes("identity") ? status?.actorVersion : status?.roleVersion;
+    if (expectedVersion === undefined || expectedVersion === null) {
+      setError("تعذر تحديد إصدار الحساب للتحقق من التزامن. أعد تحميل الحالة وحاول مرة أخرى.");
+      return;
+    }
     setBusy(true); setError("");
     try {
       const response = await identityFetch("/api/access/account-control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, role, action, reason, actorId: status?.actorId }),
+        body: JSON.stringify({ phone, role, action, reason, expectedVersion }),
       });
-      if (!response.ok) { setError(await responseMessage(response)); return; }
+      if (!response.ok) {
+        if (response.status === 409 || response.status === 412) {
+          setError("تعارض في إصدار الحساب: قام مستخدم آخر بتعديل هذه الحالة. تم تحديث البيانات، يرجى المحاولة مجددًا.");
+        } else {
+          setError(await responseMessage(response));
+        }
+        const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
+        if (refresh.ok) setStatus(await refresh.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number });
+        return;
+      }
       setReason("");
       const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
-      if (refresh.ok) setStatus(await refresh.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string });
+      if (refresh.ok) setStatus(await refresh.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number });
     } catch { setError("تعذر تحديث حالة الحساب."); } finally { setBusy(false); }
   }
 

@@ -18,20 +18,6 @@ function Fail([string] $Message) {
     exit 1
 }
 
-function New-RandomHex([int] $Bytes = 24) {
-    [Convert]::ToHexString(
-        [Security.Cryptography.RandomNumberGenerator]::GetBytes($Bytes)
-    ).ToLowerInvariant()
-}
-
-function Write-Utf8File([string] $Path, [string] $Content) {
-    [IO.File]::WriteAllText(
-        $Path,
-        $Content.TrimEnd() + [Environment]::NewLine,
-        [Text.UTF8Encoding]::new($false)
-    )
-}
-
 function Ensure-LocalEnv {
     & (Join-Path $PSScriptRoot "ensure-local-env.ps1")
 }
@@ -142,8 +128,6 @@ function Verify-HostPortsAvailable {
 
     $portKeys = @(
         "SAMRIM_POSTGRES_PORT",
-        "SAMRIM_MINIO_API_PORT",
-        "SAMRIM_MINIO_CONSOLE_PORT",
         "SAMRIM_MAILPIT_SMTP_PORT",
         "SAMRIM_MAILPIT_WEB_PORT",
         "SAMRIM_IDENTITY_PORT",
@@ -235,12 +219,6 @@ function Verify-InfraEndpoints {
             }
         },
         @{
-            Name = "minio-live"
-            Test = {
-                Test-HttpReady -Uri "http://127.0.0.1:$($Env["SAMRIM_MINIO_API_PORT"])/minio/health/live"
-            }
-        },
-        @{
             Name = "mailpit-smtp"
             Test = {
                 Test-TcpReady -HostName "127.0.0.1" -Port ([int] $Env["SAMRIM_MAILPIT_SMTP_PORT"])
@@ -295,8 +273,7 @@ function Show-Diagnostics {
         "--profile", "integration"
     )
 
-    & docker @baseArgs "ps"
-    & docker @baseArgs "logs" "--tail" "200" "identity" "dsh" "postgres" "minio" "mailpit"
+    & docker @baseArgs "logs" "--tail" "200" "identity" "dsh" "postgres" "mailpit"
 }
 
 Push-Location $repo
@@ -381,7 +358,6 @@ try {
 
     $expected = @(
         "postgres",
-        "minio",
         "mailpit",
         "identity",
         "dsh"

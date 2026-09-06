@@ -47,4 +47,67 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
+// Architectural Boundary & Dependency Direction Enforcement
+const boundaryViolations = [];
+
+function checkFileImports(filePath, relativePath) {
+  const content = fs.readFileSync(filePath, "utf8");
+  const lines = content.split("\n");
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Apps cannot import private service backend internals
+    if (relativePath.startsWith("apps/")) {
+      const match = line.match(/(?:import|from|require)\s*\(?['"]([^'"]+)['"]/);
+      if (match) {
+        const importPath = match[1];
+        if (
+          importPath.includes("services/") ||
+          importPath.includes("/backend/") ||
+          importPath.includes("/internal/")
+        ) {
+          boundaryViolations.push(
+            `${relativePath}:${i + 1}: apps cannot import service private internals (${importPath})`
+          );
+        }
+      }
+    }
+
+    // DSH cannot import Identity backend internals (only public Go client)
+    if (relativePath.startsWith("services/dsh/")) {
+      if (line.includes("services/identity/backend/internal")) {
+        boundaryViolations.push(
+          `${relativePath}:${i + 1}: DSH cannot import Identity backend internals directly`
+        );
+      }
+    }
+  }
+}
+
+function scanDir(dir, relDir = "") {
+  if (!fs.existsSync(dir)) return;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name === ".next" || entry.name === ".expo" || entry.name === "dist") continue;
+    const fullPath = path.join(dir, entry.name);
+    const relPath = path.join(relDir, entry.name).replaceAll("\\", "/");
+    if (entry.isDirectory()) {
+      scanDir(fullPath, relPath);
+    } else if (/\.(ts|tsx|js|mjs|cjs|go)$/.test(entry.name)) {
+      checkFileImports(fullPath, relPath);
+    }
+  }
+}
+
+scanDir(path.join(repoRoot, "apps"), "apps");
+scanDir(path.join(repoRoot, "services/dsh"), "services/dsh");
+
+if (boundaryViolations.length > 0) {
+  console.error("WORKSPACE_BOUNDARY_VIOLATIONS:");
+  for (const v of boundaryViolations) console.error(`  ${v}`);
+  process.exit(1);
+}
+
 console.log("NONEXISTENT_WORKSPACE_DEPENDENCIES=0");
+console.log("WORKSPACE_BOUNDARY_VIOLATIONS=0");
+console.log("WORKSPACE_DEPENDENCIES_VERIFY=PASS");

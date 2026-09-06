@@ -53,8 +53,3 @@ WHERE r.role = 'platform_owner'
 ORDER BY r.created_at ASC
 LIMIT 1
 ON CONFLICT (id) DO NOTHING;
-
--- 5. Record schema version
-INSERT INTO identity_schema_migrations(version)
-VALUES (14)
-ON CONFLICT (version) DO NOTHING;

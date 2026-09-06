@@ -5,15 +5,20 @@ import type { ManagedActivationRole } from "@bthwani/identity";
 import {
   identityErrorPayload,
   identityHttpStatus,
-  issueManagedActivationCode,
+  issueOperatorEnrollmentToken,
   provisionOperator,
   readOperatorSession,
 } from "../../../../lib/identity-bff";
 import { authorizeManagedReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus, provisionManagedRole } from "../../../../lib/dsh-bff";
+import { verifySameOrigin } from "../../../../lib/csrf";
 
 const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field", "operator"]);
 
 export async function POST(request: Request) {
+  if (!verifySameOrigin(request)) {
+    return NextResponse.json({ error: { code: "FORBIDDEN", message: "cross-site requests are forbidden" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
+  }
+
   const identity = await readOperatorSession();
   if (!identity) return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "authentication is required" } }, { status: 401, headers: { "Cache-Control": "no-store" } });
   if (identity.role !== "platform_owner") return NextResponse.json({ error: { code: "FORBIDDEN", message: "platform owner access is required" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
@@ -38,7 +43,7 @@ export async function POST(request: Request) {
       await provisionManagedRole(phone, role as "partner" | "captain" | "field");
     }
     if (role === "operator") {
-      const result = await issueManagedActivationCode(phone);
+      const result = await issueOperatorEnrollmentToken(phone);
       return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });
     }
     return NextResponse.json({ status: recover ? "role_reenrollment_authorized" : "role_provisioned", role }, { status: 200, headers: { "Cache-Control": "no-store" } });

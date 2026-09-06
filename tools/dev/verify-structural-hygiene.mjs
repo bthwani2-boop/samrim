@@ -276,6 +276,21 @@ for (const file of unclassified) {
   failures.push("UNCLASSIFIED_TRACKED_ARTIFACT: " + file);
 }
 
+const goFiles = tracked.filter((file) => file.endsWith(".go"));
+if (goFiles.length > 0) {
+  try {
+    const unformatted = execFileSync("gofmt", ["-l", ...goFiles], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    }).trim();
+    if (unformatted) {
+      failures.push("Go source files are not canonical formatted (gofmt -l):\n" + unformatted);
+    }
+  } catch (err) {
+    failures.push("Failed to run gofmt: " + err.message);
+  }
+}
+
 if (failures.length) {
   console.error("STRUCTURAL_HYGIENE=FAIL");
   for (const failure of [...new Set(failures)].sort()) {

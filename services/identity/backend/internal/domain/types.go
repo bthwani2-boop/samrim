@@ -109,12 +109,12 @@ type ManagedRecoveryRequest struct {
 	Password string `json:"password"`
 }
 
-type ManagedActivationCodeIssueRequest struct {
+type OperatorEnrollmentTokenIssueRequest struct {
 	PhoneE164 string `json:"phoneE164"`
 	Role      string `json:"role"`
 }
 
-type ManagedActivationCode struct {
+type OperatorEnrollmentToken struct {
 	Code        string    `json:"code"`
 	MaskedPhone string    `json:"maskedPhone"`
 	Role        string    `json:"role"`
@@ -249,7 +249,7 @@ func CanResetCredential(caller, role string) bool {
 	return strings.EqualFold(strings.TrimSpace(caller), "platform-control") && strings.EqualFold(strings.TrimSpace(role), "operator")
 }
 
-func CanIssueManagedActivationCodeForRole(caller, role string) bool {
+func CanIssueOperatorEnrollmentTokenForRole(caller, role string) bool {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role = strings.ToLower(strings.TrimSpace(role))
 	return caller == "platform-control" && role == "operator"

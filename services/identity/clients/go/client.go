@@ -42,6 +42,12 @@ func New(baseURL, serviceToken string) (*Client, error) {
 	return &Client{baseURL: baseURL, token: serviceToken, http: &http.Client{Timeout: 8 * time.Second}}, nil
 }
 
+func (c *Client) IssueOperatorEnrollmentToken(ctx context.Context, input OperatorEnrollmentTokenIssueRequest) (OperatorEnrollmentToken, error) {
+	var result OperatorEnrollmentToken
+	err := c.do(ctx, IdentityOperationIssueOperatorEnrollmentToken.Method, IdentityOperationIssueOperatorEnrollmentToken.Path, "", input, &result)
+	return result, err
+}
+
 func (c *Client) ProvisionRole(ctx context.Context, input ProvisionActorRoleRequest) (ActorRoleView, error) {
 	var result ActorRoleView
 	err := c.do(ctx, IdentityOperationProvisionActorRole.Method, IdentityOperationProvisionActorRole.Path, "", input, &result)
@@ -178,6 +184,7 @@ func (c *Client) doWithContext(ctx context.Context, method, pathname, correlatio
 		req.Header.Set("X-Reason", strings.TrimSpace(reason))
 	}
 	if strings.TrimSpace(operatorActorID) != "" {
+		req.Header.Set("X-Acting-Actor-ID", strings.TrimSpace(operatorActorID))
 		req.Header.Set("X-Actor-ID", strings.TrimSpace(operatorActorID))
 	}
 	if expectedVersion > 0 {

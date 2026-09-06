@@ -283,7 +283,7 @@ func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActiv
 			return domain.TokenPair{}, domain.ErrInvalidActivation
 		}
 		if domain.RequiresEnrollmentToken(role) {
-			if _, err := s.consumeManagedActivationCodeTx(ctx, tx, input.Phone, role, input.ActivationCode, actorID); err != nil {
+			if _, err := s.consumeOperatorEnrollmentTokenTx(ctx, tx, input.Phone, role, input.ActivationCode, actorID); err != nil {
 				return domain.TokenPair{}, err
 			}
 		}
@@ -297,22 +297,22 @@ func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActiv
 	})
 }
 
-func (s *Service) IssueManagedActivationCode(ctx context.Context, input domain.ManagedActivationCodeIssueRequest, caller string) (domain.ManagedActivationCode, error) {
+func (s *Service) IssueOperatorEnrollmentToken(ctx context.Context, input domain.OperatorEnrollmentTokenIssueRequest, caller string) (domain.OperatorEnrollmentToken, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.CanIssueManagedActivationCodeForRole(caller, role) {
-		return domain.ManagedActivationCode{}, domain.ErrForbidden
+	if !domain.CanIssueOperatorEnrollmentTokenForRole(caller, role) {
+		return domain.OperatorEnrollmentToken{}, domain.ErrForbidden
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.PhoneE164)
 	if err != nil {
-		return domain.ManagedActivationCode{}, domain.ErrInvalidInput
+		return domain.OperatorEnrollmentToken{}, domain.ErrInvalidInput
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:managed-code:"+role+":"+phone); err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
 	var actorID string
 	var enabled, securityEnabled bool
@@ -321,46 +321,46 @@ func (s *Service) IssueManagedActivationCode(ctx context.Context, input domain.M
 FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id
 WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actorID, &enabled, &securityEnabled, &activated)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ManagedActivationCode{}, domain.ErrNotFound
+		return domain.OperatorEnrollmentToken{}, domain.ErrNotFound
 	}
 	if err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
 	if !enabled || !securityEnabled {
-		return domain.ManagedActivationCode{}, domain.ErrForbidden
+		return domain.OperatorEnrollmentToken{}, domain.ErrForbidden
 	}
 	if activated.Valid {
-		return domain.ManagedActivationCode{}, domain.ErrConflict
+		return domain.OperatorEnrollmentToken{}, domain.ErrConflict
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND purpose=$3 AND status='pending'", actorID, role, domain.ChallengeManagedActivate); err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
 	id, err := identitysecurity.RandomToken(18)
 	if err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
 	rawCode, err := identitysecurity.RandomEnrollmentToken()
 	if err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
 	normalizedCode, err := identitysecurity.NormalizeEnrollmentToken(rawCode)
 	if err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
 	expires := s.now().UTC().Add(48 * time.Hour)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_operator_enrollment_tokens(id,actor_id,role,phone_e164,code_hash,status,attempts,expires_at,created_by) VALUES($1,$2,$3,$4,$5,'pending',0,$6,$7)`, id, actorID, role, phone, identitysecurity.SHA256Hex(normalizedCode), expires, strings.ToLower(strings.TrimSpace(caller))); err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
-	if err := auditTx(ctx, tx, "managed_activation_code.issued", actorID, caller, "success", "", map[string]any{"role": role, "expiresAt": expires.UTC().Format(time.RFC3339)}); err != nil {
-		return domain.ManagedActivationCode{}, err
+	if err := auditTx(ctx, tx, "operator_enrollment_token.issued", actorID, caller, "success", "", map[string]any{"role": role, "expiresAt": expires.UTC().Format(time.RFC3339)}); err != nil {
+		return domain.OperatorEnrollmentToken{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return domain.ManagedActivationCode{}, err
+		return domain.OperatorEnrollmentToken{}, err
 	}
-	return domain.ManagedActivationCode{Code: rawCode, MaskedPhone: identitysecurity.MaskPhone(phone), Role: role, ExpiresAt: expires}, nil
+	return domain.OperatorEnrollmentToken{Code: rawCode, MaskedPhone: identitysecurity.MaskPhone(phone), Role: role, ExpiresAt: expires}, nil
 }
 
 func (s *Service) validateEnrollmentToken(ctx context.Context, phone, role, rawCode string) error {
@@ -376,7 +376,7 @@ func (s *Service) validateEnrollmentToken(ctx context.Context, phone, role, rawC
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "identity:managed-code:"+role+":"+phone); err != nil {
 		return err
 	}
-	_, err = s.consumeManagedActivationCodeTx(ctx, tx, phone, role, code, "")
+	_, err = s.consumeOperatorEnrollmentTokenTx(ctx, tx, phone, role, code, "")
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidActivation) {
 			_ = tx.Commit()
@@ -386,7 +386,7 @@ func (s *Service) validateEnrollmentToken(ctx context.Context, phone, role, rawC
 	return tx.Commit()
 }
 
-func (s *Service) consumeManagedActivationCodeTx(ctx context.Context, tx *sql.Tx, phone, role, rawCode, expectedActorID string) (string, error) {
+func (s *Service) consumeOperatorEnrollmentTokenTx(ctx context.Context, tx *sql.Tx, phone, role, rawCode, expectedActorID string) (string, error) {
 	phone, err := identitysecurity.NormalizePhoneE164(phone)
 	if err != nil {
 		return "", domain.ErrInvalidActivation

@@ -8,7 +8,6 @@ Service roots:
 
 - `services/identity`
 - `services/dsh`
-- `services/wlt`
 
 A service directory is not a promise that every possible capability room
 exists. Only proven responsibility rooms are materialized. Do not create

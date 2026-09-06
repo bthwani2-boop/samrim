@@ -259,17 +259,17 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
-  /internal/managed-activation-codes:
+  /internal/operator-enrollment-tokens:
     post:
       tags: [internal-actor-roles]
-      operationId: issueManagedActivationCode
+      operationId: issueOperatorEnrollmentToken
       security: [{ internalServiceToken: [] }]
       description: Issues a single-use enrollment token for an already admitted, enabled operator role. The token is returned once, stored only as a digest, and never creates or grants a role.
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationCodeIssueRequest" } } }
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorEnrollmentTokenIssueRequest" } } }
       responses:
-        "201": { $ref: "#/components/responses/ManagedActivationCodeIssued" }
+        "201": { $ref: "#/components/responses/OperatorEnrollmentTokenIssued" }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -310,24 +310,42 @@ paths:
       tags: [internal-actor-roles]
       operationId: disableActorRole
       security: [{ internalServiceToken: [] }]
-      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }, { $ref: "#/components/parameters/CorrelationId" }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "#/components/parameters/ExpectedVersion" }
+        - { $ref: "#/components/parameters/IfMatch" }
+        - { $ref: "#/components/parameters/MutationReason" }
       responses:
         "204": { description: Exact role disabled and its sessions/challenges revoked. }
+        "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/roles/{role}/enable:
     post:
       tags: [internal-actor-roles]
       operationId: enableActorRole
       security: [{ internalServiceToken: [] }]
-      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }, { $ref: "#/components/parameters/CorrelationId" }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "#/components/parameters/ExpectedVersion" }
+        - { $ref: "#/components/parameters/IfMatch" }
+        - { $ref: "#/components/parameters/MutationReason" }
       responses:
         "204": { description: Existing role enabled; no session or activation eligibility is silently recreated. }
+        "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/roles/{role}/reenrollment:
     post:
@@ -335,7 +353,11 @@ paths:
       operationId: authorizeManagedRoleReenrollment
       security: [{ internalServiceToken: [] }]
       description: DSH-only explicit recovery action for partner/captain/field. Revokes that role's sessions and reopens one-time activation eligibility without changing role admission.
-      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }, { $ref: "#/components/parameters/CorrelationId" }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
       responses:
         "204": { description: Managed role is eligible for a fresh one-time activation. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -348,24 +370,40 @@ paths:
       tags: [internal-security]
       operationId: disableActorSecurity
       security: [{ internalServiceToken: [] }]
-      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/CorrelationId" }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "#/components/parameters/ExpectedVersion" }
+        - { $ref: "#/components/parameters/IfMatch" }
+        - { $ref: "#/components/parameters/MutationReason" }
       responses:
         "204": { description: Identity-wide authentication disabled and active sessions/challenges revoked. }
+        "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/security/enable:
     post:
       tags: [internal-security]
       operationId: enableActorSecurity
       security: [{ internalServiceToken: [] }]
-      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/CorrelationId" }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "#/components/parameters/ExpectedVersion" }
+        - { $ref: "#/components/parameters/IfMatch" }
+        - { $ref: "#/components/parameters/MutationReason" }
       responses:
         "204": { description: Identity-wide authentication eligibility restored; no session is resurrected. }
+        "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/operator-password/reset:
     post:
@@ -432,6 +470,10 @@ components:
     ActorId: { name: actorId, in: path, required: true, schema: { type: string } }
     Role: { name: role, in: path, required: true, schema: { $ref: "#/components/schemas/ActorType" } }
     CorrelationId: { name: X-Correlation-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
+    ActingActorId: { name: X-Acting-Actor-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
+    ExpectedVersion: { name: X-Expected-Version, in: header, required: false, schema: { type: integer, minimum: 0 } }
+    IfMatch: { name: If-Match, in: header, required: false, schema: { type: string } }
+    MutationReason: { name: X-Reason, in: header, required: false, schema: { type: string, maxLength: 500 } }
 
   schemas:
     StatusResponse:
@@ -707,7 +749,7 @@ components:
           minLength: 15
           maxLength: 128
 
-    ManagedActivationCodeIssueRequest:
+    OperatorEnrollmentTokenIssueRequest:
       type: object
       additionalProperties: false
       required: [phoneE164, role]
@@ -718,7 +760,7 @@ components:
           type: string
           enum: [operator]
 
-    ManagedActivationCode:
+    OperatorEnrollmentToken:
       type: object
       additionalProperties: false
       required: [code, maskedPhone, role, expiresAt]
@@ -826,9 +868,9 @@ components:
     ChallengeIssued:
       description: Challenge-shaped acknowledgement. Public decoys use the same shape, raw codes are never exposed, and provider delivery outcome is not reported.
       content: { application/json: { schema: { $ref: "#/components/schemas/Challenge" } } }
-    ManagedActivationCodeIssued:
-      description: One-time managed-role activation code. The plaintext code is returned only in this authorized response and is never stored.
-      content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationCode" } } }
+    OperatorEnrollmentTokenIssued:
+      description: One-time operator enrollment token. The plaintext token is returned only in this authorized response and is never stored.
+      content: { application/json: { schema: { $ref: "#/components/schemas/OperatorEnrollmentToken" } } }
     TokenPair:
       description: Role-scoped authenticated session.
       content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } }

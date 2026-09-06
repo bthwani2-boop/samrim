@@ -32,6 +32,8 @@ export async function GET(request: Request) {
       securityEnabled: record?.securityEnabled ?? false,
       recoverable: Boolean(record?.enabled && record?.activatedAt),
       role,
+      actorVersion: record?.actorVersion,
+      roleVersion: record?.roleVersion,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (isDshClientError(error)) return NextResponse.json({ error: dshErrorPayload(error) }, { status: dshHttpStatus(error), headers: { "Cache-Control": "no-store" } });

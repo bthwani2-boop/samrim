@@ -108,6 +108,10 @@ paths:
       summary: Disable a managed role by phone and role
       security:
         - serviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/ActingActorId"
+        - $ref: "#/components/parameters/ExpectedVersion"
       requestBody:
         required: true
         content:
@@ -130,6 +134,10 @@ paths:
       summary: Enable a managed role by phone and role
       security:
         - serviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - $ref: "#/components/parameters/ActingActorId"
+        - $ref: "#/components/parameters/ExpectedVersion"
       requestBody:
         required: true
         content:
@@ -202,6 +210,29 @@ components:
       type: http
       scheme: bearer
       bearerFormat: token
+
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    ActingActorId:
+      name: X-Acting-Actor-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    ExpectedVersion:
+      name: X-Expected-Version
+      in: header
+      required: false
+      schema:
+        type: integer
+        minimum: 0
 
   schemas:
     StatusResponse:
@@ -302,9 +333,13 @@ components:
           type: boolean
         state:
           type: string
-          enum: [not_provisioned, pending_activation, active, role_disabled, identity_disabled, reenrollment_required]
+          enum: [not_provisioned, pending_activation, active, role_disabled, identity_disabled]
         role:
           $ref: "#/components/schemas/ManagedRole"
+        actorVersion:
+          type: integer
+        roleVersion:
+          type: integer
 
     ErrorResponse:
       type: object

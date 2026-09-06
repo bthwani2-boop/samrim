@@ -323,7 +323,7 @@ const captainRead = await expect(
   { headers: service(dshToken) },
 );
 assert(typeof captainRead.activatedAt === "string", "managed activation was not durably recorded");
-await expect("POST", "/internal/managed-activation-codes", 403, {
+await expect("POST", "/internal/operator-enrollment-tokens", 403, {
   headers: service(dshToken),
   body: { phoneE164: sharedPhone, role: "captain" },
 });
@@ -340,7 +340,7 @@ await expect("POST", "/internal/actor-roles/provision", 403, {
   body: { phoneE164: phone(), role: "operator", password: operatorPassword },
 });
 
-const operatorActivation = await expect("POST", "/internal/managed-activation-codes", 201, {
+const operatorActivation = await expect("POST", "/internal/operator-enrollment-tokens", 201, {
   headers: service(platformToken),
   body: { phoneE164: sharedPhone, role: "operator" },
 });

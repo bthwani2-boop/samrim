@@ -8,6 +8,29 @@
     ".": {
       "types": "./clients/index.ts",
       "default": "./clients/index.ts"
+    },
+    "./presentation": {
+      "types": "./clients/presentation/ManagedIdentityFlow.tsx",
+      "default": "./clients/presentation/ManagedIdentityFlow.tsx"
     }
+  },
+  "peerDependencies": {
+    "@bthwani/design-system": "workspace:*",
+    "react": "*",
+    "react-native": "*",
+    "react-native-safe-area-context": "*"
+  },
+  "peerDependenciesMeta": {
+    "@bthwani/design-system": { "optional": true },
+    "react": { "optional": true },
+    "react-native": { "optional": true },
+    "react-native-safe-area-context": { "optional": true }
+  },
+  "devDependencies": {
+    "@bthwani/design-system": "workspace:*",
+    "@types/react": "19.2.17",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-safe-area-context": "~5.7.0"
   }
 }

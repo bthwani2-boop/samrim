@@ -47,8 +47,7 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /auth/managed/login", s.loginManaged)
 	mux.HandleFunc("POST /auth/managed/recovery/request", s.requestManagedRecovery)
 	mux.HandleFunc("POST /auth/managed/recover", s.recoverManaged)
-	mux.HandleFunc("POST /internal/managed-activation-codes", s.internal(s.issueManagedActivationCode))
-	mux.HandleFunc("POST /internal/operator-enrollment-tokens", s.internal(s.issueManagedActivationCode))
+	mux.HandleFunc("POST /internal/operator-enrollment-tokens", s.internal(s.issueOperatorEnrollmentToken))
 	mux.HandleFunc("POST /auth/operator/login/start", s.startOperatorLogin)
 	mux.HandleFunc("POST /auth/operator/login/complete", s.completeOperatorLogin)
 	mux.HandleFunc("POST /auth/refresh", s.refresh)
@@ -201,12 +200,12 @@ func (s *Server) recoverManaged(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, result)
 }
-func (s *Server) issueManagedActivationCode(w http.ResponseWriter, r *http.Request, caller string) {
-	var input domain.ManagedActivationCodeIssueRequest
+func (s *Server) issueOperatorEnrollmentToken(w http.ResponseWriter, r *http.Request, caller string) {
+	var input domain.OperatorEnrollmentTokenIssueRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.IssueManagedActivationCode(r.Context(), input, caller)
+	result, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), input, caller)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -375,24 +374,35 @@ func (s *Server) disableRole(w http.ResponseWriter, r *http.Request, caller stri
 func (s *Server) enableRole(w http.ResponseWriter, r *http.Request, caller string) {
 	s.setRoleEnabled(w, r, caller, true)
 }
-func parseExpectedVersion(r *http.Request) int {
+func parseExpectedVersion(r *http.Request) (int, error) {
 	val := strings.TrimSpace(r.Header.Get("X-Expected-Version"))
 	if val == "" {
 		val = strings.Trim(strings.TrimSpace(r.Header.Get("If-Match")), "\"")
 	}
 	if val == "" {
-		return 0
+		return 0, nil
 	}
 	v, err := strconv.Atoi(val)
 	if err != nil || v < 0 {
-		return 0
+		return 0, errors.New("expected version must be a non-negative integer")
 	}
-	return v
+	return v, nil
 }
 
 func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
-	expectedVersion := parseExpectedVersion(r)
-	operatorActorID := strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	expectedVersion, err := parseExpectedVersion(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error()))
+		return
+	}
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if operatorActorID == "" {
+		operatorActorID = strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	}
+	if caller == "platform-control" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+		return
+	}
 	if err := s.actors.SetRoleEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return
@@ -413,8 +423,19 @@ func (s *Server) enableActorSecurity(w http.ResponseWriter, r *http.Request, cal
 	s.setActorSecurityEnabled(w, r, caller, true)
 }
 func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
-	expectedVersion := parseExpectedVersion(r)
-	operatorActorID := strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	expectedVersion, err := parseExpectedVersion(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error()))
+		return
+	}
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if operatorActorID == "" {
+		operatorActorID = strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	}
+	if caller == "platform-control" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+		return
+	}
 	if err := s.actors.SetSecurityEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return

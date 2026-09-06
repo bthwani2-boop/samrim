@@ -37,15 +37,20 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_bootstrap_state", columns: []string{"id", "bootstrap_completed_at", "platform_owner_actor_id"}, indexes: []string{"identity_bootstrap_state_pkey"}},
 }
 
-func CurrentSchemaVersion(ctx context.Context, db *sql.DB) (int, error) {
+type queryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func currentSchemaVersion(ctx context.Context, q queryer) (int, error) {
 	var relation sql.NullString
-	if err := db.QueryRowContext(ctx, "SELECT to_regclass('public.identity_schema_migrations')").Scan(&relation); err != nil {
+	if err := q.QueryRowContext(ctx, "SELECT to_regclass('public.identity_schema_migrations')").Scan(&relation); err != nil {
 		return 0, fmt.Errorf("migration authority lookup: %w", err)
 	}
 	if !relation.Valid || relation.String == "" {
 		return 0, nil
 	}
-	rows, err := db.QueryContext(ctx, "SELECT version FROM identity_schema_migrations ORDER BY version")
+	rows, err := q.QueryContext(ctx, "SELECT version FROM identity_schema_migrations ORDER BY version")
 	if err != nil {
 		return 0, fmt.Errorf("migration history readback: %w", err)
 	}
@@ -67,11 +72,26 @@ func CurrentSchemaVersion(ctx context.Context, db *sql.DB) (int, error) {
 	return expected - 1, nil
 }
 
+func CurrentSchemaVersion(ctx context.Context, db *sql.DB) (int, error) {
+	return currentSchemaVersion(ctx, db)
+}
+
 func Migrate(ctx context.Context, db *sql.DB, version int, name, sha256, migrationSQL string) error {
 	if migrationSQL == "" {
 		return fmt.Errorf("identity migration v%d is empty", version)
 	}
-	current, err := CurrentSchemaVersion(ctx, db)
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("identity migration v%d transaction: %w", version, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended('identity:migrations', 0))"); err != nil {
+		return fmt.Errorf("identity migration v%d advisory lock: %w", version, err)
+	}
+
+	current, err := currentSchemaVersion(ctx, tx)
 	if err != nil {
 		return err
 	}
@@ -81,14 +101,21 @@ func Migrate(ctx context.Context, db *sql.DB, version int, name, sha256, migrati
 	if current != version-1 {
 		return fmt.Errorf("identity migration v%d cannot follow schema v%d", version, current)
 	}
-	if _, err := db.ExecContext(ctx, migrationSQL); err != nil {
+
+	if _, err := tx.ExecContext(ctx, migrationSQL); err != nil {
 		return fmt.Errorf("apply identity canonical migration v%d: %w", version, err)
 	}
+
 	if version >= 12 {
-		if _, err := db.ExecContext(ctx, "INSERT INTO identity_schema_migrations(version,name,sha256) VALUES($1,$2,$3) ON CONFLICT (version) DO NOTHING", version, name, sha256); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO identity_schema_migrations(version,name,sha256) VALUES($1,$2,$3) ON CONFLICT (version) DO UPDATE SET name=EXCLUDED.name, sha256=EXCLUDED.sha256 WHERE identity_schema_migrations.name IS NULL OR identity_schema_migrations.name = ''", version, name, sha256); err != nil {
 			return fmt.Errorf("record identity canonical migration v%d: %w", version, err)
 		}
 	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit identity canonical migration v%d: %w", version, err)
+	}
+
 	applied, err := CurrentSchemaVersion(ctx, db)
 	if err != nil {
 		return err

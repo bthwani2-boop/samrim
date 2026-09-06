@@ -25,8 +25,35 @@ try {
   if (pkg.name !== "@bthwani/identity") failures.push("Identity package name drifted");
   if (pkg.exports?.["."]?.types !== "./clients/index.ts") failures.push("Identity package types export drifted");
   if (pkg.exports?.["."]?.default !== "./clients/index.ts") failures.push("Identity package runtime export drifted");
+  if (pkg.exports?.["./presentation"]?.types !== "./clients/presentation/ManagedIdentityFlow.tsx") failures.push("Identity package presentation types export drifted");
+  if (pkg.exports?.["./presentation"]?.default !== "./clients/presentation/ManagedIdentityFlow.tsx") failures.push("Identity package presentation runtime export drifted");
 } catch {
   failures.push("services/identity/package.json is invalid JSON");
+}
+
+const presentationFlow = read("services/identity/clients/presentation/ManagedIdentityFlow.tsx");
+if (!presentationFlow) {
+  failures.push("missing canonical ManagedIdentityFlow presentation component in Identity");
+} else {
+  for (const required of [
+    "chooseIntent",
+    "requestManagedActivation",
+    "requestManagedRecovery",
+    "recoverManagedIdentity",
+    "activateManagedIdentity",
+    "أثبت رقم الهاتف",
+    "رمز تحقق الهاتف",
+    "تفعيل أول مرة",
+    "ابدأ برقم الهاتف",
+  ]) {
+    if (!presentationFlow.includes(required)) failures.push("ManagedIdentityFlow presentation component missing " + required);
+  }
+  if (presentationFlow.includes("activationCode") || presentationFlow.includes("رمز التفعيل")) {
+    failures.push("ManagedIdentityFlow retains redundant control-surface activation secret");
+  }
+  if (presentationFlow.includes("auth-mode-switch") || presentationFlow.includes("<select")) {
+    failures.push("ManagedIdentityFlow must resolve next step from phone without tabs or role selectors");
+  }
 }
 
 for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
@@ -100,15 +127,21 @@ for (const [app, role, surface] of [
     if (runtime.includes(forbidden)) failures.push(runtimePath + " contains wrong auth flow " + forbidden);
   }
   const page = read("apps/" + app + "/src/identity-gate.tsx");
-  if (!page.includes("chooseIntent") || !page.includes("requestManagedActivation") || !page.includes("requestManagedRecovery") || !page.includes("recoverManagedIdentity") || !page.includes("activateManagedIdentity")) {
-    failures.push(app + " UI is not bound to one-time managed activation");
+  if (!page.includes("ManagedIdentityFlow")) {
+    failures.push(app + " UI is not bound to canonical ManagedIdentityFlow");
   }
-  for (const phrase of ["أثبت رقم الهاتف", "رمز تحقق الهاتف", "تفعيل أول مرة", "ابدأ برقم الهاتف"]) {
-    if (!page.includes(phrase)) failures.push(app + " UI does not distinguish managed activation from phone verification: " + phrase);
+  if (!page.includes(`role="${role}"`)) {
+    failures.push(app + " UI does not bind canonical role " + role);
   }
-  if (page.includes("activationCode") || page.includes("رمز التفعيل")) failures.push(app + " managed enrollment retains redundant control-surface activation secret");
-  if (page.includes("auth-mode-switch") || page.includes("<select")) failures.push(app + " managed auth must resolve the next step from phone without tabs or role selectors");
-  if (!page.includes("currentState") && !page.includes("currentIdentityState")) failures.push(app + " logout must mirror canonical local Identity state");
+  if (!page.includes(`surface="${surface}"`)) {
+    failures.push(app + " UI does not bind canonical surface " + surface);
+  }
+  if (!page.includes('from "@bthwani/identity/presentation"') && !page.includes("from '@bthwani/identity/presentation'")) {
+    failures.push(app + " UI does not import from @bthwani/identity/presentation");
+  }
+  if (page.split("\n").length > 40) {
+    failures.push(app + " contains duplicate identity gate implementation instead of thin host binding");
+  }
 }
 
 if (fs.existsSync(path.join(root, "packages/design-system/src/native"))) {
@@ -181,7 +214,7 @@ for (const required of [
   "/auth/operator/login/start:",
   "/auth/operator/login/complete:",
   "/internal/actors/{actorId}/roles/{role}/reenrollment:",
-  "/internal/managed-activation-codes:",
+  "/internal/operator-enrollment-tokens:",
   "/internal/bootstrap/platform-owner:",
 ]) {
   if (!contract.includes(required)) failures.push("Identity contract missing " + required);
@@ -191,7 +224,7 @@ if (sixDigitPatterns.length < 3) failures.push("Identity contract must expose si
 if (!contract.includes('pattern: "^[0-9]{6}$"') || !contract.includes("minLength: 6")) failures.push("Identity contract must expose six-digit activation schemas");
 if (contract.includes('pattern: "^[0-9]{4}$"')) failures.push("Identity contract contains retired four-digit challenge schema");
 if (contract.includes("minLength: 12")) failures.push("Identity contract contains retired twelve-character password minimum");
-for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller"]) {
+for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller", "/internal/managed-activation-codes:"]) {
   if (contract.includes(forbidden)) failures.push("Identity contract contains retired auth shape " + forbidden);
 }
 
@@ -202,7 +235,7 @@ for (const required of [
   "export type ClientCredentialProofRequest",
   "export type OperatorLoginCompleteRequest",
   "readonly activatedAt?: string;",
-  "export type ManagedActivationCode =",
+  "export type OperatorEnrollmentToken =",
 ]) {
   if (!generated.includes(required)) failures.push("generated Identity types missing " + required);
 }
@@ -222,16 +255,17 @@ for (const forbidden of [
   "export type OtpRequest =",
   "export type ActivationRequest =",
   "export type LoginRequest =",
+  "export type ManagedActivationCode =",
   "readonly username",
 ]) {
   if (generated.includes(forbidden)) failures.push("generated Identity types retain old auth shape " + forbidden);
 }
 
 const domain = read("services/identity/backend/internal/domain/types.go");
-for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole", "CanIssueManagedActivationCode", "RequiresEnrollmentToken"]) {
+for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole", "CanIssueOperatorEnrollmentToken", "RequiresEnrollmentToken"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
 }
-for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "Roles []string", "Permissions []"]) {
+for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "Roles []string", "Permissions []", "CanIssueManagedActivationCode"]) {
   if (domain.includes(forbidden)) failures.push("Identity domain contains collapsed/retired authority " + forbidden);
 }
 
@@ -262,12 +296,15 @@ for (const required of [
   "challenge.decoy_issued",
   "identity_challenges",
   "purpose",
-  "IssueManagedActivationCode",
+  "IssueOperatorEnrollmentToken",
 ]) {
   if (!challenge.includes(required)) failures.push("Identity challenge service missing " + required);
 }
-if (!challenge.includes("identity_operator_enrollment_tokens") && !challenge.includes("identity_managed_activation_codes")) {
+if (!challenge.includes("identity_operator_enrollment_tokens")) {
   failures.push("Identity challenge service missing identity_operator_enrollment_tokens");
+}
+if (challenge.includes("identity_managed_activation_codes") || challenge.includes("IssueManagedActivationCode")) {
+  failures.push("Identity challenge service retains retired managed activation code references");
 }
 if (challenge.includes("EnsurePublicClientTx") || challenge.includes("IsPublicOtpRole")) {
   failures.push("Identity challenge service retains universal OTP activation semantics");
@@ -386,8 +423,11 @@ for (const required of [
 ]) {
   if (!readiness.includes(required)) failures.push("Identity readiness proof missing " + required);
 }
-if (!readiness.includes("identity_operator_enrollment_tokens") && !readiness.includes("identity_managed_activation_codes")) {
+if (!readiness.includes("identity_operator_enrollment_tokens")) {
   failures.push("Identity readiness proof missing identity_operator_enrollment_tokens");
+}
+if (readiness.includes("identity_managed_activation_codes")) {
+  failures.push("Identity readiness proof retains retired identity_managed_activation_codes");
 }
 const privilegeBoundary = read("services/identity/backend/internal/storage/postgres/privileges.go");
 for (const required of ["VerifyRuntimePrivileges", "VerifyMaintenancePrivileges", "identity_security_audit", "has_schema_privilege", "has_database_privilege"]) {

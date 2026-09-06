@@ -76,13 +76,13 @@ func TestManagedActivationRoleBoundary(t *testing.T) {
 	}
 }
 
-func TestManagedActivationCodeIssuerBoundary(t *testing.T) {
+func TestOperatorEnrollmentTokenIssuerBoundary(t *testing.T) {
 	allowed := [][2]string{
 		{"platform-control", "operator"},
 	}
 	for _, pair := range allowed {
-		if !CanIssueManagedActivationCodeForRole(pair[0], pair[1]) {
-			t.Fatalf("expected %s to issue activation code for %s", pair[0], pair[1])
+		if !CanIssueOperatorEnrollmentTokenForRole(pair[0], pair[1]) {
+			t.Fatalf("expected %s to issue operator enrollment token for %s", pair[0], pair[1])
 		}
 	}
 	denied := [][2]string{
@@ -98,8 +98,8 @@ func TestManagedActivationCodeIssuerBoundary(t *testing.T) {
 		{"browser", "captain"},
 	}
 	for _, pair := range denied {
-		if CanIssueManagedActivationCodeForRole(pair[0], pair[1]) {
-			t.Fatalf("unexpected activation-code authority: %s for %s", pair[0], pair[1])
+		if CanIssueOperatorEnrollmentTokenForRole(pair[0], pair[1]) {
+			t.Fatalf("unexpected operator-enrollment authority: %s for %s", pair[0], pair[1])
 		}
 	}
 }

@@ -14,6 +14,8 @@ export type ManagedRoleStatus = Readonly<{
   recoverable: boolean;
   state?: string;
   role: "partner" | "captain" | "field";
+  actorVersion?: number;
+  roleVersion?: number;
 }>;
 
 const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field"]);
@@ -175,6 +177,7 @@ export async function setManagedRoleEnabled(
         "X-Correlation-ID": correlationId,
       };
       if (options?.operatorActorId?.trim()) {
+        headers["X-Acting-Actor-ID"] = options.operatorActorId.trim();
         headers["X-Actor-ID"] = options.operatorActorId.trim();
       }
       if (options?.expectedVersion !== undefined && options.expectedVersion > 0) {

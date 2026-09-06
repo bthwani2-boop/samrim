@@ -44,6 +44,8 @@ type roleStatusResponse struct {
 	Recoverable     bool   `json:"recoverable"`
 	State           string `json:"state"`
 	Role            string `json:"role"`
+	ActorVersion    int    `json:"actorVersion,omitempty"`
+	RoleVersion     int    `json:"roleVersion,omitempty"`
 }
 
 type Server struct {
@@ -111,6 +113,8 @@ func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
 		Recoverable:     isRecoverable,
 		State:           canonicalState,
 		Role:            role,
+		ActorVersion:    view.ActorVersion,
+		RoleVersion:     view.RoleVersion,
 	})
 }
 
@@ -136,12 +140,18 @@ func (s *Server) setEnabledByPhone(w http.ResponseWriter, r *http.Request, enabl
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164, managed role, and a reason of 5 to 500 characters are required")
 		return
 	}
-	operatorActorID := strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if operatorActorID == "" {
+		operatorActorID = strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	}
 	expectedVersion := 0
 	if rawVer := strings.TrimSpace(r.Header.Get("X-Expected-Version")); rawVer != "" {
-		if v, err := strconv.Atoi(rawVer); err == nil && v > 0 {
-			expectedVersion = v
+		v, err := strconv.Atoi(rawVer)
+		if err != nil || v < 0 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version must be a non-negative integer")
+			return
 		}
+		expectedVersion = v
 	}
 	if err := s.identity.SetRoleEnabledByPhoneWithContext(r.Context(), phone, role, enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason, operatorActorID, expectedVersion); err != nil {
 		writeIdentityError(w, err)
@@ -301,4 +311,3 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	}
 	return true
 }
-

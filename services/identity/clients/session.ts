@@ -18,7 +18,8 @@ export type IdentitySessionState =
   | Readonly<{ kind: "signed_out" }>
   | Readonly<{ kind: "restoring" }>
   | Readonly<{ kind: "authenticated"; identity: ActorIdentity }>
-  | Readonly<{ kind: "service_unavailable"; reason: string }>;
+  | Readonly<{ kind: "service_unavailable"; reason: string }>
+  | Readonly<{ kind: "refresh_conflict" }>;
 
 type StoredTokens = Readonly<{ accessToken: string; refreshToken: string }>;
 
@@ -54,6 +55,16 @@ function isIdentityUnauthenticated(value: unknown): value is IdentityClientError
   return isIdentityClientError(value) && value.kind === "http" && value.status === 401;
 }
 
+function isRefreshStaleError(value: unknown): boolean {
+  if (isIdentityClientError(value)) {
+    if (value.kind === "http" && (value.code === "REFRESH_STALE" || value.message.includes("REFRESH_STALE"))) return true;
+  }
+  if (value && typeof value === "object" && "code" in value && (value as { code?: unknown }).code === "REFRESH_STALE") {
+    return true;
+  }
+  return false;
+}
+
 function parseStoredTokens(raw: string | null): StoredTokens | null {
   if (!raw) return null;
   try {
@@ -73,19 +84,29 @@ function parseStoredTokens(raw: string | null): StoredTokens | null {
 }
 
 export class IdentitySessionManager {
+  private readonly client: IdentityClient;
+  private readonly storage: IdentitySessionStorage;
+  private readonly deviceFingerprint: () => Promise<string>;
+  private readonly role: ActorType;
+  private readonly surface: IdentitySurface;
   private readonly key: string;
   private stateValue: IdentitySessionState = { kind: "signed_out" };
   private tokens: StoredTokens | null = null;
   private refreshInFlight: Promise<IdentitySessionState> | null = null;
 
   constructor(
-    private readonly client: IdentityClient,
-    private readonly storage: IdentitySessionStorage,
-    private readonly deviceFingerprint: () => Promise<string>,
-    private readonly role: ActorType,
-    private readonly surface: IdentitySurface,
+    client: IdentityClient,
+    storage: IdentitySessionStorage,
+    deviceFingerprint: () => Promise<string>,
+    role: ActorType,
+    surface: IdentitySurface,
     storageNamespace: string,
   ) {
+    this.client = client;
+    this.storage = storage;
+    this.deviceFingerprint = deviceFingerprint;
+    this.role = role;
+    this.surface = surface;
     if (identityRoleSurface(role) !== surface) throw new Error("IDENTITY_ROLE_SURFACE_MISMATCH");
     this.key = storageNamespace + ".identity.session.v1";
   }
@@ -188,6 +209,23 @@ export class IdentitySessionManager {
     } catch (error) {
       if (isIdentityServiceUnavailable(error)) {
         return (this.stateValue = { kind: "service_unavailable", reason: error.message });
+      }
+      if (isRefreshStaleError(error)) {
+        const reRead = parseStoredTokens(await this.storage.getItem(this.key));
+        if (reRead && reRead.refreshToken !== stored.refreshToken) {
+          try {
+            const identity = await this.client.session(reRead.accessToken);
+            if (identityAuthorizesSurface(identity, this.role, this.surface)) {
+              this.tokens = reRead;
+              return (this.stateValue = { kind: "authenticated", identity });
+            }
+          } catch (sessionError) {
+            if (isIdentityServiceUnavailable(sessionError)) {
+              return (this.stateValue = { kind: "service_unavailable", reason: sessionError.message });
+            }
+          }
+        }
+        return (this.stateValue = { kind: "refresh_conflict" });
       }
       await this.clearLocal();
       return (this.stateValue = { kind: "signed_out" });
