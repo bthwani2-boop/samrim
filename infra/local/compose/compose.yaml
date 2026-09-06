@@ -45,6 +45,21 @@ services:
       - "127.0.0.1:${SAMRIM_MAILPIT_SMTP_PORT:-58025}:1025"
       - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-58026}:8025"
 
+  identity-migrate:
+    profiles: ["integration"]
+    restart: "no"
+    build:
+      context: ../../..
+      dockerfile: services/identity/backend/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BTHWANI_ENV: "development"
+      IDENTITY_MIGRATION_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      IDENTITY_MIGRATION_DIR: "/app/migrations"
+    entrypoint: ["/migrate"]
+
   identity:
     profiles: ["integration"]
     restart: unless-stopped
@@ -56,12 +71,14 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      identity-migrate:
+        condition: service_completed_successfully
     environment:
       PORT: "8082"
       BTHWANI_ENV: "development"
       IDENTITY_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       IDENTITY_MAINTENANCE_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
-      IDENTITY_AUTO_MIGRATE: "true"
+      IDENTITY_AUTO_MIGRATE: "false"
       IDENTITY_RETENTION_CHALLENGE_DAYS: "${IDENTITY_RETENTION_CHALLENGE_DAYS:-30}"
       IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS: "${IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS:-30}"
       IDENTITY_RETENTION_ACTIVATION_DAYS: "${IDENTITY_RETENTION_ACTIVATION_DAYS:-30}"

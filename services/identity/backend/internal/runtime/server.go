@@ -162,8 +162,8 @@ func loadConfig(defaultPort string) (config, error) {
 	tokens := map[string]string{"dsh": strings.TrimSpace(os.Getenv("IDENTITY_DSH_SERVICE_TOKEN")), "platform-control": strings.TrimSpace(os.Getenv("IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN"))}
 	bootstrapToken := strings.TrimSpace(os.Getenv("IDENTITY_PLATFORM_BOOTSTRAP_SECRET"))
 	autoMigrate := strings.EqualFold(strings.TrimSpace(os.Getenv("IDENTITY_AUTO_MIGRATE")), "true")
-	if runtimeEnvironment == "production" && autoMigrate {
-		return config{}, errors.New("IDENTITY_AUTO_MIGRATE is forbidden in production")
+	if (runtimeEnvironment == "staging" || runtimeEnvironment == "production") && autoMigrate {
+		return config{}, errors.New("IDENTITY_AUTO_MIGRATE is forbidden outside local and test environments")
 	}
 	if runtimeEnvironment == "production" && bootstrapToken != "" {
 		return config{}, errors.New("IDENTITY_PLATFORM_BOOTSTRAP_SECRET is forbidden in production runtime")

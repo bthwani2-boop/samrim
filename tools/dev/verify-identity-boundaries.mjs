@@ -393,8 +393,16 @@ for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.en
   }
 }
 const runtimeServer = read("services/identity/backend/internal/runtime/server.go");
-for (const required of ["applyMigrations", "RunDeliveryWorker", "deliveryErrCh", "IDENTITY_MIGRATION_DIR", "BTHWANI_ENV", "IDENTITY_AUTO_MIGRATE is forbidden in production", "mailpit challenge delivery is forbidden outside local environments"]) {
+for (const required of ["applyMigrations", "RunDeliveryWorker", "deliveryErrCh", "IDENTITY_MIGRATION_DIR", "BTHWANI_ENV", "IDENTITY_AUTO_MIGRATE is forbidden outside local and test environments", "mailpit challenge delivery is forbidden outside local environments"]) {
   if (!runtimeServer.includes(required)) failures.push("Identity runtime async-delivery lifecycle missing " + required);
+}
+const migrationCommand = read("services/identity/backend/cmd/migrate/main.go");
+for (const required of ["IDENTITY_MIGRATION_DATABASE_URL", "RunMigrations", "outside local environments"]) {
+  if (!migrationCommand.includes(required)) failures.push("Identity predeploy migration command missing " + required);
+}
+const schemaCommand = read("services/identity/backend/cmd/schema-verify/main.go");
+for (const required of ["IDENTITY_SCHEMA_DATABASE_URL", "VerifySchema", "outside local environments"]) {
+  if (!schemaCommand.includes(required)) failures.push("Identity exact schema verification command missing " + required);
 }
 
 

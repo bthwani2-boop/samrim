@@ -67,3 +67,15 @@ if ($pending.Count -gt 0) {
 }
 
 Write-Host "INTEGRATION_RUNTIME=PASS"
+
+$composeArgs = @(
+    "compose", "--env-file", "infra/local/compose/.env",
+    "-f", "infra/local/compose/compose.yaml", "--profile", "integration",
+    "exec", "-T", "identity", "/schema-verify"
+)
+& docker @composeArgs
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Identity exact schema verification failed"
+    exit 1
+}
+Write-Host "IDENTITY_SCHEMA_EXACT=PASS"

@@ -194,6 +194,9 @@ func Ready(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	if err := VerifyCriticalConstraints(ctx, db); err != nil {
+		return err
+	}
 	for _, legacy := range []struct{ table, column string }{
 		{"identity_actors", "username"}, {"identity_actors", "password_hash"}, {"identity_actors", "operator_context_id"}, {"identity_actors", "roles"}, {"identity_actors", "permissions"}, {"identity_actors", "status"}, {"identity_actors", "provisioning_fingerprint"}, {"identity_actors", "created_by_service"},
 		{"identity_actor_roles", "password_hash"},
