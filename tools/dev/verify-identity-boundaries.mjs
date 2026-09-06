@@ -315,10 +315,14 @@ const actorTable = migration.slice(migration.indexOf("CREATE TABLE IF NOT EXISTS
 if (actorTable.includes("password_hash") || actorTable.includes("username")) failures.push("actor row still owns credentials/username");
 
 const security = read("services/identity/backend/internal/security/values.go");
+const passwordBlocklist = read("services/identity/backend/internal/security/password_blocklist.go");
 if (!security.includes("argon2.IDKey")) failures.push("Identity password hashing is not Argon2id");
 if (security.includes("bcrypt")) failures.push("legacy bcrypt remains in Identity security implementation");
 for (const required of ["verificationCodePattern = regexp.MustCompile(\"^[0-9]{6}$\")", "activationCodePattern", "func RandomToken(byteCount int)", "RandomActivationCode()", "NormalizePassword", "PasswordAllowed"]) {
   if (!security.includes(required)) failures.push("Identity security boundary missing " + required);
+}
+for (const required of ["passwordBlocklistVersion", "commonPasswordBlocklistV1", "PasswordBlocklistVersion", "control-panel-password"]) {
+  if (!passwordBlocklist.includes(required)) failures.push("Identity local password blocklist missing " + required);
 }
 const actorService = read("services/identity/backend/internal/actor/service.go");
 for (const required of ["SELECT EXISTS(SELECT 1 FROM identity_actor_roles WHERE role='platform_owner')", "platform_owner", "activatedAt.Valid"]) {

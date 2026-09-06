@@ -151,12 +151,7 @@ func PasswordAllowed(password string) bool {
 }
 
 func isCommonPassword(password string) bool {
-	switch strings.ToLower(password) {
-	case "passwordpassword", "123456789012345", "qwertyuiopasdfg", "bthwani-password", "samrim-password":
-		return true
-	default:
-		return false
-	}
+	return passwordInBlocklist(strings.ToLower(password))
 }
 
 func VerifyPassword(encoded, password string) bool {

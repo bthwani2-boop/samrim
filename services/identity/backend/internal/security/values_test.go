@@ -77,6 +77,12 @@ func TestPasswordPolicyNormalizesUnicodeAndRejectsWeakValues(t *testing.T) {
 	if PasswordAllowed("123456789012345") {
 		t.Fatal("common password accepted")
 	}
+	if PasswordAllowed("Samrim2026Password") {
+		t.Fatal("project-specific password accepted")
+	}
+	if PasswordBlocklistVersion() == "" || len(commonPasswordBlocklistV1) < 50 {
+		t.Fatal("versioned local password blocklist is missing or too small")
+	}
 	if PasswordAllowed("short") {
 		t.Fatal("short password accepted")
 	}
@@ -95,7 +101,7 @@ func mustHashPassword(t *testing.T, password string) string {
 }
 
 func TestArgon2idPasswordHashing(t *testing.T) {
-	password := "Correct-Horse-Battery-Staple"
+	password := "River-Cedar-Lantern-Quartz"
 	hash, err := HashPassword(password)
 	if err != nil {
 		t.Fatal(err)
