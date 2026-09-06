@@ -79,7 +79,7 @@ function AccountAccessPanel() {
     try {
       const response = await identityFetch("/api/access/managed-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, role, recover }) });
       if (!response.ok) { setError(await responseMessage(response)); return; }
-      setResult(await response.json() as ManagedActivationCode); setPhone(""); setStatus(null);
+      setResult(await response.json() as ManagedActivationCode); setStatus(null);
     } catch { setError("تعذر الوصول إلى خدمات إدارة الهوية."); } finally { setBusy(false); }
   }
 
