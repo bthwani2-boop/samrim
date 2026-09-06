@@ -15,6 +15,18 @@
       "options": {
         "command": "pnpm --dir apps/app-captain typecheck"
       }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/build-mobile-app.mjs app-captain"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/test-mobile-app.mjs app-captain"
+      }
     }
   },
   "tags": [

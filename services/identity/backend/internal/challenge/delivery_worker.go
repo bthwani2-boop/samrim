@@ -46,16 +46,36 @@ func (s *Service) deliverNext(ctx context.Context)(bool,error){
 	if err:=tx.Commit();err!=nil{return false,err}
 	code,err:=s.codeFor(item.challengeID,item.purpose);if err!=nil{return true,s.finishDelivery(ctx,item,"unknown")}
 	surface,ok:=domain.SurfaceForRole(item.role);if !ok{return true,s.finishDelivery(ctx,item,"unknown")}
-	status:="sent"
-	if err:=s.sender.Send(ctx,challengedelivery.Message{Phone:item.phone,Code:code,Role:item.role,Purpose:item.purpose,Surface:surface,ExpiresAt:item.expiresAt});err!=nil{status="unknown"}
-	if err:=s.finishDelivery(ctx,item,status);err!=nil{return true,err}
-	return true,nil
+	status := "sent"
+	if err := s.sender.Send(ctx, challengedelivery.Message{Phone: item.phone, Code: code, Role: item.role, Purpose: item.purpose, Surface: surface, ExpiresAt: item.expiresAt}); err != nil {
+		var delivErr *challengedelivery.DeliveryError
+		if errors.As(err, &delivErr) {
+			status = delivErr.Status
+		} else {
+			status = "unknown"
+		}
+	}
+	if err := s.finishDelivery(ctx, item, status); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
-func (s *Service) finishDelivery(ctx context.Context,item pendingDelivery,status string)error{
-	tx,err:=s.db.BeginTx(ctx,nil);if err!=nil{return err};defer func(){_ = tx.Rollback()}()
-	if _,err:=tx.ExecContext(ctx,"UPDATE identity_challenge_deliveries SET status=$1,finished_at=clock_timestamp(),updated_at=clock_timestamp() WHERE challenge_id=$2 AND status='sending'",status,item.challengeID);err!=nil{return err}
-	outcome:="success";if status!="sent"{outcome="unknown"}
-	if err:=auditTx(ctx,tx,"challenge.delivery_"+status,item.actorID,"challenge-delivery",outcome,"",map[string]any{"role":item.role,"purpose":item.purpose,"provider":s.sender.Provider()});err!=nil{return err}
+func (s *Service) finishDelivery(ctx context.Context, item pendingDelivery, status string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenge_deliveries SET status=$1,finished_at=clock_timestamp(),updated_at=clock_timestamp() WHERE challenge_id=$2 AND status='sending'", status, item.challengeID); err != nil {
+		return err
+	}
+	outcome := "success"
+	if status != "sent" {
+		outcome = status
+	}
+	if err := auditTx(ctx, tx, "challenge.delivery_"+status, item.actorID, "challenge-delivery", outcome, "", map[string]any{"role": item.role, "purpose": item.purpose, "provider": s.sender.Provider()}); err != nil {
+		return err
+	}
 	return tx.Commit()
 }

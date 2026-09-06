@@ -17,18 +17,19 @@ var identityRuntimePrivileges = []tablePrivilegeRequirement{
 	{table: "identity_password_credentials", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
 	{table: "identity_challenges", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
 	{table: "identity_challenge_deliveries", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
-	{table: "identity_managed_activation_codes", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
+	{table: "identity_operator_enrollment_tokens", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
 	{table: "identity_sessions", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
 	{table: "identity_refresh_token_history", privileges: []string{"SELECT", "INSERT"}},
 	{table: "identity_password_attempts", privileges: []string{"SELECT", "INSERT", "UPDATE", "DELETE"}},
 	{table: "identity_security_audit", privileges: []string{"SELECT", "INSERT"}},
 	{table: "identity_schema_migrations", privileges: []string{"SELECT"}},
+	{table: "identity_bootstrap_state", privileges: []string{"SELECT", "INSERT"}},
 }
 
 var identityMaintenancePrivileges = []tablePrivilegeRequirement{
 	{table: "identity_challenge_deliveries", privileges: []string{"SELECT", "DELETE"}},
 	{table: "identity_challenges", privileges: []string{"SELECT", "DELETE"}},
-	{table: "identity_managed_activation_codes", privileges: []string{"SELECT", "DELETE"}},
+	{table: "identity_operator_enrollment_tokens", privileges: []string{"SELECT", "DELETE"}},
 	{table: "identity_password_attempts", privileges: []string{"SELECT", "DELETE"}},
 	{table: "identity_refresh_token_history", privileges: []string{"SELECT", "DELETE"}},
 	{table: "identity_sessions", privileges: []string{"SELECT", "DELETE"}},

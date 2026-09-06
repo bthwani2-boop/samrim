@@ -12,13 +12,7 @@
     "updates",
     "constants",
     "crypto",
-    "battery",
     "splashScreen",
-    "documentPicker",
-    "imagePicker",
-    "secureStore",
-    "notifications",
-    "location",
-    "maps"
+    "secureStore"
   ]
 }

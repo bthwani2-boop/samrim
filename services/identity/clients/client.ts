@@ -47,12 +47,21 @@ export type IdentityClient = Readonly<{
   logout(accessToken: string): Promise<void>;
 }>;
 
+export type MutationOptions = Readonly<{
+  expectedVersion?: number | undefined;
+  operatorActorId?: string | undefined;
+}>;
+
+export type OperatorEnrollmentToken = ManagedActivationCode;
+export type IssueOperatorEnrollmentTokenRequest = ManagedActivationCodeIssueRequest;
+
 export type IdentityInternalClient = Readonly<{
+  issueOperatorEnrollmentToken(request: IssueOperatorEnrollmentTokenRequest): Promise<OperatorEnrollmentToken>;
   issueManagedActivationCode(request: ManagedActivationCodeIssueRequest): Promise<ManagedActivationCode>;
   provisionActorRole(request: ProvisionActorRoleRequest): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
-  setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, correlationId: string, reason: string): Promise<void>;
-  setActorSecurityEnabled(actorId: string, enabled: boolean, correlationId: string, reason: string): Promise<void>;
+  setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, correlationId: string, reason: string, options?: MutationOptions): Promise<void>;
+  setActorSecurityEnabled(actorId: string, enabled: boolean, correlationId: string, reason: string, options?: MutationOptions): Promise<void>;
 }>;
 
 function normalizeBaseUrl(raw: string): string {
@@ -139,12 +148,25 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
   };
 }
 
+export function expandPath(template: string, params: Record<string, string>): string {
+  return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => {
+    const val = params[key];
+    if (val === undefined) throw new Error(`Missing path parameter: ${key}`);
+    return encodeURIComponent(val.trim());
+  });
+}
+
 export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: string, timeoutMs = 8_000): IdentityInternalClient {
   const baseUrl = normalizeBaseUrl(rawBaseUrl);
   const token = serviceToken.trim();
   if (token.length < 24) throw new Error("IDENTITY_SERVICE_TOKEN_INVALID");
 
-  async function requestNoContent(pathname: string, correlationId: string, reason: string): Promise<void> {
+  async function requestNoContent(
+    pathname: string,
+    correlationId: string,
+    reason: string,
+    options?: MutationOptions,
+  ): Promise<void> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -157,6 +179,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
             Authorization: "Bearer " + token,
             ...(correlationId.trim() ? { "X-Correlation-ID": correlationId.trim() } : {}),
             ...(reason.trim() ? { "X-Reason": reason.trim() } : {}),
+            ...(options?.expectedVersion !== undefined ? { "X-Expected-Version": String(options.expectedVersion) } : {}),
+            ...(options?.operatorActorId?.trim() ? { "X-Actor-ID": options.operatorActorId.trim() } : {}),
           },
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
           signal: controller.signal,
@@ -173,32 +197,35 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
-  return {
-    issueManagedActivationCode: async (body) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  async function issueToken(body: ManagedActivationCodeIssueRequest): Promise<ManagedActivationCode> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response: Response;
       try {
-        let response: Response;
-        try {
-          response = await fetch(resolveUrl(baseUrl, identityOperationPaths.issueManagedActivationCode.path), {
-            method: identityOperationPaths.issueManagedActivationCode.method,
-            headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
-            body: JSON.stringify(body),
-            ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
-            signal: controller.signal,
-          });
-        } catch (error) {
-          throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
-        }
-        if (!response.ok) {
-          const parsed = parseErrorPayload(await response.json().catch(() => null));
-          throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
-        }
-        return (await response.json()) as ManagedActivationCode;
-      } finally {
-        clearTimeout(timeout);
+        response = await fetch(resolveUrl(baseUrl, identityOperationPaths.issueManagedActivationCode.path), {
+          method: identityOperationPaths.issueManagedActivationCode.method,
+          headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer " + token },
+          body: JSON.stringify(body),
+          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
       }
-    },
+      if (!response.ok) {
+        const parsed = parseErrorPayload(await response.json().catch(() => null));
+        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+      }
+      return (await response.json()) as ManagedActivationCode;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return {
+    issueOperatorEnrollmentToken: issueToken,
+    issueManagedActivationCode: issueToken,
     provisionActorRole: async (body) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -250,15 +277,23 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
-    setActorRoleEnabled: (actorId, role, enabled, correlationId, reason) => requestNoContent(
-      "/internal/actors/" + encodeURIComponent(actorId.trim()) + "/roles/" + encodeURIComponent(role) + "/" + (enabled ? "enable" : "disable"),
-      correlationId,
-      reason,
-    ),
-    setActorSecurityEnabled: (actorId, enabled, correlationId, reason) => requestNoContent(
-      "/internal/actors/" + encodeURIComponent(actorId.trim()) + "/security/" + (enabled ? "enable" : "disable"),
-      correlationId,
-      reason,
-    ),
+    setActorRoleEnabled: (actorId, role, enabled, correlationId, reason, options) => {
+      const op = enabled ? identityOperationPaths.enableActorRole : identityOperationPaths.disableActorRole;
+      return requestNoContent(
+        expandPath(op.path, { actorId, role }),
+        correlationId,
+        reason,
+        options,
+      );
+    },
+    setActorSecurityEnabled: (actorId, enabled, correlationId, reason, options) => {
+      const op = enabled ? identityOperationPaths.enableActorSecurity : identityOperationPaths.disableActorSecurity;
+      return requestNoContent(
+        expandPath(op.path, { actorId }),
+        correlationId,
+        reason,
+        options,
+      );
+    },
   };
 }

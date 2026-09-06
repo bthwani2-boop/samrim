@@ -59,7 +59,7 @@ platform_owner → control-panel
 
 A session is bound to one actor and one role. It does not carry every role held by the human.
 
-Customer self-service may establish only the `client` role after proving phone possession and registering a client credential. DSH provisions partner/captain/field role admission; those governed roles use one-time activation only after admission exists. Platform Control provisions the authorized `platform_owner` bootstrap and `operator` role admission; an operator consumes a phone-bound activation code before first access, while both control-panel roles require password plus a second factor/challenge for normal access.
+Customer self-service may establish only the `client` role after proving phone possession and registering a client credential. DSH provisions partner/captain/field role admission; those governed roles perform initial activation through phone verification and password enrollment. Platform Control provisions the authorized `platform_owner` bootstrap and `operator` role admission; an operator consumes an operator enrollment token before first access, while both control-panel roles require password plus a second factor/challenge for normal access.
 
 `actor_id` is the permanent cross-boundary human identifier. Phone is a mutable verified identifier, not the primary identity key; username is optional and must not exist merely as an authentication convention without Product need.
 
@@ -106,7 +106,7 @@ Performs DSH-assigned field/onboarding/verification tasks. Field participant sta
 Authenticates through the operator Identity role and acts only through exact server-side permissions/scopes owned by the applicable administration/domain capability.
 
 ### Platform owner
-Authenticates through the `platform_owner` Identity role and is the human control-panel authority allowed to provision employees and issue role-bound activation codes. This role does not become a generic permissions blob; each protected capability still owns its exact duties and approval separation.
+Authenticates through the `platform_owner` Identity role and is the human control-panel authority allowed to provision employees and issue operator enrollment tokens. This role does not become a generic permissions blob; each protected capability still owns its exact duties and approval separation.
 
 ## Approval and separation of duties
 

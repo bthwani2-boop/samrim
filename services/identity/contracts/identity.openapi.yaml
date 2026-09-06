@@ -101,7 +101,7 @@ paths:
     post:
       tags: [managed-auth]
       operationId: requestManagedActivation
-      description: Validates a one-time activation code issued by an authorized control surface, then requests a separate phone-verification challenge. The two proofs are distinct and neither grants role admission.
+      description: For operator roles, validates the one-time operator enrollment token issued by platform control, then requests a phone-verification challenge. For partner/captain/field roles, requests a phone-verification challenge directly for an admitted role. Neither grants role admission.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedChallengeRequest" } } }
@@ -116,7 +116,7 @@ paths:
     post:
       tags: [managed-auth]
       operationId: activateManagedRole
-      description: Consumes the one-time control-surface activation code and the separate phone-verification challenge, creates the role-scoped password credential, permanently records that enrollment, and creates the first role-scoped device-bound session. Repeated activation is not normal login.
+      description: Consumes the phone-verification challenge (and operator enrollment token for operator roles), creates the role-scoped password credential, permanently records that initial activation, and creates the first role-scoped device-bound session. Repeated activation is not normal login.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationRequest" } } }
@@ -264,7 +264,7 @@ paths:
       tags: [internal-actor-roles]
       operationId: issueManagedActivationCode
       security: [{ internalServiceToken: [] }]
-      description: Issues a single-use activation code for an already admitted, enabled partner/captain/field/operator role. The code is returned once, stored only as a digest, and never creates or grants a role.
+      description: Issues a single-use enrollment token for an already admitted, enabled operator role. The token is returned once, stored only as a digest, and never creates or grants a role.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationCodeIssueRequest" } } }

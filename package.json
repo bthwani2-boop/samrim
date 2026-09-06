@@ -16,7 +16,6 @@
     "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
     "control": "pnpm --dir apps/control-panel dev",
     "dsh": "nx run dsh:serve",
-    "wlt": "nx run wlt:serve",
     "identity": "nx run identity:serve",
     "nx:projects": "nx show projects",
     "workspace:typecheck": "nx run-many -t typecheck --all --outputStyle=stream",

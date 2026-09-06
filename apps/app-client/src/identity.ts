@@ -3,8 +3,7 @@ import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 
 import {
-  createIdentityClient,
-  IdentitySessionManager,
+  createMobileIdentityRuntime,
   type IdentityClient,
   type IdentitySessionState,
 } from "@bthwani/identity";
@@ -12,108 +11,58 @@ import {
 const role = "client" as const;
 const surface = "app-client" as const;
 const namespace = "bthwani.client";
-const deviceKey = namespace + ".identity.device.v1";
 
-const secureStorage = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
-  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
-  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
-};
+const runtime = createMobileIdentityRuntime({
+  role,
+  surface,
+  namespace,
+  secureStorage: {
+    getItem: (key) => SecureStore.getItemAsync(key),
+    setItem: (key, value) => SecureStore.setItemAsync(key, value),
+    removeItem: (key) => SecureStore.deleteItemAsync(key),
+  },
+  cryptoRandomUUID: () => Crypto.randomUUID(),
+  getExpoHostUri: () => (Constants.expoConfig as { hostUri?: string } | null)?.hostUri,
+  explicitApiUrl: process.env.EXPO_PUBLIC_IDENTITY_API_URL,
+});
 
-let clientValue: IdentityClient | null = null;
-let sessionValue: IdentitySessionManager | null = null;
-
-function configuredEnvironmentUrl(): string | undefined {
-  const value = process.env.EXPO_PUBLIC_IDENTITY_API_URL?.trim();
-  if (!value) return undefined;
-  if (process.env.NODE_ENV === "development" && /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3})(?::|\/|$)/i.test(value)) return undefined;
-  return value;
-}
-
-function developmentHostUrl(): string | undefined {
-  const expoConfig = Constants.expoConfig as (typeof Constants.expoConfig & { hostUri?: string }) | null;
-  const raw = expoConfig?.hostUri?.trim();
-  if (!raw) return undefined;
-  const normalized = raw.replace(/^[a-z]+:\/\//i, "");
-  const host = normalized.startsWith("[") ? normalized.slice(0, normalized.indexOf("]") + 1) : normalized.split(":")[0];
-  return host ? "http://" + host + ":18082" : undefined;
-}
-
-function identityBaseUrl(): string {
-  const explicit = configuredEnvironmentUrl();
-  if (explicit) {
-    if (process.env.NODE_ENV === "production" && explicit.startsWith("http://")) throw new Error("IDENTITY_BASE_URL_HTTPS_REQUIRED");
-    return explicit;
-  }
-  if (process.env.NODE_ENV !== "development") throw new Error("IDENTITY_BASE_URL_REQUIRED_IN_PRODUCTION");
-  const development = developmentHostUrl();
-  if (development) return development;
-  throw new Error("IDENTITY_BASE_URL_UNAVAILABLE");
-}
-
-async function deviceFingerprint(): Promise<string> {
-  const existing = (await SecureStore.getItemAsync(deviceKey))?.trim();
-  if (existing && existing.length >= 8) return existing;
-  const created = Crypto.randomUUID();
-  await SecureStore.setItemAsync(deviceKey, created);
-  return created;
-}
-
-function identityClient(): IdentityClient {
-  clientValue ??= createIdentityClient(identityBaseUrl());
-  return clientValue;
-}
-
-function identitySession(): IdentitySessionManager {
-  sessionValue ??= new IdentitySessionManager(identityClient(), secureStorage, deviceFingerprint, role, surface, namespace);
-  return sessionValue;
-}
-
-export function restoreIdentitySession(): Promise<IdentitySessionState> {
-  return identitySession().restore();
-}
+export const restoreIdentitySession = runtime.restoreIdentitySession;
+export const currentIdentityState = runtime.currentIdentityState;
+export const logoutIdentity = runtime.logoutIdentity;
 
 export function requestClientRegistration(phone: string) {
-  return identityClient().requestClientRegistration({ phone });
+  return runtime.identityClient().requestClientRegistration({ phone });
 }
 
 export async function registerClient(phone: string, code: string, password: string): Promise<IdentitySessionState> {
-  const pair = await identityClient().registerClient({
+  const pair = await runtime.identityClient().registerClient({
     phone,
     code,
     password,
-    deviceFingerprint: await deviceFingerprint(),
+    deviceFingerprint: await runtime.deviceFingerprint(),
   });
-  return identitySession().adopt(pair);
+  return runtime.identitySession().adopt(pair);
 }
 
 export async function loginClient(phone: string, password: string): Promise<IdentitySessionState> {
-  const pair = await identityClient().loginClient({
+  const pair = await runtime.identityClient().loginClient({
     phone,
     password,
-    deviceFingerprint: await deviceFingerprint(),
+    deviceFingerprint: await runtime.deviceFingerprint(),
   });
-  return identitySession().adopt(pair);
+  return runtime.identitySession().adopt(pair);
 }
 
 export function requestClientRecovery(phone: string) {
-  return identityClient().requestClientRecovery({ phone });
+  return runtime.identityClient().requestClientRecovery({ phone });
 }
 
 export async function recoverClient(phone: string, code: string, password: string): Promise<IdentitySessionState> {
-  const pair = await identityClient().recoverClient({
+  const pair = await runtime.identityClient().recoverClient({
     phone,
     code,
     password,
-    deviceFingerprint: await deviceFingerprint(),
+    deviceFingerprint: await runtime.deviceFingerprint(),
   });
-  return identitySession().adopt(pair);
-}
-
-export function logoutIdentity(): Promise<void> {
-  return identitySession().logout();
-}
-
-export function currentIdentityState(): IdentitySessionState {
-  return identitySession().state;
+  return runtime.identitySession().adopt(pair);
 }

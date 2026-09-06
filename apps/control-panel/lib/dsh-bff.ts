@@ -1,4 +1,4 @@
-import type { ActorRoleView, ManagedActivationRole } from "@bthwani/identity";
+import { validateServiceUrl, type ActorRoleView, type ManagedActivationRole } from "@bthwani/identity";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -12,6 +12,7 @@ export type ManagedRoleStatus = Readonly<{
   activated: boolean;
   securityEnabled: boolean;
   recoverable: boolean;
+  state?: string;
   role: "partner" | "captain" | "field";
 }>;
 
@@ -20,8 +21,11 @@ const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "fiel
 function dshBaseUrl(): string {
   const explicit = process.env.DSH_API_BASE_URL?.trim();
   if (explicit) {
-    if (process.env.NODE_ENV === "production" && explicit.startsWith("http://")) throw { kind: "config", message: "dsh service must use HTTPS" } satisfies DshClientError;
-    return explicit.replace(/\/+$/, "");
+    try {
+      return validateServiceUrl(explicit, "DSH_API_BASE_URL");
+    } catch {
+      throw { kind: "config", message: "dsh service must use HTTPS" } satisfies DshClientError;
+    }
   }
   if (process.env.NODE_ENV === "development") return "http://127.0.0.1:58080";
   throw { kind: "config", message: "dsh service configuration is incomplete" } satisfies DshClientError;
@@ -148,7 +152,14 @@ export async function authorizeManagedReenrollment(phone: string, role: "partner
   }
 }
 
-export async function setManagedRoleEnabled(phone: string, role: "partner" | "captain" | "field", enabled: boolean, reason: string, correlationId: string): Promise<void> {
+export async function setManagedRoleEnabled(
+  phone: string,
+  role: "partner" | "captain" | "field",
+  enabled: boolean,
+  reason: string,
+  correlationId: string,
+  options?: { operatorActorId?: string; expectedVersion?: number },
+): Promise<void> {
   if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
   const baseUrl = dshBaseUrl();
   const token = dshToken();
@@ -157,9 +168,21 @@ export async function setManagedRoleEnabled(phone: string, role: "partner" | "ca
   try {
     let response: Response;
     try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        "X-Correlation-ID": correlationId,
+      };
+      if (options?.operatorActorId?.trim()) {
+        headers["X-Actor-ID"] = options.operatorActorId.trim();
+      }
+      if (options?.expectedVersion !== undefined && options.expectedVersion > 0) {
+        headers["X-Expected-Version"] = String(options.expectedVersion);
+      }
       response = await fetch(`${baseUrl}/dsh/managed-roles/${enabled ? "enable" : "disable"}`, {
         method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${token}`, "X-Correlation-ID": correlationId },
+        headers,
         body: JSON.stringify({ phoneE164: phone, role, reason }),
         signal: controller.signal,
       });

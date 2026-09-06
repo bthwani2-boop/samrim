@@ -138,7 +138,7 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 			if err := tx.Commit(); err != nil {
 				return domain.TokenPair{}, err
 			}
-			return domain.TokenPair{}, domain.ErrInvalidRefresh
+			return domain.TokenPair{}, domain.ErrRefreshStale
 		}
 		if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=clock_timestamp(),compromised_at=clock_timestamp(),version=version+1 WHERE id=$1", sessionID); err != nil {
 			return domain.TokenPair{}, err

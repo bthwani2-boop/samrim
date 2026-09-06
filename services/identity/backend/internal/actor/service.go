@@ -74,6 +74,11 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM identity_actor_roles WHERE role='platform_owner')").Scan(&exists); err != nil {
 			return domain.ActorRoleView{}, err
 		}
+		if !exists {
+			if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state)").Scan(&exists); err != nil {
+				return domain.ActorRoleView{}, err
+			}
+		}
 		if exists {
 			return domain.ActorRoleView{}, domain.ErrConflict
 		}
@@ -113,6 +118,11 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		}
 		if _, err := tx.ExecContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,$2,true,"+activatedAtValue+",1)", a.ID, role); err != nil {
 			return domain.ActorRoleView{}, err
+		}
+		if role == "platform_owner" {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO identity_bootstrap_state(id,platform_owner_actor_id) VALUES(1,$1)", a.ID); err != nil {
+				return domain.ActorRoleView{}, err
+			}
 		}
 		enabled, roleVersion, roleCreated = true, 1, true
 		if err := auditTx(ctx, tx, "actor_role.provisioned", a.ID, caller, "success", "", map[string]any{"role": role}); err != nil {
@@ -293,7 +303,7 @@ WHERE r.actor_id=$1 AND r.role=$2 FOR UPDATE OF r,a`, actorID, role).Scan(&enabl
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_actor_roles SET activated_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2", actorID, role); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_managed_activation_codes SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return err
 	}
 	return auditTx(ctx, tx, "actor_role.activated", actorID, actorID, "success", "", map[string]any{"role": role})
@@ -484,9 +494,14 @@ func (s *Service) SetRoleEnabled(ctx context.Context, caller, actorID, role stri
 }
 
 func (s *Service) SetRoleEnabledWithReason(ctx context.Context, caller, actorID, role string, enabled bool, correlationID, reason string) error {
+	return s.SetRoleEnabledWithContext(ctx, caller, actorID, role, enabled, correlationID, reason, 0, "")
+}
+
+func (s *Service) SetRoleEnabledWithContext(ctx context.Context, caller, actorID, role string, enabled bool, correlationID, reason string, expectedVersion int, operatorActorID string) error {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
 	role = strings.ToLower(strings.TrimSpace(role))
+	operatorActorID = strings.TrimSpace(operatorActorID)
 	if actorID == "" || !domain.CanSetRoleEnabled(caller, role) || len(strings.TrimSpace(reason)) > 500 {
 		return domain.ErrForbidden
 	}
@@ -496,12 +511,16 @@ func (s *Service) SetRoleEnabledWithReason(ctx context.Context, caller, actorID,
 	}
 	defer func() { _ = tx.Rollback() }()
 	var current bool
-	err = tx.QueryRowContext(ctx, "SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE", actorID, role).Scan(&current)
+	var currentVersion int
+	err = tx.QueryRowContext(ctx, "SELECT enabled, version FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE", actorID, role).Scan(&current, &currentVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrNotFound
 	}
 	if err != nil {
 		return err
+	}
+	if expectedVersion > 0 && currentVersion != expectedVersion {
+		return domain.ErrConflict
 	}
 	if current == enabled {
 		return tx.Commit()
@@ -516,11 +535,17 @@ func (s *Service) SetRoleEnabledWithReason(ctx context.Context, caller, actorID,
 		if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_managed_activation_codes SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 			return err
 		}
 	}
-	if err := auditTx(ctx, tx, "actor_role.enabled_changed", actorID, caller, "success", correlationID, map[string]any{"role": role, "enabled": enabled, "reason": strings.TrimSpace(reason)}); err != nil {
+	auditPrincipal := caller
+	meta := map[string]any{"role": role, "enabled": enabled, "reason": strings.TrimSpace(reason), "workload": caller}
+	if operatorActorID != "" {
+		auditPrincipal = caller + ":" + operatorActorID
+		meta["operatorActorId"] = operatorActorID
+	}
+	if err := auditTx(ctx, tx, "actor_role.enabled_changed", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -558,7 +583,7 @@ func (s *Service) AuthorizeReenrollment(ctx context.Context, caller, actorID, ro
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_managed_activation_codes SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return err
 	}
 	if err := auditTx(ctx, tx, "actor_role.reenrollment_authorized", actorID, caller, "success", correlationID, map[string]any{"role": role}); err != nil {
@@ -572,8 +597,13 @@ func (s *Service) SetSecurityEnabled(ctx context.Context, caller, actorID string
 }
 
 func (s *Service) SetSecurityEnabledWithReason(ctx context.Context, caller, actorID string, enabled bool, correlationID, reason string) error {
+	return s.SetSecurityEnabledWithContext(ctx, caller, actorID, enabled, correlationID, reason, 0, "")
+}
+
+func (s *Service) SetSecurityEnabledWithContext(ctx context.Context, caller, actorID string, enabled bool, correlationID, reason string, expectedVersion int, operatorActorID string) error {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
 	if caller != "platform-control" || actorID == "" || len(strings.TrimSpace(reason)) > 500 {
 		return domain.ErrForbidden
 	}
@@ -583,13 +613,17 @@ func (s *Service) SetSecurityEnabledWithReason(ctx context.Context, caller, acto
 	}
 	defer func() { _ = tx.Rollback() }()
 	var current, hasPlatformOwner bool
-	err = tx.QueryRowContext(ctx, `SELECT a.security_enabled,EXISTS(SELECT 1 FROM identity_actor_roles r WHERE r.actor_id=a.id AND r.role='platform_owner')
-FROM identity_actors a WHERE a.id=$1 FOR UPDATE`, actorID).Scan(&current, &hasPlatformOwner)
+	var currentVersion int
+	err = tx.QueryRowContext(ctx, `SELECT a.security_enabled, a.version, EXISTS(SELECT 1 FROM identity_actor_roles r WHERE r.actor_id=a.id AND r.role='platform_owner')
+FROM identity_actors a WHERE a.id=$1 FOR UPDATE`, actorID).Scan(&current, &currentVersion, &hasPlatformOwner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrNotFound
 	}
 	if err != nil {
 		return err
+	}
+	if expectedVersion > 0 && currentVersion != expectedVersion {
+		return domain.ErrConflict
 	}
 	if hasPlatformOwner && !enabled {
 		return domain.ErrForbidden
@@ -607,11 +641,17 @@ FROM identity_actors a WHERE a.id=$1 FOR UPDATE`, actorID).Scan(&current, &hasPl
 		if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND status='pending'", actorID); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_managed_activation_codes SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND status='pending'", actorID); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND status='pending'", actorID); err != nil {
 			return err
 		}
 	}
-	if err := auditTx(ctx, tx, "actor.security_enabled_changed", actorID, caller, "success", correlationID, map[string]any{"securityEnabled": enabled, "reason": strings.TrimSpace(reason)}); err != nil {
+	auditPrincipal := caller
+	meta := map[string]any{"securityEnabled": enabled, "reason": strings.TrimSpace(reason), "workload": caller}
+	if operatorActorID != "" {
+		auditPrincipal = caller + ":" + operatorActorID
+		meta["operatorActorId"] = operatorActorID
+	}
+	if err := auditTx(ctx, tx, "actor.security_enabled_changed", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
 		return err
 	}
 	return tx.Commit()

@@ -51,7 +51,7 @@ for (const [name, value, minimum] of [
 if (dshToken === platformToken) fail("internal service tokens must be distinct");
 
 const composeFile = path.join(root, "infra/local/compose/compose.yaml");
-const composeArgs = ["compose", "--env-file", envFile, "-f", composeFile, "--profile", "foundation"];
+const composeArgs = ["compose", "--env-file", envFile, "-f", composeFile, "--profile", "integration"];
 function compose(...args) {
   return execFileSync("docker", [...composeArgs, ...args], { encoding: "utf8" });
 }
@@ -131,6 +131,22 @@ async function request(method, pathname, options = {}) {
 async function expect(method, pathname, expectedStatus, options = {}) {
   const response = await request(method, pathname, options);
   if (response.status !== expectedStatus) {
+    if (response.status === 429 && expectedStatus !== 429) {
+      try {
+        const phoneArg = options.body?.phone || options.body?.phoneE164 || "";
+        const roleArg = options.body?.role || "";
+        const diagPhone = sqlLiteral(phoneArg);
+        const diagRole = sqlLiteral(roleArg);
+        const phoneChallenges = sql("SELECT count(*) FROM identity_challenges WHERE phone_e164='" + diagPhone + "' AND created_at>clock_timestamp()-interval '15 minutes'");
+        const sourceChallenges = sql("SELECT count(*) FROM identity_challenges WHERE request_ip_hash=encode(digest('client-ip' || '" + sqlLiteral(runtimeSourceIp) + "' || '" + sqlLiteral(abuseSecret) + "', 'sha256'), 'hex') AND created_at>clock_timestamp()-interval '15 minutes'");
+        const phoneAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE phone_e164='" + diagPhone + "' AND role='" + diagRole + "' AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'");
+        const sourceAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE ip_hash=encode(digest('client-ip' || '" + sqlLiteral(runtimeSourceIp) + "' || '" + sqlLiteral(abuseSecret) + "', 'sha256'), 'hex') AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'");
+        const reservedAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE reserved=true AND created_at>clock_timestamp()-interval '15 minutes'");
+        console.error("DIAGNOSTIC_RATE_LIMIT_COUNTERS: phoneChallenges=" + phoneChallenges + " sourceChallenges=" + sourceChallenges + " phoneAttempts=" + phoneAttempts + " sourceAttempts=" + sourceAttempts + " reservedAttempts=" + reservedAttempts);
+      } catch (diagErr) {
+        console.error("DIAGNOSTIC_QUERY_FAILED: " + diagErr.message);
+      }
+    }
     fail(method + " " + pathname + " returned " + response.status +
       ", expected " + expectedStatus + "; body=" + JSON.stringify(response.body));
   }

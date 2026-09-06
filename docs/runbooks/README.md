@@ -22,29 +22,6 @@ If a runbook conflicts with executable behavior, fix the runbook unless the exec
 ### Access
 - `access/identity.md`
 
-### Commerce
-- `commerce/client-addresses.md`
-- `commerce/stores.md`
-- `commerce/orders.md`
-- `commerce/catalog-promotions-ratings.md`
-- `commerce/special-requests-and-support.md`
-
-### Partner
-- `partner/partner-onboarding.md`
-
-### Fulfillment
-- `fulfillment/dispatch.md`
-
-### Communications
-- `communications/communications-and-media.md`
-
-### Finance
-- `finance/checkout-wlt.md`
-- `finance/payments.md`
-- `finance/wallet-reconciliation.md`
-- `finance/settlements-and-payouts.md`
-- `finance/provider-unknown-outcomes.md`
-
 ### Platform
 - `platform/systemic-platform-recovery.md`
 

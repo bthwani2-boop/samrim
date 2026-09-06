@@ -28,6 +28,6 @@ export const typography = {
   code: { fontSize: 13, lineHeight: 19, fontWeight: fontWeights.medium, letterSpacing: 0 }
 } as const;
 
-export type TypographyRole = keyof typeof typography | "labelLg" | "labelMd" | "bodyMd" | "headingSm" | undefined;
+export type TypographyRole = keyof typeof typography;
 export type FontFamilyToken = keyof typeof fontFamilies;
 export type FontWeightToken = keyof typeof fontWeights;

@@ -20,7 +20,23 @@ if (!nodeVersion || nodeVersion !== nodeVersionFile) failures.push("Node pin mis
 if (!pnpmVersion || pnpmVersion !== packageJson.engines?.pnpm) failures.push("pnpm pin mismatch between packageManager and engines.pnpm");
 if (!packageJson.engines?.node?.includes(nodeVersion)) failures.push("engines.node does not admit pinned Node " + nodeVersion);
 if (!goVersion) failures.push("go.work missing Go version");
-for (const mod of ["services/identity/backend/go.mod", "services/dsh/backend/go.mod", "services/wlt/backend/go.mod"]) {
+
+function findGoMods(dir) {
+  const results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === ".git") continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...findGoMods(full));
+    } else if (entry.name === "go.mod") {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+const allGoMods = findGoMods(root).map((f) => path.relative(root, f).replace(/\\/g, "/"));
+for (const mod of allGoMods) {
   const version = read(mod).match(/^go\s+(\S+)\s*$/m)?.[1];
   if (version !== goVersion) failures.push(mod + " Go version differs from go.work");
 }

@@ -5,7 +5,9 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	identityboundary "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityboundary"
@@ -40,6 +42,7 @@ type roleStatusResponse struct {
 	Activated       bool   `json:"activated"`
 	SecurityEnabled bool   `json:"securityEnabled"`
 	Recoverable     bool   `json:"recoverable"`
+	State           string `json:"state"`
 	Role            string `json:"role"`
 }
 
@@ -84,13 +87,31 @@ func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) && identityErr.Status == http.StatusNotFound {
-			writeRoleStatus(w, roleStatusResponse{Role: role, Recoverable: true})
+			writeRoleStatus(w, roleStatusResponse{Role: role, Exists: false, Recoverable: false, State: "not_provisioned"})
 			return
 		}
 		writeIdentityError(w, err)
 		return
 	}
-	writeRoleStatus(w, roleStatusResponse{ActorID: view.ActorID, Exists: true, Enabled: view.Enabled, Activated: view.ActivatedAt != nil, SecurityEnabled: view.SecurityEnabled, Recoverable: view.Enabled && view.ActivatedAt != nil, Role: role})
+	canonicalState := "active"
+	if !view.SecurityEnabled {
+		canonicalState = "identity_disabled"
+	} else if !view.Enabled {
+		canonicalState = "role_disabled"
+	} else if view.ActivatedAt == nil {
+		canonicalState = "pending_activation"
+	}
+	isRecoverable := view.Enabled && view.SecurityEnabled && view.ActivatedAt != nil
+	writeRoleStatus(w, roleStatusResponse{
+		ActorID:         view.ActorID,
+		Exists:          true,
+		Enabled:         view.Enabled,
+		Activated:       view.ActivatedAt != nil,
+		SecurityEnabled: view.SecurityEnabled,
+		Recoverable:     isRecoverable,
+		State:           canonicalState,
+		Role:            role,
+	})
 }
 
 func (s *Server) disableByPhone(w http.ResponseWriter, r *http.Request) {
@@ -105,10 +126,7 @@ func (s *Server) setEnabledByPhone(w http.ResponseWriter, r *http.Request, enabl
 		return
 	}
 	var input roleStateRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164, role, and reason are required")
+	if !decodeJSON(w, r, &input) {
 		return
 	}
 	role := strings.ToLower(strings.TrimSpace(input.Role))
@@ -118,7 +136,14 @@ func (s *Server) setEnabledByPhone(w http.ResponseWriter, r *http.Request, enabl
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164, managed role, and a reason of 5 to 500 characters are required")
 		return
 	}
-	if err := s.identity.SetRoleEnabledByPhone(r.Context(), phone, role, enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason); err != nil {
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	expectedVersion := 0
+	if rawVer := strings.TrimSpace(r.Header.Get("X-Expected-Version")); rawVer != "" {
+		if v, err := strconv.Atoi(rawVer); err == nil && v > 0 {
+			expectedVersion = v
+		}
+	}
+	if err := s.identity.SetRoleEnabledByPhoneWithContext(r.Context(), phone, role, enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), reason, operatorActorID, expectedVersion); err != nil {
 		writeIdentityError(w, err)
 		return
 	}
@@ -133,10 +158,7 @@ func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input provisionRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164 and role are required")
+	if !decodeJSON(w, r, &input) {
 		return
 	}
 	role := strings.ToLower(strings.TrimSpace(input.Role))
@@ -182,10 +204,7 @@ func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input reenrollmentRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "role is required")
+	if !decodeJSON(w, r, &input) {
 		return
 	}
 	role := strings.ToLower(strings.TrimSpace(input.Role))
@@ -211,10 +230,7 @@ func (s *Server) reenrollByPhone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input phoneReenrollmentRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "phoneE164 and role are required")
+	if !decodeJSON(w, r, &input) {
 		return
 	}
 	role := strings.ToLower(strings.TrimSpace(input.Role))
@@ -269,3 +285,20 @@ func writeRoleStatus(w http.ResponseWriter, status roleStatusResponse) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(status)
 }
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body is invalid")
+		return false
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "request body must contain exactly one JSON value")
+		return false
+	}
+	return true
+}
+

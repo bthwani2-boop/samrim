@@ -57,13 +57,16 @@ var identitySchemaConstraints = []schemaConstraint{
 	{table: "identity_challenge_deliveries", name: "identity_challenge_deliveries_pkey", definition: "PRIMARY KEY (challenge_id)", critical: true},
 	{table: "identity_challenge_deliveries", name: "identity_challenge_delivery_attempts_check", definition: "CHECK (((attempts >= 0) AND (attempts <= 1)))", critical: true},
 	{table: "identity_challenge_deliveries", name: "identity_challenge_delivery_provider_check", definition: "CHECK (((provider)::text <> ''::text))", critical: true},
-	{table: "identity_challenge_deliveries", name: "identity_challenge_delivery_status_check", definition: "CHECK (((status)::text = ANY ((ARRAY['suppressed'::character varying, 'pending'::character varying, 'sending'::character varying, 'sent'::character varying, 'unknown'::character varying, 'expired'::character varying])::text[])))", critical: true},
-	{table: "identity_managed_activation_codes", name: "identity_managed_activation_code_attempts_check", definition: "CHECK (((attempts >= 0) AND (attempts <= 5)))", critical: true},
-	{table: "identity_managed_activation_codes", name: "identity_managed_activation_code_consumed_check", definition: "CHECK (((((status)::text = 'consumed'::text) AND (consumed_at IS NOT NULL)) OR (((status)::text <> 'consumed'::text) AND (consumed_at IS NULL))))", critical: true},
-	{table: "identity_managed_activation_codes", name: "identity_managed_activation_code_role_check", definition: "CHECK (((role)::text = ANY ((ARRAY['partner'::character varying, 'captain'::character varying, 'field'::character varying, 'operator'::character varying])::text[])))", critical: true},
-	{table: "identity_managed_activation_codes", name: "identity_managed_activation_code_status_check", definition: "CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'consumed'::character varying, 'revoked'::character varying, 'expired'::character varying, 'locked'::character varying])::text[])))", critical: true},
-	{table: "identity_managed_activation_codes", name: "identity_managed_activation_codes_actor_id_role_fkey", definition: "FOREIGN KEY (actor_id, role) REFERENCES identity_actor_roles(actor_id, role) ON DELETE CASCADE", critical: true},
-	{table: "identity_managed_activation_codes", name: "identity_managed_activation_codes_pkey", definition: "PRIMARY KEY (id)", critical: true},
+	{table: "identity_challenge_deliveries", name: "identity_challenge_delivery_status_check", definition: "CHECK (((status)::text = ANY ((ARRAY['suppressed'::character varying, 'pending'::character varying, 'sending'::character varying, 'sent'::character varying, 'failed'::character varying, 'rejected'::character varying, 'unknown'::character varying, 'expired'::character varying])::text[])))", critical: true},
+	{table: "identity_operator_enrollment_tokens", name: "identity_managed_activation_code_attempts_check", definition: "CHECK (((attempts >= 0) AND (attempts <= 5)))", critical: true},
+	{table: "identity_operator_enrollment_tokens", name: "identity_managed_activation_code_consumed_check", definition: "CHECK (((((status)::text = 'consumed'::text) AND (consumed_at IS NOT NULL)) OR (((status)::text <> 'consumed'::text) AND (consumed_at IS NULL))))", critical: true},
+	{table: "identity_operator_enrollment_tokens", name: "identity_operator_enrollment_token_role_check", definition: "CHECK (((role)::text = 'operator'::text))", critical: true},
+	{table: "identity_operator_enrollment_tokens", name: "identity_managed_activation_code_status_check", definition: "CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'consumed'::character varying, 'revoked'::character varying, 'expired'::character varying, 'locked'::character varying])::text[])))", critical: true},
+	{table: "identity_operator_enrollment_tokens", name: "identity_managed_activation_codes_actor_id_role_fkey", definition: "FOREIGN KEY (actor_id, role) REFERENCES identity_actor_roles(actor_id, role) ON DELETE CASCADE", critical: true},
+	{table: "identity_operator_enrollment_tokens", name: "identity_operator_enrollment_tokens_pkey", definition: "PRIMARY KEY (id)", critical: true},
+	{table: "identity_bootstrap_state", name: "identity_bootstrap_state_pkey", definition: "PRIMARY KEY (id)", critical: true},
+	{table: "identity_bootstrap_state", name: "identity_bootstrap_state_single_row", definition: "CHECK ((id = 1))", critical: true},
+	{table: "identity_bootstrap_state", name: "identity_bootstrap_state_platform_owner_actor_id_fkey", definition: "FOREIGN KEY (platform_owner_actor_id) REFERENCES identity_actors(id) ON DELETE RESTRICT", critical: true},
 }
 
 func VerifyCriticalConstraints(ctx context.Context, db *sql.DB) error {

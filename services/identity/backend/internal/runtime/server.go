@@ -237,7 +237,11 @@ func loadConfig(defaultPort string) (config, error) {
 		return config{}, errors.New("IDENTITY_CORS_ALLOWED_ORIGINS is empty")
 	}
 	trustedProxies := make([]*net.IPNet, 0)
-	for _, proxy := range strings.Split(os.Getenv("IDENTITY_TRUSTED_PROXY_IPS"), ",") {
+	rawProxies := os.Getenv("IDENTITY_TRUSTED_PROXY_IPS")
+	if strings.TrimSpace(rawProxies) == "" && (runtimeEnvironment == "local" || runtimeEnvironment == "test" || runtimeEnvironment == "development") {
+		rawProxies = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+	}
+	for _, proxy := range strings.Split(rawProxies, ",") {
 		proxy = strings.TrimSpace(proxy)
 		if proxy == "" {
 			continue

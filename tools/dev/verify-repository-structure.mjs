@@ -111,7 +111,7 @@ for (const app of appNames) {
   }
 
   const isExpo = trackedSet.has(base + "mobile.config.json") || trackedSet.has(base + "app.config.ts");
-  const isNext = trackedSet.has(base + "next.config.ts") || trackedSet.has(base + "next.config.js");
+  const isNext = trackedSet.has(base + "next.config.ts") || trackedSet.has(base + "next.config.js") || trackedSet.has(base + "next.config.mjs");
 
   if (isExpo) {
     for (const relative of [
@@ -131,10 +131,11 @@ for (const app of appNames) {
   }
 
   if (isNext) {
+    const hasNextConfig = trackedSet.has(base + "next.config.ts") || trackedSet.has(base + "next.config.js") || trackedSet.has(base + "next.config.mjs");
+    assert(hasNextConfig, app + " missing Next config substrate");
     for (const relative of [
       "app/layout.tsx",
       "app/page.tsx",
-      "next.config.ts",
       "tsconfig.json",
     ]) {
       assert(trackedSet.has(base + relative), app + " missing Next host substrate: " + relative);

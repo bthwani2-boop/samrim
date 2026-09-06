@@ -11,7 +11,7 @@ Customer
   recovery: phone verification -> replace client password -> fresh session
 
 Partner / Captain / Field
-  governed role provisioning -> control-surface activation code + phone verification -> one-time activation -> device-bound session
+  governed DSH role provisioning -> phone verification + password enrollment -> initial activation -> device-bound session
   normal use: restore/rotate the existing session
   lost/revoked access: explicit DSH-authorized re-enrollment, never repeated activation as ordinary login
 
@@ -24,7 +24,7 @@ Credentials are role-scoped. Customer and operator passwords cannot authenticate
 
 Identity does not own DSH participant eligibility/assignment, partner/store membership/business scope, WLT finance, enterprise HR/personnel, a generic permissions engine, Tenant, AccessGrant, or cross-domain authorization scope.
 
-Internal service identity is resolved from the bearer service credential itself. DSH manages only partner/captain/field Identity-role admission and explicit re-enrollment authorization; Platform Control manages the authorized platform-owner bootstrap, operator role/credential intent, Identity-wide security eligibility, and issuance of a single-use phone-bound activation code for an already admitted partner/captain/field/operator role. The code cannot create or grant a role and is distinct from the phone verification challenge.
+Internal service identity is resolved from the bearer service credential itself. DSH manages only partner/captain/field Identity-role admission and explicit re-enrollment authorization; Platform Control manages the authorized platform-owner bootstrap, operator role/credential intent, Identity-wide security eligibility, and issuance of a single-use phone-bound enrollment token for an already admitted operator role. The token cannot create or grant a role and is distinct from the phone verification challenge.
 
 Refresh tokens rotate atomically and remain device-fingerprint bound. Role disable revokes that role only. The actor-level `security_enabled` flag is an Identity-wide emergency authentication kill switch and never represents domain lifecycle state.
 

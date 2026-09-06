@@ -68,11 +68,14 @@ func (c *Client) SetFieldEnabled(ctx context.Context, actorID string, enabled bo
 	return c.inner.SetRoleEnabled(ctx, actorID, "field", enabled, correlationID)
 }
 func (c *Client) SetRoleEnabledByPhone(ctx context.Context, phone, role string, enabled bool, correlationID, reason string) error {
+	return c.SetRoleEnabledByPhoneWithContext(ctx, phone, role, enabled, correlationID, reason, "", 0)
+}
+func (c *Client) SetRoleEnabledByPhoneWithContext(ctx context.Context, phone, role string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
 	view, err := c.inner.LookupRoleByPhone(ctx, role, phone)
 	if err != nil {
 		return err
 	}
-	return c.inner.SetRoleEnabledWithReason(ctx, view.ActorID, role, enabled, correlationID, reason)
+	return c.inner.SetRoleEnabledWithContext(ctx, view.ActorID, role, enabled, correlationID, reason, operatorActorID, expectedVersion)
 }
 
 func (c *Client) AuthorizePartnerReenrollment(ctx context.Context, actorID, correlationID string) error {

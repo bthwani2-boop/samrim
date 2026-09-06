@@ -128,8 +128,8 @@ WHERE id IN (
   ORDER BY c.created_at,c.id
   LIMIT $2
 )`, c.config.Challenge},
-		{"managed_activation_codes", `DELETE FROM identity_managed_activation_codes
-WHERE id IN (SELECT id FROM identity_managed_activation_codes WHERE created_at < clock_timestamp() - $1 * INTERVAL '1 second' ORDER BY created_at,id LIMIT $2)`, c.config.Activation},
+		{"operator_enrollment_tokens", `DELETE FROM identity_operator_enrollment_tokens
+WHERE id IN (SELECT id FROM identity_operator_enrollment_tokens WHERE created_at < clock_timestamp() - $1 * INTERVAL '1 second' ORDER BY created_at,id LIMIT $2)`, c.config.Activation},
 		{"password_attempts", `DELETE FROM identity_password_attempts
 WHERE id IN (SELECT id FROM identity_password_attempts WHERE created_at < clock_timestamp() - $1 * INTERVAL '1 second' ORDER BY created_at,id LIMIT $2)`, c.config.PasswordAttempt},
 		{"refresh_token_history", `DELETE FROM identity_refresh_token_history

@@ -49,7 +49,7 @@ function AccountAccessPanel() {
   const [role, setRole] = useState<ActorType>("partner");
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
-  const [status, setStatus] = useState<{ exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType } | null>(null);
+  const [status, setStatus] = useState<{ exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string } | null>(null);
   const [result, setResult] = useState<ManagedActivationCode | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -65,7 +65,7 @@ function AccountAccessPanel() {
         const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: value, role })}`);
         if (id !== requestId.current) return;
         if (!response.ok) { setStatus(null); setError(await responseMessage(response)); return; }
-        setStatus(await response.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType });
+        setStatus(await response.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string });
       } catch { if (id === requestId.current) { setStatus(null); setError("تعذر التحقق من حالة الرقم حاليًا."); } }
     })(), 450);
     return () => window.clearTimeout(timeout);
@@ -88,11 +88,15 @@ function AccountAccessPanel() {
     if (reason.trim().length < 5) { setError("اكتب سببًا واضحًا من 5 أحرف على الأقل قبل تغيير الحالة."); return; }
     setBusy(true); setError("");
     try {
-      const response = await identityFetch("/api/access/account-control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, role, action, reason }) });
+      const response = await identityFetch("/api/access/account-control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, role, action, reason, actorId: status?.actorId }),
+      });
       if (!response.ok) { setError(await responseMessage(response)); return; }
       setReason("");
       const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
-      if (refresh.ok) setStatus(await refresh.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType });
+      if (refresh.ok) setStatus(await refresh.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string });
     } catch { setError("تعذر تحديث حالة الحساب."); } finally { setBusy(false); }
   }
 

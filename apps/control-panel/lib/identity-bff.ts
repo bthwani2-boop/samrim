@@ -12,9 +12,11 @@ import {
   type Challenge,
   type IdentityClientError,
   type ManagedActivationCode,
+  type MutationOptions,
   type ControlPanelRole,
   type RecoveryResult,
   type TokenPair,
+  validateServiceUrl,
 } from "@bthwani/identity";
 
 const cookiePrefix = process.env.NODE_ENV === "production" ? "__Host-" : "";
@@ -26,8 +28,7 @@ const refreshInFlight = new Map<string, Promise<ActorIdentity | null>>();
 function identityBaseUrl(): string {
   const explicit = process.env.IDENTITY_API_BASE_URL?.trim();
   if (explicit) {
-    if (process.env.NODE_ENV === "production" && !explicit.startsWith("https://")) throw new Error("IDENTITY_API_HTTPS_REQUIRED");
-    return explicit;
+    return validateServiceUrl(explicit, "IDENTITY_API_BASE_URL");
   }
   if (process.env.NODE_ENV === "development") return "http://127.0.0.1:18082";
   throw new Error("IDENTITY_API_BASE_URL_REQUIRED");
@@ -138,16 +139,25 @@ function missingIdentityRole(): IdentityClientError {
   return { kind: "http", status: 404, code: "NOT_FOUND", message: "identity role record not found" };
 }
 
-export async function setIdentityRoleEnabled(phone: string, role: ActorType, enabled: boolean, reason: string): Promise<void> {
+export async function setIdentityRoleEnabled(phone: string, role: ActorType, enabled: boolean, reason: string, options?: MutationOptions): Promise<void> {
   const record = await lookupIdentityRole(phone, role);
   if (!record) throw missingIdentityRole();
-  await identityInternalClient().setActorRoleEnabled(record.actorId, role, enabled, randomUUID(), reason);
+  await identityInternalClient().setActorRoleEnabled(record.actorId, role, enabled, randomUUID(), reason, options);
 }
 
-export async function setIdentitySecurityEnabled(phone: string, role: ActorType, enabled: boolean, reason: string): Promise<void> {
+export async function setActorSecurityEnabledById(actorId: string, enabled: boolean, reason: string, options?: MutationOptions): Promise<void> {
+  if (!actorId) throw missingIdentityRole();
+  await identityInternalClient().setActorSecurityEnabled(actorId, enabled, randomUUID(), reason, options);
+}
+
+export async function setIdentitySecurityEnabled(phone: string, role: ActorType, enabled: boolean, reason: string, explicitActorId?: string, options?: MutationOptions): Promise<void> {
+  if (explicitActorId) {
+    await setActorSecurityEnabledById(explicitActorId, enabled, reason, options);
+    return;
+  }
   const record = await lookupIdentityRole(phone, role);
   if (!record) throw missingIdentityRole();
-  await identityInternalClient().setActorSecurityEnabled(record.actorId, enabled, randomUUID(), reason);
+  await identityInternalClient().setActorSecurityEnabled(record.actorId, enabled, randomUUID(), reason, options);
 }
 
 export async function readOperatorSession(): Promise<ActorIdentity | null> {
@@ -190,7 +200,12 @@ async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>
     await writeTokens(pair, deviceFingerprint);
     return pair.identity;
   } catch (error) {
-    if (isIdentityClientError(error) && error.kind === "network") throw error;
+    if (isIdentityClientError(error)) {
+      if (error.kind === "network") throw error;
+      if (error.code === "REFRESH_STALE") {
+        return null;
+      }
+    }
     await clearOperatorCookies();
     return null;
   }

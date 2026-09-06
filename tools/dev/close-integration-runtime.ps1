@@ -33,26 +33,7 @@ function Write-Utf8File([string] $Path, [string] $Content) {
 }
 
 function Ensure-LocalEnv {
-    if (-not (Test-Path $envExamplePath -PathType Leaf)) {
-        Fail "Missing infra/local/compose/.env.example"
-    }
-
-    if (-not (Test-Path $envPath -PathType Leaf)) {
-        $content = Get-Content $envExamplePath -Raw
-        $content = $content.Replace(
-            "SAMRIM_POSTGRES_PASSWORD=change-me-local-only",
-            "SAMRIM_POSTGRES_PASSWORD=$(New-RandomHex)"
-        )
-        $content = $content.Replace(
-            "SAMRIM_MINIO_ROOT_PASSWORD=change-me-local-only",
-            "SAMRIM_MINIO_ROOT_PASSWORD=$(New-RandomHex)"
-        )
-
-        Write-Utf8File -Path $envPath -Content $content
-        Write-Host "LOCAL_RUNTIME_ENV=CREATED"
-        return
-    }
-
+    & (Join-Path $PSScriptRoot "ensure-local-env.ps1")
 }
 
 function Read-EnvMap {
@@ -166,8 +147,7 @@ function Verify-HostPortsAvailable {
         "SAMRIM_MAILPIT_SMTP_PORT",
         "SAMRIM_MAILPIT_WEB_PORT",
         "SAMRIM_IDENTITY_PORT",
-        "SAMRIM_DSH_PORT",
-        "SAMRIM_WLT_PORT"
+        "SAMRIM_DSH_PORT"
     )
 
     $seen = @{}
@@ -316,7 +296,7 @@ function Show-Diagnostics {
     )
 
     & docker @baseArgs "ps"
-    & docker @baseArgs "logs" "--tail" "200" "identity" "dsh" "wlt" "postgres" "minio" "mailpit"
+    & docker @baseArgs "logs" "--tail" "200" "identity" "dsh" "postgres" "minio" "mailpit"
 }
 
 Push-Location $repo
@@ -404,8 +384,7 @@ try {
         "minio",
         "mailpit",
         "identity",
-        "dsh",
-        "wlt"
+        "dsh"
     )
 
     $missing = @($expected | Where-Object { $_ -notin $services })

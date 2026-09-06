@@ -194,6 +194,7 @@ var (
 	ErrInvalidChallenge  = errors.New("invalid challenge")
 	ErrInvalidActivation = errors.New("invalid activation")
 	ErrInvalidRefresh    = errors.New("invalid refresh")
+	ErrRefreshStale      = errors.New("stale refresh")
 	ErrActorBlocked      = errors.New("actor blocked")
 )
 

@@ -13,12 +13,6 @@
     "constants",
     "crypto",
     "splashScreen",
-    "fileSystem",
-    "documentPicker",
-    "imagePicker",
-    "secureStore",
-    "notifications",
-    "location",
-    "maps"
+    "secureStore"
   ]
 }

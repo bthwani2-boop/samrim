@@ -227,8 +227,6 @@ for (const file of runbookFiles) {
 }
 requireTokens("docs/runbooks/README.md", [
   "access/identity.md",
-  "commerce/orders.md",
-  "finance/payments.md",
   "platform/systemic-platform-recovery.md",
 ]);
 

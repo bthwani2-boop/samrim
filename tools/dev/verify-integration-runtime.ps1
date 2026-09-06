@@ -13,8 +13,7 @@ $ErrorActionPreference = "Stop"
 
 $checks = @(
     @{ Name = "identity";  Base = "http://127.0.0.1:18082/identity" },
-    @{ Name = "dsh";       Base = "http://127.0.0.1:58080/dsh" },
-    @{ Name = "wlt";       Base = "http://127.0.0.1:18083/wlt" }
+    @{ Name = "dsh";       Base = "http://127.0.0.1:58080/dsh" }
 )
 
 function Test-Endpoint([string] $Service, [string] $Uri) {

@@ -12,18 +12,7 @@
     "updates",
     "constants",
     "crypto",
-    "image",
     "splashScreen",
-    "fileSystem",
-    "documentPicker",
-    "imagePicker",
-    "secureStore",
-    "notifications",
-    "video",
-    "sharing",
-    "webBrowser",
-    "haptics",
-    "location",
-    "maps"
+    "secureStore"
   ]
 }

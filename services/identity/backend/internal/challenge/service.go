@@ -144,6 +144,7 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		s.releaseReservation(ctx, reservationID)
 		return domain.TokenPair{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -152,16 +153,17 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 	if err := tx.QueryRowContext(ctx, `SELECT c.password_hash,r.enabled,a.security_enabled FROM identity_password_credentials c
 JOIN identity_actor_roles r ON r.actor_id=c.actor_id AND r.role=c.role JOIN identity_actors a ON a.id=c.actor_id
 WHERE c.actor_id=$1 AND c.role=$2 FOR UPDATE OF c,r,a`, a.ID, role).Scan(&currentHash, &enabled, &securityEnabled); err != nil || !enabled || !securityEnabled || currentHash != hash {
-		if reservationID > 0 {
-			_, _ = tx.ExecContext(ctx, "UPDATE identity_password_attempts SET reserved=false WHERE id=$1 AND succeeded=false", reservationID)
-		}
+		_ = tx.Rollback()
+		s.releaseReservation(ctx, reservationID)
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
 	if err := s.recordPasswordSuccessTx(ctx, tx, phone, role, ipHash, reservationID); err != nil {
+		s.releaseReservation(ctx, reservationID)
 		return domain.TokenPair{}, err
 	}
 	pair, err := s.sessions.CreateTx(ctx, tx, a.ID, role, device)
 	if err != nil {
+		s.releaseReservation(ctx, reservationID)
 		return domain.TokenPair{}, err
 	}
 	if err := auditTx(ctx, tx, "session.login", a.ID, a.ID, "success", "", map[string]any{"role": role}); err != nil {
@@ -330,7 +332,7 @@ WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actor
 	if activated.Valid {
 		return domain.ManagedActivationCode{}, domain.ErrConflict
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_managed_activation_codes SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return domain.ManagedActivationCode{}, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND purpose=$3 AND status='pending'", actorID, role, domain.ChallengeManagedActivate); err != nil {
@@ -349,7 +351,7 @@ WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actor
 		return domain.ManagedActivationCode{}, err
 	}
 	expires := s.now().UTC().Add(48 * time.Hour)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_managed_activation_codes(id,actor_id,role,phone_e164,code_hash,status,attempts,expires_at,created_by) VALUES($1,$2,$3,$4,$5,'pending',0,$6,$7)`, id, actorID, role, phone, identitysecurity.SHA256Hex(normalizedCode), expires, strings.ToLower(strings.TrimSpace(caller))); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO identity_operator_enrollment_tokens(id,actor_id,role,phone_e164,code_hash,status,attempts,expires_at,created_by) VALUES($1,$2,$3,$4,$5,'pending',0,$6,$7)`, id, actorID, role, phone, identitysecurity.SHA256Hex(normalizedCode), expires, strings.ToLower(strings.TrimSpace(caller))); err != nil {
 		return domain.ManagedActivationCode{}, err
 	}
 	if err := auditTx(ctx, tx, "managed_activation_code.issued", actorID, caller, "success", "", map[string]any{"role": role, "expiresAt": expires.UTC().Format(time.RFC3339)}); err != nil {
@@ -396,7 +398,7 @@ func (s *Service) consumeManagedActivationCodeTx(ctx context.Context, tx *sql.Tx
 	var id, actorID, codeHash string
 	var attempts int
 	var expires time.Time
-	err = tx.QueryRowContext(ctx, `SELECT id,actor_id,code_hash,attempts,expires_at FROM identity_managed_activation_codes WHERE phone_e164=$1 AND role=$2 AND status='pending' ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, phone, role).Scan(&id, &actorID, &codeHash, &attempts, &expires)
+	err = tx.QueryRowContext(ctx, `SELECT id,actor_id,code_hash,attempts,expires_at FROM identity_operator_enrollment_tokens WHERE phone_e164=$1 AND role=$2 AND status='pending' ORDER BY created_at DESC LIMIT 1 FOR UPDATE`, phone, role).Scan(&id, &actorID, &codeHash, &attempts, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", domain.ErrInvalidActivation
 	}
@@ -404,7 +406,7 @@ func (s *Service) consumeManagedActivationCodeTx(ctx context.Context, tx *sql.Tx
 		return "", err
 	}
 	if !expires.After(s.now()) {
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_managed_activation_codes SET status='expired',updated_at=clock_timestamp() WHERE id=$1", id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='expired',updated_at=clock_timestamp() WHERE id=$1", id); err != nil {
 			return "", err
 		}
 		return "", domain.ErrInvalidActivation
@@ -418,13 +420,13 @@ func (s *Service) consumeManagedActivationCodeTx(ctx context.Context, tx *sql.Tx
 		if attempts >= 5 {
 			nextStatus = "locked"
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_managed_activation_codes SET attempts=$1,status=$2,updated_at=clock_timestamp() WHERE id=$3", attempts, nextStatus, id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET attempts=$1,status=$2,updated_at=clock_timestamp() WHERE id=$3", attempts, nextStatus, id); err != nil {
 			return "", err
 		}
 		return "", domain.ErrInvalidActivation
 	}
 	if expectedActorID != "" {
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_managed_activation_codes SET status='consumed',consumed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1", id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='consumed',consumed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1", id); err != nil {
 			return "", err
 		}
 	}
@@ -455,6 +457,7 @@ func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorL
 	if errors.Is(lookupErr, domain.ErrNotFound) {
 		_ = identitysecurity.VerifyPassword(dummyPasswordHash, input.Password)
 	} else if lookupErr != nil {
+		s.releaseReservation(ctx, reservationID)
 		return domain.Challenge{}, lookupErr
 	}
 	if !valid {
@@ -714,23 +717,30 @@ func (s *Service) recordPasswordFailure(ctx context.Context, phone, role, ipHash
 		}
 	}
 	var accountFailures, sourceFailures int
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE phone_e164=$1 AND role=$2 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'", phone, role).Scan(&accountFailures); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE phone_e164=$1 AND role=$2 AND succeeded=false AND (NOT reserved OR (reserved_until IS NOT NULL AND reserved_until > clock_timestamp())) AND created_at>clock_timestamp()-interval '15 minutes'", phone, role).Scan(&accountFailures); err != nil {
 		return false, err
 	}
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE ip_hash=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'", ipHash).Scan(&sourceFailures); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE ip_hash=$1 AND succeeded=false AND (NOT reserved OR (reserved_until IS NOT NULL AND reserved_until > clock_timestamp())) AND created_at>clock_timestamp()-interval '15 minutes'", ipHash).Scan(&sourceFailures); err != nil {
 		return false, err
 	}
 	if reservationID > 0 {
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_password_attempts SET reserved=false WHERE id=$1 AND succeeded=false", reservationID); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_password_attempts SET reserved=false,reserved_until=NULL WHERE id=$1 AND succeeded=false", reservationID); err != nil {
 			return false, err
 		}
-	} else if _, err := tx.ExecContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded,reserved) VALUES($1,$2,$3,false,false)", phone, role, ipHash); err != nil {
+	} else if _, err := tx.ExecContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded,reserved,reserved_until) VALUES($1,$2,$3,false,false,NULL)", phone, role, ipHash); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
 	return sourceFailures >= passwordSourceFailureLimit, nil
+}
+
+func (s *Service) releaseReservation(ctx context.Context, reservationID int64) {
+	if reservationID <= 0 {
+		return
+	}
+	_, _ = s.db.ExecContext(ctx, "DELETE FROM identity_password_attempts WHERE id=$1 AND reserved=true", reservationID)
 }
 
 func (s *Service) passwordAdmission(ctx context.Context, phone, role, ipHash string) (bool, time.Duration, int64, error) {
@@ -745,10 +755,10 @@ func (s *Service) passwordAdmission(ctx context.Context, phone, role, ipHash str
 		}
 	}
 	var accountFailures, sourceFailures int
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE phone_e164=$1 AND role=$2 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'", phone, role).Scan(&accountFailures); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE phone_e164=$1 AND role=$2 AND succeeded=false AND (NOT reserved OR (reserved_until IS NOT NULL AND reserved_until > clock_timestamp())) AND created_at>clock_timestamp()-interval '15 minutes'", phone, role).Scan(&accountFailures); err != nil {
 		return false, 0, 0, err
 	}
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE ip_hash=$1 AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'", ipHash).Scan(&sourceFailures); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_password_attempts WHERE ip_hash=$1 AND succeeded=false AND (NOT reserved OR (reserved_until IS NOT NULL AND reserved_until > clock_timestamp())) AND created_at>clock_timestamp()-interval '15 minutes'", ipHash).Scan(&sourceFailures); err != nil {
 		return false, 0, 0, err
 	}
 	if sourceFailures >= passwordSourceFailureLimit {
@@ -758,7 +768,7 @@ func (s *Service) passwordAdmission(ctx context.Context, phone, role, ipHash str
 		return true, 0, 0, nil
 	}
 	var reservationID int64
-	if err := tx.QueryRowContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded,reserved) VALUES($1,$2,$3,false,true) RETURNING id", phone, role, ipHash).Scan(&reservationID); err != nil {
+	if err := tx.QueryRowContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded,reserved,reserved_until) VALUES($1,$2,$3,false,true,clock_timestamp()+interval '30 seconds') RETURNING id", phone, role, ipHash).Scan(&reservationID); err != nil {
 		return false, 0, 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -787,14 +797,14 @@ func (s *Service) recordPasswordSuccess(ctx context.Context, phone, role, ipHash
 }
 func (s *Service) recordPasswordSuccessTx(ctx context.Context, tx *sql.Tx, phone, role, ipHash string, reservationID int64) error {
 	if reservationID > 0 {
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_password_attempts SET succeeded=true,reserved=false WHERE id=$1 AND succeeded=false", reservationID); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_password_attempts SET succeeded=true,reserved=false,reserved_until=NULL WHERE id=$1 AND succeeded=false", reservationID); err != nil {
 			return err
 		}
 	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_password_attempts WHERE phone_e164=$1 AND role=$2 AND succeeded=false AND reserved=false", phone, role); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded,reserved) VALUES($1,$2,$3,true,false)", phone, role, ipHash)
+	_, err := tx.ExecContext(ctx, "INSERT INTO identity_password_attempts(phone_e164,role,ip_hash,succeeded,reserved,reserved_until) VALUES($1,$2,$3,true,false,NULL)", phone, role, ipHash)
 	return err
 }
 

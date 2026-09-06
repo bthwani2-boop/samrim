@@ -48,6 +48,7 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /auth/managed/recovery/request", s.requestManagedRecovery)
 	mux.HandleFunc("POST /auth/managed/recover", s.recoverManaged)
 	mux.HandleFunc("POST /internal/managed-activation-codes", s.internal(s.issueManagedActivationCode))
+	mux.HandleFunc("POST /internal/operator-enrollment-tokens", s.internal(s.issueManagedActivationCode))
 	mux.HandleFunc("POST /auth/operator/login/start", s.startOperatorLogin)
 	mux.HandleFunc("POST /auth/operator/login/complete", s.completeOperatorLogin)
 	mux.HandleFunc("POST /auth/refresh", s.refresh)
@@ -374,8 +375,25 @@ func (s *Server) disableRole(w http.ResponseWriter, r *http.Request, caller stri
 func (s *Server) enableRole(w http.ResponseWriter, r *http.Request, caller string) {
 	s.setRoleEnabled(w, r, caller, true)
 }
+func parseExpectedVersion(r *http.Request) int {
+	val := strings.TrimSpace(r.Header.Get("X-Expected-Version"))
+	if val == "" {
+		val = strings.Trim(strings.TrimSpace(r.Header.Get("If-Match")), "\"")
+	}
+	if val == "" {
+		return 0
+	}
+	v, err := strconv.Atoi(val)
+	if err != nil || v < 0 {
+		return 0
+	}
+	return v
+}
+
 func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
-	if err := s.actors.SetRoleEnabledWithReason(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason"))); err != nil {
+	expectedVersion := parseExpectedVersion(r)
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	if err := s.actors.SetRoleEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -395,7 +413,9 @@ func (s *Server) enableActorSecurity(w http.ResponseWriter, r *http.Request, cal
 	s.setActorSecurityEnabled(w, r, caller, true)
 }
 func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
-	if err := s.actors.SetSecurityEnabledWithReason(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason"))); err != nil {
+	expectedVersion := parseExpectedVersion(r)
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Actor-ID"))
+	if err := s.actors.SetSecurityEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -551,6 +571,8 @@ func writeDomainError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrInvalidInput):
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "request is invalid"))
+	case errors.Is(err, domain.ErrRefreshStale):
+		writeJSON(w, http.StatusUnauthorized, errorBody("REFRESH_STALE", "refresh token was already rotated recently"))
 	case errors.Is(err, domain.ErrUnauthenticated), errors.Is(err, domain.ErrInvalidChallenge), errors.Is(err, domain.ErrInvalidActivation), errors.Is(err, domain.ErrInvalidRefresh):
 		writeJSON(w, http.StatusUnauthorized, errorBody("UNAUTHENTICATED", "authentication failed"))
 	case errors.Is(err, domain.ErrForbidden), errors.Is(err, domain.ErrActorBlocked):

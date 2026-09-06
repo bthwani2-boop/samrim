@@ -1,0 +1,342 @@
+openapi: 3.1.0
+info:
+  title: BThwani DSH API
+  version: 1.0.0
+  description: |
+    Canonical operational contract for DSH (Delivery, Shopping, Hospitality/Operations).
+    Owns operational boundaries, managed-role provisioning delegation to Identity, and role lifecycle orchestration for partner, captain, and field roles.
+servers:
+  - url: http://127.0.0.1:58080
+
+paths:
+  /dsh/health:
+    get:
+      operationId: dshHealth
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /dsh/readiness:
+    get:
+      operationId: dshReadiness
+      summary: Readiness check
+      responses:
+        "200":
+          description: Service and downstream dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "503":
+          description: Downstream dependencies are not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /dsh/managed-roles/provision:
+    post:
+      operationId: provisionManagedRole
+      summary: Provision a managed operational role (partner, captain, field)
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProvisionManagedRoleRequest"
+      responses:
+        "200":
+          description: Managed role already existed or was updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActorRoleView"
+        "201":
+          description: Managed role was newly created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActorRoleView"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "502":
+          $ref: "#/components/responses/IdentityUnavailable"
+
+  /dsh/managed-roles/status:
+    get:
+      operationId: getManagedRoleStatus
+      summary: Query the current status of a managed role by phone and role
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: phoneE164
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: role
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/ManagedRole"
+      responses:
+        "200":
+          description: Managed role status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedRoleStatusResponse"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "502":
+          $ref: "#/components/responses/IdentityUnavailable"
+
+  /dsh/managed-roles/disable:
+    post:
+      operationId: disableManagedRole
+      summary: Disable a managed role by phone and role
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetManagedRoleStateRequest"
+      responses:
+        "204":
+          description: Managed role was disabled.
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "502":
+          $ref: "#/components/responses/IdentityUnavailable"
+
+  /dsh/managed-roles/enable:
+    post:
+      operationId: enableManagedRole
+      summary: Enable a managed role by phone and role
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetManagedRoleStateRequest"
+      responses:
+        "204":
+          description: Managed role was enabled.
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "502":
+          $ref: "#/components/responses/IdentityUnavailable"
+
+  /dsh/managed-roles/reenrollment:
+    post:
+      operationId: reenrollManagedRoleByPhone
+      summary: Authorize reenrollment for a managed role by phone
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PhoneReenrollmentRequest"
+      responses:
+        "204":
+          description: Reenrollment was authorized.
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "502":
+          $ref: "#/components/responses/IdentityUnavailable"
+
+  /dsh/managed-roles/{actorId}/reenrollment:
+    post:
+      operationId: reenrollManagedRoleByActorId
+      summary: Authorize reenrollment for a managed role by actor ID
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActorReenrollmentRequest"
+      responses:
+        "204":
+          description: Reenrollment was authorized.
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "502":
+          $ref: "#/components/responses/IdentityUnavailable"
+
+components:
+  securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+
+  schemas:
+    StatusResponse:
+      type: object
+      required: [service, status]
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+
+    ManagedRole:
+      type: string
+      enum: [partner, captain, field]
+
+    ProvisionManagedRoleRequest:
+      type: object
+      required: [phoneE164, role]
+      additionalProperties: false
+      properties:
+        phoneE164:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedRole"
+
+    SetManagedRoleStateRequest:
+      type: object
+      required: [phoneE164, role, reason]
+      additionalProperties: false
+      properties:
+        phoneE164:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedRole"
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    PhoneReenrollmentRequest:
+      type: object
+      required: [phoneE164, role]
+      additionalProperties: false
+      properties:
+        phoneE164:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedRole"
+
+    ActorReenrollmentRequest:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role:
+          $ref: "#/components/schemas/ManagedRole"
+
+    ActorRoleView:
+      type: object
+      required: [actorId, phoneE164, role, enabled, securityEnabled, version]
+      properties:
+        actorId:
+          type: string
+        phoneE164:
+          type: string
+        role:
+          type: string
+        enabled:
+          type: boolean
+        activatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        securityEnabled:
+          type: boolean
+        actorCreated:
+          type: boolean
+        roleCreated:
+          type: boolean
+        version:
+          type: integer
+
+    ManagedRoleStatusResponse:
+      type: object
+      required: [exists, enabled, activated, securityEnabled, recoverable, state, role]
+      properties:
+        actorId:
+          type: string
+        exists:
+          type: boolean
+        enabled:
+          type: boolean
+        activated:
+          type: boolean
+        securityEnabled:
+          type: boolean
+        recoverable:
+          type: boolean
+        state:
+          type: string
+          enum: [not_provisioned, pending_activation, active, role_disabled, identity_disabled, reenrollment_required]
+        role:
+          $ref: "#/components/schemas/ManagedRole"
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+  responses:
+    InvalidInput:
+      description: Invalid input or request body.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Unauthenticated:
+      description: Service authentication token is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    IdentityUnavailable:
+      description: Upstream identity dependency error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

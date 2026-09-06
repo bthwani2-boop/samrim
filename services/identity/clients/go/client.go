@@ -96,6 +96,14 @@ func (c *Client) SetRoleEnabledWithReason(ctx context.Context, actorID, role str
 	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
 	return c.doWithReason(ctx, operation.Method, pathname, correlationID, reason, nil, nil)
 }
+func (c *Client) SetRoleEnabledWithContext(ctx context.Context, actorID, role string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
+	operation := IdentityOperationDisableActorRole
+	if enabled {
+		operation = IdentityOperationEnableActorRole
+	}
+	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
+	return c.doWithContext(ctx, operation.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, nil, nil)
+}
 func (c *Client) AuthorizeReenrollment(ctx context.Context, actorID, role, correlationID string) error {
 	pathname := identityRoute(IdentityOperationAuthorizeManagedRoleReenrollment.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
 	return c.do(ctx, IdentityOperationAuthorizeManagedRoleReenrollment.Method, pathname, correlationID, nil, nil)
@@ -114,12 +122,15 @@ func (c *Client) SetActorSecurityEnabled(ctx context.Context, actorID string, en
 	return c.SetActorSecurityEnabledWithReason(ctx, actorID, enabled, correlationID, "")
 }
 func (c *Client) SetActorSecurityEnabledWithReason(ctx context.Context, actorID string, enabled bool, correlationID, reason string) error {
+	return c.SetActorSecurityEnabledWithContext(ctx, actorID, enabled, correlationID, reason, "", 0)
+}
+func (c *Client) SetActorSecurityEnabledWithContext(ctx context.Context, actorID string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
 	operation := IdentityOperationDisableActorSecurity
 	if enabled {
 		operation = IdentityOperationEnableActorSecurity
 	}
 	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
-	return c.doWithReason(ctx, operation.Method, pathname, correlationID, reason, nil, nil)
+	return c.doWithContext(ctx, operation.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, nil, nil)
 }
 func (c *Client) ResetOperatorPassword(ctx context.Context, actorID, password, correlationID string) error {
 	pathname := identityRoute(IdentityOperationResetOperatorPassword.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
@@ -137,9 +148,12 @@ func identityRoute(template string, replacements ...string) string {
 }
 
 func (c *Client) do(ctx context.Context, method, pathname, correlationID string, body any, target any) error {
-	return c.doWithReason(ctx, method, pathname, correlationID, "", body, target)
+	return c.doWithContext(ctx, method, pathname, correlationID, "", "", 0, body, target)
 }
 func (c *Client) doWithReason(ctx context.Context, method, pathname, correlationID, reason string, body any, target any) error {
+	return c.doWithContext(ctx, method, pathname, correlationID, reason, "", 0, body, target)
+}
+func (c *Client) doWithContext(ctx context.Context, method, pathname, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -162,6 +176,12 @@ func (c *Client) doWithReason(ctx context.Context, method, pathname, correlation
 	}
 	if strings.TrimSpace(reason) != "" {
 		req.Header.Set("X-Reason", strings.TrimSpace(reason))
+	}
+	if strings.TrimSpace(operatorActorID) != "" {
+		req.Header.Set("X-Actor-ID", strings.TrimSpace(operatorActorID))
+	}
+	if expectedVersion > 0 {
+		req.Header.Set("X-Expected-Version", fmt.Sprintf("%d", expectedVersion))
 	}
 	response, err := c.http.Do(req)
 	if err != nil {

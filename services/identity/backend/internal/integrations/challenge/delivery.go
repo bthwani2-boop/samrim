@@ -43,6 +43,16 @@ func (m Mailpit) Send(_ context.Context,message Message) error {
 	return smtp.SendMail(m.SMTPAddr,nil,"identity@samrim.local",[]string{m.Recipient},[]byte(body))
 }
 
+type DeliveryError struct {
+	Status     string // "failed", "rejected", "unknown"
+	StatusCode int
+	Message    string
+}
+
+func (e *DeliveryError) Error() string {
+	return fmt.Sprintf("challenge delivery %s (status=%d): %s", e.Status, e.StatusCode, e.Message)
+}
+
 type Twilio struct { AccountSID string; AuthToken string; From string; Client *http.Client }
 
 func (Twilio) Provider() string { return "twilio" }
@@ -55,7 +65,17 @@ func (t Twilio) Send(ctx context.Context,message Message) error {
 	req,err:=http.NewRequestWithContext(ctx,http.MethodPost,endpoint,strings.NewReader(form.Encode()));if err!=nil{return err}
 	req.SetBasicAuth(t.AccountSID,t.AuthToken);req.Header.Set("Content-Type","application/x-www-form-urlencoded")
 	resp,err:=t.Client.Do(req);if err!=nil{return err};defer func(){_ = resp.Body.Close()}()
-	if resp.StatusCode<200||resp.StatusCode>=300{raw,_:=io.ReadAll(io.LimitReader(resp.Body,4096));return fmt.Errorf("twilio challenge delivery failed: status=%d body=%q",resp.StatusCode,strings.TrimSpace(string(raw)))}
+	if resp.StatusCode<200||resp.StatusCode>=300{
+		raw,_:=io.ReadAll(io.LimitReader(resp.Body,4096))
+		msg:=strings.TrimSpace(string(raw))
+		status:="unknown"
+		if resp.StatusCode==http.StatusUnauthorized||resp.StatusCode==http.StatusForbidden{
+			status="rejected"
+		} else if resp.StatusCode>=400&&resp.StatusCode<500&&resp.StatusCode!=http.StatusTooManyRequests{
+			status="failed"
+		}
+		return &DeliveryError{Status:status,StatusCode:resp.StatusCode,Message:msg}
+	}
 	return nil
 }
 
@@ -71,6 +91,16 @@ func (w Webhook) Send(ctx context.Context,message Message) error {
 	req,err:=http.NewRequestWithContext(ctx,http.MethodPost,w.URL,bytes.NewReader(raw));if err!=nil{return err}
 	req.Header.Set("Authorization","Bearer "+w.Token);req.Header.Set("Content-Type","application/json")
 	resp,err:=w.Client.Do(req);if err!=nil{return err};defer func(){_ = resp.Body.Close()}()
-	if resp.StatusCode<200||resp.StatusCode>=300{raw,_:=io.ReadAll(io.LimitReader(resp.Body,4096));return fmt.Errorf("challenge webhook failed: status=%d body=%q",resp.StatusCode,strings.TrimSpace(string(raw)))}
+	if resp.StatusCode<200||resp.StatusCode>=300{
+		raw,_:=io.ReadAll(io.LimitReader(resp.Body,4096))
+		msg:=strings.TrimSpace(string(raw))
+		status:="unknown"
+		if resp.StatusCode==http.StatusUnauthorized||resp.StatusCode==http.StatusForbidden{
+			status="rejected"
+		} else if resp.StatusCode>=400&&resp.StatusCode<500&&resp.StatusCode!=http.StatusTooManyRequests{
+			status="failed"
+		}
+		return &DeliveryError{Status:status,StatusCode:resp.StatusCode,Message:msg}
+	}
 	return nil
 }

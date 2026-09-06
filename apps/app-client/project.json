@@ -15,6 +15,18 @@
       "options": {
         "command": "pnpm --dir apps/app-client typecheck"
       }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/build-mobile-app.mjs app-client"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/test-mobile-app.mjs app-client"
+      }
     }
   },
   "tags": [

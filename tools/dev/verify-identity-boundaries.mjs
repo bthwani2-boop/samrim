@@ -51,9 +51,11 @@ for (const required of [
   "loginClient",
   "requestClientRecovery",
   "recoverClient",
-  "new IdentitySessionManager(",
 ]) {
   if (!clientBinding.includes(required)) failures.push("app-client Identity binding missing " + required);
+}
+if (!clientBinding.includes("createMobileIdentityRuntime") && !clientBinding.includes("new IdentitySessionManager(")) {
+  failures.push("app-client Identity binding missing session manager");
 }
 for (const forbidden of ["requestOtp(", "activate({", "actorType"]) {
   if (clientBinding.includes(forbidden)) failures.push("app-client retains obsolete auth authority " + forbidden);
@@ -88,15 +90,17 @@ for (const [app, role, surface] of [
     'const surface = "' + surface + '" as const',
     "requestManagedActivation",
     "activateManagedIdentity",
-    "new IdentitySessionManager(",
   ]) {
     if (!runtime.includes(required)) failures.push(runtimePath + " missing " + required);
+  }
+  if (!runtime.includes("createMobileIdentityRuntime") && !runtime.includes("new IdentitySessionManager(")) {
+    failures.push(runtimePath + " missing session manager");
   }
   for (const forbidden of ["requestOtp(", "loginClient(", "actorType"]) {
     if (runtime.includes(forbidden)) failures.push(runtimePath + " contains wrong auth flow " + forbidden);
   }
-  const page = read("packages/design-system/src/native/ManagedIdentityGate.tsx");
-  if (!page.includes("chooseIntent") || !page.includes("requestCode") || !page.includes("requestRecovery") || !page.includes("recover") || !page.includes("activate")) {
+  const page = read("apps/" + app + "/src/identity-gate.tsx");
+  if (!page.includes("chooseIntent") || !page.includes("requestManagedActivation") || !page.includes("requestManagedRecovery") || !page.includes("recoverManagedIdentity") || !page.includes("activateManagedIdentity")) {
     failures.push(app + " UI is not bound to one-time managed activation");
   }
   for (const phrase of ["أثبت رقم الهاتف", "رمز تحقق الهاتف", "تفعيل أول مرة", "ابدأ برقم الهاتف"]) {
@@ -104,7 +108,11 @@ for (const [app, role, surface] of [
   }
   if (page.includes("activationCode") || page.includes("رمز التفعيل")) failures.push(app + " managed enrollment retains redundant control-surface activation secret");
   if (page.includes("auth-mode-switch") || page.includes("<select")) failures.push(app + " managed auth must resolve the next step from phone without tabs or role selectors");
-  if (!page.includes("currentState")) failures.push(app + " logout must mirror canonical local Identity state");
+  if (!page.includes("currentState") && !page.includes("currentIdentityState")) failures.push(app + " logout must mirror canonical local Identity state");
+}
+
+if (fs.existsSync(path.join(root, "packages/design-system/src/native"))) {
+  failures.push("packages/design-system must not retain domain Identity components");
 }
 
 const controlPackagePath = "apps/control-panel/package.json";
@@ -255,9 +263,11 @@ for (const required of [
   "identity_challenges",
   "purpose",
   "IssueManagedActivationCode",
-  "identity_managed_activation_codes",
 ]) {
   if (!challenge.includes(required)) failures.push("Identity challenge service missing " + required);
+}
+if (!challenge.includes("identity_operator_enrollment_tokens") && !challenge.includes("identity_managed_activation_codes")) {
+  failures.push("Identity challenge service missing identity_operator_enrollment_tokens");
 }
 if (challenge.includes("EnsurePublicClientTx") || challenge.includes("IsPublicOtpRole")) {
   failures.push("Identity challenge service retains universal OTP activation semantics");
@@ -362,11 +372,10 @@ for (const required of ["net.ParseCIDR(proxy)", "invalid CIDR", "invalid IP"]) {
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [
-    "const SchemaVersion = 13",
+  "const SchemaVersion = 14",
   "CurrentSchemaVersion",
   "migration history is non-contiguous",
   "identity_password_credentials",
-  "identity_managed_activation_codes",
   "identity_challenges",
   "identity_challenge_deliveries",
   "identity_password_attempts",
@@ -376,6 +385,9 @@ for (const required of [
   "identity_challenges_phone_purpose_idx",
 ]) {
   if (!readiness.includes(required)) failures.push("Identity readiness proof missing " + required);
+}
+if (!readiness.includes("identity_operator_enrollment_tokens") && !readiness.includes("identity_managed_activation_codes")) {
+  failures.push("Identity readiness proof missing identity_operator_enrollment_tokens");
 }
 const privilegeBoundary = read("services/identity/backend/internal/storage/postgres/privileges.go");
 for (const required of ["VerifyRuntimePrivileges", "VerifyMaintenancePrivileges", "identity_security_audit", "has_schema_privilege", "has_database_privilege"]) {
