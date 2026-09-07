@@ -7,6 +7,26 @@ export function verifySameOrigin(request: Request): boolean {
   const origin = request.headers.get("origin")?.trim();
   const host = request.headers.get("host")?.trim();
   const secFetchSite = request.headers.get("sec-fetch-site")?.toLowerCase().trim();
+  const configuredOrigin = process.env.CONTROL_PANEL_PUBLIC_ORIGIN?.trim();
+
+  let expectedOrigin: URL | null = null;
+  if (configuredOrigin) {
+    try {
+      expectedOrigin = new URL(configuredOrigin);
+      if (expectedOrigin.pathname !== "/" || expectedOrigin.search || expectedOrigin.hash) return false;
+      if (process.env.NODE_ENV === "production" && expectedOrigin.protocol !== "https:") return false;
+    } catch {
+      return false;
+    }
+  } else if (process.env.NODE_ENV === "production") {
+    return false;
+  } else {
+    try {
+      expectedOrigin = new URL(request.url);
+    } catch {
+      return false;
+    }
+  }
 
   // If Sec-Fetch-Site is present, it MUST be same-origin (reject cross-site, same-site, none)
   if (secFetchSite && secFetchSite !== "same-origin") {
@@ -14,15 +34,15 @@ export function verifySameOrigin(request: Request): boolean {
   }
 
   if (origin) {
-    if (!host) return false;
     try {
       const originUrl = new URL(origin);
-      return originUrl.host === host;
+      if (!expectedOrigin || originUrl.origin !== expectedOrigin.origin) return false;
+      return !configuredOrigin || host === expectedOrigin.host;
     } catch {
       return false;
     }
   }
 
   // If origin header is not provided, Sec-Fetch-Site must prove same-origin
-  return secFetchSite === "same-origin";
+  return secFetchSite === "same-origin" && (!configuredOrigin || host === expectedOrigin?.host);
 }

@@ -17,7 +17,7 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: "pnpm --dir apps/control-panel build && pnpm --dir apps/control-panel exec next start -p 13001",
+          command: "pnpm build && pnpm exec next start -p 13001",
           url: baseURL,
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,

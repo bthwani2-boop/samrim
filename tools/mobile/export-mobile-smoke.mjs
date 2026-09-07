@@ -4,7 +4,7 @@ import path from "node:path";
 
 const app = process.argv[2];
 if (!app) {
-  console.error("Usage: node build-mobile-app.mjs <app-name>");
+  console.error("Usage: node export-mobile-smoke.mjs <app-name>");
   process.exit(1);
 }
 
@@ -17,7 +17,7 @@ try {
     fs.rmSync(distDir, { recursive: true, force: true });
   }
 
-  execSync("pnpm exec expo export --platform android --no-bytecode --output-dir dist", {
+  execSync("pnpm exec expo export --platform android --output-dir dist", {
     cwd: appDir,
     stdio: "inherit",
     env: { ...process.env, CI: "1" },
@@ -27,7 +27,7 @@ try {
     throw new Error(`Build failed: dist directory was not created for ${app}`);
   }
 
-  console.log(`MOBILE_BUILD=PASS app=${app}`);
+  console.log(`MOBILE_EXPORT_SMOKE=PASS app=${app} platform=android bytecode=default`);
 } finally {
   if (fs.existsSync(distDir)) {
     fs.rmSync(distDir, { recursive: true, force: true });

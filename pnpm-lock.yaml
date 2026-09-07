@@ -15,9 +15,6 @@ importers:
       '@biomejs/biome':
         specifier: 2.5.12
         version: 2.5.12
-      '@playwright/test':
-        specifier: 1.63.0
-        version: 1.63.0
       nx:
         specifier: 23.2.0
         version: 23.2.0
@@ -350,6 +347,9 @@ importers:
         specifier: 19.2.3
         version: 19.2.3(react@19.2.3)
     devDependencies:
+      '@playwright/test':
+        specifier: 1.63.0
+        version: 1.63.0
       '@types/node':
         specifier: 24.10.1
         version: 24.10.1

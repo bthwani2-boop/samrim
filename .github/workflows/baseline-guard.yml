@@ -156,8 +156,8 @@ jobs:
       - name: Verify Identity vertical boundaries
         shell: bash
         run: |
-          node tools/dev/generate-identity-types.mjs --check
-          node tools/dev/generate-dsh-types.mjs --check
+          node services/identity/tools/generate-types.mjs --check
+          node services/dsh/tools/generate-types.mjs --check
           node tools/dev/verify-identity-boundaries.mjs
 
       - name: Install pinned pnpm

@@ -2,7 +2,6 @@ packages:
   - "apps/*"
   - "services/*"
   - "packages/*"
-  - "contracts"
 
 allowBuilds:
   "@sentry/cli": true

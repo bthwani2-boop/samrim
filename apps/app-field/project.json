@@ -16,10 +16,10 @@
         "command": "pnpm --dir apps/app-field typecheck"
       }
     },
-    "build": {
+    "export-smoke": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node tools/mobile/build-mobile-app.mjs app-field"
+        "command": "node tools/mobile/export-mobile-smoke.mjs app-field"
       }
     },
     "test": {

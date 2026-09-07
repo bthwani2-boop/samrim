@@ -21,14 +21,6 @@ type ManagedAccountStatus = Readonly<{
   credentialVersion?: number;
 }>;
 
-function readableMessage(message: unknown): string {
-  const raw = typeof message === "string" ? message.toLowerCase() : "";
-  if (raw.includes("fetch failed") || raw.includes("network") || raw.includes("service")) return "تعذر الوصول إلى خدمة الهوية. تحقق من تشغيل الخدمة ثم أعد المحاولة.";
-  if (raw.includes("authentication") || raw.includes("unauthorized") || raw.includes("invalid") || raw.includes("credential")) return "بيانات التحقق غير صحيحة أو انتهت صلاحيتها. راجعها وحاول مرة أخرى.";
-  if (raw.includes("challenge") || raw.includes("code")) return "تعذر التحقق من الرمز. تأكد من إدخال الرمز الأخير ثم أعد المحاولة.";
-  return "تعذر إكمال العملية. راجع البيانات وحاول مرة أخرى.";
-}
-
 async function responseMessage(response: Response): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: { code?: unknown; message?: unknown } } | null;
   const code = typeof body?.error?.code === "string" ? body.error.code : "";
@@ -41,7 +33,7 @@ async function responseMessage(response: Response): Promise<string> {
     case "DSH_UNAVAILABLE": return "خدمة إدارة الأدوار غير متاحة. تحقق من تشغيل الحاويات ثم أعد المحاولة.";
     case "DSH_CONFIG_ERROR": return "إعدادات خدمة إدارة الأدوار غير مكتملة. أعد تشغيل لوحة التحكم المحلية ثم حاول مرة أخرى.";
     case "IDENTITY_UNAVAILABLE": return "خدمة الهوية غير متاحة. تحقق من تشغيل الحاويات ثم أعد المحاولة.";
-    default: return readableMessage(body?.error?.message);
+    default: return "تعذر إكمال العملية. راجع البيانات وحاول مرة أخرى.";
   }
 }
 

@@ -1,6 +1,9 @@
 /** @type {import("next").NextConfig} */
+const isProduction = process.env.NODE_ENV === "production";
+
 const nextConfig = {
   transpilePackages: ["@bthwani/identity", "@bthwani/design-system"],
+  poweredByHeader: false,
   // Keep Next dev from scaffolding agent instruction files inside this app.
   agentRules: false,
   async headers() {
@@ -24,10 +27,12 @@ const nextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=(), payment=()",
           },
-          {
-            key: "Content-Security-Policy",
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self';",
-          },
+          ...(isProduction
+            ? [{
+                key: "Strict-Transport-Security",
+                value: "max-age=63072000; includeSubDomains; preload",
+              }]
+            : []),
         ],
       },
     ];
