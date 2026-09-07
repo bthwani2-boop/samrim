@@ -9,6 +9,18 @@ type ViewState =
   | Readonly<{ kind: "authenticated"; identity: ActorIdentity }>
   | Readonly<{ kind: "unavailable"; message: string }>;
 
+type ManagedAccountStatus = Readonly<{
+  exists: boolean;
+  enabled: boolean;
+  activated: boolean;
+  securityEnabled: boolean;
+  role: ActorType;
+  actorId?: string;
+  actorVersion?: number;
+  roleVersion?: number;
+  credentialVersion?: number;
+}>;
+
 function readableMessage(message: unknown): string {
   const raw = typeof message === "string" ? message.toLowerCase() : "";
   if (raw.includes("fetch failed") || raw.includes("network") || raw.includes("service")) return "تعذر الوصول إلى خدمة الهوية. تحقق من تشغيل الخدمة ثم أعد المحاولة.";
@@ -47,7 +59,7 @@ function AccountAccessPanel() {
   const [role, setRole] = useState<ActorType>("partner");
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
-  const [status, setStatus] = useState<{ exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number; credentialVersion?: number } | null>(null);
+  const [status, setStatus] = useState<ManagedAccountStatus | null>(null);
   const [result, setResult] = useState<OperatorEnrollmentToken | null>(null);
   const [operatorResetPassword, setOperatorResetPassword] = useState("");
   const [operatorResetPasswordConfirmation, setOperatorResetPasswordConfirmation] = useState("");
@@ -59,14 +71,14 @@ function AccountAccessPanel() {
   useEffect(() => {
     const value = phone.trim();
     const id = ++requestId.current;
-    setResult(null); setError(""); setOperatorResetPassword(""); setOperatorResetPasswordConfirmation(""); setResetSuccess(""); setReason("");
-    if (value.length < 5) { setStatus(null); return; }
+    setResult(null); setError(""); setOperatorResetPassword(""); setOperatorResetPasswordConfirmation(""); setResetSuccess(""); setReason(""); setStatus(null);
+    if (value.length < 5) return;
     const timeout = window.setTimeout(() => void (async () => {
       try {
         const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: value, role })}`);
         if (id !== requestId.current) return;
         if (!response.ok) { setStatus(null); setError(await responseMessage(response)); return; }
-        setStatus(await response.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number });
+        setStatus(await response.json() as ManagedAccountStatus);
       } catch { if (id === requestId.current) { setStatus(null); setError("تعذر التحقق من حالة الرقم حاليًا."); } }
     })(), 450);
     return () => window.clearTimeout(timeout);
@@ -81,7 +93,14 @@ function AccountAccessPanel() {
       const response = await identityFetch("/api/access/managed-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, role, recover }) });
       if (!response.ok) { setError(await responseMessage(response)); return; }
       const payload = await response.json();
-      setResult(role === "operator" ? payload as OperatorEnrollmentToken : null); setStatus(null);
+      setResult(role === "operator" ? payload as OperatorEnrollmentToken : null);
+      const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
+      if (!refresh.ok) {
+        setStatus(null);
+        setError(await responseMessage(refresh));
+        return;
+      }
+      setStatus(await refresh.json() as ManagedAccountStatus);
     } catch { setError("تعذر الوصول إلى خدمات إدارة الهوية."); } finally { setBusy(false); }
   }
 
@@ -106,7 +125,7 @@ function AccountAccessPanel() {
           setError(await responseMessage(response));
         }
         const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
-        if (refresh.ok) setStatus(await refresh.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number });
+        if (refresh.ok) setStatus(await refresh.json() as ManagedAccountStatus);
         return;
       }
       setReason("");
