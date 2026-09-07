@@ -6,7 +6,9 @@ WORKDIR /src/services/dsh/backend
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
 
-FROM scratch
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates && addgroup -S dsh && adduser -S -G dsh dsh
 COPY --from=build /out/api /api
+USER dsh
 EXPOSE 8080
 ENTRYPOINT ["/api"]
