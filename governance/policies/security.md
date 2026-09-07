@@ -112,11 +112,6 @@ Use the smallest security evidence capable of falsifying the affected claim, the
 Critical authentication/authorization bypass, secret exposure, cross-scope access, isolation failure, unsafe privileged input path or material financial-security failure blocks the affected outcome until root-correct treatment or an explicit legitimate unresolved stop state. Do not create security approval registries or governance gates as substitutes for actual security evidence.
 
 
-## Development/bootstrap credential boundary
-
-Development/bootstrap credentials or historical examples never define normal Identity credential policy. OTP/challenge lifecycle remains Identity-owned; SMS/email/push are delivery channels only. Development inspection mechanisms must be explicitly development-only and impossible to enable accidentally in production.
-
-
 ## OTP, challenge and privileged-authentication law
 
 OTP/challenge lifecycle is an Identity capability. SMS, email or any other channel is delivery only.
