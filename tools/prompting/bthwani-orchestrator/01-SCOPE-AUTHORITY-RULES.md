@@ -48,7 +48,7 @@ CLASS_D_CRITICAL_OR_PRODUCTION
 
 Class A may execute when repository/scope access allows it. Class B may execute automatically only inside the authorized local/integration boundary after target preflight. Class C requires explicit operation and target authorization. Class D is default-deny and requires explicit human Production/break-glass/release authority for the exact environment, target and operation; ordinary agent autonomy never self-grants it.
 
-Examples of Class C/D include staging durable migrations, real paid/provider effects, remote release builds, destructive device operations, Production access/data/provider/deployment/store/OTA effects, credential rotation/revocation, platform-owner recovery, financial mutation, destructive durable deletion and cloud-resource deletion.
+Examples of Class C/D include promotion/merge into protected integration or release branches, staging durable migrations, real paid/provider effects, remote release builds, destructive device operations, Production access/data/provider/deployment/store/OTA effects, credential rotation/revocation, platform-owner recovery, financial mutation, destructive durable deletion and cloud-resource deletion. `AUTO/NEXT` may prepare or update a working-branch candidate but never self-authorizes promotion into a protected integration/release branch.
 
 ~~~text
 CREDENTIAL_POSSESSION != AUTHORITY
