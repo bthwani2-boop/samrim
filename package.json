@@ -54,7 +54,8 @@
     "theme:generate": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/generate-theme-css.mjs",
     "theme:check": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/generate-theme-css.mjs --check",
     "theme:verify": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/verify-theme-authority.mjs",
-    "candidate:local:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1"
+    "candidate:local:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1",
+    "knowledge:sync": "node tools/dev/knowledge-source.mjs"
   },
   "pnpm": {
     "overrides": {
