@@ -59,7 +59,7 @@ function AccountAccessPanel() {
   useEffect(() => {
     const value = phone.trim();
     const id = ++requestId.current;
-    setResult(null); setError("");
+    setResult(null); setError(""); setOperatorResetPassword(""); setOperatorResetPasswordConfirmation(""); setResetSuccess(""); setReason("");
     if (value.length < 5) { setStatus(null); return; }
     const timeout = window.setTimeout(() => void (async () => {
       try {
@@ -190,7 +190,7 @@ function AccountAccessPanel() {
         </div> : null}
         {role === "operator" && status.activated && status.enabled && status.securityEnabled ? <div className="managed-status managed-status-info" role="region" aria-label="إعادة تعيين كلمة مرور الموظف">
           <strong>إعادة تعيين كلمة مرور الموظف (إداريًا)</strong>
-          <p>بصفتك مالك المنصة، يمكنك تعيين كلمة مرور جديدة للموظف مع إلغاء كل جلساته القديمة فورًا (إصدار الاعتماد: {status.credentialVersion ?? 1}).</p>
+          <p>بصفتك مالك المنصة، يمكنك تعيين كلمة مرور جديدة للموظف مع إلغاء كل جلساته القديمة فورًا (إصدار الاعتماد: {status.credentialVersion ?? "غير متاح"}).</p>
           <label className="field-label" htmlFor="operator-reset-new-password">كلمة المرور الجديدة
             <input id="operator-reset-new-password" type="password" autoComplete="new-password" disabled={busy} value={operatorResetPassword} onChange={(e) => setOperatorResetPassword(e.target.value)} />
             <span className="field-help">١٥ حرفاً على الأقل</span>
