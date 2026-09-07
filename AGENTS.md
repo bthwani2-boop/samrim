@@ -18,7 +18,7 @@ DONOR/OSS    = evidence/falsification input only
 ## Material-work entry
 
 1. Pin the exact repository/ref/HEAD.
-2. Read `governance/GOVERNANCE.md`.
+2. Resolve `governance.lock.json`, then read the exact pinned `governance/GOVERNANCE.md` from `bthwani2-boop/governance-and-docs`. `governance/*` and `docs/*` are logical paths in that pinned repository, not tracked local roots in `samrim`.
 3. Load only materially applicable semantic owners through source-derived lookup.
 4. For repository mutation/refoundation/closure, read `tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md` and only the modules it routes for the current state.
 5. Resolve `PRODUCT_BREADTH`, the authorized outcome, and the Orchestrator-owned environment/operation authority before any mutation. `LEVEL_4` never activates future Product breadth or a stronger environment/operation class.
@@ -39,7 +39,7 @@ pnpm knowledge:query -- list owners
 pnpm knowledge:query -- owner <keyword-or-path>
 ~~~
 
-The query tool is derived from canonical sources and is never a parallel registry.
+The query tool materializes only the exact pinned knowledge commit into ignored local cache when needed. It is derived from canonical sources and is never a parallel registry. Use `pnpm knowledge:sync` when direct inspection of the pinned knowledge checkout is required.
 
 For clean-target reconstruction, load `tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md` only when a donor is supplied.
 
@@ -48,7 +48,7 @@ For clean-target reconstruction, load `tools/prompting/bthwani-orchestrator/prof
 This file never wins a conflict. Correct routing is:
 
 ~~~text
-DURABLE MEANING CONFLICT → GOVERNANCE OWNER
+DURABLE MEANING CONFLICT → EXACT PINNED GOVERNANCE OWNER
 CURRENT IMPLEMENTATION CONFLICT → SOURCE/RUNTIME
 EXECUTION/CLOSURE CONFLICT → ORCHESTRATOR OWNER
 HUMAN PROCEDURE CONFLICT → UPDATE DOCS
