@@ -226,6 +226,10 @@ jobs:
         shell: bash
         run: pnpm run mobile:verify-config
 
+      - name: Verify canonical brand asset projections
+        shell: bash
+        run: pnpm run brand:check
+
       - name: Verify workspace dependency references
         shell: bash
         run: node tools/dev/verify-workspace-dependencies.mjs

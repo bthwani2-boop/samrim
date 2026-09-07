@@ -182,7 +182,16 @@ function buildPlugins(appKey, capabilities, sentry) {
     const splashIcon = appAsset(appKey, "splash-icon.png");
     plugins.push(
       splashIcon
-        ? ["expo-splash-screen", { image: splashIcon, imageWidth: 220, resizeMode: "contain", backgroundColor: "#FFFFFF" }]
+        ? [
+            "expo-splash-screen",
+            {
+              image: splashIcon,
+              imageWidth: 220,
+              resizeMode: "contain",
+              backgroundColor: "#FFFFFF",
+              dark: { image: splashIcon, backgroundColor: "#10131D" },
+            },
+          ]
         : "expo-splash-screen",
     );
   }
