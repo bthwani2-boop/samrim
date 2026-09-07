@@ -8,7 +8,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Scope
 
-This file owns durable cross-surface UX, information architecture, content/terminology, accessibility/localization and brand/design-language decisions. Capability-specific business states/actions remain owned by `PRD.md` and `CAPABILITIES.md`; runtime token/component implementation remains owned by the executable shared UI/design-system code.
+This file owns durable cross-surface UX, information architecture, content/terminology, accessibility/localization and brand/design-language decisions. Capability-specific business states/actions remain owned by their individual canonical owners under `capabilities/**`; `PRD.md` and `CAPABILITIES.md` provide platform orientation, schema/admission law and routing only. Runtime token/component implementation remains owned by the executable shared UI/design-system code.
 
 A design source, prototype, standalone design brief, standalone UX contract, token source, component library and rendered screen must not survive as competing authorities. This file owns durable meaning; tool-facing maps and runtime tokens are derived implementations.
 
