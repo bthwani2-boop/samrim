@@ -32,7 +32,7 @@ A screenshot is valid primary evidence only for a visual claim it can actually p
 
 ## 3. Tool-selection law
 
-Select the smallest adequate existing evidence producer for the claim. Resolve current concrete tool roles from executable configuration and `docs/development/quality/quality-and-verification.md`; this module intentionally keeps mutable vendor/tool names out of execution law.
+Select the smallest adequate existing evidence producer for the claim. Resolve current concrete tool roles from executable configuration and `docs/development/quality.md`; this module intentionally keeps mutable vendor/tool names out of execution law.
 
 ~~~text
 CLAIM
