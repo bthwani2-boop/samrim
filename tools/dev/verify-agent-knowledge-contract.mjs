@@ -8,7 +8,10 @@ const cases = [
   {
     id: "surface_ui_owner",
     source: "governance/architecture/APP-SERVICE-COMPOSITION.md",
-    include: ["SURFACE_SPECIFIC_FEATURE_UI → APP HOST"],
+    include: [
+      "SURFACE_SPECIFIC_APP_COMPOSITION → APP HOST",
+      "PROVEN_BOUNDED_CONTEXT_PRESENTATION_CLIENT → SERVICE PUBLIC CLIENT BOUNDARY",
+    ],
   },
   {
     id: "service_admission",
