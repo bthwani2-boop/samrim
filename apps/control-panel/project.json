@@ -20,6 +20,12 @@
       "options": {
         "command": "pnpm --dir apps/control-panel build"
       }
+    },
+    "e2e": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/control-panel test:e2e"
+      }
     }
   },
   "tags": [
