@@ -1,19 +1,32 @@
 import fs from "node:fs";
 import path from "node:path";
+import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
-const root = path.resolve(import.meta.dirname, "../..");
+const repoRoot = path.resolve(import.meta.dirname, "../..");
+const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
 const failures = [];
+
+function artifactRoot(relativePath) {
+  return relativePath.startsWith("governance/") || relativePath.startsWith("docs/")
+    ? knowledgeRoot
+    : repoRoot;
+}
+
+function resolveArtifact(relativePath) {
+  return path.join(artifactRoot(relativePath), ...relativePath.split("/"));
+}
 const KNOWLEDGE_REVIEW_BYTES = 24000;
 const reviewSignals = [];
 
 function rel(file) {
+  const root = file.startsWith(knowledgeRoot + path.sep) ? knowledgeRoot : repoRoot;
   return path.relative(root, file).split(path.sep).join("/");
 }
 function read(p) {
-  return fs.readFileSync(path.join(root, p), "utf8");
+  return fs.readFileSync(resolveArtifact(p), "utf8");
 }
 function exists(p) {
-  return fs.existsSync(path.join(root, p));
+  return fs.existsSync(resolveArtifact(p));
 }
 function collectMarkdown(dir) {
   if (!fs.existsSync(dir)) return [];
@@ -36,9 +49,9 @@ function duplicates(values) {
   return [...new Set(values.filter((v, i) => values.indexOf(v) !== i))];
 }
 
-const governanceFiles = collectMarkdown(path.join(root, "governance"));
-const docsFiles = collectMarkdown(path.join(root, "docs"));
-const orchestratorFiles = collectMarkdown(path.join(root, "tools/prompting/bthwani-orchestrator"));
+const governanceFiles = collectMarkdown(path.join(knowledgeRoot, "governance"));
+const docsFiles = collectMarkdown(path.join(knowledgeRoot, "docs"));
+const orchestratorFiles = collectMarkdown(path.join(repoRoot, "tools/prompting/bthwani-orchestrator"));
 const activeKnowledge = [...governanceFiles, ...docsFiles, ...orchestratorFiles];
 
 for (const file of activeKnowledge) {
@@ -138,7 +151,7 @@ if (!archPolicy.includes("Empty contract/data/testing/service lanes are not subs
   failures.push("architecture policy missing explicit empty-lane prohibition");
 }
 
-const capabilityFiles = collectMarkdown(path.join(root, "governance/product/capabilities"));
+const capabilityFiles = collectMarkdown(path.join(knowledgeRoot, "governance/product/capabilities"));
 if (capabilityFiles.length !== 28) failures.push("expected 28 one-file capability owners; found " + capabilityFiles.length);
 const capabilityIds = [];
 for (const file of capabilityFiles) {
@@ -197,7 +210,7 @@ const expectedDevelopment = new Set([
   "docs/development/quality/quality-and-verification.md",
   "docs/development/release/release-and-store-submission.md",
 ]);
-for (const file of collectMarkdown(path.join(root, "docs/development"))) {
+for (const file of collectMarkdown(path.join(knowledgeRoot, "docs/development"))) {
   if (!expectedDevelopment.has(rel(file))) failures.push("unexpected development guide: " + rel(file));
 }
 for (const expected of expectedDevelopment) if (!exists(expected)) failures.push("missing canonical development guide: " + expected);
@@ -219,7 +232,7 @@ for (const stale of [
   if (docsIndex.includes(stale)) failures.push("docs index retains stale path: " + stale);
 }
 
-const runbookFiles = collectMarkdown(path.join(root, "docs/runbooks"));
+const runbookFiles = collectMarkdown(path.join(knowledgeRoot, "docs/runbooks"));
 for (const file of runbookFiles) {
   const relative = rel(file);
   if (relative === "docs/runbooks/README.md") continue;
@@ -309,7 +322,7 @@ requireTokens("tools/prompting/bthwani-orchestrator/verify/evidence-falsificatio
   "No documentation-only closure",
 ]);
 
-const focusFiles = collectMarkdown(path.join(root, "tools/prompting/bthwani-orchestrator/focus"));
+const focusFiles = collectMarkdown(path.join(repoRoot, "tools/prompting/bthwani-orchestrator/focus"));
 for (const file of focusFiles) {
   const body = fs.readFileSync(file, "utf8");
   const relative = rel(file);
@@ -319,12 +332,12 @@ for (const file of focusFiles) {
 }
 if (focusFiles.length !== 3) failures.push("expected exactly three execution focus lenses; found " + focusFiles.length);
 
-const templateFiles = collectMarkdown(path.join(root, "tools/prompting/bthwani-orchestrator/templates"));
+const templateFiles = collectMarkdown(path.join(repoRoot, "tools/prompting/bthwani-orchestrator/templates"));
 if (templateFiles.length !== 1 || rel(templateFiles[0] ?? "") !== "tools/prompting/bthwani-orchestrator/templates/candidate-proof-matrix.md") {
   failures.push("Orchestrator templates must contain only candidate-proof-matrix.md");
 }
 
-const queryTool = fs.readFileSync(path.join(root, "tools/dev/query-knowledge.mjs"), "utf8");
+const queryTool = fs.readFileSync(path.join(repoRoot, "tools/dev/query-knowledge.mjs"), "utf8");
 for (const token of ["governance/product/capabilities", "governance/product/JOURNEYS.md", "function governanceOwners()", "function capabilityRecords()"]) {
   if (!queryTool.includes(token)) failures.push("knowledge query tool missing source-derived behavior: " + token);
 }
