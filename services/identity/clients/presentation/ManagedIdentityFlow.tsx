@@ -3,7 +3,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { resolveTheme, radius, spacing, type ThemeColors } from "@bthwani/design-system";
-import { validatePasswordInputShape, type IdentitySessionState } from "@bthwani/identity";
+import { validatePasswordInputShape } from "../password";
+import type { IdentitySessionState } from "../index";
 
 export interface ManagedIdentityBinding {
   role?: "partner" | "captain" | "field";

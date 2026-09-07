@@ -152,7 +152,7 @@ for (const file of tracked) {
       classify(file, "packages-orientation");
       continue;
     }
-    if (segments[1] === "design-system" || segments[1] === "identity-flow") {
+    if (segments[1] === "design-system") {
       classify(file, "technical-package:" + segments[1]);
     }
     continue;

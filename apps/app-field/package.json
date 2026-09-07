@@ -34,7 +34,6 @@
     "react-native-screens": "~4.26.0",
     "react-native-worklets": "0.10.1",
     "@bthwani/identity": "workspace:*",
-    "@bthwani/identity-flow": "workspace:*",
     "@bthwani/design-system": "workspace:*"
   },
   "expo": {
