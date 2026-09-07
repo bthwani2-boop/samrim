@@ -329,7 +329,7 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile
 
-      - name: Build and start production Control Panel
+      - name: Build and start release-mode Control Panel
         shell: bash
         run: |
           set -euo pipefail
@@ -349,7 +349,7 @@ jobs:
             fi
             if [[ "$attempt" -eq 60 ]]; then
               cat /tmp/samrim-control-panel.log || true
-              echo "::error::Production Control Panel did not become ready"
+              echo "::error::Release-mode Control Panel did not become ready"
               exit 1
             fi
             sleep 2

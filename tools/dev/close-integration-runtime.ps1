@@ -57,6 +57,27 @@ function Invoke-Compose {
     return $code
 }
 
+function Verify-IntegrationTargetIdentity {
+    param([hashtable] $Env)
+
+    if (-not $Env.ContainsKey("BTHWANI_ENV") -or $Env["BTHWANI_ENV"] -ne "development") {
+        Fail "Integration runtime requires BTHWANI_ENV=development before any compose mutation."
+    }
+
+    $configJson = @(
+        & docker compose --env-file $envPath -f $composeFile --profile integration config --format json 2>&1
+    )
+    if ($LASTEXITCODE -ne 0) {
+        Fail ("Unable to resolve integration compose target identity: " + ($configJson -join [Environment]::NewLine))
+    }
+    $config = ($configJson -join [Environment]::NewLine) | ConvertFrom-Json
+    if ([string] $config.name -ne "samrim-local") {
+        Fail "Compose project identity mismatch: expected=samrim-local observed=$($config.name)"
+    }
+
+    Write-Host "INTEGRATION_TARGET_IDENTITY=PASS project=samrim-local environment=development"
+}
+
 function Stop-ExistingIntegrationStack {
     Write-Host ""
     Write-Host "=== Reset previous integration stack ==="
@@ -309,6 +330,7 @@ try {
 
     Ensure-LocalEnv
     $envMap = Read-EnvMap
+    Verify-IntegrationTargetIdentity -Env $envMap
 
     Stop-ExistingIntegrationStack
 
@@ -386,6 +408,7 @@ try {
 
     Write-Host ""
     Write-Host "INTEGRATION_RUNTIME_CLOSURE=PASS"
+    Write-Host "INTEGRATION_TARGET_IDENTITY=PASS"
     Write-Host "INTEGRATION_HOST_PORT_PREFLIGHT=PASS"
     Write-Host "INTEGRATION_DOCKER_CONFIG=PASS"
     Write-Host "INTEGRATION_INFRA_RUNTIME=PASS"

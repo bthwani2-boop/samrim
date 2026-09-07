@@ -33,6 +33,7 @@
     "runtime:logs": "docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml logs -f",
     "doctor": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/doctor.ps1",
     "bootstrap": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1",
+    "safe:push": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1",
     "nx:verify-tags": "node tools/dev/verify-nx-project-tags.mjs",
     "docs:verify-command-parity": "node tools/dev/verify-doc-command-parity.mjs",
     "knowledge:verify": "node tools/dev/verify-knowledge-system.mjs",

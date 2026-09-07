@@ -72,6 +72,14 @@ For the canonical integration runtime proof:
 pnpm runtime:integration:close
 ```
 
+After a coherent verified unit is committed on a working branch, use the repository safe-push entrypoint rather than a generic push:
+
+```powershell
+pnpm safe:push -- <expected-working-branch>
+```
+
+The command fails closed on detached/protected branches, origin mismatch, dirty working tree or non-fast-forward remote movement, then confirms the remote SHA after push. Integration/release branches continue through their governed PR/promotion path.
+
 Use current `package.json` and repository scripts as command truth; this guide must not become a hand-maintained command registry.
 
 ## First representative change
