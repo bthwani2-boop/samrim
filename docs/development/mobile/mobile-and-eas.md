@@ -18,7 +18,7 @@ CURRENT_IMPLEMENTATION_TRUTH_SOURCE: LIVE_EXPO_EAS_APP_CONFIG_AND_BUILD_STATE
 
 Root commands delegate to repository-owned mobile launchers. Do not maintain a second Metro/bootstrap environment path.
 
-Verify devices with `adb devices -l`. Configure exact `adb reverse` mappings only when required by the current runtime. Use `scrcpy` against the intended ADB serial for mirroring.
+Verify devices with `adb devices -l`. The repository launcher targets the sole attached device automatically; when multiple devices are attached, set `BTHWANI_ADB_SERIAL` (or pass `-DeviceSerial` to the launcher) and it fails closed if that serial is not attached. Configure exact `adb reverse` mappings only for the resolved serial. Use `scrcpy` against the intended ADB serial for mirroring.
 
 Prefer repository launcher cache/reset options over deleting arbitrary native/generated directories.
 
@@ -66,6 +66,8 @@ Always verify the exact registered command/arguments in current manifests before
 Initialization should be idempotent and isolate app-specific signing/provider identities. It may create/reuse approved development signing material, derive certificate fingerprints, reconcile package-specific Firebase/Maps-style provider configuration and stage only ignored local inputs required by Expo/EAS. It must not modify another app or commit credentials.
 
 ## Preflight and build
+
+The currently materialized EAS build profiles are development/internal only. A Production profile is intentionally absent while Production release authority is not materialized; authenticated EAS access or an existing Expo project identity does not authorize a Production build/release path.
 
 Before remote build verify applicable resolved Expo/EAS configuration, provider input/package identity, TypeScript, Expo Doctor, local export/prebuild checks and signing/native compatibility.
 
