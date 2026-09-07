@@ -20,8 +20,8 @@ MAPPED != TREATED
 CLASSIFIED != TREATED
 CHECKPOINT != COMPLETION
 COMMIT != CLOSURE
-UNIT_CLOSED != CAMPAIGN_COMPLETE
-STAGE_PASS != CAMPAIGN_COMPLETE
+UNIT_CLOSED != AUTHORIZED_SCOPE_COMPLETE
+CHECK_PASS != AUTHORIZED_SCOPE_COMPLETE
 ```
 
 ## 2. Exact-head evidence provenance
@@ -30,8 +30,8 @@ Every closure claim must be reconstructable with:
 
 ```text
 EXACT_HEAD_SHA
-CAMPAIGN_STAGE
-UNIT_OR_CATASTROPHE_OR_ROOT
+EXECUTION_STATE
+UNIT_OR_ROOT
 CLAIM
 EVIDENCE_SOURCE
 RESULT
@@ -71,7 +71,7 @@ LEGITIMATE_BLOCKER
 
 ```text
 KNOWN_MAPPED_BUT_UNTREATED_FINDING > 0
-=> RELEVANT_STAGE_GATE_FAILS
+=> RELEVANT_CLOSURE_CLAIM_FAILS
 ```
 
 `DEFERRED_OUTSIDE_AUTHORIZED_PRODUCT_SCOPE` is terminal only for an `ACTIVE_SLICE` invocation and only for genuine future Product breadth. It cannot hide structural garbage, a prerequisite, affected regression, unsafe partial cutover, or required value in the active cone. It never satisfies a `FULL_TARGET` gate.
@@ -94,18 +94,18 @@ A green obsolete test is not closure evidence.
 
 ## 4. Continuous-execution compliance gate
 
-Before accepting any checkpoint, unit closure, stage transition or final completion, verify the campaign is not violating continuous-engagement law.
+Before accepting any checkpoint, unit closure, scope movement or final completion, verify execution is not violating continuous-engagement law.
 
 Required invariants before final completion:
 
 ```text
-CAMPAIGN_ENGAGED=TRUE
+EXECUTION_ENGAGED=TRUE
 NEXT_REQUIRED_ACTION_IS_DERIVED_OR_LEGITIMATELY_BLOCKED
 NO_IDLE_STATE
 NO_WAITING_FOR_NEXT
 NO_PAUSE_AFTER_COMMIT
 NO_PAUSE_AFTER_UNIT
-NO_PAUSE_AFTER_STAGE
+NO_PAUSE_AFTER_DERIVABLE_SCOPE_MOVEMENT
 NO_RECOMMENDATIONS_ONLY_WHEN_EXECUTION_IS_READY
 NO_DERIVABLE_AUTHORIZED_WORK_LEFT_UNEXECUTED_AT_A_STOP_POINT
 ```
@@ -119,7 +119,7 @@ ORCHESTRATOR_COMPLIANCE_FAILURE
 → EXECUTE_NEXT_REQUIRED_ACTION
 ```
 
-## 12. Falsification
+## 5. Falsification
 
 Actively search for:
 
@@ -147,7 +147,7 @@ CANONICAL_EFFECT_WITHOUT_REQUIRED_SURFACE_READBACK
 PAUSED_OR_IDLE_EXECUTION_WITH_DERIVABLE_WORK
 ```
 
-## 13. Post-unit evidence refresh
+## 6. Post-unit evidence refresh
 
 After a material unit changes the candidate, refresh the verification-owned proof state:
 
@@ -161,7 +161,7 @@ RE_PIN_CURRENT_HEAD
 
 Diagnosis/ranking of the refreshed candidate belongs to `02`; invocation of that diagnosis and subsequent movement belong to `05`.
 
-## 16. Evidence acquisition and proof-limit gate
+## 7. Evidence acquisition and proof-limit gate
 
 Every material closure claim must bind:
 
@@ -177,7 +177,7 @@ A green command proves only what it exercised. Missing acquisition capability, u
 
 Verification is risk-proportional: start affected-first, then widen when shared owners, contracts, database/migrations, runtime, security, finance, multi-surface behavior or failed evidence requires it.
 
-## 17. Runtime provenance and evidence invalidation
+## 8. Runtime provenance and evidence invalidation
 
 Runtime evidence is valid only when the tested process/container/app is proven to correspond to the claimed exact target candidate and configuration.
 
@@ -195,7 +195,7 @@ TIME/RECENCY
 
 Any material head/config/runtime/database movement invalidates affected evidence. Re-run only the evidence whose proof cone became stale, then widen if the changed owner is shared.
 
-## 18. Repository-platform truth
+## 9. Repository-platform truth
 
 When closure depends on repository-host state, tracked YAML is not sufficient evidence. Inspect the live repository platform as applicable:
 
@@ -211,7 +211,7 @@ SECURITY ANALYSIS UPLOAD/RESULT STATE
 
 Self-review is not independent review. Do not claim independent approval unless provenance proves it.
 
-## 22. Failure classification and no-blind-rerun law
+## 10. Failure classification and no-blind-rerun law
 
 A failing CI/test/runtime/provider command is evidence to diagnose, not a command to repeat until green.
 
@@ -236,7 +236,7 @@ FAILURE_SUPPRESSION/ALLOWLIST_TO_MANUFACTURE_GREEN = FORBIDDEN
 PASS_AFTER_UNEXPLAINED_FAILURE != CLOSED
 ```
 
-## 23. No documentation-only closure
+## 11. No documentation-only closure
 
 Governance, Docs, plans, matrices and reports can define/record truth and evidence obligations; they cannot substitute for required implementation/data/runtime treatment.
 
