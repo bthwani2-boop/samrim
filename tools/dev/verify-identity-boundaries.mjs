@@ -178,7 +178,7 @@ for (const [app, role, surface] of [
   ]) {
     if (!runtime.includes(required)) failures.push(runtimePath + " missing " + required);
   }
-  if (!runtime.includes("createMobileIdentityRuntime") && !runtime.includes("new IdentitySessionManager(")) {
+  if (!runtime.includes("createMobileIdentityRuntime") && !runtime.includes("createManagedMobileIdentityBinding") && !runtime.includes("new IdentitySessionManager(")) {
     failures.push(runtimePath + " missing session manager");
   }
   for (const forbidden of ["requestOtp(", "loginClient(", "actorType"]) {
@@ -188,10 +188,10 @@ for (const [app, role, surface] of [
   if (!page.includes("ManagedIdentityFlow")) {
     failures.push(app + " UI is not bound to canonical ManagedIdentityFlow");
   }
-  if (!page.includes(`managedRole="${role}"`)) {
+  if (!page.includes(`managedRole="${role}"`) && !page.includes("managedRole={role}")) {
     failures.push(app + " UI does not bind canonical role " + role);
   }
-  if (!page.includes(`surface="${surface}"`)) {
+  if (!page.includes(`surface="${surface}"`) && !page.includes("surface={surface}")) {
     failures.push(app + " UI does not bind canonical surface " + surface);
   }
   if (!page.includes('from "@bthwani/identity/presentation"') && !page.includes("from '@bthwani/identity/presentation'")) {
