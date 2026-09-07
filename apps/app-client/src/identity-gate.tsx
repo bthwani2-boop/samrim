@@ -107,6 +107,19 @@ export default function IdentityGate() {
     setLoginFailed(false);
   }
 
+  function resetSignedOutAuthState() {
+    setMode("login");
+    setPhone("");
+    setPassword("");
+    setPasswordConfirmation("");
+    setCode("");
+    setProofRequested(false);
+    setError("");
+    setNotice("");
+    setFocusedField(null);
+    setLoginFailed(false);
+  }
+
   function updatePhone(value: string) {
     setPhone(value);
     if (mode === "login") {
@@ -160,6 +173,7 @@ export default function IdentityGate() {
       setPassword("");
       setPasswordConfirmation("");
       setProofRequested(false);
+      setMode("login");
     } catch (cause) {
       setLoginFailed(mode === "login" && isCredentialFailure(cause));
       setError(identityErrorMessage(cause, mode === "login" ? "login" : mode === "recover" ? "recovery" : "general"));
@@ -171,12 +185,16 @@ export default function IdentityGate() {
   async function logout() {
     setBusy(true);
     setError("");
+    setNotice("");
+    let remoteRevocationConfirmed = true;
     try {
       await logoutIdentity();
-    } catch (cause) {
-      setError(identityErrorMessage(cause));
+    } catch {
+      remoteRevocationConfirmed = false;
     } finally {
       setState(currentIdentityState());
+      resetSignedOutAuthState();
+      if (!remoteRevocationConfirmed) setNotice("تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم.");
       setBusy(false);
     }
   }

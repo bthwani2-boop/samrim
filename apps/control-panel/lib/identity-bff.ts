@@ -81,7 +81,7 @@ function isControlPanelIdentity(identity: ActorIdentity): boolean {
   return isControlPanelRole(identity.role) && identity.surface === "control-panel" && identityAuthorizesSurface(identity, identity.role, "control-panel");
 }
 
-export async function clearOperatorCookies(): Promise<void> {
+async function clearOperatorCookies(): Promise<void> {
   const store = await cookies();
   for (const key of [accessCookie, refreshCookie, deviceCookie]) {
     store.set(key, "", { ...cookieOptions(), maxAge: 0 });
@@ -146,7 +146,7 @@ export async function setIdentityRoleEnabled(phone: string, role: ActorType, ena
   await identityInternalClient().setActorRoleEnabled(record.actorId, role, enabled, reason, context);
 }
 
-export async function setActorSecurityEnabledById(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void> {
+async function setActorSecurityEnabledById(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void> {
   if (!actorId) throw missingIdentityRole();
   await identityInternalClient().setActorSecurityEnabled(actorId, enabled, reason, context);
 }
@@ -167,7 +167,7 @@ export async function resetOperatorPasswordByPhone(phone: string, password: stri
   await identityInternalClient().resetOperatorPassword(record.actorId, password, context);
 }
 
-export async function resetOperatorPasswordById(actorId: string, password: string, context: VersionedMutationContext): Promise<void> {
+async function resetOperatorPasswordById(actorId: string, password: string, context: VersionedMutationContext): Promise<void> {
   if (!actorId) throw missingIdentityRole();
   await identityInternalClient().resetOperatorPassword(actorId, password, context);
 }

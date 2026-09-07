@@ -91,26 +91,3 @@ ${darkVars}
 }
 `;
 }
-
-export const themeKernel = {
-  themes,
-  resolveTheme,
-  themeToCssVariables,
-  generateThemeCss,
-  spacing,
-  radius,
-  elevation,
-  motion,
-  sizing,
-  breakpoints,
-  typography,
-  fontFamilies,
-  fontWeights,
-  borders,
-  opacity,
-  zIndex,
-  direction
-} as const;
-
-export const theme = themeKernel;
-export type ThemeKernel = typeof themeKernel;

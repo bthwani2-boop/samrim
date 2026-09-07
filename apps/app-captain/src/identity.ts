@@ -3,16 +3,14 @@ import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 
 import {
-  createMobileIdentityRuntime,
-  type IdentityClient,
-  type IdentitySessionState,
+  createManagedMobileIdentityBinding,
 } from "@bthwani/identity";
 
 export const role = "captain" as const;
 export const surface = "app-captain" as const;
 const namespace = "bthwani.captain";
 
-const runtime = createMobileIdentityRuntime({
+const runtime = createManagedMobileIdentityBinding({
   role,
   surface,
   namespace,
@@ -29,37 +27,8 @@ const runtime = createMobileIdentityRuntime({
 export const restoreIdentitySession = runtime.restoreIdentitySession;
 export const currentIdentityState = runtime.currentIdentityState;
 export const logoutIdentity = runtime.logoutIdentity;
-
-export function requestManagedActivation(phone: string) {
-  return runtime.identityClient().requestManagedActivation({ phone, role });
-}
-
-export async function activateManagedIdentity(phone: string, verificationCode: string, password: string): Promise<IdentitySessionState> {
-  const pair = await runtime.identityClient().activateManaged({
-    phone,
-    role,
-    verificationCode,
-    password,
-    deviceFingerprint: await runtime.deviceFingerprint(),
-  });
-  return runtime.identitySession().adopt(pair);
-}
-
-export async function loginManagedIdentity(phone: string, password: string): Promise<IdentitySessionState> {
-  const pair = await runtime.identityClient().loginManaged({
-    phone,
-    role,
-    password,
-    deviceFingerprint: await runtime.deviceFingerprint(),
-  });
-  return runtime.identitySession().adopt(pair);
-}
-
-export function requestManagedRecovery(phone: string) {
-  return runtime.identityClient().requestManagedRecovery({ phone, role });
-}
-
-export async function recoverManagedIdentity(phone: string, code: string, password: string): Promise<IdentitySessionState> {
-  await runtime.identityClient().recoverManaged({ phone, role, code, password });
-  return { kind: "signed_out" };
-}
+export const requestManagedActivation = runtime.requestManagedActivation;
+export const activateManagedIdentity = runtime.activateManagedIdentity;
+export const loginManagedIdentity = runtime.loginManagedIdentity;
+export const requestManagedRecovery = runtime.requestManagedRecovery;
+export const recoverManagedIdentity = runtime.recoverManagedIdentity;

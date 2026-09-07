@@ -3,10 +3,10 @@ import { verifySameOrigin } from "./lib/csrf";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-function contentSecurityPolicy(): string {
+function createContentSecurityPolicy(): Readonly<{ nonce: string; value: string }> {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const isDevelopment = process.env.NODE_ENV === "development";
-  const csp = [
+  const value = [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${isDevelopment ? " 'unsafe-eval'" : ""}`,
     `style-src 'self' 'nonce-${nonce}'${isDevelopment ? " 'unsafe-inline'" : ""}`,
@@ -18,33 +18,27 @@ function contentSecurityPolicy(): string {
     "form-action 'self'",
     "frame-ancestors 'none'",
   ];
-  return `${csp.join("; ")};`;
-}
-
-function withSecurityHeaders(response: NextResponse, csp: string): NextResponse {
-  response.headers.set("Content-Security-Policy", csp);
-  return response;
+  return { nonce, value: `${value.join("; ")};` };
 }
 
 export function proxy(request: NextRequest) {
-  const csp = contentSecurityPolicy();
+  const { nonce, value: csp } = createContentSecurityPolicy();
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", csp.match(/'nonce-([^']+)'/)?.[1] ?? "");
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
 
   if (request.nextUrl.pathname.startsWith("/api/") && UNSAFE_METHODS.has(request.method.toUpperCase()) && !verifySameOrigin(request)) {
-    return withSecurityHeaders(
-      NextResponse.json(
-        { error: "FORBIDDEN_CROSS_ORIGIN", message: "Cross-origin requests are forbidden for control-panel mutations" },
-        { status: 403 },
-      ),
-      csp,
+    const response = NextResponse.json(
+      { error: "FORBIDDEN_CROSS_ORIGIN", message: "Cross-origin requests are forbidden for control-panel mutations" },
+      { status: 403 },
     );
+    response.headers.set("Content-Security-Policy", csp);
+    return response;
   }
 
-  return withSecurityHeaders(
-    NextResponse.next({ request: { headers: requestHeaders } }),
-    csp,
-  );
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set("Content-Security-Policy", csp);
+  return response;
 }
 
 export const config = {

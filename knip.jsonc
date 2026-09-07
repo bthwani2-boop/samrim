@@ -1,0 +1,40 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": [
+    "apps/*/app/index.tsx",
+    "apps/*/src/identity.ts",
+    "apps/control-panel/app/**/route.ts",
+    "services/identity/project.json",
+    "tools/mobile/export-mobile-smoke.mjs",
+    "tools/mobile/test-mobile-app.mjs"
+  ],
+  "ignore": [
+    // Expo/EAS host projections are loaded by Expo's config and fingerprint tooling.
+    "apps/*/fingerprint.config.js",
+    // These are explicit Nx/Identity command entrypoints, not import-graph modules.
+    "services/identity/tests/contract-guard.test.mjs",
+    "tools/mobile/define-samrim-expo-app.d.cts",
+    "tools/mobile/export-mobile-smoke.mjs",
+    "tools/mobile/test-mobile-app.mjs"
+  ],
+  "ignoreDependencies": [
+    // Metro probes these optional host integrations with require.resolve and falls back safely.
+    "@sentry/react-native",
+    "expo"
+  ],
+  "ignoreBinaries": [
+    // CI, Nx project target and developer-host binaries are resolved outside the JS graph.
+    "build",
+    "captain",
+    "client",
+    "dev",
+    "field",
+    "go",
+    "gofmt",
+    "partner",
+    "playwright",
+    "pwsh",
+    "scrcpy",
+    "typecheck"
+  ]
+}

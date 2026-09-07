@@ -177,13 +177,15 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
   async function logoutDevice() {
     setBusy(true);
     setError("");
+    let remoteRevocationConfirmed = true;
     try {
       await binding.logoutIdentity();
-    } catch (cause) {
-      setError(identityErrorMessage(cause));
+    } catch {
+      remoteRevocationConfirmed = false;
     } finally {
       resetToPhone();
       setState(binding.currentIdentityState());
+      if (!remoteRevocationConfirmed) setNotice("تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم.");
       setBusy(false);
     }
   }
@@ -547,14 +549,12 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
     shell(
       <View style={styles.card}>
         {content}
-        {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
+        {notice ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       </View>
     )
   );
 }
-
-export default ManagedIdentityFlow;
 
 function createStyles(theme: ThemeColors, isDark: boolean) {
   return StyleSheet.create({

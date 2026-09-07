@@ -234,6 +234,10 @@ jobs:
         shell: bash
         run: node tools/dev/verify-workspace-dependencies.mjs
 
+      - name: Verify repository liveness
+        shell: bash
+        run: pnpm run repository:verify-liveness
+
       - name: Verify Nx project tags
         shell: bash
         run: pnpm run nx:verify-tags
@@ -258,7 +262,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm audit --prod --audit-level=moderate
+          pnpm audit --audit-level=moderate
           (
             cd services/identity/backend
             go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
@@ -288,7 +292,7 @@ jobs:
     name: repository-runtime
     needs: baseline
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout exact candidate
@@ -312,6 +316,48 @@ jobs:
         run: |
           set -euo pipefail
           docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration up -d --build
+
+      - name: Install browser-runtime workspace dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and start production Control Panel
+        shell: bash
+        run: |
+          set -euo pipefail
+          export IDENTITY_API_BASE_URL="http://127.0.0.1:18082"
+          export DSH_API_BASE_URL="http://127.0.0.1:58080"
+          export IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN="local-platform-control-identity-token"
+          export DSH_PLATFORM_CONTROL_SERVICE_TOKEN="local-dsh-platform-control-token-2026"
+          export CONTROL_PANEL_PUBLIC_ORIGIN="https://127.0.0.1:13001"
+          pnpm --dir apps/control-panel build
+          nohup pnpm --dir apps/control-panel exec next start -p 13001 >/tmp/samrim-control-panel.log 2>&1 &
+          echo $! >/tmp/samrim-control-panel.pid
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:13001/ >/dev/null; then
+              echo "CONTROL_PANEL_RUNTIME=PASS"
+              break
+            fi
+            if [[ "$attempt" -eq 60 ]]; then
+              cat /tmp/samrim-control-panel.log || true
+              echo "::error::Production Control Panel did not become ready"
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Install required Chromium runtime
+        shell: bash
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Run required live Control Panel browser journeys
+        shell: bash
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:13001
+        run: |
+          pnpm --dir apps/control-panel test:e2e
+          echo "PLAYWRIGHT_REQUIRED_GATE=PASS"
 
       - name: Verify repository runtime composition
         shell: bash
@@ -404,4 +450,11 @@ jobs:
       - name: Stop repository runtime
         if: always()
         shell: bash
-        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration down --volumes --remove-orphans
+        run: |
+          if [[ -f /tmp/samrim-control-panel.pid ]]; then
+            kill "$(cat /tmp/samrim-control-panel.pid)" 2>/dev/null || true
+          fi
+          if [[ -f /tmp/samrim-control-panel.log ]]; then
+            tail -n 200 /tmp/samrim-control-panel.log || true
+          fi
+          docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration down --volumes --remove-orphans

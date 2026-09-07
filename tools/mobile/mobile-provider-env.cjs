@@ -100,7 +100,6 @@ function resolveSentryEnvironment(appKey, environment = process.env) {
 }
 
 module.exports = {
-  appEnvSuffix,
   resolveGoogleServicesFile,
   resolveSentryEnvironment,
 };

@@ -38,6 +38,7 @@
     "knowledge:verify": "node tools/dev/verify-knowledge-system.mjs",
     "repository:verify-structure": "node tools/dev/verify-repository-structure.mjs",
     "repository:verify-hygiene": "node tools/dev/verify-structural-hygiene.mjs",
+    "repository:verify-liveness": "knip --no-progress --reporter compact --no-config-hints",
     "knowledge:query": "node tools/dev/query-knowledge.mjs",
     "knowledge:verify-agent-contract": "node tools/dev/verify-agent-knowledge-contract.mjs",
     "knowledge:verify-references": "node tools/dev/verify-knowledge-references.mjs",
@@ -62,6 +63,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
+    "knip": "6.34.0",
     "nx": "23.2.0",
     "typescript": "6.0.2"
   }

@@ -17,17 +17,20 @@ try {
     fs.rmSync(distDir, { recursive: true, force: true });
   }
 
-  execSync("pnpm exec expo export --platform android --output-dir dist", {
-    cwd: appDir,
-    stdio: "inherit",
-    env: { ...process.env, CI: "1" },
-  });
+  for (const platform of ["android", "ios"]) {
+    execSync(`pnpm exec expo export --platform ${platform} --output-dir dist`, {
+      cwd: appDir,
+      stdio: "inherit",
+      env: { ...process.env, CI: "1" },
+    });
 
-  if (!fs.existsSync(distDir)) {
-    throw new Error(`Build failed: dist directory was not created for ${app}`);
+    if (!fs.existsSync(distDir)) {
+      throw new Error(`Build failed: dist directory was not created for ${app} (${platform})`);
+    }
+
+    console.log(`MOBILE_EXPORT_SMOKE=PASS app=${app} platform=${platform} bytecode=default`);
+    fs.rmSync(distDir, { recursive: true, force: true });
   }
-
-  console.log(`MOBILE_EXPORT_SMOKE=PASS app=${app} platform=android bytecode=default`);
 } finally {
   if (fs.existsSync(distDir)) {
     fs.rmSync(distDir, { recursive: true, force: true });

@@ -47,7 +47,7 @@ This file is the **sole editable durable semantic owner** of `IDENTITY_ACTIVATIO
 - Password credentials use a current password-hashing primitive and server-side password policy appropriate to whether the password is a sole or multi-factor credential. Credential policy is not defined by bootstrap examples.
 - Verification/activation/operator-challenge abuse controls include bounded expiry, attempts, replay/single-use behavior and source/identifier throttling without permanent account lockout.
 - Public verification/authentication/activation surfaces are non-enumerating before the caller has proven the applicable identifier. Privileged status inspection belongs only to authorized internal/admin contracts.
-- Local sign-out and remote revocation are distinct outcomes. Once local credentials/cookies are cleared, every consuming host converges to `signed_out` even if remote revocation fails.
+- Local sign-out and remote revocation are distinct outcomes. Once local credentials/cookies are cleared, every consuming host converges to `signed_out` even if remote revocation fails. The current host policy is observable-only: no client-side retry queue retains credentials after sign-out; a failed remote revoke remains visible to the user and is resolved by server expiry or an explicit administrative revoke.
 
 **Forbidden/negative invariants**
 - No universal `phone + activation code` login journey across all actor classes.
@@ -80,7 +80,7 @@ This file is the **sole editable durable semantic owner** of `IDENTITY_ACTIVATIO
 - Operator credential reset invalidates operator sessions but not unrelated-role sessions.
 - Forged caller headers cannot change the principal resolved from a service credential.
 - Generated contract/client/app/database/runtime evidence contains zero legacy universal-OTP/client-activation or caller-header authority.
-- Mobile hosts and Control Panel transition to `signed_out` after local credential/cookie clearing even when remote revoke fails; remote-revocation failure remains separately observable/retriable according to policy.
+- Mobile hosts and Control Panel transition to `signed_out` after local credential/cookie clearing even when remote revoke fails; remote-revocation failure remains separately observable, while the current policy avoids retaining credentials for client-side retry.
 
 **Named failure classes:** duplicate_actor, role_shaped_actor_id, actor_role_collapse, customer_activation_login, customer_username_requirement, governed_role_self_grant, repeated_managed_activation, automatic_device_reactivation, cross_role_credential, cross_role_revocation, operator_single_factor_session, missing_global_security_kill_switch, consumer_authored_actor_id, service_caller_header_trust, premature_identity_context_or_tenant, account_lockout_dos, challenge_replay, refresh_reuse, public_auth_state_enumeration, local_logout_ui_divergence, secret_or_pii_leak, parallel_identity_truth.
 

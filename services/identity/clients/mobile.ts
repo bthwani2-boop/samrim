@@ -22,6 +22,12 @@ export type MobileIdentityRuntimeConfig = {
   explicitApiUrl?: string | undefined;
 };
 
+export type ManagedMobileRole = "partner" | "captain" | "field";
+
+export type ManagedMobileIdentityRuntimeConfig = Omit<MobileIdentityRuntimeConfig, "role"> & {
+  role: ManagedMobileRole;
+};
+
 export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig) {
   const deviceKey = `${config.namespace}.identity.device.v1`;
   let clientValue: IdentityClient | null = null;
@@ -86,5 +92,38 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
     restoreIdentitySession: (): Promise<IdentitySessionState> => identitySession().restore(),
     currentIdentityState: (): IdentitySessionState => identitySession().state,
     logoutIdentity: (): Promise<void> => identitySession().logout(),
+  };
+}
+
+export function createManagedMobileIdentityBinding(config: ManagedMobileIdentityRuntimeConfig) {
+  const runtime = createMobileIdentityRuntime(config);
+
+  return {
+    ...runtime,
+    requestManagedActivation: (phone: string) => runtime.identityClient().requestManagedActivation({ phone, role: config.role }),
+    activateManagedIdentity: async (phone: string, verificationCode: string, password: string): Promise<IdentitySessionState> => {
+      const pair = await runtime.identityClient().activateManaged({
+        phone,
+        role: config.role,
+        verificationCode,
+        password,
+        deviceFingerprint: await runtime.deviceFingerprint(),
+      });
+      return runtime.identitySession().adopt(pair);
+    },
+    loginManagedIdentity: async (phone: string, password: string): Promise<IdentitySessionState> => {
+      const pair = await runtime.identityClient().loginManaged({
+        phone,
+        role: config.role,
+        password,
+        deviceFingerprint: await runtime.deviceFingerprint(),
+      });
+      return runtime.identitySession().adopt(pair);
+    },
+    requestManagedRecovery: (phone: string) => runtime.identityClient().requestManagedRecovery({ phone, role: config.role }),
+    recoverManagedIdentity: async (phone: string, code: string, password: string): Promise<IdentitySessionState> => {
+      await runtime.identityClient().recoverManaged({ phone, role: config.role, code, password });
+      return { kind: "signed_out" };
+    },
   };
 }

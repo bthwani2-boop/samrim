@@ -73,7 +73,7 @@ A preflight result belongs to the exact source/config/provider/signing inputs te
 
 Submit remote builds only after the current preflight contract passes. Cache clearing is troubleshooting, not correctness.
 
-`pnpm run workspace:mobile-export-smoke` runs an Android JavaScript export smoke for the four app hosts with Expo's default bytecode behavior. Its `export-smoke` target is not a signed native Android/iOS build and does not prove iOS delivery, signing, store readiness or backend journey behavior.
+`pnpm run workspace:mobile-export-smoke` runs Android and iOS JavaScript export smoke checks for the four app hosts with Expo's default bytecode behavior. Its `export-smoke` target is not a signed native Android/iOS build and does not prove native signing, store readiness or backend journey behavior.
 
 ## Private/generated inputs
 

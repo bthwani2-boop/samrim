@@ -1,11 +1,24 @@
 import { ManagedIdentityFlow } from "@bthwani/identity/presentation";
-import * as identity from "./identity";
+import {
+  activateManagedIdentity,
+  currentIdentityState,
+  loginManagedIdentity,
+  logoutIdentity,
+  recoverManagedIdentity,
+  requestManagedActivation,
+  requestManagedRecovery,
+  restoreIdentitySession,
+  role,
+  surface,
+} from "./identity";
+
+const identity = { role, surface, restoreIdentitySession, currentIdentityState, logoutIdentity, requestManagedActivation, activateManagedIdentity, loginManagedIdentity, requestManagedRecovery, recoverManagedIdentity };
 
 export default function IdentityGate() {
   return (
     <ManagedIdentityFlow
-      managedRole="partner"
-      surface="app-partner"
+      managedRole={role}
+      surface={surface}
       roleLabel="الشريك"
       binding={identity}
     />
