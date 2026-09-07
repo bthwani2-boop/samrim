@@ -102,3 +102,13 @@ func TestIdentityRunBlocksProductionBeforeDatabaseAccess(t *testing.T) {
 		t.Fatalf("production identity runtime was not blocked before database access: %v", err)
 	}
 }
+
+
+func TestDevelopmentRejectsNonLocalChallengeDeliveryMode(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	t.Setenv("BTHWANI_ENV", "development")
+	t.Setenv("IDENTITY_CHALLENGE_DELIVERY_MODE", "nonlocal")
+	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "external challenge delivery modes are forbidden") {
+		t.Fatalf("development external delivery mode was accepted: %v", err)
+	}
+}

@@ -52,7 +52,7 @@ Challenge HMAC/delivery configuration remains server/runtime state, never a clie
 
 Provider names do not define domains. Daily development should prefer deterministic low-cost sinks/simulators unless the real external channel is the test objective.
 
-Identity owns challenge lifecycle; SMS/email/push are transport channels. Local sinks must still preserve challenge lifecycle, attempt limits and supersession semantics.
+Identity owns challenge lifecycle; SMS/email/push are transport channels. The ordinary `development`/`test` Identity runtime accepts the repository-local Mailpit sink only; other delivery modes fail closed before a delivery worker can start. Real-provider qualification belongs to a separately authorized stronger environment when that environment is materialized. Local sinks must still preserve challenge lifecycle, attempt limits and supersession semantics.
 
 Financial/biller simulators should cover success, rejection, pending, timeout, delayed/unknown result, duplicate reference/callback, invalid signature, reversal and reconciliation mismatch as applicable. WLT authorization/accounting/idempotency/reconciliation/readback remain real.
 

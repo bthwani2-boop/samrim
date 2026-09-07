@@ -313,7 +313,11 @@ func validateDatabaseTransport(runtimeEnvironment, databaseURL string) error {
 }
 
 func loadDelivery(runtimeEnvironment string) (challengedelivery.Sender, error) {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("IDENTITY_CHALLENGE_DELIVERY_MODE"))) {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("IDENTITY_CHALLENGE_DELIVERY_MODE")))
+	if (runtimeEnvironment == "development" || runtimeEnvironment == "test") && mode != "mailpit" {
+		return nil, errors.New("external challenge delivery modes are forbidden in ordinary development/test runtime; use mailpit")
+	}
+	switch mode {
 	case "mailpit":
 		if runtimeEnvironment == "production" || runtimeEnvironment == "staging" {
 			return nil, errors.New("mailpit challenge delivery is forbidden outside local environments")
