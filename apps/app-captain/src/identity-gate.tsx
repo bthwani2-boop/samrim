@@ -1,4 +1,4 @@
-import { ManagedIdentityFlow } from "@bthwani/identity/presentation";
+import { ManagedIdentityFlow } from "@bthwani/identity-flow";
 import * as identity from "./identity";
 
 export default function IdentityGate() {

@@ -25,15 +25,14 @@ try {
   if (pkg.name !== "@bthwani/identity") failures.push("Identity package name drifted");
   if (pkg.exports?.["."]?.types !== "./clients/index.ts") failures.push("Identity package types export drifted");
   if (pkg.exports?.["."]?.default !== "./clients/index.ts") failures.push("Identity package runtime export drifted");
-  if (pkg.exports?.["./presentation"]?.types !== "./clients/presentation/ManagedIdentityFlow.tsx") failures.push("Identity package presentation types export drifted");
-  if (pkg.exports?.["./presentation"]?.default !== "./clients/presentation/ManagedIdentityFlow.tsx") failures.push("Identity package presentation runtime export drifted");
+  if (pkg.exports?.["./presentation"]) failures.push("Identity package must not own app-shaped presentation");
 } catch {
   failures.push("services/identity/package.json is invalid JSON");
 }
 
-const presentationFlow = read("services/identity/clients/presentation/ManagedIdentityFlow.tsx");
+const presentationFlow = read("packages/identity-flow/src/ManagedIdentityFlow.tsx");
 if (!presentationFlow) {
-  failures.push("missing canonical ManagedIdentityFlow presentation component in Identity");
+  failures.push("missing canonical host-neutral ManagedIdentityFlow presentation component");
 } else {
   for (const required of [
     "chooseIntent",
@@ -55,6 +54,9 @@ if (!presentationFlow) {
     failures.push("ManagedIdentityFlow must resolve next step from phone without tabs or role selectors");
   }
 }
+if (fs.existsSync(path.join(root, "services/identity/clients/presentation/ManagedIdentityFlow.tsx"))) {
+  failures.push("Identity retains app-shaped ManagedIdentityFlow presentation");
+}
 
 for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
   const pkgPath = "apps/" + app + "/package.json";
@@ -62,6 +64,9 @@ for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
     const pkg = JSON.parse(read(pkgPath));
     if (pkg.dependencies?.["@bthwani/identity"] !== "workspace:*") {
       failures.push(pkgPath + " must consume @bthwani/identity via workspace:*");
+    }
+    if (["app-partner", "app-captain", "app-field"].includes(app) && pkg.dependencies?.["@bthwani/identity-flow"] !== "workspace:*") {
+      failures.push(pkgPath + " must consume @bthwani/identity-flow via workspace:*");
     }
   } catch {
     failures.push(pkgPath + " is invalid JSON");
@@ -136,8 +141,8 @@ for (const [app, role, surface] of [
   if (!page.includes(`surface="${surface}"`)) {
     failures.push(app + " UI does not bind canonical surface " + surface);
   }
-  if (!page.includes('from "@bthwani/identity/presentation"') && !page.includes("from '@bthwani/identity/presentation'")) {
-    failures.push(app + " UI does not import from @bthwani/identity/presentation");
+  if (!page.includes('from "@bthwani/identity-flow"') && !page.includes("from '@bthwani/identity-flow'")) {
+    failures.push(app + " UI does not import from @bthwani/identity-flow");
   }
   if (page.split("\n").length > 40) {
     failures.push(app + " contains duplicate identity gate implementation instead of thin host binding");
