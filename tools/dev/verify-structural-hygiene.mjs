@@ -58,6 +58,7 @@ const rootFiles = new Set([
   "CONTRIBUTING.md",
   "README.md",
   "SECURITY.md",
+  "governance.lock.json",
   "go.work",
   "go.work.sum",
   "knip.jsonc",
