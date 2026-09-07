@@ -1,13 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
+import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
 const failures = [];
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
+const readKnowledge = (p) => fs.readFileSync(path.join(knowledgeRoot, p), "utf8");
 
 const packageJson = JSON.parse(read("package.json"));
-const workflowGuide = read("docs/development/workflow/developer-workflow.md");
-const runtimeGuide = read("docs/development/runtime/runtime-and-configuration.md");
+const workflowGuide = readKnowledge("docs/development/workflow/developer-workflow.md");
+const runtimeGuide = readKnowledge("docs/development/runtime/runtime-and-configuration.md");
 const compose = read("infra/local/compose/compose.yaml");
 const envExample = read("infra/local/compose/.env.example");
 
@@ -58,10 +61,10 @@ for (const file of (function collect(dir) {
     else if (entry.isFile() && entry.name.endsWith(".md")) out.push(absolute);
   }
   return out;
-})(path.join(root, "docs/development"))) {
+})(path.join(knowledgeRoot, "docs/development"))) {
   const body = fs.readFileSync(file, "utf8");
   if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(body)) {
-    failures.push(path.relative(root, file).split(path.sep).join("/") + " hard-codes a local port");
+    failures.push(path.relative(knowledgeRoot, file).split(path.sep).join("/") + " hard-codes a local port");
   }
 }
 
