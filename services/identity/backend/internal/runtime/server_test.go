@@ -94,7 +94,6 @@ func TestProductionRequiresProviderBudgetHour(t *testing.T) {
 	}
 }
 
-
 func TestIdentityRunBlocksProductionBeforeDatabaseAccess(t *testing.T) {
 	setRuntimeConfigBaseline(t)
 	err := Run("identity", "/identity", "8082")
@@ -102,7 +101,6 @@ func TestIdentityRunBlocksProductionBeforeDatabaseAccess(t *testing.T) {
 		t.Fatalf("production identity runtime was not blocked before database access: %v", err)
 	}
 }
-
 
 func TestDevelopmentRejectsNonLocalChallengeDeliveryMode(t *testing.T) {
 	setRuntimeConfigBaseline(t)
