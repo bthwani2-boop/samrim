@@ -307,4 +307,3 @@ if (process.argv.includes("--check")) {
   fs.writeFileSync(operationsOutputPath, generatedOps, "utf8");
   console.log("DSH_GENERATED_TYPES=WRITTEN blob=" + sourceBlobSha);
 }
-

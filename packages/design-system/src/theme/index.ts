@@ -35,6 +35,9 @@ export function themeToCssVariables(themeColors: ThemeColors): Record<string, st
     "--brand-action-hover": themeColors.actionHover,
     "--brand-action-pressed": themeColors.actionPressed,
     "--brand-action-soft": themeColors.actionSoft,
+    "--action-bg": themeColors.actionBackground,
+    "--action-text": themeColors.actionText,
+    "--interactive-text": themeColors.interactiveText,
     "--brand-structure": themeColors.structure,
     "--brand-structure-soft": themeColors.structureSoft,
     "--surface-warm": themeColors.background,
@@ -49,14 +52,19 @@ export function themeToCssVariables(themeColors: ThemeColors): Record<string, st
     "--border-subtle": themeColors.borderColor,
     "--border-strong": themeColors.borderColorStrong,
     "--focus-color": themeColors.focusColor,
+    "--focus-ring": themeColors.focusRing,
     "--success": themeColors.success,
     "--success-soft": themeColors.successSoft,
+    "--success-text": themeColors.successText,
     "--warning": themeColors.warning,
     "--warning-soft": themeColors.warningSoft,
+    "--warning-text": themeColors.warningText,
     "--danger": themeColors.danger,
     "--danger-soft": themeColors.dangerSoft,
+    "--danger-text": themeColors.dangerText,
     "--info": themeColors.info,
     "--info-soft": themeColors.infoSoft,
+    "--info-text": themeColors.infoText,
     "--shadow-card": themeColors.shadowCard
   };
 }
@@ -78,16 +86,6 @@ ${lightVars}
   :root {
 ${darkVars}
   }
-}
-
-[data-theme="light"] {
-  color-scheme: light;
-${lightVars}
-}
-
-[data-theme="dark"] {
-  color-scheme: dark;
-${darkVars}
 }
 `;
 }

@@ -30,7 +30,7 @@ Routes cross-cutting incidents involving database/migrations, contract/version s
 2. **Current environment recovery procedures**:
    - **Local/integration environments**: Execute `powershell -ExecutionPolicy Bypass -File tools/dev/close-integration-runtime.ps1` to terminate running containers and volumes, followed by `tools/dev/open-integration-runtime.ps1` to cleanly re-provision and auto-migrate.
    - **Schema conformance**: Execute `go run ./cmd/schema-verify` in `services/identity/backend` to verify that all committed migrations, columns, constraints, and index checksums match the canonical schema.
-   - **Platform owner lockout recovery**: Execute `go run ./cmd/platform-owner-recover` against `IDENTITY_DATABASE_URL` to atomically reset the platform owner credentials, revoke active sessions and challenges, and log an immutable audit event.
+   - **Platform owner lockout recovery**: Execute `go run ./cmd/platform-owner-recover` against `IDENTITY_DATABASE_URL` to atomically reset the platform owner credentials, revoke active sessions and challenges, and log an append-only security audit event subject to configured retention policy.
 
 ## Database and migration failure
 

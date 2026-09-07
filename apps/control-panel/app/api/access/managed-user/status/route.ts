@@ -34,6 +34,7 @@ export async function GET(request: Request) {
       role,
       actorVersion: record?.actorVersion,
       roleVersion: record?.roleVersion,
+      credentialVersion: record?.credentialVersion,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (isDshClientError(error)) return NextResponse.json({ error: dshErrorPayload(error) }, { status: dshHttpStatus(error), headers: { "Cache-Control": "no-store" } });

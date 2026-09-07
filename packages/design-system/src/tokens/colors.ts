@@ -68,6 +68,21 @@ export const brandScale = {
   }
 } as const;
 
+export const statusScale = {
+  successSoft: "#ECFDF3",
+  success: "#1F8B4C",
+  successStrong: "#16653A",
+  warningSoft: "#FFFBEB",
+  warning: "#B96A06",
+  warningStrong: "#8E5204",
+  dangerSoft: "#FEF2F2",
+  danger: "#C43B35",
+  dangerStrong: "#9B2F2B",
+  infoSoft: "#EFF6FF",
+  info: "#295FAA",
+  infoStrong: "#214D89"
+} as const;
+
 export const colorRoles = {
   brandAction: brandRoots.brandAction,
   brandActionHover: brandScale.action[600],
@@ -96,12 +111,20 @@ export const colorRoles = {
 
   borderSubtle: alpha(brandRoots.brandStructure, 0.1),
   borderStrong: alpha(brandRoots.brandStructure, 0.18),
-  focusRing: alpha(brandRoots.brandAction, 0.34),
+  focusRing: brandScale.action[700],
 
-  success: "#1F8B4C",
-  warning: "#B96A06",
-  danger: "#C43B35",
-  info: "#295FAA",
+  actionBackground: brandScale.action[700],
+  actionText: brandScale.action[700],
+  interactiveText: brandScale.action[700],
+
+  success: statusScale.successStrong,
+  successText: statusScale.successStrong,
+  warning: statusScale.warningStrong,
+  warningText: statusScale.warningStrong,
+  danger: statusScale.dangerStrong,
+  dangerText: statusScale.dangerStrong,
+  info: statusScale.infoStrong,
+  infoText: statusScale.infoStrong,
 
   shadowBase: "#000000"
 } as const;
@@ -123,21 +146,6 @@ export const neutralScale = {
   950: "#020617"
 } as const;
 
-export const statusScale = {
-  successSoft: "#ECFDF3",
-  success: "#1F8B4C",
-  successStrong: "#16653A",
-  warningSoft: "#FFFBEB",
-  warning: "#B96A06",
-  warningStrong: "#8E5204",
-  dangerSoft: "#FEF2F2",
-  danger: "#C43B35",
-  dangerStrong: "#9B2F2B",
-  infoSoft: "#EFF6FF",
-  info: "#295FAA",
-  infoStrong: "#214D89"
-} as const;
-
 export const lightThemeColors = {
   background: brandScale.surface[50],
   backgroundAlt: brandRoots.surfaceBase,
@@ -151,21 +159,29 @@ export const lightThemeColors = {
   colorInverse: colorRoles.textInverse,
   borderColor: colorRoles.borderSubtle,
   borderColorStrong: colorRoles.borderStrong,
-  focusColor: colorRoles.focusRing,
-  action: colorRoles.brandAction,
-  actionHover: colorRoles.brandActionHover,
-  actionPressed: colorRoles.brandActionPressed,
-  actionSoft: colorRoles.brandActionSoft,
+  focusColor: brandScale.action[700],
+  focusRing: brandScale.action[700],
+  action: brandScale.action[700],
+  actionBackground: brandScale.action[700],
+  actionHover: brandScale.action[800],
+  actionPressed: brandScale.action[900],
+  actionSoft: brandScale.action[50],
+  actionText: brandScale.action[700],
+  interactiveText: brandScale.action[700],
   structure: colorRoles.brandStructure,
   structureSoft: colorRoles.brandStructureSoft,
-  success: statusScale.success,
+  success: statusScale.successStrong,
   successSoft: statusScale.successSoft,
-  warning: statusScale.warning,
+  successText: statusScale.successStrong,
+  warning: statusScale.warningStrong,
   warningSoft: statusScale.warningSoft,
-  danger: statusScale.danger,
+  warningText: statusScale.warningStrong,
+  danger: statusScale.dangerStrong,
   dangerSoft: statusScale.dangerSoft,
-  info: statusScale.info,
+  dangerText: statusScale.dangerStrong,
+  info: statusScale.infoStrong,
   infoSoft: statusScale.infoSoft,
+  infoText: statusScale.infoStrong,
   onAction: brandRoots.surfaceBase,
   shadowColor: colorRoles.shadowBase,
   shadowCard: "0 22px 60px rgba(10, 47, 92, 0.1)"
@@ -184,22 +200,30 @@ export const darkThemeColors = {
   colorInverse: brandRoots.brandStructure,
   borderColor: alpha(neutralScale[0], 0.12),
   borderColorStrong: alpha(neutralScale[0], 0.2),
-  focusColor: alpha(brandRoots.brandAction, 0.5),
-  action: brandRoots.brandAction,
-  actionHover: brandScale.action[400],
-  actionPressed: brandScale.action[300],
+  focusColor: brandScale.action[300],
+  focusRing: brandScale.action[300],
+  action: brandScale.action[400],
+  actionBackground: brandScale.action[400],
+  actionHover: brandScale.action[300],
+  actionPressed: brandScale.action[200],
   actionSoft: alpha(brandRoots.brandAction, 0.18),
+  actionText: brandScale.action[300],
+  interactiveText: brandScale.action[300],
   structure: neutralScale[50],
   structureSoft: neutralScale[800],
   success: "#4ADE80",
   successSoft: alpha("#4ADE80", 0.14),
+  successText: "#4ADE80",
   warning: "#F5C04E",
   warningSoft: alpha("#F5C04E", 0.14),
+  warningText: "#F5C04E",
   danger: "#F2877A",
   dangerSoft: alpha("#F2877A", 0.14),
+  dangerText: "#F2877A",
   info: "#8BB4E8",
   infoSoft: alpha("#8BB4E8", 0.14),
-  onAction: "#FFFFFF",
+  infoText: "#8BB4E8",
+  onAction: neutralScale[950],
   shadowColor: colorRoles.shadowBase,
   shadowCard: "0 22px 60px rgba(0, 0, 0, 0.5)"
 } as const;

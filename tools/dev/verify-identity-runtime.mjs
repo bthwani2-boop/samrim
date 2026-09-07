@@ -11,7 +11,7 @@ const defaultEnv = fs.existsSync(path.join(root, "infra/local/compose/.env"))
 const envFile = path.resolve(root, requestedEnv || defaultEnv);
 const runtimeRequestTimeoutMs = 30_000;
 const runtimeHost = process.argv.find((arg) => arg.startsWith("--host="))?.slice("--host=".length) || "127.0.0.1";
-let runtimeSourceIp = process.argv.find((arg) => arg.startsWith("--source-ip="))?.slice("--source-ip=".length) || "198.18.0.1";
+let runtimeSourceIp = process.argv.find((arg) => arg.startsWith("--source-ip="))?.slice("--source-ip=".length) || `198.18.${crypto.randomInt(1, 254)}.${crypto.randomInt(1, 254)}`;
 
 function fail(message) {
   console.error("IDENTITY_RUNTIME_SEMANTICS=FAIL");
@@ -141,9 +141,9 @@ async function expect(method, pathname, expectedStatus, options = {}) {
         const diagPhone = sqlLiteral(phoneArg);
         const diagRole = sqlLiteral(roleArg);
         const phoneChallenges = sql("SELECT count(*) FROM identity_challenges WHERE phone_e164='" + diagPhone + "' AND created_at>clock_timestamp()-interval '15 minutes'");
-        const sourceChallenges = sql("SELECT count(*) FROM identity_challenges WHERE request_ip_hash=encode(digest('client-ip' || '" + sqlLiteral(runtimeSourceIp) + "' || '" + sqlLiteral(abuseSecret) + "', 'sha256'), 'hex') AND created_at>clock_timestamp()-interval '15 minutes'");
+        const sourceChallenges = sql("SELECT count(*) FROM identity_challenges WHERE request_ip_hash=encode(sha256(('client-ip' || '" + sqlLiteral(runtimeSourceIp) + "' || '" + sqlLiteral(abuseSecret) + "')::bytea), 'hex') AND created_at>clock_timestamp()-interval '15 minutes'");
         const phoneAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE phone_e164='" + diagPhone + "' AND role='" + diagRole + "' AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'");
-        const sourceAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE ip_hash=encode(digest('client-ip' || '" + sqlLiteral(runtimeSourceIp) + "' || '" + sqlLiteral(abuseSecret) + "', 'sha256'), 'hex') AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'");
+        const sourceAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE ip_hash=encode(sha256(('client-ip' || '" + sqlLiteral(runtimeSourceIp) + "' || '" + sqlLiteral(abuseSecret) + "')::bytea), 'hex') AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'");
         const reservedAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE reserved=true AND created_at>clock_timestamp()-interval '15 minutes'");
         console.error("DIAGNOSTIC_RATE_LIMIT_COUNTERS: phoneChallenges=" + phoneChallenges + " sourceChallenges=" + sourceChallenges + " phoneAttempts=" + phoneAttempts + " sourceAttempts=" + sourceAttempts + " reservedAttempts=" + reservedAttempts);
       } catch (diagErr) {
@@ -274,22 +274,30 @@ await expect("POST", "/auth/client/register", 401, {
 });
 
 // DSH adds managed roles to the same actor without authoring actor_id or credentials.
-const captain = await expect("POST", "/internal/actor-roles/provision", 201, {
+const dshAdminActorId = "act_dsh_admin_" + suffix;
+
+// Negative invariant: DSH provisioning without X-Acting-Actor-ID fails closed
+await expect("POST", "/internal/actor-roles/provision", 400, {
   headers: service(dshToken),
+  body: { phoneE164: sharedPhone, role: "captain" },
+});
+
+const captain = await expect("POST", "/internal/actor-roles/provision", 201, {
+  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
   body: { phoneE164: sharedPhone, role: "captain" },
 });
 assert(captain.actorId === actorId, "captain provisioning created a second actor");
 assert(captain.activatedAt === undefined, "captain role should not be pre-activated");
 await expect("POST", "/internal/actor-roles/provision", 400, {
-  headers: service(dshToken),
+  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
   body: { phoneE164: phone(), role: "captain", password: "Not-Allowed-" + suffix + "-Password" },
 });
 await expect("POST", "/internal/actor-roles/provision", 400, {
-  headers: service(dshToken),
+  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
   body: { actorId: "attacker-selected", phoneE164: phone(), role: "captain" },
 });
 await expect("POST", "/internal/actor-roles/provision", 400, {
-  headers: service(dshToken),
+  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
   body: { phoneE164: phone(), role: "captain", username: "retired-identifier" },
 });
 await expect("POST", "/internal/actor-roles/provision", 403, {
@@ -355,7 +363,7 @@ const operator = await expect("POST", "/internal/actor-roles/provision", 201, {
 });
 assert(operator.actorId === actorId, "operator provisioning created a second actor");
 await expect("POST", "/internal/actor-roles/provision", 403, {
-  headers: service(dshToken, { "X-Service-Caller": "platform-control" }),
+  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Service-Caller": "platform-control" }),
   body: { phoneE164: phone(), role: "operator", password: operatorPassword },
 });
 
@@ -367,14 +375,27 @@ assertEnrollmentToken(operatorActivation.code, "operator enrollment token");
 assertTwoDayActivationExpiry(operatorActivation.expiresAt, "operator enrollment token");
 const operatorActivationChallenge = await requestChallenge(
   "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "operator", activationCode: operatorActivation.code },
+  { phone: sharedPhone, role: "operator", operatorEnrollmentToken: operatorActivation.code },
   "managed_activate",
 );
-const operatorActivationPair = await expect("POST", "/auth/managed/activate", 200, {
+
+// Negative test: legacy activationCode field must be rejected as an unknown property
+await expect("POST", "/auth/managed/activate", 400, {
   body: {
     phone: sharedPhone,
     role: "operator",
     activationCode: operatorActivation.code,
+    verificationCode: operatorActivationChallenge.code,
+    password: operatorPassword,
+    deviceFingerprint: "device-operator-activation-legacy-" + suffix,
+  },
+});
+
+const operatorActivationPair = await expect("POST", "/auth/managed/activate", 200, {
+  body: {
+    phone: sharedPhone,
+    role: "operator",
+    operatorEnrollmentToken: operatorActivation.code,
     verificationCode: operatorActivationChallenge.code,
     password: operatorPassword,
     deviceFingerprint: "device-operator-activation-" + suffix,
@@ -444,11 +465,18 @@ await expect(
   403,
   { headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }) },
 );
+// Negative invariant: DSH re-enrollment without X-Acting-Actor-ID fails closed
+await expect(
+  "POST",
+  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/reenrollment",
+  400,
+  { headers: service(dshToken, { "X-Correlation-ID": "captain-reenroll-" + suffix }) },
+);
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/reenrollment",
   204,
-  { headers: service(dshToken, { "X-Correlation-ID": "captain-reenroll-" + suffix }) },
+  { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Correlation-ID": "captain-reenroll-" + suffix }) },
 );
 const reenrolledCaptain = await expect(
   "GET",
@@ -508,10 +536,58 @@ const staleOperatorStart = await requestChallenge(
   "operator_mfa",
 );
 const resetOperatorPassword = "Operator-Reset-" + suffix + "-Strong-Password";
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
+const operatorRoleBeforeReset = await expect(
+  "GET",
+  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/operator",
+  200,
+  { headers: service(platformToken) },
+);
+const opCredVersion = operatorRoleBeforeReset.credentialVersion;
+assert(typeof opCredVersion === "number" && opCredVersion >= 1, "operator credential version missing or invalid");
+
+// Negative invariant: missing X-Expected-Version -> 400
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 400, {
   headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
   body: { password: resetOperatorPassword },
 });
+
+// Negative invariant: stale X-Expected-Version -> 409
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 409, {
+  headers: service(platformToken, {
+    "X-Acting-Actor-ID": platformOwnerActorId,
+    "X-Expected-Version": String(opCredVersion + 999),
+  }),
+  body: { password: resetOperatorPassword },
+});
+
+// Negative invariant: missing X-Acting-Actor-ID -> 400
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 400, {
+  headers: service(platformToken, {
+    "X-Expected-Version": String(opCredVersion),
+  }),
+  body: { password: resetOperatorPassword },
+});
+
+// Valid operator reset with matching expected version and acting actor -> 204
+await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
+  headers: service(platformToken, {
+    "X-Acting-Actor-ID": platformOwnerActorId,
+    "X-Expected-Version": String(opCredVersion),
+  }),
+  body: { password: resetOperatorPassword },
+});
+
+// Concurrency invariant: credentialVersion incremented
+const operatorRoleAfterReset = await expect(
+  "GET",
+  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/operator",
+  200,
+  { headers: service(platformToken) },
+);
+assert(
+  operatorRoleAfterReset.credentialVersion === opCredVersion + 1,
+  "operator credential version did not increment on reset",
+);
 await expect("POST", "/auth/operator/login/complete", 401, {
   body: { phone: sharedPhone, role: "operator", code: staleOperatorStart.code, deviceFingerprint: "device-operator-stale-" + suffix },
 });
@@ -576,7 +652,7 @@ assert(deliveryStatus(unknownCaptainPhone, "managed_activate", "captain") === "s
 const outageKnownPhone = phone();
 const outageUnknownPhone = phone();
 await expect("POST", "/internal/actor-roles/provision", 201, {
-  headers: service(dshToken),
+  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
   body: { phoneE164: outageKnownPhone, role: "captain" },
 });
 compose("stop", "mailpit");
@@ -694,28 +770,66 @@ await expect("GET", "/auth/session", 401, { token: rotated.accessToken });
 
 // Operator password reset revokes only operator sessions and keeps other roles alive.
 const newOperatorPassword = operatorPassword + "-Reset";
+const opRoleForSessionRevoke = await expect(
+  "GET",
+  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/operator",
+  200,
+  { headers: service(platformToken) },
+);
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
-  headers: service(platformToken, { "X-Correlation-ID": "operator-reset-" + suffix, "X-Acting-Actor-ID": platformOwnerActorId }),
+  headers: service(platformToken, {
+    "X-Correlation-ID": "operator-reset-" + suffix,
+    "X-Acting-Actor-ID": platformOwnerActorId,
+    "X-Expected-Version": String(opRoleForSessionRevoke.credentialVersion),
+  }),
   body: { password: newOperatorPassword },
 });
 await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: reactivatedCaptain.accessToken });
 
-// Role disable stays scoped.
+// Role disable requires X-Acting-Actor-ID and X-Expected-Version
+const captainRoleBeforeDisable = await expect(
+  "GET",
+  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain",
+  200,
+  { headers: service(dshToken) },
+);
+const captainVersion = captainRoleBeforeDisable.roleVersion;
+assert(typeof captainVersion === "number" && captainVersion >= 1, "captain roleVersion invalid: " + JSON.stringify(captainRoleBeforeDisable));
+
+// Negative invariant: missing X-Acting-Actor-ID -> 400
+await expect(
+  "POST",
+  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable",
+  400,
+  { headers: service(dshToken, { "X-Expected-Version": String(captainVersion) }) },
+);
+
+// Negative invariant: missing X-Expected-Version -> 400
+await expect(
+  "POST",
+  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable",
+  400,
+  { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }) },
+);
+
+// Valid disable -> 204
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable",
   204,
-  { headers: service(dshToken) },
+  { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Expected-Version": String(captainVersion) }) },
 );
 await expect("GET", "/auth/session", 401, { token: reactivatedCaptain.accessToken });
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
+
+// Valid enable -> 204
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/enable",
   204,
-  { headers: service(dshToken) },
+  { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Expected-Version": String(captainVersion + 1) }) },
 );
 
 // Identity-wide security disable remains distinct and invalidates every remaining role session.
@@ -783,3 +897,9 @@ console.log("IDENTITY_REFRESH_DEVICE_BINDING=PASS");
 console.log("IDENTITY_REFRESH_CONCURRENT_STALE=PASS");
 console.log("IDENTITY_REFRESH_REPLAY_COMPROMISE=PASS");
 console.log("IDENTITY_RAW_CHALLENGE_CODE_LEAK=0");
+console.log("LEGACY_ACTIVATION_CODE_RUNTIME_NAME=0");
+console.log("OPERATOR_ENROLLMENT_TOKEN_CONTRACT_DRIFT=0");
+console.log("CANONICAL_MUTATION_SHORTCUT=0");
+console.log("ADMIN_MUTATION_WITHOUT_REQUIRED_ATTRIBUTION=0");
+console.log("OPERATOR_RESET_EXPECTED_VERSION_REQUIRED=1");
+console.log("OPERATOR_RESET_CONTRACT_RUNTIME_DRIFT=0");

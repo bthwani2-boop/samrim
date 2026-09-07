@@ -59,6 +59,7 @@ export type IdentityInternalClient = Readonly<{
   searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, correlationId: string, reason: string, options?: MutationOptions): Promise<void>;
   setActorSecurityEnabled(actorId: string, enabled: boolean, correlationId: string, reason: string, options?: MutationOptions): Promise<void>;
+  resetOperatorPassword(actorId: string, password: string, options?: MutationOptions): Promise<void>;
 }>;
 
 function normalizeBaseUrl(raw: string): string {
@@ -302,6 +303,38 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         reason,
         options,
       );
+    },
+    resetOperatorPassword: async (actorId, password, options) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        let response: Response;
+        try {
+          const pathname = expandPath(identityOperationPaths.resetOperatorPassword.path, { actorId });
+          response = await fetch(resolveUrl(baseUrl, pathname), {
+            method: identityOperationPaths.resetOperatorPassword.method,
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + token,
+              ...(options?.correlationId?.trim() ? { "X-Correlation-ID": options.correlationId.trim() } : {}),
+              ...(options?.expectedVersion !== undefined ? { "X-Expected-Version": String(options.expectedVersion) } : {}),
+              ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim() } : {}),
+            },
+            body: JSON.stringify({ password }),
+            ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+            signal: controller.signal,
+          });
+        } catch (error) {
+          throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+        }
+        if (!response.ok) {
+          const parsed = parseErrorPayload(await response.json().catch(() => null));
+          throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
     },
   };
 }

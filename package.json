@@ -47,6 +47,7 @@
     "runtime:integration:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-integration-runtime.ps1",
     "runtime:integration:close": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 && pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-integration-runtime.ps1",
     "theme:generate": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/generate-theme-css.mjs",
+    "theme:check": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/generate-theme-css.mjs --check",
     "theme:verify": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/verify-theme-authority.mjs",
     "candidate:local:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1"
   },

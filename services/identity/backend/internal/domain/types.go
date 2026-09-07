@@ -22,16 +22,17 @@ type ActorRole struct {
 }
 
 type ActorRoleView struct {
-	ActorID         string     `json:"actorId"`
-	PhoneE164       string     `json:"phoneE164"`
-	Role            string     `json:"role"`
-	Enabled         bool       `json:"enabled"`
-	ActivatedAt     *time.Time `json:"activatedAt,omitempty"`
-	SecurityEnabled bool       `json:"securityEnabled"`
-	ActorVersion    int        `json:"actorVersion"`
-	RoleVersion     int        `json:"roleVersion"`
-	ActorCreated    bool       `json:"actorCreated,omitempty"`
-	RoleCreated     bool       `json:"roleCreated,omitempty"`
+	ActorID           string     `json:"actorId"`
+	PhoneE164         string     `json:"phoneE164"`
+	Role              string     `json:"role"`
+	Enabled           bool       `json:"enabled"`
+	ActivatedAt       *time.Time `json:"activatedAt,omitempty"`
+	SecurityEnabled   bool       `json:"securityEnabled"`
+	ActorVersion      int        `json:"actorVersion"`
+	RoleVersion       int        `json:"roleVersion"`
+	CredentialVersion int        `json:"credentialVersion,omitempty"`
+	ActorCreated      bool       `json:"actorCreated,omitempty"`
+	RoleCreated       bool       `json:"roleCreated,omitempty"`
 }
 
 type ActorSearchInput struct {

@@ -47,6 +47,7 @@ for (const forbidden of [
   "ActorStatus:",
   "/auth/managed/state:",
   "/auth/control-panel/state:",
+  "activationCode:",
 ]) {
   if (contract.includes(forbidden)) failures.push("legacy/premature Identity authority remains: " + forbidden);
 }
@@ -95,9 +96,9 @@ const operatorStart = contract.slice(
 if (operatorStart.includes("#/components/responses/TokenPair")) {
   failures.push("operator password-start route can create a session");
 }
-const managedRequest = schemaBlock("ManagedChallengeRequest", "ClientCredentialProofRequest");
+const managedRequest = schemaBlock("ManagedChallengeRequest", "ManagedRecoveryChallengeRequest");
 if (!managedRequest.includes("#/components/schemas/ManagedActivationRole")) failures.push("managed activation role boundary missing");
-if (!managedRequest.includes("activationCode:")) failures.push("managed activation request token schema missing");
+if (!managedRequest.includes("operatorEnrollmentToken:")) failures.push("managed activation request token schema missing");
 if (!managedRequest.includes("minLength: 24") || !managedRequest.includes('pattern: "^[A-Za-z0-9_-]{24,256}$"')) failures.push("managed activation token must be high entropy");
 const managedActivation = schemaBlock("ManagedActivationRequest", "OperatorLoginStartRequest");
 if (!managedActivation.includes("verificationCode:")) failures.push("managed activation does not require the separate phone verification code");

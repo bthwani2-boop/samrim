@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ActorIdentity, ActorType, ControlPanelRole, OperatorEnrollmentToken } from "@bthwani/identity";
+import { validatePasswordInputShape, type ActorIdentity, type ActorType, type ControlPanelRole, type OperatorEnrollmentToken } from "@bthwani/identity";
 
 type ViewState =
   | Readonly<{ kind: "loading" }>
@@ -47,8 +47,11 @@ function AccountAccessPanel() {
   const [role, setRole] = useState<ActorType>("partner");
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
-  const [status, setStatus] = useState<{ exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number } | null>(null);
+  const [status, setStatus] = useState<{ exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number; credentialVersion?: number } | null>(null);
   const [result, setResult] = useState<OperatorEnrollmentToken | null>(null);
+  const [operatorResetPassword, setOperatorResetPassword] = useState("");
+  const [operatorResetPasswordConfirmation, setOperatorResetPasswordConfirmation] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const requestId = useRef(0);
@@ -108,8 +111,50 @@ function AccountAccessPanel() {
       }
       setReason("");
       const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
-      if (refresh.ok) setStatus(await refresh.json() as { exists: boolean; enabled: boolean; activated: boolean; securityEnabled: boolean; role: ActorType; actorId?: string; actorVersion?: number; roleVersion?: number });
+      if (refresh.ok) setStatus(await refresh.json() as typeof status);
     } catch { setError("تعذر تحديث حالة الحساب."); } finally { setBusy(false); }
+  }
+
+  async function resetOperatorCredential() {
+    if (reason.trim().length < 5) {
+      setError("اكتب سببًا واضحًا من 5 أحرف على الأقل قبل إعادة تعيين كلمة المرور.");
+      return;
+    }
+    const validation = validatePasswordInputShape(operatorResetPassword, operatorResetPasswordConfirmation);
+    if (!validation.valid) {
+      setError(validation.message ?? "كلمة المرور غير صالحة.");
+      return;
+    }
+    const expectedVersion = status?.credentialVersion;
+    if (expectedVersion === undefined || expectedVersion === null || expectedVersion < 1) {
+      setError("تعذر تحديد إصدار كلمة المرور للتحقق من التزامن. أعد تحميل الحالة وحاول مرة أخرى.");
+      return;
+    }
+    setBusy(true); setError(""); setResetSuccess("");
+    try {
+      const response = await identityFetch("/api/access/managed-user/operator-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, password: operatorResetPassword, reason, expectedVersion }),
+      });
+      if (!response.ok) {
+        if (response.status === 409 || response.status === 412) {
+          setError("تعارض في إصدار كلمة المرور: تم تعديل الاعتماد من جهة أخرى. يرجى إعادة المحاولة.");
+        } else {
+          setError(await responseMessage(response));
+        }
+        return;
+      }
+      setOperatorResetPassword("");
+      setOperatorResetPasswordConfirmation("");
+      setResetSuccess("تمت إعادة تعيين كلمة مرور موظف لوحة التحكم بنجاح وإلغاء جميع الجلسات القديمة.");
+      const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
+      if (refresh.ok) setStatus(await refresh.json() as typeof status);
+    } catch {
+      setError("تعذر إعادة تعيين كلمة مرور الموظف.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const canIssueActivation = managedRole && status !== null && !status.activated;
@@ -140,8 +185,21 @@ function AccountAccessPanel() {
         <p>{status.activated ? "يوجد تسجيل سابق لهذا الدور." : "الدور مهيأ ولم يكتمل تفعيله بعد."}</p>
         {status.activated && managedRole ? <div className="managed-status managed-status-warning" role="alert">
           <strong>تم تفعيل هذا الدور من قبل.</strong>
-          <p>{canIssueRecovery ? "يمكنك إصدار رمز جديد لاسترداد وإعادة تفعيل الحساب الموجود؛ ستُلغى الجلسات السابقة." : role === "operator" ? "استرداد كلمة مرور الموظف يتم من مسار الدخول المخصص، ولا تُصدر هذه الشاشة دعوة ثانية للحساب المفعّل." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
+          <p>{canIssueRecovery ? "يمكنك إصدار رمز جديد لاسترداد وإعادة تفعيل الحساب الموجود؛ ستُلغى الجلسات السابقة." : role === "operator" ? "حساب موظف لوحة التحكم مفعل. يمكنك إدارة حالته أو إعادة تعيين كلمة مروره إداريًا أدناه." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
           {canIssueRecovery ? <button className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ استرداد الحساب…" : "استرداد وإعادة تفعيل الحساب"}</button> : null}
+        </div> : null}
+        {role === "operator" && status.activated && status.enabled && status.securityEnabled ? <div className="managed-status managed-status-info" role="region" aria-label="إعادة تعيين كلمة مرور الموظف">
+          <strong>إعادة تعيين كلمة مرور الموظف (إداريًا)</strong>
+          <p>بصفتك مالك المنصة، يمكنك تعيين كلمة مرور جديدة للموظف مع إلغاء كل جلساته القديمة فورًا (إصدار الاعتماد: {status.credentialVersion ?? 1}).</p>
+          <label className="field-label" htmlFor="operator-reset-new-password">كلمة المرور الجديدة
+            <input id="operator-reset-new-password" type="password" autoComplete="new-password" disabled={busy} value={operatorResetPassword} onChange={(e) => setOperatorResetPassword(e.target.value)} />
+            <span className="field-help">١٥ حرفاً على الأقل</span>
+          </label>
+          <label className="field-label" htmlFor="operator-reset-confirm-password">تأكيد كلمة المرور
+            <input id="operator-reset-confirm-password" type="password" autoComplete="new-password" disabled={busy} value={operatorResetPasswordConfirmation} onChange={(e) => setOperatorResetPasswordConfirmation(e.target.value)} />
+          </label>
+          <button className="button button-primary" disabled={busy || !validatePasswordInputShape(operatorResetPassword, operatorResetPasswordConfirmation).valid || reason.trim().length < 5} onClick={() => void resetOperatorCredential()}>{busy ? "جارٍ التعيين…" : "إعادة تعيين كلمة مرور الموظف"}</button>
+          {resetSuccess ? <p className="success-inline" role="status">{resetSuccess}</p> : null}
         </div> : null}
         <label className="field-label" htmlFor="access-reason">سبب التغيير
           <input id="access-reason" maxLength={500} placeholder="مثال: انتهاء التعاقد أو استرداد الجهاز" value={reason} onChange={(event) => setReason(event.target.value)} />
@@ -312,9 +370,9 @@ export default function Home() {
     return shell(<><section className="workspace-card"><div className="workspace-intro"><span className="success-badge"><span className="success-dot" aria-hidden="true" /> الجلسة نشطة</span><p className="eyebrow">مساحة {view.identity.role === "platform_owner" ? "مالك المنصة" : "المشغل"}</p><h1>أهلاً بك في لوحة التحكم</h1><p className="lead">تم توثيق جلستك بعاملين. يمكنك متابعة الوحدات المصرح بها من هذه المساحة.</p></div><div className="session-summary"><div><span className="summary-label">الدور</span><strong>{view.identity.role === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</strong></div><div><span className="summary-label">السطح</span><strong>{view.identity.surface}</strong></div><div><span className="summary-label">حالة الجلسة</span><strong className="summary-value-success">موثقة</strong></div></div><div className="workspace-note"><span className="note-mark" aria-hidden="true">✓</span><div><strong>الهوية جاهزة</strong><p>لا توجد بيانات تشغيلية معروضة هنا قبل ربط صلاحيات الوحدات؛ لن نعرض أرقاماً تجريبية أو حالة غير مؤكدة.</p></div></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}<button className="button button-secondary" disabled={busy} onClick={() => void logout()}>{busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}</button></section>{view.identity.role === "platform_owner" ? <AccountAccessPanel /> : null}</>, "workspace-shell");
   }
 
-  const canStart = controlStep === "phone" || controlStep === "recovery" ? phone.trim().length > 0 : controlStep === "password" ? phone.trim().length > 0 && password.length >= 15 : phone.trim().length > 0 && operatorEnrollmentToken.trim().length >= 24;
-  const canCompleteActivation = code.trim().length === 6 && activationPassword.length >= 15 && activationPassword === activationPasswordConfirmation;
-  const canCompleteRecovery = code.trim().length === 6 && recoveryPassword.length >= 15 && recoveryPassword === recoveryPasswordConfirmation;
+  const canStart = controlStep === "phone" || controlStep === "recovery" ? phone.trim().length > 0 : controlStep === "password" ? phone.trim().length > 0 && validatePasswordInputShape(password).valid : phone.trim().length > 0 && operatorEnrollmentToken.trim().length >= 24;
+  const canCompleteActivation = code.trim().length === 6 && validatePasswordInputShape(activationPassword, activationPasswordConfirmation).valid;
+  const canCompleteRecovery = code.trim().length === 6 && validatePasswordInputShape(recoveryPassword, recoveryPasswordConfirmation).valid;
   return shell(
     <section className="auth-layout">
       <div className="auth-context">

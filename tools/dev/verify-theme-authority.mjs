@@ -16,6 +16,42 @@ function read(relPath) {
   return fs.readFileSync(full, "utf8");
 }
 
+// Contrast ratio utilities (WCAG 2.2)
+function parseRgb(colorStr) {
+  if (!colorStr) return [0, 0, 0];
+  const rgbaMatch = colorStr.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (rgbaMatch) {
+    return [Number.parseInt(rgbaMatch[1], 10), Number.parseInt(rgbaMatch[2], 10), Number.parseInt(rgbaMatch[3], 10)];
+  }
+  const hex = colorStr.replace("#", "");
+  const expanded =
+    hex.length === 3
+      ? hex.split("").map((c) => c + c).join("")
+      : hex.slice(0, 6);
+  if (expanded.length !== 6) return [0, 0, 0];
+  return [
+    Number.parseInt(expanded.slice(0, 2), 16),
+    Number.parseInt(expanded.slice(2, 4), 16),
+    Number.parseInt(expanded.slice(4, 6), 16)
+  ];
+}
+
+function relativeLuminance(colorStr) {
+  const [r, g, b] = parseRgb(colorStr).map((c) => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(colorA, colorB) {
+  const l1 = relativeLuminance(colorA);
+  const l2 = relativeLuminance(colorB);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
 // 1. Check packages/design-system theme authority
 const colorsTs = read("packages/design-system/src/tokens/colors.ts");
 const themeIndexTs = read("packages/design-system/src/theme/index.ts");
@@ -45,6 +81,8 @@ if (!themeIndexTs.includes("export function themeToCssVariables")) {
 
 // 2. Parity check on light and dark keys
 const { lightThemeColors, darkThemeColors } = await import("../../packages/design-system/src/tokens/colors.ts");
+const { generateThemeCss } = await import("../../packages/design-system/src/theme/index.ts");
+
 const lightKeys = Object.keys(lightThemeColors).sort();
 const darkKeys = Object.keys(darkThemeColors).sort();
 
@@ -58,12 +96,62 @@ if (missingInLight.length > 0) {
   failures.push(`lightThemeColors missing keys: ${missingInLight.join(", ")}`);
 }
 
-// 3. Check Control Panel globals.css and theme.css
-const globalsCss = read("apps/control-panel/app/globals.css");
-const themeCss = read("apps/control-panel/app/theme.css");
+// 3. Contrast Matrix Verification (WCAG 2.2 AA)
+// Normal text requires >= 4.5:1. Focus / UI components require >= 3:1.
+function checkContrast(themeName, roleName, fgColor, bgRole, bgColor, minRatio) {
+  const ratio = contrastRatio(fgColor, bgColor);
+  if (ratio < minRatio) {
+    failures.push(
+      `Contrast failure in ${themeName}: ${roleName} (${fgColor}) on ${bgRole} (${bgColor}) is ${ratio.toFixed(2)}:1 (required >= ${minRatio}:1)`
+    );
+  }
+}
 
-if (!globalsCss.includes('@import "./theme.css";')) {
-  failures.push("apps/control-panel/app/globals.css must import generated ./theme.css");
+// Light theme checks
+checkContrast("light", "onAction", lightThemeColors.onAction, "actionBackground", lightThemeColors.actionBackground, 4.5);
+checkContrast("light", "actionText", lightThemeColors.actionText, "background", lightThemeColors.background, 4.5);
+checkContrast("light", "actionText", lightThemeColors.actionText, "surface", lightThemeColors.surface, 4.5);
+checkContrast("light", "focusRing", lightThemeColors.focusRing, "background", lightThemeColors.background, 3.0);
+checkContrast("light", "focusRing", lightThemeColors.focusRing, "surface", lightThemeColors.surface, 3.0);
+checkContrast("light", "color", lightThemeColors.color, "background", lightThemeColors.background, 4.5);
+checkContrast("light", "color", lightThemeColors.color, "surface", lightThemeColors.surface, 4.5);
+checkContrast("light", "successText", lightThemeColors.successText, "successSoft", lightThemeColors.successSoft, 4.5);
+checkContrast("light", "warningText", lightThemeColors.warningText, "warningSoft", lightThemeColors.warningSoft, 4.5);
+checkContrast("light", "dangerText", lightThemeColors.dangerText, "dangerSoft", lightThemeColors.dangerSoft, 4.5);
+checkContrast("light", "infoText", lightThemeColors.infoText, "infoSoft", lightThemeColors.infoSoft, 4.5);
+
+// Dark theme checks
+checkContrast("dark", "onAction", darkThemeColors.onAction, "actionBackground", darkThemeColors.actionBackground, 4.5);
+checkContrast("dark", "actionText", darkThemeColors.actionText, "background", darkThemeColors.background, 4.5);
+checkContrast("dark", "actionText", darkThemeColors.actionText, "surface", darkThemeColors.surface, 4.5);
+checkContrast("dark", "focusRing", darkThemeColors.focusRing, "background", darkThemeColors.background, 3.0);
+checkContrast("dark", "focusRing", darkThemeColors.focusRing, "surface", darkThemeColors.surface, 3.0);
+checkContrast("dark", "color", darkThemeColors.color, "background", darkThemeColors.background, 4.5);
+checkContrast("dark", "color", darkThemeColors.color, "surface", darkThemeColors.surface, 4.5);
+checkContrast("dark", "successText", darkThemeColors.successText, "surface", darkThemeColors.surface, 4.5);
+checkContrast("dark", "warningText", darkThemeColors.warningText, "surface", darkThemeColors.surface, 4.5);
+checkContrast("dark", "dangerText", darkThemeColors.dangerText, "surface", darkThemeColors.surface, 4.5);
+checkContrast("dark", "infoText", darkThemeColors.infoText, "surface", darkThemeColors.surface, 4.5);
+
+// 4. Check Single Canonical Theme CSS Artifact & No Drift
+const dsThemeCss = read("packages/design-system/theme.css");
+const expectedHeader = `/* Auto-generated from @bthwani/design-system. Do not edit manually. */\n`;
+const expectedCss = expectedHeader + generateThemeCss();
+
+if (dsThemeCss !== expectedCss) {
+  failures.push("packages/design-system/theme.css has drifted from canonical generateThemeCss()");
+}
+
+// Verify no duplicate editable theme.css in control-panel
+if (fs.existsSync(path.join(repoRoot, "apps/control-panel/app/theme.css"))) {
+  failures.push("apps/control-panel/app/theme.css exists as duplicate artifact; control panel must import @bthwani/design-system/theme.css");
+}
+
+// 5. Check Control Panel globals.css
+const globalsCss = read("apps/control-panel/app/globals.css");
+
+if (!globalsCss.includes('@import "@bthwani/design-system/theme.css";')) {
+  failures.push('apps/control-panel/app/globals.css must import "@bthwani/design-system/theme.css"');
 }
 if (globalsCss.includes("color-scheme: light;")) {
   failures.push("apps/control-panel/app/globals.css contains unjustified hardcoded color-scheme: light;");
@@ -71,13 +159,11 @@ if (globalsCss.includes("color-scheme: light;")) {
 if (globalsCss.includes("@media (prefers-color-scheme: dark)")) {
   failures.push("apps/control-panel/app/globals.css contains duplicated inline dark theme overrides; theme.css owns dark variables");
 }
-if (globalsCss.includes('[data-theme="dark"]')) {
-  failures.push("apps/control-panel/app/globals.css contains duplicated data-theme dark overrides; theme.css owns dark variables");
+if (globalsCss.includes('[data-theme="dark"]') || globalsCss.includes('[data-theme="light"]')) {
+  failures.push("apps/control-panel/app/globals.css contains dead data-theme manual branch");
 }
-
-// Verify theme.css is not empty and contains :root and prefers-color-scheme
-if (!themeCss.includes(":root") || !themeCss.includes("@media (prefers-color-scheme: dark)")) {
-  failures.push("apps/control-panel/app/theme.css missing canonical theme CSS structure");
+if (dsThemeCss.includes("[data-theme=")) {
+  failures.push("packages/design-system/theme.css contains dead data-theme manual branch");
 }
 
 // Verify no raw hex or rgb colors in control-panel globals.css
@@ -93,7 +179,7 @@ if (controlPanelPage.includes("visualTokens") || controlPanelPage.includes("styl
   failures.push("apps/control-panel/app/page.tsx contains visualTokens overriding CSS variables");
 }
 
-// 4. Check Mobile apps for dynamic adaptive StatusBar
+// 6. Check Mobile apps for dynamic adaptive StatusBar
 const mobileApps = ["app-client", "app-partner", "app-captain", "app-field"];
 for (const app of mobileApps) {
   const layout = read(`apps/${app}/app/_layout.tsx`);
@@ -105,7 +191,7 @@ for (const app of mobileApps) {
   }
 }
 
-// 5. Check app-client identity-gate and ManagedIdentityFlow for local color authorities
+// 7. Check app-client identity-gate and ManagedIdentityFlow for local color authorities
 const clientGate = read("apps/app-client/src/identity-gate.tsx");
 if (clientGate.includes("colorRoles.") || clientGate.includes("statusScale.")) {
   failures.push("apps/app-client/src/identity-gate.tsx retains obsolete static colorRoles or statusScale");
@@ -131,3 +217,6 @@ console.log("DEAD_THEME_TOKEN=0");
 console.log("STATUS_BAR_THEME_SYNC=PASS");
 console.log("CONTROL_PANEL_RAW_SEMANTIC_COLORS=0");
 console.log("THEME_KEYS_PARITY=PASS");
+console.log("WCAG_AA_THEME_CONTRAST=PASS");
+console.log("UNJUSTIFIED_DUPLICATE_THEME_CSS=0");
+console.log("DEAD_MANUAL_THEME_BRANCH=0");

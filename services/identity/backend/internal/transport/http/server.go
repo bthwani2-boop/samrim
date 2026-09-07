@@ -313,8 +313,8 @@ func (s *Server) provisionRole(w http.ResponseWriter, r *http.Request, caller st
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+	if (caller == "platform-control" || caller == "dsh") && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for administrative operations"))
 		return
 	}
 	var input domain.ProvisionActorRoleInput
@@ -418,12 +418,12 @@ func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller s
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+	if (caller == "platform-control" || caller == "dsh") && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for administrative operations"))
 		return
 	}
-	if caller == "platform-control" && expectedVersion < 1 {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for platform-control operations and must be a positive integer >= 1"))
+	if (caller == "platform-control" || caller == "dsh") && expectedVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for administrative operations and must be a positive integer >= 1"))
 		return
 	}
 	if err := s.actors.SetRoleEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
@@ -438,6 +438,10 @@ func (s *Server) authorizeReenrollment(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for reenrollment operations"))
+		return
+	}
 	if err := s.actors.AuthorizeReenrollmentWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return
@@ -485,14 +489,14 @@ func (s *Server) resetOperatorPassword(w http.ResponseWriter, r *http.Request, c
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
 		return
 	}
-	expectedVersion := 0
-	if raw := strings.TrimSpace(r.Header.Get("X-Expected-Version")); raw != "" {
-		value, err := strconv.Atoi(raw)
-		if err != nil || value < 1 {
-			writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version header is invalid"))
-			return
-		}
-		expectedVersion = value
+	expectedVersion, err := parseExpectedVersion(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error()))
+		return
+	}
+	if expectedVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for operator password reset and must be a positive integer >= 1"))
+		return
 	}
 	var input domain.PasswordResetRequest
 	if !decodeJSON(w, r, &input) {

@@ -815,6 +815,9 @@ components:
         roleVersion:
           type: integer
           minimum: 1
+        credentialVersion:
+          type: integer
+          minimum: 1
         actorCreated:
           type: boolean
         roleCreated:

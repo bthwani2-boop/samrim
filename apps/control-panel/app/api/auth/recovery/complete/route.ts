@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { validatePasswordInputShape } from "@bthwani/identity";
 import { completeOperatorRecovery, identityErrorPayload, identityHttpStatus } from "../../../../../lib/identity-bff";
 
 export async function POST(request: Request) {
@@ -7,7 +8,7 @@ export async function POST(request: Request) {
   const phone = typeof body?.phone === "string" ? body.phone.trim() : "";
   const code = typeof body?.code === "string" ? body.code.trim() : "";
   const password = typeof body?.password === "string" ? body.password : "";
-  if (!phone || !/^\d{6}$/.test(code) || password.length < 15) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "phone, code, and password are required" } }, { status: 400 });
+  if (!phone || !/^\d{6}$/.test(code) || !validatePasswordInputShape(password).valid) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "phone, code, and password are required" } }, { status: 400 });
   try {
     const result = await completeOperatorRecovery(phone, code, password);
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });

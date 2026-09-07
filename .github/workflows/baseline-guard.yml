@@ -197,9 +197,25 @@ jobs:
         shell: pwsh
         run: ./tools/dev/verify-powershell-syntax.ps1
 
+      - name: Verify Go source formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l services/*/backend)"
+          if [[ -n "${unformatted}" ]]; then
+            echo "::error::Unformatted Go files detected: ${unformatted}"
+            exit 1
+          fi
+
       - name: Frozen workspace install
         shell: bash
         run: pnpm install --frozen-lockfile
+
+      - name: Verify theme authority and WCAG AA contrast
+        shell: bash
+        run: |
+          pnpm run theme:check
+          pnpm run theme:verify
 
       - name: Verify mobile deployable identities
         shell: bash
@@ -333,6 +349,10 @@ jobs:
       - name: Verify Identity activation-session semantics
         shell: bash
         run: node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env.example
+
+      - name: Verify DSH managed-access runtime boundary
+        shell: bash
+        run: node tools/dev/verify-dsh-runtime.mjs --env-file=infra/local/compose/.env.example
 
       - name: Verify runtime proof did not mutate repository
         shell: bash

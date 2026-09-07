@@ -13,7 +13,7 @@ import {
 } from "react-native";
 
 import { resolveTheme } from "@bthwani/design-system";
-import { isIdentityClientError, type IdentitySessionState } from "@bthwani/identity";
+import { isIdentityClientError, validatePasswordInputShape, type IdentitySessionState } from "@bthwani/identity";
 import {
   currentIdentityState,
   loginClient,
@@ -235,11 +235,10 @@ export default function IdentityGate() {
   }
 
   const needsProof = mode !== "login";
-  const passwordsMatch = !needsProof || (password.length > 0 && password === passwordConfirmation);
+  const passwordShape = validatePasswordInputShape(password, needsProof ? passwordConfirmation : undefined);
   const canSubmit =
     phone.trim().length > 0 &&
-    password.length >= 15 &&
-    passwordsMatch &&
+    passwordShape.valid &&
     (!needsProof || (proofRequested && code.trim().length === 6));
 
   return (

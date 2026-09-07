@@ -58,8 +58,8 @@ Prefer operation/purpose, result/error code, HTTP status, duration, correlation 
 ### 3. Privileged operator / platform owner lockout recovery
 1. **Diagnosis**: Operator or platform owner locked out due to expired credential or lost second-factor device.
 2. **Procedure**:
-   - For an operator: An active `platform_owner` accesses Control Panel to initiate governed operator credential reset (`/internal/actors/{actorId}/roles/operator/reenrollment`).
-   - For the platform owner: Invoke the executable administrative recovery tool `go run ./cmd/platform-owner-recover` on a secured administrative host with direct database credentials (`IDENTITY_DATABASE_URL`). This tool runs an atomic database transaction that updates the password hash with Argon2id, revokes all active owner sessions and pending challenges, clears failed password attempts, and writes an immutable audit record.
+   - For an operator: An active `platform_owner` accesses Control Panel to initiate governed operator credential reset (`/internal/actors/{actorId}/operator-password/reset` with human attribution and expected credential version).
+   - For the platform owner: Invoke the executable administrative recovery tool `go run ./cmd/platform-owner-recover` on a secured administrative host with direct database credentials (`IDENTITY_DATABASE_URL`). This tool runs an atomic database transaction that updates the password hash with Argon2id, revokes all active owner sessions and pending challenges, clears failed password attempts, and writes an append-only security audit record subject to configured retention policy.
    - Never inject arbitrary SQL to bypass MFA or grant roles.
 
 ### 4. Bootstrap incident containment & durable completion

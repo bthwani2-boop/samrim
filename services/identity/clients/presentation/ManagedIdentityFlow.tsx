@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { resolveTheme, radius, spacing, type ThemeColors } from "@bthwani/design-system";
+import { validatePasswordInputShape } from "../password";
 import type { IdentitySessionState } from "../index";
 
 export interface ManagedIdentityBinding {
@@ -273,7 +274,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
 
   const phoneReady = phone.trim().length > 0;
   const verificationReady = verificationCode.trim().length === 6;
-  const passwordReady = password.length >= 15 && password === passwordConfirmation;
+  const passwordReady = validatePasswordInputShape(password, passwordConfirmation).valid;
 
   const content =
     step === "phone" ? (
@@ -336,9 +337,9 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
           value={password}
         />
         <Pressable
-          disabled={busy || password.length < 15}
+          disabled={busy || !validatePasswordInputShape(password).valid}
           onPress={loginDevice}
-          style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.pressed, (busy || password.length < 15) && styles.disabledButton]}
+          style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.pressed, (busy || !validatePasswordInputShape(password).valid) && styles.disabledButton]}
         >
           <Text style={styles.primaryButtonText}>{busy ? "جارٍ تسجيل الدخول…" : "تسجيل الدخول"}</Text>
         </Pressable>

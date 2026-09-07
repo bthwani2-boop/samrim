@@ -18,24 +18,16 @@ import (
 
 func main() {
 	var (
-		databaseURL = flag.String("database-url", "", "PostgreSQL database URL (defaults to IDENTITY_DATABASE_URL)")
-		phone       = flag.String("phone", "", "New verified phone number in E.164 format (optional)")
-		password    = flag.String("password", "", "New password (discouraged; prefer interactive prompt or IDENTITY_RECOVERY_PASSWORD)")
+		phone = flag.String("phone", "", "New verified phone number in E.164 format (optional)")
 	)
 	flag.Parse()
 
-	dbURL := strings.TrimSpace(*databaseURL)
+	dbURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if dbURL == "" {
-		dbURL = strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
-	}
-	if dbURL == "" {
-		log.Fatal("database URL is required via -database-url flag or IDENTITY_DATABASE_URL environment variable")
+		log.Fatal("database URL is required via IDENTITY_DATABASE_URL environment variable")
 	}
 
-	pwd := strings.TrimSpace(*password)
-	if pwd == "" {
-		pwd = strings.TrimSpace(os.Getenv("IDENTITY_RECOVERY_PASSWORD"))
-	}
+	pwd := strings.TrimSpace(os.Getenv("IDENTITY_RECOVERY_PASSWORD"))
 	if pwd == "" {
 		if term.IsTerminal(int(os.Stdin.Fd())) {
 			fmt.Fprint(os.Stderr, "Enter new platform owner recovery password: ")
