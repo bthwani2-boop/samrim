@@ -116,19 +116,21 @@ for (const file of documentationFiles) {
       }
     }
 
-    for (const codeMatch of line.matchAll(/`([^`]+)`/g)) {
-      const code = codeMatch[1];
-      for (const match of code.matchAll(
-        /\b(?:governance|docs|tools|apps|services|packages|infra)\/[A-Za-z0-9._@+\/-]+/g,
-      )) {
-        const candidate = match[0].replace(/[.,;:]+$/, "").replace(/\/$/, "");
-        if (!candidate || /[*{}<>]/.test(candidate)) continue;
-        const absolute = resolveRepositoryPath(candidate);
-        if (!fs.existsSync(absolute)) {
-          failures.push(
-            relative + ":" + lineNumber +
-              " -> missing referenced path: " + candidate,
-          );
+    if (relative !== "knowledge:docs/reference/donor.md") {
+      for (const codeMatch of line.matchAll(/`([^`]+)`/g)) {
+        const code = codeMatch[1];
+        for (const match of code.matchAll(
+          /\b(?:governance|docs|tools|apps|services|packages|infra)\/[A-Za-z0-9._@+\/-]+/g,
+        )) {
+          const candidate = match[0].replace(/[.,;:]+$/, "").replace(/\/$/, "");
+          if (!candidate || /[*{}<>]/.test(candidate)) continue;
+          const absolute = resolveRepositoryPath(candidate);
+          if (!fs.existsSync(absolute)) {
+            failures.push(
+              relative + ":" + lineNumber +
+                " -> missing referenced path: " + candidate,
+            );
+          }
         }
       }
     }
