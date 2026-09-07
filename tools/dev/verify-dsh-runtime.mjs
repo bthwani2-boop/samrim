@@ -108,6 +108,8 @@ const provisioned = await expect("POST", "/dsh/managed-roles/provision", 201, {
 });
 assert(provisioned.actorId, "provisioned role missing actorId");
 assert(provisioned.role === "captain", "provisioned role mismatch");
+assert(typeof provisioned.actorVersion === "number" && provisioned.actorVersion >= 1, "provisioned role missing actorVersion");
+assert(typeof provisioned.roleVersion === "number" && provisioned.roleVersion >= 1, "provisioned role missing roleVersion");
 
 console.log("5. Querying managed role status via DSH...");
 const roleStatus = await expect(

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	contract "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityboundary"
 )
 
@@ -51,6 +52,13 @@ func TestProvisionManagedRoleUsesAuthenticatedIdentityBoundary(t *testing.T) {
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var provisioned contract.ActorRoleView
+	if err := json.NewDecoder(response.Body).Decode(&provisioned); err != nil {
+		t.Fatalf("decode DSH contract response: %v", err)
+	}
+	if provisioned.ActorVersion != 1 || provisioned.RoleVersion != 1 || provisioned.Role != "captain" {
+		t.Fatalf("unexpected DSH contract response: %#v", provisioned)
 	}
 
 	// Negative test: missing X-Acting-Actor-ID must be rejected with 400
@@ -162,7 +170,7 @@ func TestStatusByPhoneReadsCanonicalIdentityState(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	var body roleStatusResponse
+	var body contract.ManagedRoleStatusResponse
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}

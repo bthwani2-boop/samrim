@@ -1,6 +1,5 @@
-import { validateServiceUrl, type ActorRoleView, type ManagedActivationRole } from "@bthwani/identity";
-import { type ManagedRole, type ManagedRoleStatusResponse } from "./generated/dsh-types";
-import { dshOperationPaths } from "./generated/dsh-operations";
+import { validateServiceUrl, type ManagedActivationRole } from "@bthwani/identity";
+import { type ActorRoleView, type ManagedRole, type ManagedRoleStatusResponse, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>

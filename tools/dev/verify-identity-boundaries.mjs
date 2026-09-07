@@ -515,8 +515,7 @@ for (const forbidden of ["If-Match", "X-Actor-ID"]) {
 
 const dshBff = read("apps/control-panel/lib/dsh-bff.ts");
 for (const required of [
-  'from "./generated/dsh-types"',
-  'from "./generated/dsh-operations"',
+  'from "@bthwani/dsh"',
   "dshOperationPaths.provisionManagedRole",
   "dshOperationPaths.getManagedRoleStatus",
   "dshOperationPaths.disableManagedRole",
@@ -533,6 +532,8 @@ for (const forbidden of ['headers["X-Actor-ID"]', 'headers["If-Match"]']) {
 
 const dshServer = read("services/dsh/backend/internal/managedaccess/server.go");
 for (const required of [
+  'internal/contract',
+  'toRoleView(view)',
   "ActorVersion",
   "RoleVersion",
   'r.Header.Get("X-Acting-Actor-ID")',
@@ -541,6 +542,27 @@ for (const required of [
   "If-Match is forbidden; use X-Expected-Version",
 ]) {
   if (!dshServer.includes(required)) failures.push("DSH managed access server missing " + required);
+}
+
+const dshGeneratedTypes = read("services/dsh/clients/generated/dsh-types.ts");
+const dshGeneratedOperations = read("services/dsh/clients/generated/dsh-operations.ts");
+const dshGeneratedGo = read("services/dsh/backend/internal/contract/dsh_types_generated.go");
+for (const [name, body] of [
+  ["TypeScript types", dshGeneratedTypes],
+  ["TypeScript operations", dshGeneratedOperations],
+  ["Go types", dshGeneratedGo],
+]) {
+  if (!body.includes("services/dsh/contracts/dsh.openapi.yaml") || !body.includes("DO NOT EDIT")) {
+    failures.push("DSH generated " + name + " is missing canonical provenance");
+  }
+}
+for (const required of ["actorVersion", "roleVersion", "credentialVersion"]) {
+  if (!dshGeneratedTypes.includes(required) || !dshGeneratedGo.includes(required)) {
+    failures.push("DSH generated response lineage missing " + required);
+  }
+}
+if (dshGeneratedTypes.includes("readonly version:") || dshGeneratedGo.includes("\n\tVersion int")) {
+  failures.push("DSH generated response lineage retains obsolete version field");
 }
 
 if (failures.length > 0) {

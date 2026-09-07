@@ -314,7 +314,7 @@ components:
 
     ActorRoleView:
       type: object
-      required: [actorId, phoneE164, role, enabled, securityEnabled, version]
+      required: [actorId, phoneE164, role, enabled, securityEnabled, actorVersion, roleVersion]
       properties:
         actorId:
           type: string
@@ -334,8 +334,15 @@ components:
           type: boolean
         roleCreated:
           type: boolean
-        version:
+        actorVersion:
           type: integer
+          minimum: 1
+        roleVersion:
+          type: integer
+          minimum: 1
+        credentialVersion:
+          type: integer
+          minimum: 1
 
     ManagedRoleStatusResponse:
       type: object

@@ -10,43 +10,10 @@ import (
 	"strconv"
 	"strings"
 
+	contract "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityboundary "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityboundary"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
-
-type provisionRequest struct {
-	PhoneE164 string `json:"phoneE164"`
-	Role      string `json:"role"`
-}
-
-type reenrollmentRequest struct {
-	ActorID string `json:"actorId"`
-	Role    string `json:"role"`
-}
-
-type phoneReenrollmentRequest struct {
-	PhoneE164 string `json:"phoneE164"`
-	Role      string `json:"role"`
-}
-
-type roleStateRequest struct {
-	PhoneE164 string `json:"phoneE164"`
-	Role      string `json:"role"`
-	Reason    string `json:"reason"`
-}
-
-type roleStatusResponse struct {
-	ActorID         string `json:"actorId,omitempty"`
-	Exists          bool   `json:"exists"`
-	Enabled         bool   `json:"enabled"`
-	Activated       bool   `json:"activated"`
-	SecurityEnabled bool   `json:"securityEnabled"`
-	Recoverable     bool   `json:"recoverable"`
-	State           string `json:"state"`
-	Role            string `json:"role"`
-	ActorVersion    int    `json:"actorVersion,omitempty"`
-	RoleVersion     int    `json:"roleVersion,omitempty"`
-}
 
 type Server struct {
 	identity    *identityboundary.Client
@@ -89,7 +56,7 @@ func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) && identityErr.Status == http.StatusNotFound {
-			writeRoleStatus(w, roleStatusResponse{Role: role, Exists: false, Recoverable: false, State: "not_provisioned"})
+			writeRoleStatus(w, contract.ManagedRoleStatusResponse{Role: contract.ManagedRole(role), Exists: false, Recoverable: false, State: "not_provisioned"})
 			return
 		}
 		writeIdentityError(w, err)
@@ -104,7 +71,7 @@ func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
 		canonicalState = "pending_activation"
 	}
 	isRecoverable := view.Enabled && view.SecurityEnabled && view.ActivatedAt != nil
-	writeRoleStatus(w, roleStatusResponse{
+	writeRoleStatus(w, contract.ManagedRoleStatusResponse{
 		ActorID:         view.ActorID,
 		Exists:          true,
 		Enabled:         view.Enabled,
@@ -112,7 +79,7 @@ func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
 		SecurityEnabled: view.SecurityEnabled,
 		Recoverable:     isRecoverable,
 		State:           canonicalState,
-		Role:            role,
+		Role:            contract.ManagedRole(role),
 		ActorVersion:    view.ActorVersion,
 		RoleVersion:     view.RoleVersion,
 	})
@@ -137,11 +104,11 @@ func (s *Server) setEnabledByPhone(w http.ResponseWriter, r *http.Request, enabl
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "If-Match is forbidden; use X-Expected-Version")
 		return
 	}
-	var input roleStateRequest
+	var input contract.SetManagedRoleStateRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	role := strings.ToLower(strings.TrimSpace(input.Role))
+	role := strings.ToLower(strings.TrimSpace(string(input.Role)))
 	phone := strings.TrimSpace(input.PhoneE164)
 	reason := strings.TrimSpace(input.Reason)
 	if (role != "partner" && role != "captain" && role != "field") || phone == "" || len(reason) < 5 || len(reason) > 500 {
@@ -186,11 +153,11 @@ func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "If-Match is forbidden; use X-Expected-Version")
 		return
 	}
-	var input provisionRequest
+	var input contract.ProvisionManagedRoleRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	role := strings.ToLower(strings.TrimSpace(input.Role))
+	role := strings.ToLower(strings.TrimSpace(string(input.Role)))
 	if role != "partner" && role != "captain" && role != "field" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "role must be partner, captain, or field")
 		return
@@ -231,7 +198,7 @@ func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(view)
+	_ = json.NewEncoder(w).Encode(toRoleView(view))
 }
 
 func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
@@ -247,11 +214,11 @@ func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "If-Match is forbidden; use X-Expected-Version")
 		return
 	}
-	var input reenrollmentRequest
+	var input contract.ActorReenrollmentRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	role := strings.ToLower(strings.TrimSpace(input.Role))
+	role := strings.ToLower(strings.TrimSpace(string(input.Role)))
 	if role != "partner" && role != "captain" && role != "field" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "role must be partner, captain, or field")
 		return
@@ -287,11 +254,11 @@ func (s *Server) reenrollByPhone(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "If-Match is forbidden; use X-Expected-Version")
 		return
 	}
-	var input phoneReenrollmentRequest
+	var input contract.PhoneReenrollmentRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	role := strings.ToLower(strings.TrimSpace(input.Role))
+	role := strings.ToLower(strings.TrimSpace(string(input.Role)))
 	if role != "partner" && role != "captain" && role != "field" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "role must be partner, captain, or field")
 		return
@@ -344,10 +311,26 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": message}})
 }
 
-func writeRoleStatus(w http.ResponseWriter, status roleStatusResponse) {
+func writeRoleStatus(w http.ResponseWriter, status contract.ManagedRoleStatusResponse) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(status)
+}
+
+func toRoleView(view identityclient.ActorRoleView) contract.ActorRoleView {
+	return contract.ActorRoleView{
+		ActorID:           view.ActorID,
+		PhoneE164:         view.PhoneE164,
+		Role:              view.Role,
+		Enabled:           view.Enabled,
+		ActivatedAt:       view.ActivatedAt,
+		SecurityEnabled:   view.SecurityEnabled,
+		ActorVersion:      view.ActorVersion,
+		RoleVersion:       view.RoleVersion,
+		CredentialVersion: view.CredentialVersion,
+		ActorCreated:      view.ActorCreated,
+		RoleCreated:       view.RoleCreated,
+	}
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
