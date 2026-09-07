@@ -105,6 +105,18 @@ func (c *Cleaner) runOnce(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	var lockAcquired bool
+	if err := tx.QueryRowContext(
+		ctx,
+		"SELECT pg_try_advisory_xact_lock(hashtextextended('identity:retention-cleanup', 0))",
+	).Scan(&lockAcquired); err != nil {
+		return fmt.Errorf("identity retention cleanup lock: %w", err)
+	}
+	if !lockAcquired {
+		return nil
+	}
+
 	statements := []struct {
 		name  string
 		query string
