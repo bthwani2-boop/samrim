@@ -4,7 +4,7 @@ import * as identity from "./identity";
 export default function IdentityGate() {
   return (
     <ManagedIdentityFlow
-      role="captain"
+      managedRole="captain"
       surface="app-captain"
       roleLabel="الكابتن"
       binding={identity}

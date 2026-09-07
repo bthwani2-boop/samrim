@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -84,7 +84,7 @@ export default function IdentityGate() {
   const [focusedField, setFocusedField] = useState<FieldName | null>(null);
   const [loginFailed, setLoginFailed] = useState(false);
 
-  async function restore() {
+  const restore = useCallback(async () => {
     setBusy(true);
     setError("");
     try {
@@ -95,11 +95,11 @@ export default function IdentityGate() {
     } finally {
       setBusy(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void restore();
-  }, []);
+  }, [restore]);
 
   function selectMode(next: AuthMode) {
     setMode(next);

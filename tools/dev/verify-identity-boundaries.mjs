@@ -135,7 +135,7 @@ for (const [app, role, surface] of [
   if (!page.includes("ManagedIdentityFlow")) {
     failures.push(app + " UI is not bound to canonical ManagedIdentityFlow");
   }
-  if (!page.includes(`role="${role}"`)) {
+  if (!page.includes(`managedRole="${role}"`)) {
     failures.push(app + " UI does not bind canonical role " + role);
   }
   if (!page.includes(`surface="${surface}"`)) {

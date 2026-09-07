@@ -121,20 +121,24 @@ export class IdentitySessionManager {
     if (!stored) {
       await this.storage.removeItem(this.key);
       this.tokens = null;
-      return (this.stateValue = { kind: "signed_out" });
+      this.stateValue = { kind: "signed_out" };
+      return this.stateValue;
     }
 
     try {
       const identity = await this.client.session(stored.accessToken);
       if (!identityAuthorizesSurface(identity, this.role, this.surface)) {
         await this.clearLocal();
-        return (this.stateValue = { kind: "signed_out" });
+        this.stateValue = { kind: "signed_out" };
+        return this.stateValue;
       }
       this.tokens = stored;
-      return (this.stateValue = { kind: "authenticated", identity });
+      this.stateValue = { kind: "authenticated", identity };
+      return this.stateValue;
     } catch (error) {
       if (isIdentityServiceUnavailable(error)) {
-        return (this.stateValue = { kind: "service_unavailable", reason: error.message });
+        this.stateValue = { kind: "service_unavailable", reason: error.message };
+        return this.stateValue;
       }
       return this.refreshStored(stored);
     }
@@ -147,12 +151,16 @@ export class IdentitySessionManager {
     const tokens = { accessToken: pair.accessToken, refreshToken: pair.refreshToken };
     await this.storage.setItem(this.key, JSON.stringify(tokens));
     this.tokens = tokens;
-    return (this.stateValue = { kind: "authenticated", identity: pair.identity });
+    this.stateValue = { kind: "authenticated", identity: pair.identity };
+    return this.stateValue;
   }
 
   async refresh(): Promise<IdentitySessionState> {
     const stored = this.tokens ?? parseStoredTokens(await this.storage.getItem(this.key));
-    if (!stored) return (this.stateValue = { kind: "signed_out" });
+    if (!stored) {
+      this.stateValue = { kind: "signed_out" };
+      return this.stateValue;
+    }
     return this.refreshStored(stored);
   }
 
@@ -208,7 +216,8 @@ export class IdentitySessionManager {
       return this.adopt(await this.client.refresh({ refreshToken: stored.refreshToken, deviceFingerprint: fingerprint }));
     } catch (error) {
       if (isIdentityServiceUnavailable(error)) {
-        return (this.stateValue = { kind: "service_unavailable", reason: error.message });
+        this.stateValue = { kind: "service_unavailable", reason: error.message };
+        return this.stateValue;
       }
       if (isRefreshStaleError(error)) {
         const reRead = parseStoredTokens(await this.storage.getItem(this.key));
@@ -217,18 +226,22 @@ export class IdentitySessionManager {
             const identity = await this.client.session(reRead.accessToken);
             if (identityAuthorizesSurface(identity, this.role, this.surface)) {
               this.tokens = reRead;
-              return (this.stateValue = { kind: "authenticated", identity });
+              this.stateValue = { kind: "authenticated", identity };
+              return this.stateValue;
             }
           } catch (sessionError) {
             if (isIdentityServiceUnavailable(sessionError)) {
-              return (this.stateValue = { kind: "service_unavailable", reason: sessionError.message });
+              this.stateValue = { kind: "service_unavailable", reason: sessionError.message };
+              return this.stateValue;
             }
           }
         }
-        return (this.stateValue = { kind: "refresh_conflict" });
+        this.stateValue = { kind: "refresh_conflict" };
+        return this.stateValue;
       }
       await this.clearLocal();
-      return (this.stateValue = { kind: "signed_out" });
+      this.stateValue = { kind: "signed_out" };
+      return this.stateValue;
     }
   }
 

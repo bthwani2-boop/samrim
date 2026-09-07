@@ -4,7 +4,7 @@ import * as identity from "./identity";
 export default function IdentityGate() {
   return (
     <ManagedIdentityFlow
-      role="partner"
+      managedRole="partner"
       surface="app-partner"
       roleLabel="الشريك"
       binding={identity}

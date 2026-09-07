@@ -212,6 +212,10 @@ jobs:
         shell: bash
         run: pnpm install --frozen-lockfile
 
+      - name: Verify TypeScript and JavaScript lint
+        shell: bash
+        run: pnpm run quality:lint
+
       - name: Verify theme authority and WCAG AA contrast
         shell: bash
         run: |

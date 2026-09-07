@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { validatePasswordInputShape, type ActorIdentity, type ActorType, type ControlPanelRole, type OperatorEnrollmentToken } from "@bthwani/identity";
 
 type ViewState =
@@ -242,7 +242,7 @@ function AccountAccessPanel() {
       <label className="field-label" htmlFor="account-phone">رقم الهاتف
         <input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} />
       </label>
-      {canIssueActivation ? <button className="button button-primary" disabled={busy || !phone.trim() || activationBlocked} onClick={() => void provision()}>{busy ? "جارٍ تجهيز الحساب…" : role === "operator" ? "تهيئة الموظف وإصدار دعوة آمنة" : status.exists ? "إعادة فتح تفعيل الدور" : "تهيئة الدور"}</button> : <span className="form-action-placeholder" aria-hidden="true" />}
+      {canIssueActivation ? <button type="button" className="button button-primary" disabled={busy || !phone.trim() || activationBlocked} onClick={() => void provision()}>{busy ? "جارٍ تجهيز الحساب…" : role === "operator" ? "تهيئة الموظف وإصدار دعوة آمنة" : status.exists ? "إعادة فتح تفعيل الدور" : "تهيئة الدور"}</button> : <span className="form-action-placeholder" aria-hidden="true" />}
     </div>
     {status ? <div className={`managed-status ${statusIsHealthy ? "managed-status-info" : "managed-status-warning"}`} role="status">
       {status.exists ? <>
@@ -251,9 +251,9 @@ function AccountAccessPanel() {
         {status.activated && managedRole ? <div className="managed-status managed-status-warning" role="alert">
           <strong>تم تفعيل هذا الدور من قبل.</strong>
           <p>{canIssueRecovery ? "يمكنك إصدار رمز جديد لاسترداد وإعادة تفعيل الحساب الموجود؛ ستُلغى الجلسات السابقة." : role === "operator" ? "حساب موظف لوحة التحكم مفعل. يمكنك إدارة حالته أو إعادة تعيين كلمة مروره إداريًا أدناه." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
-          {canIssueRecovery ? <button className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ استرداد الحساب…" : "استرداد وإعادة تفعيل الحساب"}</button> : null}
+          {canIssueRecovery ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ استرداد الحساب…" : "استرداد وإعادة تفعيل الحساب"}</button> : null}
         </div> : null}
-        {role === "operator" && status.activated && status.enabled && status.securityEnabled ? <div className="managed-status managed-status-info" role="region" aria-label="إعادة تعيين كلمة مرور الموظف">
+        {role === "operator" && status.activated && status.enabled && status.securityEnabled ? <section className="managed-status managed-status-info" aria-label="إعادة تعيين كلمة مرور الموظف">
           <strong>إعادة تعيين كلمة مرور الموظف (إداريًا)</strong>
           <p>بصفتك مالك المنصة، يمكنك تعيين كلمة مرور جديدة للموظف مع إلغاء كل جلساته القديمة فورًا (إصدار الاعتماد: {status.credentialVersion ?? "غير متاح"}).</p>
           <label className="field-label" htmlFor="operator-reset-new-password">كلمة المرور الجديدة
@@ -263,15 +263,15 @@ function AccountAccessPanel() {
           <label className="field-label" htmlFor="operator-reset-confirm-password">تأكيد كلمة المرور
             <input id="operator-reset-confirm-password" type="password" autoComplete="new-password" disabled={busy} value={operatorResetPasswordConfirmation} onChange={(e) => setOperatorResetPasswordConfirmation(e.target.value)} />
           </label>
-          <button className="button button-primary" disabled={busy || !validatePasswordInputShape(operatorResetPassword, operatorResetPasswordConfirmation).valid || reason.trim().length < 5} onClick={() => void resetOperatorCredential()}>{busy ? "جارٍ التعيين…" : "إعادة تعيين كلمة مرور الموظف"}</button>
+          <button type="button" className="button button-primary" disabled={busy || !validatePasswordInputShape(operatorResetPassword, operatorResetPasswordConfirmation).valid || reason.trim().length < 5} onClick={() => void resetOperatorCredential()}>{busy ? "جارٍ التعيين…" : "إعادة تعيين كلمة مرور الموظف"}</button>
           {resetSuccess ? <p className="success-inline" role="status">{resetSuccess}</p> : null}
-        </div> : null}
+        </section> : null}
         <label className="field-label" htmlFor="access-reason">سبب التغيير
           <input id="access-reason" maxLength={500} placeholder="مثال: انتهاء التعاقد أو استرداد الجهاز" value={reason} onChange={(event) => setReason(event.target.value)} />
         </label>
         <div className="managed-status-actions">
-          {status.enabled ? <button className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-role")}>إيقاف الدور</button> : <button className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-role")}>إعادة تفعيل الدور</button>}
-          {status.securityEnabled ? <button className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-identity")}>إيقاف الهوية بالكامل</button> : <button className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-identity")}>إعادة تفعيل الهوية</button>}
+          {status.enabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-role")}>إيقاف الدور</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-role")}>إعادة تفعيل الدور</button>}
+          {status.securityEnabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-identity")}>إيقاف الهوية بالكامل</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-identity")}>إعادة تفعيل الهوية</button>}
         </div>
       </> : <>
         <strong>لا يوجد حساب مهيأ لهذا الدور.</strong>
@@ -303,7 +303,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function restore() {
+  const restore = useCallback(async () => {
     setBusy(true);
     setError("");
     try {
@@ -324,9 +324,9 @@ export default function Home() {
     } finally {
       setBusy(false);
     }
-  }
+  }, []);
 
-  useEffect(() => { void restore(); }, []);
+  useEffect(() => { void restore(); }, [restore]);
 
   async function startLogin() {
     setBusy(true);
@@ -429,11 +429,11 @@ export default function Home() {
   }
 
   if (view.kind === "unavailable") {
-    return shell(<section className="state-card" role="alert"><span className="state-icon state-icon-warning" aria-hidden="true">!</span><p className="eyebrow">الخدمة تحتاج انتباهاً</p><h1>تعذر الوصول إلى الهوية</h1><p className="muted">{view.message}</p><button className="button button-primary" disabled={busy} onClick={() => void restore()}>{busy ? "جارٍ التحقق…" : "إعادة المحاولة"}</button></section>, "state-shell");
+    return shell(<section className="state-card" role="alert"><span className="state-icon state-icon-warning" aria-hidden="true">!</span><p className="eyebrow">الخدمة تحتاج انتباهاً</p><h1>تعذر الوصول إلى الهوية</h1><p className="muted">{view.message}</p><button type="button" className="button button-primary" disabled={busy} onClick={() => void restore()}>{busy ? "جارٍ التحقق…" : "إعادة المحاولة"}</button></section>, "state-shell");
   }
 
   if (view.kind === "authenticated") {
-    return shell(<><section className="workspace-card"><div className="workspace-intro"><span className="success-badge"><span className="success-dot" aria-hidden="true" /> الجلسة نشطة</span><p className="eyebrow">مساحة {view.identity.role === "platform_owner" ? "مالك المنصة" : "المشغل"}</p><h1>أهلاً بك في لوحة التحكم</h1><p className="lead">تم توثيق جلستك بعاملين. يمكنك متابعة الوحدات المصرح بها من هذه المساحة.</p></div><div className="session-summary"><div><span className="summary-label">الدور</span><strong>{view.identity.role === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</strong></div><div><span className="summary-label">السطح</span><strong>{view.identity.surface}</strong></div><div><span className="summary-label">حالة الجلسة</span><strong className="summary-value-success">موثقة</strong></div></div><div className="workspace-note"><span className="note-mark" aria-hidden="true">✓</span><div><strong>الهوية جاهزة</strong><p>لا توجد بيانات تشغيلية معروضة هنا قبل ربط صلاحيات الوحدات؛ لن نعرض أرقاماً تجريبية أو حالة غير مؤكدة.</p></div></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}<button className="button button-secondary" disabled={busy} onClick={() => void logout()}>{busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}</button></section>{view.identity.role === "platform_owner" ? <AccountAccessPanel /> : null}</>, "workspace-shell");
+    return shell(<><section className="workspace-card"><div className="workspace-intro"><span className="success-badge"><span className="success-dot" aria-hidden="true" /> الجلسة نشطة</span><p className="eyebrow">مساحة {view.identity.role === "platform_owner" ? "مالك المنصة" : "المشغل"}</p><h1>أهلاً بك في لوحة التحكم</h1><p className="lead">تم توثيق جلستك بعاملين. يمكنك متابعة الوحدات المصرح بها من هذه المساحة.</p></div><div className="session-summary"><div><span className="summary-label">الدور</span><strong>{view.identity.role === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</strong></div><div><span className="summary-label">السطح</span><strong>{view.identity.surface}</strong></div><div><span className="summary-label">حالة الجلسة</span><strong className="summary-value-success">موثقة</strong></div></div><div className="workspace-note"><span className="note-mark" aria-hidden="true">✓</span><div><strong>الهوية جاهزة</strong><p>لا توجد بيانات تشغيلية معروضة هنا قبل ربط صلاحيات الوحدات؛ لن نعرض أرقاماً تجريبية أو حالة غير مؤكدة.</p></div></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}<button type="button" className="button button-secondary" disabled={busy} onClick={() => void logout()}>{busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}</button></section>{view.identity.role === "platform_owner" ? <AccountAccessPanel /> : null}</>, "workspace-shell");
   }
 
   const canStart = controlStep === "phone" || controlStep === "recovery" ? phone.trim().length > 0 : controlStep === "password" ? phone.trim().length > 0 && validatePasswordInputShape(password).valid : phone.trim().length > 0 && operatorEnrollmentToken.trim().length >= 24;

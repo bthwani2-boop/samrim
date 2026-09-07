@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -19,7 +19,7 @@ export interface ManagedIdentityBinding {
 }
 
 export interface ManagedIdentityFlowProps {
-  role: "partner" | "captain" | "field";
+  managedRole: "partner" | "captain" | "field";
   surface: string;
   roleLabel: string;
   binding: ManagedIdentityBinding;
@@ -52,9 +52,9 @@ function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
   );
 }
 
-export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: ManagedIdentityFlowProps) {
-  if (binding.role && binding.role !== role) {
-    throw new Error(`MANAGED_FLOW_ROLE_MISMATCH: binding role ${binding.role} !== prop role ${role}`);
+export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }: ManagedIdentityFlowProps) {
+  if (binding.role && binding.role !== managedRole) {
+    throw new Error(`MANAGED_FLOW_ROLE_MISMATCH: binding role ${binding.role} !== prop role ${managedRole}`);
   }
   if (binding.surface && binding.surface !== surface) {
     throw new Error(`MANAGED_FLOW_SURFACE_MISMATCH: binding surface ${binding.surface} !== prop surface ${surface}`);
@@ -76,7 +76,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  async function restoreSession() {
+  const restoreSession = useCallback(async () => {
     setBusy(true);
     setError("");
     try {
@@ -87,11 +87,11 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
     } finally {
       setBusy(false);
     }
-  }
+  }, [binding]);
 
   useEffect(() => {
     void restoreSession();
-  }, []);
+  }, [restoreSession]);
 
   function resetToPhone() {
     setStep("phone");
