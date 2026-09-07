@@ -26,7 +26,6 @@ Do not move service/app-specific behavior into tools/ merely for convenience.
 
 - tools/dev/ — repository development/verification/derivation helpers;
 - tools/mobile/ — cross-app mobile development helpers only;
-- tools/prompting/bthwani-orchestrator/ — execution/closure constitution and evidence templates.
 
 Exact scripts/commands are discovered from package.json, workflow files and the live tool sources. This README does not freeze an inventory.
 
@@ -63,6 +62,6 @@ Before adding a material tool/guard/registry/manifest:
 
 ## Removing or replacing a tool
 
-Account for package scripts, CI/workflows, docs, agent adapters and callers. Remove obsolete wrappers, path filters, allowlists, generated outputs and stale docs after cutover.
+Account for package scripts, CI/workflows, Docs, `AGENTS.md` and callers. Remove obsolete wrappers, path filters, allowlists, generated outputs and stale docs after cutover.
 
 Green output proves only the tool's claim; it never certifies Product/architecture/closure by itself.

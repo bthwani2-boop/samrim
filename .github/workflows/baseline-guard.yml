@@ -45,7 +45,7 @@ jobs:
             SECURITY.md
             CONTRIBUTING.md
             governance.lock.json
-            tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md
+            AGENTS.md
             .github/CODEOWNERS
             .github/pull_request_template.md
             package.json
@@ -63,8 +63,8 @@ jobs:
             }
           done
 
-          if [[ -e tools/prompting/bthwani-refoundation ]]; then
-            echo "::error::Retired bthwani-refoundation package must not exist; durable value belongs in Governance/Docs and clean-target execution specialization belongs in the Orchestrator"
+          if [[ -e tools/prompting ]]; then
+            echo "::error::Retired prompt-package root must not exist; methods belong in pinned Docs and agent safety belongs in AGENTS.md plus machine safeguards"
             exit 1
           fi
 
