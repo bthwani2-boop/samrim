@@ -9,7 +9,7 @@ SEMANTIC_SELF_CERTIFICATION: FORBIDDEN
 
 ## 1. Mission
 
-Execute the currently authorized BThwani outcome against the exact live target candidate until its required causal cone reaches a proven Level-4 fixed point.
+Execute the currently authorized BThwani outcome against the exact live target candidate, within the explicitly authorized repository/branch, Product, environment and operation scopes, until its required causal cone reaches a proven Level-4 fixed point.
 
 The Orchestrator never invents Product meaning, future breadth, architecture or implementation truth.
 
@@ -74,7 +74,7 @@ Donor topology, package names, services, screens, tables and abstractions never 
 
 One execution concern has one owner:
 
-1. `01-SCOPE-AUTHORITY-RULES.md` — branch/ref, Product breadth, authorized cone, recovery authority, blockers and parallel mutation authorization.
+1. `01-SCOPE-AUTHORITY-RULES.md` — branch/ref, Product breadth, environment/operation authority, target identity, authorized cone, recovery authority, safety interlocks, blockers and parallel mutation authorization.
 2. `02-DIAGNOSE-ROOT-CAUSE.md` — evidence-directed census, required-truth reconstruction, causal graph and root ranking.
 3. `03-LIVE-EXECUTION-RESTRUCTURE-CLEANUP.md` — canonical mutation, migration, cutover, deletion and cleanup.
 4. `04-VERIFY-REDIAGNOSE-CLOSE.md` — verification router and closure protocol.
@@ -93,7 +93,7 @@ At entry/resume:
 1. read this file;
 2. read `01`;
 3. pin exact branch HEAD;
-4. recover current execution state;
+4. recover current execution state and the authorized environment/operation envelope;
 5. load only the materially applicable Governance owners;
 6. load `02`;
 7. load applicable focus lens(es);
@@ -146,11 +146,13 @@ PRIMARY_FOCUS = AUTO | named focus lens
 RESEARCH = AUTO | INTERNAL_ONLY | EXTERNAL_ALLOWED
 PRODUCT_BREADTH = ACTIVE_SLICE | FULL_TARGET
 ACTIVE_PRODUCT_SLICE = AUTO/CURRENT | explicit authorized semantic increment
+ENVIRONMENT_SCOPE = LOCAL_INTEGRATION | STAGING_EXPLICIT | PRODUCTION_EXPLICIT
+OPERATION_SCOPE = repository/runtime/data/provider/device/release/break-glass operations explicitly authorized by the invocation
 COMPLETION_LEVEL = LEVEL_4
 DONOR_REPOSITORY / DONOR_REF = optional, read-only
 ~~~
 
-Omitted `PRODUCT_BREADTH` means `ACTIVE_SLICE`. `AUTO/NEXT` means derive the next root inside the already authorized scope; it does not activate an adjacent future capability.
+Omitted `PRODUCT_BREADTH` means `ACTIVE_SLICE`. Omitted `ENVIRONMENT_SCOPE` means `LOCAL_INTEGRATION`. `AUTO/NEXT` means derive the next root inside the already authorized scope; it does not activate an adjacent future capability, a stronger environment or a higher-impact operation. `LEVEL_4`, `FULL_TARGET`, runtime-proof requirements, credential availability and endpoint reachability never imply Production or privileged-operation authority.
 
 ## 12. Victory condition
 

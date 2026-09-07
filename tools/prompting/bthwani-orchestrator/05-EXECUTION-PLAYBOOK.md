@@ -13,14 +13,14 @@ Own only runtime movement. Product meaning, scope, diagnosis, mutation and verif
 
 ~~~text
 PIN CURRENT HEAD
-→ RECOVER AUTHORIZED SCOPE
+→ RECOVER AUTHORIZED SCOPE + ENVIRONMENT/OPERATION AUTHORITY
 → RECOVER OPEN UNIT / CHECKPOINT
 → INVALIDATE STALE EVIDENCE
 → DERIVE RECOVERY FRONTIER
 → EXECUTE NEXT DERIVABLE ACTION
 ~~~
 
-`NEW_CHAT != NEW_CAMPAIGN`; `COMMIT != UNIT_CLOSURE`.
+`NEW_CHAT != NEW_CAMPAIGN`; `COMMIT != UNIT_CLOSURE`; `LOCAL_COMMIT != REMOTE_RECOVERY_POINT`.
 
 ## 3. Canonical runtime states
 
@@ -71,15 +71,20 @@ NEW MATERIAL FINDING
 
 Do not ask for “next” or “continue” when the next action is already derivable and authorized.
 
+Automatic continuation never expands environment or operation authority. A Class C/D action that lacks explicit target-specific authority is not derivable merely because it would advance the objective.
+
 An adjacent future Product slice is not authorized by continuation.
 
 ## 6. Commit/checkpoint transition
 
-After commit or unit closure:
+After every coherent verified unit, persist the recovery point remotely before beginning an independent next unit:
 
 ~~~text
-VERIFY CURRENT HEAD
-→ RE-PIN
+VERIFY UNIT + REVIEW DIFF
+→ COMMIT
+→ SAFE FAST-FORWARD PUSH TO THE EXACT AUTHORIZED BRANCH
+→ CONFIRM REMOTE SHA
+→ RE-PIN LIVE REMOTE HEAD
 → REFRESH AFFECTED CENSUS
 → RE-DIAGNOSE
 → CONTINUE IF AUTHORIZED WORK REMAINS

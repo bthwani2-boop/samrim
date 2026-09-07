@@ -126,8 +126,12 @@ Different tools may be used for different surfaces. Their outputs compose only w
 
 For agent-driven interactive verification:
 
+A real runtime means the real **authorized** runtime for the claim; it never means Production by default. Before any interaction capable of mutation, resolve environment/operation authority and prove the intended runtime/device/app/actor target. A connected browser/device or authenticated session is evidence capability, not permission to mutate a stronger environment.
+
 ~~~text
-OPEN CORRECT RUNTIME
+RESOLVE AUTHORIZED ENVIRONMENT / OPERATION
+→ PROVE TARGET RUNTIME / DEVICE / APP IDENTITY
+→ OPEN CORRECT RUNTIME
 → INSPECT CURRENT SEMANTIC STATE
 → ACT ON OBSERVED TARGETS
 → RE-INSPECT AFTER STATE CHANGE

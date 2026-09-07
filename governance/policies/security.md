@@ -35,6 +35,9 @@ Rate/abuse controls are applied where an operation can materially consume resour
 
 ## Sessions and credentials
 
+Credential availability is capability, not authorization. Possession of a secret, authenticated CLI session, device connection, cloud role, provider token, database URL or signing material never grants permission to use it against an environment, target or operation outside the separately authorized scope.
+
+Privileged Production credentials and mutation identities must be unavailable to ordinary development and verification contexts where practicable; privileged operations use least-privileged, attributable and preferably short-lived identities bound to the intended environment and action class.
 - Passwords, OTP/activation codes, tokens, signing keys, service credentials, provider secrets and recovery credentials are never logged or stored in plaintext outside their approved secure store.
 - Session/refresh/revocation/activation behavior is explicit and replay-safe where required.
 - Revoked, expired, suspended or replaced trust must not survive through client cache/local state or an alternate session path.

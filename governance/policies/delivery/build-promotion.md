@@ -29,6 +29,22 @@ Environment is deployment/configuration state, not a fork of Product truth.
 
 No environment may silently introduce alternate business rules, authorization bypass, parallel financial truth, dev-only fallback or hidden runtime dependency.
 
+### Environment authorization boundary
+
+Environment identity and permission to operate in that environment are independent from repository, branch, Product-scope and tool capability.
+
+~~~text
+CREDENTIAL POSSESSION      != ENVIRONMENT AUTHORITY
+ENDPOINT REACHABILITY      != ENVIRONMENT AUTHORITY
+TOOL/AUTOMATION CAPABILITY != ENVIRONMENT AUTHORITY
+PRODUCTION BUILD MODE      != PRODUCTION ENVIRONMENT
+STAGING/PREPRODUCTION      != PRODUCTION
+~~~
+
+Local/integration execution is the default engineering verification boundary unless a stronger environment is explicitly authorized. Staging and Production mutations require explicit environment and operation authority for the exact target and effect; they are never inferred from `AUTO/NEXT`, completion depth, Product breadth, a branch name, available credentials, a configured endpoint, a build profile or a need for stronger evidence.
+
+When the observed environment or target does not match the authorized environment or target, the operation fails closed before the material side effect. Production access, mutation, migration, provider effect, deployment, store/OTA release, credential change and other privileged operations use a controlled deployment/operations authority rather than ordinary development or verification capability.
+
 ## Database and migration promotion
 
 `../data-and-migrations.md` owns migration/data correctness. Delivery owns promotion timing and candidate compatibility.

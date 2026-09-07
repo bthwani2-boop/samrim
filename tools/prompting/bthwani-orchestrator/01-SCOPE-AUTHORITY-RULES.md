@@ -17,6 +17,60 @@ FORCE PUSH / BLIND MERGE / BLIND CHERRY-PICK = FORBIDDEN
 
 A fast-forward write is valid only from the expected current HEAD.
 
+## 1A. Environment, operation and target authority
+
+Repository/branch mutation authority is not runtime/environment authority.
+
+~~~text
+REPOSITORY AUTHORITY
++ BRANCH AUTHORITY
++ PRODUCT SCOPE AUTHORITY
++ ENVIRONMENT AUTHORITY
++ OPERATION AUTHORITY
++ EXPECTED TARGET IDENTITY
+= MUTATION MAY PROCEED
+~~~
+
+Missing or mismatched authority fails closed before the material side effect.
+
+The default environment authority is `ENVIRONMENT_SCOPE=LOCAL_INTEGRATION`.
+
+`STAGING_EXPLICIT` and `PRODUCTION_EXPLICIT` are never inferred, inherited or activated by `AUTO/NEXT`, `FULL_TARGET`, `LEVEL_4`, runtime-verification requirements, configured endpoints, authenticated tools or available credentials.
+
+Operation risk classes:
+
+~~~text
+CLASS_A_READ_ONLY
+CLASS_B_DEV_MUTATION
+CLASS_C_HIGH_IMPACT_NONPRODUCTION
+CLASS_D_CRITICAL_OR_PRODUCTION
+~~~
+
+Class A may execute when repository/scope access allows it. Class B may execute automatically only inside the authorized local/integration boundary after target preflight. Class C requires explicit operation and target authorization. Class D is default-deny and requires explicit human Production/break-glass/release authority for the exact environment, target and operation; ordinary agent autonomy never self-grants it.
+
+Examples of Class C/D include staging durable migrations, real paid/provider effects, remote release builds, destructive device operations, Production access/data/provider/deployment/store/OTA effects, credential rotation/revocation, platform-owner recovery, financial mutation, destructive durable deletion and cloud-resource deletion.
+
+~~~text
+CREDENTIAL_POSSESSION != AUTHORITY
+ENDPOINT_REACHABILITY != AUTHORITY
+AUTHENTICATED_CLI      != AUTHORITY
+CONNECTED_DEVICE       != DEVICE_MUTATION_AUTHORITY
+ABILITY_TO_MUTATE      != AUTHORIZATION_TO_MUTATE
+~~~
+
+Before Class B/C/D mutation, prove expected versus observed target identity using the smallest authoritative identifiers material to the operation, such as repository/remote/ref/SHA, environment class, database host/name/principal, provider account/project, app/project/package/build identity or device serial/package.
+
+For Class C/D, use:
+
+~~~text
+PREPARE (READ-ONLY TARGET/EFFECT/RECOVERY/READBACK PROOF)
+→ AUTHORITY REVALIDATION
+→ APPLY ONCE
+→ READBACK / RECONCILIATION
+~~~
+
+An environment, target, credential-class, branch/ref/SHA, provider-mode, device/package or unknown-outcome mismatch trips `SAFETY_INTERLOCK_TRIPPED`; stop only the unsafe operation, preserve recoverable state, diagnose/reconcile, re-pin/re-authorize as required, then continue only if the operation is still authorized.
+
 ## 2. Product-breadth authority
 
 ~~~text
@@ -112,6 +166,9 @@ EXACT_HEAD_SHA
 PRODUCT_BREADTH
 ACTIVE_PRODUCT_SLICE
 AUTHORIZED_SCOPE
+AUTHORIZED_ENVIRONMENT_SCOPE
+AUTHORIZED_OPERATION_SCOPE
+EXPECTED_TARGET_IDENTITY
 CURRENT_CAUSAL_ROOT
 CURRENT_UNIT
 UNIT_STATE
@@ -142,6 +199,7 @@ UNRESOLVED_EXTERNAL_LIVE_CONSUMER_CONTRACT
 UNRECONCILED_TARGET_HEAD_MOVEMENT
 MISSING_REQUIRED_HUMAN_PRODUCT_DECISION
 MISSING_REQUIRED_SECRET_CREDENTIAL_OR_ENVIRONMENT
+MISSING_REQUIRED_ENVIRONMENT_OR_OPERATION_AUTHORITY
 UNKNOWN_THAT_CAN_CHANGE_CANONICAL_TARGET_OR_SAFE_CUTOVER
 EXTERNAL_PROVIDER_BLOCKER_PREVENTING_REQUIRED_PROOF_OR_CUTOVER
 ~~~
@@ -158,7 +216,7 @@ REQUIRED PREREQUISITE/REGRESSION  → MAY CONTINUE
 ADJACENT FUTURE PRODUCT SLICE     → NOT AUTHORIZED
 ~~~
 
-No human confirmation is required for derivable work already authorized.
+No human confirmation is required for derivable work already authorized **and already inside the authorized environment/operation class**. This never upgrades Class B work into Class C/D and never grants staging, Production, release, break-glass, destructive external or other privileged authority.
 
 ## 11. Parallel mutation authority
 

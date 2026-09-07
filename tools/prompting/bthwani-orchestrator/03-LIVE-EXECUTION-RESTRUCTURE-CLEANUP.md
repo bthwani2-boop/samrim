@@ -9,6 +9,8 @@ LOAD_TRIGGER: BEFORE_ANY_REPOSITORY_MUTATION
 
 Mutate only a root selected by diagnosis and authorized by `01`.
 
+Before any material mutation, `01` must prove the authorized environment, operation class and expected target identity. If observed target/environment/credential/provider/device identity does not match, trip the safety interlock before the side effect; tool capability or credential availability cannot substitute for authority.
+
 The target of mutation is the final canonical owner/model, not a transitional patch architecture.
 
 ~~~text
@@ -50,11 +52,14 @@ Do not preserve donor topology, deprecated wrappers or stale abstractions as “
 
 For durable data or external side effects:
 
+- prove environment/operation authority and expected target identity before connection or mutation when practicable, and always before the first material effect;
+- for Class C/D use PREPARE → authority revalidation → APPLY ONCE → readback/reconciliation;
 - use the canonical owner/writer;
 - define deterministic migration/backfill/reconciliation;
 - preserve idempotency and concurrency semantics;
 - distinguish failed/rejected/pending/unknown;
-- never blind-retry ambiguous external mutations;
+- never blind-retry ambiguous external mutations; after an unknown outcome, reconcile/read back the original operation before deciding whether another mutation is legal;
+- repository cleanup authority does not authorize deletion of external files, secrets, cloud resources, durable volumes, device data, provider configuration or databases;
 - cut over writers before deleting old authority;
 - verify canonical readback before destructive cleanup.
 
