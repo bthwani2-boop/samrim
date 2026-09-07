@@ -6,7 +6,7 @@ PRODUCT_AUTHORITY: NONE
 
 ## Authority boundary
 
-This file owns vulnerability-reporting and repository secret-handling guidance only. Durable application/security engineering requirements are owned by `governance/policies/security.md`; current implementation/security state is proven from executable source, configuration, runtime and evidence.
+This file owns vulnerability-reporting and repository secret-handling guidance only. Durable application/security engineering requirements are owned by the exact pinned `governance/policies/security.md` in `bthwani2-boop/governance-and-docs`, resolved through `governance.lock.json`; current implementation/security state is proven from executable source, configuration, runtime and evidence.
 
 ## Reporting a vulnerability
 
