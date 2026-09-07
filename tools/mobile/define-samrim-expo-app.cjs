@@ -278,7 +278,6 @@ function defineSamrimExpoApp(appKey) {
     ...(capabilities.includes("router") ? { experiments: { typedRoutes: true } } : {}),
     extra: {
       appKey,
-      appLine: "next",
       sourceRepo: "samrim",
       nativeCapabilities: capabilities,
       sentry: {

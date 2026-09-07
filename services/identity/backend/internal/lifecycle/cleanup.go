@@ -13,22 +13,22 @@ import (
 const defaultInterval = time.Hour
 
 type RetentionConfig struct {
-	Challenge       time.Duration
-	PasswordAttempt time.Duration
-	Activation      time.Duration
-	Session         time.Duration
-	Audit           time.Duration
-	BatchSize       int
+	Challenge          time.Duration
+	PasswordAttempt    time.Duration
+	OperatorEnrollment time.Duration
+	Session            time.Duration
+	Audit              time.Duration
+	BatchSize          int
 }
 
 func DefaultRetentionConfig() RetentionConfig {
 	return RetentionConfig{
-		Challenge:       30 * 24 * time.Hour,
-		PasswordAttempt: 30 * 24 * time.Hour,
-		Activation:      30 * 24 * time.Hour,
-		Session:         90 * 24 * time.Hour,
-		Audit:           365 * 24 * time.Hour,
-		BatchSize:       500,
+		Challenge:          30 * 24 * time.Hour,
+		PasswordAttempt:    30 * 24 * time.Hour,
+		OperatorEnrollment: 30 * 24 * time.Hour,
+		Session:            90 * 24 * time.Hour,
+		Audit:              365 * 24 * time.Hour,
+		BatchSize:          500,
 	}
 }
 
@@ -40,7 +40,7 @@ func ConfigFromEnvironment(getenv func(string) string, requireExplicit bool) (Re
 	}{
 		{"IDENTITY_RETENTION_CHALLENGE_DAYS", &config.Challenge},
 		{"IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS", &config.PasswordAttempt},
-		{"IDENTITY_RETENTION_ACTIVATION_DAYS", &config.Activation},
+		{"IDENTITY_RETENTION_OPERATOR_ENROLLMENT_DAYS", &config.OperatorEnrollment},
 		{"IDENTITY_RETENTION_SESSION_DAYS", &config.Session},
 		{"IDENTITY_RETENTION_AUDIT_DAYS", &config.Audit},
 	}
@@ -129,7 +129,7 @@ WHERE id IN (
   LIMIT $2
 )`, c.config.Challenge},
 		{"operator_enrollment_tokens", `DELETE FROM identity_operator_enrollment_tokens
-WHERE id IN (SELECT id FROM identity_operator_enrollment_tokens WHERE created_at < clock_timestamp() - $1 * INTERVAL '1 second' ORDER BY created_at,id LIMIT $2)`, c.config.Activation},
+WHERE id IN (SELECT id FROM identity_operator_enrollment_tokens WHERE created_at < clock_timestamp() - $1 * INTERVAL '1 second' ORDER BY created_at,id LIMIT $2)`, c.config.OperatorEnrollment},
 		{"password_attempts", `DELETE FROM identity_password_attempts
 WHERE id IN (SELECT id FROM identity_password_attempts WHERE created_at < clock_timestamp() - $1 * INTERVAL '1 second' ORDER BY created_at,id LIMIT $2)`, c.config.PasswordAttempt},
 		{"refresh_token_history", `DELETE FROM identity_refresh_token_history

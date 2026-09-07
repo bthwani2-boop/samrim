@@ -40,9 +40,12 @@ Prefer operation/purpose, result/error code, HTTP status, duration, correlation 
 ## Operational procedures
 
 ### 1. OTP / Provider delivery outage
-1. **Diagnosis**: Inspect Identity health metrics and logs for external SMS/delivery errors (`delivery_status = 'failed'` or `'unknown'`).
-2. **Containment**: Delivery acknowledgement remains decoupled from delivery status. If error rate exceeds delivery threshold, mark challenges `suppressed` rather than accumulating pending queues.
-3. **Recovery**: Do not perform blind automated retries on unacknowledged challenges. Direct users to retry after the rate-limit window. Verify provider circuit breaker status before lifting throttle.
+1. **Diagnosis**: Inspect application logs and the `identity_challenge_deliveries` table for outbound delivery errors (`status = 'failed'` or `'unknown'`).
+2. **Current behavior**: Challenge acknowledgement is decoupled from delivery status. The delivery worker processes challenges asynchronously, fail-closed against provider rate limits and budget configurations (`IDENTITY_PROVIDER_BUDGET_PER_MINUTE`, `IDENTITY_PROVIDER_BUDGET_PER_HOUR`).
+3. **Recovery**: Do not perform blind manual updates on delivery queues. Direct users to retry after the rate-limit window.
+
+> [!NOTE]
+> Automated provider circuit breakers and dedicated metrics subsystems are not yet materialized; operational diagnosis relies on application structured logs and database queries.
 
 ### 2. Suspected refresh token replay / credential compromise
 1. **Diagnosis**: Grep security audit logs for `session.compromised` and `session.refresh_stale`.

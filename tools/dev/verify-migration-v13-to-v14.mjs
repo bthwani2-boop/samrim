@@ -9,12 +9,16 @@ console.log("VERIFYING MIGRATION V13 -> V14 UPGRADE & DATA PRESERVATION");
 console.log("==================================================");
 
 try {
-  const output = execFileSync("go", ["test", "-v", "-run", "TestMigrationV13ToV14Upgrade", "."], {
+  const output = execFileSync("go", ["test", "-v", "-run", "^TestMigrationV13ToV14Upgrade$", "."], {
     cwd: postgresPkg,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
   console.log(output);
+  if (output.includes("--- SKIP:") || !output.includes("--- PASS: TestMigrationV13ToV14Upgrade")) {
+    console.error("MIGRATION_V13_TO_V14=FAIL (migration test was skipped or did not pass)");
+    process.exit(1);
+  }
   console.log("MIGRATION_V13_TO_V14=PASS");
   console.log("MIGRATION_DATA_PRESERVATION=PASS");
 } catch (error) {

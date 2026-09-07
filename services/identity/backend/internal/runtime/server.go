@@ -274,6 +274,8 @@ func loadConfig(defaultPort string) (config, error) {
 			return config{}, errors.New("IDENTITY_PROVIDER_BUDGET_PER_MINUTE must be a positive integer")
 		}
 		budget.MaxPerMinute = val
+	} else if runtimeEnvironment == "staging" || runtimeEnvironment == "production" {
+		return config{}, errors.New("IDENTITY_PROVIDER_BUDGET_PER_MINUTE is required outside local environments")
 	}
 	if rawHour := strings.TrimSpace(os.Getenv("IDENTITY_PROVIDER_BUDGET_PER_HOUR")); rawHour != "" {
 		val, err := strconv.Atoi(rawHour)
@@ -281,6 +283,8 @@ func loadConfig(defaultPort string) (config, error) {
 			return config{}, errors.New("IDENTITY_PROVIDER_BUDGET_PER_HOUR must be a positive integer")
 		}
 		budget.MaxPerHour = val
+	} else if runtimeEnvironment == "staging" || runtimeEnvironment == "production" {
+		return config{}, errors.New("IDENTITY_PROVIDER_BUDGET_PER_HOUR is required outside local environments")
 	}
 	return config{port: port, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget}, nil
 }

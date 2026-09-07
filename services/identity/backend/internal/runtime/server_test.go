@@ -22,10 +22,12 @@ func setRuntimeConfigBaseline(t *testing.T) {
 	t.Setenv("BTHWANI_ENV", "production")
 	t.Setenv("IDENTITY_RETENTION_CHALLENGE_DAYS", "30")
 	t.Setenv("IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS", "30")
-	t.Setenv("IDENTITY_RETENTION_ACTIVATION_DAYS", "30")
+	t.Setenv("IDENTITY_RETENTION_OPERATOR_ENROLLMENT_DAYS", "30")
 	t.Setenv("IDENTITY_RETENTION_SESSION_DAYS", "90")
 	t.Setenv("IDENTITY_RETENTION_AUDIT_DAYS", "365")
 	t.Setenv("IDENTITY_RETENTION_BATCH_SIZE", "500")
+	t.Setenv("IDENTITY_PROVIDER_BUDGET_PER_MINUTE", "60")
+	t.Setenv("IDENTITY_PROVIDER_BUDGET_PER_HOUR", "600")
 }
 
 func TestProductionRejectsMailpit(t *testing.T) {
@@ -73,5 +75,21 @@ func TestProductionRequiresSeparateDatabasePrincipals(t *testing.T) {
 	t.Setenv("IDENTITY_MAINTENANCE_DATABASE_URL", "postgres://identity:test@db.example.com:5432/identity?sslmode=verify-full")
 	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "distinct database principals") {
 		t.Fatalf("production accepted a shared database principal: %v", err)
+	}
+}
+
+func TestProductionRequiresProviderBudgetMinute(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	t.Setenv("IDENTITY_PROVIDER_BUDGET_PER_MINUTE", "")
+	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "IDENTITY_PROVIDER_BUDGET_PER_MINUTE is required") {
+		t.Fatalf("production accepted missing budget per minute: %v", err)
+	}
+}
+
+func TestProductionRequiresProviderBudgetHour(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	t.Setenv("IDENTITY_PROVIDER_BUDGET_PER_HOUR", "")
+	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "IDENTITY_PROVIDER_BUDGET_PER_HOUR is required") {
+		t.Fatalf("production accepted missing budget per hour: %v", err)
 	}
 }

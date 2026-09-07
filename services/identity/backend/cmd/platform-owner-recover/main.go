@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"flag"
@@ -12,13 +13,14 @@ import (
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
 	_ "github.com/lib/pq"
+	"golang.org/x/term"
 )
 
 func main() {
 	var (
 		databaseURL = flag.String("database-url", "", "PostgreSQL database URL (defaults to IDENTITY_DATABASE_URL)")
 		phone       = flag.String("phone", "", "New verified phone number in E.164 format (optional)")
-		password    = flag.String("password", "", "New high-entropy password (at least 15 characters)")
+		password    = flag.String("password", "", "New password (discouraged; prefer interactive prompt or IDENTITY_RECOVERY_PASSWORD)")
 	)
 	flag.Parse()
 
@@ -34,8 +36,26 @@ func main() {
 	if pwd == "" {
 		pwd = strings.TrimSpace(os.Getenv("IDENTITY_RECOVERY_PASSWORD"))
 	}
-	if len(pwd) < 15 {
-		log.Fatal("password must be at least 15 characters long")
+	if pwd == "" {
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			fmt.Fprint(os.Stderr, "Enter new platform owner recovery password: ")
+			bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Fprintln(os.Stderr)
+			if err != nil {
+				log.Fatalf("read password: %v", err)
+			}
+			pwd = strings.TrimSpace(string(bytePassword))
+		} else {
+			reader := bufio.NewReader(os.Stdin)
+			line, err := reader.ReadString('\n')
+			if err != nil && line == "" {
+				log.Fatalf("read password from stdin: %v", err)
+			}
+			pwd = strings.TrimSpace(line)
+		}
+	}
+	if pwd == "" {
+		log.Fatal("password is required via interactive prompt, IDENTITY_RECOVERY_PASSWORD, or stdin")
 	}
 
 	db, err := sql.Open("postgres", dbURL)
