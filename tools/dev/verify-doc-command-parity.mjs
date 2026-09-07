@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
-const docsRoot = path.join(repoRoot, "docs");
+const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
+const docsRoot = path.join(knowledgeRoot, "docs");
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
 );
@@ -63,36 +65,44 @@ const forbiddenLegacyPatterns = [
 ];
 
 function collectMarkdownFiles(root) {
+  if (!fs.existsSync(root)) return [];
   const files = [];
-
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     const absolute = path.join(root, entry.name);
-
-    if (entry.isDirectory()) {
-      files.push(...collectMarkdownFiles(absolute));
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".md")) {
-      files.push(absolute);
-    }
+    if (entry.isDirectory()) files.push(...collectMarkdownFiles(absolute));
+    else if (entry.isFile() && entry.name.endsWith(".md")) files.push(absolute);
   }
-
   return files;
 }
 
-const failures = [];
+function displayPath(file) {
+  const knowledgeRel = path.relative(knowledgeRoot, file);
+  if (!knowledgeRel.startsWith("..") && !path.isAbsolute(knowledgeRel)) {
+    return "knowledge:" + knowledgeRel.replaceAll("\\", "/");
+  }
+  return path.relative(repoRoot, file).replaceAll("\\", "/");
+}
 
+function resolveRepositoryPath(candidate) {
+  const normalized = candidate.replaceAll("\\", "/").replace(/^\.\//, "");
+  if (normalized.startsWith("governance/") || normalized.startsWith("docs/")) {
+    return path.join(knowledgeRoot, ...normalized.split("/"));
+  }
+  return path.join(repoRoot, ...normalized.split("/"));
+}
+
+const failures = [];
 const documentationFiles = [
   ...collectMarkdownFiles(docsRoot),
   path.join(repoRoot, "README.md"),
   path.join(repoRoot, "CONTRIBUTING.md"),
   path.join(repoRoot, "AGENTS.md"),
+  path.join(repoRoot, "SECURITY.md"),
   path.join(repoRoot, "tools", "README.md"),
 ].filter((file, index, all) => fs.existsSync(file) && all.indexOf(file) === index);
 
 for (const file of documentationFiles) {
-  const relative = path.relative(repoRoot, file).replaceAll("\\", "/");
+  const relative = displayPath(file);
   const lines = fs.readFileSync(file, "utf8").split("\n");
 
   lines.forEach((line, index) => {
@@ -101,37 +111,39 @@ for (const file of documentationFiles) {
     for (const pattern of forbiddenLegacyPatterns) {
       if (pattern.regex.test(line)) {
         failures.push(
-          relative +
-            ":" +
-            lineNumber +
-            " -> " +
-            pattern.label +
-            ": " +
-            line.trim(),
+          relative + ":" + lineNumber + " -> " + pattern.label + ": " + line.trim(),
         );
       }
     }
 
-    if (/\bpnpm\s+--dir\b/.test(line)) {
-      return;
+    for (const codeMatch of line.matchAll(/`([^`]+)`/g)) {
+      const code = codeMatch[1];
+      for (const match of code.matchAll(
+        /\b(?:governance|docs|tools|apps|services|packages|infra)\/[A-Za-z0-9._@+\/-]+/g,
+      )) {
+        const candidate = match[0].replace(/[.,;:]+$/, "").replace(/\/$/, "");
+        if (!candidate || /[*{}<>]/.test(candidate)) continue;
+        const absolute = resolveRepositoryPath(candidate);
+        if (!fs.existsSync(absolute)) {
+          failures.push(
+            relative + ":" + lineNumber +
+              " -> missing referenced path: " + candidate,
+          );
+        }
+      }
     }
+
+    if (/\bpnpm\s+--dir\b/.test(line)) return;
 
     for (const match of line.matchAll(
       /\bpnpm\s+(?:run\s+)?([A-Za-z0-9][A-Za-z0-9:_-]*)/g,
     )) {
       const command = match[1];
-
-      if (pnpmBuiltins.has(command)) {
-        continue;
-      }
-
+      if (pnpmBuiltins.has(command)) continue;
       if (!scripts.has(command)) {
         failures.push(
-          relative +
-            ":" +
-            lineNumber +
-            " -> undocumented root command authority: pnpm " +
-            command,
+          relative + ":" + lineNumber +
+            " -> undocumented root command authority: pnpm " + command,
         );
       }
     }
@@ -140,11 +152,9 @@ for (const file of documentationFiles) {
 
 if (failures.length > 0) {
   console.error("DOC_COMMAND_PARITY=FAIL");
-
-  for (const failure of failures) {
+  for (const failure of [...new Set(failures)].sort()) {
     console.error("  " + failure);
   }
-
   process.exit(1);
 }
 
