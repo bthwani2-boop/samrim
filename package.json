@@ -52,6 +52,7 @@
     "candidate:local:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "nx": "23.2.0",
     "typescript": "6.0.2"
   }
