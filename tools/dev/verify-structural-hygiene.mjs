@@ -60,6 +60,7 @@ const rootFiles = new Set([
   "SECURITY.md",
   "go.work",
   "go.work.sum",
+  "knip.jsonc",
   "nx.json",
   "package.json",
   "pnpm-lock.yaml",
