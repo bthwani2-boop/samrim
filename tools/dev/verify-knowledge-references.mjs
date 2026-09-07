@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
-const root = path.resolve(import.meta.dirname, "../..");
+const repoRoot = path.resolve(import.meta.dirname, "../..");
+const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
 
 function collectMarkdown(dir) {
   if (!fs.existsSync(dir)) return [];
@@ -14,21 +16,28 @@ function collectMarkdown(dir) {
   return out;
 }
 
-function repoRelative(file) {
-  return path.relative(root, file).split(path.sep).join("/");
+function rootForFile(file) {
+  return file.startsWith(knowledgeRoot + path.sep) ? knowledgeRoot : repoRoot;
+}
+
+function logicalRelative(file) {
+  return path.relative(rootForFile(file), file).split(path.sep).join("/");
+}
+
+function rootForLogicalPath(ref) {
+  return ref.startsWith("governance/") || ref.startsWith("docs/")
+    ? knowledgeRoot
+    : repoRoot;
 }
 
 function extractKnowledgeRefs(body) {
   const refs = [];
-
   for (const match of body.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
     refs.push(match[1].trim());
   }
-
-  for (const match of body.matchAll(/\`([^\`\n]+\.md(?:#[^\`]*)?)\`/g)) {
+  for (const match of body.matchAll(/`([^`\n]+\.md(?:#[^`]*)?)`/g)) {
     refs.push(match[1].trim());
   }
-
   return refs;
 }
 
@@ -58,28 +67,34 @@ function resolveKnowledgeRef(sourceFile, raw) {
   ]);
 
   let absolute;
+  let owningRoot;
   if (rootRelativePrefixes.some((prefix) => ref.startsWith(prefix)) || rootFiles.has(ref)) {
-    absolute = path.join(root, ref);
+    owningRoot = rootForLogicalPath(ref);
+    absolute = path.join(owningRoot, ...ref.split("/"));
   } else if (ref.startsWith("/")) {
-    absolute = path.join(root, ref.slice(1));
+    const stripped = ref.slice(1);
+    owningRoot = rootForLogicalPath(stripped);
+    absolute = path.join(owningRoot, ...stripped.split("/"));
   } else {
+    owningRoot = rootForFile(sourceFile);
     absolute = path.resolve(path.dirname(sourceFile), ref);
   }
 
-  const relative = repoRelative(absolute);
-  if (relative.startsWith("../") || relative === "..") return { invalidEscape: true, relative };
+  const relative = path.relative(owningRoot, absolute).split(path.sep).join("/");
+  if (relative.startsWith("../") || relative === "..") {
+    return { invalidEscape: true, relative };
+  }
   return { absolute, relative };
 }
 
-const scopes = [
-  path.join(root, "governance"),
-  path.join(root, "docs"),
-  path.join(root, "tools/prompting"),
+const sources = [
+  ...collectMarkdown(path.join(knowledgeRoot, "governance")),
+  ...collectMarkdown(path.join(knowledgeRoot, "docs")),
+  ...collectMarkdown(path.join(repoRoot, "tools/prompting/bthwani-orchestrator")),
 ];
 
-const sources = scopes.flatMap(collectMarkdown);
 for (const rootFile of ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "CONTRIBUTING.md"]) {
-  const absolute = path.join(root, rootFile);
+  const absolute = path.join(repoRoot, rootFile);
   if (fs.existsSync(absolute)) sources.push(absolute);
 }
 
@@ -87,7 +102,7 @@ const failures = [];
 const docsInbound = new Map();
 
 for (const source of sources) {
-  const sourceRel = repoRelative(source);
+  const sourceRel = logicalRelative(source);
   const body = fs.readFileSync(source, "utf8");
 
   for (const raw of extractKnowledgeRefs(body)) {
@@ -95,44 +110,55 @@ for (const source of sources) {
     if (!resolved) continue;
 
     if (resolved.invalidEscape) {
-      failures.push(sourceRel + " reference escapes repository: " + raw);
+      failures.push(sourceRel + " reference escapes its authority root: " + raw);
       continue;
     }
 
     if (!fs.existsSync(resolved.absolute) || !fs.statSync(resolved.absolute).isFile()) {
-      failures.push(sourceRel + " has broken internal Markdown reference: " + raw + " -> " + resolved.relative);
+      failures.push(
+        sourceRel + " has broken Markdown reference: " + raw + " -> " + resolved.relative,
+      );
       continue;
     }
 
-    if (resolved.relative.startsWith("docs/") && resolved.relative.endsWith(".md") && resolved.relative !== sourceRel) {
-      docsInbound.set(resolved.relative, (docsInbound.get(resolved.relative) ?? 0) + 1);
+    if (
+      resolved.relative.startsWith("docs/") &&
+      resolved.relative.endsWith(".md") &&
+      resolved.relative !== sourceRel
+    ) {
+      docsInbound.set(
+        resolved.relative,
+        (docsInbound.get(resolved.relative) ?? 0) + 1,
+      );
     }
   }
 }
 
 const orphanScopes = [
-  path.join(root, "docs/development"),
-  path.join(root, "docs/platform-engineering-lifecycle"),
-  path.join(root, "docs/runbooks"),
-  path.join(root, "docs/reference/external-systems"),
+  path.join(knowledgeRoot, "docs/development"),
+  path.join(knowledgeRoot, "docs/runbooks"),
+  path.join(knowledgeRoot, "docs/reference/external-systems"),
 ];
 
 for (const file of orphanScopes.flatMap(collectMarkdown)) {
-  const rel = repoRelative(file);
+  const rel = logicalRelative(file);
   if (path.basename(file).toLowerCase() === "readme.md") continue;
   if ((docsInbound.get(rel) ?? 0) === 0) {
-    failures.push("orphaned knowledge document with no inbound Markdown/backtick reference: " + rel);
+    failures.push(
+      "orphaned knowledge document with no inbound Markdown/backtick reference: " + rel,
+    );
   }
 }
 
 const donorReference = "docs/reference/donor-reconstruction-patterns.md";
-if (fs.existsSync(path.join(root, donorReference)) && (docsInbound.get(donorReference) ?? 0) === 0) {
+const donorAbsolute = path.join(knowledgeRoot, ...donorReference.split("/"));
+if (fs.existsSync(donorAbsolute) && (docsInbound.get(donorReference) ?? 0) === 0) {
   failures.push("donor reconstruction reference is orphaned: " + donorReference);
 }
 
 if (failures.length) {
   console.error("KNOWLEDGE_REFERENCE_VERIFY=FAIL");
-  for (const failure of failures) console.error("  " + failure);
+  for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);
   process.exit(1);
 }
 
