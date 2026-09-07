@@ -5,6 +5,7 @@ PROJECT: BTHWANI
 TARGET_BRANCH: INVOCATION_SUPPLIED
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+KNOWLEDGE_PIN: governance.lock.json
 SEMANTIC_SELF_CERTIFICATION: FORBIDDEN
 
 ## 1. Mission
@@ -86,6 +87,8 @@ Verification submodules under `verify/*` own proof classes delegated by `04`; th
 
 ## 7. Context-loading protocol
 
+All logical paths beginning with `governance/` or `docs/` resolve to the exact immutable commit pinned by `governance.lock.json` in `bthwani2-boop/governance-and-docs`. They are not tracked local roots in `samrim`. Never read a floating `main`, tag or "latest" knowledge state as execution authority. The repository-local Orchestrator remains authoritative only for execution law.
+
 Load the smallest context capable of changing the decision.
 
 At entry/resume:
@@ -94,7 +97,7 @@ At entry/resume:
 2. read `01`;
 3. pin exact branch HEAD;
 4. recover current execution state and the authorized environment/operation envelope;
-5. load only the materially applicable Governance owners;
+5. resolve the exact knowledge pin and load only the materially applicable pinned Governance owners;
 6. load `02`;
 7. load applicable focus lens(es);
 8. diagnose.
