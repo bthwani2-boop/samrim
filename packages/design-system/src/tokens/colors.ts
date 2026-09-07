@@ -166,7 +166,9 @@ export const lightThemeColors = {
   dangerSoft: statusScale.dangerSoft,
   info: statusScale.info,
   infoSoft: statusScale.infoSoft,
-  shadowColor: colorRoles.shadowBase
+  onAction: brandRoots.surfaceBase,
+  shadowColor: colorRoles.shadowBase,
+  shadowCard: "0 22px 60px rgba(10, 47, 92, 0.1)"
 } as const;
 
 export const darkThemeColors = {
@@ -174,7 +176,7 @@ export const darkThemeColors = {
   backgroundAlt: neutralScale[900],
   surface: neutralScale[900],
   surfaceRaised: neutralScale[800],
-  surfaceInset: neutralScale[950],
+  surfaceInset: neutralScale[800],
   surfaceOverlay: alpha(neutralScale[900], 0.9),
   color: neutralScale[50],
   colorSecondary: neutralScale[200],
@@ -197,10 +199,11 @@ export const darkThemeColors = {
   dangerSoft: alpha("#F2877A", 0.14),
   info: "#8BB4E8",
   infoSoft: alpha("#8BB4E8", 0.14),
-  shadowColor: colorRoles.shadowBase
+  onAction: "#FFFFFF",
+  shadowColor: colorRoles.shadowBase,
+  shadowCard: "0 22px 60px rgba(0, 0, 0, 0.5)"
 } as const;
 
-export const tamaguiColorTokens = {
-  ...colorRoles,
-  ...statusScale
-} as const;
+export type ThemeColors = {
+  [K in keyof typeof lightThemeColors]: string;
+};

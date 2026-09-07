@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import type { ActorIdentity, ActorType, ControlPanelRole, OperatorEnrollmentToken } from "@bthwani/identity";
-import { colorRoles } from "@bthwani/design-system";
 
 type ViewState =
   | Readonly<{ kind: "loading" }>
@@ -162,14 +160,6 @@ function AccountAccessPanel() {
   </section>;
 }
 
-const visualTokens = {
-  "--brand-action": colorRoles.brandAction,
-  "--brand-structure": colorRoles.brandStructure,
-  "--surface-warm": colorRoles.surfaceWarm,
-  "--surface-base": colorRoles.surfaceBase,
-  "--text-muted": colorRoles.textMuted,
-  "--border-subtle": colorRoles.borderSubtle,
-} as CSSProperties;
 
 export default function Home() {
   const [view, setView] = useState<ViewState>({ kind: "loading" });
@@ -178,7 +168,7 @@ export default function Home() {
   const [loginRole, setLoginRole] = useState<ControlPanelRole>("operator");
   const [authMode, setAuthMode] = useState<"login" | "activate" | "recover">("login");
   const [controlStep, setControlStep] = useState<"phone" | "password" | "activation" | "recovery">("phone");
-  const [activationCode, setActivationCode] = useState("");
+  const [operatorEnrollmentToken, setOperatorEnrollmentToken] = useState("");
   const [code, setCode] = useState("");
   const [activationPassword, setActivationPassword] = useState("");
   const [activationPasswordConfirmation, setActivationPasswordConfirmation] = useState("");
@@ -225,7 +215,7 @@ export default function Home() {
       const response = await identityFetch(authMode === "login" ? "/api/auth/login/start" : authMode === "activate" ? "/api/auth/activation/start" : "/api/auth/recovery/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: authMode === "login" ? JSON.stringify({ phone, password, role: loginRole }) : authMode === "activate" ? JSON.stringify({ phone, activationCode }) : JSON.stringify({ phone }),
+        body: authMode === "login" ? JSON.stringify({ phone, password, role: loginRole }) : authMode === "activate" ? JSON.stringify({ phone, operatorEnrollmentToken }) : JSON.stringify({ phone }),
       });
       if (!response.ok) {
         setError(await responseMessage(response));
@@ -248,7 +238,7 @@ export default function Home() {
       const response = await identityFetch(authMode === "login" ? "/api/auth/login/complete" : authMode === "activate" ? "/api/auth/activation/complete" : "/api/auth/recovery/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: authMode === "login" ? JSON.stringify({ phone, code, role: loginRole }) : authMode === "activate" ? JSON.stringify({ phone, activationCode, verificationCode: code, password: activationPassword }) : JSON.stringify({ phone, code, password: recoveryPassword }),
+        body: authMode === "login" ? JSON.stringify({ phone, code, role: loginRole }) : authMode === "activate" ? JSON.stringify({ phone, operatorEnrollmentToken, verificationCode: code, password: activationPassword }) : JSON.stringify({ phone, code, password: recoveryPassword }),
       });
       if (!response.ok) {
         setError(await responseMessage(response));
@@ -256,7 +246,7 @@ export default function Home() {
       }
       const body = (await response.json()) as { identity?: ActorIdentity; status?: string };
       setCode("");
-      setActivationCode("");
+      setOperatorEnrollmentToken("");
       setActivationPassword("");
       setActivationPasswordConfirmation("");
       setRecoveryPassword("");
@@ -296,7 +286,7 @@ export default function Home() {
   }
 
   const shell = (content: React.ReactNode, className = "") => (
-    <main className={`control-shell ${className}`} style={visualTokens}>
+    <main className={`control-shell ${className}`}>
       <div className="ambient-orb ambient-orb-one" aria-hidden="true" />
       <div className="ambient-orb ambient-orb-two" aria-hidden="true" />
       <div className="control-frame">
@@ -322,7 +312,7 @@ export default function Home() {
     return shell(<><section className="workspace-card"><div className="workspace-intro"><span className="success-badge"><span className="success-dot" aria-hidden="true" /> الجلسة نشطة</span><p className="eyebrow">مساحة {view.identity.role === "platform_owner" ? "مالك المنصة" : "المشغل"}</p><h1>أهلاً بك في لوحة التحكم</h1><p className="lead">تم توثيق جلستك بعاملين. يمكنك متابعة الوحدات المصرح بها من هذه المساحة.</p></div><div className="session-summary"><div><span className="summary-label">الدور</span><strong>{view.identity.role === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</strong></div><div><span className="summary-label">السطح</span><strong>{view.identity.surface}</strong></div><div><span className="summary-label">حالة الجلسة</span><strong className="summary-value-success">موثقة</strong></div></div><div className="workspace-note"><span className="note-mark" aria-hidden="true">✓</span><div><strong>الهوية جاهزة</strong><p>لا توجد بيانات تشغيلية معروضة هنا قبل ربط صلاحيات الوحدات؛ لن نعرض أرقاماً تجريبية أو حالة غير مؤكدة.</p></div></div>{error ? <p className="identity-error" role="alert">{error}</p> : null}<button className="button button-secondary" disabled={busy} onClick={() => void logout()}>{busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}</button></section>{view.identity.role === "platform_owner" ? <AccountAccessPanel /> : null}</>, "workspace-shell");
   }
 
-  const canStart = controlStep === "phone" || controlStep === "recovery" ? phone.trim().length > 0 : controlStep === "password" ? phone.trim().length > 0 && password.length >= 15 : phone.trim().length > 0 && activationCode.trim().length >= 24;
+  const canStart = controlStep === "phone" || controlStep === "recovery" ? phone.trim().length > 0 : controlStep === "password" ? phone.trim().length > 0 && password.length >= 15 : phone.trim().length > 0 && operatorEnrollmentToken.trim().length >= 24;
   const canCompleteActivation = code.trim().length === 6 && activationPassword.length >= 15 && activationPassword === activationPasswordConfirmation;
   const canCompleteRecovery = code.trim().length === 6 && recoveryPassword.length >= 15 && recoveryPassword === recoveryPasswordConfirmation;
   return shell(
@@ -343,7 +333,7 @@ export default function Home() {
         <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void completeLogin(); else void startLogin(); }} noValidate>
           {controlStep === "phone" && !challengeStarted ? <><label className="field-label" htmlFor="login-role">الدور<select id="login-role" value={loginRole} disabled={busy} onChange={(event) => setLoginRole(event.target.value as ControlPanelRole)}><option value="operator">موظف لوحة التحكم</option><option value="platform_owner">مالك المنصة</option></select></label>{loginRole === "operator" ? <div className="auth-intent-actions"><button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("activate"); setControlStep("activation"); }}>تفعيل حساب موظف</button><button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("recover"); setControlStep("recovery"); }}>استرداد كلمة المرور</button></div> : null}</> : null}          {controlStep !== "phone" && !challengeStarted ? <p className="field-help">الدور المختار: {loginRole === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</p> : null}
           <label className="field-label" htmlFor="operator-phone">رقم الهاتف<input id="operator-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
-          {controlStep === "activation" && !challengeStarted ? <label className="field-label" htmlFor="activation-code">دعوة الموظف الآمنة<input id="activation-code" autoComplete="one-time-code" maxLength={256} value={activationCode} onChange={(event) => setActivationCode(event.target.value.trim())} placeholder="ألصق الدعوة عالية الأمان" /></label> : null}
+          {controlStep === "activation" && !challengeStarted ? <label className="field-label" htmlFor="operator-enrollment-token">دعوة الموظف الآمنة<input id="operator-enrollment-token" autoComplete="one-time-code" maxLength={256} value={operatorEnrollmentToken} onChange={(event) => setOperatorEnrollmentToken(event.target.value.trim())} placeholder="ألصق الدعوة عالية الأمان" /></label> : null}
           {controlStep === "password" && !challengeStarted ? <label className="field-label" htmlFor="operator-password">كلمة المرور<div className="password-field"><input aria-describedby="password-help" autoComplete="current-password" id="operator-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} /><button aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"} className="password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? "إخفاء" : "إظهار"}</button></div><span className="field-help" id="password-help">١٥ حرفاً على الأقل</span></label> : null}
           {challengeStarted ? <label className="field-label" htmlFor="operator-code">رمز تحقق الهاتف<input aria-describedby="code-help" autoComplete="one-time-code" id="operator-code" inputMode="numeric" maxLength={6} placeholder="000000" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} /></label> : null}
           {challengeStarted ? <span className="field-help" id="code-help">الرمز مكوّن من ٦ أرقام</span> : null}

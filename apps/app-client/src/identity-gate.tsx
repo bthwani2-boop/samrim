@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -9,9 +9,10 @@ import {
   Text,
   TextInput,
   View,
+  useColorScheme,
 } from "react-native";
 
-import { colorRoles, lightThemeColors, statusScale } from "@bthwani/design-system";
+import { resolveTheme } from "@bthwani/design-system";
 import { isIdentityClientError, type IdentitySessionState } from "@bthwani/identity";
 import {
   currentIdentityState,
@@ -25,21 +26,26 @@ import {
 } from "./identity";
 
 type AuthMode = "login" | "register" | "recover";
-type FieldName = "phone" | "code" | "password";
+type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
 
-const colors = {
-  background: lightThemeColors.background,
-  border: lightThemeColors.borderColor,
-  focus: lightThemeColors.focusColor,
-  muted: lightThemeColors.colorMuted,
-  navy: colorRoles.brandStructure,
-  orange: colorRoles.brandAction,
-  surface: lightThemeColors.surface,
-  disabled: lightThemeColors.borderColorStrong,
-  dangerBackground: statusScale.dangerSoft,
-  danger: statusScale.danger,
-  noticeBackground: lightThemeColors.actionSoft,
-};
+function getColors(isDark: boolean) {
+  const theme = resolveTheme(isDark ? "dark" : "light");
+  return {
+    background: theme.background,
+    border: theme.borderColor,
+    focus: theme.focusColor,
+    muted: theme.colorMuted,
+    navy: theme.structure,
+    orange: theme.action,
+    surface: theme.surface,
+    disabled: theme.borderColorStrong,
+    dangerBackground: theme.dangerSoft,
+    danger: theme.danger,
+    noticeBackground: theme.actionSoft,
+  };
+}
+
+type GateColors = ReturnType<typeof getColors>;
 
 const modeDetails: Record<AuthMode, { title: string }> = {
   login: { title: "تسجيل الدخول" },
@@ -60,10 +66,16 @@ function isCredentialFailure(value: unknown): boolean {
 }
 
 export default function IdentityGate() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const colors = useMemo(() => getColors(isDark), [isDark]);
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [mode, setMode] = useState<AuthMode>("login");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [code, setCode] = useState("");
   const [proofRequested, setProofRequested] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -93,6 +105,7 @@ export default function IdentityGate() {
     setMode(next);
     setCode("");
     setPassword("");
+    setPasswordConfirmation("");
     setProofRequested(false);
     setError("");
     setNotice("");
@@ -129,7 +142,7 @@ export default function IdentityGate() {
         return;
       }
       setProofRequested(true);
-      setNotice("تم إرسال رمز التحقق عبر القناة المهيأة.");
+      setNotice("إذا كانت البيانات صالحة، سيصلك رمز التحقق عبر القناة المهيأة.");
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
@@ -151,6 +164,7 @@ export default function IdentityGate() {
       }
       setCode("");
       setPassword("");
+      setPasswordConfirmation("");
       setProofRequested(false);
     } catch (cause) {
       setLoginFailed(mode === "login" && isCredentialFailure(cause));
@@ -187,7 +201,6 @@ export default function IdentityGate() {
       <View style={styles.container}>
         <Text style={styles.title}>بثواني</Text>
         <Text style={styles.status}>تم تسجيل الدخول</Text>
-        <Text style={styles.muted}>العميل: {state.identity.subject}</Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <Pressable disabled={busy} onPress={logout} style={styles.primaryButton}>
           <Text style={styles.primaryButtonText}>{busy ? "جارٍ التنفيذ…" : "تسجيل الخروج"}</Text>
@@ -222,9 +235,11 @@ export default function IdentityGate() {
   }
 
   const needsProof = mode !== "login";
+  const passwordsMatch = !needsProof || (password.length > 0 && password === passwordConfirmation);
   const canSubmit =
     phone.trim().length > 0 &&
     password.length >= 15 &&
+    passwordsMatch &&
     (!needsProof || (proofRequested && code.trim().length === 6));
 
   return (
@@ -321,6 +336,23 @@ export default function IdentityGate() {
                         value={password}
                       />
                     </View>
+
+                    <View style={styles.fieldBlock}>
+                      <Text style={styles.fieldLabel}>تأكيد كلمة المرور</Text>
+                      <TextInput
+                        accessibilityLabel="تأكيد كلمة المرور"
+                        autoCapitalize="none"
+                        autoComplete="new-password"
+                        onBlur={() => setFocusedField(null)}
+                        onChangeText={setPasswordConfirmation}
+                        onFocus={() => setFocusedField("passwordConfirmation")}
+                        placeholder="أعد إدخال كلمة المرور"
+                        placeholderTextColor={colors.muted}
+                        secureTextEntry
+                        style={[styles.input, focusedField === "passwordConfirmation" && styles.inputFocused]}
+                        value={passwordConfirmation}
+                      />
+                    </View>
                   </>
                 ) : null}
               </>
@@ -389,50 +421,52 @@ export default function IdentityGate() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32 },
-  authShell: { width: "100%", maxWidth: 480, alignSelf: "center" },
-  brandBlock: { alignItems: "center", marginBottom: 24 },
-  brand: { color: colors.navy, fontSize: 34, fontWeight: "800", textAlign: "center" },
-  brandAccent: { backgroundColor: colors.orange, borderRadius: 3, height: 4, marginTop: 8, width: 42 },
-  title: { color: colors.navy, fontSize: 28, fontWeight: "800", textAlign: "center" },
-  authCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 20,
-    shadowColor: colors.navy,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    elevation: 3,
-  },
-  formTitle: { color: colors.navy, fontSize: 22, fontWeight: "800", marginBottom: 16, textAlign: "right" },
-  fieldBlock: { marginBottom: 14 },
-  fieldLabel: { color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7, textAlign: "right" },
-  input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13, textAlign: "right" },
-  numericInput: { textAlign: "left" },
-  inputFocused: { borderColor: colors.focus, borderWidth: 2 },
-  codeAction: { alignSelf: "flex-end", paddingBottom: 8, paddingTop: 2 },
-  codeActionText: { color: colors.orange, fontSize: 14, fontWeight: "800" },
-  codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: colors.orange, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
-  codeActionPrimaryText: { color: colors.surface, fontSize: 16 },
-  codeActionDisabled: { backgroundColor: colors.disabled },
-  modeLinks: { alignItems: "center", flexDirection: "row-reverse", flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
-  modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline" },
-  recoveryButton: { alignItems: "center", borderColor: colors.orange, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
-  recoveryButtonText: { color: colors.orange, fontSize: 15, fontWeight: "800" },
-  disabledText: { color: colors.muted },
-  status: { textAlign: "center", fontSize: 17, fontWeight: "600" },
-  muted: { color: colors.muted, fontSize: 14, textAlign: "center" },
-  secondaryButton: { alignItems: "center", borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 16 },
-  secondaryButtonText: { color: colors.navy, fontSize: 15, fontWeight: "700", textAlign: "center" },
-  primaryButton: { alignItems: "center", backgroundColor: colors.orange, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
-  primaryButtonDisabled: { backgroundColor: colors.disabled },
-  primaryButtonText: { color: colors.surface, fontSize: 16, fontWeight: "800" },
-  primaryButtonTextDisabled: { color: colors.muted },
-  notice: { backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10, textAlign: "right" },
-  error: { backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10, textAlign: "right" },
-});
+function createStyles(colors: GateColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32 },
+    authShell: { width: "100%", maxWidth: 480, alignSelf: "center" },
+    brandBlock: { alignItems: "center", marginBottom: 24 },
+    brand: { color: colors.navy, fontSize: 34, fontWeight: "800", textAlign: "center" },
+    brandAccent: { backgroundColor: colors.orange, borderRadius: 3, height: 4, marginTop: 8, width: 42 },
+    title: { color: colors.navy, fontSize: 28, fontWeight: "800", textAlign: "center" },
+    authCard: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderRadius: 24,
+      borderWidth: 1,
+      padding: 20,
+      shadowColor: colors.navy,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.08,
+      shadowRadius: 20,
+      elevation: 3,
+    },
+    formTitle: { color: colors.navy, fontSize: 22, fontWeight: "800", marginBottom: 16, textAlign: "right" },
+    fieldBlock: { marginBottom: 14 },
+    fieldLabel: { color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7, textAlign: "right" },
+    input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13, textAlign: "right" },
+    numericInput: { textAlign: "left" },
+    inputFocused: { borderColor: colors.focus, borderWidth: 2 },
+    codeAction: { alignSelf: "flex-end", paddingBottom: 8, paddingTop: 2 },
+    codeActionText: { color: colors.orange, fontSize: 14, fontWeight: "800" },
+    codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: colors.orange, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
+    codeActionPrimaryText: { color: colors.surface, fontSize: 16 },
+    codeActionDisabled: { backgroundColor: colors.disabled },
+    modeLinks: { alignItems: "center", flexDirection: "row-reverse", flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
+    modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline" },
+    recoveryButton: { alignItems: "center", borderColor: colors.orange, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
+    recoveryButtonText: { color: colors.orange, fontSize: 15, fontWeight: "800" },
+    disabledText: { color: colors.muted },
+    status: { textAlign: "center", fontSize: 17, fontWeight: "600", color: colors.navy },
+    muted: { color: colors.muted, fontSize: 14, textAlign: "center" },
+    secondaryButton: { alignItems: "center", borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 16 },
+    secondaryButtonText: { color: colors.navy, fontSize: 15, fontWeight: "700", textAlign: "center" },
+    primaryButton: { alignItems: "center", backgroundColor: colors.orange, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
+    primaryButtonDisabled: { backgroundColor: colors.disabled },
+    primaryButtonText: { color: colors.surface, fontSize: 16, fontWeight: "800" },
+    primaryButtonTextDisabled: { color: colors.muted },
+    notice: { backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10, textAlign: "right" },
+    error: { backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10, textAlign: "right" },
+  });
+}

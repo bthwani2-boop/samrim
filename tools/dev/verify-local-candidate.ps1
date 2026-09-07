@@ -188,6 +188,10 @@ try {
         node tools/dev/verify-structural-hygiene.mjs
     }
 
+    Run-NativeStep "Theme authority" {
+        node --loader ./tools/dev/ts-resolver.mjs tools/dev/verify-theme-authority.mjs
+    }
+
     Run-NativeStep "Docs parity" {
         pnpm run docs:verify:all
     }

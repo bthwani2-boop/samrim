@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colorRoles, radius, spacing, statusScale } from "@bthwani/design-system";
+import { resolveTheme, radius, spacing, type ThemeColors } from "@bthwani/design-system";
 import type { IdentitySessionState } from "../index";
 
 export interface ManagedIdentityBinding {
@@ -40,7 +40,7 @@ function messageOf(value: unknown, context: "general" | "login" | "recovery" = "
   return "تعذر إكمال العملية. تحقق من البيانات ثم حاول مرة أخرى.";
 }
 
-function BrandHeader() {
+function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
   return (
     <View style={styles.brandRow}>
       <View style={styles.brandMark} accessibilityElementsHidden>
@@ -60,6 +60,11 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
     throw new Error(`MANAGED_FLOW_SURFACE_MISMATCH: binding surface ${binding.surface} !== prop surface ${surface}`);
   }
   const insets = useSafeAreaInsets();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
+  const theme = resolveTheme(isDark ? "dark" : "light");
+  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
+
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [step, setStep] = useState<"phone" | "password" | "activation" | "recovery">("phone");
   const [phone, setPhone] = useState("");
@@ -115,7 +120,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
     try {
       await binding.requestManagedActivation(phone);
       setChallengeRequested(true);
-      setNotice("تم إثبات صلاحية الدور. أُرسل الآن رمز تحقق الهاتف.");
+      setNotice("إذا كانت البيانات صالحة، سيصلك رمز تحقق الهاتف عبر القناة المهيأة.");
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
@@ -130,7 +135,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
     try {
       await binding.requestManagedRecovery(phone);
       setChallengeRequested(true);
-      setNotice("تم إرسال رمز استرداد كلمة المرور إلى الهاتف.");
+      setNotice("إذا كانت البيانات صالحة، سيصلك رمز استرداد كلمة المرور عبر القناة المهيأة.");
     } catch (cause) {
       setError(messageOf(cause, "recovery"));
     } finally {
@@ -202,7 +207,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
-      <BrandHeader />
+      <BrandHeader styles={styles} />
       <View style={styles.rolePill}>
         <View style={styles.liveDot} />
         <Text style={styles.rolePillText}>مساحة تشغيل {roleLabel}</Text>
@@ -214,7 +219,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
   if (state.kind === "restoring") {
     return shell(
       <View style={styles.stateCard}>
-        <ActivityIndicator color={colorRoles.brandAction} size="large" />
+        <ActivityIndicator color={theme.action} size="large" />
         <Text style={styles.stateTitle}>جارٍ تجهيز المساحة</Text>
         <Text style={styles.muted}>نستعيد جلسة هذا الجهاز بأمان.</Text>
       </View>
@@ -286,7 +291,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
             setError("");
           }}
           placeholder="مثال: 967 77 000 101"
-          placeholderTextColor={colorRoles.textMuted}
+          placeholderTextColor={theme.colorMuted}
           style={styles.input}
           textAlign="right"
           value={phone}
@@ -324,7 +329,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
             setError("");
           }}
           placeholder="١٥ حرفاً على الأقل"
-          placeholderTextColor={colorRoles.textMuted}
+          placeholderTextColor={theme.colorMuted}
           secureTextEntry
           style={styles.input}
           textAlign="right"
@@ -370,7 +375,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
               maxLength={6}
               onChangeText={(value: string) => setVerificationCode(value.replace(/\D/g, "").slice(0, 6))}
               placeholder="رمز من ٦ أرقام"
-              placeholderTextColor={colorRoles.textMuted}
+              placeholderTextColor={theme.colorMuted}
               style={styles.input}
               textAlign="right"
               value={verificationCode}
@@ -381,7 +386,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
               autoComplete="new-password"
               onChangeText={setPassword}
               placeholder="١٥ حرفاً على الأقل"
-              placeholderTextColor={colorRoles.textMuted}
+              placeholderTextColor={theme.colorMuted}
               secureTextEntry
               style={styles.input}
               textAlign="right"
@@ -393,7 +398,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
               autoComplete="new-password"
               onChangeText={setPasswordConfirmation}
               placeholder="أعد إدخال كلمة المرور"
-              placeholderTextColor={colorRoles.textMuted}
+              placeholderTextColor={theme.colorMuted}
               secureTextEntry
               style={styles.input}
               textAlign="right"
@@ -430,7 +435,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
               maxLength={6}
               onChangeText={(value: string) => setVerificationCode(value.replace(/\D/g, "").slice(0, 6))}
               placeholder="رمز من ٦ أرقام"
-              placeholderTextColor={colorRoles.textMuted}
+              placeholderTextColor={theme.colorMuted}
               style={styles.input}
               textAlign="right"
               value={verificationCode}
@@ -441,7 +446,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
               autoComplete="new-password"
               onChangeText={setPassword}
               placeholder="١٥ حرفاً على الأقل"
-              placeholderTextColor={colorRoles.textMuted}
+              placeholderTextColor={theme.colorMuted}
               secureTextEntry
               style={styles.input}
               textAlign="right"
@@ -453,7 +458,7 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
               autoComplete="new-password"
               onChangeText={setPasswordConfirmation}
               placeholder="أعد إدخال كلمة المرور"
-              placeholderTextColor={colorRoles.textMuted}
+              placeholderTextColor={theme.colorMuted}
               secureTextEntry
               style={styles.input}
               textAlign="right"
@@ -487,227 +492,229 @@ export function ManagedIdentityFlow({ role, surface, roleLabel, binding }: Manag
 
 export default ManagedIdentityFlow;
 
-const styles = StyleSheet.create({
-  content: {
-    flexGrow: 1,
-    alignItems: "stretch",
-    backgroundColor: colorRoles.surfaceWarm,
-    gap: spacing[4],
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[12],
-  },
-  brandRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing[2],
-    justifyContent: "center",
-  },
-  brandMark: {
-    alignItems: "flex-end",
-    flexDirection: "row",
-    gap: 3,
-    height: 22,
-  },
-  brandMarkNavy: {
-    backgroundColor: colorRoles.brandStructure,
-    borderRadius: radius.xs,
-    height: 22,
-    width: 8,
-  },
-  brandMarkOrange: {
-    backgroundColor: colorRoles.brandAction,
-    borderRadius: radius.xs,
-    height: 12,
-    width: 8,
-  },
-  brandName: {
-    color: colorRoles.textPrimary,
-    fontSize: 28,
-    fontWeight: "800",
-  },
-  rolePill: {
-    alignItems: "center",
-    alignSelf: "center",
-    backgroundColor: colorRoles.brandStructureSoft,
-    borderRadius: radius.round,
-    flexDirection: "row",
-    gap: spacing[2],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-  },
-  liveDot: {
-    backgroundColor: colorRoles.brandAction,
-    borderRadius: radius.round,
-    height: 7,
-    width: 7,
-  },
-  rolePillText: {
-    color: colorRoles.textSecondary,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  stateCard: {
-    alignItems: "center",
-    backgroundColor: colorRoles.surfaceBase,
-    borderColor: colorRoles.borderSubtle,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: spacing[3],
-    padding: spacing[6],
-  },
-  stateTitle: {
-    color: colorRoles.textPrimary,
-    fontSize: 20,
-    fontWeight: "800",
-  },
-  card: {
-    backgroundColor: colorRoles.surfaceBase,
-    borderColor: colorRoles.borderSubtle,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    gap: spacing[2],
-    padding: spacing[5],
-  },
-  eyebrow: {
-    color: colorRoles.brandAction,
-    fontSize: 13,
-    fontWeight: "800",
-    textAlign: "right",
-  },
-  title: {
-    color: colorRoles.textPrimary,
-    fontSize: 23,
-    fontWeight: "800",
-    textAlign: "right",
-  },
-  description: {
-    color: colorRoles.textSecondary,
-    fontSize: 14,
-    lineHeight: 23,
-    textAlign: "right",
-  },
-  fieldLabel: {
-    color: colorRoles.textPrimary,
-    fontSize: 14,
-    fontWeight: "700",
-    marginTop: spacing[2],
-    textAlign: "right",
-  },
-  input: {
-    backgroundColor: colorRoles.surfaceBase,
-    borderColor: colorRoles.borderSubtle,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    color: colorRoles.textPrimary,
-    fontSize: 16,
-    minHeight: 52,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-  },
-  summaryPhone: {
-    backgroundColor: colorRoles.brandStructureSoft,
-    borderRadius: radius.sm,
-    color: colorRoles.textPrimary,
-    fontSize: 15,
-    marginTop: spacing[2],
-    padding: spacing[2],
-    textAlign: "center",
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: colorRoles.brandAction,
-    borderRadius: radius.md,
-    justifyContent: "center",
-    minHeight: 52,
-    marginTop: spacing[2],
-    paddingHorizontal: spacing[3],
-  },
-  primaryButtonText: {
-    color: colorRoles.surfaceBase,
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  secondaryButton: {
-    alignItems: "center",
-    borderColor: colorRoles.borderStrong,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 52,
-    marginTop: spacing[2],
-    paddingHorizontal: spacing[3],
-  },
-  secondaryButtonText: {
-    color: colorRoles.textPrimary,
-    fontSize: 14,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  disabledButton: { opacity: 0.45 },
-  pressed: { opacity: 0.8 },
-  linkButton: {
-    alignItems: "center",
-    paddingVertical: spacing[2],
-  },
-  linkText: {
-    color: colorRoles.brandAction,
-    fontSize: 13,
-    fontWeight: "800",
-    textAlign: "center",
-    textDecorationLine: "underline",
-  },
-  mutedLink: {
-    color: colorRoles.textMuted,
-    fontSize: 13,
-    textAlign: "center",
-    textDecorationLine: "underline",
-  },
-  helper: {
-    color: colorRoles.textMuted,
-    fontSize: 12,
-  },
-  notice: {
-    backgroundColor: colorRoles.brandStructureSoft,
-    borderRadius: radius.sm,
-    color: colorRoles.textPrimary,
-    fontSize: 13,
-    marginTop: spacing[2],
-    padding: spacing[2],
-    textAlign: "right",
-  },
-  error: {
-    backgroundColor: statusScale.dangerSoft,
-    borderRadius: radius.sm,
-    color: statusScale.dangerStrong,
-    fontSize: 13,
-    marginTop: spacing[2],
-    padding: spacing[2],
-    textAlign: "right",
-  },
-  muted: {
-    color: colorRoles.textMuted,
-    fontSize: 14,
-    textAlign: "center",
-  },
-  successBadge: {
-    alignItems: "center",
-    alignSelf: "flex-end",
-    backgroundColor: colorRoles.brandStructureSoft,
-    borderRadius: radius.round,
-    flexDirection: "row-reverse",
-    gap: spacing[2],
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
-  },
-  successDot: {
-    backgroundColor: statusScale.success,
-    borderRadius: radius.round,
-    height: 7,
-    width: 7,
-  },
-  successBadgeText: {
-    color: colorRoles.textPrimary,
-    fontSize: 13,
-    fontWeight: "800",
-  },
-});
+function createStyles(theme: ThemeColors, isDark: boolean) {
+  return StyleSheet.create({
+    content: {
+      flexGrow: 1,
+      alignItems: "stretch",
+      backgroundColor: theme.background,
+      gap: spacing[4],
+      paddingHorizontal: spacing[4],
+      paddingBottom: spacing[12],
+    },
+    brandRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: spacing[2],
+      justifyContent: "center",
+    },
+    brandMark: {
+      alignItems: "flex-end",
+      flexDirection: "row",
+      gap: 3,
+      height: 22,
+    },
+    brandMarkNavy: {
+      backgroundColor: theme.structure,
+      borderRadius: radius.xs,
+      height: 22,
+      width: 8,
+    },
+    brandMarkOrange: {
+      backgroundColor: theme.action,
+      borderRadius: radius.xs,
+      height: 12,
+      width: 8,
+    },
+    brandName: {
+      color: theme.color,
+      fontSize: 28,
+      fontWeight: "800",
+    },
+    rolePill: {
+      alignItems: "center",
+      alignSelf: "center",
+      backgroundColor: theme.structureSoft,
+      borderRadius: radius.round,
+      flexDirection: "row",
+      gap: spacing[2],
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+    },
+    liveDot: {
+      backgroundColor: theme.action,
+      borderRadius: radius.round,
+      height: 7,
+      width: 7,
+    },
+    rolePillText: {
+      color: theme.colorSecondary,
+      fontSize: 13,
+      fontWeight: "700",
+    },
+    stateCard: {
+      alignItems: "center",
+      backgroundColor: theme.surface,
+      borderColor: theme.borderColor,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      gap: spacing[3],
+      padding: spacing[6],
+    },
+    stateTitle: {
+      color: theme.color,
+      fontSize: 20,
+      fontWeight: "800",
+    },
+    card: {
+      backgroundColor: theme.surface,
+      borderColor: theme.borderColor,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      gap: spacing[2],
+      padding: spacing[5],
+    },
+    eyebrow: {
+      color: theme.action,
+      fontSize: 13,
+      fontWeight: "800",
+      textAlign: "right",
+    },
+    title: {
+      color: theme.color,
+      fontSize: 23,
+      fontWeight: "800",
+      textAlign: "right",
+    },
+    description: {
+      color: theme.colorSecondary,
+      fontSize: 14,
+      lineHeight: 23,
+      textAlign: "right",
+    },
+    fieldLabel: {
+      color: theme.color,
+      fontSize: 14,
+      fontWeight: "700",
+      marginTop: spacing[2],
+      textAlign: "right",
+    },
+    input: {
+      backgroundColor: theme.surface,
+      borderColor: theme.borderColor,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      color: theme.color,
+      fontSize: 16,
+      minHeight: 52,
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+    },
+    summaryPhone: {
+      backgroundColor: theme.structureSoft,
+      borderRadius: radius.sm,
+      color: theme.color,
+      fontSize: 15,
+      marginTop: spacing[2],
+      padding: spacing[2],
+      textAlign: "center",
+    },
+    primaryButton: {
+      alignItems: "center",
+      backgroundColor: theme.action,
+      borderRadius: radius.md,
+      justifyContent: "center",
+      minHeight: 52,
+      marginTop: spacing[2],
+      paddingHorizontal: spacing[3],
+    },
+    primaryButtonText: {
+      color: theme.onAction,
+      fontSize: 15,
+      fontWeight: "800",
+    },
+    secondaryButton: {
+      alignItems: "center",
+      borderColor: theme.borderColorStrong,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      justifyContent: "center",
+      minHeight: 52,
+      marginTop: spacing[2],
+      paddingHorizontal: spacing[3],
+    },
+    secondaryButtonText: {
+      color: theme.color,
+      fontSize: 14,
+      fontWeight: "800",
+      textAlign: "center",
+    },
+    disabledButton: { opacity: 0.45 },
+    pressed: { opacity: 0.8 },
+    linkButton: {
+      alignItems: "center",
+      paddingVertical: spacing[2],
+    },
+    linkText: {
+      color: theme.action,
+      fontSize: 13,
+      fontWeight: "800",
+      textAlign: "center",
+      textDecorationLine: "underline",
+    },
+    mutedLink: {
+      color: theme.colorMuted,
+      fontSize: 13,
+      textAlign: "center",
+      textDecorationLine: "underline",
+    },
+    helper: {
+      color: theme.colorMuted,
+      fontSize: 12,
+    },
+    notice: {
+      backgroundColor: theme.structureSoft,
+      borderRadius: radius.sm,
+      color: theme.color,
+      fontSize: 13,
+      marginTop: spacing[2],
+      padding: spacing[2],
+      textAlign: "right",
+    },
+    error: {
+      backgroundColor: theme.dangerSoft,
+      borderRadius: radius.sm,
+      color: theme.danger,
+      fontSize: 13,
+      marginTop: spacing[2],
+      padding: spacing[2],
+      textAlign: "right",
+    },
+    muted: {
+      color: theme.colorMuted,
+      fontSize: 14,
+      textAlign: "center",
+    },
+    successBadge: {
+      alignItems: "center",
+      alignSelf: "flex-end",
+      backgroundColor: theme.structureSoft,
+      borderRadius: radius.round,
+      flexDirection: "row-reverse",
+      gap: spacing[2],
+      paddingHorizontal: spacing[3],
+      paddingVertical: spacing[2],
+    },
+    successDot: {
+      backgroundColor: theme.success,
+      borderRadius: radius.round,
+      height: 7,
+      width: 7,
+    },
+    successBadgeText: {
+      color: theme.color,
+      fontSize: 13,
+      fontWeight: "800",
+    },
+  });
+}

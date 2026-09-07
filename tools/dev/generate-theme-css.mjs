@@ -1,35 +1,13 @@
-import {
-  borders,
-  breakpoints,
-  darkThemeColors,
-  direction,
-  elevation,
-  fontFamilies,
-  fontWeights,
-  lightThemeColors,
-  motion,
-  opacity,
-  radius,
-  sizing,
-  spacing,
-  typography,
-  zIndex,
-  type ThemeColors
-} from "../tokens/index";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const themes = {
-  light: lightThemeColors,
-  dark: darkThemeColors
-} as const;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "../..");
 
-export type ThemeName = keyof typeof themes;
-export type UiTheme = ThemeColors;
+const { lightThemeColors, darkThemeColors } = await import("../../packages/design-system/src/tokens/colors.ts");
 
-export function resolveTheme(name?: string | null): ThemeColors {
-  return name === "dark" ? darkThemeColors : lightThemeColors;
-}
-
-export function themeToCssVariables(themeColors: ThemeColors): Record<string, string> {
+function themeToCssVariables(themeColors) {
   return {
     "--brand-action": themeColors.action,
     "--brand-action-hover": themeColors.actionHover,
@@ -45,7 +23,7 @@ export function themeToCssVariables(themeColors: ThemeColors): Record<string, st
     "--color-primary": themeColors.color,
     "--color-secondary": themeColors.colorSecondary,
     "--color-inverse": themeColors.colorInverse,
-    "--color-on-action": themeColors.onAction,
+    "--color-on-action": themeColors.onAction ?? "#FFFFFF",
     "--border-subtle": themeColors.borderColor,
     "--border-strong": themeColors.borderColorStrong,
     "--focus-color": themeColors.focusColor,
@@ -57,11 +35,11 @@ export function themeToCssVariables(themeColors: ThemeColors): Record<string, st
     "--danger-soft": themeColors.dangerSoft,
     "--info": themeColors.info,
     "--info-soft": themeColors.infoSoft,
-    "--shadow-card": themeColors.shadowCard
+    "--shadow-card": themeColors.shadowCard ?? (themeColors === lightThemeColors ? "0 22px 60px rgba(10, 47, 92, 0.1)" : "0 22px 60px rgba(0, 0, 0, 0.5)")
   };
 }
 
-export function generateThemeCss(): string {
+function generateThemeCss() {
   const lightVars = Object.entries(themeToCssVariables(lightThemeColors))
     .map(([k, v]) => `  ${k}: ${v};`)
     .join("\n");
@@ -92,25 +70,33 @@ ${darkVars}
 `;
 }
 
-export const themeKernel = {
-  themes,
-  resolveTheme,
-  themeToCssVariables,
-  generateThemeCss,
-  spacing,
-  radius,
-  elevation,
-  motion,
-  sizing,
-  breakpoints,
-  typography,
-  fontFamilies,
-  fontWeights,
-  borders,
-  opacity,
-  zIndex,
-  direction
-} as const;
+const header = `/* Auto-generated from @bthwani/design-system. Do not edit manually. */\n`;
+const cssContent = header + generateThemeCss();
 
-export const theme = themeKernel;
-export type ThemeKernel = typeof themeKernel;
+const isCheck = process.argv.includes("--check");
+
+const targetFiles = [
+  path.join(repoRoot, "apps/control-panel/app/theme.css"),
+  path.join(repoRoot, "packages/design-system/theme.css"),
+];
+
+if (isCheck) {
+  for (const targetFile of targetFiles) {
+    if (!fs.existsSync(targetFile)) {
+      console.error(`Missing theme CSS: ${targetFile}`);
+      process.exit(1);
+    }
+    const current = fs.readFileSync(targetFile, "utf8");
+    if (current !== cssContent) {
+      console.error(`Theme CSS drift detected: ${targetFile}`);
+      process.exit(1);
+    }
+  }
+  console.log("THEME_CSS_CHECK=PASS");
+} else {
+  for (const targetFile of targetFiles) {
+    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+    fs.writeFileSync(targetFile, cssContent, "utf8");
+  }
+  console.log("THEME_CSS_GENERATED=PASS");
+}
