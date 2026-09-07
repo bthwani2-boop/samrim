@@ -99,14 +99,14 @@ export async function completeOperatorLogin(phone: string, code: string, role: C
   return pair.identity;
 }
 
-export async function requestOperatorActivation(phone: string, activationCode: string): Promise<Challenge> {
+export async function requestOperatorActivation(phone: string, operatorEnrollmentToken: string): Promise<Challenge> {
   await operatorDeviceFingerprint();
-  return identityClient().requestManagedActivation({ phone, role: "operator", activationCode });
+  return identityClient().requestManagedActivation({ phone, role: "operator", operatorEnrollmentToken });
 }
 
-export async function completeOperatorActivation(phone: string, activationCode: string, verificationCode: string, password: string): Promise<ActorIdentity> {
+export async function completeOperatorActivation(phone: string, operatorEnrollmentToken: string, verificationCode: string, password: string): Promise<ActorIdentity> {
   const deviceFingerprint = await operatorDeviceFingerprint();
-  const pair = await identityClient().activateManaged({ phone, role: "operator", activationCode, verificationCode, password, deviceFingerprint });
+  const pair = await identityClient().activateManaged({ phone, role: "operator", operatorEnrollmentToken, verificationCode, password, deviceFingerprint });
   await writeTokens(pair, deviceFingerprint);
   return pair.identity;
 }

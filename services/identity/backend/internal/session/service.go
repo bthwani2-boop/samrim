@@ -224,7 +224,7 @@ func (s *Service) ListRole(ctx context.Context, actorID, role string) ([]domain.
 	return result, rows.Err()
 }
 
-func (s *Service) RevokeRoleSession(ctx context.Context, actorID, role, sessionID, principal, correlationID string) error {
+func (s *Service) RevokeRoleSession(ctx context.Context, actorID, role, sessionID, principal, correlationID, operatorActorID string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -238,13 +238,20 @@ func (s *Service) RevokeRoleSession(ctx context.Context, actorID, role, sessionI
 	if count == 0 {
 		return domain.ErrNotFound
 	}
-	if err := auditTx(ctx, tx, "session.revoked", actorID, principal, "success", correlationID, map[string]any{"sessionId": sessionID, "role": role}); err != nil {
+	auditPrincipal := principal
+	meta := map[string]any{"sessionId": sessionID, "role": role, "workload": principal}
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	if operatorActorID != "" {
+		auditPrincipal = principal + ":" + operatorActorID
+		meta["operatorActorId"] = operatorActorID
+	}
+	if err := auditTx(ctx, tx, "session.revoked", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *Service) RevokeRoleAll(ctx context.Context, actorID, role, principal, correlationID string) error {
+func (s *Service) RevokeRoleAll(ctx context.Context, actorID, role, principal, correlationID, operatorActorID string) error {
 	role = strings.ToLower(strings.TrimSpace(role))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -254,7 +261,14 @@ func (s *Service) RevokeRoleAll(ctx context.Context, actorID, role, principal, c
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role=$2 AND revoked_at IS NULL", strings.TrimSpace(actorID), role); err != nil {
 		return err
 	}
-	if err := auditTx(ctx, tx, "session.revoked_role", actorID, principal, "success", correlationID, map[string]any{"role": role}); err != nil {
+	auditPrincipal := principal
+	meta := map[string]any{"role": role, "workload": principal}
+	operatorActorID = strings.TrimSpace(operatorActorID)
+	if operatorActorID != "" {
+		auditPrincipal = principal + ":" + operatorActorID
+		meta["operatorActorId"] = operatorActorID
+	}
+	if err := auditTx(ctx, tx, "session.revoked_role", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
 		return err
 	}
 	return tx.Commit()

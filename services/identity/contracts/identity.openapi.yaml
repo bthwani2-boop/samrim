@@ -416,6 +416,7 @@ paths:
         - { $ref: "#/components/parameters/ActorId" }
         - { $ref: "#/components/parameters/CorrelationId" }
         - { $ref: "#/components/parameters/PlatformControlActingActorId" }
+        - { $ref: "#/components/parameters/PlatformControlExpectedVersion" }
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/PasswordResetRequest" } } }
@@ -425,6 +426,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /internal/actors/{actorId}/roles/{role}/sessions:
     get:
@@ -443,9 +445,14 @@ paths:
       tags: [internal-sessions]
       operationId: revokeActorRoleSessions
       security: [{ internalServiceToken: [] }]
-      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }, { $ref: "#/components/parameters/CorrelationId" }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/PlatformControlActingActorId" }
       responses:
         "204": { description: Active sessions for the exact actor-role revoked. }
+        "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -460,8 +467,10 @@ paths:
         - { $ref: "#/components/parameters/Role" }
         - { name: sessionId, in: path, required: true, schema: { type: string } }
         - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/PlatformControlActingActorId" }
       responses:
         "204": { description: Exact session revoked. }
+        "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -526,7 +535,7 @@ components:
           type: string
         role:
           $ref: "#/components/schemas/ManagedActivationRole"
-        activationCode:
+        operatorEnrollmentToken:
           type: string
           description: Required only for operator enrollment; platform-issued high-entropy token.
           minLength: 24
@@ -605,7 +614,7 @@ components:
           type: string
         role:
           $ref: "#/components/schemas/ManagedActivationRole"
-        activationCode:
+        operatorEnrollmentToken:
           type: string
           description: Required only for operator enrollment; platform-issued high-entropy token.
           minLength: 24

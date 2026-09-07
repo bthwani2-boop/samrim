@@ -485,11 +485,20 @@ func (s *Server) resetOperatorPassword(w http.ResponseWriter, r *http.Request, c
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
 		return
 	}
+	expectedVersion := 0
+	if raw := strings.TrimSpace(r.Header.Get("X-Expected-Version")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 {
+			writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version header is invalid"))
+			return
+		}
+		expectedVersion = value
+	}
 	var input domain.PasswordResetRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if err := s.actors.ResetOperatorPassword(r.Context(), caller, r.PathValue("actorId"), input.Password, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+	if err := s.actors.ResetOperatorPassword(r.Context(), caller, r.PathValue("actorId"), input.Password, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID, expectedVersion); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -509,24 +518,42 @@ func (s *Server) listRoleSessions(w http.ResponseWriter, r *http.Request, caller
 	writeJSON(w, http.StatusOK, items)
 }
 func (s *Server) revokeRoleSession(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if caller == "platform-control" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+		return
+	}
 	actorID, role := r.PathValue("actorId"), strings.ToLower(strings.TrimSpace(r.PathValue("role")))
 	if _, err := s.actors.GetRole(r.Context(), caller, actorID, role); err != nil {
 		writeDomainError(w, err)
 		return
 	}
-	if err := s.sessions.RevokeRoleSession(r.Context(), actorID, role, r.PathValue("sessionId"), caller, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+	if err := s.sessions.RevokeRoleSession(r.Context(), actorID, role, r.PathValue("sessionId"), caller, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *Server) revokeRoleSessions(w http.ResponseWriter, r *http.Request, caller string) {
+	if r.Header.Get("X-Actor-ID") != "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
+		return
+	}
+	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if caller == "platform-control" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+		return
+	}
 	actorID, role := r.PathValue("actorId"), strings.ToLower(strings.TrimSpace(r.PathValue("role")))
 	if _, err := s.actors.GetRole(r.Context(), caller, actorID, role); err != nil {
 		writeDomainError(w, err)
 		return
 	}
-	if err := s.sessions.RevokeRoleAll(r.Context(), actorID, role, caller, strings.TrimSpace(r.Header.Get("X-Correlation-ID"))); err != nil {
+	if err := s.sessions.RevokeRoleAll(r.Context(), actorID, role, caller, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil {
 		writeDomainError(w, err)
 		return
 	}

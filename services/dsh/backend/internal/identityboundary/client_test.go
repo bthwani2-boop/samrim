@@ -17,15 +17,15 @@ func TestDSHIdentityBoundaryPinsRoleAndUsesCredentialAsCallerIdentity(t *testing
 		call func(*Client, context.Context, ActorInput) error
 	}{
 		{name: "partner", role: "partner", call: func(c *Client, ctx context.Context, input ActorInput) error {
-			_, err := c.ProvisionPartner(ctx, input)
+			_, err := c.ProvisionPartnerWithContext(ctx, input, "corr_test", "act_operator_test")
 			return err
 		}},
 		{name: "captain", role: "captain", call: func(c *Client, ctx context.Context, input ActorInput) error {
-			_, err := c.ProvisionCaptain(ctx, input)
+			_, err := c.ProvisionCaptainWithContext(ctx, input, "corr_test", "act_operator_test")
 			return err
 		}},
 		{name: "field", role: "field", call: func(c *Client, ctx context.Context, input ActorInput) error {
-			_, err := c.ProvisionField(ctx, input)
+			_, err := c.ProvisionFieldWithContext(ctx, input, "corr_test", "act_operator_test")
 			return err
 		}},
 	} {
@@ -38,6 +38,12 @@ func TestDSHIdentityBoundaryPinsRoleAndUsesCredentialAsCallerIdentity(t *testing
 				}
 				if got := r.Header.Get("Authorization"); got != "Bearer dsh-service-token-1234567890" {
 					t.Fatalf("authorization=%q", got)
+				}
+				if got := r.Header.Get("X-Acting-Actor-ID"); got != "act_operator_test" {
+					t.Fatalf("acting actor ID=%q", got)
+				}
+				if got := r.Header.Get("X-Correlation-ID"); got != "corr_test" {
+					t.Fatalf("correlation ID=%q", got)
 				}
 				if got := r.Header.Get("X-Service-Caller"); got != "" {
 					t.Fatalf("redundant service caller header leaked: %q", got)

@@ -683,9 +683,10 @@ FROM identity_actors a WHERE a.id=$1 FOR UPDATE`, actorID).Scan(&current, &curre
 	return tx.Commit()
 }
 
-func (s *Service) ResetOperatorPassword(ctx context.Context, caller, actorID, password, correlationID string) error {
+func (s *Service) ResetOperatorPassword(ctx context.Context, caller, actorID, password, correlationID, operatorActorID string, expectedVersion int) error {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
+	operatorActorID = strings.TrimSpace(operatorActorID)
 	if actorID == "" || !domain.CanResetCredential(caller, "operator") {
 		return domain.ErrForbidden
 	}
@@ -698,6 +699,19 @@ func (s *Service) ResetOperatorPassword(ctx context.Context, caller, actorID, pa
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	var currentVersion int
+	err = tx.QueryRowContext(ctx, "SELECT version FROM identity_password_credentials WHERE actor_id=$1 AND role='operator' FOR UPDATE", actorID).Scan(&currentVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if expectedVersion > 0 && currentVersion != expectedVersion {
+		return domain.ErrConflict
+	}
+
 	result, err := tx.ExecContext(ctx, "UPDATE identity_password_credentials SET password_hash=$1,version=version+1,updated_at=clock_timestamp() WHERE actor_id=$2 AND role='operator'", hash, actorID)
 	if err != nil {
 		return err
@@ -712,16 +726,19 @@ func (s *Service) ResetOperatorPassword(ctx context.Context, caller, actorID, pa
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role='operator' AND status='pending'", actorID); err != nil {
 		return err
 	}
-	if err := auditTx(ctx, tx, "credential.password_reset", actorID, caller, "success", correlationID, map[string]any{"role": "operator"}); err != nil {
+	auditPrincipal := caller
+	meta := map[string]any{"role": "operator", "workload": caller}
+	if operatorActorID != "" {
+		auditPrincipal = caller + ":" + operatorActorID
+		meta["operatorActorId"] = operatorActorID
+	}
+	if err := auditTx(ctx, tx, "credential.password_reset", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 func (s *Service) RecoverPlatformOwner(ctx context.Context, newPhone, newPassword string) (string, error) {
-	if len(newPassword) < 15 {
-		return "", domain.ErrInvalidInput
-	}
 	hash, err := identitysecurity.HashPassword(newPassword)
 	if err != nil {
 		return "", domain.ErrInvalidInput
@@ -753,7 +770,7 @@ func (s *Service) RecoverPlatformOwner(ctx context.Context, newPhone, newPasswor
 	}
 
 	if phoneE164 != "" {
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_actors SET phone_e164=$1, updated_at=clock_timestamp() WHERE id=$2", phoneE164, actorID); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_actors SET phone_e164=$1, version=version+1, updated_at=clock_timestamp() WHERE id=$2", phoneE164, actorID); err != nil {
 			return "", err
 		}
 	}

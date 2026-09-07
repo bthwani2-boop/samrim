@@ -45,11 +45,22 @@ func TestProvisionManagedRoleUsesAuthenticatedIdentityBoundary(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPost, "/dsh/managed-roles/provision", strings.NewReader(`{"phoneE164":"+967777000112","role":"captain"}`))
 	request.Header.Set("Authorization", "Bearer control-panel-service-token-123456789")
+	request.Header.Set("X-Acting-Actor-ID", "act_operator_test_123")
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	// Negative test: missing X-Acting-Actor-ID must be rejected with 400
+	missingActorReq := httptest.NewRequest(http.MethodPost, "/dsh/managed-roles/provision", strings.NewReader(`{"phoneE164":"+967777000112","role":"captain"}`))
+	missingActorReq.Header.Set("Authorization", "Bearer control-panel-service-token-123456789")
+	missingActorReq.Header.Set("Content-Type", "application/json")
+	missingActorResp := httptest.NewRecorder()
+	mux.ServeHTTP(missingActorResp, missingActorReq)
+	if missingActorResp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing acting actor, got %d", missingActorResp.Code)
 	}
 }
 
@@ -88,6 +99,9 @@ func TestReenrollByPhoneResolvesCanonicalActorBeforeAuthorization(t *testing.T) 
 		if r.Header.Get("X-Correlation-ID") != "correlation-test" {
 			t.Fatalf("correlation id was not forwarded")
 		}
+		if r.Header.Get("X-Acting-Actor-ID") != "act_operator_test_123" {
+			t.Fatalf("acting actor ID was not forwarded: %q", r.Header.Get("X-Acting-Actor-ID"))
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer identityServer.Close()
@@ -107,6 +121,7 @@ func TestReenrollByPhoneResolvesCanonicalActorBeforeAuthorization(t *testing.T) 
 	request := httptest.NewRequest(http.MethodPost, "/dsh/managed-roles/reenrollment", strings.NewReader(`{"phoneE164":"773 777 000 112","role":"captain"}`))
 	request.Header.Set("Authorization", "Bearer "+accessToken)
 	request.Header.Set("X-Correlation-ID", "correlation-test")
+	request.Header.Set("X-Acting-Actor-ID", "act_operator_test_123")
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, request)

@@ -39,16 +39,19 @@ const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
 const abuseSecret = env.IDENTITY_ABUSE_HMAC_SECRET;
 const dshToken = env.IDENTITY_DSH_SERVICE_TOKEN;
 const platformToken = env.IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN;
+const bootstrapToken = env.IDENTITY_PLATFORM_BOOTSTRAP_SECRET;
 
 for (const [name, value, minimum] of [
   ["IDENTITY_CHALLENGE_HMAC_SECRET", challengeSecret, 32],
   ["IDENTITY_ABUSE_HMAC_SECRET", abuseSecret, 32],
   ["IDENTITY_DSH_SERVICE_TOKEN", dshToken, 24],
   ["IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN", platformToken, 24],
+  ["IDENTITY_PLATFORM_BOOTSTRAP_SECRET", bootstrapToken, 24],
 ]) {
   if (typeof value !== "string" || value.length < minimum) fail(name + " is not configured strongly enough");
 }
 if (dshToken === platformToken) fail("internal service tokens must be distinct");
+if (bootstrapToken === platformToken || bootstrapToken === dshToken) fail("bootstrap token must be distinct from operational service tokens");
 
 const composeFile = path.join(root, "infra/local/compose/compose.yaml");
 const composeArgs = ["compose", "--env-file", envFile, "-f", composeFile, "--profile", "integration"];
@@ -199,11 +202,17 @@ async function requestChallenge(pathname, body, purpose) {
 await expect("GET", "/identity/health", 200);
 await expect("GET", "/identity/readiness", 200);
 
+// Verification: platform-control service token must be rejected for bootstrap authority
+await expect("POST", "/internal/bootstrap/platform-owner", 403, {
+  headers: service(platformToken),
+  body: { phoneE164: phone(), password: "Bootstrap-" + suffix + "-Strong-Password" },
+});
+
 let platformOwnerActorId = sql("SELECT COALESCE(platform_owner_actor_id, '') FROM identity_bootstrap_state WHERE id=1");
 if (!platformOwnerActorId) {
   const bootstrapOwnerPhone = phone();
   const bootstrapped = await expect("POST", "/internal/bootstrap/platform-owner", 201, {
-    headers: service(platformToken),
+    headers: service(bootstrapToken),
     body: { phoneE164: bootstrapOwnerPhone, password: "Bootstrap-" + suffix + "-Strong-Password" },
   });
   platformOwnerActorId = bootstrapped.actorId;

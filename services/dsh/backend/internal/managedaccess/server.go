@@ -202,6 +202,10 @@ func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 	}
 
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if operatorActorID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required for managed role provisioning")
+		return
+	}
 	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
 
 	var (
@@ -258,6 +262,10 @@ func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if operatorActorID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required for managed role reenrollment")
+		return
+	}
 	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
 	if err := s.identity.AuthorizeReenrollmentWithContext(r.Context(), actorID, role, correlationID, operatorActorID); err != nil {
 		writeIdentityError(w, err)
@@ -294,6 +302,10 @@ func (s *Server) reenrollByPhone(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if operatorActorID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required for managed role reenrollment")
+		return
+	}
 	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
 	if err := s.identity.AuthorizeReenrollmentByPhoneWithContext(r.Context(), phone, role, correlationID, operatorActorID); err != nil {
 		writeIdentityError(w, err)

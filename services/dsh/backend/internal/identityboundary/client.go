@@ -48,37 +48,19 @@ func New(baseURL, serviceToken string) (*Client, error) {
 func (c *Client) provision(ctx context.Context, role string, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
 	return c.inner.ProvisionRoleWithContext(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: role}, correlationID, operatorActorID)
 }
-func (c *Client) ProvisionPartner(ctx context.Context, input ActorInput) (identityclient.ActorRoleView, error) {
-	return c.provision(ctx, "partner", input, "", "")
-}
+
 func (c *Client) ProvisionPartnerWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
 	return c.provision(ctx, "partner", input, correlationID, operatorActorID)
 }
-func (c *Client) ProvisionCaptain(ctx context.Context, input ActorInput) (identityclient.ActorRoleView, error) {
-	return c.provision(ctx, "captain", input, "", "")
-}
+
 func (c *Client) ProvisionCaptainWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
 	return c.provision(ctx, "captain", input, correlationID, operatorActorID)
 }
-func (c *Client) ProvisionField(ctx context.Context, input ActorInput) (identityclient.ActorRoleView, error) {
-	return c.provision(ctx, "field", input, "", "")
-}
+
 func (c *Client) ProvisionFieldWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
 	return c.provision(ctx, "field", input, correlationID, operatorActorID)
 }
 
-func (c *Client) SetPartnerEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
-	return c.inner.SetRoleEnabled(ctx, actorID, "partner", enabled, correlationID)
-}
-func (c *Client) SetCaptainEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
-	return c.inner.SetRoleEnabled(ctx, actorID, "captain", enabled, correlationID)
-}
-func (c *Client) SetFieldEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
-	return c.inner.SetRoleEnabled(ctx, actorID, "field", enabled, correlationID)
-}
-func (c *Client) SetRoleEnabledByPhone(ctx context.Context, phone, role string, enabled bool, correlationID, reason string) error {
-	return c.SetRoleEnabledByPhoneWithContext(ctx, phone, role, enabled, correlationID, reason, "", 0)
-}
 func (c *Client) SetRoleEnabledByPhoneWithContext(ctx context.Context, phone, role string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
 	view, err := c.inner.LookupRoleByPhone(ctx, role, phone)
 	if err != nil {
@@ -87,28 +69,40 @@ func (c *Client) SetRoleEnabledByPhoneWithContext(ctx context.Context, phone, ro
 	return c.inner.SetRoleEnabledWithContext(ctx, view.ActorID, role, enabled, correlationID, reason, operatorActorID, expectedVersion)
 }
 
-func (c *Client) AuthorizePartnerReenrollment(ctx context.Context, actorID, correlationID string) error {
-	return c.inner.AuthorizeReenrollment(ctx, actorID, "partner", correlationID)
-}
-func (c *Client) AuthorizeCaptainReenrollment(ctx context.Context, actorID, correlationID string) error {
-	return c.inner.AuthorizeReenrollment(ctx, actorID, "captain", correlationID)
-}
-func (c *Client) AuthorizeFieldReenrollment(ctx context.Context, actorID, correlationID string) error {
-	return c.inner.AuthorizeReenrollment(ctx, actorID, "field", correlationID)
-}
-func (c *Client) AuthorizeReenrollment(ctx context.Context, actorID, role, correlationID string) error {
-	return c.inner.AuthorizeReenrollment(ctx, actorID, role, correlationID)
-}
 func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID string) error {
 	return c.inner.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, operatorActorID)
 }
-func (c *Client) AuthorizeReenrollmentByPhone(ctx context.Context, phone, role, correlationID string) error {
-	return c.inner.AuthorizeReenrollmentByPhone(ctx, phone, role, correlationID)
-}
+
 func (c *Client) AuthorizeReenrollmentByPhoneWithContext(ctx context.Context, phone, role, correlationID, operatorActorID string) error {
 	return c.inner.AuthorizeReenrollmentByPhoneWithContext(ctx, phone, role, correlationID, operatorActorID)
 }
+
 func (c *Client) LookupRoleByPhone(ctx context.Context, phone, role string) (identityclient.ActorRoleView, error) {
 	return c.inner.LookupRoleByPhone(ctx, role, phone)
 }
+
+func (c *Client) SetPartnerEnabled(ctx context.Context, phone string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
+	return c.SetRoleEnabledByPhoneWithContext(ctx, phone, "partner", enabled, correlationID, reason, operatorActorID, expectedVersion)
+}
+
+func (c *Client) SetCaptainEnabled(ctx context.Context, phone string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
+	return c.SetRoleEnabledByPhoneWithContext(ctx, phone, "captain", enabled, correlationID, reason, operatorActorID, expectedVersion)
+}
+
+func (c *Client) SetFieldEnabled(ctx context.Context, phone string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
+	return c.SetRoleEnabledByPhoneWithContext(ctx, phone, "field", enabled, correlationID, reason, operatorActorID, expectedVersion)
+}
+
+func (c *Client) AuthorizePartnerReenrollment(ctx context.Context, phone, correlationID, operatorActorID string) error {
+	return c.AuthorizeReenrollmentByPhoneWithContext(ctx, phone, "partner", correlationID, operatorActorID)
+}
+
+func (c *Client) AuthorizeCaptainReenrollment(ctx context.Context, phone, correlationID, operatorActorID string) error {
+	return c.AuthorizeReenrollmentByPhoneWithContext(ctx, phone, "captain", correlationID, operatorActorID)
+}
+
+func (c *Client) AuthorizeFieldReenrollment(ctx context.Context, phone, correlationID, operatorActorID string) error {
+	return c.AuthorizeReenrollmentByPhoneWithContext(ctx, phone, "field", correlationID, operatorActorID)
+}
+
 func (c *Client) Readiness(ctx context.Context) error { return c.inner.Readiness(ctx) }

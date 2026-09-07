@@ -63,9 +63,9 @@ type PhoneRequest struct {
 }
 
 type ManagedChallengeRequest struct {
-	Phone          string `json:"phone"`
-	Role           string `json:"role"`
-	ActivationCode string `json:"activationCode,omitempty"`
+	Phone                   string `json:"phone"`
+	Role                    string `json:"role"`
+	OperatorEnrollmentToken string `json:"operatorEnrollmentToken,omitempty"`
 }
 
 type ManagedRecoveryChallengeRequest struct {
@@ -94,12 +94,12 @@ type ManagedPasswordLoginRequest struct {
 }
 
 type ManagedActivationRequest struct {
-	Phone             string `json:"phone"`
-	Role              string `json:"role"`
-	ActivationCode    string `json:"activationCode,omitempty"`
-	VerificationCode  string `json:"verificationCode"`
-	Password          string `json:"password"`
-	DeviceFingerprint string `json:"deviceFingerprint"`
+	Phone                   string `json:"phone"`
+	Role                    string `json:"role"`
+	OperatorEnrollmentToken string `json:"operatorEnrollmentToken,omitempty"`
+	VerificationCode        string `json:"verificationCode"`
+	Password                string `json:"password"`
+	DeviceFingerprint       string `json:"deviceFingerprint"`
 }
 
 type ManagedRecoveryRequest struct {

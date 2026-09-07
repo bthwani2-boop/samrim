@@ -280,7 +280,7 @@ func (s *Service) RequestManagedActivation(ctx context.Context, input domain.Man
 		return domain.Challenge{}, domain.ErrInvalidInput
 	}
 	if domain.RequiresEnrollmentToken(role) {
-		if err := s.validateEnrollmentToken(ctx, phone, role, input.ActivationCode); err != nil {
+		if err := s.validateEnrollmentToken(ctx, phone, role, input.OperatorEnrollmentToken); err != nil {
 			return domain.Challenge{}, err
 		}
 	}
@@ -305,7 +305,7 @@ func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActiv
 			return domain.TokenPair{}, domain.ErrInvalidActivation
 		}
 		if domain.RequiresEnrollmentToken(role) {
-			if _, err := s.consumeOperatorEnrollmentTokenTx(ctx, tx, input.Phone, role, input.ActivationCode, actorID); err != nil {
+			if _, err := s.consumeOperatorEnrollmentTokenTx(ctx, tx, input.Phone, role, input.OperatorEnrollmentToken, actorID); err != nil {
 				return domain.TokenPair{}, err
 			}
 		}

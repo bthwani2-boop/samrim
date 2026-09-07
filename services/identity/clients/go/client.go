@@ -42,18 +42,10 @@ func New(baseURL, serviceToken string) (*Client, error) {
 	return &Client{baseURL: baseURL, token: serviceToken, http: &http.Client{Timeout: 8 * time.Second}}, nil
 }
 
-func (c *Client) IssueOperatorEnrollmentToken(ctx context.Context, input OperatorEnrollmentTokenIssueRequest) (OperatorEnrollmentToken, error) {
-	return c.IssueOperatorEnrollmentTokenWithContext(ctx, input, "", "")
-}
-
 func (c *Client) IssueOperatorEnrollmentTokenWithContext(ctx context.Context, input OperatorEnrollmentTokenIssueRequest, correlationID, operatorActorID string) (OperatorEnrollmentToken, error) {
 	var result OperatorEnrollmentToken
 	err := c.doWithContext(ctx, IdentityOperationIssueOperatorEnrollmentToken.Method, IdentityOperationIssueOperatorEnrollmentToken.Path, correlationID, "", operatorActorID, 0, input, &result)
 	return result, err
-}
-
-func (c *Client) ProvisionRole(ctx context.Context, input ProvisionActorRoleRequest) (ActorRoleView, error) {
-	return c.ProvisionRoleWithContext(ctx, input, "", "")
 }
 
 func (c *Client) ProvisionRoleWithContext(ctx context.Context, input ProvisionActorRoleRequest, correlationID, operatorActorID string) (ActorRoleView, error) {
@@ -99,17 +91,7 @@ func (c *Client) LookupRoleByPhone(ctx context.Context, role, phone string) (Act
 	}
 	return page.Items[0], nil
 }
-func (c *Client) SetRoleEnabled(ctx context.Context, actorID, role string, enabled bool, correlationID string) error {
-	return c.SetRoleEnabledWithReason(ctx, actorID, role, enabled, correlationID, "")
-}
-func (c *Client) SetRoleEnabledWithReason(ctx context.Context, actorID, role string, enabled bool, correlationID, reason string) error {
-	operation := IdentityOperationDisableActorRole
-	if enabled {
-		operation = IdentityOperationEnableActorRole
-	}
-	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
-	return c.doWithReason(ctx, operation.Method, pathname, correlationID, reason, nil, nil)
-}
+
 func (c *Client) SetRoleEnabledWithContext(ctx context.Context, actorID, role string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
 	operation := IdentityOperationDisableActorRole
 	if enabled {
@@ -118,16 +100,12 @@ func (c *Client) SetRoleEnabledWithContext(ctx context.Context, actorID, role st
 	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
 	return c.doWithContext(ctx, operation.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, nil, nil)
 }
-func (c *Client) AuthorizeReenrollment(ctx context.Context, actorID, role, correlationID string) error {
-	return c.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, "")
-}
+
 func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID string) error {
 	pathname := identityRoute(IdentityOperationAuthorizeManagedRoleReenrollment.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
 	return c.doWithContext(ctx, IdentityOperationAuthorizeManagedRoleReenrollment.Method, pathname, correlationID, "", operatorActorID, 0, nil, nil)
 }
-func (c *Client) AuthorizeReenrollmentByPhone(ctx context.Context, phone, role, correlationID string) error {
-	return c.AuthorizeReenrollmentByPhoneWithContext(ctx, phone, role, correlationID, "")
-}
+
 func (c *Client) AuthorizeReenrollmentByPhoneWithContext(ctx context.Context, phone, role, correlationID, operatorActorID string) error {
 	page, err := c.SearchRoles(ctx, role, phone)
 	if err != nil {
@@ -138,12 +116,7 @@ func (c *Client) AuthorizeReenrollmentByPhoneWithContext(ctx context.Context, ph
 	}
 	return c.AuthorizeReenrollmentWithContext(ctx, page.Items[0].ActorID, role, correlationID, operatorActorID)
 }
-func (c *Client) SetActorSecurityEnabled(ctx context.Context, actorID string, enabled bool, correlationID string) error {
-	return c.SetActorSecurityEnabledWithReason(ctx, actorID, enabled, correlationID, "")
-}
-func (c *Client) SetActorSecurityEnabledWithReason(ctx context.Context, actorID string, enabled bool, correlationID, reason string) error {
-	return c.SetActorSecurityEnabledWithContext(ctx, actorID, enabled, correlationID, reason, "", 0)
-}
+
 func (c *Client) SetActorSecurityEnabledWithContext(ctx context.Context, actorID string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
 	operation := IdentityOperationDisableActorSecurity
 	if enabled {
@@ -152,9 +125,9 @@ func (c *Client) SetActorSecurityEnabledWithContext(ctx context.Context, actorID
 	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
 	return c.doWithContext(ctx, operation.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, nil, nil)
 }
-func (c *Client) ResetOperatorPassword(ctx context.Context, actorID, password, correlationID string) error {
+func (c *Client) ResetOperatorPasswordWithContext(ctx context.Context, actorID, password, correlationID, operatorActorID string, expectedVersion int) error {
 	pathname := identityRoute(IdentityOperationResetOperatorPassword.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
-	return c.do(ctx, IdentityOperationResetOperatorPassword.Method, pathname, correlationID, PasswordResetRequest{Password: password}, nil)
+	return c.doWithContext(ctx, IdentityOperationResetOperatorPassword.Method, pathname, correlationID, "", operatorActorID, expectedVersion, PasswordResetRequest{Password: password}, nil)
 }
 func (c *Client) Readiness(ctx context.Context) error {
 	return c.do(ctx, IdentityOperationIdentityReadiness.Method, IdentityOperationIdentityReadiness.Path, "", nil, nil)
@@ -170,9 +143,7 @@ func identityRoute(template string, replacements ...string) string {
 func (c *Client) do(ctx context.Context, method, pathname, correlationID string, body any, target any) error {
 	return c.doWithContext(ctx, method, pathname, correlationID, "", "", 0, body, target)
 }
-func (c *Client) doWithReason(ctx context.Context, method, pathname, correlationID, reason string, body any, target any) error {
-	return c.doWithContext(ctx, method, pathname, correlationID, reason, "", 0, body, target)
-}
+
 func (c *Client) doWithContext(ctx context.Context, method, pathname, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
 	var reader io.Reader
 	if body != nil {
