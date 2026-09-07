@@ -34,3 +34,5 @@ migration plan.
 
 
 Migration 002 adds `identity_challenge_deliveries` as durable provider-execution provenance with `suppressed | pending | sending | sent | unknown | expired` states. It is a forward migration; migration 001 remains immutable. Ordered migration application rejects missing, duplicate or non-contiguous versions.
+
+Migration 015 is the forward-only six-digit challenge cutover. It revokes all pending challenges, suppresses pending deliveries and marks in-flight deliveries as unknown before the six-digit runtime contract is allowed to issue new proofs. This prevents a legacy four-digit `code_hash` from being paired with a newly generated six-digit delivery code.

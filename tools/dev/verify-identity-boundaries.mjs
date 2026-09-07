@@ -403,6 +403,7 @@ for (const forbidden of ["func (s *Service) Login(", "PasswordHash", "username",
 const migration = read("services/identity/database/migrations/001_identity_authentication.sql");
 const deliveryMigration = read("services/identity/database/migrations/002_identity_challenge_delivery.sql");
 const activationCodeMigration = read("services/identity/database/migrations/003_managed_activation_codes.sql");
+const sixDigitCutoverMigration = read("services/identity/database/migrations/015_six_digit_challenge_cutover.sql");
 const databaseReadme = read("services/identity/database/README.md");
 for (const required of [
   "identity_operator_enrollment_tokens",
@@ -423,6 +424,9 @@ for (const required of [
 }
 for (const required of ["CREATE TABLE identity_managed_activation_codes", "code_hash", "status IN ('pending','consumed','revoked','expired','locked')"]) {
   if (!activationCodeMigration.includes(required)) failures.push("Identity managed activation-code migration missing " + required);
+}
+for (const required of ["UPDATE identity_challenges", "status = 'revoked'", "identity_challenge_deliveries", "status = CASE WHEN status = 'sending' THEN 'unknown' ELSE 'suppressed' END", "VALUES (15)"]) {
+  if (!sixDigitCutoverMigration.includes(required)) failures.push("Identity six-digit cutover migration missing " + required);
 }
 
 for (const required of [
@@ -476,7 +480,7 @@ for (const required of ["net.ParseCIDR(proxy)", "invalid CIDR", "invalid IP"]) {
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [
-  "const SchemaVersion = 14",
+  "const SchemaVersion = 15",
   "CurrentSchemaVersion",
   "migration history is non-contiguous",
   "identity_password_credentials",

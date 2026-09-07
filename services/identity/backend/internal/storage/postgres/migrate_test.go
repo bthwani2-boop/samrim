@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV14Upgrade(t *testing.T) {
+func TestMigrationV13ToV15Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		databaseURL = "postgres://samrim_local:change-me-local-only@127.0.0.1:58432/samrim_local?sslmode=disable"
@@ -245,6 +245,93 @@ func TestMigrationV13ToV14Upgrade(t *testing.T) {
 		t.Fatalf("reserved_until column not added to identity_password_attempts: %v", err)
 	}
 
+	// Insert legacy pending challenge/delivery states before the six-digit cutover.
+	const (
+		legacyPendingChallengeID = "challenge_legacy_four_digit_pending"
+		legacySendingChallengeID = "challenge_legacy_four_digit_sending"
+	)
+	for _, challenge := range []struct {
+		id        string
+		phone     string
+		codeHash  string
+		status    string
+		attempts  int
+		startedAt string
+	}{
+		{legacyPendingChallengeID, "+967770001303", strings.Repeat("a", 64), "pending", 0, "NULL"},
+		{legacySendingChallengeID, "+967770001304", strings.Repeat("b", 64), "pending", 0, "NULL"},
+	} {
+		if _, err := testDB.ExecContext(ctx, `
+			INSERT INTO identity_challenges(id, actor_id, role, purpose, phone_e164, code_hash, request_ip_hash, admissible, status, attempts, expires_at)
+			VALUES($1, $2, 'partner', 'managed_activate', $3, $4, $5, false, $6, $7, clock_timestamp() + interval '1 hour')`,
+			challenge.id, partnerActorID, challenge.phone, challenge.codeHash, strings.Repeat("c", 64), challenge.status, challenge.attempts); err != nil {
+			t.Fatalf("insert legacy challenge %s: %v", challenge.id, err)
+		}
+		startedAt := challenge.startedAt
+		if challenge.id == legacySendingChallengeID {
+			startedAt = "clock_timestamp()"
+		}
+		if _, err := testDB.ExecContext(ctx, fmt.Sprintf(`
+			INSERT INTO identity_challenge_deliveries(challenge_id, provider, status, attempts, started_at)
+			VALUES($1, 'mailpit', $2, $3, %s)`, startedAt), challenge.id, map[string]string{legacyPendingChallengeID: "pending", legacySendingChallengeID: "sending"}[challenge.id], map[string]int{legacyPendingChallengeID: 0, legacySendingChallengeID: 1}[challenge.id]); err != nil {
+			t.Fatalf("insert legacy delivery %s: %v", challenge.id, err)
+		}
+	}
+
+	// Apply migration 015 and prove the four-to-six-digit cutover is fail-closed.
+	var v15Name string
+	var v15Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "015_") {
+			v15Name = file.Name()
+			v15Content, err = os.ReadFile(filepath.Join(migDir, v15Name))
+			if err != nil {
+				t.Fatalf("read 015: %v", err)
+			}
+			break
+		}
+	}
+	if v15Name == "" {
+		t.Fatal("migration 015 not found")
+	}
+	hash15 := sha256.Sum256(v15Content)
+	shaHex15 := hex.EncodeToString(hash15[:])
+	if err := postgres.Migrate(ctx, testDB, 15, v15Name, shaHex15, string(v15Content)); err != nil {
+		t.Fatalf("apply migration 015 on v14 database: %v", err)
+	}
+
+	var v15 int
+	if v15, err = postgres.CurrentSchemaVersion(ctx, testDB); err != nil {
+		t.Fatalf("read schema version at v15: %v", err)
+	}
+	if v15 != 15 {
+		t.Fatalf("expected schema version 15, got %d", v15)
+	}
+
+	for _, challengeID := range []string{legacyPendingChallengeID, legacySendingChallengeID} {
+		var challengeStatus string
+		if err := testDB.QueryRowContext(ctx, "SELECT status FROM identity_challenges WHERE id=$1", challengeID).Scan(&challengeStatus); err != nil {
+			t.Fatalf("query cutover challenge %s: %v", challengeID, err)
+		}
+		if challengeStatus != "revoked" {
+			t.Fatalf("legacy challenge %s was not revoked: got %s", challengeID, challengeStatus)
+		}
+	}
+	var pendingDeliveryStatus, sendingDeliveryStatus string
+	if err := testDB.QueryRowContext(ctx, "SELECT status FROM identity_challenge_deliveries WHERE challenge_id=$1", legacyPendingChallengeID).Scan(&pendingDeliveryStatus); err != nil {
+		t.Fatalf("query pending cutover delivery: %v", err)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT status FROM identity_challenge_deliveries WHERE challenge_id=$1", legacySendingChallengeID).Scan(&sendingDeliveryStatus); err != nil {
+		t.Fatalf("query sending cutover delivery: %v", err)
+	}
+	if pendingDeliveryStatus != "suppressed" || sendingDeliveryStatus != "unknown" {
+		t.Fatalf("legacy delivery states were not preserved safely: pending=%s sending=%s", pendingDeliveryStatus, sendingDeliveryStatus)
+	}
+	var activeLegacyDeliveries int
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_challenge_deliveries WHERE status IN ('pending','sending')").Scan(&activeLegacyDeliveries); err != nil || activeLegacyDeliveries != 0 {
+		t.Fatalf("legacy pending delivery residue remains: count=%d err=%v", activeLegacyDeliveries, err)
+	}
+
 	// 5. Zero data loss on actors, roles, credentials
 	var actorCount, roleCount, credCount int
 	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_actors").Scan(&actorCount); err != nil || actorCount != 3 {
@@ -262,5 +349,5 @@ func TestMigrationV13ToV14Upgrade(t *testing.T) {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	t.Log("Migration v13 -> v14 upgrade and data preservation test PASSED successfully!")
+	t.Log("Migration v13 -> v15 upgrade, data preservation and six-digit cutover test PASSED successfully!")
 }

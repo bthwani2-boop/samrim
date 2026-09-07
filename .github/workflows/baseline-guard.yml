@@ -376,9 +376,9 @@ jobs:
           echo "DSH_RUNTIME_TRUST_STORE=PASS"
           echo "DSH_RUNTIME_NON_ROOT=PASS"
 
-      - name: Verify migration v13 to v14 upgrade and data preservation
+      - name: Verify migration v13 to v15 upgrade and six-digit cutover
         shell: bash
-        run: node tools/dev/verify-migration-v13-to-v14.mjs
+        run: node tools/dev/verify-migration-v13-to-v15.mjs
 
       - name: Verify Identity activation-session semantics
         shell: bash
