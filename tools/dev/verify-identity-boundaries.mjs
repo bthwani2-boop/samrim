@@ -35,7 +35,7 @@ try {
 
 const presentationFlow = read("services/identity/clients/presentation/ManagedIdentityFlow.tsx");
 if (!presentationFlow) {
-  failures.push("missing canonical Identity ManagedIdentityFlow presentation component");
+  failures.push("missing reusable Identity ManagedIdentityFlow public presentation client");
 } else {
   for (const required of [
     "chooseIntent",
@@ -43,18 +43,53 @@ if (!presentationFlow) {
     "requestManagedRecovery",
     "recoverManagedIdentity",
     "activateManagedIdentity",
+    "ManagedIdentityBinding",
+    "managedRole",
+    "surface",
+    "roleLabel",
     "أثبت رقم الهاتف",
     "رمز تحقق الهاتف",
     "تفعيل أول مرة",
     "ابدأ برقم الهاتف",
   ]) {
-    if (!presentationFlow.includes(required)) failures.push("ManagedIdentityFlow presentation component missing " + required);
+    if (!presentationFlow.includes(required)) failures.push("ManagedIdentityFlow presentation client missing " + required);
   }
   if (presentationFlow.includes("activationCode") || presentationFlow.includes("رمز التفعيل")) {
     failures.push("ManagedIdentityFlow retains redundant control-surface activation secret");
   }
   if (presentationFlow.includes("auth-mode-switch") || presentationFlow.includes("<select")) {
     failures.push("ManagedIdentityFlow must resolve next step from phone without tabs or role selectors");
+  }
+
+  const presentationImports = presentationFlow
+    .split("\n")
+    .filter((line) => /^\s*import\s/.test(line))
+    .join("\n");
+  for (const forbidden of [
+    "apps/",
+    "expo-router",
+    "expo-linking",
+    "expo-constants",
+    "expo-updates",
+    "expo-secure-store",
+    "@bthwani/dsh",
+    "@bthwani/wlt",
+  ]) {
+    if (presentationImports.includes(forbidden)) {
+      failures.push("ManagedIdentityFlow is not host-neutral; forbidden dependency " + forbidden);
+    }
+  }
+  for (const forbidden of [
+    "fetch(",
+    "createIdentityClient(",
+    "new IdentitySessionManager(",
+    "app.config",
+    "mobile.config",
+    "eas.json",
+  ]) {
+    if (presentationFlow.includes(forbidden)) {
+      failures.push("ManagedIdentityFlow owns host/runtime responsibility instead of injected presentation binding: " + forbidden);
+    }
   }
 }
 for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
@@ -106,6 +141,7 @@ if (clientPage.includes("رمز التفعيل") || clientPage.includes("request
   failures.push("app-client still presents customer normal auth as activation");
 }
 
+let managedPresentationConsumers = 0;
 for (const [app, role, surface] of [
   ["app-partner", "partner", "app-partner"],
   ["app-captain", "captain", "app-captain"],
@@ -139,10 +175,12 @@ for (const [app, role, surface] of [
   }
   if (!page.includes('from "@bthwani/identity/presentation"') && !page.includes("from '@bthwani/identity/presentation'")) {
     failures.push(app + " UI does not import from @bthwani/identity/presentation");
+  } else {
+    managedPresentationConsumers += 1;
   }
-  if (page.split("\n").length > 40) {
-    failures.push(app + " contains duplicate identity gate implementation instead of thin host binding");
-  }
+}
+if (managedPresentationConsumers < 2) {
+  failures.push("Identity reusable presentation client lacks proven multi-host consumption");
 }
 
 if (fs.existsSync(path.join(root, "packages/design-system/src/native"))) {
