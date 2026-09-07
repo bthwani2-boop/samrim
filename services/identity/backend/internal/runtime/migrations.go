@@ -119,6 +119,9 @@ func RunMigrations(ctx context.Context, runtimeEnvironment, databaseURL, directo
 }
 
 func VerifySchema(ctx context.Context, runtimeEnvironment, databaseURL, directory string) error {
+	if _, err := opsafety.RequireOrdinaryCLIEnvironment(runtimeEnvironment, "identity schema verification"); err != nil {
+		return err
+	}
 	if err := validateDatabaseTransport(runtimeEnvironment, databaseURL); err != nil {
 		return err
 	}
