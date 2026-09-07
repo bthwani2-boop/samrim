@@ -21,6 +21,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/challenge"
 	challengedelivery "github.com/bthwani2-boop/samrim/services/identity/backend/internal/integrations/challenge"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/lifecycle"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/opsafety"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/storage/postgres"
 	identityhttp "github.com/bthwani2-boop/samrim/services/identity/backend/internal/transport/http"
@@ -47,6 +48,9 @@ type config struct {
 func Run(_, _, defaultPort string) error {
 	cfg, err := loadConfig(defaultPort)
 	if err != nil {
+		return err
+	}
+	if _, err := opsafety.RequireOrdinaryCLIEnvironment(cfg.runtimeEnvironment, "identity service runtime"); err != nil {
 		return err
 	}
 	db, err := sql.Open("postgres", cfg.databaseURL)

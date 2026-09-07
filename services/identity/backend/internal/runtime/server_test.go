@@ -93,3 +93,12 @@ func TestProductionRequiresProviderBudgetHour(t *testing.T) {
 		t.Fatalf("production accepted missing budget per hour: %v", err)
 	}
 }
+
+
+func TestIdentityRunBlocksProductionBeforeDatabaseAccess(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	err := Run("identity", "/identity", "8082")
+	if err == nil || !strings.Contains(err.Error(), "blocked in production") {
+		t.Fatalf("production identity runtime was not blocked before database access: %v", err)
+	}
+}

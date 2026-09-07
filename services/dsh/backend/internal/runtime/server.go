@@ -27,6 +27,9 @@ func RunWithRoutes(service, prefix, defaultPort string, register func(*http.Serv
 }
 
 func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register func(*http.ServeMux), readiness func(context.Context) error) error {
+	if err := requireOrdinaryRuntimeEnvironment(os.Getenv("BTHWANI_ENV")); err != nil {
+		return err
+	}
 	port := strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
 		port = defaultPort

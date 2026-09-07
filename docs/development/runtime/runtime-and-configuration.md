@@ -10,6 +10,8 @@ CURRENT_PROVIDER_CONFIG_TRUTH_SOURCE: live repository configuration
 
 ## Runtime profiles
 
+Current repository service execution is intentionally limited to `development`/`test`. The Identity and DSH runtime entrypoints fail closed before opening service-side effects when `BTHWANI_ENV` is `staging` or `production`; those environments remain unavailable until a controlled deployment authority is materialized. Production-oriented configuration validation can still be tested without granting runtime authority.
+
 Use the smallest runtime able to prove the current claim:
 
 - **DAILY_DEV** — active app/service plus minimum dependencies.
