@@ -1,8 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
+import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
-const root = path.resolve(import.meta.dirname, "../..");
+const repoRoot = path.resolve(import.meta.dirname, "../..");
+const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
 const failures = [];
+
+function sourceRoot(relativePath) {
+  return relativePath.startsWith("governance/") || relativePath.startsWith("docs/")
+    ? knowledgeRoot
+    : repoRoot;
+}
 
 const cases = [
   {
@@ -132,7 +140,7 @@ const cases = [
 ];
 
 for (const test of cases) {
-  const absolute = path.join(root, test.source);
+  const absolute = path.join(sourceRoot(test.source), test.source);
   if (!fs.existsSync(absolute)) {
     failures.push(test.id + " missing source: " + test.source);
     continue;
@@ -151,7 +159,7 @@ for (const forbidden of [
   "tools/prompting/bthwani-orchestrator/templates/required-truth-census.md",
   "tools/prompting/bthwani-orchestrator/templates/donor-zero-loss-accounting.md",
 ]) {
-  if (fs.existsSync(path.join(root, forbidden))) failures.push("forbidden live artifact exists: " + forbidden);
+  if (fs.existsSync(path.join(sourceRoot(forbidden), forbidden))) failures.push("forbidden live artifact exists: " + forbidden);
 }
 
 if (failures.length) {
