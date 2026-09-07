@@ -90,7 +90,6 @@ function resolveKnowledgeRef(sourceFile, raw) {
 const sources = [
   ...collectMarkdown(path.join(knowledgeRoot, "governance")),
   ...collectMarkdown(path.join(knowledgeRoot, "docs")),
-  ...collectMarkdown(path.join(repoRoot, "tools/prompting/bthwani-orchestrator")),
 ];
 
 for (const rootFile of ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "CONTRIBUTING.md"]) {
@@ -135,6 +134,7 @@ for (const source of sources) {
 }
 
 const orphanScopes = [
+  path.join(knowledgeRoot, "docs/method"),
   path.join(knowledgeRoot, "docs/development"),
   path.join(knowledgeRoot, "docs/runbooks"),
   path.join(knowledgeRoot, "docs/reference"),
