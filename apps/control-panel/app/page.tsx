@@ -55,6 +55,12 @@ async function identityFetch(input: RequestInfo | URL, init?: RequestInit): Prom
   }
 }
 
+type RequestFailure = Readonly<{ status: number; message: string }>;
+
+function isRequestFailure(value: unknown): value is RequestFailure {
+  return Boolean(value && typeof value === "object" && typeof (value as { status?: unknown }).status === "number" && typeof (value as { message?: unknown }).message === "string");
+}
+
 function AccountAccessPanel() {
   const [role, setRole] = useState<ActorType>("partner");
   const [phone, setPhone] = useState("");
@@ -66,42 +72,72 @@ function AccountAccessPanel() {
   const [resetSuccess, setResetSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [finalStateUnverified, setFinalStateUnverified] = useState(false);
   const requestId = useRef(0);
+
+  async function readCanonicalStatus(): Promise<ManagedAccountStatus> {
+    const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: phone.trim(), role })}`);
+    if (!response.ok) throw { status: response.status, message: await responseMessage(response) } satisfies RequestFailure;
+    return await response.json() as ManagedAccountStatus;
+  }
+
+  async function refreshCanonicalStatus(): Promise<ManagedAccountStatus> {
+    const next = await readCanonicalStatus();
+    setStatus(next);
+    setFinalStateUnverified(false);
+    return next;
+  }
+
+  async function reconcileAfterMutationFailure(): Promise<boolean> {
+    try {
+      await refreshCanonicalStatus();
+      return true;
+    } catch {
+      setStatus(null);
+      setFinalStateUnverified(true);
+      return false;
+    }
+  }
+
+  function markFinalStateUnverified() {
+    setStatus(null);
+    setFinalStateUnverified(true);
+    setError("تم تنفيذ التغيير، لكن تعذر التحقق من الحالة النهائية. أعد تحميل الحالة قبل أي إجراء آخر.");
+  }
 
   useEffect(() => {
     const value = phone.trim();
     const id = ++requestId.current;
-    setResult(null); setError(""); setOperatorResetPassword(""); setOperatorResetPasswordConfirmation(""); setResetSuccess(""); setReason(""); setStatus(null);
+    setResult(null); setError(""); setOperatorResetPassword(""); setOperatorResetPasswordConfirmation(""); setResetSuccess(""); setReason(""); setStatus(null); setFinalStateUnverified(false);
     if (value.length < 5) return;
     const timeout = window.setTimeout(() => void (async () => {
       try {
         const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: value, role })}`);
         if (id !== requestId.current) return;
         if (!response.ok) { setStatus(null); setError(await responseMessage(response)); return; }
-        setStatus(await response.json() as ManagedAccountStatus);
+        setStatus(await response.json() as ManagedAccountStatus); setFinalStateUnverified(false);
       } catch { if (id === requestId.current) { setStatus(null); setError("تعذر التحقق من حالة الرقم حاليًا."); } }
     })(), 450);
     return () => window.clearTimeout(timeout);
   }, [phone, role]);
 
-  const roleLabel = role === "client" ? "العميل" : role === "partner" ? "الشريك" : role === "captain" ? "الكابتن" : role === "field" ? "الميداني" : "موظف لوحة التحكم";
   const managedRole = role === "partner" || role === "captain" || role === "field" || role === "operator";
 
   async function provision(recover = false) {
     setBusy(true); setError(""); setResult(null);
+    let mutationApplied = false;
     try {
       const response = await identityFetch("/api/access/managed-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, role, recover }) });
       if (!response.ok) { setError(await responseMessage(response)); return; }
+      mutationApplied = true;
       const payload = await response.json();
       setResult(role === "operator" ? payload as OperatorEnrollmentToken : null);
-      const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
-      if (!refresh.ok) {
-        setStatus(null);
-        setError(await responseMessage(refresh));
-        return;
-      }
-      setStatus(await refresh.json() as ManagedAccountStatus);
-    } catch { setError("تعذر الوصول إلى خدمات إدارة الهوية."); } finally { setBusy(false); }
+      await refreshCanonicalStatus();
+    } catch (cause) {
+      if (mutationApplied) markFinalStateUnverified();
+      else if (isRequestFailure(cause)) setError(cause.message);
+      else setError("تعذر الوصول إلى خدمات إدارة الهوية.");
+    } finally { setBusy(false); }
   }
 
   async function changeAccess(action: "disable-role" | "enable-role" | "disable-identity" | "enable-identity") {
@@ -112,6 +148,7 @@ function AccountAccessPanel() {
       return;
     }
     setBusy(true); setError("");
+    let mutationApplied = false;
     try {
       const response = await identityFetch("/api/access/account-control", {
         method: "POST",
@@ -119,19 +156,23 @@ function AccountAccessPanel() {
         body: JSON.stringify({ phone, role, action, reason, expectedVersion }),
       });
       if (!response.ok) {
+        const message = await responseMessage(response);
+        const reconciled = await reconcileAfterMutationFailure();
         if (response.status === 409 || response.status === 412) {
-          setError("تعارض في إصدار الحساب: قام مستخدم آخر بتعديل هذه الحالة. تم تحديث البيانات، يرجى المحاولة مجددًا.");
+          setError(reconciled ? "تعارض في إصدار الحساب: قام مستخدم آخر بتعديل هذه الحالة. تم تحميل الحالة الكانونية، راجعها ثم حاول مجددًا." : "حدث تعارض في إصدار الحساب وتعذر التحقق من الحالة الكانونية. أعد تحميل الحالة قبل المحاولة.");
         } else {
-          setError(await responseMessage(response));
+          setError(message);
         }
-        const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
-        if (refresh.ok) setStatus(await refresh.json() as ManagedAccountStatus);
         return;
       }
+      mutationApplied = true;
+      await refreshCanonicalStatus();
       setReason("");
-      const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
-      if (refresh.ok) setStatus(await refresh.json() as typeof status);
-    } catch { setError("تعذر تحديث حالة الحساب."); } finally { setBusy(false); }
+    } catch (cause) {
+      if (mutationApplied) markFinalStateUnverified();
+      else if (isRequestFailure(cause)) setError(cause.message);
+      else setError("تعذر تحديث حالة الحساب.");
+    } finally { setBusy(false); }
   }
 
   async function resetOperatorCredential() {
@@ -150,6 +191,7 @@ function AccountAccessPanel() {
       return;
     }
     setBusy(true); setError(""); setResetSuccess("");
+    let mutationApplied = false;
     try {
       const response = await identityFetch("/api/access/managed-user/operator-reset", {
         method: "POST",
@@ -157,20 +199,24 @@ function AccountAccessPanel() {
         body: JSON.stringify({ phone, password: operatorResetPassword, reason, expectedVersion }),
       });
       if (!response.ok) {
+        const message = await responseMessage(response);
+        const reconciled = await reconcileAfterMutationFailure();
         if (response.status === 409 || response.status === 412) {
-          setError("تعارض في إصدار كلمة المرور: تم تعديل الاعتماد من جهة أخرى. يرجى إعادة المحاولة.");
+          setError(reconciled ? "تعارض في إصدار كلمة المرور: تم تحميل الحالة الكانونية، راجع الإصدار ثم أعد المحاولة." : "حدث تعارض في إصدار كلمة المرور وتعذر التحقق من الحالة الكانونية. أعد تحميل الحالة قبل المحاولة.");
         } else {
-          setError(await responseMessage(response));
+          setError(message);
         }
         return;
       }
+      mutationApplied = true;
       setOperatorResetPassword("");
       setOperatorResetPasswordConfirmation("");
+      await refreshCanonicalStatus();
       setResetSuccess("تمت إعادة تعيين كلمة مرور موظف لوحة التحكم بنجاح وإلغاء جميع الجلسات القديمة.");
-      const refresh = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone, role })}`);
-      if (refresh.ok) setStatus(await refresh.json() as typeof status);
-    } catch {
-      setError("تعذر إعادة تعيين كلمة مرور الموظف.");
+    } catch (cause) {
+      if (mutationApplied) markFinalStateUnverified();
+      else if (isRequestFailure(cause)) setError(cause.message);
+      else setError("تعذر إعادة تعيين كلمة مرور الموظف.");
     } finally {
       setBusy(false);
     }
@@ -233,6 +279,7 @@ function AccountAccessPanel() {
       </>}
     </div> : null}
     {result ? <div className="code-output" role="status"><span className="summary-label">دعوة موظف عالية الأمان</span><code>{result.code}</code><p>تُعرض هذه الدعوة مرة واحدة فقط وتُستخدم لتفعيل موظف لوحة التحكم، وتنتهي في {new Date(result.expiresAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}
+    {finalStateUnverified ? <p className="identity-error" role="alert">الحالة النهائية غير متحققة؛ أعد تحميل الحالة قبل تنفيذ إجراء آخر.</p> : null}
     {error ? <p className="identity-error" role="alert">{error}</p> : null}
   </section>;
 }
