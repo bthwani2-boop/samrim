@@ -176,10 +176,28 @@ for (const forbidden of ["loginOperator(", "username", "activateOperator", "loca
 if (fs.existsSync(path.join(root, "apps/control-panel/app/api/auth/login/route.ts"))) {
   failures.push("single-step operator login BFF route still exists");
 }
+const controlPage = read("apps/control-panel/app/page.tsx");
+const identityClient = read("services/identity/clients/client.ts");
+for (const required of [
+  "export type AttributedMutationContext",
+  "export type VersionedMutationContext",
+  "context: AttributedMutationContext",
+  "context: VersionedMutationContext",
+  '"X-Acting-Actor-ID": context.operatorActorId.trim()',
+  '"X-Correlation-ID": context.correlationId.trim()',
+  '"X-Expected-Version": String(context.expectedVersion)',
+]) {
+  if (!identityClient.includes(required)) failures.push("Identity client missing strict mutation context " + required);
+}
+if (identityClient.includes("MutationOptions")) failures.push("Identity client retains optional mutation options");
+if (bff.includes("MutationOptions") || bff.includes("options?:")) failures.push("control-panel Identity BFF retains optional mutation context");
+for (const required of ["refreshCanonicalStatus", "reconcileAfterMutationFailure", "finalStateUnverified", "الحالة النهائية غير متحققة"]) {
+  if (!controlPage.includes(required)) failures.push("control-panel mutation UI missing final-state verification " + required);
+}
+if (controlPage.includes("تم تحديث البيانات، يرجى المحاولة")) failures.push("control-panel mutation UI claims success without canonical readback");
 for (const route of ["start", "complete"]) {
   requireText("apps/control-panel/app/api/auth/login/" + route + "/route.ts", route === "start" ? "startOperatorLogin" : "completeOperatorLogin");
 }
-const controlPage = read("apps/control-panel/app/page.tsx");
 for (const required of ["/api/auth/login/start", "/api/auth/login/complete", "التحقق الثاني", "تم توثيق جلستك بعاملين"]) {
   if (!controlPage.includes(required)) failures.push("control-panel UI missing MFA flow " + required);
 }
@@ -517,6 +535,10 @@ for (const required of [
 for (const forbidden of ["If-Match", "X-Actor-ID"]) {
   if (dshOpenApi.includes(forbidden)) failures.push("DSH OpenAPI contract retains legacy alias " + forbidden);
 }
+if (dshOpenApi.includes("/dsh/managed-roles/{actorId}/reenrollment:")) failures.push("DSH OpenAPI retains duplicate actor-id reenrollment route");
+if (fs.existsSync(path.join(root, "apps/control-panel/app/api/access/managed-user/reenrollment/route.ts"))) {
+  failures.push("control-panel retains duplicate reenrollment route");
+}
 
 const dshBff = read("apps/control-panel/lib/dsh-bff.ts");
 for (const required of [
@@ -531,6 +553,10 @@ for (const required of [
 ]) {
   if (!dshBff.includes(required)) failures.push("Control Panel DSH BFF missing " + required);
 }
+for (const required of ["DshAttributedMutationContext", "DshVersionedMutationContext", "validateAttributedMutationContext", "validateVersionedMutationContext"]) {
+  if (!dshBff.includes(required)) failures.push("Control Panel DSH BFF missing strict mutation context " + required);
+}
+if (dshBff.includes("options?:")) failures.push("Control Panel DSH BFF retains optional mutation context");
 for (const forbidden of ['headers["X-Actor-ID"]', 'headers["If-Match"]']) {
   if (dshBff.includes(forbidden)) failures.push("Control Panel DSH BFF retains legacy alias " + forbidden);
 }

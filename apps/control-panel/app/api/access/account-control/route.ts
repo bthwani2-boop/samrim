@@ -58,11 +58,11 @@ export async function POST(request: Request) {
 
   try {
     const correlationId = randomUUID();
-    const mutationOptions = { operatorActorId: identity.subject, expectedVersion };
+    const mutationOptions = { operatorActorId: identity.subject, correlationId, expectedVersion };
     if (action === "disable-role" || action === "enable-role") {
       const enabled = action === "enable-role";
       if (roleNames.has(role)) {
-        await setManagedRoleEnabled(phone, role as "partner" | "captain" | "field", enabled, reason, correlationId, mutationOptions);
+        await setManagedRoleEnabled(phone, role as "partner" | "captain" | "field", enabled, reason, mutationOptions);
       } else {
         await setIdentityRoleEnabled(phone, role, enabled, reason, mutationOptions);
       }

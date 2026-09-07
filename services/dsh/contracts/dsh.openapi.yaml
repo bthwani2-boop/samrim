@@ -182,36 +182,6 @@ paths:
         "502":
           $ref: "#/components/responses/IdentityUnavailable"
 
-  /dsh/managed-roles/{actorId}/reenrollment:
-    post:
-      operationId: reenrollManagedRoleByActorId
-      summary: Authorize reenrollment for a managed role by actor ID
-      security:
-        - serviceBearer: []
-      parameters:
-        - name: actorId
-          in: path
-          required: true
-          schema:
-            type: string
-        - $ref: "#/components/parameters/CorrelationId"
-        - $ref: "#/components/parameters/ActingActorIdRequired"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ActorReenrollmentRequest"
-      responses:
-        "204":
-          description: Reenrollment was authorized.
-        "400":
-          $ref: "#/components/responses/InvalidInput"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "502":
-          $ref: "#/components/responses/IdentityUnavailable"
-
 components:
   securitySchemes:
     serviceBearer:
@@ -301,14 +271,6 @@ components:
       properties:
         phoneE164:
           type: string
-        role:
-          $ref: "#/components/schemas/ManagedRole"
-
-    ActorReenrollmentRequest:
-      type: object
-      required: [role]
-      additionalProperties: false
-      properties:
         role:
           $ref: "#/components/schemas/ManagedRole"
 

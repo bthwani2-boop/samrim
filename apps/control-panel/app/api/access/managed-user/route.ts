@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       if (role === "operator") return NextResponse.json({ error: { code: "RECOVERY_UNSUPPORTED", message: "operator recovery is not available from managed access" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
       const existing = await lookupManagedRoleStatus(phone, role as "partner" | "captain" | "field");
       if (!existing.exists || !existing.activated) return NextResponse.json({ error: { code: "CONFLICT", message: "the managed role is not currently activated" } }, { status: 409, headers: { "Cache-Control": "no-store" } });
-      await authorizeManagedReenrollment(phone, role as "partner" | "captain" | "field", correlationId, { operatorActorId: identity.subject });
+      await authorizeManagedReenrollment(phone, role as "partner" | "captain" | "field", mutationOptions);
     }
     if (role === "operator") {
       await provisionOperator(phone, mutationOptions);

@@ -7,6 +7,13 @@ type DshClientError =
   | Readonly<{ kind: "config"; message: string }>;
 
 export type ManagedRoleStatus = ManagedRoleStatusResponse;
+export type DshAttributedMutationContext = Readonly<{
+  operatorActorId: string;
+  correlationId: string;
+}>;
+export type DshVersionedMutationContext = DshAttributedMutationContext & Readonly<{
+  expectedVersion: number;
+}>;
 
 const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field"]);
 
@@ -27,6 +34,19 @@ function dshToken(): string {
   const token = process.env.DSH_PLATFORM_CONTROL_SERVICE_TOKEN?.trim();
   if (!token || token.length < 24) throw { kind: "config", message: "dsh service configuration is incomplete" } satisfies DshClientError;
   return token;
+}
+
+function validateAttributedMutationContext(context: DshAttributedMutationContext): void {
+  if (!context.operatorActorId.trim() || !context.correlationId.trim()) {
+    throw { kind: "config", message: "dsh mutation context is incomplete" } satisfies DshClientError;
+  }
+}
+
+function validateVersionedMutationContext(context: DshVersionedMutationContext): void {
+  validateAttributedMutationContext(context);
+  if (!Number.isInteger(context.expectedVersion) || context.expectedVersion < 1) {
+    throw { kind: "config", message: "dsh expected version is invalid" } satisfies DshClientError;
+  }
 }
 
 function parseErrorPayload(value: unknown): { code: string; message: string } {
@@ -60,9 +80,10 @@ export function dshHttpStatus(error: unknown): number {
 export async function provisionManagedRole(
   phone: string,
   role: ManagedActivationRole,
-  options?: { operatorActorId?: string; correlationId?: string },
+  context: DshAttributedMutationContext,
 ): Promise<ActorRoleView> {
   if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
+  validateAttributedMutationContext(context);
   const baseUrl = dshBaseUrl();
   const token = dshToken();
   const controller = new AbortController();
@@ -75,12 +96,8 @@ export async function provisionManagedRole(
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       };
-      if (options?.operatorActorId?.trim()) {
-        headers["X-Acting-Actor-ID"] = options.operatorActorId.trim();
-      }
-      if (options?.correlationId?.trim()) {
-        headers["X-Correlation-ID"] = options.correlationId.trim();
-      }
+      headers["X-Acting-Actor-ID"] = context.operatorActorId.trim();
+      headers["X-Correlation-ID"] = context.correlationId.trim();
       response = await fetch(`${baseUrl}${dshOperationPaths.provisionManagedRole.path}`, {
         method: dshOperationPaths.provisionManagedRole.method,
         headers,
@@ -131,10 +148,10 @@ export async function lookupManagedRoleStatus(phone: string, role: "partner" | "
 export async function authorizeManagedReenrollment(
   phone: string,
   role: "partner" | "captain" | "field",
-  correlationId: string,
-  options?: { operatorActorId?: string },
+  context: DshAttributedMutationContext,
 ): Promise<void> {
   if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
+  validateAttributedMutationContext(context);
   const baseUrl = dshBaseUrl();
   const token = dshToken();
   const controller = new AbortController();
@@ -146,11 +163,9 @@ export async function authorizeManagedReenrollment(
         Accept: "application/json",
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
-        "X-Correlation-ID": correlationId,
+        "X-Correlation-ID": context.correlationId.trim(),
       };
-      if (options?.operatorActorId?.trim()) {
-        headers["X-Acting-Actor-ID"] = options.operatorActorId.trim();
-      }
+      headers["X-Acting-Actor-ID"] = context.operatorActorId.trim();
       response = await fetch(`${baseUrl}${dshOperationPaths.reenrollManagedRoleByPhone.path}`, {
         method: dshOperationPaths.reenrollManagedRoleByPhone.method,
         headers,
@@ -174,10 +189,10 @@ export async function setManagedRoleEnabled(
   role: "partner" | "captain" | "field",
   enabled: boolean,
   reason: string,
-  correlationId: string,
-  options?: { operatorActorId?: string; expectedVersion?: number },
+  context: DshVersionedMutationContext,
 ): Promise<void> {
   if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
+  validateVersionedMutationContext(context);
   const baseUrl = dshBaseUrl();
   const token = dshToken();
   const controller = new AbortController();
@@ -189,17 +204,10 @@ export async function setManagedRoleEnabled(
         Accept: "application/json",
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
-        "X-Correlation-ID": correlationId,
+        "X-Correlation-ID": context.correlationId.trim(),
       };
-      if (options?.operatorActorId?.trim()) {
-        headers["X-Acting-Actor-ID"] = options.operatorActorId.trim();
-      }
-      if (options?.expectedVersion !== undefined) {
-        if (!Number.isInteger(options.expectedVersion) || options.expectedVersion < 1) {
-          throw new Error("INVALID_EXPECTED_VERSION");
-        }
-        headers["X-Expected-Version"] = String(options.expectedVersion);
-      }
+      headers["X-Acting-Actor-ID"] = context.operatorActorId.trim();
+      headers["X-Expected-Version"] = String(context.expectedVersion);
       const operation = enabled ? dshOperationPaths.enableManagedRole : dshOperationPaths.disableManagedRole;
       response = await fetch(`${baseUrl}${operation.path}`, {
         method: operation.method,

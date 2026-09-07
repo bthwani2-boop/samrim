@@ -12,7 +12,8 @@ import {
   type Challenge,
   type IdentityClientError,
   type OperatorEnrollmentToken,
-  type MutationOptions,
+  type AttributedMutationContext,
+  type VersionedMutationContext,
   type ControlPanelRole,
   type RecoveryResult,
   type TokenPair,
@@ -120,12 +121,12 @@ export async function completeOperatorRecovery(phone: string, code: string, pass
   return identityClient().recoverManaged({ phone, role: "operator", code, password });
 }
 
-export async function issueOperatorEnrollmentToken(phone: string, options?: MutationOptions): Promise<OperatorEnrollmentToken> {
-  return identityInternalClient().issueOperatorEnrollmentToken({ phoneE164: phone, role: "operator" }, options);
+export async function issueOperatorEnrollmentToken(phone: string, context: AttributedMutationContext): Promise<OperatorEnrollmentToken> {
+  return identityInternalClient().issueOperatorEnrollmentToken({ phoneE164: phone, role: "operator" }, context);
 }
 
-export async function provisionOperator(phone: string, options?: MutationOptions): Promise<ActorRoleView> {
-  return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" }, options);
+export async function provisionOperator(phone: string, context: AttributedMutationContext): Promise<ActorRoleView> {
+  return identityInternalClient().provisionActorRole({ phoneE164: phone, role: "operator" }, context);
 }
 
 export async function lookupIdentityRole(phone: string, role: ActorType): Promise<ActorRoleView | null> {
@@ -139,36 +140,36 @@ function missingIdentityRole(): IdentityClientError {
   return { kind: "http", status: 404, code: "NOT_FOUND", message: "identity role record not found" };
 }
 
-export async function setIdentityRoleEnabled(phone: string, role: ActorType, enabled: boolean, reason: string, options?: MutationOptions): Promise<void> {
+export async function setIdentityRoleEnabled(phone: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void> {
   const record = await lookupIdentityRole(phone, role);
   if (!record) throw missingIdentityRole();
-  await identityInternalClient().setActorRoleEnabled(record.actorId, role, enabled, randomUUID(), reason, options);
+  await identityInternalClient().setActorRoleEnabled(record.actorId, role, enabled, reason, context);
 }
 
-export async function setActorSecurityEnabledById(actorId: string, enabled: boolean, reason: string, options?: MutationOptions): Promise<void> {
+export async function setActorSecurityEnabledById(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void> {
   if (!actorId) throw missingIdentityRole();
-  await identityInternalClient().setActorSecurityEnabled(actorId, enabled, randomUUID(), reason, options);
+  await identityInternalClient().setActorSecurityEnabled(actorId, enabled, reason, context);
 }
 
-export async function setIdentitySecurityEnabled(phone: string, role: ActorType, enabled: boolean, reason: string, explicitActorId?: string, options?: MutationOptions): Promise<void> {
+export async function setIdentitySecurityEnabled(phone: string, role: ActorType, enabled: boolean, reason: string, explicitActorId: string | undefined, context: VersionedMutationContext): Promise<void> {
   if (explicitActorId) {
-    await setActorSecurityEnabledById(explicitActorId, enabled, reason, options);
+    await setActorSecurityEnabledById(explicitActorId, enabled, reason, context);
     return;
   }
   const record = await lookupIdentityRole(phone, role);
   if (!record) throw missingIdentityRole();
-  await identityInternalClient().setActorSecurityEnabled(record.actorId, enabled, randomUUID(), reason, options);
+  await identityInternalClient().setActorSecurityEnabled(record.actorId, enabled, reason, context);
 }
 
-export async function resetOperatorPasswordByPhone(phone: string, password: string, options?: MutationOptions): Promise<void> {
+export async function resetOperatorPasswordByPhone(phone: string, password: string, context: VersionedMutationContext): Promise<void> {
   const record = await lookupIdentityRole(phone, "operator");
   if (!record) throw missingIdentityRole();
-  await identityInternalClient().resetOperatorPassword(record.actorId, password, options);
+  await identityInternalClient().resetOperatorPassword(record.actorId, password, context);
 }
 
-export async function resetOperatorPasswordById(actorId: string, password: string, options?: MutationOptions): Promise<void> {
+export async function resetOperatorPasswordById(actorId: string, password: string, context: VersionedMutationContext): Promise<void> {
   if (!actorId) throw missingIdentityRole();
-  await identityInternalClient().resetOperatorPassword(actorId, password, options);
+  await identityInternalClient().resetOperatorPassword(actorId, password, context);
 }
 
 export async function readOperatorSession(): Promise<ActorIdentity | null> {

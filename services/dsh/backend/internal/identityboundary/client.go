@@ -69,10 +69,6 @@ func (c *Client) SetRoleEnabledByPhoneWithContext(ctx context.Context, phone, ro
 	return c.inner.SetRoleEnabledWithContext(ctx, view.ActorID, role, enabled, correlationID, reason, operatorActorID, expectedVersion)
 }
 
-func (c *Client) AuthorizeReenrollmentWithContext(ctx context.Context, actorID, role, correlationID, operatorActorID string) error {
-	return c.inner.AuthorizeReenrollmentWithContext(ctx, actorID, role, correlationID, operatorActorID)
-}
-
 func (c *Client) AuthorizeReenrollmentByPhoneWithContext(ctx context.Context, phone, role, correlationID, operatorActorID string) error {
 	return c.inner.AuthorizeReenrollmentByPhoneWithContext(ctx, phone, role, correlationID, operatorActorID)
 }

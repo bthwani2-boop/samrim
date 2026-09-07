@@ -34,7 +34,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/managed-roles/disable", s.disableByPhone)
 	mux.HandleFunc("POST /dsh/managed-roles/enable", s.enableByPhone)
 	mux.HandleFunc("POST /dsh/managed-roles/reenrollment", s.reenrollByPhone)
-	mux.HandleFunc("POST /dsh/managed-roles/{actorId}/reenrollment", s.reenroll)
 }
 
 func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
@@ -199,46 +198,6 @@ func (s *Server) provision(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(toRoleView(view))
-}
-
-func (s *Server) reenroll(w http.ResponseWriter, r *http.Request) {
-	if !s.authorized(r) {
-		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
-		return
-	}
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Actor-ID is forbidden; use X-Acting-Actor-ID")
-		return
-	}
-	if r.Header.Get("If-Match") != "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "If-Match is forbidden; use X-Expected-Version")
-		return
-	}
-	var input contract.ActorReenrollmentRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	role := strings.ToLower(strings.TrimSpace(string(input.Role)))
-	if role != "partner" && role != "captain" && role != "field" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "role must be partner, captain, or field")
-		return
-	}
-	actorID := strings.TrimSpace(r.PathValue("actorId"))
-	if actorID == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "actorId is required")
-		return
-	}
-	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if operatorActorID == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required for managed role reenrollment")
-		return
-	}
-	correlationID := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
-	if err := s.identity.AuthorizeReenrollmentWithContext(r.Context(), actorID, role, correlationID, operatorActorID); err != nil {
-		writeIdentityError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) reenrollByPhone(w http.ResponseWriter, r *http.Request) {

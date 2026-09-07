@@ -47,19 +47,22 @@ export type IdentityClient = Readonly<{
   logout(accessToken: string): Promise<void>;
 }>;
 
-export type MutationOptions = Readonly<{
-  expectedVersion?: number | undefined;
-  operatorActorId?: string | undefined;
-  correlationId?: string | undefined;
+export type AttributedMutationContext = Readonly<{
+  operatorActorId: string;
+  correlationId: string;
+}>;
+
+export type VersionedMutationContext = AttributedMutationContext & Readonly<{
+  expectedVersion: number;
 }>;
 
 export type IdentityInternalClient = Readonly<{
-  issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest, options?: MutationOptions): Promise<OperatorEnrollmentToken>;
-  provisionActorRole(request: ProvisionActorRoleRequest, options?: MutationOptions): Promise<ActorRoleView>;
+  issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest, context: AttributedMutationContext): Promise<OperatorEnrollmentToken>;
+  provisionActorRole(request: ProvisionActorRoleRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
-  setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, correlationId: string, reason: string, options?: MutationOptions): Promise<void>;
-  setActorSecurityEnabled(actorId: string, enabled: boolean, correlationId: string, reason: string, options?: MutationOptions): Promise<void>;
-  resetOperatorPassword(actorId: string, password: string, options?: MutationOptions): Promise<void>;
+  setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
+  setActorSecurityEnabled(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
+  resetOperatorPassword(actorId: string, password: string, context: VersionedMutationContext): Promise<void>;
 }>;
 
 function normalizeBaseUrl(raw: string): string {
@@ -154,6 +157,15 @@ export function expandPath(template: string, params: Record<string, string>): st
   });
 }
 
+function validateAttributedMutationContext(context: AttributedMutationContext): void {
+  if (!context.operatorActorId.trim() || !context.correlationId.trim()) throw new Error("IDENTITY_MUTATION_CONTEXT_INVALID");
+}
+
+function validateVersionedMutationContext(context: VersionedMutationContext): void {
+  validateAttributedMutationContext(context);
+  if (!Number.isInteger(context.expectedVersion) || context.expectedVersion < 1) throw new Error("IDENTITY_MUTATION_VERSION_INVALID");
+}
+
 export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: string, timeoutMs = 8_000): IdentityInternalClient {
   const baseUrl = normalizeBaseUrl(rawBaseUrl);
   const token = serviceToken.trim();
@@ -161,10 +173,10 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
 
   async function requestNoContent(
     pathname: string,
-    correlationId: string,
     reason: string,
-    options?: MutationOptions,
+    context: VersionedMutationContext,
   ): Promise<void> {
+    validateVersionedMutationContext(context);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -175,10 +187,10 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
           headers: {
             Accept: "application/json",
             Authorization: "Bearer " + token,
-            ...(correlationId.trim() ? { "X-Correlation-ID": correlationId.trim() } : {}),
+            "X-Correlation-ID": context.correlationId.trim(),
             ...(reason.trim() ? { "X-Reason": reason.trim() } : {}),
-            ...(options?.expectedVersion !== undefined ? { "X-Expected-Version": String(options.expectedVersion) } : {}),
-            ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim() } : {}),
+            "X-Expected-Version": String(context.expectedVersion),
+            "X-Acting-Actor-ID": context.operatorActorId.trim(),
           },
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
           signal: controller.signal,
@@ -195,7 +207,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
-  async function issueToken(body: OperatorEnrollmentTokenIssueRequest, options?: MutationOptions): Promise<OperatorEnrollmentToken> {
+  async function issueToken(body: OperatorEnrollmentTokenIssueRequest, context: AttributedMutationContext): Promise<OperatorEnrollmentToken> {
+    validateAttributedMutationContext(context);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -207,8 +220,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
             Accept: "application/json",
             "Content-Type": "application/json",
             Authorization: "Bearer " + token,
-            ...(options?.correlationId?.trim() ? { "X-Correlation-ID": options.correlationId.trim() } : {}),
-            ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim() } : {}),
+            "X-Correlation-ID": context.correlationId.trim(),
+            "X-Acting-Actor-ID": context.operatorActorId.trim(),
           },
           body: JSON.stringify(body),
           ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
@@ -229,7 +242,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
 
   return {
     issueOperatorEnrollmentToken: issueToken,
-    provisionActorRole: async (body, options?: MutationOptions) => {
+    provisionActorRole: async (body, context) => {
+      validateAttributedMutationContext(context);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -241,8 +255,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
               Accept: "application/json",
               "Content-Type": "application/json",
               Authorization: "Bearer " + token,
-              ...(options?.correlationId?.trim() ? { "X-Correlation-ID": options.correlationId.trim() } : {}),
-              ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim() } : {}),
+              "X-Correlation-ID": context.correlationId.trim(),
+              "X-Acting-Actor-ID": context.operatorActorId.trim(),
             },
             body: JSON.stringify(body),
             ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
@@ -286,25 +300,24 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
-    setActorRoleEnabled: (actorId, role, enabled, correlationId, reason, options) => {
+    setActorRoleEnabled: (actorId, role, enabled, reason, context) => {
       const op = enabled ? identityOperationPaths.enableActorRole : identityOperationPaths.disableActorRole;
       return requestNoContent(
         expandPath(op.path, { actorId, role }),
-        correlationId,
         reason,
-        options,
+        context,
       );
     },
-    setActorSecurityEnabled: (actorId, enabled, correlationId, reason, options) => {
+    setActorSecurityEnabled: (actorId, enabled, reason, context) => {
       const op = enabled ? identityOperationPaths.enableActorSecurity : identityOperationPaths.disableActorSecurity;
       return requestNoContent(
         expandPath(op.path, { actorId }),
-        correlationId,
         reason,
-        options,
+        context,
       );
     },
-    resetOperatorPassword: async (actorId, password, options) => {
+    resetOperatorPassword: async (actorId, password, context) => {
+      validateVersionedMutationContext(context);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -317,9 +330,9 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
               Accept: "application/json",
               "Content-Type": "application/json",
               Authorization: "Bearer " + token,
-              ...(options?.correlationId?.trim() ? { "X-Correlation-ID": options.correlationId.trim() } : {}),
-              ...(options?.expectedVersion !== undefined ? { "X-Expected-Version": String(options.expectedVersion) } : {}),
-              ...(options?.operatorActorId?.trim() ? { "X-Acting-Actor-ID": options.operatorActorId.trim() } : {}),
+              "X-Correlation-ID": context.correlationId.trim(),
+              "X-Expected-Version": String(context.expectedVersion),
+              "X-Acting-Actor-ID": context.operatorActorId.trim(),
             },
             body: JSON.stringify({ password }),
             ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
