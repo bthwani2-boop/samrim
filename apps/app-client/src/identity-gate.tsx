@@ -195,8 +195,15 @@ export default function IdentityGate() {
       <View style={styles.container}>
         <Text style={styles.title}>بثواني</Text>
         <Text style={styles.status}>تم تسجيل الدخول</Text>
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Pressable disabled={busy} onPress={logout} style={styles.primaryButton}>
+        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="تسجيل الخروج"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={logout}
+          style={styles.primaryButton}
+        >
           <Text style={styles.primaryButtonText}>{busy ? "جارٍ التنفيذ…" : "تسجيل الخروج"}</Text>
         </Pressable>
       </View>
@@ -208,7 +215,14 @@ export default function IdentityGate() {
       <View style={styles.container}>
         <Text style={styles.title}>بثواني</Text>
         <Text style={styles.status}>خدمة الهوية غير متاحة</Text>
-        <Pressable disabled={busy} onPress={restore} style={styles.secondaryButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="إعادة التحقق"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={restore}
+          style={styles.secondaryButton}
+        >
           <Text style={styles.secondaryButtonText}>إعادة التحقق</Text>
         </Pressable>
       </View>
@@ -221,7 +235,14 @@ export default function IdentityGate() {
         <Text style={styles.title}>بثواني</Text>
         <Text style={styles.status}>تحديث جلسة العميل</Text>
         <Text style={styles.muted}>تم تجديد بيانات الجلسة من عملية متزامنة. أعد مزامنة الجلسة للمتابعة دون إعادة تسجيل الدخول.</Text>
-        <Pressable disabled={busy} onPress={restore} style={styles.primaryButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="مزامنة الجلسة"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={restore}
+          style={styles.primaryButton}
+        >
           <Text style={styles.primaryButtonText}>{busy ? "جارٍ المزامنة…" : "مزامنة الجلسة"}</Text>
         </Pressable>
       </View>
@@ -274,6 +295,7 @@ export default function IdentityGate() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={proofRequested ? "إعادة إرسال رمز التحقق" : "إرسال رمز التحقق"}
+                  accessibilityState={{ busy, disabled: busy || !phone.trim() }}
                   disabled={busy || !phone.trim()}
                   onPress={requestProof}
                   style={[
@@ -372,6 +394,7 @@ export default function IdentityGate() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={modeDetails[mode].title}
+                accessibilityState={{ busy, disabled: busy || !canSubmit }}
                 disabled={busy || !canSubmit}
                 onPress={submit}
                 style={[styles.primaryButton, (busy || !canSubmit) && styles.primaryButtonDisabled]}
@@ -383,11 +406,13 @@ export default function IdentityGate() {
             ) : null}
 
             {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
-            {error ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}
+            {error ? <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
             {mode === "login" && loginFailed ? (
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel="نسيت كلمة المرور؟"
+                accessibilityState={{ busy, disabled: busy }}
                 onPress={() => selectMode("recover")}
                 style={styles.recoveryButton}
               >
@@ -398,12 +423,12 @@ export default function IdentityGate() {
 
           <View style={styles.modeLinks}>
             {mode !== "login" ? (
-              <Pressable accessibilityRole="link" onPress={() => selectMode("login")}>
+              <Pressable accessibilityRole="link" accessibilityLabel="دخول" onPress={() => selectMode("login")}>
                 <Text style={styles.modeLinkText}>دخول</Text>
               </Pressable>
             ) : null}
             {mode !== "register" ? (
-              <Pressable accessibilityRole="link" onPress={() => selectMode("register")}>
+              <Pressable accessibilityRole="link" accessibilityLabel="حساب جديد" onPress={() => selectMode("register")}>
                 <Text style={styles.modeLinkText}>حساب جديد</Text>
               </Pressable>
             ) : null}

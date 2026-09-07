@@ -41,6 +41,11 @@ for (const required of ["export type IdentityErrorContext", "export function ide
 if (!presentationFlow) {
   failures.push("missing reusable Identity ManagedIdentityFlow public presentation client");
 } else {
+  const presentationPressables = presentationFlow.match(/<Pressable\b/g)?.length ?? 0;
+  const presentationPressableRoles = presentationFlow.match(/accessibilityRole="(?:button|link)"/g)?.length ?? 0;
+  if (presentationPressables !== presentationPressableRoles) {
+    failures.push("ManagedIdentityFlow contains a Pressable without an explicit accessibility role");
+  }
   for (const required of [
     "chooseIntent",
     "requestManagedActivation",
@@ -100,6 +105,11 @@ if (!presentationFlow) {
   }
 }
 const clientIdentityPage = read("apps/app-client/src/identity-gate.tsx");
+const clientPressables = clientIdentityPage.match(/<Pressable\b/g)?.length ?? 0;
+const clientPressableRoles = clientIdentityPage.match(/accessibilityRole="(?:button|link)"/g)?.length ?? 0;
+if (clientPressables !== clientPressableRoles) {
+  failures.push("app-client identity gate contains a Pressable without an explicit accessibility role");
+}
 if (clientIdentityPage.includes("function messageOf") || clientIdentityPage.includes("error.message") || !clientIdentityPage.includes("identityErrorMessage")) {
   failures.push("app-client exposes raw or unclassified Identity errors");
 }

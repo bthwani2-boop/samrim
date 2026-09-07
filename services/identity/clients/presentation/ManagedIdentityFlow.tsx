@@ -224,6 +224,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
         <Text style={styles.description}>تم تفعيل جلسة هذا الجهاز بنجاح.</Text>
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="إنهاء جلسة هذا الجهاز"
+          accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={logoutDevice}
           style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.pressed, busy && styles.disabledButton]}
@@ -239,7 +242,14 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
       <View style={styles.card}>
         <Text style={styles.title}>تعذر الوصول إلى الهوية</Text>
         <Text style={styles.description}>تحقق من تشغيل خدمة الهوية ثم أعد المحاولة.</Text>
-        <Pressable disabled={busy} onPress={restoreSession} style={styles.primaryButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="إعادة التحقق"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={restoreSession}
+          style={styles.primaryButton}
+        >
           <Text style={styles.primaryButtonText}>إعادة التحقق</Text>
         </Pressable>
       </View>
@@ -251,7 +261,14 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
       <View style={styles.card}>
         <Text style={styles.title}>تحديث جلسة الجهاز</Text>
         <Text style={styles.description}>تم تجديد بيانات الجلسة من عملية متزامنة. أعد مزامنة الجلسة للمتابعة دون إعادة تسجيل الدخول.</Text>
-        <Pressable disabled={busy} onPress={restoreSession} style={styles.primaryButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="مزامنة الجلسة"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={restoreSession}
+          style={styles.primaryButton}
+        >
           <Text style={styles.primaryButtonText}>مزامنة الجلسة</Text>
         </Pressable>
       </View>
@@ -284,6 +301,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
           value={phone}
         />
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="تسجيل الدخول"
+          accessibilityState={{ busy, disabled: busy || !phoneReady }}
           disabled={busy || !phoneReady}
           onPress={() => chooseIntent("password")}
           style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.pressed, (busy || !phoneReady) && styles.disabledButton]}
@@ -291,13 +311,23 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
           <Text style={styles.primaryButtonText}>تسجيل الدخول</Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="التفعيل لأول مرة"
+          accessibilityState={{ busy, disabled: busy || !phoneReady }}
           disabled={busy || !phoneReady}
           onPress={() => chooseIntent("activation")}
           style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.pressed, (busy || !phoneReady) && styles.disabledButton]}
         >
           <Text style={styles.secondaryButtonText}>التفعيل لأول مرة</Text>
         </Pressable>
-        <Pressable disabled={busy || !phoneReady} onPress={() => chooseIntent("recovery")} style={styles.linkButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="استرداد كلمة المرور"
+          accessibilityState={{ busy, disabled: busy || !phoneReady }}
+          disabled={busy || !phoneReady}
+          onPress={() => chooseIntent("recovery")}
+          style={styles.linkButton}
+        >
           <Text style={styles.linkText}>استرداد كلمة المرور</Text>
         </Pressable>
       </>
@@ -323,6 +353,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
           value={password}
         />
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="تسجيل الدخول"
+          accessibilityState={{ busy, disabled: busy || !validatePasswordInputShape(password).valid }}
           disabled={busy || !validatePasswordInputShape(password).valid}
           onPress={loginDevice}
           style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.pressed, (busy || !validatePasswordInputShape(password).valid) && styles.disabledButton]}
@@ -330,6 +363,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
           <Text style={styles.primaryButtonText}>{busy ? "جارٍ تسجيل الدخول…" : "تسجيل الدخول"}</Text>
         </Pressable>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="نسيت كلمة المرور؟ استرداد عبر الهاتف"
+          accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={() => {
             setStep("recovery");
@@ -340,7 +376,14 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
         >
           <Text style={styles.linkText}>نسيت كلمة المرور؟ استرداد عبر الهاتف</Text>
         </Pressable>
-        <Pressable disabled={busy} onPress={resetToPhone} style={styles.linkButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="تغيير رقم الهاتف"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={resetToPhone}
+          style={styles.linkButton}
+        >
           <Text style={styles.mutedLink}>تغيير رقم الهاتف</Text>
         </Pressable>
       </>
@@ -350,7 +393,14 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
         <Text style={styles.title}>تغيير كلمة المرور</Text>
         <Text style={styles.description}>سيتم تغيير كلمة مرور دور {roleLabel} فقط وإلغاء جلساته القديمة.</Text>
         <Text style={styles.summaryPhone}>{phone}</Text>
-        <Pressable disabled={busy || !phoneReady} onPress={requestRecoveryVerification} style={styles.secondaryButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={challengeRequested ? "إعادة إرسال الرمز" : "إرسال رمز التحقق"}
+          accessibilityState={{ busy, disabled: busy || !phoneReady }}
+          disabled={busy || !phoneReady}
+          onPress={requestRecoveryVerification}
+          style={styles.secondaryButton}
+        >
           <Text style={styles.secondaryButtonText}>{busy ? "جارٍ إرسال الرمز…" : challengeRequested ? "إعادة إرسال الرمز" : "إرسال رمز التحقق"}</Text>
         </Pressable>
         {challengeRequested ? (
@@ -392,6 +442,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
               value={passwordConfirmation}
             />
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="تغيير كلمة المرور"
+              accessibilityState={{ busy, disabled: busy || !verificationReady || !passwordReady }}
               disabled={busy || !verificationReady || !passwordReady}
               onPress={recoverPassword}
               style={styles.primaryButton}
@@ -400,7 +453,14 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
             </Pressable>
           </>
         ) : null}
-        <Pressable disabled={busy} onPress={() => setStep("password")} style={styles.linkButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="العودة إلى كلمة المرور"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={() => setStep("password")}
+          style={styles.linkButton}
+        >
           <Text style={styles.mutedLink}>العودة إلى كلمة المرور</Text>
         </Pressable>
       </>
@@ -410,7 +470,14 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
         <Text style={styles.title}>تفعيل جهاز {roleLabel}</Text>
         <Text style={styles.description}>أثبت رقم الهاتف المرتبط بالدور ثم أنشئ كلمة المرور.</Text>
         <Text style={styles.summaryPhone}>{phone}</Text>
-        <Pressable disabled={busy || !phoneReady} onPress={requestActivationVerification} style={styles.secondaryButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={challengeRequested ? "إعادة إرسال رمز الهاتف" : "إرسال رمز تحقق الهاتف"}
+          accessibilityState={{ busy, disabled: busy || !phoneReady }}
+          disabled={busy || !phoneReady}
+          onPress={requestActivationVerification}
+          style={styles.secondaryButton}
+        >
           <Text style={styles.secondaryButtonText}>{busy ? "جارٍ إرسال رمز الهاتف…" : challengeRequested ? "إعادة إرسال رمز الهاتف" : "إرسال رمز تحقق الهاتف"}</Text>
         </Pressable>
         {challengeRequested ? (
@@ -452,6 +519,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
               value={passwordConfirmation}
             />
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="حفظ كلمة المرور والدخول"
+              accessibilityState={{ busy, disabled: busy || !verificationReady || !passwordReady }}
               disabled={busy || !verificationReady || !passwordReady}
               onPress={activateDevice}
               style={styles.primaryButton}
@@ -460,7 +530,14 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
             </Pressable>
           </>
         ) : null}
-        <Pressable disabled={busy} onPress={resetToPhone} style={styles.linkButton}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="تغيير رقم الهاتف"
+          accessibilityState={{ busy, disabled: busy }}
+          disabled={busy}
+          onPress={resetToPhone}
+          style={styles.linkButton}
+        >
           <Text style={styles.mutedLink}>تغيير رقم الهاتف</Text>
         </Pressable>
       </>
