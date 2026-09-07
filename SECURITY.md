@@ -16,4 +16,4 @@ Use GitHub Private Vulnerability Reporting for this repository. The repository o
 
 ## Secrets
 
-Repository history must not contain secret values. Mobile signing material, Firebase service configuration, provider credentials, tokens, private keys and machine-local environment values are maintained outside Git.
+Repository history must not contain secret values. Mobile signing material, Firebase service configuration, provider credentials, tokens, private keys and machine-local environment values are maintained outside Git. The repository gate proves tracked secret-bearing filenames and a defined set of high-confidence secret markers are absent from the fetched history; it is not an exhaustive secret detector and provider secret scanning remains supplementary evidence.
