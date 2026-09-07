@@ -38,6 +38,10 @@ services:
     environment:
       BTHWANI_ENV: "development"
       IDENTITY_MIGRATION_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
+      BTHWANI_EXPECTED_DATABASE_PORT: "5432"
+      BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
+      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
       IDENTITY_MIGRATION_DIR: "/app/migrations"
     entrypoint: ["/migrate"]
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/opsafety"
 	_ "github.com/lib/pq"
 	"golang.org/x/term"
 )
@@ -22,9 +23,20 @@ func main() {
 	)
 	flag.Parse()
 
+	environment, err := opsafety.RequireOrdinaryCLIEnvironment(os.Getenv("BTHWANI_ENV"), "platform-owner emergency recovery")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if environment == "" {
+		log.Fatal("platform-owner emergency recovery environment was not resolved")
+	}
+
 	dbURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if dbURL == "" {
 		log.Fatal("database URL is required via IDENTITY_DATABASE_URL environment variable")
+	}
+	if _, err := opsafety.RequireExpectedDatabaseTarget(dbURL, os.Getenv); err != nil {
+		log.Fatal(err)
 	}
 
 	pwd := strings.TrimSpace(os.Getenv("IDENTITY_RECOVERY_PASSWORD"))

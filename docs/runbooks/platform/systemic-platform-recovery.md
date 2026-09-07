@@ -30,7 +30,7 @@ Routes cross-cutting incidents involving database/migrations, contract/version s
 2. **Current environment recovery procedures**:
    - **Local/integration environments**: Execute `powershell -ExecutionPolicy Bypass -File tools/dev/close-integration-runtime.ps1` to terminate running containers and volumes, followed by `tools/dev/open-integration-runtime.ps1` to cleanly re-provision and auto-migrate.
    - **Schema conformance**: Execute `go run ./cmd/schema-verify` in `services/identity/backend` to verify that all committed migrations, columns, constraints, and index checksums match the canonical schema.
-   - **Platform owner lockout recovery**: Execute `go run ./cmd/platform-owner-recover` against `IDENTITY_DATABASE_URL` to atomically reset the platform owner credentials, revoke active sessions and challenges, and log an append-only security audit event subject to configured retention policy.
+   - **Platform owner lockout recovery**: The repository CLI is intentionally limited to `development`/`test`. Before it can connect, set `BTHWANI_ENV`, `IDENTITY_DATABASE_URL`, and the independently expected target identity `BTHWANI_EXPECTED_DATABASE_HOST`, `BTHWANI_EXPECTED_DATABASE_PORT`, `BTHWANI_EXPECTED_DATABASE_NAME`, and `BTHWANI_EXPECTED_DATABASE_USER`; then execute `go run ./cmd/platform-owner-recover`. It atomically resets the platform owner credentials, revokes active sessions and challenges, and records the security audit effect. Staging/Production recovery through this ordinary CLI is blocked until a controlled break-glass authority is materialized.
 
 ## Database and migration failure
 
