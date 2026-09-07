@@ -7,6 +7,8 @@ const {
   resolveSentryEnvironment,
 } = require("./mobile-provider-env.cjs");
 
+const repositoryRoot = path.resolve(__dirname, "../..");
+
 const PERMISSION_TEXT = {
   photos: "نحتاج الوصول إلى معرض الصور لاختيار الصور ومشاركتها.",
   camera: "نحتاج الوصول إلى الكاميرا لالتقاط الصور أو الفيديو عند الحاجة.",
@@ -62,6 +64,26 @@ function appAsset(appKey, fileName) {
   const absolute = path.join(appRoot(appKey), "assets", fileName);
   return fs.existsSync(absolute) ? `./assets/${fileName}` : undefined;
 }
+
+function readDesignSystemSurfaceColors() {
+  const cssPath = path.join(repositoryRoot, "packages", "design-system", "theme.css");
+  const source = fs.readFileSync(cssPath, "utf8");
+  const lightBlock = source.match(/^:root\s*\{([\s\S]*?)^\}/m)?.[1];
+  const darkBlock = source.match(/@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([\s\S]*?)^\s*\}\s*\}/m)?.[1];
+
+  function readSurface(block, mode) {
+    const value = block?.match(/^\s*--surface-warm:\s*([^;]+);$/m)?.[1]?.trim();
+    if (!value) throw new Error(`Missing --surface-warm in ${mode} design-system theme projection`);
+    return value;
+  }
+
+  return {
+    light: readSurface(lightBlock, "light"),
+    dark: readSurface(darkBlock, "dark"),
+  };
+}
+
+const designSystemSurfaceColors = readDesignSystemSurfaceColors();
 
 function mediaCapabilities(capabilities) {
   const hasImagePicker = capabilities.includes("imagePicker");
@@ -188,8 +210,8 @@ function buildPlugins(appKey, capabilities, sentry) {
               image: splashIcon,
               imageWidth: 220,
               resizeMode: "contain",
-              backgroundColor: "#FFFFFF",
-              dark: { image: splashIcon, backgroundColor: "#10131D" },
+              backgroundColor: designSystemSurfaceColors.light,
+              dark: { image: splashIcon, backgroundColor: designSystemSurfaceColors.dark },
             },
           ]
         : "expo-splash-screen",
