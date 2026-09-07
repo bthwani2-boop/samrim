@@ -369,6 +369,16 @@ for (const forbidden of ["func (s *Service) Login(", "PasswordHash", "username",
 const migration = read("services/identity/database/migrations/001_identity_authentication.sql");
 const deliveryMigration = read("services/identity/database/migrations/002_identity_challenge_delivery.sql");
 const activationCodeMigration = read("services/identity/database/migrations/003_managed_activation_codes.sql");
+const databaseReadme = read("services/identity/database/README.md");
+for (const required of [
+  "identity_operator_enrollment_tokens",
+  "current challenge contract is six decimal digits",
+  "007_four_digit_challenges.sql",
+  "any future schema transition is forward-only",
+]) {
+  if (!databaseReadme.includes(required)) failures.push("Identity database README missing current schema provenance " + required);
+}
+if (databaseReadme.includes("identity_managed_activation_codes")) failures.push("Identity database README retains retired enrollment-token table name");
 for (const required of [
   "CREATE TABLE identity_challenge_deliveries",
   "status IN ('suppressed','pending','sending','sent','unknown','expired')",

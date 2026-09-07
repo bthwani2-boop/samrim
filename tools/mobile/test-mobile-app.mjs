@@ -37,13 +37,15 @@ assert.deepEqual(config.nativeCapabilities, [
   "secureStore",
 ], `${app}: nativeCapabilities drifted`);
 
-// 2. Supply-Chain & Dependency Hygiene Verification (Zero Unused Packages)
+// 2. Targeted dependency regression verification.
+// This is intentionally not a complete unused-package census; dependency
+// liveness remains a repository-wide review concern.
 const pkgPath = path.join(appDir, "package.json");
 assert.ok(fs.existsSync(pkgPath), `${app}: missing package.json`);
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 
-const forbiddenUnused = [
+const forbiddenDependencyRegressions = [
   "@react-native-community/netinfo",
   "@sentry/react-native",
   "expo-document-picker",
@@ -58,7 +60,7 @@ const forbiddenUnused = [
   "react-native-maps",
 ];
 
-for (const forbidden of forbiddenUnused) {
+for (const forbidden of forbiddenDependencyRegressions) {
   assert.ok(!allDeps[forbidden], `${app}: contains unused dependency: ${forbidden}`);
 }
 
@@ -93,7 +95,6 @@ class MockStorage {
 }
 
 const sampleIdentity = {
-  actorId: "act_test_001",
   subject: "usr_test_001",
   role,
   surface,
@@ -135,7 +136,7 @@ const samplePair = {
   const mgr = new IdentitySessionManager(client, storage, async () => "device-fp-12345", role, surface, `test.${app}`);
   const res = await mgr.restore();
   assert.equal(res.kind, "authenticated");
-  assert.equal(res.identity.actorId, "act_test_001");
+  assert.equal(res.identity.subject, "usr_test_001");
 }
 
 // Test 4: Role/surface mismatch -> clears storage and signs out

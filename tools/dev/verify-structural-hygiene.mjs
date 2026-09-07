@@ -151,8 +151,8 @@ for (const file of tracked) {
       classify(file, "packages-orientation");
       continue;
     }
-    if (segments[1] === "design-system") {
-      classify(file, "technical-package:design-system");
+    if (segments[1] === "design-system" || segments[1] === "identity-flow") {
+      classify(file, "technical-package:" + segments[1]);
     }
     continue;
   }
@@ -307,8 +307,8 @@ for (const category of classifications.values()) {
 console.log("TRACKED_ARTIFACTS=" + tracked.length);
 console.log("UNCLASSIFIED_TRACKED_ARTIFACTS=0");
 console.log("UNDISPOSITIONED_TRACKED_ARTIFACTS=0");
-console.log("KNOWN_DEAD_TRACKED_FILES=0");
-console.log("KNOWN_DEAD_TRACKED_DIRECTORIES=0");
+console.log("DEAD_TRACKED_FILES_AUDIT=NOT_PERFORMED");
+console.log("DEAD_TRACKED_DIRECTORIES_AUDIT=NOT_PERFORMED");
 console.log("TRACKED_SYMLINKS_OR_SUBMODULES=0");
 console.log("FORBIDDEN_HISTORICAL_TEMP_PATHS=0");
 console.log("README_ONLY_CONTAINERS=0");

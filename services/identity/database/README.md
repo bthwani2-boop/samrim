@@ -14,13 +14,16 @@ identity_sessions
 identity_refresh_token_history
 identity_password_attempts
 identity_security_audit
+identity_operator_enrollment_tokens
 ```
 
 `identity_actors` owns the permanent `actor_id`, current verified phone identifier and minimal Identity-wide `security_enabled` state. Passwords are not actor columns: client/operator/platform-owner password credentials are role-scoped in `identity_password_credentials`. Managed-role and operator one-time enrollment are represented by `identity_actor_roles.activated_at`.
 
 `identity_challenges` is purpose-bound. Current purposes distinguish client registration, client recovery, managed activation and operator MFA. A challenge cannot silently become a business-role grant, recurring login credential or recovery authority for another role.
 
-`identity_managed_activation_codes` stores the one-time control-surface code for a pre-provisioned partner/captain/field/operator role. Only its digest is persisted; the plaintext is returned once to the authorized issuing surface. It is separate from `identity_challenges`, which carries the phone verification proof.
+`identity_operator_enrollment_tokens` stores the one-time control-surface token for a pre-provisioned operator role. Only its digest is persisted; the plaintext is returned once to the authorized issuing surface. It is separate from `identity_challenges`, which carries the phone verification proof.
+
+The current challenge contract is six decimal digits, enforced by the Identity security boundary and generated contract. `007_four_digit_challenges.sql` is an immutable historical migration name: it revoked pending proofs from the previous contract and removed a global digest uniqueness rule. It does not define the current code width and must not be edited; any future schema transition is forward-only.
 
 Superseded schemas were never integrated as production truth. Migration 001
 intentionally fails if losing actor-global credential/context columns are
