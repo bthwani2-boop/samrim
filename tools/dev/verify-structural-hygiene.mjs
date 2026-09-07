@@ -193,13 +193,6 @@ for (const file of tracked) {
       classify(file, "mobile-tooling");
       continue;
     }
-    if (
-      segments[1] === "prompting" &&
-      segments[2] === "bthwani-orchestrator"
-    ) {
-      classify(file, "orchestration-authority");
-      continue;
-    }
   }
 }
 

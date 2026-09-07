@@ -3,6 +3,6 @@
 * @bthwani2-boop
 
 /.github/ @bthwani2-boop
-/governance/ @bthwani2-boop
-/docs/ @bthwani2-boop
-/tools/prompting/ @bthwani2-boop
+/AGENTS.md @bthwani2-boop
+/governance.lock.json @bthwani2-boop
+/tools/ @bthwani2-boop
