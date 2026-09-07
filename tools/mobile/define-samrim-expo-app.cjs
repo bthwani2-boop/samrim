@@ -272,6 +272,15 @@ function buildPlugins(appKey, capabilities, sentry) {
     ]);
   }
   if (capabilities.includes("secureStore")) plugins.push("expo-secure-store");
+  if (capabilities.includes("localization") && hasRuntimeDependency(appKey, "expo-localization")) {
+    plugins.push([
+      "expo-localization",
+      {
+        supportedLocales: { ios: ["ar", "en"], android: ["ar", "en"] },
+        supportsRTL: true,
+      },
+    ]);
+  }
 
   return plugins;
 }

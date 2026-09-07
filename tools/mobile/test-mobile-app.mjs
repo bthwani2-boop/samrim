@@ -35,6 +35,7 @@ assert.deepEqual(config.nativeCapabilities, [
   "crypto",
   "splashScreen",
   "secureStore",
+  ...(app === "app-client" ? ["localization"] : []),
 ], `${app}: nativeCapabilities drifted`);
 
 // 2. Targeted dependency regression verification.
@@ -77,6 +78,18 @@ import { register } from "node:module";
 import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.join(root, "tools/dev/ts-resolver.mjs")).href, import.meta.url);
 const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "services/identity/clients/session.ts")).href);
+
+if (app === "app-client") {
+  const { resolveIdentityDirection, resolveIdentityLocale } = await import(
+    pathToFileURL(path.join(root, "apps/app-client/src/identity-locale.ts")).href,
+  );
+  assert.equal(resolveIdentityLocale("ar-YE"), "ar");
+  assert.equal(resolveIdentityLocale("en-US"), "en");
+  assert.equal(resolveIdentityLocale("fr-FR"), "ar");
+  assert.equal(resolveIdentityDirection("ar-YE"), "rtl");
+  assert.equal(resolveIdentityDirection("en-US"), "ltr");
+  console.log("MOBILE_LOCALIZATION=PASS app=app-client locales=ar,en directions=rtl,ltr");
+}
 
 // 3. Behavioral Unit Tests for Mobile Session State Machine
 class MockStorage {
