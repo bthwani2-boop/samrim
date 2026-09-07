@@ -34,6 +34,10 @@ try {
 }
 
 const presentationFlow = read("services/identity/clients/presentation/ManagedIdentityFlow.tsx");
+const identityErrors = read("services/identity/clients/errors.ts");
+for (const required of ["export type IdentityErrorContext", "export function identityErrorMessage", "value.code", "RATE_LIMITED", "UNAUTHENTICATED"]) {
+  if (!identityErrors.includes(required)) failures.push("Identity typed UI error classifier missing " + required);
+}
 if (!presentationFlow) {
   failures.push("missing reusable Identity ManagedIdentityFlow public presentation client");
 } else {
@@ -59,6 +63,9 @@ if (!presentationFlow) {
   }
   if (presentationFlow.includes("auth-mode-switch") || presentationFlow.includes("<select")) {
     failures.push("ManagedIdentityFlow must resolve next step from phone without tabs or role selectors");
+  }
+  if (presentationFlow.includes("function messageOf") || presentationFlow.includes("raw.includes") || presentationFlow.includes("error.message")) {
+    failures.push("ManagedIdentityFlow retains raw/string-matched identity error semantics");
   }
 
   const presentationImports = presentationFlow
@@ -91,6 +98,10 @@ if (!presentationFlow) {
       failures.push("ManagedIdentityFlow owns host/runtime responsibility instead of injected presentation binding: " + forbidden);
     }
   }
+}
+const clientIdentityPage = read("apps/app-client/src/identity-gate.tsx");
+if (clientIdentityPage.includes("function messageOf") || clientIdentityPage.includes("error.message") || !clientIdentityPage.includes("identityErrorMessage")) {
+  failures.push("app-client exposes raw or unclassified Identity errors");
 }
 for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
   const pkgPath = "apps/" + app + "/package.json";

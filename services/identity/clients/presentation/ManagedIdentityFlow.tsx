@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { resolveTheme, radius, spacing, type ThemeColors } from "@bthwani/design-system";
+import { identityErrorMessage } from "../errors";
 import { validatePasswordInputShape } from "../password";
 import type { IdentitySessionState } from "../index";
 
@@ -24,21 +25,6 @@ export interface ManagedIdentityFlowProps {
   surface: string;
   roleLabel: string;
   binding: ManagedIdentityBinding;
-}
-
-function messageOf(value: unknown, context: "general" | "login" | "recovery" = "general"): string {
-  const message = value && typeof value === "object" && "message" in value ? (value as { message?: unknown }).message : undefined;
-  const raw = typeof message === "string" ? message.toLowerCase() : "";
-  if (raw.includes("network") || raw.includes("fetch failed")) return "تعذر الاتصال بخدمة الهوية. تحقق من الاتصال ثم أعد المحاولة.";
-  if (raw.includes("blocked") || raw.includes("forbidden")) return "هذا الحساب موقوف حاليًا. راجع الإدارة.";
-  if (raw.includes("invalid") || raw.includes("unauthorized") || raw.includes("authentication")) {
-    return context === "login"
-      ? "رقم الهاتف أو كلمة المرور غير صحيحة."
-      : context === "recovery"
-      ? "رمز التحقق أو البيانات الجديدة غير صحيحة."
-      : "الرمز المدخل غير صحيح. راجعه وحاول مرة أخرى.";
-  }
-  return "تعذر إكمال العملية. تحقق من البيانات ثم حاول مرة أخرى.";
 }
 
 function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
@@ -83,7 +69,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
     try {
       setState(await binding.restoreIdentitySession());
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(identityErrorMessage(cause));
       setState({ kind: "signed_out" });
     } finally {
       setBusy(false);
@@ -123,7 +109,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
       setChallengeRequested(true);
       setNotice("إذا كانت البيانات صالحة، سيصلك رمز تحقق الهاتف عبر القناة المهيأة.");
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(identityErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -138,7 +124,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
       setChallengeRequested(true);
       setNotice("إذا كانت البيانات صالحة، سيصلك رمز استرداد كلمة المرور عبر القناة المهيأة.");
     } catch (cause) {
-      setError(messageOf(cause, "recovery"));
+      setError(identityErrorMessage(cause, "recovery"));
     } finally {
       setBusy(false);
     }
@@ -151,7 +137,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
       setState(await binding.loginManagedIdentity(phone, password));
       setPassword("");
     } catch (cause) {
-      setError(messageOf(cause, "login"));
+      setError(identityErrorMessage(cause, "login"));
     } finally {
       setBusy(false);
     }
@@ -163,7 +149,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
     try {
       setState(await binding.activateManagedIdentity(phone, verificationCode, password));
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(identityErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -182,7 +168,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
       setChallengeRequested(false);
       setNotice("تم تغيير كلمة المرور. سجّل الدخول الآن باستخدام الكلمة الجديدة.");
     } catch (cause) {
-      setError(messageOf(cause, "recovery"));
+      setError(identityErrorMessage(cause, "recovery"));
     } finally {
       setBusy(false);
     }
@@ -194,7 +180,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
     try {
       await binding.logoutIdentity();
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(identityErrorMessage(cause));
     } finally {
       resetToPhone();
       setState(binding.currentIdentityState());

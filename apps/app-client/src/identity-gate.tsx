@@ -13,7 +13,7 @@ import {
 } from "react-native";
 
 import { resolveTheme } from "@bthwani/design-system";
-import { isIdentityClientError, validatePasswordInputShape, type IdentitySessionState } from "@bthwani/identity";
+import { identityErrorMessage, isIdentityClientError, validatePasswordInputShape, type IdentitySessionState } from "@bthwani/identity";
 import {
   currentIdentityState,
   loginClient,
@@ -55,14 +55,6 @@ const modeDetails: Record<AuthMode, { title: string }> = {
   recover: { title: "استعادة كلمة المرور" },
 };
 
-function messageOf(value: unknown): string {
-  if (value && typeof value === "object" && "message" in value) {
-    const message = (value as { message?: unknown }).message;
-    if (typeof message === "string" && message.trim()) return message;
-  }
-  return "تعذر إكمال عملية الهوية.";
-}
-
 function isCredentialFailure(value: unknown): boolean {
   return isIdentityClientError(value) && value.kind === "http" && value.status === 401;
 }
@@ -92,7 +84,7 @@ export default function IdentityGate() {
     try {
       setState(await restoreIdentitySession());
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(identityErrorMessage(cause));
       setState({ kind: "signed_out" });
     } finally {
       setBusy(false);
@@ -146,7 +138,7 @@ export default function IdentityGate() {
       setProofRequested(true);
       setNotice("إذا كانت البيانات صالحة، سيصلك رمز التحقق عبر القناة المهيأة.");
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(identityErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -170,7 +162,7 @@ export default function IdentityGate() {
       setProofRequested(false);
     } catch (cause) {
       setLoginFailed(mode === "login" && isCredentialFailure(cause));
-      setError(messageOf(cause));
+      setError(identityErrorMessage(cause, mode === "login" ? "login" : mode === "recover" ? "recovery" : "general"));
     } finally {
       setBusy(false);
     }
@@ -182,7 +174,7 @@ export default function IdentityGate() {
     try {
       await logoutIdentity();
     } catch (cause) {
-      setError(messageOf(cause));
+      setError(identityErrorMessage(cause));
     } finally {
       setState(currentIdentityState());
       setBusy(false);
