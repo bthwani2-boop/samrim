@@ -305,6 +305,14 @@ jobs:
         with:
           node-version: 24.17.0
 
+      - name: Set up pnpm for browser runtime proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@10.34.0 --activate
+          pnpm --version
+
       - name: Set up Go for runtime migration verification
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
