@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 export const repoRoot = path.resolve(import.meta.dirname, "../..");
 export const pinPath = path.join(repoRoot, "governance.lock.json");
@@ -104,7 +105,7 @@ export function ensureKnowledgeRoot({ materialize = true } = {}) {
   return root;
 }
 
-if (import.meta.url === new URL(process.argv[1], "file:").href) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const root = ensureKnowledgeRoot({ materialize: true });
   const pin = readKnowledgePin();
   console.log("KNOWLEDGE_REPOSITORY=" + pin.repository);
