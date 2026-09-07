@@ -15,7 +15,9 @@ function Fail([string] $Message) {
     throw "SAFE_PUSH_INTERLOCK=FAIL $Message"
 }
 
-function Invoke-Git([string[]] $Arguments) {
+function Invoke-Git {
+    param([string[]] $Arguments)
+
     $output = @(& git -C $repo @Arguments 2>&1)
     if ($LASTEXITCODE -ne 0) {
         Fail ("git " + ($Arguments -join " ") + " failed: " + ($output -join [Environment]::NewLine))
@@ -34,30 +36,33 @@ function Test-ExpectedOrigin([string] $RemoteUrl) {
 
 Push-Location $repo
 try {
-    $branch = ((Invoke-Git @("branch", "--show-current")) -join "").Trim()
-    if ([string]::IsNullOrWhiteSpace($branch)) {
+    $branchName = ((Invoke-Git -Arguments @("branch", "--show-current")) -join "").Trim()
+    if ([string]::IsNullOrWhiteSpace($branchName)) {
         Fail "detached HEAD is not push-authorized"
     }
-    if ($branch -in @("main", "master")) {
+    if ($branchName -in @("main", "master")) {
         Fail "protected integration/release branches require their governed PR/promotion path"
     }
-    if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $branch -ne $ExpectedBranch) {
-        Fail "branch mismatch: observed=$branch expected=$ExpectedBranch"
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $branchName -ne $ExpectedBranch) {
+        Fail "branch mismatch: observed=$branchName expected=$ExpectedBranch"
     }
 
-    $origin = ((Invoke-Git @("remote", "get-url", "origin")) -join "").Trim()
+    $origin = ((Invoke-Git -Arguments @("remote", "get-url", "origin")) -join "").Trim()
     if (-not (Test-ExpectedOrigin $origin)) {
         Fail "origin mismatch: observed=$origin expected_repository=$expectedRepository"
     }
 
-    $status = @(Invoke-Git @("status", "--porcelain=v1", "--untracked-files=all"))
+    $status = @(Invoke-Git -Arguments @("status", "--porcelain=v1", "--untracked-files=all"))
     if ($status.Count -gt 0) {
         Fail ("working tree must be clean before push: " + ($status -join "; "))
     }
 
-    $null = Invoke-Git @("fetch", "--no-tags", "origin", "refs/heads/d:refs/remotes/origin/d")
-    $localSha = ((Invoke-Git @("rev-parse", "HEAD")) -join "").Trim()
-    $remoteSha = ((Invoke-Git @("rev-parse", "refs/remotes/origin/d")) -join "").Trim()
+    $remoteRef = "refs/remotes/origin/$($branchName)"
+    $fetchRefspec = "refs/heads/$($branchName):$remoteRef"
+
+    $null = Invoke-Git -Arguments @("fetch", "--no-tags", "origin", $fetchRefspec)
+    $localSha = ((Invoke-Git -Arguments @("rev-parse", "HEAD")) -join "").Trim()
+    $remoteSha = ((Invoke-Git -Arguments @("rev-parse", $remoteRef)) -join "").Trim()
 
     & git -C $repo merge-base --is-ancestor $remoteSha $localSha
     if ($LASTEXITCODE -ne 0) {
@@ -65,22 +70,22 @@ try {
     }
 
     if ($localSha -eq $remoteSha) {
-        Write-Host "SAFE_PUSH=NOOP branch=$branch sha=$localSha"
-        exit 0
+        Write-Host "SAFE_PUSH=NOOP branch=$branchName sha=$localSha"
+        return
     }
 
-    $pushOutput = @(& git -C $repo push --porcelain origin "HEAD:refs/heads/d" 2>&1)
+    $pushOutput = @(& git -C $repo push --porcelain origin "HEAD:refs/heads/$($branchName)" 2>&1)
     if ($LASTEXITCODE -ne 0) {
         Fail ("fast-forward push failed: " + ($pushOutput -join [Environment]::NewLine))
     }
 
-    $null = Invoke-Git @("fetch", "--no-tags", "origin", "refs/heads/d:refs/remotes/origin/d")
-    $confirmedRemote = ((Invoke-Git @("rev-parse", "refs/remotes/origin/d")) -join "").Trim()
+    $null = Invoke-Git -Arguments @("fetch", "--no-tags", "origin", $fetchRefspec)
+    $confirmedRemote = ((Invoke-Git -Arguments @("rev-parse", $remoteRef)) -join "").Trim()
     if ($confirmedRemote -ne $localSha) {
         Fail "remote SHA mismatch after push: local=$localSha remote=$confirmedRemote"
     }
 
-    Write-Host "SAFE_PUSH=PASS repository=$expectedRepository branch=$branch sha=$localSha"
+    Write-Host "SAFE_PUSH=PASS repository=$expectedRepository branch=$branchName sha=$localSha"
 }
 finally {
     Pop-Location
