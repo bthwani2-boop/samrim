@@ -105,7 +105,7 @@ for (const source of sources) {
   const sourceRel = logicalRelative(source);
   const body = fs.readFileSync(source, "utf8");
 
-  for (const raw of extractKnowledgeRefs(body)) {
+  for (const raw of extractKnowledgeRefs(sourceRel === "docs/reference/donor.md" ? body.replace(/`[^`]*`/g, "") : body)) {
     const resolved = resolveKnowledgeRef(source, raw);
     if (!resolved) continue;
 
@@ -137,7 +137,7 @@ for (const source of sources) {
 const orphanScopes = [
   path.join(knowledgeRoot, "docs/development"),
   path.join(knowledgeRoot, "docs/runbooks"),
-  path.join(knowledgeRoot, "docs/reference/external-systems"),
+  path.join(knowledgeRoot, "docs/reference"),
 ];
 
 for (const file of orphanScopes.flatMap(collectMarkdown)) {
@@ -150,7 +150,7 @@ for (const file of orphanScopes.flatMap(collectMarkdown)) {
   }
 }
 
-const donorReference = "docs/reference/donor-reconstruction-patterns.md";
+const donorReference = "docs/reference/donor.md";
 const donorAbsolute = path.join(knowledgeRoot, ...donorReference.split("/"));
 if (fs.existsSync(donorAbsolute) && (docsInbound.get(donorReference) ?? 0) === 0) {
   failures.push("donor reconstruction reference is orphaned: " + donorReference);

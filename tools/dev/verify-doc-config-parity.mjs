@@ -9,8 +9,8 @@ const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 const readKnowledge = (p) => fs.readFileSync(path.join(knowledgeRoot, p), "utf8");
 
 const packageJson = JSON.parse(read("package.json"));
-const workflowGuide = readKnowledge("docs/development/workflow/developer-workflow.md");
-const runtimeGuide = readKnowledge("docs/development/runtime/runtime-and-configuration.md");
+const workflowGuide = readKnowledge("docs/development/workflow.md");
+const runtimeGuide = readKnowledge("docs/development/runtime.md");
 const compose = read("infra/local/compose/compose.yaml");
 const envExample = read("infra/local/compose/.env.example");
 
@@ -44,8 +44,8 @@ for (const mod of allGoMods) {
   if (version !== goVersion) failures.push(mod + " Go version differs from go.work");
 }
 
-for (const [label, value] of [["Node", nodeVersion], ["pnpm", pnpmVersion], ["Go", goVersion]]) {
-  if (value && !workflowGuide.includes(value)) failures.push("developer workflow does not reflect pinned " + label + " " + value);
+if (!workflowGuide.includes("Use repository-declared versions and scripts")) {
+  failures.push("developer workflow must route toolchain/version truth to executable repository declarations");
 }
 
 for (const key of new Set([...runtimeGuide.matchAll(/\bIDENTITY_[A-Z0-9_]+\b/g)].map((m) => m[0]))) {

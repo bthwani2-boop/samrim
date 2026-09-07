@@ -152,7 +152,7 @@ if (!archPolicy.includes("Empty contract/data/testing/service lanes are not subs
 }
 
 const capabilityFiles = collectMarkdown(path.join(knowledgeRoot, "governance/product/capabilities"));
-if (capabilityFiles.length !== 28) failures.push("expected 28 one-file capability owners; found " + capabilityFiles.length);
+if (capabilityFiles.length !== 29) failures.push("expected 29 one-file capability owners; found " + capabilityFiles.length);
 const capabilityIds = [];
 for (const file of capabilityFiles) {
   const relative = rel(file);
@@ -199,50 +199,51 @@ for (const file of docsFiles) {
 }
 
 const expectedDevelopment = new Set([
-  "docs/development/README.md",
-  "docs/development/workflow/developer-workflow.md",
-  "docs/development/backend/service-development.md",
-  "docs/development/frontend/frontend-and-routing.md",
-  "docs/development/frontend/design-system.md",
-  "docs/development/mobile/mobile-and-eas.md",
-  "docs/development/runtime/runtime-and-configuration.md",
-  "docs/development/observability/observability-and-sentry.md",
-  "docs/development/quality/quality-and-verification.md",
-  "docs/development/release/release-and-store-submission.md",
+  "docs/development/workflow.md",
+  "docs/development/backend.md",
+  "docs/development/frontend.md",
+  "docs/development/design-system.md",
+  "docs/development/mobile.md",
+  "docs/development/runtime.md",
+  "docs/development/observability.md",
+  "docs/development/quality.md",
+  "docs/development/release.md",
 ]);
 for (const file of collectMarkdown(path.join(knowledgeRoot, "docs/development"))) {
   if (!expectedDevelopment.has(rel(file))) failures.push("unexpected development guide: " + rel(file));
 }
 for (const expected of expectedDevelopment) if (!exists(expected)) failures.push("missing canonical development guide: " + expected);
-
 const docsIndex = requireTokens("docs/README.md", [
+  "development/workflow.md",
+  "development/backend.md",
+  "development/frontend.md",
+  "development/design-system.md",
+  "development/mobile.md",
+  "development/runtime.md",
+  "development/observability.md",
+  "development/quality.md",
+  "development/release.md",
+  "runbooks/identity.md",
+  "runbooks/platform-recovery.md",
+  "reference/donor.md",
+]);
+for (const stale of [
   "development/README.md",
   "runbooks/README.md",
   "reference/external-systems/",
-  "Do not recreate a flat development handbook or numbered lifecycle tree",
-]);
-for (const stale of [
-  "development/getting-started.md",
-  "development/repository-map.md",
-  "development/first-change.md",
-  "development/runtime.md",
-  "development/mobile.md",
-  "reference/target-operations/",
+  "platform-engineering-lifecycle/",
 ]) {
   if (docsIndex.includes(stale)) failures.push("docs index retains stale path: " + stale);
 }
-
+const expectedRunbooks = new Set([
+  "docs/runbooks/identity.md",
+  "docs/runbooks/platform-recovery.md",
+]);
 const runbookFiles = collectMarkdown(path.join(knowledgeRoot, "docs/runbooks"));
 for (const file of runbookFiles) {
-  const relative = rel(file);
-  if (relative === "docs/runbooks/README.md") continue;
-  if (path.dirname(relative) === "docs/runbooks") failures.push("flat runbook remains outside operational domain: " + relative);
+  if (!expectedRunbooks.has(rel(file))) failures.push("unexpected runbook: " + rel(file));
 }
-requireTokens("docs/runbooks/README.md", [
-  "access/identity.md",
-  "platform/systemic-platform-recovery.md",
-]);
-
+for (const expected of expectedRunbooks) if (!exists(expected)) failures.push("missing canonical runbook: " + expected);
 const requiredOrchestrator = [
   "tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md",
   "tools/prompting/bthwani-orchestrator/01-SCOPE-AUTHORITY-RULES.md",
@@ -289,32 +290,41 @@ requireTokens("tools/prompting/bthwani-orchestrator/profiles/clean-target-recons
   "BTHWANI_DONOR_REQUIRED_VALUE_DISPOSITION=PASS",
 ]);
 requireTokens("docs/README.md", [
-  "Developer reconstruction and semantic-parity acceptance",
+  "Semantic-parity and staleness law",
   "REQUIRED_DEVELOPMENT_GUIDANCE_LOST=0",
   "REQUIRED_OPERATIONAL_GUIDANCE_LOST=0",
+  "NUMBERED_LIFECYCLE_TREE=0",
 ]);
-requireTokens("docs/development/mobile/mobile-and-eas.md", [
-  "Material real-device operational evidence",
+requireTokens("docs/development/mobile.md", [
+  "Material real-device evidence",
   "process death and restart/resume",
 ]);
-requireTokens("docs/development/runtime/runtime-and-configuration.md", [
+requireTokens("docs/development/runtime.md", [
   "Development non-goals and feasibility spikes",
   "dedicated development VPS",
   "critical external provider early in an isolated spike",
 ]);
-requireTokens("docs/development/quality/quality-and-verification.md", [
-  "Official standards reference routing",
+requireTokens("docs/development/quality.md", [
+  "Risk-based real-device matrix",
   "OWASP ASVS",
-  "OWASP MASVS / MASTG / MASWE",
   "W3C WCAG",
-  "NIST Secure Software Development Framework",
-  "SLSA specification",
+  "NIST SSDF",
+  "SLSA",
 ]);
-requireTokens("docs/development/release/release-and-store-submission.md", [
-  "Operational go-live readiness",
-  "incident/decision owner and escalation path",
-  "support/operator visibility and governed actions",
-  "backup checkbox",
+requireTokens("docs/development/release.md", [
+  "Mutable platform/store rules",
+  "Operational readiness",
+  "Unknown required evidence is not PASS",
+  "Every release control/flag has an owner",
+]);
+requireTokens("docs/development/workflow.md", [
+  "Representative real vertical",
+  "pnpm knowledge:sync",
+  "PARALLEL_WORK != BACKEND_WAVE_THEN_FRONTEND_WAVE",
+]);
+requireTokens("governance/product/capabilities/access/account-privacy-lifecycle.md", [
+  "CAPABILITY_ID: ACCOUNT_PRIVACY_LIFECYCLE",
+  "actor_deleted_with_unrelated_roles",
 ]);
 requireTokens("tools/prompting/bthwani-orchestrator/verify/evidence-falsification.md", [
   "BLIND_RERUN_UNTIL_GREEN = FORBIDDEN",

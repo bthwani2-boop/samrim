@@ -133,6 +133,26 @@ const cases = [
     include: ["No documentation-only closure", "IMPLEMENTATION_ROOT_EXISTS + ONLY_DOC/GOVERNANCE/PLAN_CHANGED → NOT_CLOSED"],
   },
   {
+    id: "cross_repository_exact_knowledge_pin",
+    source: "governance/policies/documentation-and-knowledge.md",
+    include: ["EXACT KNOWLEDGE COMMIT SHA = ADMISSIBLE", "TRACKED LOCAL GOVERNANCE/DOCS MIRROR = FORBIDDEN"],
+  },
+  {
+    id: "safe_parallelism_not_horizontal_closure",
+    source: "governance/policies/engineering.md",
+    include: ["PARALLEL IMPLEMENTATION != HORIZONTAL PARTIAL CLOSURE"],
+  },
+  {
+    id: "account_privacy_cross_owner_safety",
+    source: "governance/product/capabilities/access/account-privacy-lifecycle.md",
+    include: ["actor_deleted_with_unrelated_roles", "dsh_mutates_wlt_for_privacy"],
+  },
+  {
+    id: "representative_vertical_falsifies_substrate",
+    source: "governance/architecture/PLATFORM-SUBSTRATE.md",
+    include: ["REAL REPRESENTATIVE VERTICAL + CANONICAL READBACK = FOUNDATION FALSIFICATION EVIDENCE"],
+  },
+  {
     id: "no_live_adr_tree",
     source: "governance/GOVERNANCE.md",
     include: ["No live ADR tree"],
@@ -153,6 +173,8 @@ for (const test of cases) {
 
 for (const forbidden of [
   "governance/decisions",
+  "governance/product/WORKFORCE-MODEL.md",
+  "governance/architecture/FOUNDATION-AND-JOURNEY-READY-SUBSTRATE.md",
   "docs/platform-engineering-lifecycle",
   "docs/reference/target-operations",
   "tools/prompting/bthwani-refoundation",
