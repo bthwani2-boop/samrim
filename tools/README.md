@@ -10,7 +10,7 @@ CURRENT_COMMAND_AUTHORITY: LIVE_PACKAGE_SCRIPTS_AND_TOOL_SOURCE
 
 tools/ contains genuinely cross-repository automation, inspection, generation and evidence helpers. It is not a Product, architecture, ownership, readiness or closure authority.
 
-Durable rules are owned by governance/policies/tooling-and-assurance.md.
+Durable rules are owned by the exact pinned `governance/policies/tooling-and-assurance.md` resolved through `governance.lock.json` from `bthwani2-boop/governance-and-docs`.
 
 ## Placement rule
 
@@ -34,7 +34,7 @@ Exact scripts/commands are discovered from package.json, workflow files and the 
 
 A generated registry/map/catalog must identify its canonical inputs and be reproducible. Do not edit a derived artifact as a second source of truth.
 
-Use source-derived knowledge queries where appropriate:
+Use source-derived knowledge queries where appropriate. They materialize only the exact pinned external knowledge commit into ignored local cache:
 
 ~~~text
 pnpm knowledge:query -- list capabilities
