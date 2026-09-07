@@ -57,8 +57,6 @@ const allowedTopLevelDirectories = new Set([
   ".github",
   "apps",
   "contracts",
-  "docs",
-  "governance",
   "infra",
   "packages",
   "services",
@@ -75,9 +73,10 @@ for (const top of actualTopLevelDirectories) {
   assert(allowedTopLevelDirectories.has(top), "Unadmitted top-level ownership class tracked: " + top);
 }
 
-for (const required of [".github", "governance", "docs", "tools"]) {
+for (const required of [".github", "tools"]) {
   assert(actualTopLevelDirectories.includes(required), "Required repository knowledge/tooling root missing: " + required);
 }
+assert(trackedSet.has("governance.lock.json"), "governance.lock.json is required as the canonical external knowledge pin");
 
 for (const forbiddenRoot of ["core/", "shared/"]) {
   assert(
