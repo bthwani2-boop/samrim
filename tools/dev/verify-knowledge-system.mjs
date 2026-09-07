@@ -48,9 +48,14 @@ if (!/^[0-9a-f]{40}$/.test(pin.commit)) failures.push("knowledge pin is not an e
 
 requireTokens("AGENTS.md", [
   "Never implement knowledge mechanically.",
+  "No source has global precedence. Authority is fact-specific",
+  "Before choosing a material solution, distinguish known facts, assumptions and decision-relevant unknowns",
+  "does not implicitly escalate environment or operation authority",
+  "HEAD MOVED",
+  "UNKNOWN EFFECT → AUTHORITATIVE RECONCILIATION",
+  "affected prior evidence is stale",
   "capabilities, not authorization",
   "Production",
-  "recheck it immediately before writing",
   "blind-retry an ambiguous external/financial mutation",
   "docs/method/diagnosis-and-decision.md",
   "docs/method/change-and-reconstruction.md",
