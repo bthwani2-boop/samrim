@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": {
+    "includes": [
+      "apps/**/*.js",
+      "apps/**/*.jsx",
+      "apps/**/*.mjs",
+      "apps/**/*.ts",
+      "apps/**/*.tsx",
+      "packages/**/*.js",
+      "packages/**/*.jsx",
+      "packages/**/*.mjs",
+      "packages/**/*.ts",
+      "packages/**/*.tsx",
+      "services/**/*.js",
+      "services/**/*.jsx",
+      "services/**/*.mjs",
+      "services/**/*.ts",
+      "services/**/*.tsx",
+      "tools/**/*.js",
+      "tools/**/*.jsx",
+      "tools/**/*.mjs",
+      "tools/**/*.ts",
+      "tools/**/*.tsx",
+      "!!**/node_modules/**",
+      "!!**/.next/**",
+      "!!**/dist/**",
+      "!!**/build/**",
+      "!!**/generated/**"
+    ]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true
+    }
+  }
+}

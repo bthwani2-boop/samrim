@@ -50,6 +50,41 @@ For every materially affected symbol/file/module/package/directory, establish as
 
 This is an impact-analysis principle, not a requirement to maintain a repository-wide governance inventory of files.
 
+## Structural substrate versus semantic capability
+
+Canonical structure may be established before Product/System capability implementation only when the output is genuinely non-semantic substrate.
+
+```text
+STRUCTURAL_SUBSTRATE != SEMANTIC_CAPABILITY
+STRUCTURAL_SUBSTRATE = ALLOWED_ONLY_WHEN_CAUSALLY_REQUIRED_BY_CURRENT_AUTHORIZED_WORK
+HORIZONTAL_CAPABILITY_WAVE = FORBIDDEN
+```
+
+Examples of structural substrate include workspace/toolchain wiring, deployable-host shell/build identity, thin process startup, health/readiness, infrastructure composition and verification tooling **only when a current admitted responsibility consumes them**. Empty contract/data/testing/service lanes are not substrate and are forbidden placeholders. Business routes, state machines, service operations, capability-specific contracts, authorization/session semantics and domain workflows remain semantic capability implementation.
+
+This policy defines only the durable structural-versus-semantic distinction. It does not define campaign stages or require repository-wide substrate completion before Product work.
+
+### Explicit vertical increments
+
+Product breadth may be delivered incrementally without weakening architectural depth.
+
+```text
+EXPLICITLY_SCOPED_VERTICAL_INCREMENT
++ CANONICAL_OWNER/WRITER
++ COMPLETE_AFFECTED_DATA/CONTRACT/RUNTIME
++ COMPLETE_REQUIRED_SURFACES/READBACK
++ FAILURE/SECURITY/FINANCE_INVARIANTS_WHERE_APPLICABLE
+= VALID_INCREMENT
+
+ACCIDENTAL_PARTIAL_CAPABILITY = INVALID
+HORIZONTAL_LAYER_FRAGMENT_CLAIMED_AS_DONE = INVALID
+TEMPORARY_PARALLEL_TRUTH_FOR_EARLY_SLICE = INVALID
+```
+
+A later increment extends the same canonical ownership model. It may add legal states, routes, contract operations, providers, or surfaces when required, but it must not force replacement of a deliberately temporary domain authority created for an earlier slice.
+
+Closing an increment is not evidence that the full target capability envelope is implemented.
+
 ## Full-stack vertical integrity
 
 A material capability is not proven because a screen, endpoint and table each exist. Valid binding requires:
@@ -134,42 +169,15 @@ Compatibility windows require a proven need, owner, bounded scope, cutover condi
 Before a materially affected structural change is considered complete, inspect its negative space for ownerless artifacts, misplaced files, stale imports/exports, dead aliases, duplicate authorities, pass-through wrappers, obsolete dependencies, generated forks, legacy paths and unfinished moves/splits/merges. Known material residue tied to the change remains unresolved.
 
 
-## App-host and integration ownership
+## App-host and integration routing
 
-Deployable apps own route hierarchy, navigation, tabs/shell, deep links, cross-capability composition, bootstrap/session binding, native/OS adapters, app assets and build/deployable configuration. Services/bounded contexts own business/system capability semantics, durable truth, canonical writers, service contracts and reusable capability presentation when justified.
+The durable app-host versus service-capability responsibility split is owned by `../architecture/APP-SERVICE-COMPOSITION.md`. This policy does not restate that composition law.
 
-```text
-WHERE_IT_APPEARS != WHO_OWNS_IT
-APP_HOST != BUSINESS_CAPABILITY_OWNER
-services → apps = FORBIDDEN
-apps → service public capability entrypoints = ALLOWED
-```
+The durable external-integration/provider behavior is owned by `providers-and-integrations.md`, with cross-boundary contract/data architecture owned by `../architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md`.
 
-External integrations terminate at domain-specific semantic ports/adapters. A vendor name, provider mechanism or generic Providers container does not become a business owner. Platform Control may own governed cross-platform enablement/configuration only where explicitly assigned; secret values remain in approved runtime secret storage.
+For changes governed by this policy, preserve those owners and verify that full-stack structure does not create a second app/service or provider authority.
 
 
-## Financial rail versus biller fulfillment
+## External semantic-boundary routing
 
-External money movement and external bill/recharge fulfillment are distinct semantic responsibilities:
-
-```text
-FinancialRail
-→ moves or authorizes external money
-
-BillerGateway
-→ fulfills telecom / electricity / water / internet / recharge / other biller service
-```
-
-Do not hide bill/recharge fulfillment inside a generic payment/provider abstraction merely because both depend on an external vendor.
-
-The operation-owning domain defines the semantic port. External vendor adapters implement that port. A vendor or generic Providers container never becomes the domain owner.
-
-For ambiguous external fulfillment or financial mutation:
-
-```text
-TIMEOUT != FAILURE
-MISSING_CONFIRMATION != SUCCESS
-UNKNOWN MUST REMAIN UNKNOWN UNTIL RECONCILED
-```
-
-Do not blindly retry through an alternate provider until duplicate external effect is proven impossible.
+Financial-rail versus biller-fulfillment semantics, provider fallback/unknown outcomes, semantic ports and adapter admission are owned by `providers-and-integrations.md` and the applicable Product/financial owner. This policy contributes only the structural invariant that transport/vendor/mechanism containers must not become alternate business owners.

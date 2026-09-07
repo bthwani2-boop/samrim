@@ -69,6 +69,25 @@ Design important behavior so its invariants and failure/recovery paths can be fa
 
 Do not weaken tests/scanners or create a fake-green compatibility path to accept a design that remains wrong. Conversely, do not introduce a large test/guard framework when focused existing evidence gives equivalent assurance more simply.
 
+## Knowledge-system and agent-consumability quality
+
+Durable knowledge must remain usable by a qualified human or coding agent without requiring accidental memory, folder-name inference or loading every document in the repository.
+
+~~~text
+ONE_MEANING → ONE_SEMANTIC_OWNER
+ROUTING_ADAPTER != SEMANTIC_AUTHORITY
+DERIVED_INDEX/QUERY != PARALLEL_AUTHORITY
+LARGE_CATALOG → SELECTIVE_SOURCE_DERIVATION_WHERE_PRACTICAL
+CONTEXT_LOADING → ONLY_MATERIALLY_APPLICABLE_OWNERS
+AMBIGUOUS_OWNER_OR_CONFLICTING_PLACEMENT_RULE = QUALITY_DEFECT
+~~~
+
+Agent/developer entrypoints should route to canonical owners and declare their own non-authority. Machine-readable indexes, query tools, generated maps and verification views must be deterministically derived from canonical sources or remain ephemeral; hand-maintained mirrors of Product/ownership truth are forbidden.
+
+A knowledge verifier must test semantic relationships that can falsify important placement/ownership/scope rules. Exact-string presence alone is insufficient when contradictory rules can coexist elsewhere. A green knowledge check that misses a known contradiction is itself an assurance defect and must be corrected.
+
+Context optimization may split or route large guidance/capability corpora, but representation changes must prove no material semantic loss and must not create duplicate normative owners.
+
 ## Suppressions and intentional conditions
 
 A warning/test/scanner finding may not be hidden merely to obtain green. Material suppression/ignore/allowlist requires either a proven false positive or an explicitly authorized intentional condition whose risk/behavior is understood.
@@ -87,7 +106,7 @@ CI, static analyzers, security scanners, reviews and similar systems are **evide
 
 Do not turn ordinary Product engineering into an assurance-control-plane side project merely because one scanner/workflow is imperfect. Repair assurance machinery when it is itself the objective or when a proven indispensable evidence blocker leaves no materially adequate route to the required claim. Never create bypasses or shadow assurance systems.
 
-## Adequacy before completion
+## Required quality conformance
 
 A material change/defect is not standards-grounded complete until evidence supports, as applicable:
 

@@ -1,121 +1,154 @@
-# BThwani Governance Index
+# BThwani Governance
 
-ARTIFACT_CLASS: DURABLE_PROJECT_GOVERNANCE
+ARTIFACT_CLASS: DURABLE_GOVERNANCE_INDEX
 SEMANTIC_OWNER: governance/GOVERNANCE.md
 EXECUTION_AUTHORITY: NONE
 CLOSURE_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
-## Purpose
+## 1. Authority boundary
 
-`governance/**` is the durable semantic constitution of BThwani: Product/System meaning, bounded-context ownership, cross-surface experience, engineering policy, security/privacy, data, runtime/reliability and delivery expectations.
+Governance contains only durable BThwani Product/System/architecture/policy meaning.
 
-It is not an execution engine, branch controller, CI authority, runtime-state inventory, route/table/operation registry or release approval mechanism. During the current refoundation campaign, execution order, mutation, recovery and closure remain owned exclusively by `tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md`; branch-specific campaign details belong to that temporary execution authority, not durable Governance.
-
-```text
-GOVERNANCE   = DURABLE MEANING / POLICY / OWNERSHIP
+~~~text
+GOVERNANCE   = DURABLE MEANING / OWNERSHIP / POLICY
+SOURCE       = CURRENT EXECUTABLE IMPLEMENTATION / CONFIGURATION / RUNTIME
+ORCHESTRATOR = AUTHORIZED EXECUTION / RECOVERY / EVIDENCE / CLOSURE
 DOCS         = HUMAN DEVELOPMENT / OPERATIONS GUIDANCE
-SOURCE       = CURRENT IMPLEMENTATION STATE
-ORCHESTRATOR = ACTIVE REFOUNDATION EXECUTION / CLOSURE
-```
+GIT HISTORY  = HISTORICAL RATIONALE / FORENSICS
+~~~
 
-## Authority model
+Governance does not own campaign stages, branch state, current route/table/config inventories, CI status, runtime health or execution order.
 
-Material claims are interpreted by class:
+## 2. One-source law
 
-1. current explicit human Product/System decisions;
-2. the applicable durable semantic owner in `governance/**`;
-3. executable contracts, schemas, code, configuration and runtime evidence for current implementation state;
-4. `docs/**` for non-authoritative development/operations guidance;
-5. historical/external material only as forensic/reference input.
+~~~text
+ONE MATERIAL MEANING       → ONE EDITABLE SEMANTIC OWNER
+ONE MATERIAL MUTABLE FACT  → ONE CANONICAL WRITER
+ONE CROSS-BOUNDARY CONTRACT→ ONE EXECUTABLE PROVENANCE
+INDEX / ROUTER             → ROUTING ONLY
+DERIVED VIEW / QUERY       → NON-AUTHORITATIVE
+HISTORICAL RATIONALE       → GIT HISTORY
+~~~
 
-A current implementation can reveal drift but does not silently redefine Product meaning. Governance cannot claim that a route, table, provider, test or deployment currently exists merely because a document says so.
+Agreement between duplicate rules does not make duplication acceptable.
 
-## Canonical semantic owners
+## 3. Project model
 
-### Project orientation
+- `project/PLATFORM.md` — what BThwani is, target surfaces and bounded-context orientation.
+- `project/GLOSSARY.md` — canonical vocabulary.
+- `project/ACTORS-TRUST-AND-SCOPE.md` — Human Actor, Identity Role, Product Persona, organization/scope/trust distinctions.
 
-- `project/PLATFORM.md` — platform classification, surfaces, actors, fulfillment/commercial modes and bounded contexts.
-- `project/GLOSSARY.md` — ubiquitous language.
-- `project/ACTORS-TRUST-AND-SCOPE.md` — actor/role/engagement/organization/scope/context trust model.
+## 4. Product model
 
-### Product
+- `product/PRD.md` — product-level definition, non-goals and cross-product requirements.
+- `product/CAPABILITIES.md` — capability schema, admission law and routing only.
+- `product/capabilities/**/*.md` — exactly one editable owner file per capability.
+- `product/JOURNEYS.md` — cross-capability journey meaning.
+- `product/FINANCIAL-MODEL.md` — financial sovereignty and cross-capability money semantics.
+- `product/COMMERCIAL-AND-PARTNER-MODEL.md` — partner/store/commercial relationships.
+- `product/EXPERIENCE-AND-DESIGN.md` — durable UX, accessibility, RTL and Design-System meaning.
 
-- `product/PRD.md` — platform requirements and non-goals.
-- `product/CAPABILITIES.md` — durable capability semantic envelope, outcomes, actors, owner boundaries, state/acceptance/failure semantics and success measures.
-- `product/JOURNEYS.md` — cross-capability actor/system journeys.
-- `product/FINANCIAL-MODEL.md` — cross-capability WLT/financial model.
-- `product/COMMERCIAL-AND-PARTNER-MODEL.md` — partner/store/commercial relationship model.
-- `product/WORKFORCE-MODEL.md` — person/engagement/eligibility/operational-role model.
-- `product/EXPERIENCE-AND-DESIGN.md` — durable UX, RTL/accessibility and design-system meaning.
+## 5. Architecture model
 
-### Architecture
-
-- `architecture/SYSTEM-CONTEXT.md` — bounded contexts and dependency direction.
-- `architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md` — semantic owner/writer/readback map.
+- `architecture/SYSTEM-CONTEXT.md` — bounded contexts and dependency orientation.
+- `architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md` — canonical owner/writer/readback map.
+- `architecture/REPOSITORY-TOPOLOGY.md` — physical placement and container admission.
 - `architecture/APP-SERVICE-COMPOSITION.md` — deployable-host versus service-capability responsibility.
-- `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` — data/contract/version/integration boundaries.
-- `architecture/RUNTIME-AND-CONFIGURATION.md` — runtime/configuration classes and technical operating boundaries.
-- `decisions/README.md` — ADR admission and rationale policy.
+- `architecture/DATA-CONTRACTS-AND-INTEGRATIONS.md` — cross-boundary data/contract/protocol architecture.
+- `architecture/RUNTIME-AND-CONFIGURATION.md` — configuration/runtime architecture.
+- `architecture/PLATFORM-SUBSTRATE.md` — durable non-semantic substrate requirements independent of campaign stages.
 
-### Engineering policies
+## 6. Engineering policies
 
-- `policies/engineering.md` — universal engineering constitution and owner routing.
-- `policies/architecture-and-fullstack.md` — bounded contexts, dependency direction, app/host vs service ownership, contracts and structural integrity.
-- `policies/data-and-migrations.md` — data authority, schemas, migrations, backfills, seeds and durable-data evolution.
-- `policies/frontend-and-client.md` — client responsibility, state/readback, accessibility and presentation boundaries.
-- `policies/runtime-reliability.md` — runtime/configuration, external systems, failure/recovery, observability and development-environment invariants.
-- `policies/security.md` — identity, authorization, credentials, privacy, financial security and untrusted boundaries.
-- `policies/standards-and-quality.md` — standards, testing, dependency/adoption, licensing and assurance adequacy.
-- `policies/delivery.md` — candidate identity, promotion, rollout, release, rollback and delivery evidence.
+- `policies/engineering.md` — cross-cutting engineering constitution and routing.
+- `policies/architecture-and-fullstack.md` — full-stack structural integrity, layer/dependency/indirection rules.
+- `policies/data-and-migrations.md` — data mutation, schema evolution, migrations/backfills/reconciliation.
+- `policies/frontend-and-client.md` — client/presentation engineering boundaries.
+- `policies/providers-and-integrations.md` — provider/integration behavior and unknown-outcome rules.
+- `policies/runtime-reliability.md` — startup/readiness/failure/recovery/performance/observability behavior.
+- `policies/security.md` — authentication, authorization, secrets, privacy and security boundaries.
+- `policies/standards-and-quality.md` — standards, testing, dependency/adoption and quality adequacy.
+- `policies/tooling-and-assurance.md` — tooling, generated/derived assurance and CI evidence.
+- `policies/documentation-and-knowledge.md` — knowledge authority, portability and anti-duplication.
+- `policies/delivery.md` + `policies/delivery/*.md` — delivery policy family.
 
-## One-source laws
+## 7. No live ADR tree
 
-```text
-ONE_REQUIRED_MEANING → ONE_SEMANTIC_OWNER
-ONE_MATERIAL_MUTABLE_STATE → ONE_CANONICAL_WRITER
-ONE_CROSS_BOUNDARY_PROTOCOL → ONE_EXECUTABLE_CONTRACT_PROVENANCE
-DERIVED/CACHED/MATERIALIZED != AUTHORITATIVE
-DOCS != DURABLE_PRODUCT_GOVERNANCE
-TEST_GREEN != DURABLE_PRODUCT_GOVERNANCE
-CI_GREEN != CLOSURE
-```
+Durable current rules live in their current semantic owner. Historical decision rationale is preserved by Git history rather than a second live ADR hierarchy.
 
-Text may summarize another owner for navigation, but it must identify that owner and may not introduce a competing rule.
+If rationale becomes materially necessary for current engineering, it must be summarized in the current owner without duplicating the rule.
 
-## What governance must not contain
+## 8. Current-state exclusion
 
-Final Governance must not hand-maintain implementation inventories derivable from executable source: route lists, operation IDs, table/column inventories, generated-client inventories, screen/hook paths, CI results, current provider health, current environment values or campaign ledgers.
+Do not hand-maintain in Governance:
 
-## Change and survival law
+- current routes/endpoints/operation IDs;
+- current tables/columns/migrations;
+- generated-client inventories;
+- current package/dependency/runtime versions unless the durable policy itself requires a range/class;
+- branch/session/campaign state;
+- current CI/run status;
+- current provider health/config values.
 
-A governance artifact survives only when it owns required durable meaning that is current, nonduplicative, correctly placed and not better represented by executable source.
+Executable source/runtime is authoritative for those facts.
 
-```text
-REQUIRED_DURABLE_MEANING
-+ UNIQUE_RESPONSIBILITY
-+ CORRECT_SEMANTIC_OWNER
-+ NO_PARALLEL_AUTHORITY
-+ NO_TASK/BRANCH/SESSION_RESIDUE
-= ADMISSIBLE
-```
+## 9. Semantic completeness
 
-`DEPRECATED` or `SUPERSEDED` does not grant survival rights. Required historical decision rationale may survive as an ADR when the rationale itself remains valuable; otherwise Git history is the archive.
+Every material responsibility has exactly one durable disposition:
 
-## Developer reconstruction test
+~~~text
+CAPABILITY
+SUBCAPABILITY OF NAMED OWNER
+DURABLE POLICY
+TECHNICAL MECHANISM OWNED ELSEWHERE
+DERIVED PROJECTION / READ MODEL
+EXPLICIT NON-GOAL
+~~~
 
-Governance is sufficient only when a qualified developer can determine, without reverse-engineering accidental repository structure:
+A folder, donor artifact, route, screen, provider or table does not automatically earn capability or service status.
 
-- what BThwani is and is not;
-- deployable surfaces and primary actors;
-- the canonical bounded-context owner of every material fact;
-- required capabilities and cross-surface outcomes;
-- financial ownership and failure/reconciliation semantics;
-- authorization/trust boundaries;
-- app-host versus service-capability responsibilities;
-- contract/data/migration expectations;
-- provider/integration boundaries;
-- UX/RTL/accessibility requirements;
-- runtime/reliability/security/quality/delivery policies.
+## 10. Developer reconstruction acceptance
 
-Implementation commands and operating procedures remain in `docs/**`.
+Governance is complete only when a qualified developer or execution agent can determine, without reverse-engineering accidental repository structure:
+
+- what BThwani is and is not, including explicit non-goals;
+- deployable surfaces, Human Actors, Identity roles, Product personas and trust/scope boundaries;
+- the canonical owner and writer of every material durable fact;
+- admitted capabilities, cross-capability journeys and required/excluded surfaces;
+- financial ownership, conservation, unknown-outcome and reconciliation semantics;
+- authentication, authorization, privacy, secret and privileged-operation boundaries;
+- app-host versus service-capability responsibility;
+- data, migration, contract, generated-binding and cross-service integration expectations;
+- provider/control-plane/data-plane ownership and ambiguity handling;
+- experience, Arabic/RTL, accessibility and localization requirements;
+- runtime, reliability, quality, delivery and release policy boundaries.
+
+The acceptance test is semantic, not file-count based:
+
+~~~text
+UNACCOUNTED_MATERIAL_PRODUCT_RESPONSIBILITIES=0
+UNOWNED_DURABLE_FACTS=0
+UNMAPPED_REQUIRED_ACTORS/JOURNEYS=0
+UNMAPPED_REQUIRED_FAILURE/RECOVERY_SEMANTICS=0
+UNMAPPED_REQUIRED_SECURITY/PRIVACY/FINANCIAL_INVARIANTS=0
+DUPLICATE_DURABLE_MEANING_AUTHORITIES=0
+IMPLEMENTATION_INVENTORY_AS_GOVERNANCE_AUTHORITY=0
+~~~
+
+When history or donor evidence reveals still-required meaning that current owners do not represent, Governance is incomplete until that meaning is deliberately owned, superseded, or rejected with reason. Historical file survival is never required.
+
+## 11. Change/survival law
+
+A Governance artifact survives only if it owns unique current durable meaning and is not better represented by another owner or executable source.
+
+~~~text
+REQUIRED CURRENT DURABLE MEANING
++ UNIQUE RESPONSIBILITY
++ CORRECT OWNER
++ NO PARALLEL AUTHORITY
++ NO CAMPAIGN/HISTORICAL RESIDUE
+= SURVIVES
+~~~
+
+Otherwise delete it. Git is the archive.

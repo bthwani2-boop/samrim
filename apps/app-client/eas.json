@@ -1,0 +1,46 @@
+{
+  "cli": {
+    "version": "22.2.0",
+    "appVersionSource": "remote",
+    "requireCommit": true,
+    "promptToConfigurePushNotifications": false
+  },
+  "build": {
+    "base": {
+      "node": "24.17.0",
+      "pnpm": "10.34.0",
+      "env": {
+        "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"
+      }
+    },
+    "development": {
+      "extends": "base",
+      "credentialsSource": "local",
+      "environment": "development",
+      "channel": "development",
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "internal": {
+      "extends": "base",
+      "environment": "preview",
+      "channel": "preview",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "extends": "base",
+      "environment": "production",
+      "channel": "production",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  }
+}

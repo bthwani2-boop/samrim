@@ -1,21 +1,22 @@
-name: Foundation Pull Request Policy
+name: Repository Pull Request Policy
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: read
 
 concurrency:
-  group: foundation-pr-policy-${{ github.ref }}
+  group: repository-pr-policy-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   policy:
-    name: foundation-pr-policy
+    name: repository-pr-policy
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

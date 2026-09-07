@@ -1,10 +1,16 @@
-# External References — Identity, Workforce and Platform Control
+# External References — Identity, HR References and Platform Control
 
 DOCUMENT_CLASS: NON_AUTHORITATIVE_EXTERNAL_REFERENCE
 EXECUTION_AUTHORITY: NONE
-PRODUCT_AUTHORITY: NONE
-CURRENT_REPOSITORY_STATE_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
+ADOPTION_AUTHORITY: NONE
+REFERENCE_FRESHNESS: REVALIDATE_MATERIAL_FACTS_AT_USE
+REFERENCE_REVIEWED_ON: 2026-09-05
+REFERENCE_MAX_REVIEW_AGE_DAYS: 180
+LICENSE_RECHECK_ON_ADOPTION: REQUIRED
+SECURITY_SUPPLY_CHAIN_RECHECK_ON_ADOPTION: REQUIRED
 
 ### 1B.7 Identity / authentication / sessions
 
@@ -84,7 +90,9 @@ CURRENT_REPOSITORY_STATE_AUTHORITY: NONE
 
 Source business facts remain owned by DSH/WLT/etc.; notification references do not become business authority.
 
-### 1B.14 Workforce / HR / employee lifecycle
+### 1B.14 HR / employee lifecycle references (future-adoption only)
+
+These references do not imply a current peer HR service, module, or bounded context. Adopt an enterprise HR boundary only if concrete future cross-domain lifecycle/data/rule requirements independently justify it.
 
 **P1 — Odoo HR**
 - Docs: https://www.odoo.com/documentation/
@@ -102,7 +110,7 @@ Source business facts remain owned by DSH/WLT/etc.; notification references do n
 - Entry: https://www.workday.com/
 - Use only for high-level enterprise HR falsification where public material is sufficient.
 
-Do not collapse Identity, Person, Engagement and Operational Role into one actor blob.
+Do not overload Identity actor truth with domain-specific participant state, and do not invent a generic people service merely to group roles.
 
 ### 1B.16 Feature flags / configuration / Platform Control
 

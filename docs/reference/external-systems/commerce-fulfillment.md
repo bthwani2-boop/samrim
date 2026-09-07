@@ -2,9 +2,15 @@
 
 DOCUMENT_CLASS: NON_AUTHORITATIVE_EXTERNAL_REFERENCE
 EXECUTION_AUTHORITY: NONE
-PRODUCT_AUTHORITY: NONE
-CURRENT_REPOSITORY_STATE_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
+ADOPTION_AUTHORITY: NONE
+REFERENCE_FRESHNESS: REVALIDATE_MATERIAL_FACTS_AT_USE
+REFERENCE_REVIEWED_ON: 2026-09-05
+REFERENCE_MAX_REVIEW_AGE_DAYS: 180
+LICENSE_RECHECK_ON_ADOPTION: REQUIRED
+SECURITY_SUPPLY_CHAIN_RECHECK_ON_ADOPTION: REQUIRED
 
 ### 1B.1 Commerce core / cart / checkout / order / fulfillment
 
@@ -175,7 +181,7 @@ Specialist rule: product search starts at Algolia; deep distributed-search archi
 **P1 — Odoo**
 - Repository: https://github.com/odoo/odoo
 - Docs: https://www.odoo.com/documentation/
-- Use for broad operations/admin/workforce/accounting/inventory workflows and mature backoffice IA.
+- Use for broad operations/admin/HR-reference/accounting/inventory workflows and mature backoffice IA.
 
 **P2 — ERPNext**
 - Repository: https://github.com/frappe/erpnext
@@ -184,7 +190,7 @@ Specialist rule: product search starts at Algolia; deep distributed-search archi
 
 **P3 — OrangeHRM**
 - Repository: https://github.com/orangehrm/orangehrm
-- Use when Workforce/HR-specific employee lifecycle questions remain unresolved.
+- Use only when future HR-specific employee lifecycle questions remain unresolved; this does not imply a current peer HR boundary.
 
 **P4 — Microsoft Dynamics 365**
 - Docs: https://learn.microsoft.com/dynamics365/

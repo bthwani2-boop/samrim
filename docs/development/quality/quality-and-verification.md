@@ -1,0 +1,85 @@
+# Quality, Testing and Verification
+
+DOCUMENT_CLASS: HUMAN_DEVELOPMENT_GUIDE
+EXECUTION_AUTHORITY: NONE
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+CURRENT_WORKFLOW_TRUTH_SOURCE: .github/workflows and repository scripts
+
+## Principle
+
+A green CI/test proves only the claim exercised. CI is evidence, not Product/System authority or closure.
+
+Classify affected tests/fixtures/mocks/snapshots/guards as valid canonical spec, obsolete behavior, duplicate coverage, wrong-layer spec, losing-topology test, missing prevention or broken test infrastructure. Delete/refound obsolete assurance with the change.
+
+## Evidence ladder
+
+Use the smallest sufficient evidence class without substituting weaker proof:
+
+- compile/typecheck/static analysis;
+- schema/contract validation;
+- unit/domain;
+- database migration/invariant;
+- integration;
+- runtime smoke;
+- end-to-end/journey;
+- visual/accessibility;
+- security/privacy;
+- financial/reconciliation;
+- release/deployment.
+
+A material capability/increment follows the user/system action through owner, storage, transport, contract, generated binding, presentation, app composition, mutation and persisted/observable readback.
+
+
+## Agent-assisted interactive verification
+
+For materially affected interactive surfaces, use the smallest adequate evidence producer and keep tool choice subordinate to the claim. The Orchestrator owns closure semantics in `tools/prompting/bthwani-orchestrator/verify/surface-runtime-and-journey-proof.md`; this guide only describes current practical tool roles.
+
+Current concrete tool roles for that Orchestrator agent loop, when installed and appropriate:
+
+- **Web:** prefer Playwright CLI/MCP for agent-driven browser exploration and control; use Playwright Test when a durable repeatable web regression is required.
+- **Mobile:** prefer `agent-device` CLI/MCP for agent-native device exploration, debugging and semantic interaction. It can also provide replay/E2E evidence when that is sufficient for the claim.
+- **Declarative mobile/cross-platform flows:** use Maestro CLI/MCP and YAML Flows when a durable declarative journey suite is the simpler fit.
+- **Android substrate/debugging:** use ADB for device connectivity, app/process state, logs, port/reverse plumbing and other Android-level evidence; ADB alone is not user-journey proof.
+- **Human visual assistance:** Maestro Studio and `scrcpy` may accelerate inspection/authoring/mirroring, but their presence or a manual screenshot is not closure evidence by itself.
+
+Do not duplicate the same material journey in `agent-device` replay and Maestro merely to increase tool count. Keep one durable proof path when it is sufficient; add a second framework only when it proves a materially different risk or is required by an existing owned suite.
+
+MCP is an agent transport/integration mechanism, not a stronger evidence class. A command executed through MCP proves no more than the underlying runtime action/assertion.
+
+Tool versions and availability are environment/configuration facts. Resolve them from the installed binary, lockfile or executable configuration at use time rather than freezing mutable versions in this document. Any durable test/flow placement follows `governance/policies/tooling-and-assurance.md`: app-specific assurance stays with the app lifecycle; genuinely cross-repository assurance belongs under the corresponding cross-repository tooling/test owner.
+
+## Negative space
+
+After cutover search for old writers/readers, stale exports/config, wrappers/aliases, obsolete tests/mocks, duplicate contracts and wrong-owner paths.
+
+## CI guard discipline
+
+A custom guard/script/workflow must enforce a unique durable invariant not already enforced better by compiler/schema/test/runtime tooling. Remove obsolete topology guards, debt baselines, pass-through wrappers and campaign-only checks when their role ends.
+
+A red workflow is a finding to diagnose, not something to suppress merely to recover green status.
+
+## Official standards reference routing
+
+Use current official sources when a material security, accessibility, supply-chain or secure-development claim depends on them. These links are reference entrypoints, not frozen version authority:
+
+- OWASP ASVS — https://owasp.org/www-project-application-security-verification-standard/
+- OWASP MASVS / MASTG / MASWE — https://mas.owasp.org/MASVS/
+- W3C WCAG — https://www.w3.org/WAI/standards-guidelines/wcag/
+- NIST Secure Software Development Framework (SP 800-218) — https://csrc.nist.gov/pubs/sp/800/218/final
+- SLSA specification — https://slsa.dev/spec/
+
+Revalidate the current applicable version/profile at the decision or release point. External standards constrain engineering assurance; they do not create BThwani Product semantics.
+
+## Documentation and knowledge verification
+
+```powershell
+pnpm docs:verify:all
+pnpm knowledge:verify:all
+```
+
+Knowledge verification combines canonical ownership/invariant/authority checks, internal Markdown reference/orphan checks and adversarial high-risk agent knowledge-contract checks. CI keeps them separately visible for attribution.
+
+Use current root verification entrypoints such as `pnpm workspace:verify`, repository structure/hygiene checks, docs/knowledge verification and integration runtime proof as applicable; exact command truth remains in `package.json`/scripts.
+
+Dependency changes require appropriate package/version/license/security/maintenance review. Generated artifacts and lockfile changes remain reproducible and reviewable with their source.

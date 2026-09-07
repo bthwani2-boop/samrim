@@ -1,34 +1,33 @@
-# Execution Playbook
+# Execution State and Movement
 
 OWNER_ROLE: PROCEDURAL_EXECUTION_STATE_MACHINE
 AUTHORITY_ASSIGNED_BY: 00-ORCHESTRATOR.md
 SELF_CERTIFICATION: FORBIDDEN
+LOAD_TRIGGER: ENTRY_RECOVERY_MOVEMENT_CONTINUATION
 
 ## 1. Purpose
 
-This file owns how the engine moves. It does not redefine Product, architecture, diagnosis, mutation or verification laws owned elsewhere.
+Own only runtime movement. Product meaning, scope, diagnosis, mutation and verification remain elsewhere.
 
-## 2. Session entry
+## 2. Session entry / recovery
 
-```text
-PIN_CURRENT_HEAD
-→ RECONSTRUCT_CURRENT_EXECUTION_STATE
-→ IDENTIFY_LAST_PROVEN_CLOSED_UNIT
-→ IDENTIFY_ACTIVE_OPEN_UNIT
-→ INVALIDATE_STALE_EVIDENCE
-→ FIND_RECOVERY_FRONTIER
-→ DERIVE_NEXT_REQUIRED_ACTION
-```
+~~~text
+PIN CURRENT HEAD
+→ RECOVER AUTHORIZED SCOPE
+→ RECOVER OPEN UNIT / CHECKPOINT
+→ INVALIDATE STALE EVIDENCE
+→ DERIVE RECOVERY FRONTIER
+→ EXECUTE NEXT DERIVABLE ACTION
+~~~
 
-`NEW_CHAT != NEW_CAMPAIGN`, `NEW_CHAT != NEW_ROOT`, and `COMMIT != UNIT_CLOSURE`.
+`NEW_CHAT != NEW_CAMPAIGN`; `COMMIT != UNIT_CLOSURE`.
 
-## 3. Runtime states
+## 3. Canonical runtime states
 
-Exactly one active state before completion:
+Exactly one state applies before terminal completion:
 
-```text
+~~~text
 RECOVERING
-QUALIFYING_FOUNDATION
 DISCOVERING
 DIAGNOSING
 SELECTING
@@ -42,119 +41,100 @@ VERIFYING
 FALSIFYING
 RECENSUS
 LEGITIMATELY_BLOCKED
-```
+~~~
 
-Idle/waiting is forbidden when the next authorized action is derivable.
+Structural prerequisite work uses the same state machine; no separate mandatory stage family exists.
 
-## 4. Foundation qualification traversal
+## 4. Root execution movement
 
-```text
-FULL_MATERIAL_CENSUS
-→ REQUIRED_TRUTH_RECONSTRUCTION
-→ CURRENT_SHAPE_INDEPENDENT_CANONICAL_MODEL
-→ SURVIVAL_AND_OWNERSHIP_CHALLENGE
-→ SYSTEMIC_ROOT_CANDIDATE_UNIVERSE
-→ RESOLVE_RANKING_RELEVANT_UNKNOWNS
-→ QUALIFICATION_GATE
-```
+~~~text
+02 EMITS HIGHEST SAFE AUTHORIZED ROOT
+→ SELECTING
+→ 03 EXECUTES MUTATION / CUTOVER / CLEANUP
+→ VERIFYING
+→ 04 EMITS VERIFICATION RESULT
+→ RECENSUS
+→ 02 REBUILDS CAUSAL FRONTIER
+→ CONTINUE OR VERIFY AUTHORIZED-SCOPE FIXED POINT
+~~~
 
-If the foundation is already canonical enough for safe capability work, do not manufacture demolition. Proceed to structural qualification/capability work.
+If the selected root is a structural prerequisite, load `profiles/structural-substrate.md`; it remains the same cycle, not another stage machine.
 
-If a dominant systemic root blocks safe downstream work, execute it before long capability closure.
+## 5. Automatic continuation
 
-## 5. Systemic refoundation traversal
+~~~text
+NEW MATERIAL FINDING
+→ INCORPORATE INTO CAUSAL GRAPH
+→ RE-DIAGNOSE / RE-RANK
+→ EXECUTE HIGHEST REQUIRED AUTHORIZED ROOT
+~~~
 
-```text
-SELECT_DOMINANT_SYSTEMIC_ROOT
-→ PROVE_COMPLETE_AFFECTED_CONE
-→ SALVAGE_REQUIRED_TRUTH
-→ BUILD/REFOUND_CANONICAL_WINNER
-→ MIGRATE/CUT_OVER
-→ DELETE_LOSERS_AND_COMPAT_RESIDUE
-→ PRUNE
-→ FIX_PREVENTION
-→ VERIFY/FALSIFY
-→ RE_PIN
-→ RE_CENSUS
-→ RE_RANK
-```
+Do not ask for “next” or “continue” when the next action is already derivable and authorized.
 
-## 6. Capability traversal
+An adjacent future Product slice is not authorized by continuation.
 
-Prefer complete vertical semantic capability units:
-
-```text
-PRODUCT/SYSTEM MEANING
-→ ACTOR/JOURNEY/STATE
-→ DATA/STORAGE
-→ CANONICAL WRITER/READER
-→ DOMAIN OWNER
-→ TRANSPORT/EVENT
-→ CONTRACT
-→ GENERATED BINDING
-→ PRESENTATION
-→ APP/HOST COMPOSITION
-→ MATERIAL ACTION
-→ MUTATION/OBSERVATION
-→ PERSISTED/OBSERVABLE READBACK
-→ ALL REQUIRED CONSUMERS
-→ LOSER/RESIDUE DELETION
-→ NEGATIVE SPACE
-```
-
-Horizontal all-backend/all-contract/all-frontend/all-app waves are forbidden when they leave material capabilities partially connected.
-
-## 7. Automatic continuation
-
-Every completed action can expose a higher or adjacent root:
-
-```text
-NEW_FINDING
-→ CLASSIFY_IN_CURRENT_CAUSAL_GRAPH
-→ PROMOTE_IF_HIGHER
-→ RE_RANK
-→ EXECUTE_HIGHEST_REQUIRED_FRONTIER
-```
-
-`ASK_NEXT=FORBIDDEN`, `ASK_CONTINUE=FORBIDDEN`, and `WAIT_FOR_CONFIRMATION=FORBIDDEN` when the next action is already authorized and derivable.
-
-Human input is required only for a genuine stop state or unresolved Product/System decision.
-
-## 8. Commit/checkpoint transition
-
-A commit is a recoverable checkpoint, not a handoff.
+## 6. Commit/checkpoint transition
 
 After commit or unit closure:
 
-```text
-VERIFY_CURRENT_BRANCH_HEAD
-→ RE_PIN
-→ RE_CENSUS
-→ RE_DIAGNOSE
-→ RE_RANK
-→ CONTINUE
-```
+~~~text
+VERIFY CURRENT HEAD
+→ RE-PIN
+→ REFRESH AFFECTED CENSUS
+→ RE-DIAGNOSE
+→ CONTINUE IF AUTHORIZED WORK REMAINS
+→ OTHERWISE VERIFY AUTHORIZED-SCOPE FIXED POINT
+~~~
 
-## 9. Safe-checkpoint preemption
+## 7. Safe preemption
 
-An open unit may be preempted only when a proven higher-leverage root is a prerequisite/superseding cause and preemption does not create mixed authority, unsafe partial cutover or stranded required truth.
+Preempt an open unit only for a proven higher prerequisite/superseding cause and only when no unsafe mixed authority, partial cutover or stranded required truth is created.
 
-## 10. No endless audit
+## 8. No endless analysis
 
-Once the highest safe root is proven executable and ranking-changing unknowns are resolved:
+Once a highest safe root is executable and ranking-changing unknowns are resolved:
 
-```text
-MUTATION_MANDATORY
-ANALYSIS_ONLY_CONTINUATION=FORBIDDEN_UNLESS_IT_CAN_CHANGE_SAFETY_OR_DOMINANCE
-```
+~~~text
+MUTATION REQUIRED
+ANALYSIS-ONLY CONTINUATION FOR THE SAME ROOT = FORBIDDEN
+~~~
 
-## 11. Fixed-point traversal
+## 9. Fixed-point traversal
 
-```text
-FRESH_FULL_REPOSITORY_RECENSUS_FROM_ZERO
-→ FRESH_FALSIFICATION
-→ EXECUTE_EXPOSED_OBLIGATION
+For `ACTIVE_SLICE`:
+
+~~~text
+FRESH AFFECTED-CONE RECENSUS
+→ FALSIFY OUTCOME / OWNER / READBACK / NEGATIVE SPACE
+→ EXECUTE EXPOSED REQUIRED OBLIGATION
 → REPEAT
-```
+~~~
 
-Stop only when Level-4 fixed point is proven or a legitimate blocker prevents safe forward execution.
+For explicit `FULL_TARGET`, apply the same cycle repository-wide.
+
+Stop when the authorized-scope Level-4 fixed point is proven or a legitimate blocker prevents safe progress.
+
+## 10. Clean-target reconstruction movement
+
+When donor evidence is configured:
+
+~~~text
+PIN TARGET + DONOR REF
+→ RESOLVE AUTHORIZED SCOPE
+→ EXTRACT ONLY MATERIAL DONOR/HISTORY TRUTH FOR THAT SCOPE
+→ BUILD CANONICAL TARGET
+→ VERIFY / RECENSUS
+→ CONTINUE NORMAL CAUSAL CYCLE
+~~~
+
+Repository-wide donor exhaustion is required only for explicit `FULL_TARGET`.
+
+## 11. Parallel scheduling
+
+Ask `01` for the safe parallel set. Schedule independent mutation cones. If a shared premise changes, return affected units to recovery/reconciliation before further mutation.
+
+## 12. Cross-objective non-regression
+
+When a shared owner/contract/database/package/runtime/host changes, invalidate only materially affected prior evidence and reprove affected previously closed outcomes before integration.
+
+Local speed that shifts failure/debt into another required capability is not valid progress.

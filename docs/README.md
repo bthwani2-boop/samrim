@@ -1,78 +1,102 @@
-# BThwani Developer Documentation
+# BThwani Human Documentation
 
-DOCUMENT_CLASS: HUMAN_DEVELOPMENT_AND_OPERATIONS_GUIDANCE
+DOCUMENT_CLASS: HUMAN_DOCUMENTATION_INDEX
 EXECUTION_AUTHORITY: NONE
 PRODUCT_SEMANTIC_AUTHORITY: NONE
-CURRENT_COMMAND_AUTHORITY: LIVE_REPOSITORY_SCRIPTS_AND_CONFIG
+CURRENT_IMPLEMENTATION_AUTHORITY: NONE
+CURRENT_COMMAND_TRUTH_SOURCE: LIVE_REPOSITORY_SCRIPTS_AND_CONFIG
 
-## Start here
+## 1. Purpose
 
-A developer new to BThwani should read in this order:
+Docs explain how humans develop, inspect, release and operate BThwani. They do not define Product/domain meaning, current implementation state or execution/closure law.
+
+~~~text
+DOCS != GOVERNANCE
+DOCS != EXECUTABLE CONFIG
+DOCS != CURRENT IMPLEMENTATION INVENTORY
+DOCS != ORCHESTRATOR
+~~~
+
+When a command/path/configuration statement conflicts with executable source, source wins and Docs must be corrected.
+
+## 2. Start here
 
 1. `governance/GOVERNANCE.md`
 2. `governance/project/PLATFORM.md`
 3. `governance/project/GLOSSARY.md`
 4. `governance/project/ACTORS-TRUST-AND-SCOPE.md`
 5. `governance/product/PRD.md`
-6. `governance/product/CAPABILITIES.md`
-7. `governance/product/JOURNEYS.md`
-8. `governance/architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md`
-9. `governance/product/FINANCIAL-MODEL.md` when money is affected
-10. `governance/product/EXPERIENCE-AND-DESIGN.md` when a user/operator surface is affected
-11. the applicable engineering policy
-12. `development/getting-started.md`
+6. `governance/architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md`
+7. `development/README.md`
 
-## What Docs owns
+Use source-derived semantic lookup:
 
-`docs/**` explains how humans develop, run, inspect and operate BThwani. It may summarize governance or executable configuration for usability, but it does not create Product/domain truth or current runtime truth.
+~~~text
+pnpm knowledge:query -- capability <CAPABILITY_ID>
+pnpm knowledge:query -- journey <J_ID>
+pnpm knowledge:query -- owner <keyword-or-path>
+~~~
 
-```text
-DOCS != PRODUCT GOVERNANCE
-DOCS != EXECUTABLE CONFIG
-DOCS != CURRENT ROUTE/SCHEMA REGISTRY
-```
+## 3. Development guidance
 
-When a command, path, port or environment value conflicts with live scripts/configuration, the executable source wins and the documentation must be corrected.
+`development/README.md` is the only development-guide router.
 
-## Documentation map
+It routes:
 
-### Development handbook
+- workflow/onboarding/evidence;
+- backend/service/contract/data work;
+- frontend/app-host/routing/design-system work;
+- mobile/Expo/EAS;
+- runtime/configuration/providers;
+- observability/Sentry;
+- quality/testing/verification;
+- release/store submission.
 
-Read in this order for normal onboarding:
+Do not recreate a flat development handbook or numbered lifecycle tree.
 
-1. `development/getting-started.md`
-2. `development/repository-map.md`
-3. `development/first-change.md`
+## 4. Operations
 
-Then use the focused guide:
+`runbooks/README.md` is the only runbook router. Runbooks describe current diagnosis/containment/recovery through canonical operational interfaces.
 
-- `development/apps-and-routing.md`
-- `development/frontend-development.md`
-- `development/services-development.md`
-- `development/database-and-migrations.md`
-- `development/contracts-and-generation.md`
-- `development/testing-and-verification.md`
-- `development/configuration-and-secrets.md`
-- `development/runtime.md`
-- `development/providers-and-sandboxes.md`
-- `development/mobile.md`
-- `development/control-panel.md`
-- `development/design-system.md`
-- `development/observability-and-debugging.md`
-- `development/ci-and-quality.md`
-- `development/eas.md`
-- `development/sentry.md`
-- `development/repository-evidence.md`
-- `development/leanctx.md`
+Future or conditional mechanisms that do not exist in the executable repository do not belong in current runbooks.
 
-### Runbooks
+## 5. References
 
-`runbooks/README.md` routes operational incidents to focused runbooks. Runbooks describe diagnosis/recovery only; they do not override domain owners or invent direct business/database mutations.
+`reference/external-systems/` is non-authoritative external evidence/falsification material.
 
-### Reference
+`reference/donor-reconstruction-patterns.md` is non-authoritative donor/history guidance.
 
-`reference/external-systems/` contains non-authoritative external research. Reference selection is not dependency adoption.
+Reference material never authorizes Product scope, target topology, dependency adoption or current implementation state.
 
-## Staleness rule
+## 6. Developer reconstruction and semantic-parity acceptance
 
-Every documentation change that mentions executable commands/paths/configuration must verify them against the same repository candidate. Historical commands, branch assumptions, deleted paths and implementation inventories must be removed rather than retained as compatibility prose.
+The current Docs set is sufficient only when a qualified developer can, without consulting retired handbooks, determine how to:
+
+- orient in the repository and find the applicable semantic owner;
+- bootstrap and verify the workspace using executable command authority;
+- develop a service without crossing private ownership boundaries;
+- evolve contracts/generated bindings and durable data/migrations safely;
+- configure runtime, secrets and development providers without creating parallel truth;
+- build app-host feature presentation and Design-System reuse correctly;
+- develop/test mobile hosts and qualify material real-device behavior;
+- debug with canonical readback and privacy-safe observability;
+- select the evidence class capable of falsifying a material claim;
+- build/release/store-submit an attributable candidate;
+- find the applicable operational runbook for recovery rather than editing canonical truth directly.
+
+When development/runbook/reference files are merged, renamed or deleted, closure requires **semantic parity**, not filename parity. Still-required historical guidance must be absorbed into the current focused owner before the losing document disappears.
+
+~~~text
+REQUIRED_DEVELOPMENT_GUIDANCE_LOST=0
+REQUIRED_OPERATIONAL_GUIDANCE_LOST=0
+STALE_COMMAND_OR_PATH_AUTHORITY=0
+DOCS_PARALLEL_PRODUCT_CONTRACT_DATA_AUTHORITY=0
+~~~
+
+Historical material that is useful only as evidence belongs in Git history or a clearly non-authoritative reference; it must not be revived as a second handbook.
+
+## 7. Staleness law
+
+Docs must not preserve obsolete branch names, local-machine paths, retired repository topology, historical commands or deleted knowledge structures as current guidance.
+
+If the executable mechanism disappears, either update the guide to the current mechanism or delete the obsolete guidance.

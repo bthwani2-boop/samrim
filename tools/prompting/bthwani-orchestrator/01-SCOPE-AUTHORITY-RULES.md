@@ -1,331 +1,188 @@
 # Scope, Authority, Exact-Head and Recovery Rules
 
-OWNER_ROLE: BRANCH_SCOPE_EXACT_HEAD_RECOVERY_STOP_STATES
+OWNER_ROLE: BRANCH_SCOPE_RECOVERY_BLOCKERS_PARALLEL_AUTHORITY
 AUTHORITY_ASSIGNED_BY: 00-ORCHESTRATOR.md
 SELF_CERTIFICATION: FORBIDDEN
+LOAD_TRIGGER: ENTRY_RESUME_OR_SCOPE_CHANGE
 
-## 1. Invocation branch law
+## 1. Mutation authority
 
-```text
-MUTABLE_AUTHORITY = INVOCATION_BRANCH
-```
+Only the invocation repository/branch is mutable unless the human explicitly expands scope.
 
-Only the repository/branch supplied by the current invocation is mutable unless explicit human authorization expands scope.
+~~~text
+TARGET BRANCH = MUTATION AUTHORITY
+DONOR / OTHER BRANCHES = READ-ONLY FORENSIC INPUT BY DEFAULT
+FORCE PUSH / BLIND MERGE / BLIND CHERRY-PICK = FORBIDDEN
+~~~
 
-Cross-branch merge, rebase, autosync, blind cherry-pick of historical structure and force-push are forbidden by default. A normal fast-forward update of the invocation branch is allowed when the expected head is still current.
+A fast-forward write is valid only from the expected current HEAD.
 
-## 2. Live tree vs forensic history
+## 2. Product-breadth authority
 
-```text
-CURRENT_HEAD = CANONICAL_PRESENT
-GIT_HISTORY = FORENSIC_PAST
-```
+~~~text
+PRODUCT_BREADTH=ACTIVE_SLICE | FULL_TARGET
+LEVEL_4 != FUTURE PRODUCT AUTHORIZATION
+~~~
 
-The live tree is not an archive.
+`ACTIVE_SLICE` authorizes the named/current semantic outcome plus only its real causal prerequisites and complete affected cone.
 
-```text
-DO_NOT_KEEP_OBSOLETE_MATERIAL_FOR_POSSIBLE_FUTURE_REFERENCE
-DO_NOT_MOVE_LOSERS_TO_ARCHIVE_LEGACY_HISTORY_BACKUP_UNUSED
-DO_NOT_PRESERVE_DEAD_CODE_FOR_EXPLANATION
-```
+The affected cone may include:
 
-If previously committed material is needed later, recover it through commit history, parent blobs, diffs and historical refs.
+- canonical owner/writer/data/contract/runtime;
+- required consumers/readbacks/surfaces;
+- security/privacy/financial invariants actually exercised;
+- migration/cutover dependencies;
+- regressions caused by shared owners;
+- structural prerequisites without which the authorized outcome cannot be canonical.
 
-```text
-GIT_HISTORY_IS_THE_ARCHIVE
-CURRENT_HEAD_IS_NOT_AN_ARCHIVE
-```
+Unrelated future capabilities and unrelated repository cleanup remain outside mutation scope.
 
-Historical branches and old commits are forensic only. They may recover required truth or explain past behavior; they never impose topology or preservation rights.
+`FULL_TARGET` explicitly authorizes repository-wide governed convergence.
 
 ## 3. Exact-head discipline
 
 Before every coherent mutation batch:
 
-```text
-RESOLVE_REMOTE_CURRENT_BRANCH
-→ RECORD_EXPECTED_CURRENT_BRANCH_SHA
-→ DIAGNOSE_AGAINST_THAT_SHA
-```
+~~~text
+RESOLVE LIVE TARGET HEAD
+→ RECORD EXPECTED SHA
+→ DIAGNOSE AGAINST THAT SHA
+→ RECHECK SHA IMMEDIATELY BEFORE WRITE
+~~~
 
-Immediately before write:
+Unexpected movement stops only the pending unsafe write:
 
-```text
-RESOLVE_ACTUAL_CURRENT_BRANCH_SHA
-```
+~~~text
+INSPECT FOREIGN DELTA
+→ INVALIDATE AFFECTED EVIDENCE
+→ RECONSTRUCT OPEN UNIT
+→ RE-PIN
+→ CONTINUE
+~~~
 
-If the head moved unexpectedly:
+## 4. Scope-directed accounting
 
-```text
-STOP_THE_PENDING_WRITE_ONLY
-→ INSPECT_DELTA
-→ INVALIDATE_AFFECTED_EVIDENCE
-→ RECONSTRUCT_ACTIVE_UNIT_STATE
-→ RE_PIN
-→ CONTINUE_FROM_THE_CORRECT_FRONTIER
-```
+Do not require a repository-wide census for every active slice.
 
-Head movement does not authorize campaign idleness or restart from zero.
+Start with the authorized outcome and evidence-derived affected cone. Expand the census only when a finding proves a higher/shared/systemic dependency.
 
-## 4. All-tracked hostile accounting
+For explicit `FULL_TARGET` or a proven repository-wide structural root, repository-wide accounting is appropriate.
 
-```text
-TRACKED_ARTIFACT_DEFAULT=ACCOUNT_REQUIRED
-CURRENT_CONTAINER_DEFAULT=DOES_NOT_SURVIVE_UNLESS_PROVEN_CANONICAL
-```
+~~~text
+ACTIVE_SLICE → MATERIAL CAUSAL CONE ACCOUNTING
+SYSTEMIC ROOT → ROOT'S COMPLETE AFFECTED CONE
+FULL_TARGET   → REPOSITORY-WIDE ACCOUNTING
+~~~
 
-Every tracked line/symbol/file/directory/package/workspace/service/database object/migration/contract/generated artifact/runtime registration/config/workflow/tool/doc/governance artifact/test/fixture/dependency/top-level surface is in scope.
+A tracked artifact outside the current cone is neither “proven good” nor automatically a blocker.
 
-`NONMATERIAL` requires positive proof. `KEEP_PROVEN` requires positive proof.
+## 5. Survival and legacy law
 
-A surviving container must prove as applicable:
+Inside the affected cone, a surviving artifact must have a current required responsibility, correct owner/location/boundary and no better canonical consolidation.
 
-```text
-REQUIRED
-SEMANTICS_CORRECT
-UNIQUE_COHESIVE_RESPONSIBILITY
-CANONICAL_OWNER
-CANONICAL_WRITER_OR_DERIVED_ROLE
-CANONICAL_LOCATION
-CANONICAL_BOUNDARY
-NON_DUPLICATIVE
-NON_SHADOW
-NO_BETTER_CONSOLIDATION
-NO_OBSOLETE_COMPATIBILITY
-REQUIRED_BY_CANONICAL_BASELINE
-```
+A proven loser may remain only while actively required for truth extraction, migration, compatibility with a real live consumer or safe cutover.
 
-## 5. Known-garbage survival law
+~~~text
+LAST REQUIRED DEPENDENCY ENDS → DELETE LOSER
+HISTORY/EXPLANATION ONLY       → USE GIT HISTORY
+~~~
 
-```text
-KNOWN_GARBAGE_SURVIVAL=FORBIDDEN
-KNOWN_LOSING_CONTAINER_SURVIVAL=FORBIDDEN
-KNOWN_DEAD_ARTIFACT_SURVIVAL=FORBIDDEN
-KNOWN_DEFERRED_STRUCTURAL_GARBAGE=FORBIDDEN
-```
+## 6. Structural prerequisite law
 
-A proven loser may remain temporarily only when it is an active, explicit dependency of truth extraction, migration or safe cutover.
+Structural work is pulled forward only when it is causally required.
 
-```text
-LAST_REQUIRED_DEPENDENCY_ENDS
-→ DELETE_LOSER_NOW
-```
+Do not defer a proven prerequisite merely because it looks “infrastructure”, and do not force unrelated structural cleanup before a Product root.
 
-The following are not treatments:
+A structural finding joins the current authorized cone when at least one is true:
 
-```text
-CLASSIFIED
-MAPPED
-CLUSTERED
-ASSIGNED_TO_ROOT
-RENAMED
-MOVED
-MERGED
-DOCUMENTED
-DEPRECATED
-```
+- it blocks the canonical owner/path;
+- it creates duplicate/shadow authority used by the slice;
+- it affects the same mutable writer/data/contract/runtime;
+- it contaminates migration/cutover/evidence for the slice;
+- it is an ancestor/root whose continued existence makes the slice noncanonical.
 
-## 6. Stage-B deferral isolation law
+Otherwise it remains outside the active slice unless `FULL_TARGET` is authorized.
 
-Structural garbage cannot be sent to Stage B merely because it is local or inconvenient.
+## 7. Ephemeral execution state
 
-Stage-B deferral requires positive proof of all applicable isolation conditions:
+Maintain enough transient state to recover and force the next action:
 
-```text
-CONTAINER_AND_ANCESTORS_ARE_CANONICAL
-NO_CROSS_ROOT_AUTHORITY
-NO_SHARED_MUTABLE_WRITER
-NO_SHARED_RUNTIME_EFFECT
-NO_REPOSITORY_TOPOLOGY_EFFECT
-NO_MIGRATION_EPOCH_EFFECT
-NO_CONTRACT_GENERATED_LINEAGE_EFFECT
-NO_VERIFICATION_CONTAMINATION
-NO_HIGH_FAN_IN_COMPENSATION
-NO_PARENT_PRE_ROOT_CATASTROPHE
-NO_MATERIAL_ROOT_TAX
-NO_STRUCTURAL_DEMOLITION_TARGET
-```
-
-Without this proof, the obligation remains A0/A1 structural work.
-
-## 7. Continuous engagement authority
-
-Once mutation execution begins, the campaign becomes continuously engaged.
-
-```text
-CAMPAIGN_ENGAGED=TRUE
-```
-
-It remains true until either:
-
-```text
-LEVEL_4_FIXED_POINT=PASS
-```
-
-or a legitimate stop state makes safe forward execution impossible.
-
-The campaign may not voluntarily return to idle between commits, units or stages.
-
-```text
-COMMIT != PAUSE
-COMMIT != HANDOFF
-COMMIT != PERMISSION_TO_STOP
-UNIT_CLOSED != CAMPAIGN_PAUSE
-STAGE_TRANSITION != CAMPAIGN_PAUSE
-CHECKPOINT != NATURAL_STOP
-```
-
-## 8. Legal runtime states — no idle state
-
-Before final completion the campaign must be in exactly one actionable state:
-
-```text
-RECOVERING
-DISCOVERING
-DIAGNOSING
-SELECTING
-DEMOLISHING
-REFOUNDING
-MIGRATING
-CUTTING_OVER
-DELETING
-PRUNING
-VERIFYING
-FALSIFYING
-RECENSUS
-LEGITIMATELY_BLOCKED
-```
-
-Forbidden pre-completion states:
-
-```text
-IDLE
-WAITING_FOR_NEXT
-PAUSED_AFTER_COMMIT
-PAUSED_AFTER_UNIT
-PAUSED_AFTER_STAGE
-RECOMMENDATIONS_ONLY
-READY_BUT_NOT_EXECUTING
-ASKING_FOR_NEXT_INSTRUCTION_WHEN_DERIVABLE
-```
-
-## 9. Mandatory ephemeral execution control state
-
-During execution, maintain an ephemeral control state sufficient to force the next action:
-
-```text
+~~~text
 EXACT_HEAD_SHA
-CAMPAIGN_ENGAGED
-CURRENT_STAGE
+PRODUCT_BREADTH
+ACTIVE_PRODUCT_SLICE
+AUTHORIZED_SCOPE
+CURRENT_CAUSAL_ROOT
 CURRENT_UNIT
 UNIT_STATE
 RECOVERY_FRONTIER
 NEXT_REQUIRED_ACTION
 CURRENT_BLOCKER_OR_NONE
 VALID_EVIDENCE_STATE
-```
+~~~
 
-This is not a durable campaign ledger and must not become a second authority.
+This state is ephemeral and must not become a durable campaign ledger.
 
-If `CURRENT_BLOCKER_OR_NONE=NONE`, `NEXT_REQUIRED_ACTION` must be executed rather than merely reported.
+## 8. Recovery priority
 
-## 10. Recovery and open-unit priority
+Reconstruct from live HEAD, commit graph, material diffs, current reachability and nonstale evidence.
 
-Recovery reconstructs from:
+Open units are:
 
-```text
-LIVE_REMOTE_CURRENT_BRANCH
-+ COMMIT_GRAPH
-+ MATERIAL_DIFFS
-+ CURRENT_REACHABILITY
-+ NONSTALE_EVIDENCE
-```
+- `OPEN_CRITICAL` — partial authority/data/runtime/consumer cutover or other unsafe mixed state; normally resume first.
+- `OPEN_SAFE_CHECKPOINT` — recoverable state with no unsafe mixed authority; may be preempted by a proven higher prerequisite/root.
 
-An open unit is classified as:
+## 9. Stop states
 
-```text
-OPEN_CRITICAL
-OPEN_SAFE_CHECKPOINT
-```
+Mutation may stop only for:
 
-`OPEN_CRITICAL` includes partial authority, data, runtime or consumer cutover and normally resumes first.
-
-`OPEN_SAFE_CHECKPOINT` has no dangerous mixed-authority state and may be preempted by a proven safely executable dominant pre-root catastrophe.
-
-A checkpoint exists only so execution can recover if forcibly interrupted.
-
-## 11. Automatic continuation after unit closure
-
-When a unit closes:
-
-```text
-RE_PIN_CURRENT_BRANCH
-→ RE_CENSUS_INVALIDATED_CONE
-→ RE_DIAGNOSE
-→ RE_RANK
-→ SELECT_NEXT_HIGHEST_EXECUTABLE_UNIT
-→ EXECUTE_IMMEDIATELY
-```
-
-Do not wait for `NEXT`, `CONTINUE`, confirmation or another human prompt when the next action is derivable and authorized.
-
-If a newly exposed causal obligation is higher, absorb or promote it under the current campaign graph and continue.
-
-## 12. Stop states
-
-Only these may stop mutation:
-
-```text
+~~~text
 UNRESOLVED_IRREVERSIBLE_DATA_RISK
 UNRESOLVED_EXTERNAL_LIVE_CONSUMER_CONTRACT
-UNKNOWN_CURRENT_CURRENT_BRANCH_HEAD_MOVEMENT_NOT_YET_RECONCILED
+UNRECONCILED_TARGET_HEAD_MOVEMENT
 MISSING_REQUIRED_HUMAN_PRODUCT_DECISION
-MISSING_REQUIRED_SECRET_CREDENTIAL_ENVIRONMENT
-BLOCKED_UNKNOWN_THAT_CAN_CHANGE_CANONICAL_TARGET_OR_SAFE_CUTOVER
-EXTERNAL_PROVIDER_BLOCKER_THAT_PREVENTS_REQUIRED_PROOF_OR_CUTOVER
-```
+MISSING_REQUIRED_SECRET_CREDENTIAL_OR_ENVIRONMENT
+UNKNOWN_THAT_CAN_CHANGE_CANONICAL_TARGET_OR_SAFE_CUTOVER
+EXTERNAL_PROVIDER_BLOCKER_PREVENTING_REQUIRED_PROOF_OR_CUTOVER
+~~~
 
-Large deletion, many callers, extensive migration, unfamiliar structure, session length, token pressure, commit boundaries, unit boundaries or stage boundaries are not stop states.
+Large deletion, many callers, difficult migration, token/session length, commit boundaries and unfamiliar code are not stop states.
 
-## 13. Compliance failure is a live defect
+## 10. Continuation authorization
 
-If execution behavior violates this package, do not merely note the violation.
+After a unit closes:
 
-```text
-ORCHESTRATOR_COMPLIANCE_FAILURE
-→ STOP_THE_WRONG_LOCAL_ACTION
-→ RECONSTRUCT_CORRECT_CONTROL_STATE
-→ RETURN_TO_REQUIRED_FRONTIER
-→ EXECUTE_THE_MISSING_REQUIRED_ACTION
-```
+~~~text
+NEXT ROOT INSIDE AUTHORIZED SCOPE → MAY CONTINUE
+REQUIRED PREREQUISITE/REGRESSION  → MAY CONTINUE
+ADJACENT FUTURE PRODUCT SLICE     → NOT AUTHORIZED
+~~~
 
-Examples:
+No human confirmation is required for derivable work already authorized.
 
-```text
-PAUSED_WITH_NO_BLOCKER
-MAPPED_BUT_UNTREATED_GARBAGE
-SKIPPED_LOSER_DELETION
-STOPPED_AFTER_COMMIT
-STOPPED_AFTER_UNIT
-WAITED_FOR_NEXT_WITH_DERIVABLE_WORK
-PATCHED_INSIDE_PROVEN_INVALID_CONTAINER
-SELECTED_LOWER_UNIT_WITHOUT_ANCESTOR_EXONERATION
-```
+## 11. Parallel mutation authority
 
-The orchestrator is operational law, not advisory prose.
+Parallel mutation is allowed only for proven non-overlapping mutation cones.
 
-## 14. Single mutation authority
+~~~text
+NON_OVERLAPPING CONES → PARALLEL ALLOWED
+SHARED MUTABLE OWNER/DB/CONTRACT/RUNTIME/EXPORT → SERIALIZE
+ONE INTEGRATION AUTHORITY PER TARGET BRANCH
+EACH MUTATING UNIT → EXACT BASE SHA
+FOREIGN DELTA → RECONCILE BEFORE WRITE/INTEGRATION
+~~~
 
-```text
-ACTIVE_EXECUTION_SESSIONS=1
-PARALLEL_MUTATING_SESSIONS=FORBIDDEN
-PARALLEL_EXECUTION_AGENTS=FORBIDDEN
-MAX_ACTIVE_OVERLAPPING_MATERIAL_MUTATION_UNITS=1
-```
+Read-only evidence acquisition may run at maximum safe parallelism.
 
-Wide read-only evidence collection may run in parallel when it cannot create competing mutation authority.
+## 12. Donor/research authority
 
-```text
-ONE_ACTIVE_UNIT != SMALL_UNIT
-CONTEXT_WINDOW != ARCHITECTURE_BOUNDARY
-```
+When a donor exists:
+
+~~~text
+TARGET = MUTATION AUTHORITY
+DONOR  = READ-ONLY FORENSIC EVIDENCE
+~~~
+
+Inspect only donor current/history capable of changing required truth for the authorized scope unless `FULL_TARGET` is explicit.
+
+External research may resolve technical/standard/provider facts. It may not invent BThwani Product truth or authorize a new dependency/provider without applicable Governance.

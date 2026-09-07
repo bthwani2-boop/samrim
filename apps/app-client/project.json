@@ -1,0 +1,36 @@
+{
+  "name": "app-client",
+  "root": "apps/app-client",
+  "sourceRoot": "apps/app-client",
+  "projectType": "application",
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm client"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/app-client typecheck"
+      }
+    },
+    "export-smoke": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/export-mobile-smoke.mjs app-client"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/test-mobile-app.mjs app-client"
+      }
+    }
+  },
+  "tags": [
+    "scope:app-client",
+    "type:app"
+  ]
+}

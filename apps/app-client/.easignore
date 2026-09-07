@@ -1,0 +1,13 @@
+# Governed EAS archive rules for one mobile runtime.
+node_modules/
+.expo/
+dist/
+build/
+coverage/
+.tmp/
+*.log
+credentials.json
+*.jks
+*.keystore
+.env*
+google-services.json

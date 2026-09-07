@@ -3,12 +3,14 @@
 ARTIFACT_CLASS: DURABLE_PRODUCT_GOVERNANCE
 SEMANTIC_OWNER: governance/product/COMMERCIAL-AND-PARTNER-MODEL.md
 EXECUTION_AUTHORITY: NONE
+CLOSURE_AUTHORITY: NONE
+IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Partner model
 
 A Partner Organization is a business entity operating one or more stores under governed DSH relationships. A Store is a commerce/fulfillment business scope with one canonical operational owner unless an explicit transfer capability changes that ownership.
 
-Partner organization, store, operator context and platform isolation are different concepts.
+Partner organization, store, authorization scope and platform isolation are different concepts.
 
 ## Commercial relationship modes
 

@@ -17,6 +17,24 @@ FRONTEND = INTENT + READBACK
 PROVIDER = EXTERNAL RAIL, NOT INTERNAL LEDGER
 ```
 
+## Financial breadth activation law
+
+This file defines the durable financial target/invariants; it does not authorize all WLT Product breadth at once.
+
+```text
+UNUSED_FUTURE_FINANCIAL_FEATURE != CURRENT_IMPLEMENTATION_OBLIGATION
+REAL_FINANCIAL_EFFECT_CREATED_BY_ACTIVE_SLICE = CURRENT_WLT_OBLIGATION
+```
+
+Examples:
+
+- a commerce slice with no money effect does not require payout, refund, external-rail or wallet UI merely because they exist in the target model;
+- once checkout creates a COD/payment allocation, WLT conservation/idempotency for that allocation is mandatory in that slice;
+- once captain assignment depends on COD capacity, the corresponding WLT exposure reservation and its lawful backing are mandatory before assignment;
+- once delivery creates earnings/payables/commission/COD finalization truth, those postings cannot be deferred to a later “finance phase.”
+
+Incremental Product breadth may defer unrelated financial workflows, never the financial invariant of an effect already created.
+
 ## One wallet / one ledger
 
 Each actor has one canonical internal WLT wallet. Available, held, pending, earned, settled, reserved and withdrawal-eligible amounts are states/projections over that truth, not parallel wallets. Every value-changing internal movement is represented through the canonical balanced ledger. Direct balance edits, spreadsheet totals, screenshots, client arithmetic and operator-entered authoritative amounts are forbidden.

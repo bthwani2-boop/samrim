@@ -6,9 +6,9 @@ EXECUTION_AUTHORITY: NONE
 CLOSURE_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
-## Data authority
+## Data mutation and integrity policy
 
-Every durable data fact has one canonical owning domain/service and one governed mutation path. Another service may consume a contract-permitted projection/reference but must not directly mutate the owner's tables or recreate the owner's business calculations as independent truth.
+Canonical data ownership is defined by `../architecture/OWNERSHIP-AND-SOURCE-OF-TRUTH.md`. This policy governs mutation, integrity, migration, backfill, reconciliation and retention behavior. Every durable data fact therefore has one governed mutation path. Another service may consume a contract-permitted projection/reference but must not directly mutate the owner's tables or recreate the owner's business calculations as independent truth.
 
 Each service/database authority owns one migration history. Applied migration identity/order/checksum is immutable; corrections use explicit forward-safe migrations rather than rewriting history for cleanliness.
 
@@ -25,6 +25,22 @@ Use the database to encode durable integrity close to the data when appropriate:
 - outbox/event persistence when atomic state+event publication is required.
 
 Do not move mutable Product workflow policy into opaque database logic merely because it can be expressed in SQL. Database constraints protect durable invariants; domain/application owners decide governed behavior.
+
+## Migration authority and readiness
+
+Each durable data owner has one globally ordered canonical migration lane unless a separately deployed/storage-owned boundary proves an independent lane is required. Parallel migration authorities for the same database/schema meaning are forbidden.
+
+~~~text
+ONE_DATA_OWNER
+→ ONE_CANONICAL_MIGRATION_HISTORY
+→ ONE_REPRODUCIBLE_MIGRATION_ENTRYPOINT
+~~~
+
+A service that claims database readiness proves its required database/schema prerequisites, not merely that the process is alive.
+
+Production schema evolution is an explicit controlled migration/predeploy responsibility. Development/bootstrap may invoke the same canonical migration mechanism explicitly, but API process startup must not become an arbitrary hidden production schema mutator.
+
+Do not create empty/placeholder business migrations or speculative future tables merely to make a service appear prepared for future Product work.
 
 ## Migration law
 
@@ -100,6 +116,6 @@ Before deletion/narrowing prove all remaining readers/writers, legal/audit/finan
 
 For durable-data risk, backup configuration alone is not proof. Establish the applicable restore/PITR/rebuild claim, migration/backfill recovery behavior and representative recovery evidence when operational correctness depends on it. Numeric RPO/RTO values require an authorized operational requirement; do not invent them.
 
-## Closure
+## Required conformance properties
 
-Data closure requires consistent owner/schema/constraints/migration history, correct backfill/reconciliation, canonical readback, migrated consumers, zero superseded authoritative writer and no material duplicate/orphan/drift residue tied to the root.
+Concrete candidate closure remains Orchestrator authority. Data conformance requires consistent owner/schema/constraints/migration history, correct backfill/reconciliation, canonical readback, migrated consumers, zero superseded authoritative writer and no material duplicate/orphan/drift residue tied to the affected responsibility.

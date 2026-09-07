@@ -38,6 +38,8 @@ Rate/abuse controls are applied where an operation can materially consume resour
 - Passwords, OTP/activation codes, tokens, signing keys, service credentials, provider secrets and recovery credentials are never logged or stored in plaintext outside their approved secure store.
 - Session/refresh/revocation/activation behavior is explicit and replay-safe where required.
 - Revoked, expired, suspended or replaced trust must not survive through client cache/local state or an alternate session path.
+- Public login/activation/challenge consumption must not reveal actor/role existence or blocked/disabled/security-disabled admission state. Publicly distinguish only what is required for safe protocol behavior; privileged status inspection belongs to explicitly authorized administration contracts.
+- Local sign-out is complete when local session credentials/cookies are irreversibly cleared and the host converges to signed-out state. Remote session revocation is a separate server-side result; its failure must not resurrect local authentication or leave the UI acting authenticated.
 - Credential comparison/verification and token/cookie/session transport/storage use the owning platform/framework's current secure primitives; do not invent custom cryptography for convenience.
 - Client/mobile/web bundles contain no server secret, privileged provider credential or private signing material.
 
@@ -47,7 +49,7 @@ Rate/abuse controls are applied where an operation can materially consume resour
 - Provider webhooks use signature/authentication verification, replay/timestamp protection where supported/required, schema/body limits, stable event identity and idempotent processing.
 - Provider-specific secrets/payloads terminate at their adapter/owner boundary; downstream domains consume governed normalized facts.
 - Missing trusted context, permission, secret, signature, provider identity or security-critical configuration fails closed.
-- Unknown/ambiguous external mutation outcomes remain unresolved/reconcilable; security/reliability uncertainty must not be converted into fabricated success or a second provider attempt that can duplicate the effect.
+- Provider unknown-result/reconciliation semantics are owned by `providers-and-integrations.md`; security requires that ambiguity never bypass authentication, authorization, signature/provenance checks or fail-closed controls.
 
 ## Privacy and data lifecycle
 
@@ -73,7 +75,7 @@ data element
 - Collect only data required by current Product/contracts and a legitimate current purpose.
 - Restrict reads/projections/exports by purpose, actor, object and business scope; redact fields not required by a consumer.
 - Retain sensitive data only for the governed operational/legal/audit need. A durable retention requirement must have an owner; absence of a material required retention/deletion decision is a governance gap rather than permission to retain forever.
-- Deletion/anonymization must respect canonical ownership, references, legal/audit/financial retention and reconciliation. Deleting a projection does not delete owner truth; deleting owner truth without resolving required consumers/references is not privacy closure.
+- Deletion/anonymization must respect canonical ownership, references, legal/audit/financial retention and reconciliation. Deleting a projection does not delete owner truth; deleting owner truth without resolving required consumers/references is not a conformant privacy/data-lifecycle result.
 - Production PII, credentials, identity documents, precise location history and financial payloads are not ordinary local/staging/test data. Exceptional diagnostic use must be authorized, minimized/sanitized, protected, time-bounded and removed after purpose.
 
 ## Sensitive logging, telemetry, and evidence
@@ -138,7 +140,9 @@ Exact thresholds are configuration/policy values and must not be invented in gov
 
 Raw OTPs must not enter production logs, traces, analytics or general audit records.
 
-For privileged Control Panel/operator authentication, architecture must remain capable of stronger factors such as TOTP and Passkeys/WebAuthn. These are authentication methods, not SMS delivery channels.
+For privileged Control Panel/operator authentication, password-only session creation is not sufficient. The current minimum baseline requires password plus a second factor/challenge before an operator session is created. A one-time phone-delivered challenge is permitted as a transitional MFA factor because it reuses the governed Identity challenge engine, but it is not phishing-resistant; Passkeys/WebAuthn are the preferred progressive phishing-resistant target and sensitive operations may require stronger step-up policy.
+
+Customer phone verification is for registration/recovery proof, not a recurring activation-login loop. Partner/captain/field activation is one-time after governed role provisioning; loss of access after activation follows an explicit recovery/re-enrollment path rather than automatic activation reset.
 
 
 ## Threat boundaries and data classification
@@ -159,7 +163,7 @@ Data handling distinguishes at minimum:
 
 - public/non-sensitive content;
 - internal operational data;
-- personal/location/workforce data;
+- personal/location/operational-participant data;
 - authentication/credential/secret material;
 - financial/payment/payout/reconciliation evidence.
 

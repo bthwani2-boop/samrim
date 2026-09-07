@@ -1,0 +1,36 @@
+{
+  "name": "app-partner",
+  "root": "apps/app-partner",
+  "sourceRoot": "apps/app-partner",
+  "projectType": "application",
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm partner"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/app-partner typecheck"
+      }
+    },
+    "export-smoke": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/export-mobile-smoke.mjs app-partner"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/test-mobile-app.mjs app-partner"
+      }
+    }
+  },
+  "tags": [
+    "scope:app-partner",
+    "type:app"
+  ]
+}

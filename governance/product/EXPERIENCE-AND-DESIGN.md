@@ -10,7 +10,7 @@ IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 This file owns durable cross-surface UX, information architecture, content/terminology, accessibility/localization and brand/design-language decisions. Capability-specific business states/actions remain owned by `PRD.md` and `CAPABILITIES.md`; runtime token/component implementation remains owned by the executable shared UI/design-system code.
 
-A design source, prototype, `DESIGN.md`, `UX-CONTRACT.md`, token source, component library and rendered screen must not survive as competing authorities. This file owns durable meaning; tool-facing maps and runtime tokens are derived implementations.
+A design source, prototype, standalone design brief, standalone UX contract, token source, component library and rendered screen must not survive as competing authorities. This file owns durable meaning; tool-facing maps and runtime tokens are derived implementations.
 
 ## Experience authority chain
 
@@ -61,14 +61,28 @@ Copy must not claim success, service health, balance, eligibility or completion 
 
 Current BThwani visual direction is a calm operational commerce/control environment: warm neutral work surfaces, navy for trusted structure/content and orange for governed primary action.
 
-Current core palette decisions are:
+Current brand and light-foundation anchors are:
 
-- trusted structure/primary text: `#0A2F5C`;
-- governed primary action: `#FF500D`;
-- warm background: `#FFFCF8`;
-- primary surface: `#FFFFFF`.
+- trusted structure/primary text in light appearance: `#0A2F5C`;
+- governed primary-action brand anchor: `#FF500D`;
+- light background: `#FFFCF8`;
+- light primary surface: `#FFFFFF`.
 
-Semantic success/warning/danger/info/border/focus roles must be expressed through the shared semantic token system rather than copied raw values per surface. Brand changes update this durable authority and then the runtime token implementation; runtime drift does not redefine the brand.
+Semantic success/warning/danger/info/border/focus roles must be expressed through the shared semantic token system rather than copied raw values per surface. Brand changes update this durable authority and then the runtime token implementation; runtime drift does not redefine the brand. Raw light-foundation values must not be hardcoded as cross-theme component truth.
+
+## Light and dark appearance
+
+Light and dark are first-class supported appearance modes for BThwani interactive surfaces. They are presentation variants of one Product/UX meaning, not separate experiences or authorities.
+
+~~~text
+ONE SEMANTIC ROLE → LIGHT VALUE + DARK VALUE
+ONE PRODUCT STATE/ACTION → SAME MEANING/AUTHORITY/PRIORITY IN BOTH MODES
+ONE COMPONENT/PATTERN → THEME THROUGH SHARED SEMANTIC TOKENS
+~~~
+
+Do not implement dark appearance by mechanical color inversion, per-screen token forks, duplicated components or alternate Product copy. Both modes must preserve materially applicable contrast, focus visibility, state distinction, icon/media legibility, overlays/elevation and platform chrome while retaining the same authorization, navigation, feedback and recovery semantics.
+
+Appearance choice is presentation state and must not become domain/business truth. The concrete runtime selection/persistence mechanism belongs to the client/design-system implementation. Any materially affected surface or shared component whose rendering can vary by appearance must be proven in both supported modes before its visual/theme claim closes.
 
 Arabic is the primary reading lane. Current typography uses an Arabic-first sans lane and a distinct Latin/technical lane; runtime font loading/fallback implementation may evolve without changing this semantic requirement.
 
@@ -98,6 +112,32 @@ Canonical Experience/Design Decision
 Do not create local token foundations/components that independently encode a materially shared decision. Local adaptation is valid when a platform, viewport, actor task or accessibility requirement materially demands it and Product meaning remains identical.
 
 Shared UI may own presentation behavior; it never becomes a domain/business/financial truth owner.
+
+## Design-System admission and localization ownership
+
+The shared Design System grows from real cross-surface/domain-neutral need rather than from an attempt to prebuild a complete component catalog.
+
+~~~text
+REAL REUSABLE CONSUMER NEED
+→ SMALLEST DOMAIN-NEUTRAL TOKEN/PRIMITIVE/PATTERN
+→ PLATFORM-APPROPRIATE IMPLEMENTATION
+→ ACCESSIBILITY/RTL EVIDENCE
+→ REUSE
+
+PREBUILD FULL DOMAIN COMPONENT CATALOG = FORBIDDEN
+~~~
+
+Business/domain components begin in the consuming app feature. Extract them only when the extracted responsibility is genuinely reusable and does not carry domain state, authorization, financial meaning or actor-specific policy into the Design System.
+
+The Design System may own generic strings intrinsic to reusable controls/patterns when required for accessibility/interaction. Domain/Product copy and translations remain with their semantic capability/presentation owner.
+
+~~~text
+DESIGN_SYSTEM_GENERIC_COMPONENT_STRING = ALLOWED_WHEN_INTRINSIC
+DOMAIN_PRODUCT_TRANSLATION = DOMAIN/PRESENTATION OWNER
+REPOSITORY_WIDE_GENERIC_LOCALES_AUTHORITY = FORBIDDEN
+~~~
+
+Directionality foundations are shared semantics; individual apps must not independently invent competing RTL/LTR systems. Platform-specific rendering adaptations are allowed when the semantic direction contract remains one.
 
 ## Design asset provenance
 

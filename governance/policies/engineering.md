@@ -19,7 +19,10 @@ This file owns cross-cutting engineering law and routes specialized durable requ
 - `architecture-and-fullstack.md` — architecture, layer responsibility, dependencies, contracts/generated boundaries and full-stack integrity;
 - `data-and-migrations.md` — schemas, constraints, migrations, backfills, seeds/fixtures and data cutovers;
 - `frontend-and-client.md` — screens/controllers/adapters, local state/readback, mobile/client lifecycle and resource correctness;
-- `runtime-reliability.md` — runtime/config/providers, observability, resilience, performance/capacity and recovery;
+- `runtime-reliability.md` — runtime reliability, observability, resilience, performance/capacity and recovery;
+- `providers-and-integrations.md` — semantic external-integration ports, provider control/data-plane boundaries, secrets/provenance, retries/fallbacks, webhooks and simulators;
+- `tooling-and-assurance.md` — repository tooling/automation placement, derived artifacts, guards, CI/evidence and dependency/build assurance;
+- `documentation-and-knowledge.md` — Governance/Docs/agent authority partition, portability, semantic-parity preservation and knowledge verification;
 - `standards-and-quality.md` — context-appropriate Best Practice/standards adequacy and quality.
 
 Security/privacy remains owned by `security.md`; delivery/promotion/release by `delivery.md`; Product/System semantics by `../product/**`.

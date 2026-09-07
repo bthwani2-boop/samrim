@@ -1,0 +1,98 @@
+name: samrim-local
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${SAMRIM_POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${SAMRIM_POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${SAMRIM_POSTGRES_DB}"
+    ports:
+      - "127.0.0.1:${SAMRIM_POSTGRES_PORT:-58432}:5432"
+    volumes:
+      - samrim-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  mailpit:
+    image: axllent/mailpit:v1.27.8
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SAMRIM_MAILPIT_SMTP_PORT:-58025}:1025"
+      - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-58026}:8025"
+
+  identity-migrate:
+    profiles: ["integration"]
+    restart: "no"
+    build:
+      context: ../../..
+      dockerfile: services/identity/backend/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BTHWANI_ENV: "development"
+      IDENTITY_MIGRATION_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      IDENTITY_MIGRATION_DIR: "/app/migrations"
+    entrypoint: ["/migrate"]
+
+  identity:
+    profiles: ["integration"]
+    restart: unless-stopped
+    build:
+      context: ../../..
+      dockerfile: services/identity/backend/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+      identity-migrate:
+        condition: service_completed_successfully
+    environment:
+      PORT: "8082"
+      BTHWANI_ENV: "development"
+      IDENTITY_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      IDENTITY_MAINTENANCE_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      IDENTITY_AUTO_MIGRATE: "false"
+      IDENTITY_RETENTION_CHALLENGE_DAYS: "${IDENTITY_RETENTION_CHALLENGE_DAYS:-30}"
+      IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS: "${IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS:-30}"
+      IDENTITY_RETENTION_OPERATOR_ENROLLMENT_DAYS: "${IDENTITY_RETENTION_OPERATOR_ENROLLMENT_DAYS:-30}"
+      IDENTITY_RETENTION_SESSION_DAYS: "${IDENTITY_RETENTION_SESSION_DAYS:-90}"
+      IDENTITY_RETENTION_AUDIT_DAYS: "${IDENTITY_RETENTION_AUDIT_DAYS:-365}"
+      IDENTITY_RETENTION_BATCH_SIZE: "${IDENTITY_RETENTION_BATCH_SIZE:-500}"
+      IDENTITY_CHALLENGE_HMAC_SECRET: "${IDENTITY_CHALLENGE_HMAC_SECRET}"
+      IDENTITY_ABUSE_HMAC_SECRET: "${IDENTITY_ABUSE_HMAC_SECRET}"
+      IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"
+      IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN: "${IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN}"
+      IDENTITY_PLATFORM_BOOTSTRAP_SECRET: "${IDENTITY_PLATFORM_BOOTSTRAP_SECRET:-}"
+      IDENTITY_TRUSTED_PROXY_IPS: "${IDENTITY_TRUSTED_PROXY_IPS:-}"
+      IDENTITY_CHALLENGE_DELIVERY_MODE: "${IDENTITY_CHALLENGE_DELIVERY_MODE}"
+      IDENTITY_MAILPIT_SMTP_ADDR: "mailpit:1025"
+      IDENTITY_MAILPIT_RECIPIENT: "${IDENTITY_MAILPIT_RECIPIENT}"
+      IDENTITY_CORS_ALLOWED_ORIGINS: "${IDENTITY_CORS_ALLOWED_ORIGINS}"
+    ports:
+      - "${SAMRIM_IDENTITY_BIND_HOST:-0.0.0.0}:${SAMRIM_IDENTITY_PORT:-18082}:8082"
+
+  dsh:
+    profiles: ["integration"]
+    restart: unless-stopped
+    build:
+      context: ../../..
+      dockerfile: services/dsh/backend/Dockerfile
+    environment:
+      PORT: "8080"
+      BTHWANI_ENV: "development"
+      DSH_IDENTITY_API_BASE_URL: "http://identity:8082"
+      IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"
+      DSH_PLATFORM_CONTROL_SERVICE_TOKEN: "${DSH_PLATFORM_CONTROL_SERVICE_TOKEN}"
+    ports:
+      - "127.0.0.1:${SAMRIM_DSH_PORT:-58080}:8080"
+
+volumes:
+  samrim-postgres-data:

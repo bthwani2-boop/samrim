@@ -1,0 +1,36 @@
+{
+  "name": "app-captain",
+  "root": "apps/app-captain",
+  "sourceRoot": "apps/app-captain",
+  "projectType": "application",
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm captain"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm --dir apps/app-captain typecheck"
+      }
+    },
+    "export-smoke": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/export-mobile-smoke.mjs app-captain"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/mobile/test-mobile-app.mjs app-captain"
+      }
+    }
+  },
+  "tags": [
+    "scope:app-captain",
+    "type:app"
+  ]
+}

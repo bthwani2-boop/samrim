@@ -3,11 +3,14 @@
 ARTIFACT_CLASS: DURABLE_ARCHITECTURE_GOVERNANCE
 SEMANTIC_OWNER: governance/architecture/SYSTEM-CONTEXT.md
 EXECUTION_AUTHORITY: NONE
+CLOSURE_AUTHORITY: NONE
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Context
 
 BThwani is one platform composed of deployable hosts, bounded-context services, shared technical packages, executable contracts and infrastructure.
+
+Repository placement/taxonomy is owned by `REPOSITORY-TOPOLOGY.md`; this file owns system/context relationships.
 
 ## Dependency direction
 
@@ -34,7 +37,7 @@ DESIGN SYSTEM → DOMAIN POLICY
 
 ## Contexts
 
-Identity, Workforce, DSH, WLT and explicitly admitted Platform Control are the primary bounded contexts. External systems are integrations behind these owners.
+Identity, DSH and WLT are the primary durable bounded-context responsibilities. Platform Control is an admitted semantic control-plane responsibility for explicitly assigned cross-platform configuration/change/rollout facts; whether it is an independently deployable service remains conditional on executable service-admission evidence. Other peer services require the same independent admission proof. External systems are integrations behind semantic owners.
 
 ## Deployable hosts
 

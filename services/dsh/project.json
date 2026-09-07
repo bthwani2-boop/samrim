@@ -1,0 +1,38 @@
+{
+  "name": "dsh",
+  "root": "services/dsh",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go build ./...",
+        "cwd": "services/dsh/backend"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test ./...",
+        "cwd": "services/dsh/backend"
+      }
+    },
+    "vet": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go vet ./...",
+        "cwd": "services/dsh/backend"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/run-go-service.ps1 -Service dsh"
+      }
+    }
+  },
+  "tags": [
+    "scope:dsh",
+    "type:service"
+  ]
+}
