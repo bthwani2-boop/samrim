@@ -31,6 +31,10 @@ jobs:
         with:
           node-version: 24.17.0
 
+      - name: Materialize exact pinned Governance and Docs
+        shell: bash
+        run: node tools/dev/knowledge-source.mjs
+
       - name: Enforce canonical repository invariants
         shell: bash
         run: |
@@ -40,8 +44,7 @@ jobs:
             README.md
             SECURITY.md
             CONTRIBUTING.md
-            governance
-            docs
+            governance.lock.json
             tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md
             .github/CODEOWNERS
             .github/pull_request_template.md
