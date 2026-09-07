@@ -33,10 +33,12 @@ function getColors(isDark: boolean) {
   return {
     background: theme.background,
     border: theme.borderColor,
-    focus: theme.focusColor,
+    focus: theme.focusRing,
     muted: theme.colorMuted,
     navy: theme.structure,
-    orange: theme.action,
+    brandAction: theme.brandAction,
+    actionBackground: theme.actionBackground,
+    interactiveText: theme.interactiveText,
     surface: theme.surface,
     disabled: theme.borderColorStrong,
     dangerBackground: theme.dangerSoft,
@@ -190,7 +192,7 @@ export default function IdentityGate() {
   if (state.kind === "restoring") {
     return (
       <View style={styles.container}>
-        <ActivityIndicator color={colors.orange} />
+        <ActivityIndicator color={colors.actionBackground} />
         <Text style={styles.muted}>جارٍ التحقق من الجلسة الحية…</Text>
       </View>
     );
@@ -427,7 +429,7 @@ function createStyles(colors: GateColors) {
     authShell: { width: "100%", maxWidth: 480, alignSelf: "center" },
     brandBlock: { alignItems: "center", marginBottom: 24 },
     brand: { color: colors.navy, fontSize: 34, fontWeight: "800", textAlign: "center" },
-    brandAccent: { backgroundColor: colors.orange, borderRadius: 3, height: 4, marginTop: 8, width: 42 },
+    brandAccent: { backgroundColor: colors.brandAction, borderRadius: 3, height: 4, marginTop: 8, width: 42 },
     title: { color: colors.navy, fontSize: 28, fontWeight: "800", textAlign: "center" },
     authCard: {
       backgroundColor: colors.surface,
@@ -448,20 +450,20 @@ function createStyles(colors: GateColors) {
     numericInput: { textAlign: "left" },
     inputFocused: { borderColor: colors.focus, borderWidth: 2 },
     codeAction: { alignSelf: "flex-end", paddingBottom: 8, paddingTop: 2 },
-    codeActionText: { color: colors.orange, fontSize: 14, fontWeight: "800" },
-    codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: colors.orange, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
+    codeActionText: { color: colors.interactiveText, fontSize: 14, fontWeight: "800" },
+    codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: colors.actionBackground, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
     codeActionPrimaryText: { color: colors.surface, fontSize: 16 },
     codeActionDisabled: { backgroundColor: colors.disabled },
     modeLinks: { alignItems: "center", flexDirection: "row-reverse", flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
     modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline" },
-    recoveryButton: { alignItems: "center", borderColor: colors.orange, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
-    recoveryButtonText: { color: colors.orange, fontSize: 15, fontWeight: "800" },
+    recoveryButton: { alignItems: "center", borderColor: colors.interactiveText, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
+    recoveryButtonText: { color: colors.interactiveText, fontSize: 15, fontWeight: "800" },
     disabledText: { color: colors.muted },
     status: { textAlign: "center", fontSize: 17, fontWeight: "600", color: colors.navy },
     muted: { color: colors.muted, fontSize: 14, textAlign: "center" },
     secondaryButton: { alignItems: "center", borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 16 },
     secondaryButtonText: { color: colors.navy, fontSize: 15, fontWeight: "700", textAlign: "center" },
-    primaryButton: { alignItems: "center", backgroundColor: colors.orange, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
+    primaryButton: { alignItems: "center", backgroundColor: colors.actionBackground, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
     primaryButtonDisabled: { backgroundColor: colors.disabled },
     primaryButtonText: { color: colors.surface, fontSize: 16, fontWeight: "800" },
     primaryButtonTextDisabled: { color: colors.muted },

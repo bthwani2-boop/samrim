@@ -220,7 +220,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
   if (state.kind === "restoring") {
     return shell(
       <View style={styles.stateCard}>
-        <ActivityIndicator color={theme.action} size="large" />
+        <ActivityIndicator color={theme.actionBackground} size="large" />
         <Text style={styles.stateTitle}>جارٍ تجهيز المساحة</Text>
         <Text style={styles.muted}>نستعيد جلسة هذا الجهاز بأمان.</Text>
       </View>
@@ -522,7 +522,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       width: 8,
     },
     brandMarkOrange: {
-      backgroundColor: theme.action,
+      backgroundColor: theme.brandAction,
       borderRadius: radius.xs,
       height: 12,
       width: 8,
@@ -543,7 +543,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       paddingVertical: spacing[2],
     },
     liveDot: {
-      backgroundColor: theme.action,
+      backgroundColor: theme.brandAction,
       borderRadius: radius.round,
       height: 7,
       width: 7,
@@ -576,7 +576,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       padding: spacing[5],
     },
     eyebrow: {
-      color: theme.action,
+      color: theme.interactiveText,
       fontSize: 13,
       fontWeight: "800",
       textAlign: "right",
@@ -622,7 +622,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
     },
     primaryButton: {
       alignItems: "center",
-      backgroundColor: theme.action,
+      backgroundColor: theme.actionBackground,
       borderRadius: radius.md,
       justifyContent: "center",
       minHeight: 52,
@@ -657,7 +657,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       paddingVertical: spacing[2],
     },
     linkText: {
-      color: theme.action,
+      color: theme.interactiveText,
       fontSize: 13,
       fontWeight: "800",
       textAlign: "center",

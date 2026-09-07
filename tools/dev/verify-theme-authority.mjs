@@ -202,6 +202,18 @@ if (managedFlow.includes("colorRoles.") || managedFlow.includes("statusScale."))
   failures.push("ManagedIdentityFlow retains obsolete static colorRoles or statusScale");
 }
 
+for (const [name, body] of [
+  ["app-client identity gate", clientGate],
+  ["ManagedIdentityFlow", managedFlow],
+  ["theme tokens", colorsTs],
+  ["theme CSS generator", themeIndexTs],
+  ["control-panel globals", globalsCss],
+]) {
+  if (/\btheme\.(action|focusColor)\b/.test(body) || /\b(action|focusColor):\s*brandScale/.test(body) || body.includes("--focus-color") || body.includes("var(--focus-color)")) {
+    failures.push(`${name} retains retired action/focus semantic aliases`);
+  }
+}
+
 if (failures.length > 0) {
   console.error("THEME_AUTHORITY_VERIFICATION=FAIL");
   for (const f of failures) {

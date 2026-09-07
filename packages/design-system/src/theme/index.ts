@@ -31,11 +31,14 @@ export function resolveTheme(name?: string | null): ThemeColors {
 
 export function themeToCssVariables(themeColors: ThemeColors): Record<string, string> {
   return {
-    "--brand-action": themeColors.action,
-    "--brand-action-hover": themeColors.actionHover,
-    "--brand-action-pressed": themeColors.actionPressed,
-    "--brand-action-soft": themeColors.actionSoft,
+    "--brand-action": themeColors.brandAction,
+    "--brand-action-hover": themeColors.brandActionHover,
+    "--brand-action-pressed": themeColors.brandActionPressed,
+    "--brand-action-soft": themeColors.brandActionSoft,
     "--action-bg": themeColors.actionBackground,
+    "--action-hover": themeColors.actionHover,
+    "--action-pressed": themeColors.actionPressed,
+    "--action-soft": themeColors.actionSoft,
     "--action-text": themeColors.actionText,
     "--interactive-text": themeColors.interactiveText,
     "--brand-structure": themeColors.structure,
@@ -51,7 +54,6 @@ export function themeToCssVariables(themeColors: ThemeColors): Record<string, st
     "--color-on-action": themeColors.onAction,
     "--border-subtle": themeColors.borderColor,
     "--border-strong": themeColors.borderColorStrong,
-    "--focus-color": themeColors.focusColor,
     "--focus-ring": themeColors.focusRing,
     "--success": themeColors.success,
     "--success-soft": themeColors.successSoft,

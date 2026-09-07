@@ -1,11 +1,14 @@
 /* Auto-generated from @bthwani/design-system. Do not edit manually. */
 :root {
   color-scheme: light dark;
-  --brand-action: #B73809;
-  --brand-action-hover: #8C2B07;
-  --brand-action-pressed: #641F05;
+  --brand-action: #FF500D;
+  --brand-action-hover: #E5480C;
+  --brand-action-pressed: #B73809;
   --brand-action-soft: #FFF3ED;
   --action-bg: #B73809;
+  --action-hover: #8C2B07;
+  --action-pressed: #641F05;
+  --action-soft: #FFF3ED;
   --action-text: #B73809;
   --interactive-text: #B73809;
   --brand-structure: #0A2F5C;
@@ -21,7 +24,6 @@
   --color-on-action: #FFFFFF;
   --border-subtle: rgba(10, 47, 92, 0.1);
   --border-strong: rgba(10, 47, 92, 0.18);
-  --focus-color: #B73809;
   --focus-ring: #B73809;
   --success: #16653A;
   --success-soft: #ECFDF3;
@@ -40,11 +42,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-  --brand-action: #FF7138;
+  --brand-action: #FF500D;
   --brand-action-hover: #FF9A6B;
   --brand-action-pressed: #FFC0A3;
   --brand-action-soft: rgba(255, 80, 13, 0.18);
   --action-bg: #FF7138;
+  --action-hover: #FF9A6B;
+  --action-pressed: #FFC0A3;
+  --action-soft: rgba(255, 80, 13, 0.18);
   --action-text: #FF9A6B;
   --interactive-text: #FF9A6B;
   --brand-structure: #F8FAFC;
@@ -60,7 +65,6 @@
   --color-on-action: #020617;
   --border-subtle: rgba(255, 255, 255, 0.12);
   --border-strong: rgba(255, 255, 255, 0.2);
-  --focus-color: #FF9A6B;
   --focus-ring: #FF9A6B;
   --success: #4ADE80;
   --success-soft: rgba(74, 222, 128, 0.14);

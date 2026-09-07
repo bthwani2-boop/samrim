@@ -147,6 +147,10 @@ export const neutralScale = {
 } as const;
 
 export const lightThemeColors = {
+  brandAction: colorRoles.brandAction,
+  brandActionHover: colorRoles.brandActionHover,
+  brandActionPressed: colorRoles.brandActionPressed,
+  brandActionSoft: colorRoles.brandActionSoft,
   background: brandScale.surface[50],
   backgroundAlt: brandRoots.surfaceBase,
   surface: brandRoots.surfaceBase,
@@ -159,9 +163,7 @@ export const lightThemeColors = {
   colorInverse: colorRoles.textInverse,
   borderColor: colorRoles.borderSubtle,
   borderColorStrong: colorRoles.borderStrong,
-  focusColor: brandScale.action[700],
   focusRing: brandScale.action[700],
-  action: brandScale.action[700],
   actionBackground: brandScale.action[700],
   actionHover: brandScale.action[800],
   actionPressed: brandScale.action[900],
@@ -188,6 +190,10 @@ export const lightThemeColors = {
 } as const;
 
 export const darkThemeColors = {
+  brandAction: colorRoles.brandAction,
+  brandActionHover: brandScale.action[300],
+  brandActionPressed: brandScale.action[200],
+  brandActionSoft: alpha(brandRoots.brandAction, 0.18),
   background: neutralScale[950],
   backgroundAlt: neutralScale[900],
   surface: neutralScale[900],
@@ -200,9 +206,7 @@ export const darkThemeColors = {
   colorInverse: brandRoots.brandStructure,
   borderColor: alpha(neutralScale[0], 0.12),
   borderColorStrong: alpha(neutralScale[0], 0.2),
-  focusColor: brandScale.action[300],
   focusRing: brandScale.action[300],
-  action: brandScale.action[400],
   actionBackground: brandScale.action[400],
   actionHover: brandScale.action[300],
   actionPressed: brandScale.action[200],
