@@ -13,11 +13,13 @@ Durable documentation must not hard-code a temporary campaign branch as the perm
 
 ## Repository roles
 
-- `governance/` — durable product, system, architecture, security, quality and delivery meaning.
-- `docs/` — human development and operational guidance.
+- `governance.lock.json` — exact immutable pin to the canonical `bthwani2-boop/governance-and-docs` commit. No tracked local `governance/` or `docs/` copy is permitted.
+- `tools/prompting/bthwani-orchestrator/` — repository-local execution, mutation, recovery, evidence and closure authority.
 - `tools/` — automation, inspection, generation and evidence; not Product Truth.
 - `AGENTS.md` — routing-only entrypoint for coding agents; it never replaces Governance, Orchestrator, Docs or source.
-- `apps/`, `services/`, `packages/`, `contracts/`, `infra/` — executable implementation roots whose durable placement/admission rules come from Governance; their current contents and existence are proven by live source.
+- `apps/`, `services/`, `packages/`, `contracts/`, `infra/` — executable implementation roots whose durable placement/admission rules come from the exact pinned Governance; their current contents and existence are proven by live source.
+
+Logical paths beginning with `governance/` or `docs/` refer to the exact commit pinned by `governance.lock.json`. Use `pnpm knowledge:sync` to materialize that immutable commit into ignored local cache when direct file inspection is required.
 
 ## Secrets
 
