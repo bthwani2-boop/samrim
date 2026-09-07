@@ -21,8 +21,8 @@ DONOR/OSS    = evidence/falsification input only
 2. Read `governance/GOVERNANCE.md`.
 3. Load only materially applicable semantic owners through source-derived lookup.
 4. For repository mutation/refoundation/closure, read `tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md` and only the modules it routes for the current state.
-5. Resolve `PRODUCT_BREADTH` and the authorized outcome. `LEVEL_4` never activates future Product breadth.
-6. Reconstruct current implementation only from executable source/history/runtime.
+5. Resolve `PRODUCT_BREADTH`, the authorized outcome, and the Orchestrator-owned environment/operation authority before any mutation. `LEVEL_4` never activates future Product breadth or a stronger environment/operation class.
+6. Reconstruct current implementation only from executable source/history/runtime and prove the expected target identity before material side effects.
 7. Execute the complete causal affected cone of the authorized outcome; structural work is pulled forward only when diagnosis proves it is a prerequisite.
 8. Preserve one semantic owner, one material writer and one cross-boundary contract provenance.
 9. Do not create empty future lanes, fake Product screens/APIs/tables, shadow models, compatibility authorities or speculative frameworks.

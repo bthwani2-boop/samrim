@@ -34,6 +34,17 @@ const cases = [
     include: ["There is one execution cycle, not a mandatory stage pipeline"],
   },
   {
+    id: "environment_operation_authority",
+    source: "tools/prompting/bthwani-orchestrator/01-SCOPE-AUTHORITY-RULES.md",
+    include: [
+      "Repository/branch mutation authority is not runtime/environment authority.",
+      "CREDENTIAL_POSSESSION != AUTHORITY",
+      "PRODUCTION_EXPLICIT",
+      "SAFETY_INTERLOCK_TRIPPED",
+    ],
+  },
+
+  {
     id: "structural_substrate_conditional",
     source: "tools/prompting/bthwani-orchestrator/profiles/structural-substrate.md",
     include: ["conditional", "EMPTY FUTURE LANES = FORBIDDEN"],
