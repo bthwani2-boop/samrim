@@ -197,6 +197,7 @@ requireTokens(".github/workflows/pr-policy.yml", [
   "PR_POLICY_DRAFT=DEFERRED_UNTIL_READY",
   "pull-requests: read",
   "gh api --paginate",
+  "Dependabot changed-file query failed",
   "PR_POLICY_DEPENDABOT_SCOPE=PASS",
   "PR_POLICY_DEPENDABOT_BOUNDED=PASS",
   "PR_POLICY_HUMAN_AGENT_EVIDENCE=PASS",

@@ -56,10 +56,11 @@ jobs:
             [[ "${head}" == dependabot/* ]] || { echo "::error::Dependabot machine policy requires dependabot/* head branch"; exit 1; }
             (( ${#body} >= 120 )) || { echo "::error::Dependabot PR body is unexpectedly incomplete"; exit 1; }
 
-            mapfile -t changed_files < <(
+            changed_output="$(
               gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/files?per_page=100" --jq '.[].filename'
-            )
-            (( ${#changed_files[@]} > 0 )) || { echo "::error::Dependabot PR has no changed files"; exit 1; }
+            )" || { echo "::error::Dependabot changed-file query failed"; exit 1; }
+            [[ -n "${changed_output}" ]] || { echo "::error::Dependabot PR has no changed files"; exit 1; }
+            mapfile -t changed_files <<<"${changed_output}"
 
             for file in "${changed_files[@]}"; do
               case "${file}" in
