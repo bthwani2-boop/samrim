@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
@@ -9,73 +10,174 @@ const failures = [];
 function sourceRoot(relativePath) {
   return relativePath.startsWith("governance/") || relativePath.startsWith("docs/") ? knowledgeRoot : repoRoot;
 }
-function check(source, tokens, id) {
-  const absolute = path.join(sourceRoot(source), ...source.split("/"));
+
+function read(relativePath) {
+  const absolute = path.join(sourceRoot(relativePath), ...relativePath.split("/"));
   if (!fs.existsSync(absolute)) {
-    failures.push(id + " missing source: " + source);
-    return;
+    failures.push("missing source: " + relativePath);
+    return "";
   }
-  const body = fs.readFileSync(absolute, "utf8");
-  for (const token of tokens) {
-    if (!body.includes(token)) failures.push(id + " missing invariant in " + source + ": " + token);
-  }
+  return fs.readFileSync(absolute, "utf8").replaceAll("\r\n", "\n");
 }
 
-check("AGENTS.md", [
-  "Never implement knowledge mechanically.",
-  "No source has global precedence. Authority is fact-specific",
-  "Before choosing a material solution, distinguish known facts, assumptions and decision-relevant unknowns",
-  "surface the conflict as a blocker",
-  "does not implicitly escalate environment or operation authority",
-  "HEAD MOVED",
-  "UNKNOWN EFFECT → AUTHORITATIVE RECONCILIATION",
-  "affected prior evidence is stale",
-  "SECURITY / PRIVACY / FINANCIAL / EXTERNAL EFFECTS",
-  "capabilities, not authorization",
-  "Production",
-  "blind-retry an ambiguous external/financial mutation",
-  "Do not ask for “next”",
-  "A change is not complete because code compiles, a screenshot looks correct or CI is green.",
-], "agent_operating_safety");
+function requireTokens(relativePath, tokens, id) {
+  const body = read(relativePath);
+  for (const token of tokens) {
+    if (!body.includes(token)) failures.push(id + " missing invariant in " + relativePath + ": " + token);
+  }
+  return body;
+}
 
-check("governance/GOVERNANCE.md", [
+function forbidTokens(relativePath, tokens, id) {
+  const body = read(relativePath);
+  for (const token of tokens) {
+    if (body.includes(token)) failures.push(id + " forbidden token in " + relativePath + ": " + token);
+  }
+  return body;
+}
+
+const agentBody = requireTokens("AGENTS.md", [
+  "REPOSITORY_AGENT_LAW_AUTHORITY: CANONICAL",
+  "END-TO-END OWNERSHIP IS NON-DELEGABLE.",
+  "OWN THE MATERIAL OUTCOME, NOT THE PATCH, FILE OR REQUESTED STEP.",
+  "ONE MATERIAL TASK → ONE PRIMARY AGENT → ONE RECONCILED EVIDENCE MODEL → ONE FINAL DECISION / INTEGRATION / CLOSURE AUTHORITY.",
+  "SUBAGENT CONSENSUS != PROOF.",
+  "OVERLAPPING MUTABLE CONES MUST SERIALIZE",
+  "No source has global precedence. Authority is fact-specific",
+  "PRE-EXISTING STATE HAS NO PRESUMPTION OF CORRECTNESS.",
+  "READINESS PRECEDES IMPLEMENTATION.",
+  "DEPTH IS MANDATORY; BREADTH IS EVIDENCE-DRIVEN.",
+  "A FINDING IS EVIDENCE, NOT TREATMENT.",
+  "TREAT THE HIGHEST PROVEN CAUSAL ROOT.",
+  "ONE MATERIAL MEANING → ONE SEMANTIC OWNER",
+  "NOTHING NEW IS ADMITTED BY DEFAULT.",
+  "EVERY SURVIVING MATERIAL ARTIFACT IN THE AFFECTED CONE MUST RE-EARN ITS RIGHT TO EXIST.",
+  "COMPATIBILITY_JUST_IN_CASE = FORBIDDEN.",
+  "CAPABILITY != AUTHORITY.",
+  "UNKNOWN CONSEQUENTIAL EFFECT → AUTHORITATIVE RECONCILIATION",
+  "AUDIT-ONLY IS NOT COMPLETION.",
+  "NEVER CHECKPOINT A KNOWN UNSAFE MIXED STATE",
+  "REPOSITORY-OWNED SAFE PUSH",
+  "TOOLS / TESTS / CI / GUARDS / MANIFESTS / REPORTS ARE EVIDENCE PRODUCERS",
+  "MISSING REQUIRED EVIDENCE = OPEN PROOF LIMIT, NOT PASS.",
+  "PASS AFTER AN UNEXPLAINED FAILURE != CLOSED.",
+  "MATERIAL INTERACTIVE BEHAVIOR MUST BE EXERCISED IN THE REAL AUTHORIZED RUNTIME.",
+  "WEB INTERACTION / JOURNEYS → PLAYWRIGHT",
+  "MOBILE REPEATABLE JOURNEYS → MAESTRO",
+  "MOBILE EXPLORATION / CONTROL / INSPECTION → AGENT-DEVICE",
+  "LOW-LEVEL ANDROID / PROCESS / PACKAGE / LOG DIAGNOSIS → ADB",
+  "TREATMENT DOES NOT PROVE CLOSURE.",
+  "FRESH ADVERSARIAL RE-CENSUS FROM THE RESULTING EXACT STATE AS IF THE PRIOR FINDING LIST DID NOT EXIST",
+  "KNOWN PARALLEL / SHADOW TRUTH = 0",
+], "agent_constitution");
+
+forbidTokens("AGENTS.md", [
+  "docs/method/",
+  "tools/prompting",
+  "LEVEL_4",
+  "ACTIVE_SLICE",
+  "FULL_TARGET",
+  "RECOVERY_FRONTIER",
+  "NEXT_REQUIRED_ACTION",
+  "UNIT_CLOSED",
+  "CAMPAIGN_COMPLETE",
+  "CURRENT_CAUSAL_ROOT",
+  "AUTHORIZED_SCOPE_FIXED_POINT",
+], "agent_constitution");
+
+if (agentBody.length > 20000) {
+  failures.push("AGENTS.md exceeds compact-contract ceiling: " + agentBody.length + " bytes");
+}
+
+const tracked = execFileSync("git", ["ls-files", "-z"], {
+  cwd: repoRoot,
+  encoding: "utf8",
+})
+  .split("\0")
+  .filter(Boolean)
+  .map((item) => item.replaceAll("\\", "/"));
+
+const agentLawFiles = tracked.filter((item) => /(^|\/)AGENTS\.md$/i.test(item));
+if (agentLawFiles.length !== 1 || agentLawFiles[0] !== "AGENTS.md") {
+  failures.push("AGENTS.md must be the only tracked AGENTS law owner; found: " + agentLawFiles.join(", "));
+}
+
+const unexpectedInstructionFiles = tracked.filter(
+  (item) =>
+    /\.instructions\.md$/i.test(item) &&
+    item !== ".github/copilot-instructions.md",
+);
+if (unexpectedInstructionFiles.length > 0) {
+  failures.push("unexpected path-specific instruction authority: " + unexpectedInstructionFiles.join(", "));
+}
+
+const canonicalAdapters = {
+  ".github/copilot-instructions.md": [
+    "# GitHub Copilot Routing Adapter",
+    "",
+    "ADAPTER_CLASS: DERIVED_AGENT_ROUTING",
+    "SEMANTIC_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+    "CLOSURE_AUTHORITY: NONE",
+    "",
+    "Use AGENTS.md as the repository routing entrypoint before material code or repository changes.",
+    "",
+    "This adapter owns no Product, architecture, execution, branch, migration, deletion, verification or closure semantics. Canonical owners routed by AGENTS.md remain authoritative within their classes.",
+    "",
+  ].join("\n"),
+  "CLAUDE.md": [
+    "# Claude Code Routing Adapter",
+    "",
+    "ADAPTER_CLASS: DERIVED_AGENT_ROUTING",
+    "SEMANTIC_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+    "CLOSURE_AUTHORITY: NONE",
+    "",
+    "Read and follow AGENTS.md first for repository authority routing.",
+    "",
+    "This file adds no Product, architecture, execution, branch, deletion, migration, verification or closure law. If it ever conflicts with AGENTS.md or a canonical owner routed by AGENTS.md, this adapter is stale and must be corrected or deleted.",
+    "",
+  ].join("\n"),
+  "GEMINI.md": [
+    "# Gemini CLI Routing Adapter",
+    "",
+    "ADAPTER_CLASS: DERIVED_AGENT_ROUTING",
+    "SEMANTIC_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+    "CLOSURE_AUTHORITY: NONE",
+    "",
+    "Read and follow AGENTS.md first for repository authority routing.",
+    "",
+    "This file adds no Product, architecture, execution, branch, deletion, migration, verification or closure law. If it ever conflicts with AGENTS.md or a canonical owner routed by AGENTS.md, this adapter is stale and must be corrected or deleted.",
+    "",
+  ].join("\n"),
+};
+
+for (const [relativePath, expected] of Object.entries(canonicalAdapters)) {
+  const actual = read(relativePath).replaceAll(String.fromCharCode(96), "");
+  if (actual !== expected) failures.push(relativePath + " must remain an exact routing-only adapter with zero independent agent law");
+}
+
+requireTokens("governance/GOVERNANCE.md", [
   "GOVERNANCE          = CURRENT DURABLE DECISION BASELINE",
   "DOCUMENTED != INFALLIBLE",
   "CONFLICT → DIAGNOSE → CORRECT THE WRONG OWNER",
 ], "governance_falsifiability");
 
-check("docs/method/diagnosis-and-decision.md", [
-  "Do not ask “what do the documents tell me to implement?”",
-  "CURRENT ROOT CAUSE",
-  "REQUIRED PROOF",
-], "diagnosis_method");
-
-check("docs/method/change-and-reconstruction.md", [
-  "Credentials, authenticated tools, connected devices and reachable endpoints are capability, not authorization.",
-  "Never blind-retry an ambiguous external or financial effect.",
-  "DELETE LOSERS / RESIDUE",
-], "change_method");
-
-check("docs/method/verification-and-evidence.md", [
-  "A green command proves only what it exercised.",
-  "Do not rerun until green without diagnosis.",
-  "KNOWN LOSING/SHADOW AUTHORITIES IN CONE = 0",
-], "verification_method");
-
-check("governance/policies/documentation-and-knowledge.md", [
+requireTokens("governance/policies/documentation-and-knowledge.md", [
   "EXACT KNOWLEDGE COMMIT SHA = ADMISSIBLE",
   "TRACKED LOCAL GOVERNANCE/DOCS MIRROR = FORBIDDEN",
 ], "cross_repository_pin");
 
-check("governance/policies/providers-and-integrations.md", [
+requireTokens("governance/policies/providers-and-integrations.md", [
   "BLIND_FALLBACK_ON_UNKNOWN_MUTATION=0",
 ], "provider_unknown_outcome");
 
-check("governance/product/FINANCIAL-MODEL.md", [
+requireTokens("governance/product/FINANCIAL-MODEL.md", [
   "WLT is the sole authoritative owner of internal financial truth",
 ], "financial_truth");
 
-check("governance/product/capabilities/access/account-privacy-lifecycle.md", [
+requireTokens("governance/product/capabilities/access/account-privacy-lifecycle.md", [
   "actor_deleted_with_unrelated_roles",
   "dsh_mutates_wlt_for_privacy",
 ], "privacy_cross_owner");
@@ -96,4 +198,9 @@ if (failures.length) {
   for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);
   process.exit(1);
 }
+
+console.log("AGENT_LAW_OWNER=AGENTS.md");
+console.log("NESTED_AGENT_LAW_OWNERS=0");
+console.log("PATH_SPECIFIC_AGENT_LAW_OWNERS=0");
+console.log("ROUTING_ADAPTER_SHADOW_LAW=0");
 console.log("AGENT_KNOWLEDGE_CONTRACT=PASS");
