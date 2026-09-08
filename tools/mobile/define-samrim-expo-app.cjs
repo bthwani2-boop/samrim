@@ -276,8 +276,9 @@ function buildPlugins(appKey, capabilities, sentry) {
     plugins.push([
       "expo-localization",
       {
-        supportedLocales: { ios: ["ar", "en"], android: ["ar", "en"] },
-        supportsRTL: true,
+        supportedLocales: { ios: ["ar"], android: ["ar"] },
+        forcesRTL: true,
+        allowDynamicLocaleChangesAndroid: false,
       },
     ]);
   }

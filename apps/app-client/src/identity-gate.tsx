@@ -24,7 +24,7 @@ import {
   requestClientRegistration,
   restoreIdentitySession,
 } from "./identity";
-import { useIdentityPresentation, type IdentityCopy } from "./identity-presentation";
+import { identityPresentation, type IdentityCopy } from "./identity-presentation";
 
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
@@ -62,10 +62,10 @@ function isCredentialFailure(value: unknown): boolean {
 
 export default function IdentityGate() {
   const colorScheme = useColorScheme();
-  const { direction, copy } = useIdentityPresentation();
+  const { direction, copy } = identityPresentation;
   const isDark = colorScheme === "dark";
   const colors = useMemo(() => getColors(isDark), [isDark]);
-  const styles = useMemo(() => createStyles(colors, direction), [colors, direction]);
+  const styles = useMemo(() => createStyles(colors, direction), [colors]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [mode, setMode] = useState<AuthMode>("login");
@@ -91,7 +91,7 @@ export default function IdentityGate() {
     } finally {
       setBusy(false);
     }
-  }, [copy.errors]);
+  }, []);
 
   useEffect(() => {
     void restore();

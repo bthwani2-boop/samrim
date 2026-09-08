@@ -35,7 +35,7 @@ assert.deepEqual(config.nativeCapabilities, [
   "crypto",
   "splashScreen",
   "secureStore",
-  ...(app === "app-client" ? ["localization"] : []),
+  "localization",
 ], `${app}: nativeCapabilities drifted`);
 
 // 2. Targeted dependency regression verification.
@@ -45,6 +45,7 @@ const pkgPath = path.join(appDir, "package.json");
 assert.ok(fs.existsSync(pkgPath), `${app}: missing package.json`);
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+assert.equal(allDeps["expo-localization"], "~57.0.1", `${app}: static RTL requires expo-localization`);
 
 const forbiddenDependencyRegressions = [
   "@react-native-community/netinfo",
@@ -79,17 +80,18 @@ import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.join(root, "tools/dev/ts-resolver.mjs")).href, import.meta.url);
 const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "services/identity/clients/session.ts")).href);
 
-if (app === "app-client") {
-  const { resolveIdentityDirection, resolveIdentityLocale } = await import(
-    pathToFileURL(path.join(root, "apps/app-client/src/identity-locale.ts")).href,
-  );
-  assert.equal(resolveIdentityLocale("ar-YE"), "ar");
-  assert.equal(resolveIdentityLocale("en-US"), "en");
-  assert.equal(resolveIdentityLocale("fr-FR"), "ar");
-  assert.equal(resolveIdentityDirection("ar-YE"), "rtl");
-  assert.equal(resolveIdentityDirection("en-US"), "ltr");
-  console.log("MOBILE_LOCALIZATION=PASS app=app-client locales=ar,en directions=rtl,ltr");
-}
+const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
+const expoConfig = defineSamrimExpoApp(app);
+const localizationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-localization");
+assert.deepEqual(localizationPlugin, [
+  "expo-localization",
+  {
+    supportedLocales: { ios: ["ar"], android: ["ar"] },
+    forcesRTL: true,
+    allowDynamicLocaleChangesAndroid: false,
+  },
+], `${app}: native localization config must be Arabic-only and statically RTL`);
+console.log(`MOBILE_AR_RTL_NATIVE_CONFIG=PASS app=${app} locale=ar forcesRTL=true`);
 
 // 3. Behavioral Unit Tests for Mobile Session State Machine
 class MockStorage {
