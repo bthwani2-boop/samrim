@@ -21,7 +21,7 @@ LOCAL SUCCESS != SYSTEM COMPLETENESS. IMPLEMENTED != COMPLETE.
 IN-SCOPE MATERIAL OBLIGATION → TREATED_AND_PROVEN | EVIDENCE-BACKED_BLOCKER.
 NO MATERIAL FINDING MAY REMAIN OWNERLESS.
 
-For materially complex, broad or uncertain work, identify independent diagnostic, research, specialist and adversarial questions and use available subagents when parallel investigation materially improves confidence or latency.
+For materially complex, broad or uncertain work, the primary agent MUST decompose material uncertainty into independent diagnostic, research, specialist and adversarial inquiries and use available subagents wherever those inquiries can safely run in parallel; convenience is not a reason to keep material investigation serial.
 
 All subagents share the same pinned repository, target branch/base SHA, objective and authority envelope. They produce evidence; they do not redefine scope, choose final architecture or become parallel decision authorities.
 
@@ -212,7 +212,7 @@ ACTION
 
 Use the smallest adequate tool combination. Actively exercise material positive, negative, failure, recovery, retry/replay, concurrency, lifecycle, visual/responsive, accessibility, localization/directionality, theme, keyboard/input and permission states capable of falsifying the claim. Use a real device when OS lifecycle, permissions, backgrounding, notifications, location, hardware/OEM behavior, real networking or device-specific resources can materially affect it.
 
-A material runtime defect reopens the causal cone: diagnose the highest root, treat it when authorized, restart the affected journey from a valid state, and persist the smallest durable repeatable regression proof in the correct assurance layer when practical.
+A material runtime defect reopens the causal cone: diagnose the highest root, treat it when authorized, restart the affected journey from a valid state, and persist the smallest durable repeatable regression proof in the correct assurance layer. If repeatable automation is genuinely unavailable, keep the regression claim open with an explicit proof limit rather than pretending durable coverage.
 
 ## 8. Closure, re-census and continuation
 
