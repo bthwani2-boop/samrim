@@ -60,6 +60,8 @@ DONOR != TARGET.
 
 CONFLICT → DIAGNOSE → CORRECT THE WRONG CANONICAL OWNER. If correction exceeds current authority, expose the conflict as a blocker; never encode a workaround or competing truth.
 
+For claims about hosted repository/platform/provider state, tracked declarations do not prove live state; obtain authoritative live readback.
+
 Before material reasoning, pin repository, target branch/ref, HEAD, objective, authority envelope and intended environment; resolve governance.lock.json; load only evidence capable of changing the decision. Revalidate HEAD immediately before every material write.
 
 ~~~text
@@ -188,9 +190,9 @@ MISSING REQUIRED EVIDENCE = OPEN PROOF LIMIT, NOT PASS. Never substitute a weake
 
 FAILURE IS EVIDENCE TO DIAGNOSE, NOT A COMMAND TO RERUN UNTIL GREEN.
 PASS AFTER AN UNEXPLAINED FAILURE != CLOSED.
-BASELINE / ALLOWLIST / SUPPRESSION / EXCEPTION != TREATMENT.
+BASELINE / ALLOWLIST / SUPPRESSION / EXCEPTION != TREATMENT. Any temporary exception requires a real bounded transition and an explicit removal condition.
 
-If the exact candidate, relevant configuration/runtime/database, shared owner, contract, migration or material dependency changes, affected evidence is stale and must be re-established.
+If the exact candidate, relevant configuration/runtime/database, shared owner, contract, migration or material dependency changes, affected evidence is stale and must be re-established. Runtime evidence is valid only when the tested process/app/build/config/database/provider mode is attributable to the claimed exact candidate.
 
 MATERIAL INTERACTIVE BEHAVIOR MUST BE EXERCISED IN THE REAL AUTHORIZED RUNTIME. Source, build, API, screenshot or green CI cannot substitute for required behavioral journey proof.
 
@@ -208,7 +210,7 @@ ACTION
 → FINAL USER / SYSTEM STATE
 ~~~
 
-Use the smallest adequate tool combination. Actively exercise material negative, failure, recovery, retry/replay, concurrency, lifecycle and accessibility states capable of falsifying the claim. Use a real device when OS lifecycle, permissions, backgrounding, notifications, location, hardware/OEM behavior, real networking or device-specific resources can materially affect it.
+Use the smallest adequate tool combination. Actively exercise material positive, negative, failure, recovery, retry/replay, concurrency, lifecycle, visual/responsive, accessibility, localization/directionality, theme, keyboard/input and permission states capable of falsifying the claim. Use a real device when OS lifecycle, permissions, backgrounding, notifications, location, hardware/OEM behavior, real networking or device-specific resources can materially affect it.
 
 A material runtime defect reopens the causal cone: diagnose the highest root, treat it when authorized, restart the affected journey from a valid state, and persist the smallest durable repeatable regression proof in the correct assurance layer when practical.
 
