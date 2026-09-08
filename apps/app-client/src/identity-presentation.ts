@@ -38,7 +38,7 @@ export type IdentityCopy = {
   errors: IdentityErrorMessages;
 };
 
-export const identityCopy: IdentityCopy = {
+const identityCopy: IdentityCopy = {
   brand: "بثواني",
   restoringSession: "جارٍ التحقق من الجلسة الحية…",
   authenticatedStatus: "تم تسجيل الدخول",
