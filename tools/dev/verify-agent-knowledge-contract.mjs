@@ -67,6 +67,7 @@ const agentBody = requireTokens("AGENTS.md", [
   "NEVER CHECKPOINT A KNOWN UNSAFE MIXED STATE",
   "REPOSITORY-OWNED SAFE PUSH",
   "CI / PR ARE INTEGRATION ASSURANCE, NOT SUBSTITUTES FOR DIAGNOSIS, CLAIM-SPECIFIC PROOF OR REAL-RUNTIME VERIFICATION.",
+  "Required checks must be bound to the expected trusted producer when the platform supports source binding",
   "SKIPPED / NOT-RUN / STALE REQUIRED EVIDENCE != PASS.",
   "ONE MATERIAL CLAIM → ONE PRIMARY CI OWNER.",
   "Bot-authored dependency PRs may use a bounded machine policy instead of human prose",

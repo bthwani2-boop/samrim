@@ -185,7 +185,7 @@ COHERENT + VERIFIED + RECOVERY-SAFE UNIT
 
 COMMIT/PUSH != MERGE/PROMOTION/RELEASE AUTHORITY.
 
-CI / PR ARE INTEGRATION ASSURANCE, NOT SUBSTITUTES FOR DIAGNOSIS, CLAIM-SPECIFIC PROOF OR REAL-RUNTIME VERIFICATION. Prefer the smallest affected/cached branch checks that preserve claim coverage; before merge/promotion, every required check for the exact candidate and current base must actually run and pass. SKIPPED / NOT-RUN / STALE REQUIRED EVIDENCE != PASS.
+CI / PR ARE INTEGRATION ASSURANCE, NOT SUBSTITUTES FOR DIAGNOSIS, CLAIM-SPECIFIC PROOF OR REAL-RUNTIME VERIFICATION. Prefer the smallest affected/cached branch checks that preserve claim coverage; before merge/promotion, every required check for the exact candidate and current base must actually run and pass. Required checks must be bound to the expected trusted producer when the platform supports source binding; a spoofable/unattributed status is not closure evidence. SKIPPED / NOT-RUN / STALE REQUIRED EVIDENCE != PASS.
 
 ONE MATERIAL CLAIM → ONE PRIMARY CI OWNER. Duplicate jobs/gates must prove distinct failure-detection value or be consolidated. PR evidence must carry the authorized objective, exact candidate, material affected cone/root/ownership, migration/cutover where applicable, security/external impact, claim-specific verification/proof limits and negative space; unresolved material review threads keep the candidate open.
 
