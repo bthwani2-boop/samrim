@@ -121,6 +121,11 @@ test("production security headers and cross-origin mutation guard are active", a
     },
   });
   expect(crossOriginResponse.status()).toBe(403);
+
+  const sameOriginBrowserResponse = await page.request.post("/api/auth/logout", {
+    headers: { Referer: page.url() },
+  });
+  expect(sameOriginBrowserResponse.status()).not.toBe(403);
 });
 
 test("rendered light and dark themes preserve RTL and keyboard focus", async ({ page }) => {

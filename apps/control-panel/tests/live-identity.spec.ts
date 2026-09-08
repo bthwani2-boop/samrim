@@ -75,6 +75,29 @@ test("platform owner MFA persists through reload and logout revokes the live ses
   expect(authenticatedReadback.body.identity.role).toBe("platform_owner");
   expect(authenticatedReadback.body.identity.surface).toBe("control-panel");
 
+  const managedPhone = "+9678" + String(randomInt(10_000_000, 99_999_999));
+  const accountStatus = page.locator("section.access-card > div.managed-status").first();
+  await page.getByLabel("رقم الهاتف", { exact: false }).last().fill(managedPhone);
+  await expect(accountStatus).toContainText("لا يوجد حساب مهيأ لهذا الدور.");
+  await page.getByRole("button", { name: "تهيئة الدور" }).click();
+  await expect(accountStatus).toContainText("الدور مهيأ ولم يكتمل تفعيله بعد.");
+  await expect(accountStatus).toContainText("الدور مفعّل · الهوية مسموحة");
+
+  await page.locator("#access-reason").fill("إثبات تهيئة الوصول المحلي");
+  await page.getByRole("button", { name: "إيقاف الدور" }).click();
+  await expect(accountStatus).toContainText("الدور موقوف · الهوية مسموحة");
+
+  const accountReadback = await page.evaluate(async (phone) => {
+    const params = new URLSearchParams({ phone, role: "partner" });
+    const response = await fetch("/api/access/managed-user/status?" + params.toString(), { cache: "no-store" });
+    return { status: response.status, body: await response.json() };
+  }, managedPhone);
+  expect(accountReadback.status).toBe(200);
+  expect(accountReadback.body.role).toBe("partner");
+  expect(accountReadback.body.exists).toBe(true);
+  expect(accountReadback.body.enabled).toBe(false);
+  expect(accountReadback.body.securityEnabled).toBe(true);
+
   await page.reload();
   await expect(page.getByRole("heading", { name: "أهلاً بك في لوحة التحكم" })).toBeVisible();
 

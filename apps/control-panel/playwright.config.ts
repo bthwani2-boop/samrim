@@ -18,6 +18,10 @@ export default defineConfig({
     : {
         webServer: {
           command: "pnpm build && pnpm exec next start -p 13001",
+          env: {
+            BTHWANI_ENV: "development",
+            CONTROL_PANEL_PUBLIC_ORIGIN: process.env.CONTROL_PANEL_PUBLIC_ORIGIN ?? "http://127.0.0.1:13001",
+          },
           url: baseURL,
           reuseExistingServer: !process.env.CI,
           timeout: 120_000,
