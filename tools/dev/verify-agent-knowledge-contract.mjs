@@ -113,15 +113,27 @@ if (agentLawFiles.length !== 1 || agentLawFiles[0] !== "AGENTS.md") {
   failures.push("AGENTS.md must be the only tracked AGENTS law owner; found: " + agentLawFiles.join(", "));
 }
 
-const unexpectedInstructionFiles = tracked.filter(
-  (item) =>
-    /\.instructions\.md$/i.test(item) &&
-    item !== ".github/copilot-instructions.md",
-);
+const unexpectedInstructionFiles = tracked.filter((item) => /\.instructions\.md$/i.test(item));
 if (unexpectedInstructionFiles.length > 0) {
   failures.push("unexpected path-specific instruction authority: " + unexpectedInstructionFiles.join(", "));
 }
 
+const adapterPaths = {
+  copilot: tracked.filter((item) => /(^|\/)copilot-instructions\.md$/i.test(item)),
+  claude: tracked.filter((item) => /(^|\/)CLAUDE\.md$/i.test(item)),
+  gemini: tracked.filter((item) => /(^|\/)GEMINI\.md$/i.test(item)),
+};
+for (const [name, paths] of Object.entries(adapterPaths)) {
+  const expectedPath =
+    name === "copilot" ? ".github/copilot-instructions.md" :
+    name === "claude" ? "CLAUDE.md" :
+    "GEMINI.md";
+  if (paths.length !== 1 || paths[0] !== expectedPath) {
+    failures.push(name + " routing adapter must exist exactly once at " + expectedPath + "; found: " + paths.join(", "));
+  }
+}
+
+const tick = String.fromCharCode(96);
 const canonicalAdapters = {
   ".github/copilot-instructions.md": [
     "# GitHub Copilot Routing Adapter",
@@ -131,9 +143,9 @@ const canonicalAdapters = {
     "EXECUTION_AUTHORITY: NONE",
     "CLOSURE_AUTHORITY: NONE",
     "",
-    "Use AGENTS.md as the repository routing entrypoint before material code or repository changes.",
+    "Use " + tick + "AGENTS.md" + tick + " as the repository routing entrypoint before material code or repository changes.",
     "",
-    "This adapter owns no Product, architecture, execution, branch, migration, deletion, verification or closure semantics. Canonical owners routed by AGENTS.md remain authoritative within their classes.",
+    "This adapter owns no Product, architecture, execution, branch, migration, deletion, verification or closure semantics. Canonical owners routed by " + tick + "AGENTS.md" + tick + " remain authoritative within their classes.",
     "",
   ].join("\n"),
   "CLAUDE.md": [
@@ -144,9 +156,9 @@ const canonicalAdapters = {
     "EXECUTION_AUTHORITY: NONE",
     "CLOSURE_AUTHORITY: NONE",
     "",
-    "Read and follow AGENTS.md first for repository authority routing.",
+    "Read and follow " + tick + "AGENTS.md" + tick + " first for repository authority routing.",
     "",
-    "This file adds no Product, architecture, execution, branch, deletion, migration, verification or closure law. If it ever conflicts with AGENTS.md or a canonical owner routed by AGENTS.md, this adapter is stale and must be corrected or deleted.",
+    "This file adds no Product, architecture, execution, branch, deletion, migration, verification or closure law. If it ever conflicts with " + tick + "AGENTS.md" + tick + " or a canonical owner routed by " + tick + "AGENTS.md" + tick + ", this adapter is stale and must be corrected or deleted.",
     "",
   ].join("\n"),
   "GEMINI.md": [
@@ -157,15 +169,15 @@ const canonicalAdapters = {
     "EXECUTION_AUTHORITY: NONE",
     "CLOSURE_AUTHORITY: NONE",
     "",
-    "Read and follow AGENTS.md first for repository authority routing.",
+    "Read and follow " + tick + "AGENTS.md" + tick + " first for repository authority routing.",
     "",
-    "This file adds no Product, architecture, execution, branch, deletion, migration, verification or closure law. If it ever conflicts with AGENTS.md or a canonical owner routed by AGENTS.md, this adapter is stale and must be corrected or deleted.",
+    "This file adds no Product, architecture, execution, branch, deletion, migration, verification or closure law. If it ever conflicts with " + tick + "AGENTS.md" + tick + " or a canonical owner routed by " + tick + "AGENTS.md" + tick + ", this adapter is stale and must be corrected or deleted.",
     "",
   ].join("\n"),
 };
 
 for (const [relativePath, expected] of Object.entries(canonicalAdapters)) {
-  const actual = read(relativePath).replaceAll(String.fromCharCode(96), "");
+  const actual = read(relativePath);
   if (actual !== expected) failures.push(relativePath + " must remain an exact routing-only adapter with zero independent agent law");
 }
 
