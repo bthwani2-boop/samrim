@@ -41,11 +41,12 @@ function classify(file, category) {
   classifications.set(file, category);
 }
 
+const rootAgentLawOwner = "AGENTS.md";
 const rootAgentRoutingAdapters = new Set([
-  "AGENTS.md",
   "CLAUDE.md",
   "GEMINI.md",
 ]);
+const githubAgentRoutingAdapter = ".github/copilot-instructions.md";
 
 const rootFiles = new Set([
   ".editorconfig",
@@ -101,9 +102,8 @@ const serviceLanes = new Set(
 for (const file of tracked) {
   if (!file.includes("/")) {
     if (rootFiles.has(file)) classify(file, "root-substrate");
-    else if (rootAgentRoutingAdapters.has(file)) {
-      classify(file, "agent-routing-adapter");
-    }
+    else if (file === rootAgentLawOwner) classify(file, "agent-law-owner");
+    else if (rootAgentRoutingAdapters.has(file)) classify(file, "agent-routing-adapter");
     continue;
   }
 
@@ -111,7 +111,7 @@ for (const file of tracked) {
   const top = segments[0];
 
   if (top === ".github") {
-    classify(file, "repository-platform");
+    classify(file, file === githubAgentRoutingAdapter ? "agent-routing-adapter" : "repository-platform");
     continue;
   }
 
