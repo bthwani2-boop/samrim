@@ -7,6 +7,8 @@ CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
 AGENTS.md is the only repository agent-law owner. Routing adapters own no competing law. This contract is self-contained: Governance, Docs, source, runtime, donor, OSS and official references provide fact-specific evidence, not operating law.
 
+MATERIAL = capable of changing behavior, meaning, authority, safety, durable data, contracts, runtime/configuration, user experience, external/deployable identity, evidence validity or operational outcome.
+
 ## 1. Total outcome ownership and parallel intelligence
 
 END-TO-END OWNERSHIP IS NON-DELEGABLE.
@@ -104,6 +106,8 @@ INVESTIGATE WHILE MATERIAL UNCERTAINTY CAN CHANGE THE DECISION; ONCE EVIDENCE IS
 
 TREAT THE HIGHEST PROVEN CAUSAL ROOT.
 
+CHOOSE THE MINIMUM COMPLETE CANONICAL TREATMENT. MINIMUM != PARTIAL. Preserve a proven-sound owner/boundary/model; refound only when the structure itself is a proven causal defect or materially blocks the correct outcome.
+
 A FINDING IS EVIDENCE, NOT TREATMENT. Renaming, moving, documenting, governing, deprecating, wrapping, aliasing, suppressing or hiding a defect does not treat it. A descendant fix is forbidden when a higher proven root would invalidate, duplicate or make it obsolete. Repeated local fixes around the same owner/boundary/model trigger higher-root re-diagnosis.
 
 ~~~text
@@ -124,7 +128,7 @@ REFOUND DIRECTLY TO THE PROVEN CANONICAL MODEL. Do not recreate losing architect
 
 COMPATIBILITY_JUST_IN_CASE = FORBIDDEN. Temporary compatibility requires a proven live consumer, explicit owner, bounded scope, real coexistence need, exit condition and deletion trigger.
 
-Before delete/merge/rehome/refound or destructive change, prove what material meaning, durable data/history, contract/generated lineage, assurance value and external/deployable identity must survive or be intentionally migrated.
+Before delete/merge/rehome/refound, dependency adoption/replacement or destructive change, prove what material meaning, durable data/history, contract/generated lineage, assurance value, legal/license/asset provenance and external/deployable identity must survive or be intentionally migrated.
 REPRESENTATION CLEANUP NEVER AUTHORIZES TRUTH LOSS.
 INTERNAL RESTRUCTURING MUST NOT SILENTLY CHANGE EXTERNAL/DEPLOYABLE IDENTITY.
 
@@ -210,7 +214,7 @@ ACTION
 → FINAL USER / SYSTEM STATE
 ~~~
 
-Use the smallest adequate tool combination. Actively exercise material positive, negative, failure, recovery, retry/replay, concurrency, lifecycle, visual/responsive, accessibility, localization/directionality, theme, keyboard/input and permission states capable of falsifying the claim. Use a real device when OS lifecycle, permissions, backgrounding, notifications, location, hardware/OEM behavior, real networking or device-specific resources can materially affect it.
+Use the smallest adequate tool combination. For cross-surface journeys, preserve the same material actor, authorization, candidate provenance and state/test-data lineage across surfaces unless the journey itself requires a proven transition. Actively exercise material positive, negative, failure, recovery, retry/replay, concurrency, lifecycle, visual/responsive, accessibility, localization/directionality, theme, keyboard/input and permission states capable of falsifying the claim. Use a real device when OS lifecycle, permissions, backgrounding, notifications, location, hardware/OEM behavior, real networking or device-specific resources can materially affect it.
 
 A material runtime defect reopens the causal cone: diagnose the highest root, treat it when authorized, restart the affected journey from a valid state, and persist the smallest durable repeatable regression proof in the correct assurance layer. If repeatable automation is genuinely unavailable, keep the regression claim open with an explicit proof limit rather than pretending durable coverage.
 
