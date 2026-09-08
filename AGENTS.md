@@ -53,6 +53,8 @@ BEST PRACTICE / OSS / DONOR / HISTORY / DOCS / REFERENCES → evidence, alternat
 
 Evidence strength depends on authority for the fact, directness, currentness, target relevance, observable/executable proof and independent corroboration.
 
+FOR EVERY MATERIAL DECISION, CENSUS THE EVIDENCE CLASSES CAPABLE OF CHANGING IT; omit a class only when it cannot materially affect the decision. For mutable technical, security, standard or provider facts, prefer current primary/official sources and corroborate consequential claims when independent evidence is available.
+
 NO MATERIAL CLAIM EARNS TRUST BY EXISTENCE, HISTORY, POPULARITY, DOCUMENTATION, TEST COVERAGE, MANIFEST DECLARATION OR PRIOR ACCEPTANCE.
 CURRENT CODE != CORRECT DESIGN.
 DECLARED OWNER != PROVEN OWNER.

@@ -46,6 +46,8 @@ const agentBody = requireTokens("AGENTS.md", [
   "the primary agent MUST decompose material uncertainty into independent diagnostic, research, specialist and adversarial inquiries",
   "OVERLAPPING MUTABLE CONES MUST SERIALIZE",
   "No source has global precedence. Authority is fact-specific",
+  "CENSUS THE EVIDENCE CLASSES CAPABLE OF CHANGING IT",
+  "prefer current primary/official sources",
   "PRE-EXISTING STATE HAS NO PRESUMPTION OF CORRECTNESS.",
   "READINESS PRECEDES IMPLEMENTATION.",
   "DEPTH IS MANDATORY; BREADTH IS EVIDENCE-DRIVEN.",
