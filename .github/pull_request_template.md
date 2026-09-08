@@ -28,7 +28,7 @@
 
 ## Verification
 
-<!-- Exact checks/evidence executed against the same candidate. State the material claims, proof class, negative/failure/recovery coverage, and what remains unproven. -->
+<!-- Exact checks/evidence executed against the same candidate. State the material claims, proof class, negative/failure/recovery coverage, and what remains unproven. For user-facing changes include design-readiness evidence, representative responsive/RTL/theme/accessibility/error states, and real browser/device journey proof where material. -->
 
 ## Security / Secrets
 

@@ -9,6 +9,8 @@ AGENTS.md is the only repository agent-law owner. Routing adapters own no compet
 
 MATERIAL = capable of changing behavior, meaning, authority, safety, durable data, contracts, runtime/configuration, user experience, external/deployable identity, evidence validity or operational outcome.
 
+THIS FILE IS HARD SEMANTIC OPERATING LAW, NOT OPTIONAL GUIDANCE OR A CHECKLIST. Apply every materially applicable invariant to the whole outcome; literalism, narrow request wording, delegation, tool success or omission cannot bypass it. Satisfy all applicable laws together. If a material conflict cannot be reconciled without violating authority or safety, block the affected action, preserve the rest of the authorized objective and surface the evidence-backed blocker.
+
 ## 1. Total outcome ownership and parallel intelligence
 
 END-TO-END OWNERSHIP IS NON-DELEGABLE.
@@ -183,7 +185,17 @@ COHERENT + VERIFIED + RECOVERY-SAFE UNIT
 
 COMMIT/PUSH != MERGE/PROMOTION/RELEASE AUTHORITY.
 
+CI / PR ARE INTEGRATION ASSURANCE, NOT SUBSTITUTES FOR DIAGNOSIS, CLAIM-SPECIFIC PROOF OR REAL-RUNTIME VERIFICATION. Prefer the smallest affected/cached branch checks that preserve claim coverage; before merge/promotion, every required check for the exact candidate and current base must actually run and pass. SKIPPED / NOT-RUN / STALE REQUIRED EVIDENCE != PASS.
+
+ONE MATERIAL CLAIM → ONE PRIMARY CI OWNER. Duplicate jobs/gates must prove distinct failure-detection value or be consolidated. PR evidence must carry the authorized objective, exact candidate, material affected cone/root/ownership, migration/cutover where applicable, security/external impact, claim-specific verification/proof limits and negative space; unresolved material review threads keep the candidate open.
+
+Bot-authored dependency PRs may use a bounded machine policy instead of human prose only when bot identity and dependency-only scope are proven and the same required technical/security gates still run.
+
 ## 7. Verification, interactive runtime proof and falsification
+
+USER EXPERIENCE IS A SYSTEM OUTCOME, NOT SCREEN AESTHETICS. For material user-facing work, DESIGN READINESS PRECEDES UI IMPLEMENTATION: prove the user task/journey, information architecture, hierarchy/navigation, interaction/feedback, content semantics, state model, platform conventions, performance perception and canonical design-system ownership before coding; account for every material loading/empty/error/offline/permission/recovery, responsive, directionality, theme, keyboard/input and accessibility state.
+
+Prefer the canonical design system plus current primary platform and accessibility guidance. Trends, screenshots, donor UI, component libraries and visual similarity are evidence, never design authority. Every visible control and persistent visual/interaction pattern must earn user-task value; decorative noise, duplicate navigation, inconsistent interaction, inaccessible semantics and avoidable cognitive load are defects. Validate representative states on the real target runtime/device before closure.
 
 FALSIFY BEFORE TRUSTING. NO CLAIM MAY BE STRONGER THAN ITS EVIDENCE.
 

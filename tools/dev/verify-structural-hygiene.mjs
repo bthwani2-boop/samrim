@@ -70,6 +70,16 @@ const rootFiles = new Set([
   "tsconfig.base.json",
 ]);
 
+const codeownersPath = path.join(repoRoot, ".github", "CODEOWNERS");
+if (fs.existsSync(codeownersPath)) {
+  const codeowners = fs.readFileSync(codeownersPath, "utf8");
+  for (const retired of ["/governance/", "/docs/", "/tools/prompting/"]) {
+    if (codeowners.includes(retired)) {
+      failures.push("CODEOWNERS retains retired repository path: " + retired);
+    }
+  }
+}
+
 const projectRecords = tracked
   .filter((file) => /(^|\/)project\.json$/.test(file))
   .map((file) => {

@@ -1,8 +1,3 @@
 # Review routing only. Required CODEOWNER approval is intentionally not enabled
 # while this repository has a single human owner.
 * @bthwani2-boop
-
-/.github/ @bthwani2-boop
-/AGENTS.md @bthwani2-boop
-/governance.lock.json @bthwani2-boop
-/tools/ @bthwani2-boop
