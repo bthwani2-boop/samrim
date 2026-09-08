@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: repository-pr-policy-${{ github.event.pull_request.head.ref || github.ref_name }}
@@ -22,6 +23,8 @@ jobs:
     steps:
       - name: Validate promotion pull request evidence
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -38,6 +41,7 @@ jobs:
           draft="$(jq -r '.pull_request.draft // false' "${GITHUB_EVENT_PATH}")"
           title="$(jq -r '.pull_request.title // ""' "${GITHUB_EVENT_PATH}")"
           body="$(jq -r '.pull_request.body // ""' "${GITHUB_EVENT_PATH}")"
+          pr_number="$(jq -r '.pull_request.number' "${GITHUB_EVENT_PATH}")"
 
           [[ "${base}" == "main" ]] || { echo "::error::Canonical promotion target must be main"; exit 1; }
           (( ${#title} >= 8 )) || { echo "::error::PR title is too short"; exit 1; }
@@ -51,6 +55,24 @@ jobs:
             [[ "${author}" == "dependabot[bot]" ]] || { echo "::error::Dependabot machine policy requires Dependabot PR author"; exit 1; }
             [[ "${head}" == dependabot/* ]] || { echo "::error::Dependabot machine policy requires dependabot/* head branch"; exit 1; }
             (( ${#body} >= 120 )) || { echo "::error::Dependabot PR body is unexpectedly incomplete"; exit 1; }
+
+            mapfile -t changed_files < <(
+              gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/files?per_page=100" --jq '.[].filename'
+            )
+            (( ${#changed_files[@]} > 0 )) || { echo "::error::Dependabot PR has no changed files"; exit 1; }
+
+            for file in "${changed_files[@]}"; do
+              case "${file}" in
+                package.json|pnpm-lock.yaml|go.work|go.work.sum|*/package.json|*/go.mod|*/go.sum|.github/workflows/*.yml|.github/workflows/*.yaml|infra/local/compose/compose.yaml|Dockerfile|*/Dockerfile)
+                  ;;
+                *)
+                  echo "::error::Dependabot machine policy rejected non-dependency path: ${file}"
+                  exit 1
+                  ;;
+              esac
+            done
+
+            echo "PR_POLICY_DEPENDABOT_SCOPE=PASS"
             echo "PR_POLICY_DEPENDABOT_BOUNDED=PASS"
             exit 0
           fi
