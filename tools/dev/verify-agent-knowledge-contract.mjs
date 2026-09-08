@@ -193,6 +193,33 @@ for (const [relativePath, expected] of Object.entries(canonicalAdapters)) {
   if (actual !== expected) failures.push(relativePath + " must remain an exact routing-only adapter with zero independent agent law");
 }
 
+requireTokens(".github/workflows/pr-policy.yml", [
+  "PR_POLICY_DRAFT=DEFERRED_UNTIL_READY",
+  "PR_POLICY_DEPENDABOT_BOUNDED=PASS",
+  "PR_POLICY_HUMAN_AGENT_EVIDENCE=PASS",
+  "## Exact candidate and authorized objective",
+  "## Affected cone and ownership",
+  "## Diagnosis and decision",
+  "## Migration / Cutover",
+  "## Verification",
+  "## Security / Secrets",
+  "## Negative space",
+], "pr_policy_derivation");
+
+requireTokens(".github/pull_request_template.md", [
+  "## Exact candidate and authorized objective",
+  "## Affected cone and ownership",
+  "## Diagnosis and decision",
+  "## Migration / Cutover",
+  "## Deployable identity / runtime",
+  "## Dependencies / external references",
+  "## Verification",
+  "## Security / Secrets",
+  "## Docs / knowledge",
+  "## Negative space",
+  "For user-facing changes include design-readiness evidence",
+], "pr_template_derivation");
+
 requireTokens("governance/GOVERNANCE.md", [
   "GOVERNANCE          = CURRENT DURABLE DECISION BASELINE",
   "DOCUMENTED != INFALLIBLE",
