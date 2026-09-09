@@ -61,7 +61,8 @@
   "pnpm": {
     "overrides": {
       "uuid": "11.1.1",
-      "decode-uri-component": "0.5.0"
+      "decode-uri-component": "0.5.0",
+      "nx>smol-toml": "1.8.0"
     }
   },
   "devDependencies": {
