@@ -93,6 +93,36 @@ assert.deepEqual(localizationPlugin, [
 ], `${app}: native localization config must be Arabic-only and statically RTL`);
 console.log(`MOBILE_AR_RTL_NATIVE_CONFIG=PASS app=${app} locale=ar forcesRTL=true`);
 
+// Remote EAS environments may retain provider variables after a native dependency
+// has been intentionally removed. Provider variables alone must not re-admit a
+// native config plugin that is absent from the current app dependency graph.
+{
+  const sentryKeys = ["SENTRY_ORG", "SENTRY_PROJECT", "EXPO_PUBLIC_SENTRY_DSN"];
+  const previous = Object.fromEntries(sentryKeys.map((key) => [key, process.env[key]]));
+  try {
+    process.env.SENTRY_ORG = "test-org";
+    process.env.SENTRY_PROJECT = "test-project";
+    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://public@example.invalid/1";
+
+    const providerConfiguredExpo = defineSamrimExpoApp(app);
+    const sentryPlugin = providerConfiguredExpo.plugins.find(
+      (plugin) =>
+        (Array.isArray(plugin) ? plugin[0] : plugin) === "@sentry/react-native/expo",
+    );
+
+    assert.equal(sentryPlugin, undefined, `${app}: stale EAS Sentry variables must not admit a missing native dependency`);
+    assert.equal(providerConfiguredExpo.extra.sentry.enabled, false, `${app}: Sentry must remain disabled without its dependency`);
+    assert.equal(providerConfiguredExpo.extra.sentry.nativeConfigured, false, `${app}: Sentry native config must remain disabled without its dependency`);
+    assert.equal(providerConfiguredExpo.extra.sentry.nativeDependencyInstalled, false, `${app}: Sentry dependency census drifted`);
+  } finally {
+    for (const key of sentryKeys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+}
+console.log(`MOBILE_PROVIDER_ENV_GATING=PASS app=${app} provider=sentry`);
+
 // 3. Behavioral Unit Tests for Mobile Session State Machine
 class MockStorage {
   constructor(initial = {}) {
