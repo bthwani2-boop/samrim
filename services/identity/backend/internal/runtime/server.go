@@ -30,6 +30,7 @@ import (
 
 type config struct {
 	port                   string
+	listenHost             string
 	runtimeEnvironment     string
 	databaseURL            string
 	maintenanceDatabaseURL string
@@ -103,7 +104,7 @@ func Run(_, _, defaultPort string) error {
 		return postgres.VerifyMigrationHistory(ctx, db, migrationRecords)
 	}
 	handler := identityhttp.New(actors, challenges, sessions, identityhttp.Config{InternalServiceTokens: cfg.internalTokens, AllowedOrigins: cfg.allowedOrigins, AbuseIPSecret: cfg.abuseIPSecret, TrustedProxies: cfg.trustedProxies, Readiness: readiness})
-	server := &http.Server{Addr: ":" + cfg.port, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: net.JoinHostPort(cfg.listenHost, cfg.port), Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	serverErrCh := make(chan error, 1)
@@ -141,6 +142,7 @@ func Run(_, _, defaultPort string) error {
 
 func loadConfig(defaultPort string) (config, error) {
 	port := env("PORT", defaultPort)
+	listenHost := strings.TrimSpace(os.Getenv("BTHWANI_LISTEN_HOST"))
 	runtimeEnvironment := strings.ToLower(strings.TrimSpace(os.Getenv("BTHWANI_ENV")))
 	switch runtimeEnvironment {
 	case "development", "test", "staging", "production":
@@ -290,7 +292,7 @@ func loadConfig(defaultPort string) (config, error) {
 	} else if runtimeEnvironment == "staging" || runtimeEnvironment == "production" {
 		return config{}, errors.New("IDENTITY_PROVIDER_BUDGET_PER_HOUR is required outside local environments")
 	}
-	return config{port: port, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget}, nil
+	return config{port: port, listenHost: listenHost, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget}, nil
 }
 
 func databaseURLUser(raw string) (string, error) {

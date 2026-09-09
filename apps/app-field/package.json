@@ -5,7 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "expo start --dev-client --port 18104",
+    "start": "expo start --dev-client --localhost --port 18104",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

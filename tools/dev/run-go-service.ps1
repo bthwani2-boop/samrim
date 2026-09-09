@@ -50,14 +50,17 @@ if (-not $env:PORT -and [string]::IsNullOrWhiteSpace([string] $port)) {
 }
 
 $oldPort = $env:PORT
+$oldListenHost = $env:BTHWANI_LISTEN_HOST
 try {
     if (-not $env:PORT) {
         $env:PORT = [string] $port
     }
+    $env:BTHWANI_LISTEN_HOST = "127.0.0.1"
 
     Write-Host "Service: $Service"
     Write-Host "Backend: $backendPath"
     Write-Host "PORT source: $(if ($oldPort) { 'environment' } else { $envExamplePath + ' ' + $envKey })"
+    Write-Host "LISTEN_HOST=127.0.0.1"
 
     Push-Location $backendPath
     try {
@@ -72,4 +75,5 @@ try {
 }
 finally {
     $env:PORT = $oldPort
+    $env:BTHWANI_LISTEN_HOST = $oldListenHost
 }

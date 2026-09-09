@@ -60,6 +60,7 @@ services:
         condition: service_completed_successfully
     environment:
       PORT: "8082"
+      BTHWANI_LISTEN_HOST: "0.0.0.0"
       BTHWANI_ENV: "development"
       IDENTITY_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       IDENTITY_MAINTENANCE_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
@@ -85,7 +86,7 @@ services:
       IDENTITY_MAILPIT_RECIPIENT: "${IDENTITY_MAILPIT_RECIPIENT}"
       IDENTITY_CORS_ALLOWED_ORIGINS: "${IDENTITY_CORS_ALLOWED_ORIGINS}"
     ports:
-      - "${SAMRIM_IDENTITY_BIND_HOST:-0.0.0.0}:${SAMRIM_IDENTITY_PORT:-18082}:8082"
+      - "${SAMRIM_IDENTITY_BIND_HOST:-127.0.0.1}:${SAMRIM_IDENTITY_PORT:-18082}:8082"
 
   dsh:
     profiles: ["integration"]
@@ -95,6 +96,7 @@ services:
       dockerfile: services/dsh/backend/Dockerfile
     environment:
       PORT: "8080"
+      BTHWANI_LISTEN_HOST: "0.0.0.0"
       BTHWANI_ENV: "development"
       DSH_IDENTITY_API_BASE_URL: "http://identity:8082"
       IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"

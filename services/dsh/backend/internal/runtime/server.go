@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -34,6 +35,7 @@ func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register fun
 	if port == "" {
 		port = defaultPort
 	}
+	listenHost := strings.TrimSpace(os.Getenv("BTHWANI_LISTEN_HOST"))
 
 	mux := http.NewServeMux()
 	writeStatus := func(w http.ResponseWriter, _ *http.Request) {
@@ -61,7 +63,7 @@ func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register fun
 	}
 
 	server := &http.Server{
-		Addr:              ":" + port,
+		Addr:              net.JoinHostPort(listenHost, port),
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
