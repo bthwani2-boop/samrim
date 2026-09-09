@@ -384,11 +384,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export BTHWANI_ENV="development"
           export IDENTITY_API_BASE_URL="http://127.0.0.1:18082"
           export DSH_API_BASE_URL="http://127.0.0.1:58080"
           export IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN="local-platform-control-identity-token"
           export DSH_PLATFORM_CONTROL_SERVICE_TOKEN="local-dsh-platform-control-token-2026"
-          export CONTROL_PANEL_PUBLIC_ORIGIN="https://127.0.0.1:13001"
+          export CONTROL_PANEL_PUBLIC_ORIGIN="http://127.0.0.1:13001"
           pnpm --dir apps/control-panel build
           nohup pnpm --dir apps/control-panel exec next start -p 13001 >/tmp/samrim-control-panel.log 2>&1 &
           echo $! >/tmp/samrim-control-panel.pid
