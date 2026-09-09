@@ -143,7 +143,7 @@ paths:
     post:
       tags: [managed-auth]
       operationId: requestManagedRecoveryVerification
-      description: Requests phone proof for password recovery of an already activated partner, captain, field, or operator role without exposing whether an admissible credential exists.
+      description: Requests phone proof for password recovery of an already activated partner, captain, field, operator, or platform-owner role without exposing whether an admissible credential exists.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedRecoveryChallengeRequest" } } }
@@ -514,6 +514,10 @@ components:
       type: string
       enum: [partner, captain, field, operator]
 
+    ManagedRecoveryRole:
+      type: string
+      enum: [partner, captain, field, operator, platform_owner]
+
     ControlPanelRole:
       type: string
       enum: [operator, platform_owner]
@@ -550,7 +554,7 @@ components:
         phone:
           type: string
         role:
-          $ref: "#/components/schemas/ManagedActivationRole"
+          $ref: "#/components/schemas/ManagedRecoveryRole"
 
     ClientCredentialProofRequest:
       type: object
@@ -642,7 +646,7 @@ components:
         phone:
           type: string
         role:
-          $ref: "#/components/schemas/ManagedActivationRole"
+          $ref: "#/components/schemas/ManagedRecoveryRole"
         code:
           type: string
           minLength: 6

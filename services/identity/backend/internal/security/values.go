@@ -139,7 +139,7 @@ func PasswordAllowed(password string) bool {
 		return false
 	}
 	length := utf8.RuneCountInString(password)
-	if length < 15 || length > 128 || strings.TrimSpace(password) == "" {
+	if length < 8 || length > 128 || strings.TrimSpace(password) == "" {
 		return false
 	}
 	return !isCommonPassword(password)

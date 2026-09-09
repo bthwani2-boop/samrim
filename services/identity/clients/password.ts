@@ -1,6 +1,6 @@
 /**
  * Canonical client-side password input shape validator.
- * Validates Unicode length (15 to 128 characters), non-whitespace, and optional confirmation matching.
+ * Validates Unicode length (8 to 128 characters), non-whitespace, and optional confirmation matching.
  * Full security validation (blocklists, normalization, Argon2id hashing) remains server authority.
  */
 export function countUnicodeRunes(text: string): number {
@@ -13,7 +13,7 @@ export type PasswordShapeValidationResult = Readonly<{
   message?: string | undefined;
 }>;
 
-export const MIN_PASSWORD_LENGTH = 15;
+export const MIN_PASSWORD_LENGTH = 8;
 export const MAX_PASSWORD_LENGTH = 128;
 
 export function validatePasswordInputShape(password: string, confirmation?: string): PasswordShapeValidationResult {

@@ -76,6 +76,19 @@ func TestManagedActivationRoleBoundary(t *testing.T) {
 	}
 }
 
+func TestManagedRecoveryRoleBoundary(t *testing.T) {
+	for _, role := range []string{"partner", "captain", "field", "operator", "platform_owner"} {
+		if !IsManagedRecoveryRole(role) {
+			t.Fatalf("expected managed recovery role %s", role)
+		}
+	}
+	for _, role := range []string{"client", "employee", ""} {
+		if IsManagedRecoveryRole(role) {
+			t.Fatalf("unexpected managed recovery role %q", role)
+		}
+	}
+}
+
 func TestOperatorEnrollmentTokenIssuerBoundary(t *testing.T) {
 	allowed := [][2]string{
 		{"platform-control", "operator"},

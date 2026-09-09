@@ -47,6 +47,7 @@ button:disabled { cursor: not-allowed; }
 .password-toggle { position: absolute; top: 50%; left: 10px; min-height: 36px; padding: 0 9px; transform: translateY(-50%); border: 0; border-radius: 9px; background: var(--brand-structure-soft); color: var(--brand-structure); font-size: 12px; font-weight: 800; }
 .password-toggle:focus-visible, .text-button:focus-visible, .button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 .field-help { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+.field-error { color: var(--danger); font-size: 12px; font-weight: 700; }
 .form-actions { display: grid; gap: 13px; margin-top: 25px; }
 .button { display: inline-flex; min-height: 56px; align-items: center; justify-content: center; width: 100%; border: 0; border-radius: 15px; font-size: 15px; font-weight: 850; transition: transform .18s ease, background .18s ease, opacity .18s ease; }
 .button:hover:not(:disabled) { transform: translateY(-1px); }

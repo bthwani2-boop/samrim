@@ -8,7 +8,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$repo = (Resolve-Path (Join-Path $PSScriptRoot "....")).Path
+$repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $serviceRoot = Join-Path $repo ("services\" + $Service)
 $backendPath = Join-Path $serviceRoot "backend"
 $projectPath = Join-Path $serviceRoot "project.json"

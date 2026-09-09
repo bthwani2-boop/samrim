@@ -29,6 +29,7 @@ test("phone-first operator sign-in exposes named controls and the second step", 
 
   await expect(page.getByRole("heading", { name: "تسجيل دخول لوحة التحكم" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: /^كلمة المرور/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "نسيت كلمة المرور؟" })).toBeVisible();
   const password = page.locator("#operator-password");
   await expect(page.getByRole("button", { name: "إظهار كلمة المرور" })).toBeVisible();
   await page.getByRole("button", { name: "إظهار كلمة المرور" }).click();
@@ -43,24 +44,42 @@ test("identity service failure is exposed as an alert with a recovery action", a
   await expect(page.getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
 });
 
-test("recovery success is a status and returns to the canonical login journey", async ({ page }) => {
+test("platform owner recovery is available and returns to the canonical login journey", async ({ page }) => {
   await stubSession(page, 401);
+  let recoveryStartBody: Record<string, unknown> | undefined;
+  let recoveryCompleteBody: Record<string, unknown> | undefined;
   await page.route("**/api/auth/recovery/start", async (route) => {
+    recoveryStartBody = route.request().postDataJSON() as Record<string, unknown>;
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ challenge: { id: "challenge" } }) });
   });
   await page.route("**/api/auth/recovery/complete", async (route) => {
+    recoveryCompleteBody = route.request().postDataJSON() as Record<string, unknown>;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "recovery_complete" }) });
   });
   await page.goto("/");
 
-  await page.getByRole("button", { name: "استرداد كلمة المرور" }).click();
+  await page.getByLabel("الدور").selectOption("platform_owner");
   await page.getByLabel("رقم الهاتف").fill("96777000100");
+  await page.getByRole("button", { name: "متابعة" }).click();
+  await expect(page.getByRole("button", { name: "نسيت كلمة المرور؟" })).toBeVisible();
+  await page.getByRole("button", { name: "نسيت كلمة المرور؟" }).click();
   await page.getByRole("button", { name: "إرسال رمز الاسترداد" }).click();
   await page.getByLabel("رمز تحقق الهاتف").fill("123456");
-  await page.getByLabel("كلمة المرور الجديدة").fill("A-valid-password-123");
-  await page.getByLabel("تأكيد كلمة المرور").fill("A-valid-password-123");
+  await expect(page.getByRole("button", { name: "إظهار كلمة المرور الجديدة" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "إظهار تأكيد كلمة المرور" })).toHaveCount(1);
+  await page.getByRole("button", { name: "إظهار كلمة المرور الجديدة" }).click();
+  await expect(page.locator("#recovery-password")).toHaveAttribute("type", "text");
+  await page.locator("#recovery-password").fill("short");
+  await page.locator("#recovery-password-confirmation").fill("short");
+  await expect(page.getByRole("button", { name: "تغيير كلمة المرور" })).toBeEnabled();
+  await page.getByRole("button", { name: "تغيير كلمة المرور" }).click();
+  await expect(page.locator("p.identity-error")).toContainText("8 حرفاً");
+  await page.locator("#recovery-password").fill("A-valid-password-123");
+  await page.locator("#recovery-password-confirmation").fill("A-valid-password-123");
   await page.getByRole("button", { name: "تغيير كلمة المرور" }).click();
 
+  expect(recoveryStartBody).toMatchObject({ phone: "96777000100", role: "platform_owner" });
+  expect(recoveryCompleteBody).toMatchObject({ phone: "96777000100", role: "platform_owner", code: "123456" });
   await expect(page.getByRole("status")).toContainText("تم تغيير كلمة المرور");
   await expect(page.locator("p.identity-error")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "ابدأ برقم الهاتف" })).toBeVisible();

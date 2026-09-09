@@ -10,6 +10,7 @@ It preserves:
 - customer phone-verification + client-password registration/login/recovery;
 - one-time managed partner/captain/field activation after governed provisioning;
 - explicit DSH-authorized managed-role re-enrollment;
+- phone-proof recovery for an already activated operator or platform-owner credential;
 - operator password proof plus a required second-factor challenge before session creation;
 - credential-derived internal service identity.
 

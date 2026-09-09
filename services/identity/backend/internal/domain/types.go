@@ -274,6 +274,11 @@ func IsManagedActivationRole(role string) bool {
 	return IsManagedRole(role) || role == "operator"
 }
 
+func IsManagedRecoveryRole(role string) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	return IsManagedActivationRole(role) || role == "platform_owner"
+}
+
 func IsControlPanelRole(role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	return role == "operator" || role == "platform_owner"
