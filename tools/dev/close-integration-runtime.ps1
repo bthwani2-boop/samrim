@@ -47,6 +47,8 @@ function Invoke-Compose {
 
     $baseArgs = @(
         "compose",
+        "--ansi", "never",
+        "--progress", "plain",
         "--env-file", $envPath,
         "-f", $composeFile,
         "--profile", "integration"
@@ -289,6 +291,8 @@ function Show-Diagnostics {
 
     $baseArgs = @(
         "compose",
+        "--ansi", "never",
+        "--progress", "plain",
         "--env-file", $envPath,
         "-f", $composeFile,
         "--profile", "integration"
