@@ -53,8 +53,10 @@ test("recovery success is a status and returns to the canonical login journey", 
   });
   await page.goto("/");
 
-  await page.getByRole("button", { name: "استرداد كلمة المرور" }).click();
   await page.getByLabel("رقم الهاتف").fill("96777000100");
+  await page.getByRole("button", { name: "متابعة" }).click();
+  await expect(page.getByRole("button", { name: "نسيت كلمة المرور؟" })).toBeVisible();
+  await page.getByRole("button", { name: "نسيت كلمة المرور؟" }).click();
   await page.getByRole("button", { name: "إرسال رمز الاسترداد" }).click();
   await page.getByLabel("رمز تحقق الهاتف").fill("123456");
   await page.getByLabel("كلمة المرور الجديدة").fill("A-valid-password-123");
