@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
+    [ValidateSet("identity", "dsh")]
     [string]$Service
 )
 
@@ -14,9 +15,15 @@ $backendPath = Join-Path $serviceRoot "backend"
 $projectPath = Join-Path $serviceRoot "project.json"
 $goModPath = Join-Path $backendPath "go.mod"
 $apiMainPath = Join-Path $backendPath "cmd\api\main.go"
-$envExamplePath = Join-Path $repo "infra\local\compose\.env.example"
+$ensureLocalEnvPath = Join-Path $PSScriptRoot "ensure-local-env.ps1"
+$envPath = Join-Path $repo "infra\local\compose\.env"
 
-foreach ($required in @($projectPath, $goModPath, $apiMainPath, $envExamplePath)) {
+foreach ($required in @(
+    $projectPath,
+    $goModPath,
+    $apiMainPath,
+    $ensureLocalEnvPath
+)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Requested Go service is not a discovered materialized service: $required"
     }
@@ -26,44 +33,178 @@ $project = Get-Content -LiteralPath $projectPath -Raw | ConvertFrom-Json
 if (@($project.tags) -notcontains "type:service") {
     throw "$Service is not tagged as type:service."
 }
-if ([string] $project.root -ne ("services/" + $Service)) {
+if ([string]$project.root -ne ("services/" + $Service)) {
     throw "$Service project.root does not match services/$Service."
 }
 
-$envKey = "SAMRIM_" + (($Service -replace '[^A-Za-z0-9]', '_').ToUpperInvariant()) + "_PORT"
-$port = $null
-foreach ($line in Get-Content -LiteralPath $envExamplePath) {
-    $trimmed = $line.Trim()
-    if (-not $trimmed -or $trimmed.StartsWith("#")) {
-        continue
-    }
+& $ensureLocalEnvPath
 
-    $parts = $trimmed.Split("=", 2)
-    if ($parts.Count -eq 2 -and $parts[0].Trim() -eq $envKey) {
-        $port = $parts[1].Trim()
-        break
-    }
+if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
+    throw "Local runtime environment is missing after ensure-local-env: $envPath"
 }
 
-if (-not $env:PORT -and [string]::IsNullOrWhiteSpace([string] $port)) {
-    throw "No local default port for $Service. Expected $envKey in infra/local/compose/.env.example or an explicit PORT environment variable."
+function Read-EnvMap([string]$Path) {
+    $map = @{}
+
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) {
+            continue
+        }
+
+        $parts = $trimmed.Split("=", 2)
+        if ($parts.Count -ne 2) {
+            continue
+        }
+
+        $map[$parts[0].Trim()] = $parts[1].Trim()
+    }
+
+    return $map
 }
 
-$oldPort = $env:PORT
-$oldListenHost = $env:BTHWANI_LISTEN_HOST
+function Require-EnvMapValue(
+    [hashtable]$Map,
+    [string]$Name
+) {
+    if (
+        -not $Map.ContainsKey($Name) -or
+        [string]::IsNullOrWhiteSpace([string]$Map[$Name])
+    ) {
+        throw "Required local runtime setting is missing: $Name"
+    }
+
+    return [string]$Map[$Name]
+}
+
+function Set-ProcessEnvironment(
+    [string]$Name,
+    [AllowEmptyString()][string]$Value
+) {
+    [Environment]::SetEnvironmentVariable(
+        $Name,
+        $Value,
+        [EnvironmentVariableTarget]::Process
+    )
+}
+
+$localEnv = Read-EnvMap -Path $envPath
+
+$runtimeEnvironment = Require-EnvMapValue -Map $localEnv -Name "BTHWANI_ENV"
+if ($runtimeEnvironment -ne "development") {
+    throw "LOCAL_INTEGRATION host runtime requires BTHWANI_ENV=development."
+}
+
+$portKey = "SAMRIM_" +
+    (($Service -replace '[^A-Za-z0-9]', '_').ToUpperInvariant()) +
+    "_PORT"
+
+$configuredPort = Require-EnvMapValue -Map $localEnv -Name $portKey
+$inheritedPort = [Environment]::GetEnvironmentVariable(
+    "PORT",
+    [EnvironmentVariableTarget]::Process
+)
+$runtimePort = if ([string]::IsNullOrWhiteSpace($inheritedPort)) {
+    $configuredPort
+}
+else {
+    $inheritedPort
+}
+
+$managedNames = [System.Collections.Generic.HashSet[string]]::new(
+    [StringComparer]::OrdinalIgnoreCase
+)
+
+foreach ($name in $localEnv.Keys) {
+    $null = $managedNames.Add([string]$name)
+}
+
+foreach ($name in @(
+    "PORT",
+    "BTHWANI_LISTEN_HOST",
+    "BTHWANI_EXPECTED_DATABASE_HOST",
+    "BTHWANI_EXPECTED_DATABASE_PORT",
+    "BTHWANI_EXPECTED_DATABASE_NAME",
+    "BTHWANI_EXPECTED_DATABASE_USER",
+    "IDENTITY_DATABASE_URL",
+    "IDENTITY_MAINTENANCE_DATABASE_URL",
+    "IDENTITY_MIGRATION_DATABASE_URL",
+    "IDENTITY_MAILPIT_SMTP_ADDR",
+    "IDENTITY_AUTO_MIGRATE",
+    "DSH_IDENTITY_API_BASE_URL"
+)) {
+    $null = $managedNames.Add($name)
+}
+
+$previous = @{}
+foreach ($name in $managedNames) {
+    $previous[$name] = [Environment]::GetEnvironmentVariable(
+        $name,
+        [EnvironmentVariableTarget]::Process
+    )
+}
+
 try {
-    if (-not $env:PORT) {
-        $env:PORT = [string] $port
+    foreach ($entry in $localEnv.GetEnumerator()) {
+        Set-ProcessEnvironment `
+            -Name ([string]$entry.Key) `
+            -Value ([string]$entry.Value)
     }
-    $env:BTHWANI_LISTEN_HOST = "127.0.0.1"
+
+    Set-ProcessEnvironment -Name "PORT" -Value $runtimePort
+    Set-ProcessEnvironment -Name "BTHWANI_LISTEN_HOST" -Value "127.0.0.1"
+
+    switch ($Service) {
+        "identity" {
+            $dbUserRaw = Require-EnvMapValue -Map $localEnv -Name "SAMRIM_POSTGRES_USER"
+            $dbPasswordRaw = Require-EnvMapValue -Map $localEnv -Name "SAMRIM_POSTGRES_PASSWORD"
+            $dbNameRaw = Require-EnvMapValue -Map $localEnv -Name "SAMRIM_POSTGRES_DB"
+            $dbPort = Require-EnvMapValue -Map $localEnv -Name "SAMRIM_POSTGRES_PORT"
+            $mailpitSmtpPort = Require-EnvMapValue -Map $localEnv -Name "SAMRIM_MAILPIT_SMTP_PORT"
+
+            $dbUser = [Uri]::EscapeDataString($dbUserRaw)
+            $dbPassword = [Uri]::EscapeDataString($dbPasswordRaw)
+            $dbName = [Uri]::EscapeDataString($dbNameRaw)
+
+            $databaseURL = "postgres://${dbUser}:${dbPassword}@127.0.0.1:${dbPort}/${dbName}?sslmode=disable"
+
+            Set-ProcessEnvironment -Name "IDENTITY_DATABASE_URL" -Value $databaseURL
+            Set-ProcessEnvironment -Name "IDENTITY_MAINTENANCE_DATABASE_URL" -Value $databaseURL
+            Set-ProcessEnvironment -Name "IDENTITY_MIGRATION_DATABASE_URL" -Value $databaseURL
+            Set-ProcessEnvironment -Name "IDENTITY_MAILPIT_SMTP_ADDR" -Value "127.0.0.1:${mailpitSmtpPort}"
+            Set-ProcessEnvironment -Name "IDENTITY_AUTO_MIGRATE" -Value "false"
+
+            Set-ProcessEnvironment -Name "BTHWANI_EXPECTED_DATABASE_HOST" -Value "127.0.0.1"
+            Set-ProcessEnvironment -Name "BTHWANI_EXPECTED_DATABASE_PORT" -Value $dbPort
+            Set-ProcessEnvironment -Name "BTHWANI_EXPECTED_DATABASE_NAME" -Value $dbNameRaw
+            Set-ProcessEnvironment -Name "BTHWANI_EXPECTED_DATABASE_USER" -Value $dbUserRaw
+        }
+
+        "dsh" {
+            $identityPort = Require-EnvMapValue -Map $localEnv -Name "SAMRIM_IDENTITY_PORT"
+            Set-ProcessEnvironment `
+                -Name "DSH_IDENTITY_API_BASE_URL" `
+                -Value "http://127.0.0.1:${identityPort}"
+        }
+    }
 
     Write-Host "Service: $Service"
     Write-Host "Backend: $backendPath"
-    Write-Host "PORT source: $(if ($oldPort) { 'environment' } else { $envExamplePath + ' ' + $envKey })"
+    Write-Host "Environment source: $envPath"
+    Write-Host "PORT=$runtimePort"
     Write-Host "LISTEN_HOST=127.0.0.1"
 
     Push-Location $backendPath
     try {
+        if ($Service -eq "identity") {
+            Write-Host "Identity schema migration/verification: starting"
+            & go run ./cmd/migrate
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+            }
+            Write-Host "Identity schema migration/verification: PASS"
+        }
+
         & go run ./cmd/api
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
@@ -74,6 +215,22 @@ try {
     }
 }
 finally {
-    $env:PORT = $oldPort
-    $env:BTHWANI_LISTEN_HOST = $oldListenHost
+    foreach ($name in $managedNames) {
+        $oldValue = $previous[$name]
+
+        if ($null -eq $oldValue) {
+            [Environment]::SetEnvironmentVariable(
+                $name,
+                $null,
+                [EnvironmentVariableTarget]::Process
+            )
+        }
+        else {
+            [Environment]::SetEnvironmentVariable(
+                $name,
+                [string]$oldValue,
+                [EnvironmentVariableTarget]::Process
+            )
+        }
+    }
 }
