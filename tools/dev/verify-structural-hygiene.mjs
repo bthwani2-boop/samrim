@@ -25,6 +25,46 @@ const tracked = records.map((record) => record.file);
 const failures = [];
 const classifications = new Map();
 
+const attributesText = fs
+  .readFileSync(path.join(repoRoot, ".gitattributes"), "utf8")
+  .replace(/\r\n?/g, "\n");
+
+if (!/^\*\s+text=auto\s+eol=lf\s*$/m.test(attributesText)) {
+  failures.push(
+    "Canonical repository text EOL policy is missing: expected '* text=auto eol=lf'",
+  );
+}
+
+const eolRecords = execFileSync("git", ["ls-files", "--eol", "-z"], {
+  cwd: repoRoot,
+  encoding: "utf8",
+})
+  .split("\0")
+  .filter(Boolean);
+
+for (const record of eolRecords) {
+  const separator = record.indexOf("\t");
+  if (separator < 0) {
+    failures.push("Unable to parse git ls-files --eol record: " + record);
+    continue;
+  }
+
+  const metadata = record.slice(0, separator);
+  const file = record.slice(separator + 1).replaceAll("\\", "/");
+  const indexEol = metadata.match(/\bi\/(\S+)/)?.[1];
+
+  if (!indexEol) {
+    failures.push("Unable to resolve index EOL state: " + file + " (" + metadata + ")");
+    continue;
+  }
+
+  if (indexEol === "crlf" || indexEol === "mixed") {
+    failures.push(
+      "Tracked artifact is non-canonical in Git index: " + file + " (" + metadata + ")",
+    );
+  }
+}
+
 function classify(file, category) {
   if (classifications.has(file)) {
     failures.push(
@@ -319,5 +359,6 @@ console.log("TRACKED_SYMLINKS_OR_SUBMODULES=0");
 console.log("FORBIDDEN_HISTORICAL_TEMP_PATHS=0");
 console.log("README_ONLY_CONTAINERS=0");
 console.log("GENERATED_BUILD_OUTPUT_TRACKED=0");
+console.log("CANONICAL_TEXT_EOL_POLICY=PASS");
 console.log("STRUCTURAL_HYGIENE=PASS");
 console.log("CLASSIFICATION_COUNTS=" + JSON.stringify(counts));
