@@ -339,6 +339,28 @@ jobs:
 
           Write-Host "WINDOWS_EOL_REGRESSION=PASS"
 
+      - name: Set up Node for Windows mobile export proof
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+
+      - name: Install pinned pnpm for Windows mobile export proof
+        shell: pwsh
+        run: npm install --global pnpm@10.34.0
+
+      - name: Install workspace for Windows mobile export proof
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Windows mobile exports
+        shell: pwsh
+        run: |
+          pnpm run workspace:mobile-export-smoke
+          if ($LASTEXITCODE -ne 0) {
+            throw "Windows mobile export smoke failed."
+          }
+          Write-Host "WINDOWS_MOBILE_EXPORT=PASS"
+
   runtime:
     name: repository-runtime
     needs: baseline
