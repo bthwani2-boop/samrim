@@ -230,15 +230,15 @@ try {
         Verify-ExpoConfig -App $app
     }
 
+    Run-NativeStep "Developer doctor" {
+        pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/doctor.ps1 -ExpectedBranch $verificationBranch
+    }
+
     Run-NativeStep "Developer bootstrap" {
         pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1
     }
 
     Assert-CleanTree "developer bootstrap"
-
-    Run-NativeStep "Developer doctor" {
-        pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/doctor.ps1 -ExpectedBranch $verificationBranch
-    }
 
     Run-NativeStep "Workspace verification" {
         pnpm run workspace:verify

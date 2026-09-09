@@ -52,15 +52,33 @@ for (const record of eolRecords) {
   const metadata = record.slice(0, separator);
   const file = record.slice(separator + 1).replaceAll("\\", "/");
   const indexEol = metadata.match(/\bi\/(\S+)/)?.[1];
+  const attributes = metadata.match(/\battr\/(.+)$/)?.[1] ?? "";
 
   if (!indexEol) {
     failures.push("Unable to resolve index EOL state: " + file + " (" + metadata + ")");
     continue;
   }
 
-  if (indexEol === "crlf" || indexEol === "mixed") {
+  const binary =
+    indexEol === "-text" || attributes.split(/\s+/).includes("-text");
+
+  if (!binary && !/\beol=lf\b/.test(attributes)) {
     failures.push(
-      "Tracked artifact is non-canonical in Git index: " + file + " (" + metadata + ")",
+      "Tracked text artifact lacks canonical eol=lf policy: " +
+        file +
+        " (" +
+        metadata +
+        ")",
+    );
+  }
+
+  if (!binary && (indexEol === "crlf" || indexEol === "mixed")) {
+    failures.push(
+      "Tracked text artifact is non-canonical in Git index: " +
+        file +
+        " (" +
+        metadata +
+        ")",
     );
   }
 }

@@ -249,13 +249,13 @@ jobs:
         shell: bash
         run: pnpm run nx:projects
 
-      - name: Verify developer bootstrap
-        shell: pwsh
-        run: ./tools/dev/bootstrap.ps1
-
       - name: Verify developer doctor
         shell: pwsh
         run: ./tools/dev/doctor.ps1 -SkipBranchCheck
+
+      - name: Verify developer bootstrap
+        shell: pwsh
+        run: ./tools/dev/bootstrap.ps1
 
       - name: Verify workspace
         shell: bash
@@ -291,17 +291,15 @@ jobs:
             exit 1
           fi
 
-  windows-bootstrap:
-    name: repository-windows-bootstrap
+  windows-eol:
+    name: repository-windows-eol
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
-      - name: Configure hostile Windows Git host defaults
+      - name: Configure hostile Windows Git default
         shell: pwsh
-        run: |
-          git config --global core.autocrlf true
-          git config --global core.safecrlf false
+        run: git config --global core.autocrlf true
 
       - name: Checkout exact candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -309,22 +307,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
 
-      - name: Set up Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 24.17.0
-
-      - name: Install pinned pnpm
-        shell: pwsh
-        run: npm install --global pnpm@10.34.0
-
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version: 1.27.1
           cache: false
 
-      - name: Verify fresh Windows checkout obeys canonical LF
+      - name: Verify canonical LF checkout and Go workspace stability
         shell: pwsh
         run: |
           $bad = @(
@@ -334,84 +323,25 @@ jobs:
 
           if ($bad.Count -gt 0) {
             $bad | Write-Host
-            throw "Fresh Windows checkout contains CRLF/mixed tracked files."
-          }
-
-          Write-Host "WINDOWS_FRESH_CHECKOUT_EOL=PASS"
-
-      - name: Create legacy CRLF-only checkout fixture
-        shell: pwsh
-        run: |
-          $path = "go.work"
-          $text = [IO.File]::ReadAllText($path)
-          $text = $text.Replace("`r`n", "`n").Replace("`r", "`n")
-          [IO.File]::WriteAllText(
-            $path,
-            $text.Replace("`n", "`r`n"),
-            [Text.UTF8Encoding]::new($false)
-          )
-
-          $record = (& git ls-files --eol -- $path | Out-String).Trim()
-          Write-Host $record
-          if ($record -notmatch '\bw/crlf\b') {
-            throw "Unable to establish CRLF-only regression fixture."
-          }
-
-          $workHash = (& git hash-object --path=go.work -- go.work | Out-String).Trim()
-          $indexHash = (& git rev-parse :go.work | Out-String).Trim()
-
-          if ($workHash -ne $indexHash) {
-            throw "Regression fixture changed semantic Git content."
-          }
-
-      - name: Verify bootstrap closes Windows EOL drift at source
-        shell: pwsh
-        run: |
-          ./tools/dev/bootstrap.ps1
-
-          $autocrlf = (& git config --local --get core.autocrlf | Out-String).Trim()
-          $safecrlf = (& git config --local --get core.safecrlf | Out-String).Trim()
-
-          if ($autocrlf -ne "false") {
-            throw "Expected repository-local core.autocrlf=false, found '$autocrlf'."
-          }
-
-          if ($safecrlf -ne "true") {
-            throw "Expected repository-local core.safecrlf=true, found '$safecrlf'."
-          }
-
-          $bad = @(
-            git ls-files --eol |
-              Where-Object { $_ -match '\bw/(crlf|mixed)\b' }
-          )
-
-          if ($bad.Count -gt 0) {
-            $bad | Write-Host
-            throw "Bootstrap left CRLF/mixed tracked files."
-          }
-
-          $drift = @(git status --porcelain --untracked-files=all)
-          if ($drift.Count -gt 0) {
-            $drift | Write-Host
-            throw "Bootstrap left repository drift on Windows."
+            throw "Fresh Windows checkout contains CRLF/mixed tracked text."
           }
 
           go work sync
           if ($LASTEXITCODE -ne 0) {
-            throw "go work sync failed after Windows bootstrap."
+            throw "go work sync failed."
           }
 
           $drift = @(git status --porcelain --untracked-files=all)
           if ($drift.Count -gt 0) {
             $drift | Write-Host
-            throw "go work sync reintroduced repository drift on Windows."
+            throw "go work sync mutated the fresh Windows checkout."
           }
 
-          Write-Host "WINDOWS_BOOTSTRAP_EOL=PASS"
+          Write-Host "WINDOWS_EOL_REGRESSION=PASS"
 
   runtime:
     name: repository-runtime
-    needs: [baseline, windows-bootstrap]
+    needs: baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
