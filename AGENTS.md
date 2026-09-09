@@ -57,6 +57,8 @@ Evidence strength depends on authority for the fact, directness, currentness, ta
 
 FOR EVERY MATERIAL DECISION, CENSUS THE EVIDENCE CLASSES CAPABLE OF CHANGING IT; omit a class only when it cannot materially affect the decision. For mutable technical, security, standard or provider facts, prefer current primary/official sources and corroborate consequential claims when independent evidence is available.
 
+`AUTO` / `NEXT` / `CONTINUE` are execution-autonomy signals, not evidence, implementation recipes or authority to follow a documented sequence. Never derive the next action mechanically from Governance, Docs, donor/history, OSS, references, best practice or a prior plan. Derive it from the pinned current state and decision-relevant evidence.
+
 NO MATERIAL CLAIM EARNS TRUST BY EXISTENCE, HISTORY, POPULARITY, DOCUMENTATION, TEST COVERAGE, MANIFEST DECLARATION OR PRIOR ACCEPTANCE.
 CURRENT CODE != CORRECT DESIGN.
 DECLARED OWNER != PROVEN OWNER.
@@ -99,6 +101,8 @@ RIGHT CHANGE + WRONG TIME = WRONG CHANGE.
 POSSIBLE FUTURE NEED != CURRENT PREREQUISITE.
 
 Causal prerequisites precede dependent work; unrelated future foundation does not. Do not solve tomorrow's problem today unless today's correct solution causally requires it.
+
+`NEXT` = the smallest complete canonical action that, from current evidence, addresses the highest proven causal root or its required prerequisite and best advances the authorized objective now. Compare viable alternatives, account for current need, maturity, prerequisites, total complexity, safety and reversibility, and actively seek evidence that could falsify the preferred treatment before selecting it.
 
 NO MATERIAL OR SEMANTIC CHANGE IS TOO SMALL FOR CORRECT CONTEXT. A one-character change in the wrong owner, abstraction, sequence or time is still a defect.
 
