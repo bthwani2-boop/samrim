@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV16Upgrade(t *testing.T) {
+func TestMigrationV13ToV15Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		databaseURL = "postgres://samrim_local:change-me-local-only@127.0.0.1:58432/samrim_local?sslmode=disable"
@@ -332,43 +332,6 @@ func TestMigrationV13ToV16Upgrade(t *testing.T) {
 		t.Fatalf("legacy pending delivery residue remains: count=%d err=%v", activeLegacyDeliveries, err)
 	}
 
-	// Apply migration 016 and prove platform-owner recovery is admitted without
-	// widening the platform-owner activation/bootstrap boundary.
-	var v16Name string
-	var v16Content []byte
-	for _, file := range files {
-		if strings.HasPrefix(file.Name(), "016_") {
-			v16Name = file.Name()
-			v16Content, err = os.ReadFile(filepath.Join(migDir, v16Name))
-			if err != nil {
-				t.Fatalf("read 016: %v", err)
-			}
-			break
-		}
-	}
-	if v16Name == "" {
-		t.Fatal("migration 016 not found")
-	}
-	hash16 := sha256.Sum256(v16Content)
-	shaHex16 := hex.EncodeToString(hash16[:])
-	if err := postgres.Migrate(ctx, testDB, 16, v16Name, shaHex16, string(v16Content)); err != nil {
-		t.Fatalf("apply migration 016 on v15 database: %v", err)
-	}
-
-	var v16 int
-	if v16, err = postgres.CurrentSchemaVersion(ctx, testDB); err != nil {
-		t.Fatalf("read schema version at v16: %v", err)
-	}
-	if v16 != 16 {
-		t.Fatalf("expected schema version 16, got %d", v16)
-	}
-	if _, err := testDB.ExecContext(ctx, `
-		INSERT INTO identity_challenges(id, actor_id, role, purpose, phone_e164, code_hash, request_ip_hash, admissible, status, attempts, expires_at)
-		VALUES('challenge_platform_owner_recovery', $1, 'platform_owner', 'managed_recover', '+967770001300', $2, $3, true, 'revoked', 0, clock_timestamp() + interval '1 hour')`,
-		ownerActorID, strings.Repeat("d", 64), strings.Repeat("e", 64)); err != nil {
-		t.Fatalf("platform-owner recovery challenge is not admitted by v16 schema: %v", err)
-	}
-
 	// 5. Zero data loss on actors, roles, credentials
 	var actorCount, roleCount, credCount int
 	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_actors").Scan(&actorCount); err != nil || actorCount != 3 {
@@ -386,5 +349,5 @@ func TestMigrationV13ToV16Upgrade(t *testing.T) {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	t.Log("Migration v13 -> v16 upgrade, data preservation, six-digit cutover, and platform-owner recovery boundary test PASSED successfully!")
+	t.Log("Migration v13 -> v15 upgrade, data preservation and six-digit cutover test PASSED successfully!")
 }

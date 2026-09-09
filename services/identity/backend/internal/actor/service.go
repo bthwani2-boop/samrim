@@ -274,13 +274,13 @@ WHERE a.phone_e164=$1 AND r.role=$2 AND r.enabled=true AND a.security_enabled=tr
 	return a, hash, credentialVersion, err
 }
 
-func (s *Service) ManagedRoleCandidate(ctx context.Context, rawPhone, role string) (domain.Actor, domain.ActorRole, error) {
+func (s *Service) ManagedActivationCandidate(ctx context.Context, rawPhone, role string) (domain.Actor, domain.ActorRole, error) {
 	phone, err := identitysecurity.NormalizePhoneE164(rawPhone)
 	if err != nil {
 		return domain.Actor{}, domain.ActorRole{}, domain.ErrInvalidInput
 	}
 	role = strings.ToLower(strings.TrimSpace(role))
-	if !domain.IsManagedRecoveryRole(role) {
+	if !domain.IsManagedActivationRole(role) {
 		return domain.Actor{}, domain.ActorRole{}, domain.ErrInvalidInput
 	}
 	var a domain.Actor
@@ -391,7 +391,7 @@ func (s *Service) ResetClientPasswordTx(ctx context.Context, tx *sql.Tx, actorID
 
 func (s *Service) ResetManagedPasswordTx(ctx context.Context, tx *sql.Tx, actorID, role, password string) error {
 	role = strings.ToLower(strings.TrimSpace(role))
-	if !domain.IsManagedRecoveryRole(role) {
+	if !domain.IsManagedActivationRole(role) {
 		return domain.ErrForbidden
 	}
 	hash, err := identitysecurity.HashPassword(password)

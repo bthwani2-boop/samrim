@@ -59,7 +59,7 @@ const identityCopy: IdentityCopy = {
   newPasswordLabel: "كلمة المرور الجديدة",
   passwordConfirmationLabel: "تأكيد كلمة المرور",
   loginPasswordPlaceholder: "أدخل كلمة المرور",
-  newPasswordPlaceholder: "8 أحرف على الأقل",
+  newPasswordPlaceholder: "15 حرفًا على الأقل",
   passwordConfirmationPlaceholder: "أعد إدخال كلمة المرور",
   sendCode: "إرسال رمز التحقق",
   resendCode: "إعادة إرسال رمز التحقق",

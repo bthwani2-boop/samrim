@@ -74,12 +74,6 @@ func TestRandomEnrollmentTokenIsHighEntropy(t *testing.T) {
 }
 
 func TestPasswordPolicyNormalizesUnicodeAndRejectsWeakValues(t *testing.T) {
-	if !PasswordAllowed("A1b2c3d4") {
-		t.Fatal("valid eight-character password rejected")
-	}
-	if PasswordAllowed("A1b2c3d") {
-		t.Fatal("seven-character password accepted")
-	}
 	if PasswordAllowed("123456789012345") {
 		t.Fatal("common password accepted")
 	}

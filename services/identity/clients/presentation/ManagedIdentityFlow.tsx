@@ -347,7 +347,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
             setPassword(value);
             setError("");
           }}
-          placeholder="٨ أحرف على الأقل"
+          placeholder="١٥ حرفاً على الأقل"
           placeholderTextColor={theme.colorMuted}
           secureTextEntry
           style={styles.input}
@@ -424,7 +424,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
               accessibilityLabel="كلمة المرور الجديدة"
               autoComplete="new-password"
               onChangeText={setPassword}
-              placeholder="٨ أحرف على الأقل"
+              placeholder="١٥ حرفاً على الأقل"
               placeholderTextColor={theme.colorMuted}
               secureTextEntry
               style={styles.input}
@@ -501,7 +501,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
               accessibilityLabel="كلمة المرور"
               autoComplete="new-password"
               onChangeText={setPassword}
-              placeholder="٨ أحرف على الأقل"
+              placeholder="١٥ حرفاً على الأقل"
               placeholderTextColor={theme.colorMuted}
               secureTextEntry
               style={styles.input}

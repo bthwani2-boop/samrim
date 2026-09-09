@@ -113,10 +113,6 @@ const managedType = schemaBlock("ManagedActorType", "PhoneRequest");
 if (!managedType.includes("enum: [partner, captain, field]")) failures.push("managed activation roles are incorrect");
 const managedActivationRole = schemaBlock("ManagedActivationRole", "ControlPanelRole");
 if (!managedActivationRole.includes("enum: [partner, captain, field, operator]")) failures.push("operator activation role boundary missing");
-const managedRecoveryRole = schemaBlock("ManagedRecoveryRole", "PhoneRequest");
-if (!managedRecoveryRole.includes("enum: [partner, captain, field, operator, platform_owner]")) failures.push("platform-owner recovery role boundary missing");
-const managedRecoveryRequest = schemaBlock("ManagedRecoveryChallengeRequest", "ClientCredentialProofRequest");
-if (!managedRecoveryRequest.includes("#/components/schemas/ManagedRecoveryRole")) failures.push("managed recovery challenge role boundary missing");
 
 if (failures.length) {
   console.error("IDENTITY_CONTRACT_GUARD=FAIL");

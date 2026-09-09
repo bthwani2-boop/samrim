@@ -227,14 +227,14 @@ func (s *Service) RecoverClient(ctx context.Context, input domain.ClientCredenti
 
 func (s *Service) RequestManagedRecovery(ctx context.Context, input domain.ManagedRecoveryChallengeRequest, ipHash string) (domain.Challenge, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.IsManagedRecoveryRole(role) {
+	if !domain.IsManagedActivationRole(role) {
 		return domain.Challenge{}, domain.ErrForbidden
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
 	if err != nil {
 		return domain.Challenge{}, domain.ErrInvalidInput
 	}
-	a, roleView, lookupErr := s.actors.ManagedRoleCandidate(ctx, phone, role)
+	a, roleView, lookupErr := s.actors.ManagedActivationCandidate(ctx, phone, role)
 	admissible := false
 	actorID := ""
 	if lookupErr == nil && roleView.ActivatedAt != nil {
@@ -252,7 +252,7 @@ func (s *Service) RequestManagedRecovery(ctx context.Context, input domain.Manag
 
 func (s *Service) RecoverManaged(ctx context.Context, input domain.ManagedRecoveryRequest) (domain.RecoveryResult, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.IsManagedRecoveryRole(role) {
+	if !domain.IsManagedActivationRole(role) {
 		return domain.RecoveryResult{}, domain.ErrInvalidInput
 	}
 	_, err := s.consume(ctx, input.Phone, role, domain.ChallengeManagedRecover, input.Code, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
@@ -284,7 +284,7 @@ func (s *Service) RequestManagedActivation(ctx context.Context, input domain.Man
 			return domain.Challenge{}, err
 		}
 	}
-	a, r, lookupErr := s.actors.ManagedRoleCandidate(ctx, phone, role)
+	a, r, lookupErr := s.actors.ManagedActivationCandidate(ctx, phone, role)
 	admissible := lookupErr == nil && r.ActivatedAt == nil
 	actorID := ""
 	if admissible {

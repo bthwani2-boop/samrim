@@ -57,8 +57,6 @@ function AccountAccessPanel() {
   const [result, setResult] = useState<OperatorEnrollmentToken | null>(null);
   const [operatorResetPassword, setOperatorResetPassword] = useState("");
   const [operatorResetPasswordConfirmation, setOperatorResetPasswordConfirmation] = useState("");
-  const [showOperatorResetPassword, setShowOperatorResetPassword] = useState(false);
-  const [showOperatorResetPasswordConfirmation, setShowOperatorResetPasswordConfirmation] = useState(false);
   const [resetSuccess, setResetSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -201,8 +199,6 @@ function AccountAccessPanel() {
       mutationApplied = true;
       setOperatorResetPassword("");
       setOperatorResetPasswordConfirmation("");
-      setShowOperatorResetPassword(false);
-      setShowOperatorResetPasswordConfirmation(false);
       await refreshCanonicalStatus();
       setResetSuccess("تمت إعادة تعيين كلمة مرور موظف لوحة التحكم بنجاح وإلغاء جميع الجلسات القديمة.");
     } catch (cause) {
@@ -249,11 +245,11 @@ function AccountAccessPanel() {
           <strong>إعادة تعيين كلمة مرور الموظف (إداريًا)</strong>
           <p>بصفتك مالك المنصة، يمكنك تعيين كلمة مرور جديدة للموظف مع إلغاء كل جلساته القديمة فورًا (إصدار الاعتماد: {status.credentialVersion ?? "غير متاح"}).</p>
           <label className="field-label" htmlFor="operator-reset-new-password">كلمة المرور الجديدة
-            <div className="password-field"><input id="operator-reset-new-password" type={showOperatorResetPassword ? "text" : "password"} autoComplete="new-password" disabled={busy} value={operatorResetPassword} onChange={(e) => setOperatorResetPassword(e.target.value)} /><button aria-label={showOperatorResetPassword ? "إخفاء كلمة المرور الجديدة" : "إظهار كلمة المرور الجديدة"} className="password-toggle" type="button" onClick={() => setShowOperatorResetPassword((visible) => !visible)}>{showOperatorResetPassword ? "إخفاء" : "إظهار"}</button></div>
-            <span className="field-help">٨ أحرف على الأقل</span>
+            <input id="operator-reset-new-password" type="password" autoComplete="new-password" disabled={busy} value={operatorResetPassword} onChange={(e) => setOperatorResetPassword(e.target.value)} />
+            <span className="field-help">١٥ حرفاً على الأقل</span>
           </label>
           <label className="field-label" htmlFor="operator-reset-confirm-password">تأكيد كلمة المرور
-            <div className="password-field"><input id="operator-reset-confirm-password" type={showOperatorResetPasswordConfirmation ? "text" : "password"} autoComplete="new-password" disabled={busy} value={operatorResetPasswordConfirmation} onChange={(e) => setOperatorResetPasswordConfirmation(e.target.value)} /><button aria-label={showOperatorResetPasswordConfirmation ? "إخفاء تأكيد كلمة المرور" : "إظهار تأكيد كلمة المرور"} className="password-toggle" type="button" onClick={() => setShowOperatorResetPasswordConfirmation((visible) => !visible)}>{showOperatorResetPasswordConfirmation ? "إخفاء" : "إظهار"}</button></div>
+            <input id="operator-reset-confirm-password" type="password" autoComplete="new-password" disabled={busy} value={operatorResetPasswordConfirmation} onChange={(e) => setOperatorResetPasswordConfirmation(e.target.value)} />
           </label>
           <button type="button" className="button button-primary" disabled={busy || !validatePasswordInputShape(operatorResetPassword, operatorResetPasswordConfirmation).valid || reason.trim().length < 5} onClick={() => void resetOperatorCredential()}>{busy ? "جارٍ التعيين…" : "إعادة تعيين كلمة مرور الموظف"}</button>
           {resetSuccess ? <p className="success-inline" role="status">{resetSuccess}</p> : null}
@@ -290,10 +286,6 @@ export default function Home() {
   const [activationPasswordConfirmation, setActivationPasswordConfirmation] = useState("");
   const [recoveryPassword, setRecoveryPassword] = useState("");
   const [recoveryPasswordConfirmation, setRecoveryPasswordConfirmation] = useState("");
-  const [showActivationPassword, setShowActivationPassword] = useState(false);
-  const [showActivationPasswordConfirmation, setShowActivationPasswordConfirmation] = useState(false);
-  const [showRecoveryPassword, setShowRecoveryPassword] = useState(false);
-  const [showRecoveryPasswordConfirmation, setShowRecoveryPasswordConfirmation] = useState(false);
   const [challengeStarted, setChallengeStarted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -311,10 +303,6 @@ export default function Home() {
     setActivationPasswordConfirmation("");
     setRecoveryPassword("");
     setRecoveryPasswordConfirmation("");
-    setShowActivationPassword(false);
-    setShowActivationPasswordConfirmation(false);
-    setShowRecoveryPassword(false);
-    setShowRecoveryPasswordConfirmation(false);
     setOperatorEnrollmentToken("");
     setShowPassword(false);
     setError("");
@@ -357,7 +345,7 @@ export default function Home() {
       const response = await identityFetch(authMode === "login" ? "/api/auth/login/start" : authMode === "activate" ? "/api/auth/activation/start" : "/api/auth/recovery/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: authMode === "login" ? JSON.stringify({ phone, password, role: loginRole }) : authMode === "activate" ? JSON.stringify({ phone, operatorEnrollmentToken }) : JSON.stringify({ phone, role: loginRole }),
+        body: authMode === "login" ? JSON.stringify({ phone, password, role: loginRole }) : authMode === "activate" ? JSON.stringify({ phone, operatorEnrollmentToken }) : JSON.stringify({ phone }),
       });
       if (!response.ok) {
         setError(await responseMessage(response, authMode === "login" ? "login" : authMode === "recover" ? "recovery" : "general"));
@@ -377,21 +365,10 @@ export default function Home() {
     setBusy(true);
     setError("");
     try {
-      if (authMode === "recover") {
-        const validation = validatePasswordInputShape(recoveryPassword, recoveryPasswordConfirmation);
-        if (code.trim().length !== 6) {
-          setError("أدخل رمز التحقق المكوّن من ٦ أرقام.");
-          return;
-        }
-        if (!validation.valid) {
-          setError(validation.message ?? "تحقق من كلمة المرور الجديدة وتأكيدها.");
-          return;
-        }
-      }
       const response = await identityFetch(authMode === "login" ? "/api/auth/login/complete" : authMode === "activate" ? "/api/auth/activation/complete" : "/api/auth/recovery/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: authMode === "login" ? JSON.stringify({ phone, code, role: loginRole }) : authMode === "activate" ? JSON.stringify({ phone, operatorEnrollmentToken, verificationCode: code, password: activationPassword }) : JSON.stringify({ phone, role: loginRole, code, password: recoveryPassword }),
+        body: authMode === "login" ? JSON.stringify({ phone, code, role: loginRole }) : authMode === "activate" ? JSON.stringify({ phone, operatorEnrollmentToken, verificationCode: code, password: activationPassword }) : JSON.stringify({ phone, code, password: recoveryPassword }),
       });
       if (!response.ok) {
         setError(await responseMessage(response, authMode === "login" ? "login" : authMode === "recover" ? "recovery" : "general"));
@@ -467,8 +444,7 @@ export default function Home() {
 
   const canStart = controlStep === "phone" || controlStep === "recovery" ? phone.trim().length > 0 : controlStep === "password" ? phone.trim().length > 0 && validatePasswordInputShape(password).valid : phone.trim().length > 0 && operatorEnrollmentToken.trim().length >= 24;
   const canCompleteActivation = code.trim().length === 6 && validatePasswordInputShape(activationPassword, activationPasswordConfirmation).valid;
-  const recoveryPasswordShape = validatePasswordInputShape(recoveryPassword);
-  const recoveryPasswordValidation = validatePasswordInputShape(recoveryPassword, recoveryPasswordConfirmation);
+  const canCompleteRecovery = code.trim().length === 6 && validatePasswordInputShape(recoveryPassword, recoveryPasswordConfirmation).valid;
   return shell(
     <section className="auth-layout">
       <div className="auth-context">
@@ -485,17 +461,17 @@ export default function Home() {
           <p className="muted">{controlStep === "phone" ? "اختر الدور والغرض من الدخول؛ لن نكشف حالة الحساب قبل اكتمال التحقق." : controlStep === "activation" ? "أدخل رمز التفعيل الصادر من مالك المنصة، ثم رمز تحقق الهاتف." : controlStep === "recovery" ? "أثبت ملكية الهاتف برمز تحقق ثم أنشئ كلمة مرور جديدة." : challengeStarted ? "أدخل الرمز الأخير الذي وصلك عبر قناة التحقق المهيأة." : "أدخل كلمة المرور للمتابعة إلى التحقق الثاني."}</p>
         </div>
         <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void completeLogin(); else void startLogin(); }} noValidate>
-          {controlStep === "phone" && !challengeStarted ? <><label className="field-label" htmlFor="login-role">الدور<select id="login-role" value={loginRole} disabled={busy} onChange={(event) => setLoginRole(event.target.value as ControlPanelRole)}><option value="operator">موظف لوحة التحكم</option><option value="platform_owner">مالك المنصة</option></select></label>{loginRole === "operator" || loginRole === "platform_owner" ? <div className="auth-intent-actions">{loginRole === "operator" ? <button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("activate"); setControlStep("activation"); setError(""); setNotice(""); }}>تفعيل حساب موظف</button> : null}<button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("recover"); setControlStep("recovery"); setError(""); setNotice(""); }}>استرداد كلمة المرور</button></div> : null}</> : null}          {controlStep !== "phone" && !challengeStarted ? <p className="field-help">الدور المختار: {loginRole === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</p> : null}
+          {controlStep === "phone" && !challengeStarted ? <><label className="field-label" htmlFor="login-role">الدور<select id="login-role" value={loginRole} disabled={busy} onChange={(event) => setLoginRole(event.target.value as ControlPanelRole)}><option value="operator">موظف لوحة التحكم</option><option value="platform_owner">مالك المنصة</option></select></label>{loginRole === "operator" ? <div className="auth-intent-actions"><button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("activate"); setControlStep("activation"); setError(""); setNotice(""); }}>تفعيل حساب موظف</button><button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("recover"); setControlStep("recovery"); setError(""); setNotice(""); }}>استرداد كلمة المرور</button></div> : null}</> : null}          {controlStep !== "phone" && !challengeStarted ? <p className="field-help">الدور المختار: {loginRole === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</p> : null}
           <label className="field-label" htmlFor="operator-phone">رقم الهاتف<input id="operator-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
           {controlStep === "activation" && !challengeStarted ? <label className="field-label" htmlFor="operator-enrollment-token">دعوة الموظف الآمنة<input id="operator-enrollment-token" autoComplete="one-time-code" maxLength={256} value={operatorEnrollmentToken} onChange={(event) => setOperatorEnrollmentToken(event.target.value.trim())} placeholder="ألصق الدعوة عالية الأمان" /></label> : null}
-          {controlStep === "password" && !challengeStarted ? <label className="field-label" htmlFor="operator-password">كلمة المرور<div className="password-field"><input aria-describedby="password-help" autoComplete="current-password" id="operator-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} /><button aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"} className="password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? "إخفاء" : "إظهار"}</button></div><span className="field-help" id="password-help">٨ أحرف على الأقل</span></label> : null}
+          {controlStep === "password" && !challengeStarted ? <label className="field-label" htmlFor="operator-password">كلمة المرور<div className="password-field"><input aria-describedby="password-help" autoComplete="current-password" id="operator-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} /><button aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"} className="password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)}>{showPassword ? "إخفاء" : "إظهار"}</button></div><span className="field-help" id="password-help">١٥ حرفاً على الأقل</span></label> : null}
           {challengeStarted ? <label className="field-label" htmlFor="operator-code">رمز تحقق الهاتف<input aria-describedby="code-help" autoComplete="one-time-code" id="operator-code" inputMode="numeric" maxLength={6} placeholder="000000" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} /></label> : null}
           {challengeStarted ? <span className="field-help" id="code-help">الرمز مكوّن من ٦ أرقام</span> : null}
-          {authMode === "activate" && challengeStarted ? <><label className="field-label" htmlFor="activation-password">إنشاء كلمة المرور<div className="password-field"><input autoComplete="new-password" id="activation-password" type={showActivationPassword ? "text" : "password"} value={activationPassword} onChange={(event) => setActivationPassword(event.target.value)} /><button aria-label={showActivationPassword ? "إخفاء كلمة المرور الجديدة" : "إظهار كلمة المرور الجديدة"} className="password-toggle" type="button" onClick={() => setShowActivationPassword((visible) => !visible)}>{showActivationPassword ? "إخفاء" : "إظهار"}</button></div><span className="field-help">٨ أحرف على الأقل</span></label><label className="field-label" htmlFor="activation-password-confirmation">تأكيد كلمة المرور<div className="password-field"><input autoComplete="new-password" id="activation-password-confirmation" type={showActivationPasswordConfirmation ? "text" : "password"} value={activationPasswordConfirmation} onChange={(event) => setActivationPasswordConfirmation(event.target.value)} /><button aria-label={showActivationPasswordConfirmation ? "إخفاء تأكيد كلمة المرور" : "إظهار تأكيد كلمة المرور"} className="password-toggle" type="button" onClick={() => setShowActivationPasswordConfirmation((visible) => !visible)}>{showActivationPasswordConfirmation ? "إخفاء" : "إظهار"}</button></div></label></> : null}
-          {authMode === "recover" && challengeStarted ? <><label className="field-label" htmlFor="recovery-password">كلمة المرور الجديدة<div className="password-field"><input aria-invalid={recoveryPassword.length > 0 && !recoveryPasswordShape.valid} autoComplete="new-password" id="recovery-password" type={showRecoveryPassword ? "text" : "password"} value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} /><button aria-label={showRecoveryPassword ? "إخفاء كلمة المرور الجديدة" : "إظهار كلمة المرور الجديدة"} className="password-toggle" type="button" onClick={() => setShowRecoveryPassword((visible) => !visible)}>{showRecoveryPassword ? "إخفاء" : "إظهار"}</button></div><span className="field-help">٨ أحرف على الأقل</span>{recoveryPassword.length > 0 && !recoveryPasswordShape.valid ? <span className="field-error">{recoveryPasswordShape.message}</span> : null}</label><label className="field-label" htmlFor="recovery-password-confirmation">تأكيد كلمة المرور<div className="password-field"><input aria-invalid={recoveryPasswordConfirmation.length > 0 && recoveryPasswordValidation.code === "MISMATCH"} autoComplete="new-password" id="recovery-password-confirmation" type={showRecoveryPasswordConfirmation ? "text" : "password"} value={recoveryPasswordConfirmation} onChange={(event) => setRecoveryPasswordConfirmation(event.target.value)} /><button aria-label={showRecoveryPasswordConfirmation ? "إخفاء تأكيد كلمة المرور" : "إظهار تأكيد كلمة المرور"} className="password-toggle" type="button" onClick={() => setShowRecoveryPasswordConfirmation((visible) => !visible)}>{showRecoveryPasswordConfirmation ? "إخفاء" : "إظهار"}</button></div>{recoveryPasswordConfirmation.length > 0 && recoveryPasswordValidation.code === "MISMATCH" ? <span className="field-error">كلمتا المرور غير متطابقتين</span> : null}</label></> : null}
+          {authMode === "activate" && challengeStarted ? <><label className="field-label" htmlFor="activation-password">إنشاء كلمة المرور<input autoComplete="new-password" id="activation-password" type="password" value={activationPassword} onChange={(event) => setActivationPassword(event.target.value)} /><span className="field-help">١٥ حرفاً على الأقل</span></label><label className="field-label" htmlFor="activation-password-confirmation">تأكيد كلمة المرور<input autoComplete="new-password" id="activation-password-confirmation" type="password" value={activationPasswordConfirmation} onChange={(event) => setActivationPasswordConfirmation(event.target.value)} /></label></> : null}
+          {authMode === "recover" && challengeStarted ? <><label className="field-label" htmlFor="recovery-password">كلمة المرور الجديدة<input autoComplete="new-password" id="recovery-password" type="password" value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} /><span className="field-help">١٥ حرفاً على الأقل</span></label><label className="field-label" htmlFor="recovery-password-confirmation">تأكيد كلمة المرور<input autoComplete="new-password" id="recovery-password-confirmation" type="password" value={recoveryPasswordConfirmation} onChange={(event) => setRecoveryPasswordConfirmation(event.target.value)} /></label></> : null}
           {error ? <p className="identity-error" role="alert">{error}</p> : null}
           {notice ? <p className="success-inline" role="status" aria-live="polite">{notice}</p> : null}
-          {challengeStarted ? <div className="form-actions"><button className="button button-primary" disabled={busy || (authMode === "activate" ? !canCompleteActivation : code.trim().length !== 6)} type="submit">{busy ? "جارٍ التحقق…" : authMode === "activate" ? "حفظ كلمة المرور وتفعيل الحساب" : authMode === "recover" ? "تغيير كلمة المرور" : "إكمال تسجيل الدخول"}</button><button className="text-button" disabled={busy} type="button" onClick={resetSignedOutAuthState}>العودة لتعديل البيانات</button></div> : <div className="form-actions"><button className="button button-primary" disabled={busy || !canStart} type="submit">{busy ? "جارٍ التنفيذ…" : controlStep === "phone" ? "متابعة" : controlStep === "activation" ? "إرسال رمز تحقق الهاتف" : controlStep === "recovery" ? "إرسال رمز الاسترداد" : "متابعة إلى التحقق الثاني"}</button>{controlStep === "password" && (loginRole === "operator" || loginRole === "platform_owner") ? <button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("recover"); setControlStep("recovery"); setError(""); setNotice(""); }}>نسيت كلمة المرور؟</button> : null}<p className="security-note"><span aria-hidden="true">⌁</span> {controlStep === "activation" ? "رمز التفعيل ثم رمز تحقق الهاتف" : controlStep === "recovery" ? "سيتم إلغاء الجلسات القديمة بعد تغيير كلمة المرور" : "اخترت العملية والدور يدويًا؛ لا تظهر حالة الحساب قبل التحقق."}</p></div>}
+          {challengeStarted ? <div className="form-actions"><button className="button button-primary" disabled={busy || (authMode === "activate" ? !canCompleteActivation : authMode === "recover" ? !canCompleteRecovery : code.trim().length !== 6)} type="submit">{busy ? "جارٍ التحقق…" : authMode === "activate" ? "حفظ كلمة المرور وتفعيل الحساب" : authMode === "recover" ? "تغيير كلمة المرور" : "إكمال تسجيل الدخول"}</button><button className="text-button" disabled={busy} type="button" onClick={resetSignedOutAuthState}>العودة لتعديل البيانات</button></div> : <div className="form-actions"><button className="button button-primary" disabled={busy || !canStart} type="submit">{busy ? "جارٍ التنفيذ…" : controlStep === "phone" ? "متابعة" : controlStep === "activation" ? "إرسال رمز تحقق الهاتف" : controlStep === "recovery" ? "إرسال رمز الاسترداد" : "متابعة إلى التحقق الثاني"}</button>{controlStep === "password" && loginRole === "operator" ? <button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("recover"); setControlStep("recovery"); setError(""); setNotice(""); }}>نسيت كلمة المرور؟</button> : null}<p className="security-note"><span aria-hidden="true">⌁</span> {controlStep === "activation" ? "رمز التفعيل ثم رمز تحقق الهاتف" : controlStep === "recovery" ? "سيتم إلغاء الجلسات القديمة بعد تغيير كلمة المرور" : "اخترت العملية والدور يدويًا؛ لا تظهر حالة الحساب قبل التحقق."}</p></div>}
         </form>
       </div>
     </section>,

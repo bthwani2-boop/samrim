@@ -15,13 +15,12 @@ Partner / Captain / Field
   normal use: restore/rotate the existing session
   lost/revoked access: explicit DSH-authorized re-enrollment, never repeated activation as ordinary login
 
-Operator / Platform Owner
-  control-surface provisioning -> password proof -> required second-factor challenge -> session
-  recovery: phone verification -> replace the role-scoped password -> revoke old sessions -> sign in again
+Operator
+  Platform Control provisioning -> password proof -> required second-factor challenge -> session
   Passkeys/WebAuthn: preferred progressive phishing-resistant target, not a universal first-release requirement
 ```
 
-Credentials are role-scoped. Customer, operator, and platform-owner passwords cannot authenticate each other's roles even when they belong to the same `actor_id`.
+Credentials are role-scoped. Customer and operator passwords cannot authenticate each other's roles even when they belong to the same `actor_id`.
 
 Identity does not own DSH participant eligibility/assignment, partner/store membership/business scope, WLT finance, enterprise HR/personnel, a generic permissions engine, Tenant, AccessGrant, or cross-domain authorization scope.
 

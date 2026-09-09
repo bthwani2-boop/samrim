@@ -19,7 +19,7 @@ identity_operator_enrollment_tokens
 
 `identity_actors` owns the permanent `actor_id`, current verified phone identifier and minimal Identity-wide `security_enabled` state. Passwords are not actor columns: client/operator/platform-owner password credentials are role-scoped in `identity_password_credentials`. Managed-role and operator one-time enrollment are represented by `identity_actor_roles.activated_at`.
 
-`identity_challenges` is purpose-bound. Current purposes distinguish client registration, client recovery, managed activation, managed recovery, and operator MFA. Managed recovery may replace an already activated operator or platform-owner credential after phone proof; it cannot silently become activation or bootstrap authority.
+`identity_challenges` is purpose-bound. Current purposes distinguish client registration, client recovery, managed activation and operator MFA. A challenge cannot silently become a business-role grant, recurring login credential or recovery authority for another role.
 
 `identity_operator_enrollment_tokens` stores the one-time control-surface token for a pre-provisioned operator role. Only its digest is persisted; the plaintext is returned once to the authorized issuing surface. It is separate from `identity_challenges`, which carries the phone verification proof.
 
@@ -36,5 +36,3 @@ migration plan.
 Migration 002 adds `identity_challenge_deliveries` as durable provider-execution provenance with `suppressed | pending | sending | sent | unknown | expired` states. It is a forward migration; migration 001 remains immutable. Ordered migration application rejects missing, duplicate or non-contiguous versions.
 
 Migration 015 is the forward-only six-digit challenge cutover. It revokes all pending challenges, suppresses pending deliveries and marks in-flight deliveries as unknown before the six-digit runtime contract is allowed to issue new proofs. This prevents a legacy four-digit `code_hash` from being paired with a newly generated six-digit delivery code.
-
-Migration 016 extends only the `managed_recover` challenge boundary to `platform_owner`; platform-owner activation remains bootstrap-only.

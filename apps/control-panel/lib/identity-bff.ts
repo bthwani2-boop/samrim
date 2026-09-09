@@ -112,13 +112,13 @@ export async function completeOperatorActivation(phone: string, operatorEnrollme
   return pair.identity;
 }
 
-export async function requestControlPanelRecovery(phone: string, role: ControlPanelRole): Promise<Challenge> {
+export async function requestOperatorRecovery(phone: string): Promise<Challenge> {
   await operatorDeviceFingerprint();
-  return identityClient().requestManagedRecovery({ phone, role });
+  return identityClient().requestManagedRecovery({ phone, role: "operator" });
 }
 
-export async function completeControlPanelRecovery(phone: string, role: ControlPanelRole, code: string, password: string): Promise<RecoveryResult> {
-  return identityClient().recoverManaged({ phone, role, code, password });
+export async function completeOperatorRecovery(phone: string, code: string, password: string): Promise<RecoveryResult> {
+  return identityClient().recoverManaged({ phone, role: "operator", code, password });
 }
 
 export async function issueOperatorEnrollmentToken(phone: string, context: AttributedMutationContext): Promise<OperatorEnrollmentToken> {
