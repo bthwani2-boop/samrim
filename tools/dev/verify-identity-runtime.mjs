@@ -53,8 +53,13 @@ for (const [name, value, minimum] of [
 if (dshToken === platformToken) fail("internal service tokens must be distinct");
 if (bootstrapToken === platformToken || bootstrapToken === dshToken) fail("bootstrap token must be distinct from operational service tokens");
 
-const composeFile = path.join(root, "infra/local/compose/compose.yaml");
-const composeArgs = ["compose", "--env-file", envFile, "-f", composeFile, "--profile", "integration"];
+const composeFile = path.join(root, "infra/local/compose/compose.integration.yaml");
+const composeArgs = [
+  "compose",
+  "--project-name", "samrim-integration",
+  "--env-file", envFile,
+  "-f", composeFile,
+];
 function compose(...args) {
   return execFileSync("docker", [...composeArgs, ...args], { encoding: "utf8" });
 }
