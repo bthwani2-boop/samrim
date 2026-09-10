@@ -79,6 +79,7 @@ const identityCors = envMap.get("IDENTITY_CORS_ALLOWED_ORIGINS");
 assert(controlOrigin === "http://127.0.0.1:13000", "canonical Control Panel origin drifted");
 assert(identityCors === controlOrigin, "Identity CORS must equal the canonical Control Panel origin");
 
+const verifierPath = "tools/dev/verify-local-runtime-ownership.mjs";
 const materialRuntimeFiles = [...new Set([
   "package.json",
   "README.md",
@@ -87,7 +88,7 @@ const materialRuntimeFiles = [...new Set([
   ...collectTextFiles("tools/dev"),
   ...collectTextFiles("apps/control-panel"),
   ...collectTextFiles(".github/workflows"),
-])].filter((file) => exists(file));
+])].filter((file) => exists(file) && file !== verifierPath);
 
 const forbiddenControlAlias = "http://localhost:" + "13000";
 for (const file of materialRuntimeFiles) {
