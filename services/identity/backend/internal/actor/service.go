@@ -774,6 +774,14 @@ func (s *Service) RecoverPlatformOwner(ctx context.Context, newPhone, newPasswor
 		return "", err
 	}
 
+	var currentPhoneE164 string
+	if err := tx.QueryRowContext(ctx, "SELECT phone_e164 FROM identity_actors WHERE id=$1 FOR UPDATE", actorID).Scan(&currentPhoneE164); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", domain.ErrNotFound
+		}
+		return "", err
+	}
+
 	if phoneE164 != "" {
 		if _, err := tx.ExecContext(ctx, "UPDATE identity_actors SET phone_e164=$1, version=version+1, updated_at=clock_timestamp() WHERE id=$2", phoneE164, actorID); err != nil {
 			return "", err
@@ -795,7 +803,11 @@ func (s *Service) RecoverPlatformOwner(ctx context.Context, newPhone, newPasswor
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked', updated_at=clock_timestamp() WHERE actor_id=$1 AND status='pending'", actorID); err != nil {
 		return "", err
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_password_attempts WHERE actor_id=$1", actorID); err != nil {
+	attemptPhones := []string{currentPhoneE164}
+	if phoneE164 != "" && phoneE164 != currentPhoneE164 {
+		attemptPhones = append(attemptPhones, phoneE164)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_password_attempts WHERE phone_e164 = ANY($1) AND role='platform_owner'", pq.Array(attemptPhones)); err != nil {
 		return "", err
 	}
 
