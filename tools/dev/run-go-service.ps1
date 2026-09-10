@@ -17,6 +17,7 @@ $goModPath = Join-Path $backendPath "go.mod"
 $apiMainPath = Join-Path $backendPath "cmd\api\main.go"
 $ensureLocalEnvPath = Join-Path $PSScriptRoot "ensure-local-env.ps1"
 $envPath = Join-Path $repo "infra\local\compose\.env"
+$integrationProject = "samrim-integration"
 
 foreach ($required in @(
     $projectPath,
@@ -88,12 +89,44 @@ function Set-ProcessEnvironment(
     )
 }
 
+function Assert-NoIntegrationResidue {
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        throw "Docker CLI is required to prove DAILY_DEV ownership before starting $Service."
+    }
+
+    & docker version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker daemon is required to prove DAILY_DEV ownership before starting $Service."
+    }
+
+    $containers = @(
+        & docker ps -a `
+            --filter "label=com.docker.compose.project=$integrationProject" `
+            --format '{{.ID}}' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+    )
+    $volumes = @(
+        & docker volume ls `
+            --filter "label=com.docker.compose.project=$integrationProject" `
+            --format '{{.Name}}' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
+    )
+
+    if ($containers.Count -gt 0 -or $volumes.Count -gt 0) {
+        throw "RUNTIME_OWNERSHIP_CONFLICT=FAIL service=$Service integration_containers=$($containers.Count) integration_volumes=$($volumes.Count). Host services require zero FULL_INTEGRATION residue."
+    }
+}
+
 $localEnv = Read-EnvMap -Path $envPath
 
 $runtimeEnvironment = Require-EnvMapValue -Map $localEnv -Name "BTHWANI_ENV"
 if ($runtimeEnvironment -ne "development") {
     throw "LOCAL_INTEGRATION host runtime requires BTHWANI_ENV=development."
 }
+
+Assert-NoIntegrationResidue
 
 $portKey = "SAMRIM_" +
     (($Service -replace '[^A-Za-z0-9]', '_').ToUpperInvariant()) +
@@ -111,12 +144,6 @@ if (
     throw "Host runtime does not accept inherited PORT=$inheritedPort for $Service. Canonical local port is $configuredPort from $portKey in infra/local/compose/.env."
 }
 $runtimePort = $configuredPort
-
-$readinessPath = switch ($Service) {
-    "identity" { "/identity/readiness" }
-    "dsh" { "/dsh/readiness" }
-}
-$readinessUri = "http://127.0.0.1:${runtimePort}${readinessPath}"
 
 function Get-PortOwnerSummary([object[]] $Listeners) {
     $ownerPids = @(
@@ -147,7 +174,7 @@ function Assert-ServicePortAvailable {
     }
 
     $owners = Get-PortOwnerSummary -Listeners $listeners
-    throw "RUNTIME_OWNERSHIP_CONFLICT=FAIL service=$Service port=$runtimePort owner=$owners. The host launcher requires exclusive ownership and will not accept a pre-existing healthy endpoint as success. If FULL_INTEGRATION Docker is active, run 'pnpm runtime:integration:down' then 'pnpm runtime:daily:up'. Otherwise stop the owning process."
+    throw "RUNTIME_OWNERSHIP_CONFLICT=FAIL service=$Service port=$runtimePort owner=$owners. The host launcher requires exclusive ownership. Stop the owning process before starting this service."
 }
 
 Assert-ServicePortAvailable
