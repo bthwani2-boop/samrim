@@ -45,7 +45,7 @@ function Resolve-AdbSerial {
     throw "ADB target is not deterministic. Online devices: $($devices -join ', ')"
 }
 
-function Start-Dev([string]$Label, [string]$Command) {
+function Start-Dev([string]$Label, [string]$Command, [switch]$NonInteractive) {
     $pwsh = [Environment]::ProcessPath
     if (
         [string]::IsNullOrWhiteSpace($pwsh) -or
@@ -63,9 +63,11 @@ function Start-Dev([string]$Label, [string]$Command) {
     $p = $pnpm.Replace("'", "''")
     $c = $Command.Replace("'", "''")
     $l = $Label.Replace("'", "''")
+    $ciLine = if ($NonInteractive) { "`$env:CI = '1'" } else { '' }
     $child = @"
 `$Host.UI.RawUI.WindowTitle = 'BThwani - $l'
 Set-Location -LiteralPath '$r'
+$ciLine
 & '$p' '$c'
 exit `$LASTEXITCODE
 "@
@@ -83,7 +85,8 @@ function Ensure-Dev(
     [string]$Command,
     [int]$Port,
     [string]$Uri,
-    [switch]$Expo
+    [switch]$Expo,
+    [switch]$NonInteractive
 ) {
     if (Test-Ready -Port $Port -Uri $Uri -Expo:$Expo) {
         Write-Host "DEV_COMPONENT=ALREADY_READY label=$Label port=$Port"
@@ -93,7 +96,7 @@ function Ensure-Dev(
     if ($listeners.Count -gt 0) {
         throw "Port $Port is occupied but $Label is not ready."
     }
-    $process = Start-Dev -Label $Label -Command $Command
+    $process = Start-Dev -Label $Label -Command $Command -NonInteractive:$NonInteractive
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
     while ([DateTime]::UtcNow -lt $deadline) {
         if (Test-Ready -Port $Port -Uri $Uri -Expo:$Expo) {
@@ -155,12 +158,13 @@ try {
         @('Captain','captain',18103),
         @('Field','field',18104)
     )) {
-        Ensure-Dev -Label $app[0] -Command $app[1] -Port $app[2] -Uri "http://localhost:$($app[2])/" -Expo
+        Ensure-Dev -Label $app[0] -Command $app[1] -Port $app[2] -Uri "http://localhost:$($app[2])/" -Expo -NonInteractive
     }
 
     Write-Host ''
     Write-Host 'BTHWANI_DEV_ALL=PASS' -ForegroundColor Green
     Write-Host 'READY=PostgreSQL,Mailpit,Identity,DSH,Control,Client,Partner,Captain,Field'
+    Write-Host 'MOBILE_MODE=METRO_ONLY auto-launch=disabled; open only the app you are actively testing.'
     Write-Host 'Close the spawned PowerShell windows to stop host/mobile runtimes.'
     Write-Host 'Use pnpm runtime:down to stop PostgreSQL/Mailpit.'
 }
