@@ -1,4 +1,3 @@
-import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 
@@ -22,7 +21,6 @@ const runtime = createMobileIdentityRuntime({
     removeItem: (key) => SecureStore.deleteItemAsync(key),
   },
   cryptoRandomUUID: () => Crypto.randomUUID(),
-  getExpoHostUri: () => (Constants.expoConfig as { hostUri?: string } | null)?.hostUri,
   explicitApiUrl: process.env.EXPO_PUBLIC_IDENTITY_API_URL,
 });
 

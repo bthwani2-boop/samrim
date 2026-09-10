@@ -1,17 +1,10 @@
-import Constants from "expo-constants";
-
 import { createDshMobileClient, type PartnerBootstrapResponse } from "@bthwani/dsh";
 import { readIdentityAccessToken } from "./identity";
 
 function dshBaseUrl(): string {
   const explicit = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
-  if (explicit) return explicit;
-  const rawHostUri = (Constants.expoConfig as { hostUri?: string } | null)?.hostUri?.trim();
-  if (!rawHostUri) throw new Error("DSH_BASE_URL_UNAVAILABLE");
-  const normalized = rawHostUri.replace(/^[a-z]+:\/\//i, "");
-  const host = normalized.startsWith("[") ? normalized.slice(0, normalized.indexOf("]") + 1) : normalized.split(":")[0];
-  if (!host) throw new Error("DSH_BASE_URL_UNAVAILABLE");
-  return `http://${host}:58080`;
+  if (!explicit) throw new Error("DSH_BASE_URL_REQUIRED");
+  return explicit;
 }
 
 export async function readOwnPartnerBootstrap(): Promise<PartnerBootstrapResponse> {

@@ -115,8 +115,12 @@ for (const key of [
   const value = Number(envMap.get(key));
   assert(Number.isInteger(value) && value >= 1 && value <= 65535, `invalid canonical runtime port ${key}`);
 }
+const identityApiUrl = envMap.get("IDENTITY_API_BASE_URL");
+const dshApiUrl = envMap.get("DSH_API_BASE_URL");
 const controlOrigin = envMap.get("CONTROL_PANEL_PUBLIC_ORIGIN");
 assert(envMap.get("IDENTITY_CORS_ALLOWED_ORIGINS") === controlOrigin, "Identity CORS must equal the canonical Control Panel origin");
+assert(envMap.get("EXPO_PUBLIC_IDENTITY_API_URL") === identityApiUrl, "mobile Identity URL must project the canonical Identity API URL");
+assert(envMap.get("EXPO_PUBLIC_DSH_API_URL") === dshApiUrl, "mobile DSH URL must project the canonical DSH API URL");
 
 const runtime = read(runtimeOwner);
 for (const marker of [
@@ -176,7 +180,23 @@ for (const script of ["dev", "serve", "start"]) {
 for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
   const pkg = JSON.parse(read(`apps/${app}/package.json`));
   assert(pkg.scripts?.start === undefined, `${app} package exposes shadow runtime script 'start'`);
+
+  const identityBinding = read(`apps/${app}/src/identity.ts`);
+  assert(identityBinding.includes("EXPO_PUBLIC_IDENTITY_API_URL"), `${app} must consume the canonical public Identity URL`);
+  assert(!identityBinding.includes("getExpoHostUri"), `${app} retains Expo-host Identity fallback`);
+  assert(!identityBinding.includes("Constants.expoConfig"), `${app} retains Expo-host Identity fallback`);
 }
+
+const mobileIdentity = read("services/identity/clients/mobile.ts");
+assert(!mobileIdentity.includes("defaultDevPort"), "mobile Identity runtime retains default port fallback");
+assert(!mobileIdentity.includes("getExpoHostUri"), "mobile Identity runtime retains Expo-host fallback");
+assert(!mobileIdentity.includes("18082"), "mobile Identity runtime hard-codes a local backend port");
+assert(mobileIdentity.includes("IDENTITY_BASE_URL_REQUIRED"), "mobile Identity runtime must fail closed when explicit API URL is absent");
+
+const partnerProduct = read("apps/app-partner/src/partner-product.ts");
+assert(partnerProduct.includes("EXPO_PUBLIC_DSH_API_URL"), "Partner DSH binding must consume the canonical public DSH URL");
+assert(!partnerProduct.includes("Constants.expoConfig"), "Partner DSH binding retains Expo-host fallback");
+assert(!partnerProduct.includes("58080"), "Partner DSH binding hard-codes a local backend port");
 
 for (const verifier of [
   "tools/dev/verify-identity-runtime.mjs",
@@ -203,6 +223,8 @@ assert(!candidate.includes("runtime:integration:"), "candidate proof retains par
 const playwright = read("apps/control-panel/playwright.config.ts");
 assert(!/\bwebServer\s*:/.test(playwright), "Playwright must not create an implicit second local Control Panel server");
 assert(!playwright.includes("http://127.0.0.1:13001"), "Playwright config retains alternate local Control Panel origin");
+assert(!playwright.includes('|| "http://127.0.0.1:13000"'), "Playwright retains a hard-coded canonical-port fallback");
+assert(playwright.includes("PLAYWRIGHT_BASE_URL or CONTROL_PANEL_PUBLIC_ORIGIN is required"), "Playwright must fail closed when canonical origin is not supplied");
 
 const workflow = read(".github/workflows/baseline-guard.yml");
 assert(workflow.includes("infra/local/compose/compose.yaml"), "CI must use the canonical Compose topology");

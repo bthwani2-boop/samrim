@@ -2,7 +2,10 @@ import { defineConfig } from "@playwright/test";
 
 const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL?.trim();
 const inheritedControlOrigin = process.env.CONTROL_PANEL_PUBLIC_ORIGIN?.trim();
-const baseURL = externalBaseURL || inheritedControlOrigin || "http://127.0.0.1:13000";
+const baseURL = externalBaseURL || inheritedControlOrigin;
+if (!baseURL) {
+  throw new Error("PLAYWRIGHT_BASE_URL or CONTROL_PANEL_PUBLIC_ORIGIN is required");
+}
 const parsedBase = new URL(baseURL);
 
 if (
