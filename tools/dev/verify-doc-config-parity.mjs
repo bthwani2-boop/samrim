@@ -47,6 +47,18 @@ for (const mod of allGoMods) {
 if (!workflowGuide.includes("Use repository-declared versions and scripts")) {
   failures.push("developer workflow must route toolchain/version truth to executable repository declarations");
 }
+if (!workflowGuide.includes("CURRENT_COMMAND_TRUTH_SOURCE: package.json / pnpm-workspace.yaml / repository scripts")) {
+  failures.push("developer workflow must identify repository manifests/scripts as command truth");
+}
+if (!runtimeGuide.includes("CURRENT_RUNTIME_TRUTH_SOURCE: live repository scripts/configuration")) {
+  failures.push("runtime guide must identify live repository scripts/configuration as runtime truth");
+}
+if (!runtimeGuide.includes("Resolve them from the consuming repository's exact pinned `package.json`, runtime scripts and executable configuration")) {
+  failures.push("runtime guide must route runtime command truth to the exact consuming repository");
+}
+if (/runtime:integration:|runtime:daily:/i.test(runtimeGuide + "\n" + workflowGuide)) {
+  failures.push("development guides must not freeze retired parallel runtime command families");
+}
 
 for (const key of new Set([...runtimeGuide.matchAll(/\bIDENTITY_[A-Z0-9_]+\b/g)].map((m) => m[0]))) {
   if (!compose.includes(key)) failures.push("documented Identity config key missing from compose: " + key);
@@ -69,7 +81,6 @@ for (const file of (function collect(dir) {
 }
 
 if (/docker compose/i.test(read("tools/dev/bootstrap.ps1"))) failures.push("bootstrap must remain independent of runtime composition");
-if (!runtimeGuide.includes("Current integration-runtime commands are derived from")) failures.push("runtime guide must route command truth to package.json");
 
 if (failures.length) {
   console.error("DOC_CONFIG_PARITY=FAIL");
