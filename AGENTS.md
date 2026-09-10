@@ -177,6 +177,7 @@ WRAPPING GARBAGE != CLEANUP.
 GIT HISTORY IS THE ARCHIVE; THE LIVE REPOSITORY IS NOT AN ARCHIVE OF UNUSED FUTURE OPTIONS.
 
 NEVER CHECKPOINT A KNOWN UNSAFE MIXED STATE: no mixed canonical writers, unsafe partial cutover, untracked migration state or required truth left in limbo.
+LOCAL RUNTIME: DAILY_DEV = Docker(postgres,mailpit)+Host(identity,dsh,apps); FULL_INTEGRATION = Docker(postgres,mailpit,identity,dsh); NEVER MIX.
 
 ~~~text
 COHERENT + VERIFIED + RECOVERY-SAFE UNIT
