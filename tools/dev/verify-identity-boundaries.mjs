@@ -213,7 +213,7 @@ try {
   const pkg = JSON.parse(read(controlPackagePath));
   if (pkg.dependencies?.["@bthwani/identity"] !== "workspace:*") failures.push("control-panel must consume @bthwani/identity via workspace:*");
 } catch {
-  failures.push("control-panel package.json is invalid");
+  failures.push("control-panel package.json is invalid JSON");
 }
 const bff = read("apps/control-panel/lib/identity-bff.ts");
 for (const required of [
@@ -549,13 +549,23 @@ if (!dockerfile.includes("COPY services/identity/database/migrations /app/migrat
   failures.push("Identity image must package the canonical ordered migration directory");
 }
 
-const dailyComposeBoundary = read("infra/local/compose/compose.yaml");
-if (/^\s{2}(identity|identity-migrate|dsh):\s*$/m.test(dailyComposeBoundary) ||
-    dailyComposeBoundary.includes("IDENTITY_CHALLENGE_HMAC_SECRET") ||
-    dailyComposeBoundary.includes("IDENTITY_ABUSE_HMAC_SECRET")) {
-  failures.push("DAILY_DEV compose contains Identity domain runtime configuration");
+const canonicalCompose = read("infra/local/compose/compose.yaml");
+for (const required of [
+  "identity-migrate:",
+  "identity:",
+  "dsh-migrate:",
+  "dsh:",
+  "IDENTITY_CHALLENGE_HMAC_SECRET",
+  "IDENTITY_ABUSE_HMAC_SECRET",
+  'IDENTITY_MAILPIT_SMTP_ADDR: "mailpit:1025"',
+  'DSH_IDENTITY_API_BASE_URL: "http://identity:8082"',
+]) {
+  if (!canonicalCompose.includes(required)) failures.push("canonical local Compose missing " + required);
 }
-for (const file of ["infra/local/compose/compose.integration.yaml", "infra/local/compose/.env.example", "services/identity/backend/internal/runtime/server.go"]) {
+if (fs.existsSync(path.join(root, "infra/local/compose/compose.integration.yaml"))) {
+  failures.push("parallel local integration Compose topology remains");
+}
+for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.env.example", "services/identity/backend/internal/runtime/server.go"]) {
   const body = read(file);
   if (!body.includes("IDENTITY_CHALLENGE_HMAC_SECRET")) failures.push(file + " missing challenge secret configuration");
   if (!body.includes("IDENTITY_ABUSE_HMAC_SECRET")) failures.push(file + " missing abuse secret configuration");
@@ -575,7 +585,6 @@ const schemaCommand = read("services/identity/backend/cmd/schema-verify/main.go"
 for (const required of ["IDENTITY_SCHEMA_DATABASE_URL", "VerifySchema", "outside local environments"]) {
   if (!schemaCommand.includes(required)) failures.push("Identity exact schema verification command missing " + required);
 }
-
 
 if (fs.existsSync(path.join(root, "services/identity/backend/internal/activation/service.go"))) {
   failures.push("retired universal activation package remains");
