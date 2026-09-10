@@ -32,6 +32,8 @@ $DailyCompose = Join-Path $RepoRoot 'infra\local\compose\compose.yaml'
 $IntegrationCompose = Join-Path $RepoRoot 'infra\local\compose\compose.integration.yaml'
 $EnsureLocalEnv = Join-Path $PSScriptRoot 'ensure-local-env.ps1'
 $VerifyIntegration = Join-Path $PSScriptRoot 'verify-integration-runtime.ps1'
+$VerifyIdentity = Join-Path $PSScriptRoot 'verify-identity-runtime.mjs'
+$VerifyDsh = Join-Path $PSScriptRoot 'verify-dsh-runtime.mjs'
 $DailyProject = 'samrim-local'
 $IntegrationProject = 'samrim-integration'
 
@@ -548,6 +550,17 @@ function Invoke-IntegrationClose {
         $expected = @('dsh', 'identity', 'mailpit', 'postgres')
         if (($running -join ',') -ne ($expected -join ',')) {
             Fail "Integration service census mismatch: running=$($running -join ',') expected=$($expected -join ',')"
+        }
+
+        foreach ($semanticVerifier in @(
+            @{ Path = $VerifyIdentity; Label = 'Identity runtime semantics' },
+            @{ Path = $VerifyDsh; Label = 'DSH managed-access runtime' }
+        )) {
+            if (-not (Test-Path -LiteralPath $semanticVerifier.Path -PathType Leaf)) {
+                Fail "$($semanticVerifier.Label) verifier is missing: $($semanticVerifier.Path)"
+            }
+            & node $semanticVerifier.Path "--env-file=$EnvPath"
+            if ($LASTEXITCODE -ne 0) { Fail "$($semanticVerifier.Label) verification failed." }
         }
 
         $finalStatus = @(& git -C $RepoRoot status --porcelain --untracked-files=all)

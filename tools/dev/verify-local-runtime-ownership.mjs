@@ -219,6 +219,8 @@ for (const marker of [
   "exec', 'expo', 'start'",
   "go run ./cmd/api",
   "down', '--volumes', '--remove-orphans'",
+  "verify-identity-runtime.mjs",
+  "verify-dsh-runtime.mjs",
 ]) {
   assert(runtime.includes(marker), `canonical runtime owner missing invariant: ${marker}`);
 }
