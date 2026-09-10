@@ -149,16 +149,23 @@ function Start-CapturedRuntimeProcess([string] $Name, [string] $Command, [hashta
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $processInfo
     if (-not $process.Start()) { Fail "Unable to start runtime process: $Name" }
-    $record = [pscustomobject]@{ Name=$Name; Process=$process; StdoutTask=$process.StandardOutput.ReadToEndAsync(); StderrTask=$process.StandardError.ReadToEndAsync(); Output=$null }
+    $record = [pscustomobject]@{ Name=$Name; Process=$process; StdoutTask=$process.StandardOutput.ReadToEndAsync(); StderrTask=$process.StandardError.ReadToEndAsync(); Output=$null; CleanupPids=@() }
     $runtimeProcesses.Add($record)
     Write-Host "RUNTIME_PROCESS_STARTED name=$Name pid=$($process.Id)"
     return $record
 }
 
 function Stop-RuntimeProcess($Record) {
-    if ($null -eq $Record -or $Record.Process.HasExited) { return }
-    & taskkill.exe /PID $Record.Process.Id /T /F *> $null
-    try { $null = $Record.Process.WaitForExit(10000) } catch {}
+    if ($null -eq $Record) { return }
+    if (-not $Record.Process.HasExited) {
+        & taskkill.exe /PID $Record.Process.Id /T /F *> $null
+        try { $null = $Record.Process.WaitForExit(10000) } catch {}
+    }
+    foreach ($processId in @($Record.CleanupPids | Sort-Object -Unique)) {
+        if ($processId -gt 0 -and (Get-Process -Id $processId -ErrorAction SilentlyContinue)) {
+            & taskkill.exe /PID $processId /T /F *> $null
+        }
+    }
 }
 
 function Get-RuntimeProcessOutput($Record) {
@@ -225,6 +232,7 @@ function Wait-ExpoLocalhost([int] $Port, $Record, [int] $TimeoutSeconds = 120) {
         $listeners = @(Get-RuntimeListeners -Port $Port)
         $loopback = @($listeners | Where-Object { $_.LocalAddress -in @("127.0.0.1","::1") })
         if ($loopback.Count -gt 0) {
+            $Record.CleanupPids = @($loopback | Select-Object -ExpandProperty OwningProcess -Unique)
             Assert-LocalhostListener -Port $Port -Label $Record.Name
             if (Test-LocalhostHttp -Port $Port) { return }
         }
