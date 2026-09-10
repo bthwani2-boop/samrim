@@ -23,12 +23,6 @@
         "command": "go vet ./...",
         "cwd": "services/dsh/backend"
       }
-    },
-    "serve": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/run-go-service.ps1 -Service dsh"
-      }
     }
   },
   "tags": [

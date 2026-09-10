@@ -7,7 +7,6 @@
     "node": ">=24.17.0 <25"
   },
   "scripts": {
-    "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File ../../tools/dev/start-control-panel.ps1",
     "build": "next build",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
     "test:e2e": "playwright test --config playwright.config.ts"

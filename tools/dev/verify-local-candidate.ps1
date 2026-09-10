@@ -152,14 +152,13 @@ try {
     }
 
     if (-not $SkipRuntime) {
-        Assert-IntegrationZero
-
         try {
             pnpm runtime:daily:up
             if ($LASTEXITCODE -ne 0) { Fail "runtime:daily:up failed." }
             $dailyStarted = $true
 
             Assert-DailyOwnership -ExpectRunning
+            Assert-IntegrationZero
             $envMap = Read-EnvMap -Path $envPath
             $postgresId = @(
                 & docker ps `

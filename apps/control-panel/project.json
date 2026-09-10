@@ -3,12 +3,6 @@
   "root": "apps/control-panel",
   "projectType": "application",
   "targets": {
-    "dev": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pnpm --dir apps/control-panel dev"
-      }
-    },
     "typecheck": {
       "executor": "nx:run-commands",
       "options": {

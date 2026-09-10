@@ -23,18 +23,12 @@
     "expo"
   ],
   "ignoreBinaries": [
-    // CI, Nx project target and developer-host binaries are resolved outside the JS graph.
+    // CI, Nx project targets and developer-host binaries are resolved outside the JS graph.
     "build",
-    "captain",
-    "client",
-    "dev",
-    "field",
     "go",
     "gofmt",
-    "partner",
     "playwright",
     "pwsh",
-    "scrcpy",
     "typecheck"
   ]
 }

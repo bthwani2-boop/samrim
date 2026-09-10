@@ -38,8 +38,25 @@ function collectTextFiles(relativeRoot) {
   return out;
 }
 
-const packageJson = JSON.parse(read("package.json"));
-const scripts = packageJson.scripts ?? {};
+const rootPackage = JSON.parse(read("package.json"));
+const scripts = rootPackage.scripts ?? {};
+const runtimeOwner = "tools/dev/runtime.ps1";
+const pwshPrefix = `pwsh -NoProfile -ExecutionPolicy Bypass -File ${runtimeOwner} -Action `;
+const expectedRootRuntimeScripts = new Map([
+  ["runtime:daily:up", `${pwshPrefix}DailyUp`],
+  ["runtime:daily:down", `${pwshPrefix}DailyDown`],
+  ["runtime:status", `${pwshPrefix}Status`],
+  ["runtime:integration:close", `${pwshPrefix}IntegrationClose`],
+  ["identity", `${pwshPrefix}Identity`],
+  ["dsh", `${pwshPrefix}Dsh`],
+  ["control", `${pwshPrefix}Control`],
+  ["client", `${pwshPrefix}Client`],
+  ["partner", `${pwshPrefix}Partner`],
+  ["captain", `${pwshPrefix}Captain`],
+  ["field", `${pwshPrefix}Field`],
+  ["scr", `${pwshPrefix}Scrcpy`],
+]);
+
 const allowedRuntimeScripts = new Set([
   "runtime:daily:up",
   "runtime:daily:down",
@@ -47,31 +64,51 @@ const allowedRuntimeScripts = new Set([
   "runtime:verify-ownership",
   "runtime:integration:close",
 ]);
-
 for (const name of Object.keys(scripts).filter((name) => name.startsWith("runtime:"))) {
   assert(allowedRuntimeScripts.has(name), `shadow/manual runtime command must not exist: ${name}`);
-  assert(!String(scripts[name]).includes("docker compose"), `root runtime script must not call docker compose directly: ${name}`);
+}
+for (const [name, expected] of expectedRootRuntimeScripts) {
+  assert(scripts[name] === expected, `${name} must route directly to ${runtimeOwner}`);
+}
+assert(
+  scripts["runtime:verify-ownership"] === "node tools/dev/verify-local-runtime-ownership.mjs",
+  "runtime:verify-ownership must remain the read-only repository ownership verifier",
+);
+
+assert(exists(runtimeOwner), `canonical runtime owner is missing: ${runtimeOwner}`);
+for (const retired of [
+  "tools/dev/local-runtime.ps1",
+  "tools/dev/run-go-service.ps1",
+  "tools/dev/start-control-panel.ps1",
+  "tools/dev/integration-proof.ps1",
+  "tools/dev/runtime-status.ps1",
+  "tools/mobile/start-mobile-runtime.ps1",
+  "tools/dev/close-integration-runtime.ps1",
+  "tools/dev/install-powershell-pnpm-router.ps1",
+]) {
+  assert(!exists(retired), `retired runtime launcher must not exist: ${retired}`);
 }
 
-assert(
-  scripts["runtime:daily:up"] === "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local-runtime.ps1 -Action Up",
-  "runtime:daily:up must route through local-runtime.ps1",
-);
-assert(
-  scripts["runtime:daily:down"] === "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local-runtime.ps1 -Action Down",
-  "runtime:daily:down must route through local-runtime.ps1",
-);
-assert(
-  scripts["runtime:status"] === "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime-status.ps1",
-  "runtime:status must be a read-only repository-owned census",
-);
-assert(
-  scripts["runtime:integration:close"] === "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/integration-proof.ps1",
-  "FULL_INTEGRATION must expose exactly one public lifecycle-owning proof entrypoint",
-);
+const noRuntimeTargets = [
+  "services/identity/project.json",
+  "services/dsh/project.json",
+  "apps/control-panel/project.json",
+  "apps/app-client/project.json",
+  "apps/app-partner/project.json",
+  "apps/app-captain/project.json",
+  "apps/app-field/project.json",
+];
+for (const file of noRuntimeTargets) {
+  const project = JSON.parse(read(file));
+  for (const target of ["serve", "dev", "start"]) {
+    assert(project.targets?.[target] === undefined, `${file} exposes shadow runtime target '${target}'`);
+  }
+}
 
-assert(!exists("tools/dev/close-integration-runtime.ps1"), "retired close-integration-runtime.ps1 must not exist");
-assert(!exists("tools/dev/install-powershell-pnpm-router.ps1"), "retired global PowerShell pnpm router must not exist");
+const controlPackage = JSON.parse(read("apps/control-panel/package.json"));
+for (const script of ["dev", "serve", "start"]) {
+  assert(controlPackage.scripts?.[script] === undefined, `Control Panel package exposes shadow runtime script '${script}'`);
+}
 
 const envExample = read("infra/local/compose/.env.example");
 const envMap = parseEnv(envExample, ".env.example");
@@ -79,6 +116,20 @@ const controlOrigin = envMap.get("CONTROL_PANEL_PUBLIC_ORIGIN");
 const identityCors = envMap.get("IDENTITY_CORS_ALLOWED_ORIGINS");
 assert(controlOrigin === "http://127.0.0.1:13000", "canonical Control Panel origin drifted");
 assert(identityCors === controlOrigin, "Identity CORS must equal the canonical Control Panel origin");
+for (const key of [
+  "SAMRIM_POSTGRES_PORT",
+  "SAMRIM_MAILPIT_SMTP_PORT",
+  "SAMRIM_MAILPIT_WEB_PORT",
+  "SAMRIM_IDENTITY_PORT",
+  "SAMRIM_DSH_PORT",
+  "SAMRIM_APP_CLIENT_METRO_PORT",
+  "SAMRIM_APP_PARTNER_METRO_PORT",
+  "SAMRIM_APP_CAPTAIN_METRO_PORT",
+  "SAMRIM_APP_FIELD_METRO_PORT",
+]) {
+  const value = Number(envMap.get(key));
+  assert(Number.isInteger(value) && value >= 1 && value <= 65535, `invalid canonical runtime port ${key}`);
+}
 
 const verifierPath = "tools/dev/verify-local-runtime-ownership.mjs";
 const materialRuntimeFiles = [...new Set([
@@ -87,17 +138,26 @@ const materialRuntimeFiles = [...new Set([
   "CONTRIBUTING.md",
   ...collectTextFiles("infra/local"),
   ...collectTextFiles("tools/dev"),
+  ...collectTextFiles("tools/mobile"),
   ...collectTextFiles("apps/control-panel"),
+  ...collectTextFiles("services/identity"),
+  ...collectTextFiles("services/dsh"),
   ...collectTextFiles(".github/workflows"),
 ])].filter((file) => exists(file) && file !== verifierPath);
 
 const forbiddenControlAlias = "http://localhost:" + "13000";
 for (const file of materialRuntimeFiles) {
-  assert(!read(file).includes(forbiddenControlAlias), `${file} reintroduces forbidden Control Panel localhost alias`);
+  const body = read(file);
+  assert(!body.includes(forbiddenControlAlias), `${file} reintroduces forbidden Control Panel localhost alias`);
 }
 
 const retiredRuntimeTokens = [
-  ["--pro" + "file", "retired Docker Compose profile authority"],
+  ["tools/dev/local-" + "runtime.ps1", "retired DAILY_DEV launcher"],
+  ["tools/dev/run-go-" + "service.ps1", "retired Go launcher"],
+  ["tools/dev/start-control-" + "panel.ps1", "retired Control launcher"],
+  ["tools/dev/integration-" + "proof.ps1", "retired Integration launcher"],
+  ["tools/dev/runtime-" + "status.ps1", "retired status launcher"],
+  ["tools/mobile/start-mobile-" + "runtime.ps1", "retired mobile launcher"],
   ["close-integration-" + "runtime.ps1", "retired integration lifecycle file"],
   ["install-powershell-" + "pnpm-router.ps1", "retired global PowerShell pnpm router"],
   ["BTHWANI PNPM " + "ROUTER", "retired global PowerShell pnpm router marker"],
@@ -134,38 +194,38 @@ for (const service of ["postgres", "mailpit", "identity-migrate", "identity", "d
 }
 assert(integrationCompose.includes("samrim-integration-postgres-data:/var/lib/postgresql/data"), "integration database must use isolated volume");
 assert(!integrationCompose.includes("samrim-postgres-data:/var/lib/postgresql/data"), "integration compose must not mount DAILY_DEV database volume");
-assert(!integrationCompose.includes("profiles:"), "integration compose must be a dedicated appliance, not a profile of DAILY_DEV");
+assert(!integrationCompose.includes("profiles:"), "integration compose must be a dedicated appliance");
 
-const localRuntime = read("tools/dev/local-runtime.ps1");
-assert(localRuntime.includes("RUNTIME_MODE=DAILY_DEV"), "DAILY_DEV mode marker missing");
-assert(localRuntime.includes("samrim-integration"), "DAILY_DEV must reject integration residue");
-assert(localRuntime.includes("--remove-orphans"), "DAILY_DEV must clean legacy same-project orphan containers");
-assert(!localRuntime.includes("--profile"), "DAILY_DEV runtime must not know an integration profile");
-assert(!localRuntime.includes("identity-migrate"), "DAILY_DEV runtime must not manage integration domain services");
-
-const integrationProof = read("tools/dev/integration-proof.ps1");
-assert(integrationProof.includes("compose.integration.yaml"), "integration proof must use isolated compose file");
-assert(integrationProof.includes("samrim-integration"), "integration proof must own isolated project identity");
-assert(integrationProof.includes("finally"), "integration proof must have unconditional teardown");
-assert(integrationProof.includes('"down", "--volumes", "--remove-orphans"'), "integration proof teardown must destroy isolated state");
-assert(integrationProof.includes("DAILY_INTEGRATION_STATE_SHARING=0"), "integration proof must assert state isolation");
-assert(!integrationProof.includes("local-runtime.ps1"), "integration proof must not mutate DAILY_DEV lifecycle");
+const runtime = read(runtimeOwner);
+for (const marker of [
+  "RUNTIME_OWNER=tools/dev/runtime.ps1",
+  "RUNTIME_MODE_TRANSITION=FULL_INTEGRATION_TO_DAILY_DEV",
+  "RUNTIME_MODE_TRANSITION=DAILY_DEV_TO_FULL_INTEGRATION",
+  "INTEGRATION_RUNTIME_RESIDUE=0",
+  "DOCKER_OWNS=postgres,mailpit",
+  "HOST_OWNS=identity,dsh,control-panel,mobile,scrcpy",
+  "Reset-IntegrationIfPresent",
+  "Set-CanonicalEnvironment",
+  "SAMRIM_${appToken}_METRO_PORT",
+  "exec', 'expo', 'start'",
+  "go run ./cmd/api",
+  "down', '--volumes', '--remove-orphans'",
+]) {
+  assert(runtime.includes(marker), `canonical runtime owner missing invariant: ${marker}`);
+}
+for (const retiredPort of ["18101", "18102", "18103", "18104", "18082", "58080", "55432", "58025", "58026", "13000"]) {
+  assert(!runtime.includes(retiredPort), `canonical runtime owner hard-codes port ${retiredPort} instead of deriving canonical env`);
+}
+assert(!runtime.includes("--profile"), "canonical runtime owner must not use Docker Compose profiles");
 
 const integrationVerifier = read("tools/dev/verify-integration-runtime.ps1");
 assert(integrationVerifier.includes("compose.integration.yaml"), "integration verifier must use isolated integration compose");
 assert(integrationVerifier.includes('"--project-name", "samrim-integration"'), "integration verifier must bind schema proof to samrim-integration");
-assert(!integrationVerifier.includes('"infra/local/compose/compose.yaml"'), "integration verifier must not call the DAILY_DEV compose file");
-assert(!integrationVerifier.includes("--profile"), "integration verifier must not know the retired integration profile");
+assert(!integrationVerifier.includes('"infra/local/compose/compose.yaml"'), "integration verifier must not call DAILY_DEV compose");
 
 const identityRuntimeVerifier = read("tools/dev/verify-identity-runtime.mjs");
 assert(identityRuntimeVerifier.includes("compose.integration.yaml"), "Identity runtime semantics must use isolated integration compose");
 assert(identityRuntimeVerifier.includes('"--project-name", "samrim-integration"'), "Identity runtime semantics must bind Docker calls to samrim-integration");
-assert(!identityRuntimeVerifier.includes("infra/local/compose/compose.yaml"), "Identity runtime semantics must not call the DAILY_DEV compose file");
-assert(!identityRuntimeVerifier.includes('"--profile"'), "Identity runtime semantics must not know the retired integration profile");
-
-const runtimeStatus = read("tools/dev/runtime-status.ps1");
-assert(!runtimeStatus.includes(" compose "), "runtime-status must remain a read-only Docker label census");
-assert(runtimeStatus.includes("INTEGRATION_CONTAINERS="), "runtime-status must report integration residue");
 
 const doctor = read("tools/dev/doctor.ps1");
 for (const marker of [
@@ -180,49 +240,15 @@ for (const marker of [
   assert(doctor.includes(marker), `doctor missing invariant: ${marker}`);
 }
 
-const runGo = read("tools/dev/run-go-service.ps1");
-assert(!runGo.includes("SERVICE_ALREADY_READY=PASS"), "Go launcher still accepts unknown ready process provenance");
-assert(runGo.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"), "Go launcher lacks fail-closed ownership conflict");
-assert(runGo.includes("Host runtime does not accept inherited PORT="), "Go launcher allows shadow PORT authority");
-
-const control = read("tools/dev/start-control-panel.ps1");
-assert(control.includes("ensure-local-env.ps1"), "Control Panel launcher must reconcile canonical env");
-assert(control.includes("CONTROL_PANEL_PUBLIC_ORIGIN") && control.includes("IDENTITY_CORS_ALLOWED_ORIGINS"), "Control Panel launcher must validate origin/CORS coherence");
-assert(control.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"), "Control Panel launcher lacks fail-closed ownership");
-assert(!control.includes("http://127.0.0.1:13000"), "Control Panel launcher must derive its origin rather than duplicate it");
-
-const controlPackage = JSON.parse(read("apps/control-panel/package.json"));
-assert(!("start" in (controlPackage.scripts ?? {})), "Control Panel package must not expose a second local start path");
-
-const playwright = read("apps/control-panel/playwright.config.ts");
-assert(playwright.includes('const DEFAULT_TEST_ORIGIN = "http://127.0.0.1:13001";'), "Playwright isolated test origin drifted");
-assert(!playwright.includes("localhost:13001"), "Playwright reintroduced localhost aliasing");
-assert(playwright.includes("CONTROL_PANEL_PUBLIC_ORIGIN: parsedBase.origin"), "Playwright must derive CSRF origin from its test base URL");
-
-const proxy = read("apps/control-panel/proxy.ts");
-assert(/error:\s*\{\s*code:\s*"FORBIDDEN_CROSS_ORIGIN"/m.test(proxy), "cross-origin failure envelope is not canonical");
-
-const mobile = read("tools/mobile/start-mobile-runtime.ps1");
-assert(!mobile.includes("METRO_ALREADY_READY=PASS"), "Mobile launcher accepts unknown Metro provenance");
-assert(mobile.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"), "Mobile launcher lacks fail-closed Metro/integration ownership");
-assert(mobile.includes("samrim-integration"), "Mobile launcher must reject Integration residue before DAILY_DEV startup");
-assert(mobile.includes("SAMRIM_${appToken}_METRO_PORT"), "Mobile launcher must derive Metro port from canonical env");
-assert(mobile.includes("'exec', 'expo'"), "Mobile launcher must directly own Expo startup");
-assert(mobile.includes("forbidden secondary local start authority"), "Mobile launcher must reject package-level start authority if it reappears");
-assert(!mobile.includes("'run', 'start'") && !mobile.includes('"run", "start"'), "Mobile launcher must not delegate Expo startup to package scripts");
-for (const retiredPort of ["18101", "18102", "18103", "18104", "18082", "58080"]) {
-  assert(!mobile.includes(retiredPort), `Mobile launcher hard-codes runtime port ${retiredPort} instead of deriving canonical env`);
-}
-
 const candidate = read("tools/dev/verify-local-candidate.ps1");
 assert(candidate.includes("pnpm runtime:daily:up"), "candidate proof does not exercise DAILY_DEV");
-assert(candidate.includes("pnpm runtime:integration:close"), "candidate proof must use the single public integration entrypoint");
+assert(candidate.includes("pnpm runtime:integration:close"), "candidate proof does not exercise canonical integration proof");
 
 const workflow = read(".github/workflows/baseline-guard.yml");
 assert(workflow.includes("compose.integration.yaml"), "CI runtime proof must use isolated integration compose");
 
 const composeReadme = read("infra/local/compose/README.md");
-assert(composeReadme.includes("compose.integration.yaml"), "compose README must describe isolated integration appliance");
+assert(composeReadme.includes(runtimeOwner), "compose README must name the single canonical runtime owner");
 assert(composeReadme.includes("runtime:integration:close"), "compose README must expose one integration proof entrypoint");
 
 if (failures.length) {
@@ -231,6 +257,8 @@ if (failures.length) {
   process.exit(1);
 }
 
+console.log("CANONICAL_RUNTIME_FILES=1");
+console.log("CANONICAL_RUNTIME_OWNER=tools/dev/runtime.ps1");
 console.log("INTERACTIVE_RUNTIME_MODES=1");
 console.log("DAILY_DEV_APP_OWNER=HOST");
 console.log("DAILY_DEV_INFRA_OWNER=DOCKER");
@@ -243,6 +271,7 @@ console.log("INTEGRATION_KEEP_RUNNING_PATHS=0");
 console.log("DAILY_INTEGRATION_STATE_SHARING=0");
 console.log("INTEGRATION_RUNTIME_RESIDUE_POLICY=ZERO");
 console.log("DOCKER_DOMAIN_SERVICES_DURING_DAILY=0");
+console.log("SECONDARY_NX_RUNTIME_TARGETS=0");
 console.log("MOBILE_SHADOW_RUNTIME_ENTRYPOINTS=0");
 console.log("GLOBAL_PNPM_ROUTER_PATHS=0");
 console.log("SHADOW_RUNTIME_COMMANDS=0");

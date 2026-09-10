@@ -4,12 +4,6 @@
   "sourceRoot": "apps/app-field",
   "projectType": "application",
   "targets": {
-    "serve": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pnpm field"
-      }
-    },
     "typecheck": {
       "executor": "nx:run-commands",
       "options": {

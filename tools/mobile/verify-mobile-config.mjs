@@ -5,6 +5,7 @@ const repoRoot = path.resolve(import.meta.dirname, "../..");
 const appsRoot = path.join(repoRoot, "apps");
 const envExamplePath = path.join(repoRoot, "infra/local/compose/.env.example");
 const rootPackagePath = path.join(repoRoot, "package.json");
+const runtimePath = path.join(repoRoot, "tools/dev/runtime.ps1");
 const requiredStringFields = [
   "name",
   "slug",
@@ -47,6 +48,15 @@ const apps = fs
   .filter((app) => fs.existsSync(path.join(appsRoot, app, "mobile.config.json")))
   .sort();
 
+if (apps.length === 0) {
+  console.error("No mobile hosts discovered from apps/*/mobile.config.json");
+  process.exit(1);
+}
+if (!fs.existsSync(runtimePath)) {
+  console.error("Canonical runtime owner is missing: tools/dev/runtime.ps1");
+  process.exit(1);
+}
+
 const env = parseEnv(fs.readFileSync(envExamplePath, "utf8"));
 const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, "utf8"));
 const seen = {
@@ -57,17 +67,17 @@ const seen = {
   projectId: new Map(),
 };
 const seenPorts = new Map();
-let failed = false;
-
-if (apps.length === 0) {
-  console.error("No mobile hosts discovered from apps/*/mobile.config.json");
-  process.exit(1);
-}
-
 const servicePorts = new Set([
   requirePort(env, "SAMRIM_IDENTITY_PORT"),
   requirePort(env, "SAMRIM_DSH_PORT"),
 ]);
+const actionByApp = new Map([
+  ["app-client", "Client"],
+  ["app-partner", "Partner"],
+  ["app-captain", "Captain"],
+  ["app-field", "Field"],
+]);
+let failed = false;
 
 for (const app of apps) {
   const appRoot = path.join(appsRoot, app);
@@ -75,13 +85,8 @@ for (const app of apps) {
   const projectPath = path.join(appRoot, "project.json");
   const packagePath = path.join(appRoot, "package.json");
 
-  if (!fs.existsSync(projectPath)) {
-    console.error(`${app}: missing project.json`);
-    failed = true;
-    continue;
-  }
-  if (!fs.existsSync(packagePath)) {
-    console.error(`${app}: missing package.json`);
+  if (!fs.existsSync(projectPath) || !fs.existsSync(packagePath)) {
+    console.error(`${app}: missing project.json or package.json`);
     failed = true;
     continue;
   }
@@ -95,24 +100,25 @@ for (const app of apps) {
     console.error(`${app}: project.root does not match apps/${app}`);
     failed = true;
   }
-
-  const rootCommandName = app.replace(/^app-/, "");
-  const expectedServeCommand = `pnpm ${rootCommandName}`;
-  if (project.targets?.serve?.options?.command !== expectedServeCommand) {
-    console.error(`${app}: Nx serve must route only through '${expectedServeCommand}'`);
+  if (project.targets?.serve !== undefined || project.targets?.dev !== undefined) {
+    console.error(`${app}: Nx must not expose a secondary local runtime target`);
     failed = true;
   }
 
-  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/start-mobile-runtime.ps1 -App ${app}`;
-  if (rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
-    console.error(`${app}: root runtime command drifted from canonical mobile launcher`);
+  const rootCommandName = app.replace(/^app-/, "");
+  const action = actionByApp.get(app);
+  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action ${action}`;
+  if (!action || rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
+    console.error(`${app}: root command must route directly to the canonical runtime owner`);
     failed = true;
   }
 
   const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
-  if (pkg.scripts?.start !== undefined) {
-    console.error(`${app}: package.json must not expose scripts.start; use the root runtime command`);
-    failed = true;
+  for (const forbidden of ["start", "dev", "serve"]) {
+    if (pkg.scripts?.[forbidden] !== undefined) {
+      console.error(`${app}: package.json must not expose scripts.${forbidden}; use the root runtime command`);
+      failed = true;
+    }
   }
   for (const [scriptName, command] of Object.entries(pkg.scripts ?? {})) {
     if (typeof command === "string" && /\b(?:expo|react-native)\s+start\b/i.test(command)) {
@@ -170,7 +176,9 @@ for (const app of apps) {
 }
 
 if (failed) process.exit(1);
+console.log("MOBILE_RUNTIME_OWNER=tools/dev/runtime.ps1");
 console.log("MOBILE_RUNTIME_ENTRYPOINTS=1_PER_APP");
 console.log("MOBILE_SHADOW_START_SCRIPTS=0");
+console.log("MOBILE_SHADOW_NX_RUNTIME_TARGETS=0");
 console.log("MOBILE_METRO_PORT_AUTHORITY=CANONICAL_ENV");
 console.log("MOBILE_CONFIG=PASS apps=" + apps.join(","));
