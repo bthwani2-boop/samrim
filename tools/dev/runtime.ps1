@@ -3,39 +3,37 @@
 param(
     [Parameter(Mandatory)]
     [ValidateSet(
-        'DailyUp',
-        'DailyDown',
+        'Up',
+        'Down',
+        'Restart',
         'Status',
-        'Identity',
-        'Dsh',
+        'Logs',
+        'Doctor',
+        'Reset',
         'Control',
         'Client',
         'Partner',
         'Captain',
         'Field',
-        'Scrcpy',
-        'IntegrationClose'
+        'Scrcpy'
     )]
     [string]$Action,
 
     [string]$DeviceSerial = $env:BTHWANI_ADB_SERIAL,
-    [switch]$ClearCache,
-    [string]$ExpectedBranch = ''
+    [switch]$ClearCache
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$EnvPath = Join-Path $RepoRoot 'infra\local\compose\.env'
-$DailyCompose = Join-Path $RepoRoot 'infra\local\compose\compose.yaml'
-$IntegrationCompose = Join-Path $RepoRoot 'infra\local\compose\compose.integration.yaml'
+$ComposeDir = Join-Path $RepoRoot 'infra\local\compose'
+$EnvPath = Join-Path $ComposeDir '.env'
+$ComposePath = Join-Path $ComposeDir 'compose.yaml'
 $EnsureLocalEnv = Join-Path $PSScriptRoot 'ensure-local-env.ps1'
-$VerifyIntegration = Join-Path $PSScriptRoot 'verify-integration-runtime.ps1'
-$VerifyIdentity = Join-Path $PSScriptRoot 'verify-identity-runtime.mjs'
-$VerifyDsh = Join-Path $PSScriptRoot 'verify-dsh-runtime.mjs'
-$DailyProject = 'samrim-local'
-$IntegrationProject = 'samrim-integration'
+$OwnershipVerifier = Join-Path $PSScriptRoot 'verify-local-runtime-ownership.mjs'
+$CanonicalProject = 'samrim-local'
+$LegacyProjects = @('samrim-integration')
 
 function Fail([string]$Message) {
     throw $Message
@@ -76,7 +74,6 @@ function Ensure-Environment {
     if (-not (Test-Path -LiteralPath $EnsureLocalEnv -PathType Leaf)) {
         Fail "Canonical local environment reconciler is missing: $EnsureLocalEnv"
     }
-    $global:LASTEXITCODE = 0
     & $EnsureLocalEnv
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) {
         Fail 'Canonical local runtime environment reconciliation failed.'
@@ -88,12 +85,52 @@ function Ensure-Environment {
     return $map
 }
 
+function Set-CanonicalEnvironment([hashtable]$Map) {
+    foreach ($entry in $Map.GetEnumerator()) {
+        [Environment]::SetEnvironmentVariable(
+            [string]$entry.Key,
+            [string]$entry.Value,
+            [EnvironmentVariableTarget]::Process
+        )
+    }
+}
+
 function Ensure-Docker {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         Fail 'Docker CLI is required for LOCAL_INTEGRATION runtime.'
     }
     & docker version *> $null
     if ($LASTEXITCODE -ne 0) { Fail 'Docker daemon is not available.' }
+}
+
+function Get-ComposeBaseArgs {
+    return @(
+        'compose',
+        '--ansi', 'never',
+        '--progress', 'plain',
+        '--project-name', $CanonicalProject,
+        '--env-file', $EnvPath,
+        '-f', $ComposePath
+    )
+}
+
+function Invoke-ComposeRaw([string[]]$Arguments, [switch]$Quiet) {
+    $base = Get-ComposeBaseArgs
+    if ($Quiet) {
+        & docker @base @Arguments *> $null
+        return [int]$LASTEXITCODE
+    }
+    $output = @(& docker @base @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+    $output | ForEach-Object { Write-Host $_ }
+    return [int]$exitCode
+}
+
+function Invoke-Compose([string[]]$Arguments) {
+    $code = Invoke-ComposeRaw -Arguments $Arguments
+    if ($code -ne 0) {
+        Fail "Docker Compose failed: $($Arguments -join ' ')"
+    }
 }
 
 function Get-ProjectContainers([string]$Project, [switch]$RunningOnly) {
@@ -107,9 +144,7 @@ function Get-ProjectContainers([string]$Project, [switch]$RunningOnly) {
 
 function Get-ProjectVolumes([string]$Project) {
     $rows = @(
-        & docker volume ls `
-            --filter "label=com.docker.compose.project=$Project" `
-            --format '{{.Name}}' |
+        & docker volume ls --filter "label=com.docker.compose.project=$Project" --format '{{.Name}}' |
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ }
     )
@@ -117,271 +152,381 @@ function Get-ProjectVolumes([string]$Project) {
     return $rows
 }
 
-function Get-ProjectServices([string]$Project, [switch]$RunningOnly) {
-    $args = @('ps')
-    if (-not $RunningOnly) { $args += '-a' }
-    $args += @(
-        '--filter', "label=com.docker.compose.project=$Project",
-        '--format', '{{.Label "com.docker.compose.service"}}'
+function Get-ProjectNetworks([string]$Project) {
+    $rows = @(
+        & docker network ls --filter "label=com.docker.compose.project=$Project" --format '{{.ID}}' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
     )
-    $rows = @(& docker @args | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
-    if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect Docker services for project $Project." }
+    if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect Docker networks for project $Project." }
     return $rows
 }
 
-function Invoke-ComposeRaw([string]$Project, [string]$ComposeFile, [string[]]$Arguments) {
-    $base = @(
-        'compose',
-        '--ansi', 'never',
-        '--progress', 'plain',
-        '--project-name', $Project,
-        '--env-file', $EnvPath,
-        '-f', $ComposeFile
+function Get-ServiceContainerId([string]$Project, [string]$Service) {
+    $ids = @(
+        & docker ps -a `
+            --filter "label=com.docker.compose.project=$Project" `
+            --filter "label=com.docker.compose.service=$Service" `
+            --format '{{.ID}}' |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ }
     )
-    $output = @(& docker @base @Arguments 2>&1)
-    $exitCode = $LASTEXITCODE
-    $output | ForEach-Object { Write-Host $_ }
-    return [int]$exitCode
+    if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect service container $Project/$Service." }
+    if ($ids.Count -ne 1) { Fail "Expected exactly one container for $Project/$Service; observed=$($ids.Count)." }
+    return $ids[0]
 }
 
-function Invoke-Compose([string]$Project, [string]$ComposeFile, [string[]]$Arguments) {
-    $code = Invoke-ComposeRaw -Project $Project -ComposeFile $ComposeFile -Arguments $Arguments
-    if ($code -ne 0) {
-        Fail "Docker Compose failed for project ${Project}: $($Arguments -join ' ')"
+function Assert-OneShotSucceeded([string]$Service) {
+    $id = Get-ServiceContainerId -Project $CanonicalProject -Service $Service
+    $state = (& docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}' $id).Trim()
+    if ($LASTEXITCODE -ne 0 -or $state -ne 'exited|0') {
+        Fail "ONE_SHOT_SERVICE=FAIL service=$Service state=$state"
+    }
+    Write-Host "ONE_SHOT_SERVICE=PASS service=$Service"
+}
+
+function Assert-RunningService([string]$Service, [switch]$RequireHealthy) {
+    $id = Get-ServiceContainerId -Project $CanonicalProject -Service $Service
+    $status = (& docker inspect --format '{{.State.Status}}' $id).Trim()
+    if ($LASTEXITCODE -ne 0 -or $status -ne 'running') {
+        Fail "SERVICE_STATE=FAIL service=$Service status=$status"
+    }
+    if ($RequireHealthy) {
+        $health = (& docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' $id).Trim()
+        if ($LASTEXITCODE -ne 0 -or $health -ne 'healthy') {
+            Fail "SERVICE_HEALTH=FAIL service=$Service health=$health"
+        }
     }
 }
 
-function Assert-IntegrationZero {
-    $containers = @(Get-ProjectContainers -Project $IntegrationProject)
-    $volumes = @(Get-ProjectVolumes -Project $IntegrationProject)
-    if ($containers.Count -gt 0 -or $volumes.Count -gt 0) {
-        Fail "INTEGRATION_RUNTIME_RESIDUE=FAIL containers=$($containers.Count) volumes=$($volumes.Count)"
+function Get-DockerPublishedPortOwners([int]$Port) {
+    $needle = ":${Port}->"
+    $rows = @(
+        & docker ps --format '{{.ID}}|{{.Names}}|{{.Ports}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}' |
+            Where-Object { $_ -and $_.Contains($needle) }
+    )
+    if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect Docker published port ownership for $Port." }
+    return $rows
+}
+
+function Get-PortOwnerSummary([int]$Port) {
+    if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
+        return 'host listener inspection unavailable'
     }
-    Write-Host 'INTEGRATION_RUNTIME_RESIDUE=0'
-}
-
-function Reset-IntegrationRuntime {
-    Invoke-Compose `
-        -Project $IntegrationProject `
-        -ComposeFile $IntegrationCompose `
-        -Arguments @('down', '--volumes', '--remove-orphans')
-    Assert-IntegrationZero
-}
-
-function Reset-IntegrationIfPresent {
-    $containers = @(Get-ProjectContainers -Project $IntegrationProject)
-    $volumes = @(Get-ProjectVolumes -Project $IntegrationProject)
-    if ($containers.Count -eq 0 -and $volumes.Count -eq 0) { return }
-
-    Write-Host "RUNTIME_MODE_TRANSITION=FULL_INTEGRATION_TO_DAILY_DEV containers=$($containers.Count) volumes=$($volumes.Count)"
-    Reset-IntegrationRuntime
-}
-
-function Assert-DailyRuntime {
-    $running = @(Get-ProjectServices -Project $DailyProject -RunningOnly)
-    $expected = @('mailpit', 'postgres')
-    if (($running -join ',') -ne ($expected -join ',')) {
-        Fail "DAILY_DEV service census mismatch: running=$($running -join ',') expected=$($expected -join ',')"
+    $listeners = @(
+        Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
+            Where-Object { $_.LocalAddress -in @('127.0.0.1', '0.0.0.0', '::', '::1') }
+    )
+    if ($listeners.Count -eq 0) { return 'none' }
+    $owners = foreach ($ownerPid in @($listeners | Select-Object -ExpandProperty OwningProcess -Unique)) {
+        $process = Get-Process -Id ([int]$ownerPid) -ErrorAction SilentlyContinue
+        if ($null -eq $process) { "PID=$ownerPid(exited)" } else { "PID=$ownerPid:$($process.ProcessName)" }
     }
-
-    $all = @(Get-ProjectServices -Project $DailyProject)
-    $unexpected = @($all | Where-Object { $_ -notin $expected })
-    if ($unexpected.Count -gt 0) {
-        Fail "DAILY_DEV Docker ownership violation: unexpected services=$($unexpected -join ',')"
-    }
-
-    Write-Host 'DAILY_RUNTIME_DOCKER_DOMAIN_SERVICES=0'
-    Write-Host 'RUNTIME_MODE=DAILY_DEV'
-    Write-Host 'DOCKER_OWNS=postgres,mailpit'
-    Write-Host 'HOST_OWNS=identity,dsh,control-panel,mobile,scrcpy'
+    return ($owners -join ',')
 }
 
-function Ensure-DailyRuntime {
+function Test-PortListening([int]$Port) {
+    if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
+        try {
+            $client = [Net.Sockets.TcpClient]::new()
+            $task = $client.ConnectAsync('127.0.0.1', $Port)
+            if (-not $task.Wait(300)) { $client.Dispose(); return $false }
+            $connected = $client.Connected
+            $client.Dispose()
+            return $connected
+        }
+        catch { return $false }
+    }
+    return @(
+        Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
+            Where-Object { $_.LocalAddress -in @('127.0.0.1', '0.0.0.0', '::', '::1') }
+    ).Count -gt 0
+}
+
+function Assert-PublishedPortSafe([int]$Port, [string]$ExpectedService) {
+    if (-not (Test-PortListening -Port $Port)) { return }
+    $dockerOwners = @(Get-DockerPublishedPortOwners -Port $Port)
+    $expected = @($dockerOwners | Where-Object { $_ -match "\|$CanonicalProject\|$([regex]::Escape($ExpectedService))$" })
+    if ($expected.Count -eq 1 -and $dockerOwners.Count -eq 1) { return }
+    $hostOwner = Get-PortOwnerSummary -Port $Port
+    $dockerText = if ($dockerOwners.Count -eq 0) { 'none' } else { $dockerOwners -join ';' }
+    Fail "RUNTIME_OWNERSHIP_CONFLICT=FAIL port=$Port expected=$CanonicalProject/$ExpectedService host_owner=$hostOwner docker_owner=$dockerText"
+}
+
+function Assert-CanonicalPublishedPort([int]$Port, [string]$ExpectedService) {
+    $dockerOwners = @(Get-DockerPublishedPortOwners -Port $Port)
+    $expected = @($dockerOwners | Where-Object { $_ -match "\|$CanonicalProject\|$([regex]::Escape($ExpectedService))$" })
+    if ($expected.Count -ne 1 -or $dockerOwners.Count -ne 1 -or -not (Test-PortListening -Port $Port)) {
+        $hostOwner = Get-PortOwnerSummary -Port $Port
+        $dockerText = if ($dockerOwners.Count -eq 0) { 'none' } else { $dockerOwners -join ';' }
+        Fail "PORT_OWNERSHIP=FAIL port=$Port expected=$CanonicalProject/$ExpectedService host_owner=$hostOwner docker_owner=$dockerText"
+    }
+}
+
+function Assert-PortFree([int]$Port, [string]$Component) {
+    if (-not (Test-PortListening -Port $Port)) { return }
+    $dockerOwners = @(Get-DockerPublishedPortOwners -Port $Port)
+    $hostOwner = Get-PortOwnerSummary -Port $Port
+    $dockerText = if ($dockerOwners.Count -eq 0) { 'none' } else { $dockerOwners -join ';' }
+    Fail "PORT_OWNERSHIP_CONFLICT=FAIL component=$Component port=$Port host_owner=$hostOwner docker_owner=$dockerText"
+}
+
+function Assert-NoLegacyRuntimeResidue {
+    foreach ($project in $LegacyProjects) {
+        $containers = @(Get-ProjectContainers -Project $project)
+        $volumes = @(Get-ProjectVolumes -Project $project)
+        $networks = @(Get-ProjectNetworks -Project $project)
+        if ($containers.Count -gt 0 -or $volumes.Count -gt 0 -or $networks.Count -gt 0) {
+            Fail "LEGACY_RUNTIME_RESIDUE=FAIL project=$project containers=$($containers.Count) volumes=$($volumes.Count) networks=$($networks.Count) action=run-pnpm-runtime-reset"
+        }
+    }
+}
+
+function Remove-ProjectResidue([string]$Project) {
+    $containers = @(Get-ProjectContainers -Project $Project)
+    if ($containers.Count -gt 0) {
+        & docker rm -f @containers *> $null
+        if ($LASTEXITCODE -ne 0) { Fail "Unable to remove containers for legacy project $Project." }
+    }
+    $volumes = @(Get-ProjectVolumes -Project $Project)
+    if ($volumes.Count -gt 0) {
+        & docker volume rm -f @volumes *> $null
+        if ($LASTEXITCODE -ne 0) { Fail "Unable to remove volumes for legacy project $Project." }
+    }
+    $networks = @(Get-ProjectNetworks -Project $Project)
+    foreach ($network in $networks) {
+        & docker network rm $network *> $null
+        if ($LASTEXITCODE -ne 0) { Fail "Unable to remove network $network for legacy project $Project." }
+    }
+}
+
+function Remove-LegacyImages {
+    $rows = @(& docker image ls --format '{{.Repository}}|{{.ID}}')
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect Docker images.' }
+    $ids = @(
+        $rows |
+            ForEach-Object { $_.Split('|', 2) } |
+            Where-Object { $_.Count -eq 2 -and $_[0] -like 'samrim-integration-*' } |
+            ForEach-Object { $_[1] } |
+            Sort-Object -Unique
+    )
+    if ($ids.Count -gt 0) {
+        & docker image rm @ids *> $null
+        if ($LASTEXITCODE -ne 0) { Fail 'Unable to remove obsolete samrim-integration images.' }
+    }
+}
+
+function Assert-Endpoint([string]$Service, [string]$Uri) {
+    try {
+        $response = Invoke-RestMethod -Uri $Uri -Method Get -TimeoutSec 5
+    }
+    catch {
+        Fail "SERVICE_ENDPOINT=FAIL service=$Service uri=$Uri error=$($_.Exception.Message)"
+    }
+    if ($null -eq $response -or $response.status -ne 'ok' -or $response.service -ne $Service) {
+        Fail "SERVICE_ENDPOINT=FAIL service=$Service uri=$Uri"
+    }
+}
+
+function Assert-Mailpit([hashtable]$EnvMap) {
+    $port = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_MAILPIT_WEB_PORT'
+    try {
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:$port/" -Method Get -TimeoutSec 5 -SkipHttpErrorCheck
+    }
+    catch {
+        Fail "MAILPIT_READY=FAIL error=$($_.Exception.Message)"
+    }
+    if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 500) {
+        Fail "MAILPIT_READY=FAIL status=$($response.StatusCode)"
+    }
+}
+
+function Assert-CanonicalRuntime([hashtable]$EnvMap) {
+    Assert-OneShotSucceeded -Service 'identity-migrate'
+    Assert-OneShotSucceeded -Service 'dsh-migrate'
+    Assert-RunningService -Service 'postgres' -RequireHealthy
+    Assert-RunningService -Service 'mailpit'
+    Assert-RunningService -Service 'identity' -RequireHealthy
+    Assert-RunningService -Service 'dsh' -RequireHealthy
+
+    $identityPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_IDENTITY_PORT'
+    $dshPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_DSH_PORT'
+    $mailpitPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_MAILPIT_WEB_PORT'
+    Assert-CanonicalPublishedPort -Port $identityPort -ExpectedService 'identity'
+    Assert-CanonicalPublishedPort -Port $dshPort -ExpectedService 'dsh'
+    Assert-CanonicalPublishedPort -Port $mailpitPort -ExpectedService 'mailpit'
+
+    $identityBase = (Require-EnvValue -Map $EnvMap -Name 'IDENTITY_API_BASE_URL').TrimEnd('/')
+    $dshBase = (Require-EnvValue -Map $EnvMap -Name 'DSH_API_BASE_URL').TrimEnd('/')
+    Assert-Endpoint -Service 'identity' -Uri "$identityBase/identity/health"
+    Assert-Endpoint -Service 'identity' -Uri "$identityBase/identity/readiness"
+    Assert-Endpoint -Service 'dsh' -Uri "$dshBase/dsh/health"
+    Assert-Endpoint -Service 'dsh' -Uri "$dshBase/dsh/readiness"
+    Assert-Mailpit -EnvMap $EnvMap
+}
+
+function Test-CanonicalRuntimeReady([hashtable]$EnvMap) {
+    try {
+        Assert-NoLegacyRuntimeResidue
+        Assert-CanonicalRuntime -EnvMap $EnvMap
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Start-CanonicalRuntime {
     $envMap = Ensure-Environment
+    Set-CanonicalEnvironment -Map $envMap
     Ensure-Docker
+    Assert-NoLegacyRuntimeResidue
 
-    # Selecting any DAILY_DEV action is an explicit local mode transition.
-    # FULL_INTEGRATION is ephemeral and must never survive into DAILY_DEV.
-    Reset-IntegrationIfPresent
+    if (-not (Test-Path -LiteralPath $ComposePath -PathType Leaf)) {
+        Fail "Canonical Compose file is missing: $ComposePath"
+    }
+    $configCode = Invoke-ComposeRaw -Arguments @('config', '--quiet') -Quiet
+    if ($configCode -ne 0) { Fail 'CANONICAL_COMPOSE_CONFIG=FAIL' }
 
-    Invoke-Compose `
-        -Project $DailyProject `
-        -ComposeFile $DailyCompose `
-        -Arguments @('up', '-d', '--wait', '--wait-timeout', '120', '--remove-orphans', 'postgres', 'mailpit')
+    Assert-PublishedPortSafe -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') -ExpectedService 'identity'
+    Assert-PublishedPortSafe -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') -ExpectedService 'dsh'
+    Assert-PublishedPortSafe -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_MAILPIT_WEB_PORT') -ExpectedService 'mailpit'
 
-    Assert-DailyRuntime
-    Assert-IntegrationZero
+    Invoke-Compose -Arguments @('up', '-d', '--build', '--wait', '--wait-timeout', '180', '--remove-orphans')
+    Assert-CanonicalRuntime -EnvMap $envMap
+
+    Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS'
+    Write-Host 'DOCKER_OWNS=postgres,mailpit,identity,dsh'
+    Write-Host "IDENTITY_API=$(Require-EnvValue -Map $envMap -Name 'IDENTITY_API_BASE_URL')"
+    Write-Host "DSH_API=$(Require-EnvValue -Map $envMap -Name 'DSH_API_BASE_URL')"
+    Write-Host "MAILPIT_WEB=http://127.0.0.1:$(Require-TcpPort -Map $envMap -Name 'SAMRIM_MAILPIT_WEB_PORT')"
     return $envMap
 }
 
-function Stop-DailyRuntime {
+function Ensure-CanonicalRuntime {
+    $envMap = Ensure-Environment
+    Set-CanonicalEnvironment -Map $envMap
+    Ensure-Docker
+    if (Test-CanonicalRuntimeReady -EnvMap $envMap) {
+        Write-Host 'CANONICAL_LOCAL_RUNTIME=READY'
+        return $envMap
+    }
+    return Start-CanonicalRuntime
+}
+
+function Stop-CanonicalRuntime {
     $null = Ensure-Environment
     Ensure-Docker
-    Invoke-Compose `
-        -Project $DailyProject `
-        -ComposeFile $DailyCompose `
-        -Arguments @('down', '--remove-orphans')
-
-    $containers = @(Get-ProjectContainers -Project $DailyProject)
-    if ($containers.Count -gt 0) { Fail 'DAILY_RUNTIME_SHUTDOWN=FAIL project containers remain.' }
-    Write-Host 'LOCAL_RUNTIME=DOWN owner=DAILY_DEV data_volume=preserved'
+    Invoke-Compose -Arguments @('down', '--remove-orphans')
+    if (@(Get-ProjectContainers -Project $CanonicalProject).Count -gt 0) {
+        Fail 'CANONICAL_RUNTIME_STOP=FAIL containers remain.'
+    }
+    Write-Host 'CANONICAL_RUNTIME_STOP=PASS data_volume=preserved'
 }
 
 function Show-RuntimeStatus {
+    $null = Ensure-Environment
     Ensure-Docker
-    foreach ($entry in @(
-        @{ Project = $DailyProject; Label = 'DAILY_DEV' },
-        @{ Project = $IntegrationProject; Label = 'FULL_INTEGRATION' }
-    )) {
-        Write-Host ''
-        Write-Host "=== $($entry.Label) ($($entry.Project)) ==="
-        $rows = @(
-            & docker ps -a `
-                --filter "label=com.docker.compose.project=$($entry.Project)" `
-                --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
-        )
-        if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect Docker project: $($entry.Project)" }
-        if ($rows.Count -eq 0) { Write-Host 'containers=0' } else { $rows | Write-Host }
-        $volumes = @(Get-ProjectVolumes -Project $entry.Project)
-        Write-Host "volumes=$($volumes.Count)"
+    Write-Host "CANONICAL_PROJECT=$CanonicalProject"
+    $base = Get-ComposeBaseArgs
+    & docker @base ps -a
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical Compose runtime.' }
+    foreach ($project in $LegacyProjects) {
+        Write-Host "LEGACY_PROJECT=$project containers=$(@(Get-ProjectContainers -Project $project).Count) volumes=$(@(Get-ProjectVolumes -Project $project).Count) networks=$(@(Get-ProjectNetworks -Project $project).Count)"
     }
-
-    $integrationContainers = @(Get-ProjectContainers -Project $IntegrationProject)
-    $integrationVolumes = @(Get-ProjectVolumes -Project $IntegrationProject)
-    Write-Host ''
-    Write-Host 'RUNTIME_STATUS=PASS'
-    Write-Host "INTEGRATION_CONTAINERS=$($integrationContainers.Count)"
-    Write-Host "INTEGRATION_VOLUMES=$($integrationVolumes.Count)"
 }
 
-function Get-PortOwnerSummary([object[]]$Listeners) {
-    $ownerPids = @($Listeners | Select-Object -ExpandProperty OwningProcess -Unique)
-    $owners = foreach ($ownerPid in $ownerPids) {
-        $process = Get-Process -Id ([int]$ownerPid) -ErrorAction SilentlyContinue
-        if ($null -eq $process) { "PID=$ownerPid (exited)" }
-        else { "PID=$ownerPid $($process.ProcessName)" }
-    }
-    if ($owners.Count -eq 0) { return 'unknown process' }
-    return ($owners -join ', ')
+function Show-RuntimeLogs {
+    $null = Ensure-Environment
+    Ensure-Docker
+    $base = Get-ComposeBaseArgs
+    & docker @base logs --tail 200 -f
+    if ($LASTEXITCODE -ne 0) { Fail 'Docker Compose logs failed.' }
 }
 
-function Assert-PortAvailable([int]$Port, [string]$Component) {
-    $listeners = @(
-        Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
-            Where-Object { $_.LocalAddress -in @('127.0.0.1', '0.0.0.0', '::') }
+function Assert-NoNativeBackendProcesses {
+    if (-not (Get-Command Get-CimInstance -ErrorAction SilentlyContinue)) { return }
+    $repoNeedle = $RepoRoot.ToLowerInvariant()
+    $matches = @(
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $command = [string]$_.CommandLine
+                if ([string]::IsNullOrWhiteSpace($command)) { return $false }
+                $lower = $command.ToLowerInvariant()
+                $inRepo = $lower.Contains($repoNeedle)
+                $backend = $lower.Contains('services\identity') -or $lower.Contains('services/identity') -or $lower.Contains('services\dsh') -or $lower.Contains('services/dsh')
+                $nativeServer = $lower.Contains('go run') -or $lower.Contains('cmd\api') -or $lower.Contains('cmd/api')
+                return $inRepo -and $backend -and $nativeServer
+            }
     )
-    if ($listeners.Count -eq 0) { return }
-    $owners = Get-PortOwnerSummary -Listeners $listeners
-    Fail "RUNTIME_OWNERSHIP_CONFLICT=FAIL component=$Component port=$Port owner=$owners"
-}
-
-function Set-CanonicalEnvironment([hashtable]$Map) {
-    foreach ($entry in $Map.GetEnumerator()) {
-        [Environment]::SetEnvironmentVariable(
-            [string]$entry.Key,
-            [string]$entry.Value,
-            [EnvironmentVariableTarget]::Process
-        )
+    if ($matches.Count -gt 0) {
+        $summary = $matches | ForEach-Object { "PID=$($_.ProcessId) $($_.Name)" }
+        Fail "NATIVE_BACKEND_RUNTIME=FAIL $($summary -join '; ')"
     }
+    Write-Host 'NATIVE_BACKEND_RUNTIME=0'
 }
 
-function Start-GoService([ValidateSet('identity', 'dsh')][string]$Service) {
-    $envMap = Ensure-DailyRuntime
+function Invoke-RuntimeDoctor {
+    $envMap = Ensure-Environment
     Set-CanonicalEnvironment -Map $envMap
+    Ensure-Docker
 
-    $serviceRoot = Join-Path $RepoRoot ("services\" + $Service)
-    $backendPath = Join-Path $serviceRoot 'backend'
-    $projectPath = Join-Path $serviceRoot 'project.json'
-    foreach ($required in @(
-        $projectPath,
-        (Join-Path $backendPath 'go.mod'),
-        (Join-Path $backendPath 'cmd\api\main.go')
-    )) {
-        if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-            Fail "Requested Go service is not materialized correctly: $required"
+    $composeFiles = @(
+        Get-ChildItem -LiteralPath $ComposeDir -File -ErrorAction Stop |
+            Where-Object { $_.Name -match '^compose(?:\..+)?\.ya?ml$' }
+    )
+    if ($composeFiles.Count -ne 1 -or $composeFiles[0].FullName -ne $ComposePath) {
+        Fail "CANONICAL_LOCAL_COMPOSE_FILES=FAIL observed=$($composeFiles.Name -join ',')"
+    }
+    Write-Host 'CANONICAL_LOCAL_COMPOSE_FILES=1'
+
+    $configCode = Invoke-ComposeRaw -Arguments @('config', '--quiet') -Quiet
+    if ($configCode -ne 0) { Fail 'CANONICAL_COMPOSE_CONFIG=FAIL' }
+    Assert-NoLegacyRuntimeResidue
+    Assert-NoNativeBackendProcesses
+    Assert-CanonicalRuntime -EnvMap $envMap
+
+    if (Test-Path -LiteralPath $OwnershipVerifier -PathType Leaf) {
+        & node $OwnershipVerifier
+        if ($LASTEXITCODE -ne 0) { Fail 'Repository runtime ownership verifier failed.' }
+    }
+
+    Write-Host 'PARALLEL_LOCAL_RUNTIME_AUTHORITY=0'
+    Write-Host 'PORT_OWNERSHIP=PASS'
+    Write-Host 'SERVICE_HEALTH=PASS'
+    Write-Host 'RUNTIME_DOCTOR=PASS'
+}
+
+function Reset-CanonicalRuntime {
+    $envMap = Ensure-Environment
+    Ensure-Docker
+    Write-Host 'RUNTIME_RESET=DESTRUCTIVE_LOCAL_DATA scope=samrim Docker containers/networks/volumes; local .env secrets are preserved'
+
+    $null = Invoke-ComposeRaw -Arguments @('down', '--volumes', '--remove-orphans')
+    Remove-ProjectResidue -Project $CanonicalProject
+    foreach ($project in $LegacyProjects) {
+        Remove-ProjectResidue -Project $project
+    }
+    Remove-LegacyImages
+
+    foreach ($project in @($CanonicalProject) + $LegacyProjects) {
+        $containers = @(Get-ProjectContainers -Project $project)
+        $volumes = @(Get-ProjectVolumes -Project $project)
+        $networks = @(Get-ProjectNetworks -Project $project)
+        if ($containers.Count -gt 0 -or $volumes.Count -gt 0 -or $networks.Count -gt 0) {
+            Fail "RUNTIME_RESET=FAIL project=$project containers=$($containers.Count) volumes=$($volumes.Count) networks=$($networks.Count)"
         }
     }
 
-    $project = Get-Content -LiteralPath $projectPath -Raw | ConvertFrom-Json
-    if (@($project.tags) -notcontains 'type:service' -or [string]$project.root -ne ("services/" + $Service)) {
-        Fail "$Service project ownership metadata is invalid."
-    }
-
-    $portKey = 'SAMRIM_' + (($Service -replace '[^A-Za-z0-9]', '_').ToUpperInvariant()) + '_PORT'
-    $runtimePort = Require-TcpPort -Map $envMap -Name $portKey
-    Assert-PortAvailable -Port $runtimePort -Component $Service
-
-    [Environment]::SetEnvironmentVariable('PORT', [string]$runtimePort, 'Process')
-    [Environment]::SetEnvironmentVariable('BTHWANI_LISTEN_HOST', '127.0.0.1', 'Process')
-
-    if ($Service -eq 'identity') {
-        $dbUserRaw = Require-EnvValue -Map $envMap -Name 'SAMRIM_POSTGRES_USER'
-        $dbPasswordRaw = Require-EnvValue -Map $envMap -Name 'SAMRIM_POSTGRES_PASSWORD'
-        $dbNameRaw = Require-EnvValue -Map $envMap -Name 'SAMRIM_POSTGRES_DB'
-        $dbPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_POSTGRES_PORT'
-        $mailpitSmtpPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_MAILPIT_SMTP_PORT'
-
-        $dbUser = [Uri]::EscapeDataString($dbUserRaw)
-        $dbPassword = [Uri]::EscapeDataString($dbPasswordRaw)
-        $dbName = [Uri]::EscapeDataString($dbNameRaw)
-        $databaseURL = "postgres://${dbUser}:${dbPassword}@127.0.0.1:${dbPort}/${dbName}?sslmode=disable"
-
-        [Environment]::SetEnvironmentVariable('IDENTITY_DATABASE_URL', $databaseURL, 'Process')
-        [Environment]::SetEnvironmentVariable('IDENTITY_MAINTENANCE_DATABASE_URL', $databaseURL, 'Process')
-        [Environment]::SetEnvironmentVariable('IDENTITY_MIGRATION_DATABASE_URL', $databaseURL, 'Process')
-        [Environment]::SetEnvironmentVariable('IDENTITY_MAILPIT_SMTP_ADDR', "127.0.0.1:${mailpitSmtpPort}", 'Process')
-        [Environment]::SetEnvironmentVariable('IDENTITY_AUTO_MIGRATE', 'false', 'Process')
-        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_HOST', '127.0.0.1', 'Process')
-        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_PORT', [string]$dbPort, 'Process')
-        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_NAME', $dbNameRaw, 'Process')
-        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_USER', $dbUserRaw, 'Process')
-    }
-    else {
-        $identityPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT'
-        $dbUserRaw = Require-EnvValue -Map $envMap -Name 'SAMRIM_POSTGRES_USER'
-        $dbPasswordRaw = Require-EnvValue -Map $envMap -Name 'SAMRIM_POSTGRES_PASSWORD'
-        $dbNameRaw = Require-EnvValue -Map $envMap -Name 'SAMRIM_POSTGRES_DB'
-        $dbPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_POSTGRES_PORT'
-        $dbUser = [Uri]::EscapeDataString($dbUserRaw)
-        $dbPassword = [Uri]::EscapeDataString($dbPasswordRaw)
-        $dbName = [Uri]::EscapeDataString($dbNameRaw)
-        $databaseURL = "postgres://${dbUser}:${dbPassword}@127.0.0.1:${dbPort}/${dbName}?sslmode=disable"
-        [Environment]::SetEnvironmentVariable('DSH_IDENTITY_API_BASE_URL', "http://127.0.0.1:${identityPort}", 'Process')
-        [Environment]::SetEnvironmentVariable('DSH_DATABASE_URL', $databaseURL, 'Process')
-        [Environment]::SetEnvironmentVariable('DSH_MIGRATION_DATABASE_URL', $databaseURL, 'Process')
-        [Environment]::SetEnvironmentVariable('DSH_SCHEMA_DATABASE_URL', $databaseURL, 'Process')
-        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_HOST', '127.0.0.1', 'Process')
-        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_PORT', [string]$dbPort, 'Process')
-        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_NAME', $dbNameRaw, 'Process')
-        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_USER', $dbUserRaw, 'Process')
-    }
-
-    Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=$Service port=$runtimePort"
-    Push-Location $backendPath
-    try {
-        if ($Service -eq 'identity') {
-            Write-Host 'Identity schema migration/verification: starting'
-            & go run ./cmd/migrate
-            if ($LASTEXITCODE -ne 0) { Fail 'Identity schema migration/verification failed.' }
-            Write-Host 'Identity schema migration/verification: PASS'
-        }
-        if ($Service -eq 'dsh') {
-            Write-Host 'DSH schema migration/verification: starting'
-            & go run ./cmd/migrate
-            if ($LASTEXITCODE -ne 0) { Fail 'DSH schema migration/verification failed.' }
-            Write-Host 'DSH schema migration/verification: PASS'
-        }
-
-        & go run ./cmd/api
-        if ($LASTEXITCODE -ne 0) { Fail "$Service exited with code $LASTEXITCODE." }
-    }
-    finally {
-        Pop-Location
-    }
+    Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') -Component 'identity'
+    Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') -Component 'dsh'
+    Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_MAILPIT_WEB_PORT') -Component 'mailpit-web'
+    Write-Host 'LEGACY_RUNTIME_RESIDUE=0'
+    Write-Host 'RUNTIME_RESET=PASS final_state=DOWN secrets=preserved'
 }
 
 function Start-ControlPanel {
-    $envMap = Ensure-DailyRuntime
+    $envMap = Ensure-CanonicalRuntime
     Set-CanonicalEnvironment -Map $envMap
 
     $originRaw = Require-EnvValue -Map $envMap -Name 'CONTROL_PANEL_PUBLIC_ORIGIN'
@@ -407,9 +552,9 @@ function Start-ControlPanel {
         Fail "CONTROL_PANEL_CORS_CONTRACT=FAIL control_origin=$originAuthority identity_cors=$corsRaw"
     }
 
-    Assert-PortAvailable -Port $origin.Port -Component 'control-panel'
+    Assert-PortFree -Port $origin.Port -Component 'control-panel'
     $controlRoot = Join-Path $RepoRoot 'apps\control-panel'
-    Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=control-panel origin=$originAuthority"
+    Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=control-panel origin=$originAuthority backend_owner=docker"
     & pnpm --dir $controlRoot exec next dev -H $origin.Host -p $origin.Port
     if ($LASTEXITCODE -ne 0) { Fail "Control Panel exited with code $LASTEXITCODE." }
 }
@@ -438,7 +583,7 @@ function Resolve-AdbTargetSerial([string]$RequestedSerial) {
 }
 
 function Start-Mobile([ValidateSet('app-client', 'app-partner', 'app-captain', 'app-field')][string]$App) {
-    $envMap = Ensure-DailyRuntime
+    $envMap = Ensure-CanonicalRuntime
     Set-CanonicalEnvironment -Map $envMap
 
     $appRoot = Join-Path $RepoRoot ("apps\" + $App)
@@ -461,15 +606,12 @@ function Start-Mobile([ValidateSet('app-client', 'app-partner', 'app-captain', '
     }
 
     $appToken = ($App -replace '[^A-Za-z0-9]', '_').ToUpperInvariant()
-    $metroPortKey = "SAMRIM_${appToken}_METRO_PORT"
-    $metroPort = Require-TcpPort -Map $envMap -Name $metroPortKey
+    $metroPort = Require-TcpPort -Map $envMap -Name "SAMRIM_${appToken}_METRO_PORT"
     $identityPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT'
     $dshPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT'
-    if (@($metroPort, $identityPort, $dshPort) | Group-Object | Where-Object { $_.Count -gt 1 }) {
-        Fail "Mobile runtime ports must be distinct for $App."
-    }
-
-    Assert-PortAvailable -Port $metroPort -Component $App
+    Assert-PortFree -Port $metroPort -Component $App
+    Assert-CanonicalPublishedPort -Port $identityPort -ExpectedService 'identity'
+    Assert-CanonicalPublishedPort -Port $dshPort -ExpectedService 'dsh'
 
     $adbSerial = Resolve-AdbTargetSerial -RequestedSerial $DeviceSerial
     if (-not [string]::IsNullOrWhiteSpace($adbSerial)) {
@@ -496,121 +638,21 @@ function Start-Mobile([ValidateSet('app-client', 'app-partner', 'app-captain', '
     $expoArgs = @('--dir', $appRoot, 'exec', 'expo', 'start', '--dev-client', '--localhost', '--port', [string]$metroPort)
     if ($ClearCache) { $expoArgs += '--clear' }
 
-    Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=$App metro_port=$metroPort"
+    Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=$App metro_port=$metroPort backend_owner=docker"
     & pnpm @expoArgs
     if ($LASTEXITCODE -ne 0) { Fail "$App Expo runtime exited with code $LASTEXITCODE." }
-}
-
-function Test-PortBindable([int]$Port) {
-    $listener = $null
-    try {
-        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
-        $listener.Start()
-        return $true
-    }
-    catch { return $false }
-    finally { if ($null -ne $listener) { try { $listener.Stop() } catch {} } }
-}
-
-function Assert-IntegrationPortsAvailable([hashtable]$EnvMap) {
-    foreach ($key in @(
-        'SAMRIM_POSTGRES_PORT',
-        'SAMRIM_MAILPIT_SMTP_PORT',
-        'SAMRIM_MAILPIT_WEB_PORT',
-        'SAMRIM_IDENTITY_PORT',
-        'SAMRIM_DSH_PORT'
-    )) {
-        $port = Require-TcpPort -Map $EnvMap -Name $key
-        if (-not (Test-PortBindable -Port $port)) {
-            Fail "INTEGRATION_HOST_PORT_PREFLIGHT=FAIL key=$key port=$port owner=host-process"
-        }
-    }
-    Write-Host 'INTEGRATION_HOST_PORT_PREFLIGHT=PASS'
-}
-
-function Show-IntegrationDiagnostics {
-    try { $null = Invoke-ComposeRaw -Project $IntegrationProject -ComposeFile $IntegrationCompose -Arguments @('ps', '-a') } catch {}
-    try { $null = Invoke-ComposeRaw -Project $IntegrationProject -ComposeFile $IntegrationCompose -Arguments @('logs', '--tail', '200') } catch {}
-}
-
-function Invoke-IntegrationClose {
-    $envMap = Ensure-Environment
-    Ensure-Docker
-
-    $branch = (& git -C $RepoRoot branch --show-current).Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) { Fail 'Unable to determine current Git branch.' }
-    if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $branch -ne $ExpectedBranch) {
-        Fail "Expected branch '$ExpectedBranch', found '$branch'."
-    }
-    $status = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
-    if ($LASTEXITCODE -ne 0 -or $status.Count -gt 0) { Fail 'Working tree must be clean before integration proof.' }
-
-    $proofError = $null
-    $cleanupError = $null
-    try {
-        $dailyContainers = @(Get-ProjectContainers -Project $DailyProject)
-        if ($dailyContainers.Count -gt 0) {
-            Write-Host "RUNTIME_MODE_TRANSITION=DAILY_DEV_TO_FULL_INTEGRATION containers=$($dailyContainers.Count)"
-            Invoke-Compose -Project $DailyProject -ComposeFile $DailyCompose -Arguments @('down', '--remove-orphans')
-        }
-
-        Reset-IntegrationRuntime
-        Assert-IntegrationPortsAvailable -EnvMap $envMap
-
-        Invoke-Compose -Project $IntegrationProject -ComposeFile $IntegrationCompose -Arguments @('config', '--quiet')
-        Write-Host 'INTEGRATION_DOCKER_CONFIG=PASS'
-        Invoke-Compose -Project $IntegrationProject -ComposeFile $IntegrationCompose -Arguments @('up', '-d', '--build', '--wait', '--wait-timeout', '180')
-
-        if (-not (Test-Path -LiteralPath $VerifyIntegration -PathType Leaf)) {
-            Fail "Integration verifier is missing: $VerifyIntegration"
-        }
-        & pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $VerifyIntegration -EnvFile $EnvPath -Attempts 60 -DelaySeconds 2
-        if ($LASTEXITCODE -ne 0) { Fail 'Integration endpoint verification failed.' }
-
-        $running = @(Get-ProjectServices -Project $IntegrationProject -RunningOnly)
-        $expected = @('dsh', 'identity', 'mailpit', 'postgres')
-        if (($running -join ',') -ne ($expected -join ',')) {
-            Fail "Integration service census mismatch: running=$($running -join ',') expected=$($expected -join ',')"
-        }
-
-        foreach ($semanticVerifier in @(
-            @{ Path = $VerifyIdentity; Label = 'Identity runtime semantics' },
-            @{ Path = $VerifyDsh; Label = 'DSH managed-access runtime' }
-        )) {
-            if (-not (Test-Path -LiteralPath $semanticVerifier.Path -PathType Leaf)) {
-                Fail "$($semanticVerifier.Label) verifier is missing: $($semanticVerifier.Path)"
-            }
-            & node $semanticVerifier.Path "--env-file=$EnvPath"
-            if ($LASTEXITCODE -ne 0) { Fail "$($semanticVerifier.Label) verification failed." }
-        }
-
-        $finalStatus = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
-        if ($LASTEXITCODE -ne 0 -or $finalStatus.Count -gt 0) { Fail 'Integration proof mutated repository state.' }
-        Write-Host 'INTEGRATION_RUNTIME_PROOF=PASS'
-    }
-    catch {
-        $proofError = $_
-        Show-IntegrationDiagnostics
-    }
-    finally {
-        try { Reset-IntegrationRuntime }
-        catch { $cleanupError = $_ }
-    }
-
-    if ($null -ne $cleanupError) { Fail "INTEGRATION_RUNTIME_CLEANUP=FAIL: $($cleanupError.Exception.Message)" }
-    if ($null -ne $proofError) { Fail "INTEGRATION_RUNTIME_PROOF=FAIL residue=0: $($proofError.Exception.Message)" }
-    Write-Host 'INTEGRATION_RUNTIME_CLEANUP=PASS'
-    Write-Host 'INTEGRATION_RUNTIME_PROOF=PASS residue=0'
 }
 
 Push-Location $RepoRoot
 try {
     switch ($Action) {
-        'DailyUp' { $null = Ensure-DailyRuntime }
-        'DailyDown' { Stop-DailyRuntime }
+        'Up' { $null = Start-CanonicalRuntime }
+        'Down' { Stop-CanonicalRuntime }
+        'Restart' { Stop-CanonicalRuntime; $null = Start-CanonicalRuntime }
         'Status' { Show-RuntimeStatus }
-        'Identity' { Start-GoService -Service 'identity' }
-        'Dsh' { Start-GoService -Service 'dsh' }
+        'Logs' { Show-RuntimeLogs }
+        'Doctor' { Invoke-RuntimeDoctor }
+        'Reset' { Reset-CanonicalRuntime }
         'Control' { Start-ControlPanel }
         'Client' { Start-Mobile -App 'app-client' }
         'Partner' { Start-Mobile -App 'app-partner' }
@@ -622,7 +664,6 @@ try {
             & scrcpy --tcpip
             if ($LASTEXITCODE -ne 0) { Fail "scrcpy exited with code $LASTEXITCODE." }
         }
-        'IntegrationClose' { Invoke-IntegrationClose }
     }
 }
 finally {

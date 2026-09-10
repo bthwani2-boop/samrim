@@ -253,7 +253,7 @@ jobs:
         shell: bash
         run: pnpm run nx:projects
 
-      - name: Verify developer doctor
+      - name: Verify developer prerequisites
         shell: pwsh
         run: ./tools/dev/doctor.ps1 -SkipBranchCheck
 
@@ -279,12 +279,11 @@ jobs:
             go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
           )
 
-      - name: Verify repository compose configuration
+      - name: Verify canonical Compose configuration
         shell: bash
         run: |
           set -euo pipefail
           docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml config >/dev/null
-          docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml config >/dev/null
 
       - name: Verify developer tooling is non-mutating
         shell: bash
@@ -294,7 +293,7 @@ jobs:
           if [[ -n "${drift}" ]]; then
             printf '%s\n' "${drift}"
             git diff -- . || true
-            echo "::error::Integration developer tooling mutated repository state"
+            echo "::error::Developer tooling mutated repository state"
             exit 1
           fi
 
@@ -399,11 +398,11 @@ jobs:
           go-version: 1.27.1
           cache: false
 
-      - name: Build and start repository runtime
+      - name: Build and start canonical repository runtime
         shell: bash
         run: |
           set -euo pipefail
-          docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml up -d --build
+          docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 180
 
       - name: Install browser-runtime workspace dependencies
         shell: bash
@@ -428,8 +427,6 @@ jobs:
             echo "DSH_API_BASE_URL=${DSH_API_BASE_URL}"
             echo "IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN=${IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN}"
             echo "DSH_PLATFORM_CONTROL_SERVICE_TOKEN=${DSH_PLATFORM_CONTROL_SERVICE_TOKEN}"
-            echo "SAMRIM_POSTGRES_PORT=$(env_value SAMRIM_POSTGRES_PORT)"
-            echo "SAMRIM_MAILPIT_SMTP_PORT=$(env_value SAMRIM_MAILPIT_SMTP_PORT)"
             echo "SAMRIM_MAILPIT_WEB_PORT=$(env_value SAMRIM_MAILPIT_WEB_PORT)"
             echo "SAMRIM_IDENTITY_PORT=$(env_value SAMRIM_IDENTITY_PORT)"
             echo "SAMRIM_DSH_PORT=$(env_value SAMRIM_DSH_PORT)"
@@ -479,9 +476,8 @@ jobs:
           for attempt in $(seq 1 60); do
             ok=1
 
-            docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml exec -T postgres pg_isready -h 127.0.0.1 -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
+            docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml exec -T postgres pg_isready -h 127.0.0.1 -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
             curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT}/" >/dev/null || ok=0
-            (: >/dev/tcp/127.0.0.1/${SAMRIM_MAILPIT_SMTP_PORT}) >/dev/null 2>&1 || ok=0
 
             verify_json_endpoint identity "${IDENTITY_API_BASE_URL}/identity/health" || ok=0
             verify_json_endpoint identity "${IDENTITY_API_BASE_URL}/identity/readiness" || ok=0
@@ -495,15 +491,15 @@ jobs:
 
             if [[ "$attempt" -eq 60 ]]; then
               echo "::error::Repository runtime did not become ready"
-              docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml ps
-              docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml logs --tail 200
+              docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml ps -a
+              docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml logs --tail 200
               exit 1
             fi
 
             sleep 2
           done
 
-          mapfile -t running < <(docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml ps --status running --services | sort)
+          mapfile -t running < <(docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml ps --status running --services | sort)
           expected=(dsh identity mailpit postgres)
 
           if [[ "${running[*]}" != "${expected[*]}" ]]; then
@@ -513,13 +509,20 @@ jobs:
             exit 1
           fi
 
+          for migration in identity-migrate dsh-migrate; do
+            cid="$(docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml ps -a -q "$migration")"
+            [[ -n "$cid" ]]
+            [[ "$(docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}' "$cid")" == "exited|0" ]]
+          done
+
           echo "REPOSITORY_COMPOSE_SERVICES=PASS"
+          echo "REPOSITORY_MIGRATION_JOBS=PASS"
 
       - name: Verify DSH image trust store and non-root runtime
         shell: bash
         run: |
           set -euo pipefail
-          docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml exec -T dsh sh -ceu '
+          docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml exec -T dsh sh -ceu '
             test -s /etc/ssl/certs/ca-certificates.crt
             test "$(id -u)" -ne 0
           '
@@ -561,4 +564,4 @@ jobs:
           if [[ -f /tmp/samrim-control-panel.log ]]; then
             tail -n 200 /tmp/samrim-control-panel.log || true
           fi
-          docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml down --volumes --remove-orphans
+          docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml down --volumes --remove-orphans

@@ -54,10 +54,10 @@ for (const [name, value, minimum] of [
 if (dshToken === platformToken) fail("internal service tokens must be distinct");
 if (bootstrapToken === platformToken || bootstrapToken === dshToken) fail("bootstrap token must be distinct from operational service tokens");
 
-const composeFile = path.join(root, "infra/local/compose/compose.integration.yaml");
+const composeFile = path.join(root, "infra/local/compose/compose.yaml");
 const composeArgs = [
   "compose",
-  "--project-name", "samrim-integration",
+  "--project-name", "samrim-local",
   "--env-file", envFile,
   "-f", composeFile,
 ];
@@ -95,7 +95,6 @@ async function waitForDeliveryStatus(phoneValue, purpose, role, expected) {
   }
   fail("challenge delivery did not reach " + expected + " for " + purpose + "/" + role);
 }
-
 
 const suffix = crypto.randomBytes(5).toString("hex");
 let phoneCounter = crypto.randomInt(10_000_000, 80_000_000);
@@ -171,13 +170,13 @@ function assertSixDigitCode(value, label) {
 }
 
 function assertEnrollmentToken(value, label) {
-	assert(typeof value === "string" && /^[A-Za-z0-9_-]{24,256}$/.test(value), label + " is not a high-entropy enrollment token");
+  assert(typeof value === "string" && /^[A-Za-z0-9_-]{24,256}$/.test(value), label + " is not a high-entropy enrollment token");
 }
 
 function assertTwoDayActivationExpiry(value, label) {
-	const expiresAt = Date.parse(value);
-	const hoursRemaining = (expiresAt - Date.now()) / (60 * 60 * 1000);
-	assert(Number.isFinite(expiresAt) && hoursRemaining > 47.5 && hoursRemaining < 48.5, label + " does not expire after two days");
+  const expiresAt = Date.parse(value);
+  const hoursRemaining = (expiresAt - Date.now()) / (60 * 60 * 1000);
+  assert(Number.isFinite(expiresAt) && hoursRemaining > 47.5 && hoursRemaining < 48.5, label + " does not expire after two days");
 }
 
 function service(token, extra = {}) {
@@ -208,7 +207,6 @@ async function requestChallenge(pathname, body, purpose) {
 await expect("GET", "/identity/health", 200);
 await expect("GET", "/identity/readiness", 200);
 
-// Verification: platform-control service token must be rejected for bootstrap authority
 await expect("POST", "/internal/bootstrap/platform-owner", 403, {
   headers: service(platformToken),
   body: { phoneE164: phone(), password: "Bootstrap-" + suffix + "-Strong-Password" },
@@ -225,12 +223,10 @@ if (!platformOwnerActorId) {
 }
 assert(typeof platformOwnerActorId === "string" && platformOwnerActorId.startsWith("act_"), "platform_owner actorId invalid");
 
-// Retired universal OTP/login routes are unreachable.
 await expect("POST", "/auth/otp/request", 404, { body: { phone: phone(), role: "client" } });
 await expect("POST", "/auth/activate", 404, { body: {} });
 await expect("POST", "/auth/login", 404, { body: {} });
 
-// Customer registration proves phone before actor/credential creation.
 const sharedPhone = phone();
 const customerPassword = "Client-" + suffix + "-Strong-Password";
 const registration = await requestChallenge(
@@ -256,7 +252,6 @@ const actorId = clientPair.identity.subject;
 assert(/^act_/.test(actorId), "actor_id is not neutral");
 assertSession(clientPair, "client", "app-client", actorId);
 
-// Normal customer authentication is phone + password and does not require another challenge.
 const clientLogin = await expect("POST", "/auth/client/login", 200, {
   body: { phone: sharedPhone, password: customerPassword, deviceFingerprint: "device-client-login-" + suffix },
 });
@@ -264,7 +259,6 @@ assertSession(clientLogin, "client", "app-client", actorId);
 await expect("POST", "/auth/managed/state", 404, { body: { phone: sharedPhone, role: "captain" } });
 await expect("POST", "/auth/control-panel/state", 404, { body: { phone: sharedPhone } });
 
-// Duplicate registration is non-enumerating at request time but cannot overwrite the client credential.
 const duplicateRegistration = await requestChallenge(
   "/auth/client/registration/request",
   { phone: sharedPhone },
@@ -279,10 +273,7 @@ await expect("POST", "/auth/client/register", 401, {
   },
 });
 
-// DSH adds managed roles to the same actor without authoring actor_id or credentials.
 const dshAdminActorId = "act_dsh_admin_" + suffix;
-
-// Negative invariant: DSH provisioning without X-Acting-Actor-ID fails closed
 await expect("POST", "/internal/actor-roles/provision", 400, {
   headers: service(dshToken),
   body: { phoneE164: sharedPhone, role: "captain" },
@@ -315,7 +306,6 @@ await expect("POST", "/internal/actor-roles/provision", 403, {
   body: { phoneE164: phone(), role: "platform_owner" },
 });
 
-// DSH provisioning plus phone proof is sufficient for one-time managed enrollment.
 const captainChallenge = await requestChallenge(
   "/auth/managed/activation/request",
   { phone: sharedPhone, role: "captain" },
@@ -361,7 +351,6 @@ await expect("POST", "/internal/operator-enrollment-tokens", 403, {
   body: { phoneE164: sharedPhone, role: "captain" },
 });
 
-// Operator provisioning is a separate role-scoped credential on the same actor.
 const operatorPassword = "Operator-" + suffix + "-Strong-Password";
 const operator = await expect("POST", "/internal/actor-roles/provision", 201, {
   headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
@@ -385,7 +374,6 @@ const operatorActivationChallenge = await requestChallenge(
   "managed_activate",
 );
 
-// Negative test: legacy activationCode field must be rejected as an unknown property
 await expect("POST", "/auth/managed/activate", 400, {
   body: {
     phone: sharedPhone,
@@ -409,7 +397,6 @@ const operatorActivationPair = await expect("POST", "/auth/managed/activate", 20
 });
 assertSession(operatorActivationPair, "operator", "control-panel", actorId);
 
-// Password proof alone returns only a challenge; second factor is required to create an operator session.
 const operatorStart = await requestChallenge(
   "/auth/operator/login/start",
   { phone: sharedPhone, role: "operator", password: operatorPassword },
@@ -426,7 +413,6 @@ const operatorPair = await expect("POST", "/auth/operator/login/complete", 200, 
 });
 assertSession(operatorPair, "operator", "control-panel", actorId);
 
-// A wrong/unknown operator password receives a decoy-shaped start response and cannot complete.
 const unknownOperatorPhone = phone();
 const decoyOperator = await requestChallenge(
   "/auth/operator/login/start",
@@ -442,7 +428,6 @@ await expect("POST", "/auth/operator/login/complete", 401, {
   },
 });
 
-// Managed activation cannot be repeated as ordinary login.
 await expect("POST", "/auth/managed/activate", 401, {
   body: {
     phone: sharedPhone,
@@ -464,14 +449,12 @@ assert(
 );
 assert(deliveryStatus(sharedPhone, "managed_activate", "captain") === "suppressed", "repeated managed enrollment was not suppressed");
 
-// Explicit DSH re-enrollment is the only path that reopens managed activation.
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/reenrollment",
   403,
   { headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }) },
 );
-// Negative invariant: DSH re-enrollment without X-Acting-Actor-ID fails closed
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/reenrollment",
@@ -514,7 +497,6 @@ const reactivatedCaptain = await expect("POST", "/auth/managed/activate", 200, {
 });
 assertSession(reactivatedCaptain, "captain", "app-captain", actorId);
 
-// Managed/operator recovery replaces the credential, revokes role sessions, and never creates a session.
 const operatorRecovery = await requestChallenge(
   "/auth/managed/recovery/request",
   { phone: sharedPhone, role: "operator" },
@@ -551,13 +533,11 @@ const operatorRoleBeforeReset = await expect(
 const opCredVersion = operatorRoleBeforeReset.credentialVersion;
 assert(typeof opCredVersion === "number" && opCredVersion >= 1, "operator credential version missing or invalid");
 
-// Negative invariant: missing X-Expected-Version -> 400
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 400, {
   headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
   body: { password: resetOperatorPassword },
 });
 
-// Negative invariant: stale X-Expected-Version -> 409
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 409, {
   headers: service(platformToken, {
     "X-Acting-Actor-ID": platformOwnerActorId,
@@ -566,7 +546,6 @@ await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/opera
   body: { password: resetOperatorPassword },
 });
 
-// Negative invariant: missing X-Acting-Actor-ID -> 400
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 400, {
   headers: service(platformToken, {
     "X-Expected-Version": String(opCredVersion),
@@ -574,7 +553,6 @@ await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/opera
   body: { password: resetOperatorPassword },
 });
 
-// Valid operator reset with matching expected version and acting actor -> 204
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
   headers: service(platformToken, {
     "X-Acting-Actor-ID": platformOwnerActorId,
@@ -583,7 +561,6 @@ await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/opera
   body: { password: resetOperatorPassword },
 });
 
-// Concurrency invariant: credentialVersion incremented
 const operatorRoleAfterReset = await expect(
   "GET",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/operator",
@@ -598,7 +575,6 @@ await expect("POST", "/auth/operator/login/complete", 401, {
   body: { phone: sharedPhone, role: "operator", code: staleOperatorStart.code, deviceFingerprint: "device-operator-stale-" + suffix },
 });
 
-// Client recovery is a distinct phone-proof path and revokes only client sessions.
 const recoveryPhone = phone();
 const recoveryOldPassword = "Recovery-" + suffix + "-Old-Password";
 const recoveryRegistration = await requestChallenge(
@@ -645,16 +621,14 @@ await expect("POST", "/auth/client/login", 200, {
   },
 });
 
-// Unknown managed-role requests are non-enumerating but their decoy proof cannot grant a role/session.
 const unknownCaptainPhone = phone();
-const unknownCaptainChallenge = await requestChallenge(
+await requestChallenge(
   "/auth/managed/activation/request",
   { phone: unknownCaptainPhone, role: "captain" },
   "managed_activate",
 );
 assert(deliveryStatus(unknownCaptainPhone, "managed_activate", "captain") === "suppressed", "unknown managed enrollment was not suppressed");
 
-// Provider outage must not become an actor/role oracle. Public acknowledgement is independent of delivery outcome.
 const outageKnownPhone = phone();
 const outageUnknownPhone = phone();
 await expect("POST", "/internal/actor-roles/provision", 201, {
@@ -663,12 +637,12 @@ await expect("POST", "/internal/actor-roles/provision", 201, {
 });
 compose("stop", "mailpit");
 try {
-  const knownOutage = await requestChallenge(
+  await requestChallenge(
     "/auth/managed/activation/request",
     { phone: outageKnownPhone, role: "captain" },
     "managed_activate",
   );
-  const unknownOutage = await requestChallenge(
+  await requestChallenge(
     "/auth/managed/activation/request",
     { phone: outageUnknownPhone, role: "captain" },
     "managed_activate",
@@ -687,19 +661,15 @@ assert(
   "unknown provider outcome was blindly retried after provider recovery",
 );
 
-// Start the independent abuse-budget slice from a fresh source identity. The actor, credentials,
-// and persisted state remain the same; this prevents the long semantic journey from self-triggering
-// the production source budget before the dedicated lockout assertions run.
 runtimeSourceIp = "198.19.0." + crypto.randomInt(2, 254);
 
-// Challenge attempt locking is exact.
 const lockedPhone = phone();
 const locked = await requestChallenge(
   "/auth/client/registration/request",
   { phone: lockedPhone },
   "client_register",
 );
-  const wrongCode = locked.code === "000000" ? "000001" : "000000";
+const wrongCode = locked.code === "000000" ? "000001" : "000000";
 for (let attempt = 0; attempt < 5; attempt++) {
   await expect("POST", "/auth/client/register", 401, {
     body: {
@@ -719,7 +689,6 @@ await expect("POST", "/auth/client/register", 401, {
   },
 });
 
-// Reissuing a challenge does not reset the cumulative phone/source attempt budget.
 const budgetPhone = phone();
 for (let round = 0; round < 3; round++) {
   const reissued = await requestChallenge(
@@ -741,7 +710,6 @@ for (let round = 0; round < 3; round++) {
 }
 await expect("POST", "/auth/client/registration/request", 429, { body: { phone: budgetPhone } });
 
-// Refresh remains device-bound, rotates atomically, and detects historical replay.
 const refreshPair = await expect("POST", "/auth/client/login", 200, {
   body: { phone: sharedPhone, password: customerPassword, deviceFingerprint: "device-refresh-" + suffix },
 });
@@ -774,7 +742,6 @@ await expect("POST", "/auth/refresh", 401, {
 });
 await expect("GET", "/auth/session", 401, { token: rotated.accessToken });
 
-// Operator password reset revokes only operator sessions and keeps other roles alive.
 const newOperatorPassword = operatorPassword + "-Reset";
 const opRoleForSessionRevoke = await expect(
   "GET",
@@ -794,7 +761,6 @@ await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: reactivatedCaptain.accessToken });
 
-// Role disable requires X-Acting-Actor-ID and X-Expected-Version
 const captainRoleBeforeDisable = await expect(
   "GET",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain",
@@ -804,23 +770,18 @@ const captainRoleBeforeDisable = await expect(
 const captainVersion = captainRoleBeforeDisable.roleVersion;
 assert(typeof captainVersion === "number" && captainVersion >= 1, "captain roleVersion invalid: " + JSON.stringify(captainRoleBeforeDisable));
 
-// Negative invariant: missing X-Acting-Actor-ID -> 400
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable",
   400,
   { headers: service(dshToken, { "X-Expected-Version": String(captainVersion) }) },
 );
-
-// Negative invariant: missing X-Expected-Version -> 400
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable",
   400,
   { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }) },
 );
-
-// Valid disable -> 204
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable",
@@ -829,8 +790,6 @@ await expect(
 );
 await expect("GET", "/auth/session", 401, { token: reactivatedCaptain.accessToken });
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
-
-// Valid enable -> 204
 await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/enable",
@@ -838,7 +797,6 @@ await expect(
   { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Expected-Version": String(captainVersion + 1) }) },
 );
 
-// Identity-wide security disable remains distinct and invalidates every remaining role session.
 const operatorAfterResetStart = await requestChallenge(
   "/auth/operator/login/start",
   { phone: sharedPhone, role: "operator", password: newOperatorPassword },
@@ -855,8 +813,6 @@ const operatorAfterReset = await expect("POST", "/auth/operator/login/complete",
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 403, {
   headers: service(dshToken),
 });
-
-// Negative invariant assertions: missing acting actor, forbidden aliases, invalid version, version conflict
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
   headers: service(platformToken, { "X-Expected-Version": "1", "X-Reason": "negative test missing actor" }),
 });

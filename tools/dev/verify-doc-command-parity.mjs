@@ -95,6 +95,7 @@ function resolveRepositoryPath(candidate) {
 }
 
 const failures = [];
+const nonAuthoritativeCommandDrift = [];
 const documentationFiles = [
   ...collectMarkdownFiles(docsRoot),
   path.join(repoRoot, "README.md"),
@@ -106,7 +107,9 @@ const documentationFiles = [
 
 for (const file of documentationFiles) {
   const relative = displayPath(file);
-  const lines = fs.readFileSync(file, "utf8").split("\n");
+  const body = fs.readFileSync(file, "utf8");
+  const lines = body.split("\n");
+  const executionAuthorityNone = relative.startsWith("knowledge:") && /(?:^|\n)EXECUTION_AUTHORITY:\s*NONE\s*(?:\n|$)/.test(body);
 
   lines.forEach((line, index) => {
     const lineNumber = index + 1;
@@ -146,10 +149,13 @@ for (const file of documentationFiles) {
       const command = match[1];
       if (pnpmBuiltins.has(command)) continue;
       if (!scripts.has(command)) {
-        failures.push(
-          relative + ":" + lineNumber +
-            " -> undocumented root command authority: pnpm " + command,
-        );
+        const finding = relative + ":" + lineNumber +
+          " -> command not present in current repository: pnpm " + command;
+        if (executionAuthorityNone) {
+          nonAuthoritativeCommandDrift.push(finding);
+        } else {
+          failures.push(finding);
+        }
       }
     }
   });
@@ -163,4 +169,8 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
+for (const drift of [...new Set(nonAuthoritativeCommandDrift)].sort()) {
+  console.warn("DOC_NONAUTHORITATIVE_COMMAND_DRIFT " + drift);
+}
 console.log("DOC_COMMAND_PARITY=PASS");
+console.log("DOC_NONAUTHORITATIVE_COMMAND_DRIFT_COUNT=" + new Set(nonAuthoritativeCommandDrift).size);

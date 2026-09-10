@@ -45,8 +45,8 @@ const identityPort = env.SAMRIM_IDENTITY_PORT;
 const identityBase = identityPort ? `http://127.0.0.1:${identityPort}` : null;
 const identityBootstrapToken = env.IDENTITY_PLATFORM_BOOTSTRAP_SECRET;
 const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
-const composeFile = path.join(repoRoot, "infra/local/compose/compose.integration.yaml");
-const composeArgs = ["compose", "--project-name", "samrim-integration", "--env-file", envPath, "-f", composeFile];
+const composeFile = path.join(repoRoot, "infra/local/compose/compose.yaml");
+const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", composeFile];
 
 function compose(...args) {
   return execFileSync("docker", [...composeArgs, ...args], { encoding: "utf8" });
@@ -166,7 +166,6 @@ await expect("POST", "/dsh/managed-roles/provision", 401, {
 });
 
 console.log("3. Verifying DSH human attribution fail-closed invariants...");
-// Missing X-Acting-Actor-ID must return 400
 await expect("POST", "/dsh/managed-roles/provision", 400, {
   token: dshToken,
   body: { phoneE164: testPhone, role: "captain" },
@@ -281,14 +280,12 @@ assert(typeof roleStatus.roleVersion === "number" && roleStatus.roleVersion >= 1
 const currentVersion = roleStatus.roleVersion;
 
 console.log("6. Verifying DSH role lifecycle OCC concurrency invariants...");
-// Missing X-Expected-Version must return 400
 await expect("POST", "/dsh/managed-roles/disable", 400, {
   token: dshToken,
   headers: { "X-Acting-Actor-ID": actingAdminId },
   body: { phoneE164: testPhone, role: "captain", reason: "testing missing version" },
 });
 
-// Stale X-Expected-Version must return 409
 await expect("POST", "/dsh/managed-roles/disable", 409, {
   token: dshToken,
   headers: {
@@ -298,7 +295,6 @@ await expect("POST", "/dsh/managed-roles/disable", 409, {
   body: { phoneE164: testPhone, role: "captain", reason: "testing conflict" },
 });
 
-// Missing X-Acting-Actor-ID on disable must return 400
 await expect("POST", "/dsh/managed-roles/disable", 400, {
   token: dshToken,
   headers: { "X-Expected-Version": String(currentVersion) },
@@ -315,7 +311,6 @@ await expect("POST", "/dsh/managed-roles/disable", 204, {
   body: { phoneE164: testPhone, role: "captain", reason: "operational freeze test" },
 });
 
-// Readback after disable
 const disabledStatus = await expect(
   "GET",
   `/dsh/managed-roles/status?phoneE164=${encodeURIComponent(testPhone)}&role=captain`,
@@ -335,7 +330,6 @@ await expect("POST", "/dsh/managed-roles/enable", 204, {
   body: { phoneE164: testPhone, role: "captain", reason: "operational unfreeze test" },
 });
 
-// Readback after enable
 const enabledStatus = await expect(
   "GET",
   `/dsh/managed-roles/status?phoneE164=${encodeURIComponent(testPhone)}&role=captain`,
@@ -345,13 +339,11 @@ const enabledStatus = await expect(
 assert(enabledStatus.enabled === true, "role was not re-enabled");
 
 console.log("9. Authorizing reenrollment via DSH...");
-// Missing acting actor on reenrollment must return 400
 await expect("POST", "/dsh/managed-roles/reenrollment", 400, {
   token: dshToken,
   body: { phoneE164: testPhone, role: "captain" },
 });
 
-// Valid reenrollment
 await expect("POST", "/dsh/managed-roles/reenrollment", 204, {
   token: dshToken,
   headers: { "X-Acting-Actor-ID": actingAdminId },
