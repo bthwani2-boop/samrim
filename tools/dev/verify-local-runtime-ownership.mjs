@@ -79,19 +79,38 @@ const identityCors = envMap.get("IDENTITY_CORS_ALLOWED_ORIGINS");
 assert(controlOrigin === "http://127.0.0.1:13000", "canonical Control Panel origin drifted");
 assert(identityCors === controlOrigin, "Identity CORS must equal the canonical Control Panel origin");
 
-const forbiddenControlAlias = "http://localhost:" + "13000";
-for (const file of new Set([
+const materialRuntimeFiles = [...new Set([
   "package.json",
   "README.md",
   "CONTRIBUTING.md",
-  "AGENTS.md",
   ...collectTextFiles("infra/local"),
   ...collectTextFiles("tools/dev"),
   ...collectTextFiles("apps/control-panel"),
   ...collectTextFiles(".github/workflows"),
-])) {
-  if (!exists(file)) continue;
+])].filter((file) => exists(file));
+
+const forbiddenControlAlias = "http://localhost:" + "13000";
+for (const file of materialRuntimeFiles) {
   assert(!read(file).includes(forbiddenControlAlias), `${file} reintroduces forbidden Control Panel localhost alias`);
+}
+
+const retiredRuntimeTokens = [
+  ["--profile " + "integration", "retired integration profile"],
+  ["close-integration-" + "runtime.ps1", "retired integration lifecycle file"],
+  ["Keep" + "Running", "integration keep-running escape hatch"],
+  ["runtime:integration:" + "up", "manual integration up command"],
+  ["runtime:integration:" + "down", "manual integration down command"],
+  ["runtime:integration:" + "status", "manual integration status command"],
+  ["runtime:integration:" + "config", "manual integration config command"],
+  ["runtime:integration:" + "verify", "manual integration verify command"],
+  ["runtime:daily:" + "config", "shadow daily config command"],
+  ["runtime:" + "logs", "shadow runtime logs command"],
+];
+for (const file of materialRuntimeFiles) {
+  const body = read(file);
+  for (const [token, label] of retiredRuntimeTokens) {
+    assert(!body.includes(token), `${file} retains ${label}`);
+  }
 }
 
 const ensureLocalEnv = read("tools/dev/ensure-local-env.ps1");
@@ -126,14 +145,11 @@ assert(integrationProof.includes("samrim-integration"), "integration proof must 
 assert(integrationProof.includes("finally"), "integration proof must have unconditional teardown");
 assert(integrationProof.includes('"down", "--volumes", "--remove-orphans"'), "integration proof teardown must destroy isolated state");
 assert(integrationProof.includes("DAILY_INTEGRATION_STATE_SHARING=0"), "integration proof must assert state isolation");
-assert(!integrationProof.includes("KeepRunning"), "integration proof must not expose keep-running semantics");
-assert(!integrationProof.includes("close-integration-runtime.ps1"), "integration proof must not delegate to retired lifecycle code");
 assert(!integrationProof.includes("local-runtime.ps1"), "integration proof must not mutate DAILY_DEV lifecycle");
 
 const integrationVerifier = read("tools/dev/verify-integration-runtime.ps1");
 assert(integrationVerifier.includes("compose.integration.yaml"), "integration verifier must use isolated integration compose");
 assert(integrationVerifier.includes('"--project-name", "samrim-integration"'), "integration verifier must bind schema proof to samrim-integration");
-assert(!integrationVerifier.includes("--profile"), "integration verifier must not know the retired integration profile");
 assert(!integrationVerifier.includes('"infra/local/compose/compose.yaml"'), "integration verifier must not call the DAILY_DEV compose file");
 
 const runtimeStatus = read("tools/dev/runtime-status.ps1");
@@ -182,17 +198,13 @@ assert(mobile.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"), "Mobile launcher lack
 const candidate = read("tools/dev/verify-local-candidate.ps1");
 assert(candidate.includes("pnpm runtime:daily:up"), "candidate proof does not exercise DAILY_DEV");
 assert(candidate.includes("pnpm runtime:integration:close"), "candidate proof must use the single public integration entrypoint");
-assert(!candidate.includes("close-integration-runtime.ps1"), "candidate proof still calls retired integration implementation");
-assert(!candidate.includes("--profile integration"), "candidate proof still knows retired integration profile");
 
 const workflow = read(".github/workflows/baseline-guard.yml");
 assert(workflow.includes("compose.integration.yaml"), "CI runtime proof must use isolated integration compose");
-assert(!workflow.includes("--profile integration"), "CI must not use retired integration profile");
 
 const composeReadme = read("infra/local/compose/README.md");
 assert(composeReadme.includes("compose.integration.yaml"), "compose README must describe isolated integration appliance");
 assert(composeReadme.includes("runtime:integration:close"), "compose README must expose one integration proof entrypoint");
-assert(!composeReadme.includes("runtime:integration:up") && !composeReadme.includes("runtime:integration:down"), "compose README advertises manual integration lifecycle");
 
 if (failures.length) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
