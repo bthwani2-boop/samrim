@@ -1,11 +1,13 @@
+#Requires -Version 7.4
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string] $App,
+    [ValidateSet('app-client', 'app-partner', 'app-captain', 'app-field')]
+    [string]$App,
 
-    [string] $DeviceSerial = $env:BTHWANI_ADB_SERIAL,
+    [string]$DeviceSerial = $env:BTHWANI_ADB_SERIAL,
 
-    [switch] $ClearCache
+    [switch]$ClearCache
 )
 
 Set-StrictMode -Version Latest
@@ -16,10 +18,13 @@ $AppRoot = Join-Path $RepoRoot ("apps\" + $App)
 $PackageJson = Join-Path $AppRoot 'package.json'
 $ProjectJson = Join-Path $AppRoot 'project.json'
 $MobileConfig = Join-Path $AppRoot 'mobile.config.json'
+$EnvPath = Join-Path $RepoRoot 'infra\local\compose\.env'
+$EnsureLocalEnv = Join-Path $RepoRoot 'tools\dev\ensure-local-env.ps1'
+$integrationProject = 'samrim-integration'
 
-foreach ($required in @($PackageJson, $ProjectJson, $MobileConfig)) {
+foreach ($required in @($PackageJson, $ProjectJson, $MobileConfig, $EnsureLocalEnv)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw "Requested mobile host is not a discovered materialized mobile app: $required"
+        throw "Mobile runtime prerequisite is missing: $required"
     }
 }
 
@@ -27,15 +32,20 @@ $project = Get-Content -LiteralPath $ProjectJson -Raw | ConvertFrom-Json
 if (@($project.tags) -notcontains 'type:app') {
     throw "$App is not tagged as type:app."
 }
+if ([string]$project.root -ne ("apps/" + $App)) {
+    throw "$App project.root does not match apps/$App."
+}
 
 $package = Get-Content -LiteralPath $PackageJson -Raw | ConvertFrom-Json
-$startScript = [string] $package.scripts.start
-if ([string]::IsNullOrWhiteSpace($startScript)) {
-    throw "$App package.json does not define scripts.start."
+if ($null -ne $package.scripts.start) {
+    throw "$App package.json exposes a forbidden secondary local start authority. Use the repository root command only."
 }
 
 if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
     throw 'pnpm is required.'
+}
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    throw "Docker CLI is required to prove DAILY_DEV ownership before starting $App."
 }
 
 $Unmerged = @(& git -C $RepoRoot diff --name-only --diff-filter=U)
@@ -46,11 +56,102 @@ if ($Unmerged.Count -gt 0) {
     throw ("Repository contains unresolved merge paths: " + ($Unmerged -join ', '))
 }
 
+& $EnsureLocalEnv
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) {
+    throw 'Canonical local runtime environment reconciliation failed.'
+}
+
+function Read-EnvMap([string]$Path) {
+    $map = @{}
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
+        $parts = $trimmed.Split('=', 2)
+        if ($parts.Count -ne 2) {
+            throw "Malformed local runtime environment line in ${Path}: $line"
+        }
+        $name = $parts[0].Trim()
+        if ($map.ContainsKey($name)) {
+            throw "Duplicate local runtime environment key '$name' in ${Path}."
+        }
+        $map[$name] = $parts[1].Trim()
+    }
+    return $map
+}
+
+function Require-EnvValue([hashtable]$Map, [string]$Name) {
+    if (-not $Map.ContainsKey($Name) -or [string]::IsNullOrWhiteSpace([string]$Map[$Name])) {
+        throw "Required mobile runtime setting is missing: $Name"
+    }
+    return [string]$Map[$Name]
+}
+
+function Require-TcpPort([hashtable]$Map, [string]$Name) {
+    $raw = Require-EnvValue -Map $Map -Name $Name
+    $value = 0
+    if (-not [int]::TryParse($raw, [ref]$value) -or $value -lt 1 -or $value -gt 65535) {
+        throw "Invalid TCP port in $Name: $raw"
+    }
+    return $value
+}
+
+$envMap = Read-EnvMap -Path $EnvPath
+if ((Require-EnvValue -Map $envMap -Name 'BTHWANI_ENV') -ne 'development') {
+    throw 'Mobile DAILY_DEV runtime requires BTHWANI_ENV=development.'
+}
+
+$appToken = ($App -replace '[^A-Za-z0-9]', '_').ToUpperInvariant()
+$metroPortKey = "SAMRIM_${appToken}_METRO_PORT"
+$metroPort = Require-TcpPort -Map $envMap -Name $metroPortKey
+$identityPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT'
+$dshPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT'
+
+$duplicatePorts = @(
+    @($metroPort, $identityPort, $dshPort) |
+        Group-Object |
+        Where-Object { $_.Count -gt 1 }
+)
+if ($duplicatePorts.Count -gt 0) {
+    throw "Mobile runtime ports must be distinct: $metroPortKey=$metroPort SAMRIM_IDENTITY_PORT=$identityPort SAMRIM_DSH_PORT=$dshPort"
+}
+
+& docker version *> $null
+if ($LASTEXITCODE -ne 0) {
+    throw "Docker daemon is required to prove DAILY_DEV ownership before starting $App."
+}
+
+$integrationContainers = @(
+    & docker ps -a `
+        --filter "label=com.docker.compose.project=$integrationProject" `
+        --format '{{.ID}}' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ }
+)
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect Integration containers before starting $App."
+}
+
+$integrationVolumes = @(
+    & docker volume ls `
+        --filter "label=com.docker.compose.project=$integrationProject" `
+        --format '{{.Name}}' |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { $_ }
+)
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect Integration volumes before starting $App."
+}
+
+if ($integrationContainers.Count -gt 0 -or $integrationVolumes.Count -gt 0) {
+    throw "RUNTIME_OWNERSHIP_CONFLICT=FAIL component=$App integration_containers=$($integrationContainers.Count) integration_volumes=$($integrationVolumes.Count). DAILY_DEV host runtimes require zero Integration residue."
+}
+Write-Host "DAILY_HOST_RUNTIME_OWNERSHIP=PASS component=$App integration_containers=0 integration_volumes=0"
+
 function Resolve-AdbTargetSerial {
-    param([string] $RequestedSerial)
+    param([string]$RequestedSerial)
 
     if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
-        return ""
+        return ''
     }
 
     $serials = @(
@@ -67,107 +168,80 @@ function Resolve-AdbTargetSerial {
         return $RequestedSerial
     }
 
-    if ($serials.Count -eq 0) {
-        return ""
-    }
+    if ($serials.Count -eq 0) { return '' }
     if ($serials.Count -gt 1) {
-        throw ("Multiple ADB devices are attached; set BTHWANI_ADB_SERIAL or -DeviceSerial explicitly. Devices: " + ($serials -join ", "))
+        throw ("Multiple ADB devices are attached; set BTHWANI_ADB_SERIAL or -DeviceSerial explicitly. Devices: " + ($serials -join ', '))
     }
     return $serials[0]
 }
 
-$Ports = @{
-    'app-client' = 18101
-    'app-partner' = 18102
-    'app-captain' = 18103
-    'app-field' = 18104
-}
-$metroPort = [int] $Ports[$App]
-
-function Get-PortOwnerSummary([object[]] $Listeners) {
-    $ownerPids = @(
-        $Listeners |
-            Select-Object -ExpandProperty OwningProcess -Unique
-    )
+function Get-PortOwnerSummary([object[]]$Listeners) {
+    $ownerPids = @($Listeners | Select-Object -ExpandProperty OwningProcess -Unique)
     $owners = foreach ($ownerPid in $ownerPids) {
-        $process = Get-Process -Id ([int] $ownerPid) -ErrorAction SilentlyContinue
-        if ($null -eq $process) {
-            "PID=$ownerPid (exited)"
-        }
-        else {
-            "PID=$ownerPid $($process.ProcessName)"
-        }
+        $process = Get-Process -Id ([int]$ownerPid) -ErrorAction SilentlyContinue
+        if ($null -eq $process) { "PID=$ownerPid (exited)" }
+        else { "PID=$ownerPid $($process.ProcessName)" }
     }
-    if ($owners.Count -eq 0) {
-        return "unknown process"
-    }
-    return ($owners -join ", ")
+    if ($owners.Count -eq 0) { return 'unknown process' }
+    return ($owners -join ', ')
 }
 
 function Assert-MetroPortAvailable {
     $listeners = @(
         Get-NetTCPConnection -State Listen -LocalPort $metroPort -ErrorAction SilentlyContinue |
-            Where-Object { $_.LocalAddress -in @("127.0.0.1", "0.0.0.0") }
+            Where-Object { $_.LocalAddress -in @('127.0.0.1', '0.0.0.0', '::') }
     )
-    if ($listeners.Count -eq 0) {
-        return
-    }
+    if ($listeners.Count -eq 0) { return }
 
     $owners = Get-PortOwnerSummary -Listeners $listeners
-    throw "RUNTIME_OWNERSHIP_CONFLICT=FAIL app=$App port=$metroPort owner=$owners. The mobile launcher requires exclusive Metro ownership and will not accept a pre-existing HTTP endpoint as success. Stop the owning process before retrying."
-}
-
-$adbSerial = Resolve-AdbTargetSerial -RequestedSerial $DeviceSerial
-if (-not [string]::IsNullOrWhiteSpace($adbSerial)) {
-    if ($metroPort) {
-        & adb -s $adbSerial reverse "tcp:$metroPort" "tcp:$metroPort" *> $null
-        if ($LASTEXITCODE -ne 0) {
-            throw "ADB reverse failed for $adbSerial port $metroPort."
-        }
-    }
-
-    & adb -s $adbSerial reverse "tcp:18082" "tcp:18082" *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "ADB reverse failed for $adbSerial port 18082."
-    }
-
-    & adb -s $adbSerial reverse "tcp:58080" "tcp:58080" *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "ADB reverse failed for $adbSerial port 58080."
-    }
-
-    Write-Host "ADB_TARGET=PASS serial=$adbSerial app=$App"
-    Write-Host "ADB_REVERSE=READY serial=$adbSerial ports=$metroPort,18082,58080"
+    throw "RUNTIME_OWNERSHIP_CONFLICT=FAIL app=$App port=$metroPort owner=$owners. The canonical mobile launcher requires exclusive Metro ownership."
 }
 
 Assert-MetroPortAvailable
 
-$nodeOptions = [Environment]::GetEnvironmentVariable("NODE_OPTIONS", "Process")
-if ([string]::IsNullOrWhiteSpace($nodeOptions)) {
-    $nodeOptions = "--dns-result-order=ipv4first"
+$adbSerial = Resolve-AdbTargetSerial -RequestedSerial $DeviceSerial
+if (-not [string]::IsNullOrWhiteSpace($adbSerial)) {
+    foreach ($port in @($metroPort, $identityPort, $dshPort)) {
+        & adb -s $adbSerial reverse "tcp:$port" "tcp:$port" *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw "ADB reverse failed for $adbSerial port $port."
+        }
+    }
+
+    Write-Host "ADB_TARGET=PASS serial=$adbSerial app=$App"
+    Write-Host "ADB_REVERSE=READY serial=$adbSerial ports=$metroPort,$identityPort,$dshPort source=canonical-env"
 }
-elseif ($nodeOptions -match "(?i)(^|\s)--dns-result-order=\S+") {
+
+$nodeOptions = [Environment]::GetEnvironmentVariable('NODE_OPTIONS', 'Process')
+if ([string]::IsNullOrWhiteSpace($nodeOptions)) {
+    $nodeOptions = '--dns-result-order=ipv4first'
+}
+elseif ($nodeOptions -match '(?i)(^|\s)--dns-result-order=\S+') {
     $nodeOptions = [regex]::Replace(
         $nodeOptions,
-        "(?i)(^|\s)--dns-result-order=\S+",
+        '(?i)(^|\s)--dns-result-order=\S+',
         '$1--dns-result-order=ipv4first'
     )
 }
 else {
     $nodeOptions = "$nodeOptions --dns-result-order=ipv4first"
 }
-[Environment]::SetEnvironmentVariable("NODE_OPTIONS", $nodeOptions, "Process")
-Write-Host "NODE_DNS_ORDER=ipv4first"
+[Environment]::SetEnvironmentVariable('NODE_OPTIONS', $nodeOptions, 'Process')
+Write-Host 'NODE_DNS_ORDER=ipv4first'
 
-$Args = @(
+$expoArgs = @(
     '--dir', $AppRoot,
-    'run', 'start'
+    'exec', 'expo',
+    'start',
+    '--dev-client',
+    '--localhost',
+    '--port', [string]$metroPort
 )
 if ($ClearCache) {
-    $Args += @('--', '--clear')
+    $expoArgs += '--clear'
 }
 
-Write-Host ("Starting " + $App + " from " + $AppRoot)
-Write-Host ("Invocation source: " + $PackageJson + " scripts.start")
-& pnpm @Args
+Write-Host "MOBILE_RUNTIME_AUTHORITY=PASS app=$App metro_port=$metroPort source=canonical-env"
+Write-Host "Starting $App from $AppRoot"
+& pnpm @expoArgs
 exit $LASTEXITCODE

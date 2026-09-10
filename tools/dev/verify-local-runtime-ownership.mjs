@@ -71,6 +71,7 @@ assert(
 );
 
 assert(!exists("tools/dev/close-integration-runtime.ps1"), "retired close-integration-runtime.ps1 must not exist");
+assert(!exists("tools/dev/install-powershell-pnpm-router.ps1"), "retired global PowerShell pnpm router must not exist");
 
 const envExample = read("infra/local/compose/.env.example");
 const envMap = parseEnv(envExample, ".env.example");
@@ -98,6 +99,8 @@ for (const file of materialRuntimeFiles) {
 const retiredRuntimeTokens = [
   ["--pro" + "file", "retired Docker Compose profile authority"],
   ["close-integration-" + "runtime.ps1", "retired integration lifecycle file"],
+  ["install-powershell-" + "pnpm-router.ps1", "retired global PowerShell pnpm router"],
+  ["BTHWANI PNPM " + "ROUTER", "retired global PowerShell pnpm router marker"],
   ["Keep" + "Running", "integration keep-running escape hatch"],
   ["runtime:integration:" + "up", "manual integration up command"],
   ["runtime:integration:" + "down", "manual integration down command"],
@@ -201,7 +204,15 @@ assert(/error:\s*\{\s*code:\s*"FORBIDDEN_CROSS_ORIGIN"/m.test(proxy), "cross-ori
 
 const mobile = read("tools/mobile/start-mobile-runtime.ps1");
 assert(!mobile.includes("METRO_ALREADY_READY=PASS"), "Mobile launcher accepts unknown Metro provenance");
-assert(mobile.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"), "Mobile launcher lacks fail-closed Metro ownership");
+assert(mobile.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"), "Mobile launcher lacks fail-closed Metro/integration ownership");
+assert(mobile.includes("samrim-integration"), "Mobile launcher must reject Integration residue before DAILY_DEV startup");
+assert(mobile.includes("SAMRIM_${appToken}_METRO_PORT"), "Mobile launcher must derive Metro port from canonical env");
+assert(mobile.includes("'exec', 'expo'"), "Mobile launcher must directly own Expo startup");
+assert(mobile.includes("forbidden secondary local start authority"), "Mobile launcher must reject package-level start authority if it reappears");
+assert(!mobile.includes("'run', 'start'") && !mobile.includes('"run", "start"'), "Mobile launcher must not delegate Expo startup to package scripts");
+for (const retiredPort of ["18101", "18102", "18103", "18104", "18082", "58080"]) {
+  assert(!mobile.includes(retiredPort), `Mobile launcher hard-codes runtime port ${retiredPort} instead of deriving canonical env`);
+}
 
 const candidate = read("tools/dev/verify-local-candidate.ps1");
 assert(candidate.includes("pnpm runtime:daily:up"), "candidate proof does not exercise DAILY_DEV");
@@ -232,6 +243,8 @@ console.log("INTEGRATION_KEEP_RUNNING_PATHS=0");
 console.log("DAILY_INTEGRATION_STATE_SHARING=0");
 console.log("INTEGRATION_RUNTIME_RESIDUE_POLICY=ZERO");
 console.log("DOCKER_DOMAIN_SERVICES_DURING_DAILY=0");
+console.log("MOBILE_SHADOW_RUNTIME_ENTRYPOINTS=0");
+console.log("GLOBAL_PNPM_ROUTER_PATHS=0");
 console.log("SHADOW_RUNTIME_COMMANDS=0");
 console.log("SHADOW_CONFIG_AUTHORITY=0");
 console.log("KNOWN_RUNTIME_DRIFT_PATHS=0");
