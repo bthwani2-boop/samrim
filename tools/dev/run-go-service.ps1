@@ -111,6 +111,85 @@ else {
     $inheritedPort
 }
 
+$readinessPath = switch ($Service) {
+    "identity" { "/identity/readiness" }
+    "dsh" { "/dsh/readiness" }
+}
+$readinessUri = "http://127.0.0.1:${runtimePort}${readinessPath}"
+
+function Get-PortOwnerSummary([object[]] $Listeners) {
+    $ownerPids = @(
+        $Listeners |
+            Select-Object -ExpandProperty OwningProcess -Unique
+    )
+    $owners = foreach ($ownerPid in $ownerPids) {
+        $process = Get-Process -Id ([int] $ownerPid) -ErrorAction SilentlyContinue
+        if ($null -eq $process) {
+            "PID=$ownerPid (exited)"
+        }
+        else {
+            "PID=$ownerPid $($process.ProcessName)"
+        }
+    }
+    if ($owners.Count -eq 0) {
+        return "unknown process"
+    }
+    return ($owners -join ", ")
+}
+
+function Test-ExistingServiceReady {
+    $listeners = @(
+        Get-NetTCPConnection -State Listen -LocalPort ([int] $runtimePort) -ErrorAction SilentlyContinue
+    )
+    if ($listeners.Count -eq 0) {
+        return $false
+    }
+
+    $response = $null
+    $requestError = $null
+    try {
+        $response = Invoke-WebRequest `
+            -Uri $readinessUri `
+            -Method Get `
+            -TimeoutSec 3 `
+            -SkipHttpErrorCheck
+    }
+    catch {
+        $requestError = $_.Exception.Message
+    }
+
+    $payload = $null
+    if ($null -ne $response) {
+        try { $payload = $response.Content | ConvertFrom-Json } catch {}
+    }
+    if (
+        $null -ne $response -and
+        $response.StatusCode -eq 200 -and
+        $null -ne $payload -and
+        [string] $payload.service -eq $Service -and
+        [string] $payload.status -eq "ok"
+    ) {
+        Write-Host "SERVICE_ALREADY_READY=PASS service=$Service port=$runtimePort"
+        return $true
+    }
+
+    $observed = if ($null -ne $response) {
+        "status=$($response.StatusCode) body=$($response.Content.Trim())"
+    }
+    elseif ($requestError) {
+        "request failed: $requestError"
+    }
+    else {
+        "no readiness response"
+    }
+    $owners = Get-PortOwnerSummary -Listeners $listeners
+    throw "Cannot start ${Service}: port $runtimePort is already occupied by $owners, and $readinessUri is not a healthy ${Service} endpoint ($observed). Stop the owning process or choose another port."
+}
+
+if (Test-ExistingServiceReady) {
+    exit 0
+}
+
 $managedNames = [System.Collections.Generic.HashSet[string]]::new(
     [StringComparer]::OrdinalIgnoreCase
 )

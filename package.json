@@ -15,7 +15,6 @@
     "scr": "scrcpy --tcpip",
     "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
     "brand:check": "node tools/mobile/verify-brand-assets.mjs",
-    "all": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/start-all.ps1",
     "control": "pnpm --dir apps/control-panel dev",
     "dsh": "nx run dsh:serve",
     "identity": "nx run identity:serve",

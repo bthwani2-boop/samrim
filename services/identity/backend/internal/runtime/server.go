@@ -107,11 +107,15 @@ func Run(_, _, defaultPort string) error {
 	server := &http.Server{Addr: net.JoinHostPort(cfg.listenHost, cfg.port), Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return err
+	}
 	serverErrCh := make(chan error, 1)
 	deliveryErrCh := make(chan error, 1)
 	go func() {
 		log.Printf("identity API listening on %s", server.Addr)
-		serverErrCh <- server.ListenAndServe()
+		serverErrCh <- server.Serve(listener)
 	}()
 	go func() { deliveryErrCh <- challenges.RunDeliveryWorker(ctx) }()
 	go cleaner.Run(ctx)

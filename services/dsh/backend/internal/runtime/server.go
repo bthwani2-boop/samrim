@@ -73,11 +73,15 @@ func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register fun
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return err
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("%s API listening on %s", service, server.Addr)
-		errCh <- server.ListenAndServe()
+		errCh <- server.Serve(listener)
 	}()
 
 	select {

@@ -82,11 +82,69 @@ $Ports = @{
     'app-captain' = 18103
     'app-field' = 18104
 }
+$metroPort = [int] $Ports[$App]
+
+function Get-PortOwnerSummary([object[]] $Listeners) {
+    $ownerPids = @(
+        $Listeners |
+            Select-Object -ExpandProperty OwningProcess -Unique
+    )
+    $owners = foreach ($ownerPid in $ownerPids) {
+        $process = Get-Process -Id ([int] $ownerPid) -ErrorAction SilentlyContinue
+        if ($null -eq $process) {
+            "PID=$ownerPid (exited)"
+        }
+        else {
+            "PID=$ownerPid $($process.ProcessName)"
+        }
+    }
+    if ($owners.Count -eq 0) {
+        return "unknown process"
+    }
+    return ($owners -join ", ")
+}
+
+function Test-ExistingMetroReady {
+    $listeners = @(
+        Get-NetTCPConnection -State Listen -LocalPort $metroPort -ErrorAction SilentlyContinue |
+            Where-Object { $_.LocalAddress -in @("127.0.0.1", "0.0.0.0") }
+    )
+    if ($listeners.Count -eq 0) {
+        return $false
+    }
+
+    $response = $null
+    $requestError = $null
+    try {
+        $response = Invoke-WebRequest `
+            -Uri "http://127.0.0.1:${metroPort}/" `
+            -Method Get `
+            -TimeoutSec 3 `
+            -SkipHttpErrorCheck
+    }
+    catch {
+        $requestError = $_.Exception.Message
+    }
+    if ($null -ne $response -and $response.StatusCode -eq 200) {
+        Write-Host "METRO_ALREADY_READY=PASS app=$App port=$metroPort"
+        return $true
+    }
+
+    $observed = if ($null -ne $response) {
+        "status=$($response.StatusCode)"
+    }
+    elseif ($requestError) {
+        "request failed: $requestError"
+    }
+    else {
+        "no response"
+    }
+    $owners = Get-PortOwnerSummary -Listeners $listeners
+    throw "Cannot start ${App}: Metro port $metroPort is already occupied by $owners and is not serving HTTP 200 on 127.0.0.1 ($observed). Stop the owning process before retrying."
+}
 
 $adbSerial = Resolve-AdbTargetSerial -RequestedSerial $DeviceSerial
 if (-not [string]::IsNullOrWhiteSpace($adbSerial)) {
-    $metroPort = $Ports[$App]
-
     if ($metroPort) {
         & adb -s $adbSerial reverse "tcp:$metroPort" "tcp:$metroPort" *> $null
         if ($LASTEXITCODE -ne 0) {
@@ -107,6 +165,27 @@ if (-not [string]::IsNullOrWhiteSpace($adbSerial)) {
     Write-Host "ADB_TARGET=PASS serial=$adbSerial app=$App"
     Write-Host "ADB_REVERSE=READY serial=$adbSerial ports=$metroPort,18082,58080"
 }
+
+if (Test-ExistingMetroReady) {
+    exit 0
+}
+
+$nodeOptions = [Environment]::GetEnvironmentVariable("NODE_OPTIONS", "Process")
+if ([string]::IsNullOrWhiteSpace($nodeOptions)) {
+    $nodeOptions = "--dns-result-order=ipv4first"
+}
+elseif ($nodeOptions -match "(?i)(^|\s)--dns-result-order=\S+") {
+    $nodeOptions = [regex]::Replace(
+        $nodeOptions,
+        "(?i)(^|\s)--dns-result-order=\S+",
+        '$1--dns-result-order=ipv4first'
+    )
+}
+else {
+    $nodeOptions = "$nodeOptions --dns-result-order=ipv4first"
+}
+[Environment]::SetEnvironmentVariable("NODE_OPTIONS", $nodeOptions, "Process")
+Write-Host "NODE_DNS_ORDER=ipv4first"
 
 $Args = @(
     '--dir', $AppRoot,

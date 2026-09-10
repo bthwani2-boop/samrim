@@ -26,7 +26,9 @@ $global:BthwaniPnpmNative = (
 function global:pnpm {
     $bthwaniRepo = '__REPO__'
     $bthwaniCommands = @(
-        'all',
+        'runtime:up',
+        'dsh',
+        'identity',
         'client',
         'partner',
         'captain',
@@ -113,5 +115,5 @@ Invoke-Expression $block
 
 Write-Host "BTHWANI_REPO=$RepoRoot"
 Write-Host 'BTHWANI_PNPM_ROUTER=INSTALLED'
-Write-Host 'Commands: all, client, partner, captain, field, control, scr'
+Write-Host 'Commands: runtime:up, dsh, identity, client, partner, captain, field, control, scr'
 Write-Host 'Restart any already-open Windows PowerShell session before using the updated router there.'
