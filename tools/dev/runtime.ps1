@@ -15,12 +15,18 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $ComposeDir = Join-Path $RepoRoot 'infra\local\compose'
 $ComposePath = Join-Path $ComposeDir 'compose.yaml'
 $EnvPath = Join-Path $ComposeDir '.env'
-$EnsureLocalEnv = Join-Path $PSScriptRoot 'ensure-local-env.ps1'
+$EnvExamplePath = Join-Path $ComposeDir '.env.example'
 $OwnershipVerifier = Join-Path $PSScriptRoot 'verify-local-runtime-ownership.mjs'
 $CanonicalProject = 'samrim-local'
-$LegacyProjects = @('samrim-integration')
+$SamrimProjectPrefix = 'samrim-'
 
 function Fail([string]$Message) { throw $Message }
+
+function New-RandomHex([int]$Bytes = 32) {
+    return [Convert]::ToHexString(
+        [Security.Cryptography.RandomNumberGenerator]::GetBytes($Bytes)
+    ).ToLowerInvariant()
+}
 
 function Read-EnvMap([string]$Path) {
     $map = @{}
@@ -54,11 +60,81 @@ function Require-TcpPort([hashtable]$Map, [string]$Name) {
 }
 
 function Ensure-Environment {
-    if (-not (Test-Path -LiteralPath $EnsureLocalEnv -PathType Leaf)) { Fail "Missing environment reconciler: $EnsureLocalEnv" }
-    & $EnsureLocalEnv
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) { Fail 'Canonical environment reconciliation failed.' }
+    if (-not (Test-Path -LiteralPath $EnvExamplePath -PathType Leaf)) {
+        Fail "Missing canonical local runtime template: $EnvExamplePath"
+    }
+
+    $generatedSecretKeys = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($name in @(
+        'SAMRIM_POSTGRES_PASSWORD',
+        'IDENTITY_CHALLENGE_HMAC_SECRET',
+        'IDENTITY_DSH_SERVICE_TOKEN',
+        'IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN',
+        'DSH_PLATFORM_CONTROL_SERVICE_TOKEN',
+        'IDENTITY_ABUSE_HMAC_SECRET',
+        'IDENTITY_PLATFORM_BOOTSTRAP_SECRET'
+    )) {
+        $null = $generatedSecretKeys.Add($name)
+    }
+
+    $current = @{}
+    $existingRaw = $null
+    $state = 'created'
+    if (Test-Path -LiteralPath $EnvPath -PathType Leaf) {
+        $current = Read-EnvMap -Path $EnvPath
+        $existingRaw = Get-Content -LiteralPath $EnvPath -Raw
+        $state = 'unchanged'
+    }
+
+    $templateLines = @(Get-Content -LiteralPath $EnvExamplePath)
+    $templateKeys = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $output = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($line in $templateLines) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#')) {
+            $output.Add($line)
+            continue
+        }
+
+        $parts = $line.Split('=', 2)
+        if ($parts.Count -ne 2) { Fail "Malformed canonical local runtime template line: $line" }
+        $name = $parts[0].Trim()
+        $templateValue = $parts[1].Trim()
+        if (-not $templateKeys.Add($name)) { Fail "Duplicate canonical local runtime template key '$name'." }
+
+        if ($generatedSecretKeys.Contains($name)) {
+            if ($current.ContainsKey($name) -and -not [string]::IsNullOrWhiteSpace([string]$current[$name])) {
+                $resolvedValue = [string]$current[$name]
+            } else {
+                $resolvedValue = New-RandomHex
+                $state = if ($null -eq $existingRaw) { 'created' } else { 'reconciled' }
+            }
+        } else {
+            $resolvedValue = $templateValue
+            if (-not $current.ContainsKey($name) -or [string]$current[$name] -ne $resolvedValue) {
+                if ($null -ne $existingRaw) { $state = 'reconciled' }
+            }
+        }
+        $output.Add("${name}=${resolvedValue}")
+    }
+
+    $unknownKeys = @(
+        $current.Keys |
+            Where-Object { -not $templateKeys.Contains([string]$_) } |
+            Sort-Object
+    )
+    if ($unknownKeys.Count -gt 0 -and $null -ne $existingRaw) { $state = 'reconciled' }
+
+    $newRaw = (($output -join [Environment]::NewLine).TrimEnd()) + [Environment]::NewLine
+    if ($null -eq $existingRaw -or $existingRaw -ne $newRaw) {
+        [IO.File]::WriteAllText($EnvPath, $newRaw, [Text.UTF8Encoding]::new($false))
+        if ($null -ne $existingRaw) { $state = 'reconciled' }
+    }
+
     $map = Read-EnvMap -Path $EnvPath
     if ((Require-EnvValue -Map $map -Name 'BTHWANI_ENV') -ne 'development') { Fail 'LOCAL_INTEGRATION requires BTHWANI_ENV=development.' }
+    Write-Host "LOCAL_RUNTIME_ENV=PASS state=$state source=infra/local/compose/.env.example secrets=preserved unknown_removed=$($unknownKeys.Count)"
     return $map
 }
 
@@ -101,14 +177,37 @@ function Get-ProjectResourceIds([ValidateSet('container','volume','network')][st
     return @($rows | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
-function Assert-NoLegacyRuntimeResidue {
-    foreach ($project in $LegacyProjects) {
-        $containers = @(Get-ProjectResourceIds -Kind container -Project $project)
-        $volumes = @(Get-ProjectResourceIds -Kind volume -Project $project)
-        $networks = @(Get-ProjectResourceIds -Kind network -Project $project)
-        if ($containers.Count -or $volumes.Count -or $networks.Count) {
-            Fail "LEGACY_RUNTIME_RESIDUE=FAIL project=$project containers=$($containers.Count) volumes=$($volumes.Count) networks=$($networks.Count) action=pnpm-runtime-reset"
+function Get-SamrimComposeProjects {
+    $projects = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($row in @(& docker ps -a --format '{{.Label "com.docker.compose.project"}}')) {
+        $project = [string]$row
+        if ($project.StartsWith($SamrimProjectPrefix, [StringComparison]::OrdinalIgnoreCase)) { $null = $projects.Add($project) }
+    }
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect Docker container project labels.' }
+    foreach ($row in @(& docker volume ls --format '{{.Label "com.docker.compose.project"}}')) {
+        $project = [string]$row
+        if ($project.StartsWith($SamrimProjectPrefix, [StringComparison]::OrdinalIgnoreCase)) { $null = $projects.Add($project) }
+    }
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect Docker volume project labels.' }
+    foreach ($row in @(& docker network ls --format '{{.Label "com.docker.compose.project"}}')) {
+        $project = [string]$row
+        if ($project.StartsWith($SamrimProjectPrefix, [StringComparison]::OrdinalIgnoreCase)) { $null = $projects.Add($project) }
+    }
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect Docker network project labels.' }
+    return @($projects | Sort-Object)
+}
+
+function Get-NonCanonicalSamrimProjects {
+    return @(Get-SamrimComposeProjects | Where-Object { $_ -ne $CanonicalProject })
+}
+
+function Assert-NoParallelRuntimeResidue {
+    $projects = @(Get-NonCanonicalSamrimProjects)
+    if ($projects.Count) {
+        $details = foreach ($project in $projects) {
+            "project=$project containers=$(@(Get-ProjectResourceIds -Kind container -Project $project).Count) volumes=$(@(Get-ProjectResourceIds -Kind volume -Project $project).Count) networks=$(@(Get-ProjectResourceIds -Kind network -Project $project).Count)"
         }
+        Fail "PARALLEL_RUNTIME_RESIDUE=FAIL $($details -join ';') action=pnpm-runtime-reset"
     }
 }
 
@@ -266,7 +365,7 @@ function Assert-CanonicalRuntime([hashtable]$EnvMap) {
 
 function Test-CanonicalRuntimeReady([hashtable]$EnvMap) {
     try {
-        Assert-NoLegacyRuntimeResidue
+        Assert-NoParallelRuntimeResidue
         Assert-CanonicalRuntime -EnvMap $EnvMap
         return $true
     } catch { return $false }
@@ -276,7 +375,7 @@ function Start-CanonicalRuntime {
     $envMap = Ensure-Environment
     Set-CanonicalEnvironment -Map $envMap
     Ensure-Docker
-    Assert-NoLegacyRuntimeResidue
+    Assert-NoParallelRuntimeResidue
     Assert-NoNativeBackendProcesses
     if (-not (Test-Path -LiteralPath $ComposePath -PathType Leaf)) { Fail "Canonical Compose file is missing: $ComposePath" }
     Invoke-Compose -Arguments @('config','--quiet') -Quiet
@@ -316,8 +415,10 @@ function Show-RuntimeStatus {
     $base = Get-ComposeBaseArgs
     & docker @base ps -a
     if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical runtime.' }
-    foreach ($project in $LegacyProjects) {
-        Write-Host "LEGACY_PROJECT=$project containers=$(@(Get-ProjectResourceIds -Kind container -Project $project).Count) volumes=$(@(Get-ProjectResourceIds -Kind volume -Project $project).Count) networks=$(@(Get-ProjectResourceIds -Kind network -Project $project).Count)"
+    $parallelProjects = @(Get-NonCanonicalSamrimProjects)
+    Write-Host "PARALLEL_RUNTIME_PROJECTS=$($parallelProjects.Count)"
+    foreach ($project in $parallelProjects) {
+        Write-Host "NONCANONICAL_PROJECT=$project containers=$(@(Get-ProjectResourceIds -Kind container -Project $project).Count) volumes=$(@(Get-ProjectResourceIds -Kind volume -Project $project).Count) networks=$(@(Get-ProjectResourceIds -Kind network -Project $project).Count)"
     }
 }
 
@@ -337,7 +438,7 @@ function Invoke-RuntimeDoctor {
     if ($composeFiles.Count -ne 1 -or $composeFiles[0].FullName -ne $ComposePath) { Fail "CANONICAL_LOCAL_COMPOSE_FILES=FAIL observed=$($composeFiles.Name -join ',')" }
     Write-Host 'CANONICAL_LOCAL_COMPOSE_FILES=1'
     Invoke-Compose -Arguments @('config','--quiet') -Quiet
-    Assert-NoLegacyRuntimeResidue
+    Assert-NoParallelRuntimeResidue
     Assert-NoNativeBackendProcesses
     Assert-CanonicalRuntime -EnvMap $envMap
     & node $OwnershipVerifier
@@ -352,19 +453,21 @@ function Reset-CanonicalRuntime {
     $envMap = Ensure-Environment
     Ensure-Docker
     Write-Host 'RUNTIME_RESET=DESTRUCTIVE_LOCAL_DATA scope=samrim Docker containers/networks/volumes; local .env secrets are preserved'
+    $parallelProjects = @(Get-NonCanonicalSamrimProjects)
     try { Invoke-Compose -Arguments @('down','--volumes','--remove-orphans') } catch { Write-Host "Canonical compose teardown was not complete: $($_.Exception.Message)" }
     Remove-ProjectResources -Project $CanonicalProject
-    foreach ($project in $LegacyProjects) { Remove-ProjectResources -Project $project }
-    foreach ($project in @($CanonicalProject) + $LegacyProjects) {
+    foreach ($project in $parallelProjects) { Remove-ProjectResources -Project $project }
+    foreach ($project in @($CanonicalProject) + $parallelProjects) {
         foreach ($kind in @('container','volume','network')) {
             if (@(Get-ProjectResourceIds -Kind $kind -Project $project).Count) { Fail "RUNTIME_RESET=FAIL project=$project kind=$kind residue=present" }
         }
     }
+    if (@(Get-NonCanonicalSamrimProjects).Count) { Fail 'RUNTIME_RESET=FAIL noncanonical samrim Compose projects remain.' }
     Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') -Component 'identity'
     Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') -Component 'dsh'
     Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_MAILPIT_WEB_PORT') -Component 'mailpit-web'
     Assert-NoNativeBackendProcesses
-    Write-Host 'LEGACY_RUNTIME_RESIDUE=0'
+    Write-Host 'PARALLEL_RUNTIME_RESIDUE=0'
     Write-Host 'RUNTIME_RESET=PASS final_state=DOWN secrets=preserved'
 }
 

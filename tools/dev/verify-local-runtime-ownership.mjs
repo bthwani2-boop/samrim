@@ -77,6 +77,7 @@ for (const retired of [
   "tools/dev/install-powershell-pnpm-router.ps1",
   "tools/dev/verify-integration-runtime.ps1",
   "tools/dev/doctor.ps1",
+  "tools/dev/ensure-local-env.ps1",
 ]) {
   assert(!exists(retired), `retired runtime file must not exist: ${retired}`);
 }
@@ -120,19 +121,26 @@ assert(envMap.get("IDENTITY_CORS_ALLOWED_ORIGINS") === controlOrigin, "Identity 
 const runtime = read(runtimeOwner);
 for (const marker of [
   "$CanonicalProject = 'samrim-local'",
+  "$EnvExamplePath = Join-Path $ComposeDir '.env.example'",
+  "function Ensure-Environment",
+  "function New-RandomHex",
+  "Assert-NoParallelRuntimeResidue",
+  "Get-NonCanonicalSamrimProjects",
   "DOCKER_OWNS=postgres,mailpit,identity,dsh",
   "CANONICAL_LOCAL_RUNTIME=PASS",
   "RUNTIME_RESET=PASS",
-  "Assert-NoLegacyRuntimeResidue",
   "Assert-CanonicalPublishedPort",
 ]) {
   assert(runtime.includes(marker), `canonical runtime owner missing invariant: ${marker}`);
 }
+assert(!runtime.includes("ensure-local-env.ps1"), "canonical runtime owner must not delegate environment reconciliation to a second executable");
 assert(/['"]exec['"]\s*,\s*['"]expo['"]\s*,\s*['"]start['"]/.test(runtime), "canonical runtime owner must launch Expo through pnpm exec expo start");
 const nativeApiToken = "go run ./cmd/" + "api";
 const nativeMigrationToken = "go run ./cmd/" + "migrate";
 assert(!runtime.includes(nativeApiToken), "canonical runtime owner must not launch Identity/DSH natively");
 assert(!runtime.includes(nativeMigrationToken), "canonical runtime owner must not run backend migrations natively");
+const retiredProject = "samrim-" + "integration";
+assert(!runtime.includes(retiredProject), "canonical runtime owner must not retain a hard-coded retired parallel project name");
 for (const oldToken of [
   "Daily" + "Up",
   "Daily" + "Down",
@@ -178,7 +186,7 @@ for (const verifier of [
   assert(body.includes("compose.yaml"), `${verifier} must use the canonical Compose file`);
   assert(body.includes("samrim-local"), `${verifier} must use the canonical Compose project`);
   assert(!body.includes("compose.integration.yaml"), `${verifier} retains parallel Compose path`);
-  assert(!body.includes("samrim-integration"), `${verifier} retains parallel Compose project`);
+  assert(!body.includes(retiredProject), `${verifier} retains parallel Compose project`);
 }
 
 const candidate = read("tools/dev/verify-local-candidate.ps1");
@@ -188,6 +196,7 @@ for (const command of ["pnpm runtime:up", "pnpm runtime:doctor", "pnpm runtime:d
 assert(candidate.includes("Invoke-CanonicalSchemaVerify"), "candidate proof must retain exact schema verification without a separate integration-runtime wrapper");
 assert(!candidate.includes("verify-integration-runtime.ps1"), "candidate proof retains deleted integration-runtime wrapper");
 assert(!candidate.includes("doctor.ps1"), "candidate proof retains deleted duplicate doctor wrapper");
+assert(!candidate.includes("ensure-local-env.ps1"), "candidate proof retains deleted environment wrapper");
 assert(!candidate.includes("runtime:daily:"), "candidate proof retains DAILY_DEV runtime command");
 assert(!candidate.includes("runtime:integration:"), "candidate proof retains parallel Integration runtime command");
 
@@ -198,9 +207,10 @@ assert(!playwright.includes("http://127.0.0.1:13001"), "Playwright config retain
 const workflow = read(".github/workflows/baseline-guard.yml");
 assert(workflow.includes("infra/local/compose/compose.yaml"), "CI must use the canonical Compose topology");
 assert(!workflow.includes("compose.integration.yaml"), "CI retains parallel Compose topology");
-assert(!workflow.includes("samrim-integration"), "CI retains parallel Compose project");
+assert(!workflow.includes(retiredProject), "CI retains parallel Compose project");
 assert(!workflow.includes("tools/dev/doctor.ps1"), "CI retains deleted duplicate doctor wrapper");
 assert(!workflow.includes("verify-integration-runtime.ps1"), "CI retains deleted integration-runtime wrapper");
+assert(!workflow.includes("ensure-local-env.ps1"), "CI retains deleted environment wrapper");
 
 if (failures.length) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
