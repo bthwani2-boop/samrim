@@ -429,7 +429,7 @@ function Start-Mobile([ValidateSet('app-client', 'app-partner', 'app-captain', '
     }
 
     $package = Get-Content -LiteralPath $packagePath -Raw | ConvertFrom-Json
-    if ($null -ne $package.scripts.start) {
+    if ($null -ne $package.scripts.PSObject.Properties['start']) {
         Fail "$App package.json exposes a forbidden secondary local start authority."
     }
     $project = Get-Content -LiteralPath $projectPath -Raw | ConvertFrom-Json
