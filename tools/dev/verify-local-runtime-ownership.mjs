@@ -152,6 +152,13 @@ const integrationVerifier = read("tools/dev/verify-integration-runtime.ps1");
 assert(integrationVerifier.includes("compose.integration.yaml"), "integration verifier must use isolated integration compose");
 assert(integrationVerifier.includes('"--project-name", "samrim-integration"'), "integration verifier must bind schema proof to samrim-integration");
 assert(!integrationVerifier.includes('"infra/local/compose/compose.yaml"'), "integration verifier must not call the DAILY_DEV compose file");
+assert(!integrationVerifier.includes("--profile"), "integration verifier must not know the retired integration profile");
+
+const identityRuntimeVerifier = read("tools/dev/verify-identity-runtime.mjs");
+assert(identityRuntimeVerifier.includes("compose.integration.yaml"), "Identity runtime semantics must use isolated integration compose");
+assert(identityRuntimeVerifier.includes('"--project-name", "samrim-integration"'), "Identity runtime semantics must bind Docker calls to samrim-integration");
+assert(!identityRuntimeVerifier.includes("infra/local/compose/compose.yaml"), "Identity runtime semantics must not call the DAILY_DEV compose file");
+assert(!identityRuntimeVerifier.includes('"--profile"'), "Identity runtime semantics must not know the retired integration profile");
 
 const runtimeStatus = read("tools/dev/runtime-status.ps1");
 assert(!runtimeStatus.includes(" compose "), "runtime-status must remain a read-only Docker label census");
