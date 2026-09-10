@@ -231,7 +231,12 @@ for (const forbidden of ["loginOperator(", "username", "activateOperator", "loca
 if (fs.existsSync(path.join(root, "apps/control-panel/app/api/auth/login/route.ts"))) {
   failures.push("single-step operator login BFF route still exists");
 }
-const controlPage = read("apps/control-panel/app/page.tsx");
+const controlPage = [
+  "apps/control-panel/app/page.tsx",
+  "apps/control-panel/app/components/public-shell.tsx",
+  "apps/control-panel/app/components/account-access-panel.tsx",
+  "apps/control-panel/app/(workspace)/workspace/page.tsx",
+].map((relative) => read(relative)).join("\n");
 const identityClient = read("services/identity/clients/client.ts");
 for (const required of [
   "export type AttributedMutationContext",
