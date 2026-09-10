@@ -394,51 +394,57 @@ jobs:
           go-version: 1.27.1
           cache: false
 
-      - name: Build and start canonical repository runtime
+      - name: Start canonical repository runtime through the sole lifecycle owner
+        shell: pwsh
+        run: |
+          pnpm runtime:up
+          if ($LASTEXITCODE -ne 0) { throw "runtime:up failed." }
+          pnpm runtime:doctor
+          if ($LASTEXITCODE -ne 0) { throw "runtime:doctor failed." }
+
+      - name: Export canonical runtime values for proof consumers
         shell: bash
         run: |
           set -euo pipefail
-          docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml up -d --build --wait --wait-timeout 180
+          env_value() {
+            sed -n "s/^${1}=//p" infra/local/compose/.env
+          }
+          for key in \
+            BTHWANI_ENV \
+            IDENTITY_API_BASE_URL \
+            DSH_API_BASE_URL \
+            IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN \
+            DSH_PLATFORM_CONTROL_SERVICE_TOKEN \
+            SAMRIM_MAILPIT_WEB_PORT \
+            SAMRIM_IDENTITY_PORT \
+            SAMRIM_DSH_PORT \
+            CONTROL_PANEL_PUBLIC_ORIGIN; do
+            value="$(env_value "$key")"
+            [[ -n "$value" ]] || { echo "::error::Missing canonical runtime value: $key"; exit 1; }
+            printf '%s=%s\n' "$key" "$value" >> "$GITHUB_ENV"
+          done
+          printf 'PLAYWRIGHT_BASE_URL=%s\n' "$(env_value CONTROL_PANEL_PUBLIC_ORIGIN)" >> "$GITHUB_ENV"
 
       - name: Install browser-runtime workspace dependencies
         shell: bash
         run: pnpm install --frozen-lockfile
 
-      - name: Build and start release-mode Control Panel
+      - name: Build and start canonical Control Panel through the sole runtime owner
         shell: bash
         run: |
           set -euo pipefail
-          env_value() {
-            sed -n "s/^${1}=//p" infra/local/compose/.env.example
-          }
-          export BTHWANI_ENV="development"
-          export IDENTITY_API_BASE_URL="$(env_value IDENTITY_API_BASE_URL)"
-          export DSH_API_BASE_URL="$(env_value DSH_API_BASE_URL)"
-          export IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN="$(env_value IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN)"
-          export DSH_PLATFORM_CONTROL_SERVICE_TOKEN="$(env_value DSH_PLATFORM_CONTROL_SERVICE_TOKEN)"
-          export CONTROL_PANEL_PUBLIC_ORIGIN="http://127.0.0.1:13001"
-          {
-            echo "BTHWANI_ENV=${BTHWANI_ENV}"
-            echo "IDENTITY_API_BASE_URL=${IDENTITY_API_BASE_URL}"
-            echo "DSH_API_BASE_URL=${DSH_API_BASE_URL}"
-            echo "IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN=${IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN}"
-            echo "DSH_PLATFORM_CONTROL_SERVICE_TOKEN=${DSH_PLATFORM_CONTROL_SERVICE_TOKEN}"
-            echo "SAMRIM_MAILPIT_WEB_PORT=$(env_value SAMRIM_MAILPIT_WEB_PORT)"
-            echo "SAMRIM_IDENTITY_PORT=$(env_value SAMRIM_IDENTITY_PORT)"
-            echo "SAMRIM_DSH_PORT=$(env_value SAMRIM_DSH_PORT)"
-          } >> "$GITHUB_ENV"
           pnpm --dir apps/control-panel build
-          nohup pnpm --dir apps/control-panel exec next start -p 13001 >/tmp/samrim-control-panel.log 2>&1 &
+          setsid pnpm control >/tmp/samrim-control-panel.log 2>&1 &
           echo $! >/tmp/samrim-control-panel.pid
 
           for attempt in $(seq 1 60); do
-            if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:13001/ >/dev/null; then
+            if curl --fail --silent --show-error --max-time 5 "${CONTROL_PANEL_PUBLIC_ORIGIN}/" >/dev/null; then
               echo "CONTROL_PANEL_RUNTIME=PASS"
               break
             fi
             if [[ "$attempt" -eq 60 ]]; then
               cat /tmp/samrim-control-panel.log || true
-              echo "::error::Release-mode Control Panel did not become ready"
+              echo "::error::Canonical Control Panel did not become ready"
               exit 1
             fi
             sleep 2
@@ -450,8 +456,6 @@ jobs:
 
       - name: Run required live Control Panel browser journeys
         shell: bash
-        env:
-          PLAYWRIGHT_BASE_URL: http://127.0.0.1:13001
         run: |
           pnpm --dir apps/control-panel test:e2e
           echo "PLAYWRIGHT_REQUIRED_GATE=PASS"
@@ -472,7 +476,7 @@ jobs:
           for attempt in $(seq 1 60); do
             ok=1
 
-            docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml exec -T postgres pg_isready -h 127.0.0.1 -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
+            docker compose --project-name samrim-local --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml exec -T postgres pg_isready -h 127.0.0.1 -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
             curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT}/" >/dev/null || ok=0
 
             verify_json_endpoint identity "${IDENTITY_API_BASE_URL}/identity/health" || ok=0
@@ -487,15 +491,15 @@ jobs:
 
             if [[ "$attempt" -eq 60 ]]; then
               echo "::error::Repository runtime did not become ready"
-              docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml ps -a
-              docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml logs --tail 200
+              docker compose --project-name samrim-local --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml ps -a
+              docker compose --project-name samrim-local --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml logs --tail 200
               exit 1
             fi
 
             sleep 2
           done
 
-          mapfile -t running < <(docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml ps --status running --services | sort)
+          mapfile -t running < <(docker compose --project-name samrim-local --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml ps --status running --services | sort)
           expected=(dsh identity mailpit postgres)
 
           if [[ "${running[*]}" != "${expected[*]}" ]]; then
@@ -506,7 +510,7 @@ jobs:
           fi
 
           for migration in identity-migrate dsh-migrate; do
-            cid="$(docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml ps -a -q "$migration")"
+            cid="$(docker compose --project-name samrim-local --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml ps -a -q "$migration")"
             [[ -n "$cid" ]]
             [[ "$(docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}' "$cid")" == "exited|0" ]]
           done
@@ -518,7 +522,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml exec -T dsh sh -ceu '
+          docker compose --project-name samrim-local --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml exec -T dsh sh -ceu '
             test -s /etc/ssl/certs/ca-certificates.crt
             test "$(id -u)" -ne 0
           '
@@ -531,11 +535,11 @@ jobs:
 
       - name: Verify Identity activation-session semantics
         shell: bash
-        run: node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env.example
+        run: node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env
 
       - name: Verify DSH managed-access runtime boundary
         shell: bash
-        run: node tools/dev/verify-dsh-runtime.mjs --env-file=infra/local/compose/.env.example
+        run: node tools/dev/verify-dsh-runtime.mjs --env-file=infra/local/compose/.env
 
       - name: Verify runtime proof did not mutate repository
         shell: bash
@@ -550,14 +554,15 @@ jobs:
           fi
           echo "REPOSITORY_RUNTIME_REPOSITORY_MUTATION=0"
 
-      - name: Stop repository runtime
+      - name: Stop and purge repository runtime through the sole lifecycle owner
         if: always()
         shell: bash
         run: |
           if [[ -f /tmp/samrim-control-panel.pid ]]; then
-            kill "$(cat /tmp/samrim-control-panel.pid)" 2>/dev/null || true
+            pgid="$(cat /tmp/samrim-control-panel.pid)"
+            kill -- "-${pgid}" 2>/dev/null || true
           fi
           if [[ -f /tmp/samrim-control-panel.log ]]; then
             tail -n 200 /tmp/samrim-control-panel.log || true
           fi
-          docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml down --volumes --remove-orphans
+          pnpm runtime:reset

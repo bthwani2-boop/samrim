@@ -233,6 +233,13 @@ assert(!workflow.includes(retiredProject), "CI retains parallel Compose project"
 assert(!workflow.includes("tools/dev/doctor.ps1"), "CI retains deleted duplicate doctor wrapper");
 assert(!workflow.includes("verify-integration-runtime.ps1"), "CI retains deleted integration-runtime wrapper");
 assert(!workflow.includes("ensure-local-env.ps1"), "CI retains deleted environment wrapper");
+assert(!workflow.includes("127.0.0.1:13001"), "CI retains alternate Control Panel origin");
+assert(!/docker compose[^\n]*(?:\bup\b|\bdown\b|\bstart\b|\bstop\b|\brestart\b)/i.test(workflow), "CI must not own local Compose lifecycle outside runtime.ps1");
+assert(!/\bnext\s+(?:dev|start)\b/.test(workflow), "CI must not launch Control Panel outside runtime.ps1");
+for (const command of ["pnpm runtime:up", "pnpm runtime:doctor", "pnpm control", "pnpm runtime:reset"]) {
+  assert(workflow.includes(command), `CI canonical runtime proof must use ${command}`);
+}
+assert(workflow.includes("--env-file infra/local/compose/.env"), "CI runtime inspection must use the reconciled canonical .env");
 
 if (failures.length) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
@@ -243,6 +250,7 @@ if (failures.length) {
 console.log("CANONICAL_LOCAL_COMPOSE_FILES=1");
 console.log("CANONICAL_LOCAL_COMPOSE_PROJECTS=1");
 console.log("PUBLIC_RUNTIME_EXECUTORS=1");
+console.log("SHADOW_RUNTIME_EXECUTORS=0");
 console.log("CANONICAL_RUNTIME_OWNER=tools/dev/runtime.ps1");
 console.log("IDENTITY_OWNER=DOCKER");
 console.log("DSH_OWNER=DOCKER");
@@ -251,5 +259,7 @@ console.log("MOBILE_OWNER=HOST_RUNTIME_PS1");
 console.log("PARALLEL_LOCAL_RUNTIME_AUTHORITY=0");
 console.log("NATIVE_BACKEND_START_PATHS=0");
 console.log("PORT_FALLBACK_PATHS=0");
+console.log("CONTROL_PANEL_ALTERNATE_ORIGINS=0");
+console.log("MOBILE_SHADOW_LAUNCHERS=0");
 console.log(`CONTROL_PANEL_ORIGIN=${controlOrigin}`);
 console.log("LOCAL_RUNTIME_OWNERSHIP=PASS");
