@@ -281,7 +281,10 @@ jobs:
 
       - name: Verify repository compose configuration
         shell: bash
-        run: docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration config >/dev/null
+        run: |
+          set -euo pipefail
+          docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml config >/dev/null
+          docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml config >/dev/null
 
       - name: Verify developer tooling is non-mutating
         shell: bash
@@ -400,7 +403,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration up -d --build
+          docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml up -d --build
 
       - name: Install browser-runtime workspace dependencies
         shell: bash
@@ -461,7 +464,7 @@ jobs:
           for attempt in $(seq 1 60); do
             ok=1
 
-            docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration exec -T postgres pg_isready -h 127.0.0.1 -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
+            docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml exec -T postgres pg_isready -h 127.0.0.1 -U samrim_local -d samrim_local >/dev/null 2>&1 || ok=0
             curl --fail --silent --show-error --max-time 5 http://127.0.0.1:58026/ >/dev/null || ok=0
             (: >/dev/tcp/127.0.0.1/58025) >/dev/null 2>&1 || ok=0
 
@@ -477,15 +480,15 @@ jobs:
 
             if [[ "$attempt" -eq 60 ]]; then
               echo "::error::Repository runtime did not become ready"
-              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration ps
-              docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration logs --tail 200
+              docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml ps
+              docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml logs --tail 200
               exit 1
             fi
 
             sleep 2
           done
 
-          mapfile -t running < <(docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration ps --status running --services | sort)
+          mapfile -t running < <(docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml ps --status running --services | sort)
           expected=(dsh identity mailpit postgres)
 
           if [[ "${running[*]}" != "${expected[*]}" ]]; then
@@ -501,7 +504,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration exec -T dsh sh -ceu '
+          docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml exec -T dsh sh -ceu '
             test -s /etc/ssl/certs/ca-certificates.crt
             test "$(id -u)" -ne 0
           '
@@ -543,4 +546,4 @@ jobs:
           if [[ -f /tmp/samrim-control-panel.log ]]; then
             tail -n 200 /tmp/samrim-control-panel.log || true
           fi
-          docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration down --volumes --remove-orphans
+          docker compose --project-name samrim-integration --env-file infra/local/compose/.env.example -f infra/local/compose/compose.integration.yaml down --volumes --remove-orphans
