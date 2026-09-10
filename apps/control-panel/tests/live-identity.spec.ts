@@ -64,7 +64,7 @@ test("platform owner MFA persists through reload and logout revokes the live ses
   await page.getByLabel("رمز تحقق الهاتف").fill(code);
   await page.getByRole("button", { name: "إكمال تسجيل الدخول" }).click();
 
-  await expect(page.getByRole("heading", { name: "أهلاً بك في لوحة التحكم" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
   await expect(page.getByText("مالك المنصة", { exact: true }).first()).toBeVisible();
 
   const authenticatedReadback = await page.evaluate(async () => {
@@ -74,6 +74,10 @@ test("platform owner MFA persists through reload and logout revokes the live ses
   expect(authenticatedReadback.status).toBe(200);
   expect(authenticatedReadback.body.identity.role).toBe("platform_owner");
   expect(authenticatedReadback.body.identity.surface).toBe("control-panel");
+
+  await page.getByRole("link", { name: "الحسابات والأدوار" }).click();
+  await expect(page).toHaveURL(/\/access$/);
+  await expect(page.getByRole("heading", { name: "الحسابات والأدوار" })).toBeVisible();
 
   const managedPhone = "+9678" + String(randomInt(10_000_000, 99_999_999));
   const accountStatus = page.locator("section.access-card > div.managed-status").first();
@@ -99,7 +103,7 @@ test("platform owner MFA persists through reload and logout revokes the live ses
   expect(accountReadback.body.securityEnabled).toBe(true);
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "أهلاً بك في لوحة التحكم" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الحسابات والأدوار" })).toBeVisible();
 
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
   await expect(page.getByRole("heading", { name: "ابدأ برقم الهاتف" })).toBeVisible();

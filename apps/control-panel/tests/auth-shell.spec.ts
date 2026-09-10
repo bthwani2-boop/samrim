@@ -18,6 +18,86 @@ const authenticatedOperator = {
   expiresAt: "2099-01-01T00:00:00.000Z",
 };
 
+const authenticatedOwner = {
+  subject: "actor-owner",
+  sessionId: "session-owner",
+  role: "platform_owner",
+  surface: "control-panel",
+  expiresAt: "2099-01-01T00:00:00.000Z",
+};
+
+async function stubAuthenticatedSession(page: Page, identity = authenticatedOperator) {
+  await page.route("**/api/auth/session**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ identity }),
+    });
+  });
+}
+
+test("signed-out access to a protected workspace route returns to the identity surface", async ({ page }) => {
+  await stubSession(page, 401);
+  await page.goto("/workspace");
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "ابدأ برقم الهاتف" })).toBeVisible();
+});
+
+test("authenticated operator enters the workspace without owner-only navigation", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.goto("/");
+
+  await expect(page).toHaveURL(/\/workspace$/);
+  await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "الحسابات والأدوار" })).toHaveCount(0);
+  await expect(page.getByText("مالك المنصة", { exact: true })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
+});
+
+test("platform owner can discover the existing access responsibility through workspace navigation", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOwner);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const accessLink = page.getByRole("link", { name: "الحسابات والأدوار" });
+  await expect(accessLink).toBeVisible();
+  await accessLink.click();
+
+  await expect(page).toHaveURL(/\/access$/);
+  await expect(accessLink).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("heading", { name: "الحسابات والأدوار" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "تهيئة أو إيقاف الحساب" })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await expect(page.locator("#workspace-main")).toBeFocused();
+});
+
+test("operator direct navigation to access is restricted without granting a client capability", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.goto("/access");
+
+  await expect(page.getByRole("heading", { name: "إدارة الوصول مقصورة على مالك المنصة" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "تهيئة أو إيقاف الحساب" })).toHaveCount(0);
+});
+
+test("authenticated workspace keeps navigation meaning across light and dark themes", async ({ page }) => {
+  await stubAuthenticatedSession(page, authenticatedOwner);
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+  await page.goto("/workspace");
+
+  const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await expect(page.getByRole("link", { name: "الحسابات والأدوار" })).toBeVisible();
+  await expect(page.getByRole("main")).toHaveAttribute("id", "workspace-main");
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.reload();
+  const darkBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(darkBackground).not.toBe(lightBackground);
+  await expect(page.getByRole("link", { name: "الحسابات والأدوار" })).toBeVisible();
+});
+
 test("phone-first operator sign-in exposes named controls and the second step", async ({ page }) => {
   await stubSession(page, 401);
   await page.goto("/");
@@ -77,7 +157,7 @@ test("remote logout failure keeps local sign-out and remains observable", async 
   });
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "أهلاً بك في لوحة التحكم" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
   await expect(page.getByRole("heading", { name: "ابدأ برقم الهاتف" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("تعذر تأكيد إبطال الجلسة");
