@@ -96,7 +96,7 @@ for (const file of materialRuntimeFiles) {
 }
 
 const retiredRuntimeTokens = [
-  ["--profile " + "integration", "retired integration profile"],
+  ["--pro" + "file", "retired Docker Compose profile authority"],
   ["close-integration-" + "runtime.ps1", "retired integration lifecycle file"],
   ["Keep" + "Running", "integration keep-running escape hatch"],
   ["runtime:integration:" + "up", "manual integration up command"],
