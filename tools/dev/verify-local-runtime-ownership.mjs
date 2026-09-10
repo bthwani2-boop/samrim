@@ -130,6 +130,12 @@ assert(!integrationProof.includes("KeepRunning"), "integration proof must not ex
 assert(!integrationProof.includes("close-integration-runtime.ps1"), "integration proof must not delegate to retired lifecycle code");
 assert(!integrationProof.includes("local-runtime.ps1"), "integration proof must not mutate DAILY_DEV lifecycle");
 
+const integrationVerifier = read("tools/dev/verify-integration-runtime.ps1");
+assert(integrationVerifier.includes("compose.integration.yaml"), "integration verifier must use isolated integration compose");
+assert(integrationVerifier.includes('"--project-name", "samrim-integration"'), "integration verifier must bind schema proof to samrim-integration");
+assert(!integrationVerifier.includes("--profile"), "integration verifier must not know the retired integration profile");
+assert(!integrationVerifier.includes('"infra/local/compose/compose.yaml"'), "integration verifier must not call the DAILY_DEV compose file");
+
 const runtimeStatus = read("tools/dev/runtime-status.ps1");
 assert(!runtimeStatus.includes(" compose "), "runtime-status must remain a read-only Docker label census");
 assert(runtimeStatus.includes("INTEGRATION_CONTAINERS="), "runtime-status must report integration residue");
