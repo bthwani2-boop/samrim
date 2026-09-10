@@ -90,7 +90,7 @@ function Require-TcpPort([hashtable]$Map, [string]$Name) {
     $raw = Require-EnvValue -Map $Map -Name $Name
     $value = 0
     if (-not [int]::TryParse($raw, [ref]$value) -or $value -lt 1 -or $value -gt 65535) {
-        throw "Invalid TCP port in $Name: $raw"
+        throw "Invalid TCP port in ${Name}: $raw"
     }
     return $value
 }
