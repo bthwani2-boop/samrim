@@ -27,7 +27,11 @@ function loadEnv(filePath) {
 const fileEnv = loadEnv(envPath);
 const env = { ...fileEnv, ...process.env };
 
-const dshBase = env.DSH_BASE_URL || "http://127.0.0.1:58080";
+const dshBase = env.DSH_BASE_URL || env.DSH_API_BASE_URL;
+if (!dshBase) {
+  console.error("DSH_API_BASE_URL or DSH_BASE_URL is required in the canonical environment");
+  process.exit(1);
+}
 const dshToken = env.DSH_PLATFORM_CONTROL_SERVICE_TOKEN || env.DSH_SERVICE_TOKEN || env.IDENTITY_DSH_SERVICE_TOKEN;
 
 if (!dshToken) {

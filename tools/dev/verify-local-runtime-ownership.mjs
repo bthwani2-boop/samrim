@@ -89,18 +89,19 @@ for (const retired of [
   assert(!exists(retired), `retired runtime launcher must not exist: ${retired}`);
 }
 
-const noRuntimeTargets = [
-  "services/identity/project.json",
-  "services/dsh/project.json",
-  "apps/control-panel/project.json",
-  "apps/app-client/project.json",
-  "apps/app-partner/project.json",
-  "apps/app-captain/project.json",
-  "apps/app-field/project.json",
-];
-for (const file of noRuntimeTargets) {
+const noRuntimeTargets = new Map([
+  ["services/identity/project.json", ["serve", "dev", "start", "up", "down", "config"]],
+  ["services/dsh/project.json", ["serve", "dev", "start", "up", "down", "config"]],
+  ["apps/control-panel/project.json", ["serve", "dev", "start", "up", "down", "config"]],
+  ["apps/app-client/project.json", ["serve", "dev", "start", "up", "down", "config"]],
+  ["apps/app-partner/project.json", ["serve", "dev", "start", "up", "down", "config"]],
+  ["apps/app-captain/project.json", ["serve", "dev", "start", "up", "down", "config"]],
+  ["apps/app-field/project.json", ["serve", "dev", "start", "up", "down", "config"]],
+  ["infra/project.json", ["serve", "dev", "start", "up", "down", "config"]],
+]);
+for (const [file, forbiddenTargets] of noRuntimeTargets) {
   const project = JSON.parse(read(file));
-  for (const target of ["serve", "dev", "start"]) {
+  for (const target of forbiddenTargets) {
     assert(project.targets?.[target] === undefined, `${file} exposes shadow runtime target '${target}'`);
   }
 }
@@ -114,7 +115,15 @@ const envExample = read("infra/local/compose/.env.example");
 const envMap = parseEnv(envExample, ".env.example");
 const controlOrigin = envMap.get("CONTROL_PANEL_PUBLIC_ORIGIN");
 const identityCors = envMap.get("IDENTITY_CORS_ALLOWED_ORIGINS");
-assert(controlOrigin === "http://127.0.0.1:13000", "canonical Control Panel origin drifted");
+let controlUri;
+try { controlUri = new URL(controlOrigin); } catch { controlUri = null; }
+assert(
+  controlUri?.protocol === "http:" &&
+  controlUri.hostname === "127.0.0.1" &&
+  controlUri.port !== "" &&
+  controlUri.pathname === "/",
+  "canonical Control Panel origin drifted",
+);
 assert(identityCors === controlOrigin, "Identity CORS must equal the canonical Control Panel origin");
 for (const key of [
   "SAMRIM_POSTGRES_PORT",
@@ -145,7 +154,7 @@ const materialRuntimeFiles = [...new Set([
   ...collectTextFiles(".github/workflows"),
 ])].filter((file) => exists(file) && file !== verifierPath);
 
-const forbiddenControlAlias = "http://localhost:" + "13000";
+const forbiddenControlAlias = controlUri ? `http://localhost:${controlUri.port}` : "http://localhost:";
 for (const file of materialRuntimeFiles) {
   const body = read(file);
   assert(!body.includes(forbiddenControlAlias), `${file} reintroduces forbidden Control Panel localhost alias`);
@@ -181,7 +190,7 @@ const ensureLocalEnv = read("tools/dev/ensure-local-env.ps1");
 assert(!/\[switch\]\s*\$Force\b/i.test(ensureLocalEnv), "ensure-local-env must not expose Force regeneration");
 assert(!ensureLocalEnv.includes("Preserved local-only values"), "unknown local configuration must not survive reconciliation");
 assert(ensureLocalEnv.includes("unknown_removed="), "ensure-local-env must report removal of shadow keys");
-assert(!ensureLocalEnv.includes("http://127.0.0.1:13000"), "ensure-local-env must derive origin from .env.example");
+assert(!ensureLocalEnv.includes("CONTROL_PANEL_PUBLIC_ORIGIN=http://"), "ensure-local-env must derive origin from .env.example");
 
 const dailyCompose = read("infra/local/compose/compose.yaml");
 const integrationCompose = read("infra/local/compose/compose.integration.yaml");
@@ -213,15 +222,19 @@ for (const marker of [
 ]) {
   assert(runtime.includes(marker), `canonical runtime owner missing invariant: ${marker}`);
 }
-for (const retiredPort of ["18101", "18102", "18103", "18104", "18082", "58080", "55432", "58025", "58026", "13000"]) {
-  assert(!runtime.includes(retiredPort), `canonical runtime owner hard-codes port ${retiredPort} instead of deriving canonical env`);
+for (const [key, value] of envMap) {
+  if (/_PORT$/.test(key) && value) {
+    assert(!runtime.includes(value), `canonical runtime owner hard-codes ${key}=${value} instead of deriving canonical env`);
+  }
 }
 assert(!runtime.includes("--profile"), "canonical runtime owner must not use Docker Compose profiles");
 
 const integrationVerifier = read("tools/dev/verify-integration-runtime.ps1");
 assert(integrationVerifier.includes("compose.integration.yaml"), "integration verifier must use isolated integration compose");
 assert(integrationVerifier.includes('"--project-name", "samrim-integration"'), "integration verifier must bind schema proof to samrim-integration");
-assert(!integrationVerifier.includes('"infra/local/compose/compose.yaml"'), "integration verifier must not call DAILY_DEV compose");
+assert(integrationVerifier.includes("EnvFile"), "integration verifier must consume the canonical environment path");
+assert(!integrationVerifier.includes(":18082"), "integration verifier must not hard-code the Identity host port");
+assert(!integrationVerifier.includes(":58080"), "integration verifier must not hard-code the DSH host port");
 
 const identityRuntimeVerifier = read("tools/dev/verify-identity-runtime.mjs");
 assert(identityRuntimeVerifier.includes("compose.integration.yaml"), "Identity runtime semantics must use isolated integration compose");

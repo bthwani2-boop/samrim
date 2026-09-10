@@ -145,7 +145,7 @@ function Invoke-ComposeRaw([string]$Project, [string]$ComposeFile, [string[]]$Ar
 function Invoke-Compose([string]$Project, [string]$ComposeFile, [string[]]$Arguments) {
     $code = Invoke-ComposeRaw -Project $Project -ComposeFile $ComposeFile -Arguments $Arguments
     if ($code -ne 0) {
-        Fail "Docker Compose failed for project $Project: $($Arguments -join ' ')"
+        Fail "Docker Compose failed for project ${Project}: $($Arguments -join ' ')"
     }
 }
 
@@ -541,7 +541,7 @@ function Invoke-IntegrationClose {
         if (-not (Test-Path -LiteralPath $VerifyIntegration -PathType Leaf)) {
             Fail "Integration verifier is missing: $VerifyIntegration"
         }
-        & pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $VerifyIntegration -Attempts 60 -DelaySeconds 2
+        & pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $VerifyIntegration -EnvFile $EnvPath -Attempts 60 -DelaySeconds 2
         if ($LASTEXITCODE -ne 0) { Fail 'Integration endpoint verification failed.' }
 
         $running = @(Get-ProjectServices -Project $IntegrationProject -RunningOnly)

@@ -31,7 +31,6 @@ function identityBaseUrl(): string {
   if (explicit) {
     return validateServiceUrl(explicit, "IDENTITY_API_BASE_URL");
   }
-  if (process.env.NODE_ENV === "development") return "http://127.0.0.1:18082";
   throw new Error("IDENTITY_API_BASE_URL_REQUIRED");
 }
 

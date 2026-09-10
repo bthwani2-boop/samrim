@@ -26,7 +26,6 @@ function dshBaseUrl(): string {
       throw { kind: "config", message: "dsh service must use HTTPS" } satisfies DshClientError;
     }
   }
-  if (process.env.NODE_ENV === "development") return "http://127.0.0.1:58080";
   throw { kind: "config", message: "dsh service configuration is incomplete" } satisfies DshClientError;
 }
 

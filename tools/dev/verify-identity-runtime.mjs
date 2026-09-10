@@ -33,7 +33,8 @@ function parseEnv(file) {
 }
 
 const env = parseEnv(envFile);
-const port = env.SAMRIM_IDENTITY_PORT || "18082";
+const port = env.SAMRIM_IDENTITY_PORT;
+if (!port) fail("SAMRIM_IDENTITY_PORT is required in the canonical environment");
 const baseUrl = "http://" + runtimeHost + ":" + port;
 const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
 const abuseSecret = env.IDENTITY_ABUSE_HMAC_SECRET;
