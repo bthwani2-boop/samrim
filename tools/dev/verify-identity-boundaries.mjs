@@ -605,6 +605,10 @@ for (const required of [
   "/dsh/managed-roles/disable:",
   "/dsh/managed-roles/enable:",
   "/dsh/managed-roles/reenrollment:",
+  "/dsh/partner-bootstrap:",
+  "/dsh/partner-bootstrap/self:",
+  "Idempotency-Key",
+  "userBearer",
   "X-Acting-Actor-ID",
   "X-Expected-Version",
   "actorVersion",
@@ -628,6 +632,8 @@ for (const required of [
   "dshOperationPaths.disableManagedRole",
   "dshOperationPaths.enableManagedRole",
   "dshOperationPaths.reenrollManagedRoleByPhone",
+  "dshOperationPaths.createPartnerBootstrap",
+  "Idempotency-Key",
   "X-Acting-Actor-ID",
   "X-Expected-Version",
 ]) {
@@ -654,6 +660,21 @@ for (const required of [
 ]) {
   if (!dshServer.includes(required)) failures.push("DSH managed access server missing " + required);
 }
+const partnerBootstrapServer = read("services/dsh/backend/internal/partnerbootstrap/server.go");
+for (const required of [
+  "CreatePermission",
+  "ReadActorRole",
+  "ReadSession",
+  "CreatePartnerBootstrap",
+  "Idempotency-Key",
+  "X-Acting-Actor-ID",
+]) {
+  if (!partnerBootstrapServer.includes(required)) failures.push("DSH partner bootstrap server missing " + required);
+}
+const dshStorage = read("services/dsh/backend/internal/storage/postgres/partner_bootstrap.go");
+for (const required of ["pg_advisory_xact_lock", "ErrIdempotencyConflict", "ErrAlreadyBootstrapped", "partner_bootstrap_audit"]) {
+  if (!dshStorage.includes(required)) failures.push("DSH partner bootstrap storage missing " + required);
+}
 
 const dshGeneratedTypes = read("services/dsh/clients/generated/dsh-types.ts");
 const dshGeneratedOperations = read("services/dsh/clients/generated/dsh-operations.ts");
@@ -672,7 +693,11 @@ for (const required of ["actorVersion", "roleVersion", "credentialVersion"]) {
     failures.push("DSH generated response lineage missing " + required);
   }
 }
-if (dshGeneratedTypes.includes("readonly version:") || dshGeneratedGo.includes("\n\tVersion int")) {
+const actorRoleViewStart = dshGeneratedGo.indexOf("type ActorRoleView struct");
+const actorRoleViewBody = actorRoleViewStart >= 0 ? dshGeneratedGo.slice(actorRoleViewStart, dshGeneratedGo.indexOf("\n}", actorRoleViewStart) + 2) : "";
+const actorRoleTypeStart = dshGeneratedTypes.indexOf("export type ActorRoleView =");
+const actorRoleTypeBody = actorRoleTypeStart >= 0 ? dshGeneratedTypes.slice(actorRoleTypeStart, dshGeneratedTypes.indexOf("\n};", actorRoleTypeStart) + 3) : "";
+if (actorRoleTypeBody.includes("readonly version:") || actorRoleViewBody.includes("\n\tVersion int")) {
   failures.push("DSH generated response lineage retains obsolete version field");
 }
 

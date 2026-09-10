@@ -77,6 +77,14 @@ func (c *Client) LookupRoleByPhone(ctx context.Context, phone, role string) (ide
 	return c.inner.LookupRoleByPhone(ctx, role, phone)
 }
 
+func (c *Client) ReadActorRole(ctx context.Context, actorID, role string) (identityclient.ActorRoleView, error) {
+	return c.inner.ReadRole(ctx, actorID, role)
+}
+
+func (c *Client) ReadSession(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
+	return c.inner.ReadSession(ctx, accessToken)
+}
+
 func (c *Client) SetPartnerEnabled(ctx context.Context, phone string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
 	return c.SetRoleEnabledByPhoneWithContext(ctx, phone, "partner", enabled, correlationID, reason, operatorActorID, expectedVersion)
 }

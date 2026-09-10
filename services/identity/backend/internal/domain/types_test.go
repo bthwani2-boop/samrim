@@ -37,7 +37,7 @@ func TestTrustedCallerProvisionBoundary(t *testing.T) {
 }
 
 func TestTrustedCallerOperationBoundaries(t *testing.T) {
-	if !CanReadRole("platform-control", "client") || !CanReadRole("dsh", "partner") {
+	if !CanReadRole("platform-control", "client") || !CanReadRole("dsh", "partner") || !CanReadRole("dsh", "operator") || !CanReadRole("dsh", "platform_owner") {
 		t.Fatal("expected role reads inside caller boundaries")
 	}
 	for _, pair := range [][2]string{{"platform-control", "platform_owner"}, {"browser", "operator"}} {
@@ -92,8 +92,6 @@ func TestOperatorEnrollmentTokenIssuerBoundary(t *testing.T) {
 		{"platform-control", "partner"},
 		{"platform-control", "captain"},
 		{"platform-control", "field"},
-		{"dsh", "operator"},
-		{"dsh", "platform_owner"},
 		{"platform-control", "platform_owner"},
 		{"browser", "captain"},
 	}

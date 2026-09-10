@@ -133,3 +133,17 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Host "IDENTITY_SCHEMA_EXACT=PASS"
+
+$dshSchemaArgs = @(
+    "compose",
+    "--project-name", "samrim-integration",
+    "--env-file", $EnvPath,
+    "-f", (Join-Path $RepoRoot "infra/local/compose/compose.integration.yaml"),
+    "exec", "-T", "dsh", "/schema-verify"
+)
+& docker @dshSchemaArgs
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "DSH exact schema verification failed"
+    exit 1
+}
+Write-Host "DSH_SCHEMA_EXACT=PASS"

@@ -338,7 +338,22 @@ function Start-GoService([ValidateSet('identity', 'dsh')][string]$Service) {
     }
     else {
         $identityPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT'
+        $dbUserRaw = Require-EnvValue -Map $envMap -Name 'SAMRIM_POSTGRES_USER'
+        $dbPasswordRaw = Require-EnvValue -Map $envMap -Name 'SAMRIM_POSTGRES_PASSWORD'
+        $dbNameRaw = Require-EnvValue -Map $envMap -Name 'SAMRIM_POSTGRES_DB'
+        $dbPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_POSTGRES_PORT'
+        $dbUser = [Uri]::EscapeDataString($dbUserRaw)
+        $dbPassword = [Uri]::EscapeDataString($dbPasswordRaw)
+        $dbName = [Uri]::EscapeDataString($dbNameRaw)
+        $databaseURL = "postgres://${dbUser}:${dbPassword}@127.0.0.1:${dbPort}/${dbName}?sslmode=disable"
         [Environment]::SetEnvironmentVariable('DSH_IDENTITY_API_BASE_URL', "http://127.0.0.1:${identityPort}", 'Process')
+        [Environment]::SetEnvironmentVariable('DSH_DATABASE_URL', $databaseURL, 'Process')
+        [Environment]::SetEnvironmentVariable('DSH_MIGRATION_DATABASE_URL', $databaseURL, 'Process')
+        [Environment]::SetEnvironmentVariable('DSH_SCHEMA_DATABASE_URL', $databaseURL, 'Process')
+        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_HOST', '127.0.0.1', 'Process')
+        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_PORT', [string]$dbPort, 'Process')
+        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_NAME', $dbNameRaw, 'Process')
+        [Environment]::SetEnvironmentVariable('BTHWANI_EXPECTED_DATABASE_USER', $dbUserRaw, 'Process')
     }
 
     Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=$Service port=$runtimePort"
@@ -349,6 +364,12 @@ function Start-GoService([ValidateSet('identity', 'dsh')][string]$Service) {
             & go run ./cmd/migrate
             if ($LASTEXITCODE -ne 0) { Fail 'Identity schema migration/verification failed.' }
             Write-Host 'Identity schema migration/verification: PASS'
+        }
+        if ($Service -eq 'dsh') {
+            Write-Host 'DSH schema migration/verification: starting'
+            & go run ./cmd/migrate
+            if ($LASTEXITCODE -ne 0) { Fail 'DSH schema migration/verification failed.' }
+            Write-Host 'DSH schema migration/verification: PASS'
         }
 
         & go run ./cmd/api

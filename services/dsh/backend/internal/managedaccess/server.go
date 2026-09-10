@@ -2,7 +2,6 @@ package managedaccess
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,14 +9,15 @@ import (
 	"strconv"
 	"strings"
 
+	auth "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	contract "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityboundary "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityboundary"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 type Server struct {
-	identity    *identityboundary.Client
-	accessToken []byte
+	identity *identityboundary.Client
+	auth     *auth.ServiceToken
 }
 
 func New(identity *identityboundary.Client, accessToken string) (*Server, error) {
@@ -25,7 +25,11 @@ func New(identity *identityboundary.Client, accessToken string) (*Server, error)
 	if identity == nil || len(accessToken) < 24 {
 		return nil, errors.New("dsh managed access configuration is invalid")
 	}
-	return &Server{identity: identity, accessToken: []byte(accessToken)}, nil
+	authorizer, err := auth.NewServiceToken(accessToken)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{identity: identity, auth: authorizer}, nil
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
@@ -241,13 +245,7 @@ func (s *Server) reenrollByPhone(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authorized(r *http.Request) bool {
-	value := strings.TrimSpace(r.Header.Get("Authorization"))
-	const prefix = "Bearer "
-	if !strings.HasPrefix(value, prefix) {
-		return false
-	}
-	provided := strings.TrimSpace(strings.TrimPrefix(value, prefix))
-	return len(provided) == len(s.accessToken) && subtle.ConstantTimeCompare([]byte(provided), s.accessToken) == 1
+	return s.auth.Authorized(r)
 }
 
 func writeIdentityError(w http.ResponseWriter, err error) {

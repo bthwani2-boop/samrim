@@ -59,6 +59,19 @@ func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleV
 	err := c.do(ctx, IdentityOperationReadActorRole.Method, pathname, "", nil, &result)
 	return result, err
 }
+
+// ReadSession validates an end-user access token at the canonical Identity
+// session boundary. The token is deliberately not sent to an internal route
+// with the DSH service credential.
+func (c *Client) ReadSession(ctx context.Context, accessToken string) (ActorIdentity, error) {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return ActorIdentity{}, &Error{Status: http.StatusUnauthorized, Code: "UNAUTHENTICATED", Message: "access token is required"}
+	}
+	var result ActorIdentity
+	err := c.doWithToken(ctx, IdentityOperationReadCurrentSession.Method, IdentityOperationReadCurrentSession.Path, accessToken, "", "", "", 0, nil, &result)
+	return result, err
+}
 func (c *Client) SearchRoles(ctx context.Context, role, query string) (ActorRoleSearchPage, error) {
 	params := url.Values{}
 	params.Set("role", strings.TrimSpace(role))
@@ -145,6 +158,14 @@ func (c *Client) do(ctx context.Context, method, pathname, correlationID string,
 }
 
 func (c *Client) doWithContext(ctx context.Context, method, pathname, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
+	return c.doWithToken(ctx, method, pathname, c.token, correlationID, reason, operatorActorID, expectedVersion, body, target)
+}
+
+func (c *Client) doWithToken(ctx context.Context, method, pathname, token, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return &Error{Status: http.StatusUnauthorized, Code: "UNAUTHENTICATED", Message: "access token is required"}
+	}
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -158,7 +179,7 @@ func (c *Client) doWithContext(ctx context.Context, method, pathname, correlatio
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

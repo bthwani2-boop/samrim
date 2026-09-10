@@ -1,6 +1,8 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../..");
@@ -37,6 +39,46 @@ const dshToken = env.DSH_PLATFORM_CONTROL_SERVICE_TOKEN || env.DSH_SERVICE_TOKEN
 if (!dshToken) {
   console.error("DSH_PLATFORM_CONTROL_SERVICE_TOKEN or DSH_SERVICE_TOKEN is required to verify DSH runtime boundary");
   process.exit(1);
+}
+
+const identityPort = env.SAMRIM_IDENTITY_PORT;
+const identityBase = identityPort ? `http://127.0.0.1:${identityPort}` : null;
+const identityBootstrapToken = env.IDENTITY_PLATFORM_BOOTSTRAP_SECRET;
+const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
+const composeFile = path.join(repoRoot, "infra/local/compose/compose.integration.yaml");
+const composeArgs = ["compose", "--project-name", "samrim-integration", "--env-file", envPath, "-f", composeFile];
+
+function compose(...args) {
+  return execFileSync("docker", [...composeArgs, ...args], { encoding: "utf8" });
+}
+
+function sql(query) {
+  return compose("exec", "-T", "postgres", "psql", "-U", env.SAMRIM_POSTGRES_USER, "-d", env.SAMRIM_POSTGRES_DB, "-Atc", query).trim();
+}
+
+async function identityRequest(method, pathname, options = {}) {
+  if (!identityBase) fail("SAMRIM_IDENTITY_PORT is required for DSH boundary proof");
+  const response = await fetch(identityBase + pathname, {
+    method,
+    headers: {
+      Accept: "application/json",
+      ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...(options.token ? { Authorization: "Bearer " + options.token } : {}),
+    },
+    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+  });
+  const raw = await response.text();
+  let body = null;
+  if (raw) {
+    try { body = JSON.parse(raw); } catch { body = raw; }
+  }
+  return { status: response.status, body };
+}
+
+function codeFor(challengeId, purpose) {
+  const digest = crypto.createHmac("sha256", challengeSecret)
+    .update(challengeId).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest();
+  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0");
 }
 
 function fail(msg) {
@@ -81,9 +123,34 @@ async function expect(method, relPath, expectedStatus, options = {}) {
   return res.body;
 }
 
+async function waitForDshReadiness() {
+  let lastStatus = "unavailable";
+  for (let attempt = 1; attempt <= 30; attempt += 1) {
+    try {
+      const response = await request("GET", "/dsh/readiness");
+      lastStatus = `${response.status}: ${JSON.stringify(response.body)}`;
+      if (response.status === 200 && response.body?.status === "ok" && response.body?.service === "dsh") {
+        return;
+      }
+    } catch (error) {
+      lastStatus = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  fail(`DSH readiness did not recover after restart: ${lastStatus}`);
+}
+
 const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const testPhone = "+96771" + Math.floor(1000000 + Math.random() * 9000000);
-const actingAdminId = "act_dsh_boundary_admin_" + suffix;
+let actingAdminId = sql("SELECT COALESCE(platform_owner_actor_id, '') FROM identity_bootstrap_state WHERE id=1");
+if (!actingAdminId) {
+  const owner = await identityRequest("POST", "/internal/bootstrap/platform-owner", {
+    token: identityBootstrapToken,
+    body: { phoneE164: "+9677" + Math.floor(10000000 + Math.random() * 89999999), password: "Bootstrap-" + suffix + "-Strong-Password" },
+  });
+  if (owner.status !== 201) fail("platform owner bootstrap failed: " + JSON.stringify(owner.body));
+  actingAdminId = owner.body.actorId;
+}
 
 console.log("1. Verifying DSH health and readiness...");
 const health = await expect("GET", "/dsh/health", 200);
@@ -91,6 +158,7 @@ assert(health.status === "ok" && health.service === "dsh", "health status invali
 
 const readiness = await expect("GET", "/dsh/readiness", 200);
 assert(readiness.status === "ok" && readiness.service === "dsh", "readiness status invalid");
+assert(actingAdminId.startsWith("act_"), "platform owner actor id is invalid");
 
 console.log("2. Verifying DSH authentication boundary...");
 await expect("POST", "/dsh/managed-roles/provision", 401, {
@@ -115,7 +183,93 @@ assert(provisioned.role === "captain", "provisioned role mismatch");
 assert(typeof provisioned.actorVersion === "number" && provisioned.actorVersion >= 1, "provisioned role missing actorVersion");
 assert(typeof provisioned.roleVersion === "number" && provisioned.roleVersion >= 1, "provisioned role missing roleVersion");
 
-console.log("5. Querying managed role status via DSH...");
+console.log("5. Verifying the J2.1 partner bootstrap authorization and transaction...");
+const partnerPhone = "+96772" + Math.floor(1000000 + Math.random() * 9000000);
+const partner = await expect("POST", "/dsh/managed-roles/provision", 201, {
+  token: dshToken,
+  headers: { "X-Acting-Actor-ID": actingAdminId },
+  body: { phoneE164: partnerPhone, role: "partner" },
+});
+assert(partner.actorId && partner.role === "partner", "partner actor was not provisioned");
+const partnerChallenge = await identityRequest("POST", "/auth/managed/activation/request", {
+  body: { phone: partnerPhone, role: "partner" },
+});
+assert(partnerChallenge.status === 201 && partnerChallenge.body?.challengeId, "partner activation challenge was not issued");
+const partnerPair = await identityRequest("POST", "/auth/managed/activate", {
+  body: {
+    phone: partnerPhone,
+    role: "partner",
+    verificationCode: codeFor(partnerChallenge.body.challengeId, "managed_activate"),
+    password: "Partner-" + suffix + "-Strong-Password",
+    deviceFingerprint: "device-partner-" + suffix,
+  },
+});
+assert(partnerPair.status === 200 && partnerPair.body?.accessToken, "partner session was not created");
+const bootstrapKey = "j21-" + suffix + "-idempotency";
+const bootstrapHeaders = {
+  "X-Acting-Actor-ID": actingAdminId,
+  "X-Correlation-ID": "correlation-" + suffix,
+  "Idempotency-Key": bootstrapKey,
+};
+await expect("POST", "/dsh/partner-bootstrap", 401, {
+  headers: bootstrapHeaders,
+  body: { partnerActorId: partner.actorId, storeName: "متجر J2.1" },
+});
+await expect("POST", "/dsh/partner-bootstrap", 403, {
+  token: dshToken,
+  headers: { ...bootstrapHeaders, "X-Acting-Actor-ID": "act_forged_actor_" + suffix },
+  body: { partnerActorId: partner.actorId, storeName: "متجر J2.1" },
+});
+const createdBootstrap = await expect("POST", "/dsh/partner-bootstrap", 201, {
+  token: dshToken,
+  headers: bootstrapHeaders,
+  body: { partnerActorId: partner.actorId, storeName: "متجر J2.1" },
+});
+assert(createdBootstrap.idempotentReplay === false, "new bootstrap was marked as replay");
+assert(createdBootstrap.partnerOrganization?.ownerActorId === partner.actorId, "organization owner readback mismatch");
+assert(createdBootstrap.firstStore?.partnerOrganizationId === createdBootstrap.partnerOrganization.id, "first store organization link mismatch");
+assert(createdBootstrap.firstStore?.name === "متجر J2.1", "first store name readback mismatch");
+const operatorReadback = await expect("GET", "/dsh/partner-bootstrap/" + encodeURIComponent(partner.actorId), 200, {
+  token: dshToken,
+  headers: { "X-Acting-Actor-ID": actingAdminId },
+});
+assert(operatorReadback.firstStore.id === createdBootstrap.firstStore.id, "operator canonical readback mismatch");
+const replayedBootstrap = await expect("POST", "/dsh/partner-bootstrap", 200, {
+  token: dshToken,
+  headers: bootstrapHeaders,
+  body: { partnerActorId: partner.actorId, storeName: "متجر J2.1" },
+});
+assert(replayedBootstrap.idempotentReplay === true, "idempotent replay was not marked");
+assert(replayedBootstrap.firstStore.id === createdBootstrap.firstStore.id, "idempotent replay created a duplicate store");
+await expect("POST", "/dsh/partner-bootstrap", 409, {
+  token: dshToken,
+  headers: bootstrapHeaders,
+  body: { partnerActorId: partner.actorId, storeName: "متجر مختلف" },
+});
+await expect("POST", "/dsh/partner-bootstrap", 404, {
+  token: dshToken,
+  headers: { ...bootstrapHeaders, "Idempotency-Key": "j21-missing-" + suffix },
+  body: { partnerActorId: "act_missing_partner_" + suffix, storeName: "متجر مفقود" },
+});
+const persistedCount = Number(sql("SELECT count(*) FROM dsh.partner_bootstrap_audit WHERE idempotency_key='" + bootstrapKey.replaceAll("'", "''") + "'"));
+assert(persistedCount === 1, "bootstrap audit was not persisted exactly once");
+const selfReadback = await expect("GET", "/dsh/partner-bootstrap/self", 200, {
+  headers: { Authorization: "Bearer " + partnerPair.body.accessToken },
+});
+assert(selfReadback.partnerOrganization.ownerActorId === partner.actorId, "partner self readback owner mismatch");
+assert(selfReadback.firstStore.id === createdBootstrap.firstStore.id, "partner self readback store mismatch");
+
+console.log("5. Restarting DSH and proving canonical bootstrap persistence...");
+compose("restart", "dsh");
+await waitForDshReadiness();
+const restartedReadback = await expect("GET", "/dsh/partner-bootstrap/self", 200, {
+  headers: { Authorization: "Bearer " + partnerPair.body.accessToken },
+});
+assert(restartedReadback.partnerOrganization.id === createdBootstrap.partnerOrganization.id, "restart organization readback mismatch");
+assert(restartedReadback.firstStore.id === createdBootstrap.firstStore.id, "restart store readback mismatch");
+console.log("DSH_BOOTSTRAP_RESTART_PERSISTENCE=PASS");
+
+console.log("6. Querying managed role status via DSH...");
 const roleStatus = await expect(
   "GET",
   `/dsh/managed-roles/status?phoneE164=${encodeURIComponent(testPhone)}&role=captain`,

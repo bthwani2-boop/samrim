@@ -115,6 +115,10 @@ export class IdentitySessionManager {
     return this.stateValue;
   }
 
+  getAccessToken(): string | null {
+    return this.tokens?.accessToken ?? null;
+  }
+
   async restore(): Promise<IdentitySessionState> {
     this.stateValue = { kind: "restoring" };
     const stored = parseStoredTokens(await this.storage.getItem(this.key));

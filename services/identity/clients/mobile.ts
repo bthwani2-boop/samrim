@@ -89,6 +89,7 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
     identityClient,
     identitySession,
     deviceFingerprint,
+    readAccessToken: (): string | null => identitySession().getAccessToken(),
     restoreIdentitySession: (): Promise<IdentitySessionState> => identitySession().restore(),
     currentIdentityState: (): IdentitySessionState => identitySession().state,
     logoutIdentity: (): Promise<void> => identitySession().logout(),

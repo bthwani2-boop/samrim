@@ -198,7 +198,7 @@ assert(/^name:\s*samrim-local\s*$/m.test(dailyCompose), "daily compose project m
 assert(/^name:\s*samrim-integration\s*$/m.test(integrationCompose), "integration compose project must be samrim-integration");
 assert(!/^\s{2}(identity|identity-migrate|dsh):\s*$/m.test(dailyCompose), "daily compose must not contain domain services");
 assert(!dailyCompose.includes("profiles:"), "daily compose must not contain alternate profiles");
-for (const service of ["postgres", "mailpit", "identity-migrate", "identity", "dsh"]) {
+for (const service of ["postgres", "mailpit", "identity-migrate", "identity", "dsh-migrate", "dsh"]) {
   assert(new RegExp(`^  ${service}:\\s*$`, "m").test(integrationCompose), `integration compose missing service: ${service}`);
 }
 assert(integrationCompose.includes("samrim-integration-postgres-data:/var/lib/postgresql/data"), "integration database must use isolated volume");

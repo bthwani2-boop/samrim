@@ -31,6 +31,7 @@ function WorkspaceHeader({ identity, busy, onLogout }: Readonly<{ identity: Acto
 
 function WorkspaceNavigation({ identity, pathname }: Readonly<{ identity: ActorIdentity; pathname: string }>) {
   const isOwner = identity.role === "platform_owner";
+  const canBootstrapPartner = isOwner || identity.role === "operator";
   return (
     <nav className="workspace-nav" aria-label="تنقل مساحة العمل">
       <p className="workspace-nav-label">المساحة الحالية</p>
@@ -42,6 +43,14 @@ function WorkspaceNavigation({ identity, pathname }: Readonly<{ identity: ActorI
           <p className="workspace-nav-label workspace-nav-label-spaced">إدارة الوصول</p>
           <Link className="workspace-nav-link" href="/access" aria-current={pathname === "/access" ? "page" : undefined}>
             الحسابات والأدوار
+          </Link>
+        </>
+      ) : null}
+      {canBootstrapPartner ? (
+        <>
+          <p className="workspace-nav-label workspace-nav-label-spaced">التشغيل</p>
+          <Link className="workspace-nav-link" href="/partners" aria-current={pathname === "/partners" ? "page" : undefined}>
+            تهيئة الشركاء
           </Link>
         </>
       ) : null}
