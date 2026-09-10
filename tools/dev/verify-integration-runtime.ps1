@@ -31,7 +31,6 @@ function Test-Endpoint([string] $Service, [string] $Uri) {
 }
 
 $pending = [System.Collections.Generic.HashSet[string]]::new()
-
 foreach ($service in $checks) {
     foreach ($endpoint in @("health", "readiness")) {
         $null = $pending.Add("$($service.Name)|$($service.Base)/$endpoint")
@@ -43,7 +42,6 @@ for ($attempt = 1; $attempt -le $Attempts -and $pending.Count -gt 0; $attempt++)
         $parts = $entry.Split("|", 2)
         $serviceName = $parts[0]
         $uri = $parts[1]
-
         if (Test-Endpoint -Service $serviceName -Uri $uri) {
             Write-Host "PASS $uri"
             $null = $pending.Remove($entry)
@@ -68,8 +66,10 @@ if ($pending.Count -gt 0) {
 Write-Host "INTEGRATION_RUNTIME=PASS"
 
 $composeArgs = @(
-    "compose", "--env-file", "infra/local/compose/.env",
-    "-f", "infra/local/compose/compose.yaml", "--profile", "integration",
+    "compose",
+    "--project-name", "samrim-integration",
+    "--env-file", "infra/local/compose/.env",
+    "-f", "infra/local/compose/compose.integration.yaml",
     "exec", "-T", "identity", "/schema-verify"
 )
 & docker @composeArgs
