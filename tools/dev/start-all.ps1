@@ -5,14 +5,14 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$repo = (Resolve-Path (Join-Path $PSScriptRoot '..\\..')).Path
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $started = [System.Collections.Generic.List[object]]::new()
-$envFile = Join-Path $repo 'infra\\local\\compose\\.env'
-$composeFile = Join-Path $repo 'infra\\local\\compose\\compose.yaml'
+$envFile = Join-Path $repo 'infra\local\compose\.env'
+$composeFile = Join-Path $repo 'infra\local\compose\compose.yaml'
 
 function Test-Ready([int]$Port, [string]$Uri, [switch]$Expo) {
     $uris = if ($Expo) {
-        @(\"http://localhost:$Port/status\", \"http://localhost:$Port/\")
+        @("http://localhost:$Port/status", "http://localhost:$Port/")
     } else {
         @($Uri)
     }
@@ -29,20 +29,20 @@ function Resolve-AdbSerial {
     if (-not (Get-Command adb -ErrorAction SilentlyContinue)) { return '' }
     $devices = @(
         & adb devices |
-            Where-Object { $_ -match '\\tdevice$' } |
-            ForEach-Object { ($_ -split '\\t', 2)[0].Trim() }
+            Where-Object { $_ -match '\tdevice$' } |
+            ForEach-Object { ($_ -split '\t', 2)[0].Trim() }
     )
     if ($env:BTHWANI_ADB_SERIAL) {
         if ($env:BTHWANI_ADB_SERIAL -notin $devices) {
-            throw \"BTHWANI_ADB_SERIAL is not online: $env:BTHWANI_ADB_SERIAL\"
+            throw "BTHWANI_ADB_SERIAL is not online: $env:BTHWANI_ADB_SERIAL"
         }
         return $env:BTHWANI_ADB_SERIAL
     }
-    $tcp = @($devices | Where-Object { $_ -match '^\\d{1,3}(?:\\.\\d{1,3}){3}:\\d+$' })
+    $tcp = @($devices | Where-Object { $_ -match '^\d{1,3}(?:\.\d{1,3}){3}:\d+$' })
     if ($tcp.Count -eq 1) { return $tcp[0] }
     if ($devices.Count -eq 1) { return $devices[0] }
     if ($devices.Count -eq 0) { return '' }
-    throw \"ADB target is not deterministic. Online devices: $($devices -join ', ')\"
+    throw "ADB target is not deterministic. Online devices: $($devices -join ', ')"
 }
 
 function Start-Dev([string]$Label, [string]$Command) {
@@ -52,22 +52,22 @@ function Start-Dev([string]$Label, [string]$Command) {
             Where-Object { $_.CommandType -in @('Application','ExternalScript') } |
             Select-Object -First 1
     ).Source
-    $r = $repo.Replace(\"'\", \"''\")
-    $p = $pnpm.Replace(\"'\", \"''\")
-    $c = $Command.Replace(\"'\", \"''\")
-    $l = $Label.Replace(\"'\", \"''\")
-    $child = @\"
+    $r = $repo.Replace("'", "''")
+    $p = $pnpm.Replace("'", "''")
+    $c = $Command.Replace("'", "''")
+    $l = $Label.Replace("'", "''")
+    $child = @"
 `$Host.UI.RawUI.WindowTitle = 'BThwani - $l'
 Set-Location -LiteralPath '$r'
 & '$p' '$c'
 exit `$LASTEXITCODE
-\"@
+"@
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($child))
     $process = Start-Process $pwsh -ArgumentList @(
         '-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded
     ) -PassThru
     $started.Add($process)
-    Write-Host \"DEV_PROCESS_STARTED label=$Label pid=$($process.Id)\"
+    Write-Host "DEV_PROCESS_STARTED label=$Label pid=$($process.Id)"
     return $process
 }
 
@@ -79,26 +79,26 @@ function Ensure-Dev(
     [switch]$Expo
 ) {
     if (Test-Ready -Port $Port -Uri $Uri -Expo:$Expo) {
-        Write-Host \"DEV_COMPONENT=ALREADY_READY label=$Label port=$Port\"
+        Write-Host "DEV_COMPONENT=ALREADY_READY label=$Label port=$Port"
         return
     }
     $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
     if ($listeners.Count -gt 0) {
-        throw \"Port $Port is occupied but $Label is not ready.\"
+        throw "Port $Port is occupied but $Label is not ready."
     }
     $process = Start-Dev -Label $Label -Command $Command
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
     while ([DateTime]::UtcNow -lt $deadline) {
         if (Test-Ready -Port $Port -Uri $Uri -Expo:$Expo) {
-            Write-Host \"DEV_COMPONENT=READY label=$Label port=$Port\"
+            Write-Host "DEV_COMPONENT=READY label=$Label port=$Port"
             return
         }
         if ($process.HasExited) {
-            throw \"$Label exited before readiness. exit=$($process.ExitCode)\"
+            throw "$Label exited before readiness. exit=$($process.ExitCode)"
         }
         Start-Sleep -Milliseconds 500
     }
-    throw \"Timed out waiting for $Label on port $Port.\"
+    throw "Timed out waiting for $Label on port $Port."
 }
 
 function Stop-Started {
@@ -112,13 +112,13 @@ function Stop-Started {
 }
 
 foreach ($tool in @('docker','pnpm','pwsh')) {
-    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw \"$tool is required.\" }
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "$tool is required." }
 }
 
 $adb = Resolve-AdbSerial
 if ($adb) {
     $env:BTHWANI_ADB_SERIAL = $adb
-    Write-Host \"ADB_TARGET=PASS serial=$adb\"
+    Write-Host "ADB_TARGET=PASS serial=$adb"
 } else {
     Remove-Item Env:BTHWANI_ADB_SERIAL -ErrorAction SilentlyContinue
     Write-Host 'ADB_TARGET=NOT_CONNECTED mobile=metro-only'
@@ -133,7 +133,7 @@ try {
     Push-Location $repo
     try {
         & pnpm runtime:up
-        if ($LASTEXITCODE -ne 0) { throw \"pnpm runtime:up failed: $LASTEXITCODE\" }
+        if ($LASTEXITCODE -ne 0) { throw "pnpm runtime:up failed: $LASTEXITCODE" }
     } finally { Pop-Location }
 
     Write-Host 'DEV_INFRASTRUCTURE=READY'
@@ -148,7 +148,7 @@ try {
         @('Captain','captain',18103),
         @('Field','field',18104)
     )) {
-        Ensure-Dev -Label $app[0] -Command $app[1] -Port $app[2] -Uri \"http://localhost:$($app[2])/\" -Expo
+        Ensure-Dev -Label $app[0] -Command $app[1] -Port $app[2] -Uri "http://localhost:$($app[2])/" -Expo
     }
 
     Write-Host ''

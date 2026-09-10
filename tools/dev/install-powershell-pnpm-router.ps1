@@ -1,7 +1,7 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
-    [string] $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\\..')).Path
+    [string] $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 )
 
 Set-StrictMode -Version Latest
@@ -9,9 +9,9 @@ $ErrorActionPreference = 'Stop'
 
 $startMarker = '# >>> BTHWANI PNPM ROUTER >>>'
 $endMarker = '# <<< BTHWANI PNPM ROUTER <<<'
-$pattern = '(?ms)^' + [regex]::Escape($startMarker) + '.*?^' + [regex]::Escape($endMarker) + '\\r?\\n?'
+$pattern = '(?ms)^' + [regex]::Escape($startMarker) + '.*?^' + [regex]::Escape($endMarker) + '\r?\n?'
 
-$repoLiteral = $RepoRoot.Replace(\"'\", \"''\")
+$repoLiteral = $RepoRoot.Replace("'", "''")
 $template = @'
 # >>> BTHWANI PNPM ROUTER >>>
 $global:BthwaniPnpmNative = (
@@ -88,7 +88,7 @@ function Install-RouterProfile([string] $ProfilePath) {
         -Value $newContent `
         -Encoding utf8
 
-    Write-Host \"POWERSHELL_PROFILE_UPDATED=$ProfilePath\"
+    Write-Host "POWERSHELL_PROFILE_UPDATED=$ProfilePath"
 }
 
 $documents = [Environment]::GetFolderPath(
@@ -97,8 +97,8 @@ $documents = [Environment]::GetFolderPath(
 
 $profileTargets = @(
     $PROFILE,
-    (Join-Path $documents 'PowerShell\\Microsoft.PowerShell_profile.ps1'),
-    (Join-Path $documents 'WindowsPowerShell\\Microsoft.PowerShell_profile.ps1')
+    (Join-Path $documents 'PowerShell\Microsoft.PowerShell_profile.ps1'),
+    (Join-Path $documents 'WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
 ) |
     Where-Object {
         -not [string]::IsNullOrWhiteSpace([string] $_)
@@ -111,7 +111,7 @@ foreach ($profilePath in $profileTargets) {
 
 Invoke-Expression $block
 
-Write-Host \"BTHWANI_REPO=$RepoRoot\"
+Write-Host "BTHWANI_REPO=$RepoRoot"
 Write-Host 'BTHWANI_PNPM_ROUTER=INSTALLED'
 Write-Host 'Commands: all, client, partner, captain, field, control, scr'
 Write-Host 'Restart any already-open Windows PowerShell session before using the updated router there.'
