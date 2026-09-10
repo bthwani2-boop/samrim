@@ -104,43 +104,17 @@ function Get-PortOwnerSummary([object[]] $Listeners) {
     return ($owners -join ", ")
 }
 
-function Test-ExistingMetroReady {
+function Assert-MetroPortAvailable {
     $listeners = @(
         Get-NetTCPConnection -State Listen -LocalPort $metroPort -ErrorAction SilentlyContinue |
             Where-Object { $_.LocalAddress -in @("127.0.0.1", "0.0.0.0") }
     )
     if ($listeners.Count -eq 0) {
-        return $false
+        return
     }
 
-    $response = $null
-    $requestError = $null
-    try {
-        $response = Invoke-WebRequest `
-            -Uri "http://127.0.0.1:${metroPort}/" `
-            -Method Get `
-            -TimeoutSec 3 `
-            -SkipHttpErrorCheck
-    }
-    catch {
-        $requestError = $_.Exception.Message
-    }
-    if ($null -ne $response -and $response.StatusCode -eq 200) {
-        Write-Host "METRO_ALREADY_READY=PASS app=$App port=$metroPort"
-        return $true
-    }
-
-    $observed = if ($null -ne $response) {
-        "status=$($response.StatusCode)"
-    }
-    elseif ($requestError) {
-        "request failed: $requestError"
-    }
-    else {
-        "no response"
-    }
     $owners = Get-PortOwnerSummary -Listeners $listeners
-    throw "Cannot start ${App}: Metro port $metroPort is already occupied by $owners and is not serving HTTP 200 on 127.0.0.1 ($observed). Stop the owning process before retrying."
+    throw "RUNTIME_OWNERSHIP_CONFLICT=FAIL app=$App port=$metroPort owner=$owners. The mobile launcher requires exclusive Metro ownership and will not accept a pre-existing HTTP endpoint as success. Stop the owning process before retrying."
 }
 
 $adbSerial = Resolve-AdbTargetSerial -RequestedSerial $DeviceSerial
@@ -166,9 +140,7 @@ if (-not [string]::IsNullOrWhiteSpace($adbSerial)) {
     Write-Host "ADB_REVERSE=READY serial=$adbSerial ports=$metroPort,18082,58080"
 }
 
-if (Test-ExistingMetroReady) {
-    exit 0
-}
+Assert-MetroPortAvailable
 
 $nodeOptions = [Environment]::GetEnvironmentVariable("NODE_OPTIONS", "Process")
 if ([string]::IsNullOrWhiteSpace($nodeOptions)) {

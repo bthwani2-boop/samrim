@@ -44,34 +44,8 @@ $listeners = @(
         Where-Object { $_.LocalAddress -in @('127.0.0.1', '0.0.0.0') }
 )
 if ($listeners.Count -gt 0) {
-    $response = $null
-    $requestError = $null
-    try {
-        $response = Invoke-WebRequest `
-            -Uri "http://127.0.0.1:${port}/" `
-            -Method Get `
-            -TimeoutSec 3 `
-            -SkipHttpErrorCheck
-    }
-    catch {
-        $requestError = $_.Exception.Message
-    }
-    if ($null -ne $response -and $response.StatusCode -eq 200) {
-        Write-Host "CONTROL_ALREADY_READY=PASS port=$port"
-        exit 0
-    }
-
-    $observed = if ($null -ne $response) {
-        "status=$($response.StatusCode)"
-    }
-    elseif ($requestError) {
-        "request failed: $requestError"
-    }
-    else {
-        'no response'
-    }
     $owners = Get-PortOwnerSummary -Listeners $listeners
-    throw "Cannot start Control Panel: port $port is already occupied by $owners and is not serving HTTP 200 on 127.0.0.1 ($observed). Stop the owning process before retrying."
+    throw "RUNTIME_OWNERSHIP_CONFLICT=FAIL service=control-panel port=$port owner=$owners. The launcher requires exclusive ownership and will not accept a pre-existing HTTP endpoint as success. Stop the owning process before retrying."
 }
 
 foreach ($line in Get-Content -LiteralPath $envPath) {

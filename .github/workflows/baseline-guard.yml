@@ -121,6 +121,10 @@ jobs:
         shell: bash
         run: node tools/dev/verify-structural-hygiene.mjs
 
+      - name: Verify local runtime ownership
+        shell: bash
+        run: node tools/dev/verify-local-runtime-ownership.mjs
+
       - name: Verify removed human-domain residue is zero
         shell: bash
         run: node tools/dev/verify-removed-human-domain-residue.mjs

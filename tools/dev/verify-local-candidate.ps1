@@ -432,6 +432,10 @@ try {
         node tools/dev/verify-structural-hygiene.mjs
     }
 
+    Run-NativeStep "Local runtime ownership" {
+        node tools/dev/verify-local-runtime-ownership.mjs
+    }
+
     Run-NativeStep "Theme authority" {
         node --loader ./tools/dev/ts-resolver.mjs tools/dev/verify-theme-authority.mjs
     }
@@ -511,8 +515,8 @@ try {
 
         foreach ($port in @(13000,$identityPort,$dshPort,18101,18102,18103,18104)) { Assert-RuntimePortFree -Port $port -Label "Deterministic local runtime proof" }
 
-        pnpm runtime:up
-        if ($LASTEXITCODE -ne 0) { Fail "runtime:up failed." }
+        pnpm runtime:daily:up
+        if ($LASTEXITCODE -ne 0) { Fail "runtime:daily:up failed." }
         $dailyRuntimeStarted = $true
 
         foreach ($entry in @(@{Name="PostgreSQL";Port=$postgresPort},@{Name="Mailpit SMTP";Port=$mailpitSmtpPort},@{Name="Mailpit Web";Port=$mailpitWebPort})) {
@@ -522,8 +526,17 @@ try {
         $postgresId = (docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml ps -q postgres).Trim()
         if ([string]::IsNullOrWhiteSpace($postgresId)) { Fail "Unable to resolve local PostgreSQL container." }
         $postgresHealth = (docker inspect --format "{{.State.Health.Status}}" $postgresId).Trim()
-        if ($postgresHealth -ne "healthy") { Fail "runtime:up returned before PostgreSQL became healthy: $postgresHealth" }
+        if ($postgresHealth -ne "healthy") { Fail "runtime:daily:up returned before PostgreSQL became healthy: $postgresHealth" }
         Write-Host "POSTGRES_READINESS=PASS state=healthy"
+
+        $unexpectedIntegrationServices = @(
+            docker compose --env-file infra/local/compose/.env -f infra/local/compose/compose.yaml --profile integration ps --status running --services identity dsh
+        )
+        if ($LASTEXITCODE -ne 0) { Fail "Unable to census integration-only Docker services during DAILY_DEV proof." }
+        if ($unexpectedIntegrationServices.Count -gt 0) {
+            Fail ("DAILY_DEV unexpectedly owns domain services in Docker: " + ($unexpectedIntegrationServices -join ", "))
+        }
+        Write-Host "DAILY_RUNTIME_DOCKER_DOMAIN_SERVICES=0"
 
         Write-Host ""
         Write-Host "=== Canonical daily host commands from clean child environments ==="
@@ -576,8 +589,8 @@ try {
         Write-Host ""
         Write-Host "=== Host runtime secret-output proof and shutdown ==="
         Stop-AllRuntimeProcesses
-        pnpm runtime:down
-        if ($LASTEXITCODE -ne 0) { Fail "runtime:down failed." }
+        pnpm runtime:daily:down
+        if ($LASTEXITCODE -ne 0) { Fail "runtime:daily:down failed." }
         $dailyRuntimeStarted = $false
 
         foreach ($port in @(13000,$identityPort,$dshPort,18101,18102,18103,18104,$postgresPort,$mailpitSmtpPort,$mailpitWebPort)) {
@@ -625,7 +638,7 @@ finally {
         } catch {}
     }
     if ($dailyRuntimeStarted) {
-        try { pnpm runtime:down *> $null } catch {}
+        try { pnpm runtime:daily:down *> $null } catch {}
     }
     Pop-Location
 }

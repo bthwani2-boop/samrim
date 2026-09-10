@@ -47,7 +47,7 @@ services:
 
   identity:
     profiles: ["integration"]
-    restart: unless-stopped
+    restart: "no"
     build:
       context: ../../..
       dockerfile: services/identity/backend/Dockerfile
@@ -90,7 +90,7 @@ services:
 
   dsh:
     profiles: ["integration"]
-    restart: unless-stopped
+    restart: "no"
     build:
       context: ../../..
       dockerfile: services/dsh/backend/Dockerfile
