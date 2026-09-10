@@ -46,7 +46,14 @@ function Resolve-AdbSerial {
 }
 
 function Start-Dev([string]$Label, [string]$Command) {
-    $pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop).Source
+    $pwsh = [Environment]::ProcessPath
+    if (
+        [string]::IsNullOrWhiteSpace($pwsh) -or
+        -not (Test-Path -LiteralPath $pwsh -PathType Leaf) -or
+        [IO.Path]::GetFileName($pwsh) -notin @('pwsh.exe','pwsh')
+    ) {
+        throw "Unable to resolve the current PowerShell 7 executable."
+    }
     $pnpm = (
         Get-Command pnpm -All -ErrorAction Stop |
             Where-Object { $_.CommandType -in @('Application','ExternalScript') } |
