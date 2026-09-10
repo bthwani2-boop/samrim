@@ -75,7 +75,7 @@ function Assert-DailyServiceCensus {
     $services = @(
         & docker ps -a `
             --filter "label=com.docker.compose.project=$dailyProject" `
-            --format "{{.Label \"com.docker.compose.service\"}}" |
+            --format '{{.Label "com.docker.compose.service"}}' |
             ForEach-Object { $_.Trim() } |
             Where-Object { $_ } |
             Sort-Object -Unique
