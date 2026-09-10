@@ -230,10 +230,7 @@ func loadConfig(defaultPort string) (config, error) {
 	}
 	originConfig := strings.TrimSpace(os.Getenv("IDENTITY_CORS_ALLOWED_ORIGINS"))
 	if originConfig == "" {
-		if runtimeEnvironment == "production" || runtimeEnvironment == "staging" {
-			return config{}, errors.New("IDENTITY_CORS_ALLOWED_ORIGINS is required outside local environments")
-		}
-		originConfig = "http://localhost:13000"
+		return config{}, errors.New("IDENTITY_CORS_ALLOWED_ORIGINS is required")
 	}
 	origins := map[string]bool{}
 	for _, origin := range strings.Split(originConfig, ",") {

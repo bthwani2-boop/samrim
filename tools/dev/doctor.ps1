@@ -101,9 +101,7 @@ try {
         "infra/local/compose/compose.yaml",
         "infra/local/compose/compose.integration.yaml",
         "tools/dev/ensure-local-env.ps1",
-        "tools/dev/local-runtime.ps1",
-        "tools/dev/integration-proof.ps1",
-        "tools/dev/runtime-status.ps1"
+        "tools/dev/runtime.ps1"
     )) {
         Check $file { Test-Path $file } { param($v) $v -eq $true }
     }
@@ -144,7 +142,13 @@ try {
     Check "control-panel origin coherence" {
         $expected = [string]$template["CONTROL_PANEL_PUBLIC_ORIGIN"]
         $uri = [Uri]::new($expected, [UriKind]::Absolute)
-        ([string]$actual["CONTROL_PANEL_PUBLIC_ORIGIN"] -eq $expected -and $uri.Scheme -eq "http" -and $uri.Host -eq "127.0.0.1" -and $uri.Port -eq 13000)
+        (
+            [string]$actual["CONTROL_PANEL_PUBLIC_ORIGIN"] -eq $expected -and
+            $uri.Scheme -eq "http" -and
+            $uri.Host -eq "127.0.0.1" -and
+            -not $uri.IsDefaultPort -and
+            $uri.AbsolutePath -eq "/"
+        )
     } { param($v) $v -eq $true }
 
     Check "identity CORS coherence" {
