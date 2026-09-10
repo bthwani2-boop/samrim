@@ -119,42 +119,6 @@ export async function createPartnerBootstrap(
   }
 }
 
-export async function readPartnerBootstrap(
-  partnerActorId: string,
-  operatorActorId: string,
-): Promise<PartnerBootstrapResponse> {
-  if (!partnerActorId.trim() || !operatorActorId.trim()) throw new Error("DSH_BOOTSTRAP_INPUT_INVALID");
-  const baseUrl = dshBaseUrl();
-  const token = dshToken();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
-  try {
-    let response: Response;
-    try {
-      const operation = dshOperationPaths.readPartnerBootstrap;
-      const pathname = operation.path.replace("{partnerActorId}", encodeURIComponent(partnerActorId.trim()));
-      response = await fetch(`${baseUrl}${pathname}`, {
-        method: operation.method,
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-          "X-Acting-Actor-ID": operatorActorId.trim(),
-        },
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
-    }
-    if (!response.ok) {
-      const parsed = parseErrorPayload(await response.json().catch(() => null));
-      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
-    }
-    return await response.json() as PartnerBootstrapResponse;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export async function provisionManagedRole(
   phone: string,
   role: ManagedActivationRole,
