@@ -194,7 +194,10 @@ function Wait-JsonRuntimeEndpoint([string] $Uri, [string] $ExpectedService, $Rec
         if ($Record.Process.HasExited) { Fail-WithRuntimeOutput -Record $Record -Message "Process exited before endpoint became ready: $Uri" }
         try {
             $response = Invoke-RestMethod -Uri $Uri -Method Get -TimeoutSec 5
-            if ($response.status -eq "ok" -and $response.service -eq $ExpectedService) { return }
+            if ($response.status -eq "ok" -and $response.service -eq $ExpectedService) {
+                $Record.CleanupPids = @(Get-RuntimeListeners -Port ([Uri] $Uri).Port | Select-Object -ExpandProperty OwningProcess -Unique)
+                return
+            }
         } catch {}
         Start-Sleep -Milliseconds 500
     }
@@ -207,6 +210,7 @@ function Wait-IPv4RuntimeListener([int] $Port, $Record, [int] $TimeoutSeconds = 
         if ($Record.Process.HasExited) { Fail-WithRuntimeOutput -Record $Record -Message "Process exited before 127.0.0.1:$Port became ready." }
         $listeners = @(Get-RuntimeListeners -Port $Port)
         if (@($listeners | Where-Object { $_.LocalAddress -eq "127.0.0.1" }).Count -gt 0) {
+            $Record.CleanupPids = @($listeners | Select-Object -ExpandProperty OwningProcess -Unique)
             Assert-IPv4LoopbackListener -Port $Port -Label $Record.Name
             return
         }
