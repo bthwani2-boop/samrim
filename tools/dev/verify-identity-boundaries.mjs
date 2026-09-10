@@ -549,7 +549,13 @@ if (!dockerfile.includes("COPY services/identity/database/migrations /app/migrat
   failures.push("Identity image must package the canonical ordered migration directory");
 }
 
-for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.env.example", "services/identity/backend/internal/runtime/server.go"]) {
+const dailyComposeBoundary = read("infra/local/compose/compose.yaml");
+if (/^\s{2}(identity|identity-migrate|dsh):\s*$/m.test(dailyComposeBoundary) ||
+    dailyComposeBoundary.includes("IDENTITY_CHALLENGE_HMAC_SECRET") ||
+    dailyComposeBoundary.includes("IDENTITY_ABUSE_HMAC_SECRET")) {
+  failures.push("DAILY_DEV compose contains Identity domain runtime configuration");
+}
+for (const file of ["infra/local/compose/compose.integration.yaml", "infra/local/compose/.env.example", "services/identity/backend/internal/runtime/server.go"]) {
   const body = read(file);
   if (!body.includes("IDENTITY_CHALLENGE_HMAC_SECRET")) failures.push(file + " missing challenge secret configuration");
   if (!body.includes("IDENTITY_ABUSE_HMAC_SECRET")) failures.push(file + " missing abuse secret configuration");
