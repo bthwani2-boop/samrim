@@ -16,6 +16,7 @@ $ensureLocalEnvPath = Join-Path $PSScriptRoot "ensure-local-env.ps1"
 $dailyProject = "samrim-local"
 $integrationProject = "samrim-integration"
 
+$global:LASTEXITCODE = 0
 & $ensureLocalEnvPath
 if ($LASTEXITCODE -ne 0) { throw "Local runtime environment reconciliation failed." }
 

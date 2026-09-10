@@ -23,7 +23,7 @@ func TestOrdinaryCLIEnvironmentBlocksStagingAndProduction(t *testing.T) {
 
 func TestExpectedDatabaseTargetRequiresIndependentIdentity(t *testing.T) {
 	getenv := func(string) string { return "" }
-	_, err := RequireExpectedDatabaseTarget("postgres://samrim_local:secret@127.0.0.1:58432/samrim_local?sslmode=disable", getenv)
+	_, err := RequireExpectedDatabaseTarget("postgres://samrim_local:secret@127.0.0.1:55432/samrim_local?sslmode=disable", getenv)
 	if err == nil || !strings.Contains(err.Error(), "explicit database target identity") {
 		t.Fatalf("missing expected target identity was accepted: %v", err)
 	}
@@ -32,12 +32,12 @@ func TestExpectedDatabaseTargetRequiresIndependentIdentity(t *testing.T) {
 func TestExpectedDatabaseTargetRejectsMismatchWithoutLeakingPassword(t *testing.T) {
 	values := map[string]string{
 		expectedDatabaseHostEnv: "127.0.0.1",
-		expectedDatabasePortEnv: "58432",
+		expectedDatabasePortEnv: "55432",
 		expectedDatabaseNameEnv: "other_database",
 		expectedDatabaseUserEnv: "samrim_local",
 	}
 	getenv := func(name string) string { return values[name] }
-	_, err := RequireExpectedDatabaseTarget("postgres://samrim_local:super-secret-password@127.0.0.1:58432/samrim_local?sslmode=disable", getenv)
+	_, err := RequireExpectedDatabaseTarget("postgres://samrim_local:super-secret-password@127.0.0.1:55432/samrim_local?sslmode=disable", getenv)
 	if err == nil || !strings.Contains(err.Error(), "mismatch") {
 		t.Fatalf("database mismatch was accepted: %v", err)
 	}

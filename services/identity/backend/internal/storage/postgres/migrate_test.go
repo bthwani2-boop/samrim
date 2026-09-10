@@ -20,7 +20,7 @@ import (
 func TestMigrationV13ToV15Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
-		databaseURL = "postgres://samrim_local:change-me-local-only@127.0.0.1:58432/samrim_local?sslmode=disable"
+		databaseURL = "postgres://samrim_local:change-me-local-only@127.0.0.1:55432/samrim_local?sslmode=disable"
 	}
 
 	// Connect to root postgres maintenance to create isolated test database
