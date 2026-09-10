@@ -9,7 +9,6 @@
   "scripts": {
     "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File ../../tools/dev/start-control-panel.ps1",
     "build": "next build",
-    "start": "next start -p 13000",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
     "test:e2e": "playwright test --config playwright.config.ts"
   },

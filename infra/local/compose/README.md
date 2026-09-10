@@ -1,14 +1,20 @@
 # Local compose
 
-Single canonical local Compose substrate for development and integration.
+Single canonical local Compose substrate for local development and integration proof.
 
 ## Runtime ownership
 
-- **DAILY_DEV**: `pnpm runtime:daily:up` runs PostgreSQL/PostGIS and Mailpit in Docker. Identity and DSH run from the host through `pnpm identity` and `pnpm dsh`.
-- **FULL_INTEGRATION**: `pnpm runtime:integration:up` runs PostgreSQL/PostGIS, Mailpit, Identity migrations, Identity and DSH in Docker.
-- Do not mix host Identity/DSH processes with the FULL_INTEGRATION containers. The runtime commands fail or reconcile closed instead of accepting an ambiguous owner.
-- `pnpm runtime:status` always includes integration-profile containers so Docker-owned Identity/DSH cannot be hidden by profile filtering.
+- **DAILY_DEV is the only interactive development mode.** `pnpm runtime:daily:up` owns PostgreSQL/PostGIS and Mailpit in Docker. Identity, DSH, Control Panel and mobile runtimes are host-owned.
+- **FULL_INTEGRATION is an ephemeral proof appliance, not a second development mode.** The only public entry point is `pnpm runtime:integration:close`; it owns build/start/readiness/proof/teardown and must leave zero Docker domain-service residue.
+- `pnpm runtime:status` is diagnostic only and always includes integration-profile containers so stale Docker-owned Identity/DSH cannot be hidden.
+- Direct `docker compose` lifecycle mutation is an internal implementation/diagnostic mechanism, not the normal developer workflow.
 
-`pnpm runtime:daily:down` and `pnpm runtime:integration:down` remove the complete local Compose project while preserving the named PostgreSQL data volume.
+`pnpm runtime:daily:down` removes the complete local Compose project while preserving the named PostgreSQL data volume.
 
-Copy `.env.example` to the ignored `.env` through `pnpm bootstrap`; never commit real local credentials.
+## Local configuration
+
+`infra/local/compose/.env.example` is the tracked canonical source for non-secret local runtime values. The ignored `.env` is derived/reconciled by `tools/dev/ensure-local-env.ps1`.
+
+Existing secret values are preserved. Missing generated secrets are created once. Non-secret drift is reconciled to `.env.example`; destructive `-Force` regeneration is not part of the local workflow.
+
+Do not duplicate local hosts, ports or origins in documentation. Read their current values from the executable configuration.
