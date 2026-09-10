@@ -90,6 +90,7 @@ try {
             Run-Step 'Canonical runtime doctor' { pnpm runtime:doctor }
             Run-Step 'Identity exact schema' { Invoke-CanonicalSchemaVerify -Service 'identity' }
             Run-Step 'DSH exact schema' { Invoke-CanonicalSchemaVerify -Service 'dsh' }
+            Run-Step 'Identity migration upgrade proof' { node tools/dev/verify-migration-v13-to-v15.mjs "--env-file=$envPath" }
             Run-Step 'Identity runtime semantics' { node tools/dev/verify-identity-runtime.mjs "--env-file=$envPath" }
             Run-Step 'DSH managed-access runtime' { node tools/dev/verify-dsh-runtime.mjs "--env-file=$envPath" }
             Run-Step 'Canonical runtime status' { pnpm runtime:status }
