@@ -123,10 +123,10 @@ for (const marker of [
   "RUNTIME_RESET=PASS",
   "Assert-NoLegacyRuntimeResidue",
   "Assert-CanonicalPublishedPort",
-  "exec', 'expo', 'start'",
 ]) {
   assert(runtime.includes(marker), `canonical runtime owner missing invariant: ${marker}`);
 }
+assert(/['"]exec['"]\s*,\s*['"]expo['"]\s*,\s*['"]start['"]/.test(runtime), "canonical runtime owner must launch Expo through pnpm exec expo start");
 const nativeApiToken = "go run ./cmd/" + "api";
 const nativeMigrationToken = "go run ./cmd/" + "migrate";
 assert(!runtime.includes(nativeApiToken), "canonical runtime owner must not launch Identity/DSH natively");
