@@ -34,6 +34,11 @@ function Assert-CleanTree([string]$Context) {
     }
 }
 
+function Invoke-CanonicalSchemaVerify([string]$Service) {
+    & docker compose --project-name samrim-local --env-file $envPath -f $composePath exec -T $Service /schema-verify
+    if ($LASTEXITCODE -ne 0) { Fail "$Service exact schema verification failed." }
+}
+
 Push-Location $repo
 try {
     $branch = (& git branch --show-current).Trim()
@@ -70,7 +75,6 @@ try {
     Run-Step 'Mobile deployable identities' { pnpm run mobile:verify-config }
     Run-Step 'Workspace dependency references' { node tools/dev/verify-workspace-dependencies.mjs }
     Run-Step 'Nx project tags' { pnpm run nx:verify-tags }
-    Run-Step 'Developer prerequisites' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/doctor.ps1 -ExpectedBranch $verificationBranch }
     Run-Step 'Developer bootstrap' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1 }
     Assert-CleanTree 'developer bootstrap'
     Run-Step 'Workspace verification' { pnpm run workspace:verify }
@@ -84,9 +88,8 @@ try {
             Run-Step 'Canonical runtime up' { pnpm runtime:up }
             $runtimeStarted = $true
             Run-Step 'Canonical runtime doctor' { pnpm runtime:doctor }
-            Run-Step 'Canonical runtime endpoint/schema proof' {
-                pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/dev/verify-integration-runtime.ps1 -EnvFile $envPath -Attempts 60 -DelaySeconds 2
-            }
+            Run-Step 'Identity exact schema' { Invoke-CanonicalSchemaVerify -Service 'identity' }
+            Run-Step 'DSH exact schema' { Invoke-CanonicalSchemaVerify -Service 'dsh' }
             Run-Step 'Identity runtime semantics' { node tools/dev/verify-identity-runtime.mjs "--env-file=$envPath" }
             Run-Step 'DSH managed-access runtime' { node tools/dev/verify-dsh-runtime.mjs "--env-file=$envPath" }
             Run-Step 'Canonical runtime status' { pnpm runtime:status }

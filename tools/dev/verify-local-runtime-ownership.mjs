@@ -75,8 +75,10 @@ for (const retired of [
   "tools/mobile/start-mobile-runtime.ps1",
   "tools/dev/close-integration-runtime.ps1",
   "tools/dev/install-powershell-pnpm-router.ps1",
+  "tools/dev/verify-integration-runtime.ps1",
+  "tools/dev/doctor.ps1",
 ]) {
-  assert(!exists(retired), `retired runtime launcher must not exist: ${retired}`);
+  assert(!exists(retired), `retired runtime file must not exist: ${retired}`);
 }
 
 const composeDir = path.join(repoRoot, "infra/local/compose");
@@ -169,7 +171,6 @@ for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
 }
 
 for (const verifier of [
-  "tools/dev/verify-integration-runtime.ps1",
   "tools/dev/verify-identity-runtime.mjs",
   "tools/dev/verify-dsh-runtime.mjs",
 ]) {
@@ -184,6 +185,9 @@ const candidate = read("tools/dev/verify-local-candidate.ps1");
 for (const command of ["pnpm runtime:up", "pnpm runtime:doctor", "pnpm runtime:down"]) {
   assert(candidate.includes(command), `candidate proof must exercise ${command}`);
 }
+assert(candidate.includes("Invoke-CanonicalSchemaVerify"), "candidate proof must retain exact schema verification without a separate integration-runtime wrapper");
+assert(!candidate.includes("verify-integration-runtime.ps1"), "candidate proof retains deleted integration-runtime wrapper");
+assert(!candidate.includes("doctor.ps1"), "candidate proof retains deleted duplicate doctor wrapper");
 assert(!candidate.includes("runtime:daily:"), "candidate proof retains DAILY_DEV runtime command");
 assert(!candidate.includes("runtime:integration:"), "candidate proof retains parallel Integration runtime command");
 
@@ -195,6 +199,8 @@ const workflow = read(".github/workflows/baseline-guard.yml");
 assert(workflow.includes("infra/local/compose/compose.yaml"), "CI must use the canonical Compose topology");
 assert(!workflow.includes("compose.integration.yaml"), "CI retains parallel Compose topology");
 assert(!workflow.includes("samrim-integration"), "CI retains parallel Compose project");
+assert(!workflow.includes("tools/dev/doctor.ps1"), "CI retains deleted duplicate doctor wrapper");
+assert(!workflow.includes("verify-integration-runtime.ps1"), "CI retains deleted integration-runtime wrapper");
 
 if (failures.length) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");

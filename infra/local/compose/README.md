@@ -25,7 +25,7 @@ Use only:
 - `pnpm runtime:doctor`
 - `pnpm runtime:reset`
 
-`runtime:reset` is a destructive local-data recovery operation scoped to Samrim Docker resources. It preserves the generated local `.env` and its local secret values, removes canonical disposable runtime state and proven legacy `samrim-integration` residue, then finishes with the runtime down.
+`runtime:reset` is a destructive local-data recovery operation scoped to Samrim Docker resources. It preserves the generated local `.env` and its local secret values, removes canonical disposable runtime state and any proven non-canonical Samrim Compose residue, then finishes with the runtime down.
 
 There is no separate DAILY_DEV/FULL_INTEGRATION Docker topology and no native Identity/DSH development launcher. Integration is a test class executed against the canonical topology, not a second runtime owner.
 

@@ -253,10 +253,6 @@ jobs:
         shell: bash
         run: pnpm run nx:projects
 
-      - name: Verify developer prerequisites
-        shell: pwsh
-        run: ./tools/dev/doctor.ps1 -SkipBranchCheck
-
       - name: Verify developer bootstrap
         shell: pwsh
         run: ./tools/dev/bootstrap.ps1
