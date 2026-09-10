@@ -67,10 +67,10 @@ function Verify-IntegrationTargetIdentity {
     }
 
     $configJson = @(
-        & docker compose --env-file $envPath -f $composeFile --profile integration config --format json 2>&1
+        & docker compose --env-file $envPath -f $composeFile --profile integration config --format json 2>$null
     )
     if ($LASTEXITCODE -ne 0) {
-        Fail ("Unable to resolve integration compose target identity: " + ($configJson -join [Environment]::NewLine))
+        Fail "Unable to resolve integration compose target identity."
     }
     $config = ($configJson -join [Environment]::NewLine) | ConvertFrom-Json
     if ([string] $config.name -ne "samrim-local") {
@@ -344,7 +344,7 @@ try {
 
     Write-Host ""
     Write-Host "=== Integration compose config ==="
-    $null = & docker compose --env-file $envPath -f $composeFile --profile integration config
+    $null = & docker compose --env-file $envPath -f $composeFile --profile integration config --quiet
     if ($LASTEXITCODE -ne 0) {
         Fail "Integration compose config failed."
     }
@@ -352,7 +352,7 @@ try {
 
     Write-Host ""
     Write-Host "=== Build and start integration runtime ==="
-    $upCode = Invoke-Compose -Arguments @("up", "-d", "--build")
+    $upCode = Invoke-Compose -Arguments @("up", "-d", "--build", "--wait", "--wait-timeout", "180")
     if ($upCode -ne 0) {
         Show-Diagnostics
         Fail "Integration compose build/up failed."
