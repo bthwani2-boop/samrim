@@ -42,8 +42,10 @@ function Invoke-IntegrationCompose([string[]]$Arguments) {
         "--env-file", $envPath,
         "-f", $integrationCompose
     )
-    & docker @base @Arguments
-    return $LASTEXITCODE
+    $output = @(& docker @base @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+    $output | ForEach-Object { Write-Host $_ }
+    return $exitCode
 }
 
 function Get-ProjectContainers([string]$Project, [switch]$RunningOnly) {
