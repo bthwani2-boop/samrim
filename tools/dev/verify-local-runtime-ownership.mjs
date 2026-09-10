@@ -3,14 +3,9 @@ import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const failures = [];
-
-function read(relativePath) {
-  return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
-}
-
-function assert(condition, message) {
-  if (!condition) failures.push(message);
-}
+const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+const exists = (relativePath) => fs.existsSync(path.join(repoRoot, relativePath));
+const assert = (condition, message) => { if (!condition) failures.push(message); };
 
 function parseEnv(text, label) {
   const map = new Map();
@@ -35,76 +30,57 @@ function collectTextFiles(relativeRoot) {
   if (!fs.existsSync(absoluteRoot)) return [];
   const out = [];
   for (const entry of fs.readdirSync(absoluteRoot, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === ".next" || entry.name === ".git") continue;
+    if (["node_modules", ".next", ".git"].includes(entry.name)) continue;
     const absolute = path.join(absoluteRoot, entry.name);
-    if (entry.isDirectory()) {
-      out.push(...collectTextFiles(path.relative(repoRoot, absolute)));
-    } else if (entry.isFile()) {
-      out.push(path.relative(repoRoot, absolute).replaceAll("\\", "/"));
-    }
+    if (entry.isDirectory()) out.push(...collectTextFiles(path.relative(repoRoot, absolute)));
+    else if (entry.isFile()) out.push(path.relative(repoRoot, absolute).replaceAll("\\", "/"));
   }
   return out;
 }
 
 const packageJson = JSON.parse(read("package.json"));
 const scripts = packageJson.scripts ?? {};
+const allowedRuntimeScripts = new Set([
+  "runtime:daily:up",
+  "runtime:daily:down",
+  "runtime:status",
+  "runtime:verify-ownership",
+  "runtime:integration:close",
+]);
 
-const expectedDailyScripts = {
-  "runtime:daily:up":
-    "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local-runtime.ps1 -Action Up",
-  "runtime:daily:down":
-    "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local-runtime.ps1 -Action Down",
-};
-for (const [name, command] of Object.entries(expectedDailyScripts)) {
-  assert(
-    scripts[name] === command,
-    `${name} must route through the canonical DAILY_DEV runtime owner`,
-  );
-}
-
-for (const forbidden of [
-  "runtime:up",
-  "runtime:down",
-  "runtime:config",
-  "runtime:integration:up",
-  "runtime:integration:down",
-  "runtime:integration:status",
-  "runtime:integration:config",
-  "runtime:integration:verify",
-]) {
-  assert(!(forbidden in scripts), `ambiguous/manual runtime command must not exist: ${forbidden}`);
+for (const name of Object.keys(scripts).filter((name) => name.startsWith("runtime:"))) {
+  assert(allowedRuntimeScripts.has(name), `shadow/manual runtime command must not exist: ${name}`);
+  assert(!String(scripts[name]).includes("docker compose"), `root runtime script must not call docker compose directly: ${name}`);
 }
 
 assert(
-  scripts["runtime:integration:close"] ===
-    "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/integration-proof.ps1",
-  "FULL_INTEGRATION must expose exactly one lifecycle-owning public proof entry point",
+  scripts["runtime:daily:up"] === "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local-runtime.ps1 -Action Up",
+  "runtime:daily:up must route through local-runtime.ps1",
+);
+assert(
+  scripts["runtime:daily:down"] === "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local-runtime.ps1 -Action Down",
+  "runtime:daily:down must route through local-runtime.ps1",
+);
+assert(
+  scripts["runtime:status"] === "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime-status.ps1",
+  "runtime:status must be a read-only repository-owned census",
+);
+assert(
+  scripts["runtime:integration:close"] === "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/integration-proof.ps1",
+  "FULL_INTEGRATION must expose exactly one public lifecycle-owning proof entrypoint",
 );
 
-assert(
-  typeof scripts["runtime:status"] === "string" &&
-    scripts["runtime:status"].includes("--profile integration") &&
-    scripts["runtime:status"].includes("ps -a"),
-  "runtime:status must census integration-profile containers",
-);
+assert(!exists("tools/dev/close-integration-runtime.ps1"), "retired close-integration-runtime.ps1 must not exist");
 
 const envExample = read("infra/local/compose/.env.example");
 const envMap = parseEnv(envExample, ".env.example");
 const controlOrigin = envMap.get("CONTROL_PANEL_PUBLIC_ORIGIN");
 const identityCors = envMap.get("IDENTITY_CORS_ALLOWED_ORIGINS");
-
-assert(
-  controlOrigin === "http://127.0.0.1:13000",
-  "canonical DAILY_DEV Control Panel origin must be http://127.0.0.1:13000",
-);
-assert(
-  identityCors === controlOrigin,
-  "Identity CORS must equal the canonical DAILY_DEV Control Panel origin",
-);
+assert(controlOrigin === "http://127.0.0.1:13000", "canonical Control Panel origin drifted");
+assert(identityCors === controlOrigin, "Identity CORS must equal the canonical Control Panel origin");
 
 const forbiddenControlAlias = "http://localhost:" + "13000";
-
-const forbiddenAliasFiles = [
+for (const file of new Set([
   "package.json",
   "README.md",
   "CONTRIBUTING.md",
@@ -113,188 +89,104 @@ const forbiddenAliasFiles = [
   ...collectTextFiles("tools/dev"),
   ...collectTextFiles("apps/control-panel"),
   ...collectTextFiles(".github/workflows"),
-];
-for (const file of [...new Set(forbiddenAliasFiles)]) {
-  if (!fs.existsSync(path.join(repoRoot, file))) continue;
-  const body = read(file);
-  assert(
-    !body.includes(forbiddenControlAlias),
-    `${file} reintroduces the forbidden Control Panel localhost alias`,
-  );
+])) {
+  if (!exists(file)) continue;
+  assert(!read(file).includes(forbiddenControlAlias), `${file} reintroduces forbidden Control Panel localhost alias`);
 }
 
 const ensureLocalEnv = read("tools/dev/ensure-local-env.ps1");
-assert(
-  !/\[switch\]\s*\$Force\b/i.test(ensureLocalEnv),
-  "ensure-local-env must not expose destructive Force-based secret regeneration",
-);
-assert(
-  ensureLocalEnv.includes("infra\\local\\compose\\.env.example") ||
-    ensureLocalEnv.includes("infra/local/compose/.env.example"),
-  "ensure-local-env must derive local non-secret configuration from .env.example",
-);
-assert(
-  ensureLocalEnv.includes("secrets=preserved"),
-  "ensure-local-env must preserve existing local secrets during reconciliation",
-);
-assert(
-  !ensureLocalEnv.includes("http://127.0.0.1:13000"),
-  "ensure-local-env must not duplicate the canonical Control Panel origin literal",
-);
+assert(!/\[switch\]\s*\$Force\b/i.test(ensureLocalEnv), "ensure-local-env must not expose Force regeneration");
+assert(!ensureLocalEnv.includes("Preserved local-only values"), "unknown local configuration must not survive reconciliation");
+assert(ensureLocalEnv.includes("unknown_removed="), "ensure-local-env must report removal of shadow keys");
+assert(!ensureLocalEnv.includes("http://127.0.0.1:13000"), "ensure-local-env must derive origin from .env.example");
+
+const dailyCompose = read("infra/local/compose/compose.yaml");
+const integrationCompose = read("infra/local/compose/compose.integration.yaml");
+assert(/^name:\s*samrim-local\s*$/m.test(dailyCompose), "daily compose project must be samrim-local");
+assert(/^name:\s*samrim-integration\s*$/m.test(integrationCompose), "integration compose project must be samrim-integration");
+assert(!/^\s{2}(identity|identity-migrate|dsh):\s*$/m.test(dailyCompose), "daily compose must not contain domain services");
+assert(!dailyCompose.includes("profiles:"), "daily compose must not contain alternate profiles");
+for (const service of ["postgres", "mailpit", "identity-migrate", "identity", "dsh"]) {
+  assert(new RegExp(`^  ${service}:\\s*$`, "m").test(integrationCompose), `integration compose missing service: ${service}`);
+}
+assert(integrationCompose.includes("samrim-integration-postgres-data:/var/lib/postgresql/data"), "integration database must use isolated volume");
+assert(!integrationCompose.includes("samrim-postgres-data:/var/lib/postgresql/data"), "integration compose must not mount DAILY_DEV database volume");
+assert(!integrationCompose.includes("profiles:"), "integration compose must be a dedicated appliance, not a profile of DAILY_DEV");
 
 const localRuntime = read("tools/dev/local-runtime.ps1");
-assert(
-  !localRuntime.includes('ValidateSet("Daily", "Integration")') &&
-    !localRuntime.includes("FULL_INTEGRATION"),
-  "local-runtime.ps1 must own DAILY_DEV only",
-);
-assert(
-  localRuntime.includes("RUNTIME_MODE=DAILY_DEV"),
-  "DAILY_DEV runtime mode marker is missing",
-);
-assert(
-  localRuntime.includes('"identity",') &&
-    localRuntime.includes('"dsh",') &&
-    localRuntime.includes('"identity-migrate"'),
-  "DAILY_DEV must remove Docker domain-service residue",
-);
+assert(localRuntime.includes("RUNTIME_MODE=DAILY_DEV"), "DAILY_DEV mode marker missing");
+assert(localRuntime.includes("samrim-integration"), "DAILY_DEV must reject integration residue");
+assert(localRuntime.includes("--remove-orphans"), "DAILY_DEV must clean legacy same-project orphan containers");
+assert(!localRuntime.includes("--profile"), "DAILY_DEV runtime must not know an integration profile");
+assert(!localRuntime.includes("identity-migrate"), "DAILY_DEV runtime must not manage integration domain services");
 
 const integrationProof = read("tools/dev/integration-proof.ps1");
-assert(
-  integrationProof.includes("close-integration-runtime.ps1"),
-  "integration proof wrapper must invoke the existing full proof core",
-);
-assert(
-  integrationProof.includes("finally") &&
-    integrationProof.includes("local-runtime.ps1") &&
-    integrationProof.includes("-Action Down"),
-  "integration proof must always tear down Docker runtime residue",
-);
-assert(
-  !integrationProof.includes("-KeepRunning"),
-  "public integration proof must not expose a keep-running escape hatch",
-);
+assert(integrationProof.includes("compose.integration.yaml"), "integration proof must use isolated compose file");
+assert(integrationProof.includes("samrim-integration"), "integration proof must own isolated project identity");
+assert(integrationProof.includes("finally"), "integration proof must have unconditional teardown");
+assert(integrationProof.includes('"down", "--volumes", "--remove-orphans"'), "integration proof teardown must destroy isolated state");
+assert(integrationProof.includes("DAILY_INTEGRATION_STATE_SHARING=0"), "integration proof must assert state isolation");
+assert(!integrationProof.includes("KeepRunning"), "integration proof must not expose keep-running semantics");
+assert(!integrationProof.includes("close-integration-runtime.ps1"), "integration proof must not delegate to retired lifecycle code");
+assert(!integrationProof.includes("local-runtime.ps1"), "integration proof must not mutate DAILY_DEV lifecycle");
 
-const compose = read("infra/local/compose/compose.yaml");
-function serviceBlock(name) {
-  const match = compose.match(
-    new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [A-Za-z0-9_-]+:\\n|^volumes:\\n)`, "m"),
-  );
-  if (!match) {
-    failures.push(`Compose service missing: ${name}`);
-    return "";
-  }
-  return match[0];
-}
-for (const name of ["identity-migrate", "identity", "dsh"]) {
-  assert(
-    serviceBlock(name).includes('profiles: ["integration"]'),
-    `${name} must remain integration-profile only`,
-  );
-}
-for (const name of ["identity", "dsh"]) {
-  const block = serviceBlock(name);
-  assert(block.includes('restart: "no"'), `${name} must not auto-resurrect with Docker Desktop`);
-  assert(!block.includes("restart: unless-stopped"), `${name} retains an auto-restart policy`);
-}
-for (const name of ["postgres", "mailpit"]) {
-  assert(!serviceBlock(name).includes("profiles:"), `${name} must remain DAILY_DEV infrastructure`);
+const runtimeStatus = read("tools/dev/runtime-status.ps1");
+assert(!runtimeStatus.includes(" compose "), "runtime-status must remain a read-only Docker label census");
+assert(runtimeStatus.includes("INTEGRATION_CONTAINERS="), "runtime-status must report integration residue");
+
+const doctor = read("tools/dev/doctor.ps1");
+for (const marker of [
+  "local env key parity",
+  "local non-secret value parity",
+  "daily Docker service ownership",
+  "integration container residue",
+  "integration volume residue",
+  "UNKNOWN_LOCAL_CONFIG_KEYS=0",
+  "DAILY_INTEGRATION_STATE_SHARING=0",
+]) {
+  assert(doctor.includes(marker), `doctor missing invariant: ${marker}`);
 }
 
 const runGo = read("tools/dev/run-go-service.ps1");
-assert(
-  !runGo.includes("SERVICE_ALREADY_READY=PASS"),
-  "Go host launcher still accepts unknown ready process provenance",
-);
-assert(
-  runGo.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"),
-  "Go host launcher lacks fail-closed ownership conflict",
-);
-assert(
-  runGo.includes("Host runtime does not accept inherited PORT="),
-  "Go host launcher still allows shadow PORT authority",
-);
+assert(!runGo.includes("SERVICE_ALREADY_READY=PASS"), "Go launcher still accepts unknown ready process provenance");
+assert(runGo.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"), "Go launcher lacks fail-closed ownership conflict");
+assert(runGo.includes("Host runtime does not accept inherited PORT="), "Go launcher allows shadow PORT authority");
 
 const control = read("tools/dev/start-control-panel.ps1");
-assert(
-  control.includes("ensure-local-env.ps1"),
-  "Control Panel launcher must reconcile canonical local configuration before start",
-);
-assert(
-  control.includes("CONTROL_PANEL_PUBLIC_ORIGIN") &&
-    control.includes("IDENTITY_CORS_ALLOWED_ORIGINS"),
-  "Control Panel launcher must validate origin/CORS coherence",
-);
-assert(
-  !control.includes("$port = 13000") &&
-    !control.includes("-H 127.0.0.1") &&
-    !control.includes("http://127.0.0.1:13000"),
-  "Control Panel launcher must derive host/port from canonical configuration rather than duplicate them",
-);
-assert(
-  control.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"),
-  "Control Panel launcher lacks fail-closed port ownership",
-);
+assert(control.includes("ensure-local-env.ps1"), "Control Panel launcher must reconcile canonical env");
+assert(control.includes("CONTROL_PANEL_PUBLIC_ORIGIN") && control.includes("IDENTITY_CORS_ALLOWED_ORIGINS"), "Control Panel launcher must validate origin/CORS coherence");
+assert(control.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"), "Control Panel launcher lacks fail-closed ownership");
+assert(!control.includes("http://127.0.0.1:13000"), "Control Panel launcher must derive its origin rather than duplicate it");
 
 const controlPackage = JSON.parse(read("apps/control-panel/package.json"));
-assert(
-  !("start" in (controlPackage.scripts ?? {})),
-  "Control Panel package must not expose a second hard-coded local start path",
-);
+assert(!("start" in (controlPackage.scripts ?? {})), "Control Panel package must not expose a second local start path");
 
 const playwright = read("apps/control-panel/playwright.config.ts");
-assert(
-  playwright.includes('const DEFAULT_TEST_ORIGIN = "http://127.0.0.1:13001";'),
-  "Playwright isolated runtime must have one explicit loopback test origin",
-);
-assert(
-  !playwright.includes("localhost:13001"),
-  "Playwright must not reintroduce localhost aliasing",
-);
-assert(
-  playwright.includes("CONTROL_PANEL_PUBLIC_ORIGIN: parsedBase.origin"),
-  "self-hosted Playwright must derive CSRF origin from its own test base URL",
-);
+assert(playwright.includes('const DEFAULT_TEST_ORIGIN = "http://127.0.0.1:13001";'), "Playwright isolated test origin drifted");
+assert(!playwright.includes("localhost:13001"), "Playwright reintroduced localhost aliasing");
+assert(playwright.includes("CONTROL_PANEL_PUBLIC_ORIGIN: parsedBase.origin"), "Playwright must derive CSRF origin from its test base URL");
 
 const proxy = read("apps/control-panel/proxy.ts");
-assert(
-  /error:\s*\{\s*code:\s*"FORBIDDEN_CROSS_ORIGIN"/m.test(proxy),
-  "cross-origin proxy failure must use the canonical nested error envelope",
-);
+assert(/error:\s*\{\s*code:\s*"FORBIDDEN_CROSS_ORIGIN"/m.test(proxy), "cross-origin failure envelope is not canonical");
 
 const mobile = read("tools/mobile/start-mobile-runtime.ps1");
-assert(
-  !mobile.includes("METRO_ALREADY_READY=PASS"),
-  "Mobile launcher still accepts unknown Metro provenance",
-);
-assert(
-  mobile.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"),
-  "Mobile launcher lacks fail-closed Metro ownership conflict",
-);
+assert(!mobile.includes("METRO_ALREADY_READY=PASS"), "Mobile launcher accepts unknown Metro provenance");
+assert(mobile.includes("RUNTIME_OWNERSHIP_CONFLICT=FAIL"), "Mobile launcher lacks fail-closed Metro ownership");
 
 const candidate = read("tools/dev/verify-local-candidate.ps1");
-assert(!candidate.includes("pnpm runtime:up"), "Local candidate proof still uses ambiguous runtime:up");
-assert(!candidate.includes("pnpm runtime:down"), "Local candidate proof still uses ambiguous runtime:down");
-assert(
-  candidate.includes("pnpm runtime:daily:up"),
-  "Local candidate proof does not exercise DAILY_DEV transition",
-);
-assert(
-  candidate.includes("DAILY_RUNTIME_DOCKER_DOMAIN_SERVICES=0"),
-  "Local candidate proof does not census Docker domain-service absence",
-);
+assert(candidate.includes("pnpm runtime:daily:up"), "candidate proof does not exercise DAILY_DEV");
+assert(candidate.includes("pnpm runtime:integration:close"), "candidate proof must use the single public integration entrypoint");
+assert(!candidate.includes("close-integration-runtime.ps1"), "candidate proof still calls retired integration implementation");
+assert(!candidate.includes("--profile integration"), "candidate proof still knows retired integration profile");
+
+const workflow = read(".github/workflows/baseline-guard.yml");
+assert(workflow.includes("compose.integration.yaml"), "CI runtime proof must use isolated integration compose");
+assert(!workflow.includes("--profile integration"), "CI must not use retired integration profile");
 
 const composeReadme = read("infra/local/compose/README.md");
-assert(composeReadme.includes("DAILY_DEV"), "Local compose README lacks DAILY_DEV ownership");
-assert(
-  composeReadme.includes("runtime:integration:close"),
-  "Local compose README must expose the single integration proof entry point",
-);
-assert(
-  !composeReadme.includes("runtime:integration:up") &&
-    !composeReadme.includes("runtime:integration:down"),
-  "Local compose README must not advertise manual FULL_INTEGRATION lifecycle commands",
-);
+assert(composeReadme.includes("compose.integration.yaml"), "compose README must describe isolated integration appliance");
+assert(composeReadme.includes("runtime:integration:close"), "compose README must expose one integration proof entrypoint");
+assert(!composeReadme.includes("runtime:integration:up") && !composeReadme.includes("runtime:integration:down"), "compose README advertises manual integration lifecycle");
 
 if (failures.length) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
@@ -302,11 +194,19 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("LOCAL_RUNTIME_INTERACTIVE_MODE=DAILY_DEV_ONLY");
-console.log("FULL_INTEGRATION_PUBLIC_ENTRYPOINTS=1");
-console.log(`CONTROL_PANEL_DAILY_ORIGIN=${controlOrigin}`);
-console.log("DAILY_DEV_DOCKER_DOMAIN_SERVICES=0");
-console.log("FULL_INTEGRATION_RESIDUE_POLICY=ZERO");
-console.log("RUNTIME_LAUNCHER_UNKNOWN_PROVENANCE_ACCEPTANCE=0");
-console.log("RUNTIME_SHADOW_PORT_AUTHORITY=0");
+console.log("INTERACTIVE_RUNTIME_MODES=1");
+console.log("DAILY_DEV_APP_OWNER=HOST");
+console.log("DAILY_DEV_INFRA_OWNER=DOCKER");
+console.log(`CONTROL_PANEL_ORIGIN=${controlOrigin}`);
+console.log("CONTROL_PANEL_ORIGIN_ALIASES=0");
+console.log("UNKNOWN_LOCAL_CONFIG_KEYS=0");
+console.log("PUBLIC_INTEGRATION_ENTRYPOINTS=1");
+console.log("MANUAL_INTEGRATION_LIFECYCLE_COMMANDS=0");
+console.log("INTEGRATION_KEEP_RUNNING_PATHS=0");
+console.log("DAILY_INTEGRATION_STATE_SHARING=0");
+console.log("INTEGRATION_RUNTIME_RESIDUE_POLICY=ZERO");
+console.log("DOCKER_DOMAIN_SERVICES_DURING_DAILY=0");
+console.log("SHADOW_RUNTIME_COMMANDS=0");
+console.log("SHADOW_CONFIG_AUTHORITY=0");
+console.log("KNOWN_RUNTIME_DRIFT_PATHS=0");
 console.log("LOCAL_RUNTIME_OWNERSHIP=PASS");
