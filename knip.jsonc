@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
   "entry": [
     "apps/*/app/index.tsx",
     "apps/*/src/identity.ts",
@@ -12,6 +12,20 @@
     "tools/mobile/export-mobile-smoke.mjs",
     "tools/mobile/test-mobile-app.mjs"
   ],
+  "workspaces": {
+    "apps/control-panel": {
+      // Do not execute runtime-bound Playwright config during static liveness analysis.
+      // Keep the config, global setup and specs as explicit static-analysis entries instead.
+      "playwright": {
+        "config": [],
+        "entry": [
+          "playwright.config.ts",
+          "playwright.global-setup.ts",
+          "tests/**/*.spec.ts"
+        ]
+      }
+    }
+  },
   "ignore": [
     // Expo/EAS host projections are loaded by Expo's config and fingerprint tooling.
     "apps/*/fingerprint.config.js",
