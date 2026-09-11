@@ -3,6 +3,11 @@ import { defineConfig } from "@playwright/test";
 const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL?.trim();
 const inheritedControlOrigin = process.env.CONTROL_PANEL_PUBLIC_ORIGIN?.trim();
 const baseURL = externalBaseURL || inheritedControlOrigin;
+
+if (!baseURL) {
+  throw new Error("PLAYWRIGHT_BASE_URL or CONTROL_PANEL_PUBLIC_ORIGIN is required");
+}
+
 const liveIdentityProof = process.env.PLAYWRIGHT_LIVE_IDENTITY === "1";
 
 export default defineConfig({
@@ -14,7 +19,7 @@ export default defineConfig({
   ...(liveIdentityProof ? { grep: /@live/ } : { grepInvert: /@live/ }),
   reporter: "list",
   use: {
-    ...(baseURL ? { baseURL } : {}),
+    baseURL,
     locale: "ar-YE",
     trace: "retain-on-failure",
   },
