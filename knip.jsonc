@@ -1,29 +1,25 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
-  "entry": [
-    "apps/*/app/index.tsx",
-    "apps/*/src/identity.ts",
-    "apps/control-panel/app/**/route.ts",
-    "services/identity/project.json",
-    "tools/dev/verify-candidate-runtime.mjs",
-    "tools/dev/verify-dsh-runtime.mjs",
-    "tools/dev/verify-identity-runtime.mjs",
-    "tools/dev/verify-migration-v13-to-v15.mjs",
-    "tools/mobile/export-mobile-smoke.mjs",
-    "tools/mobile/test-mobile-app.mjs"
-  ],
   "workspaces": {
+    ".": {
+      "entry": [
+        "tools/dev/js-deps.mjs",
+        "tools/dev/verify-candidate-runtime.mjs",
+        "tools/dev/verify-dsh-runtime.mjs",
+        "tools/dev/verify-identity-runtime.mjs",
+        "tools/dev/verify-migration-v13-to-v15.mjs",
+        "tools/mobile/export-mobile-smoke.mjs",
+        "tools/mobile/test-mobile-app.mjs"
+      ]
+    },
     "apps/control-panel": {
-      // Do not execute runtime-bound Playwright config during static liveness analysis.
-      // Keep the config, global setup and specs as explicit static-analysis entries instead.
-      "playwright": {
-        "config": [],
-        "entry": [
-          "playwright.config.ts",
-          "playwright.global-setup.ts",
-          "tests/**/*.spec.ts"
-        ]
-      }
+      "entry": [
+        "app/**/route.ts",
+        "playwright.config.ts",
+        "playwright.global-setup.ts",
+        "tests/**/*.spec.ts"
+      ],
+      "playwright": false
     }
   },
   "ignore": [
