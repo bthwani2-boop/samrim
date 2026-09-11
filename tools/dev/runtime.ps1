@@ -19,6 +19,7 @@ $EnvExamplePath = Join-Path $ComposeDir '.env.example'
 $OwnershipVerifier = Join-Path $PSScriptRoot 'verify-local-runtime-ownership.mjs'
 $CanonicalProject = 'samrim-local'
 $SamrimProjectPrefix = 'samrim-'
+$RuntimeBuildStatePath = Join-Path $RepoRoot '.bthwani-local\runtime-build-state.json'
 
 function Fail([string]$Message) { throw $Message }
 
@@ -160,9 +161,9 @@ function Invoke-Compose([string[]]$Arguments, [switch]$Quiet) {
         & docker @base @Arguments *> $null
         $code = $LASTEXITCODE
     } else {
-        $output = @(& docker @base @Arguments 2>&1)
+        & docker @base @Arguments 2>&1 |
+            ForEach-Object { Write-Host $_ }
         $code = $LASTEXITCODE
-        $output | ForEach-Object { Write-Host $_ }
     }
     if ($code -ne 0) { Fail "Docker Compose failed: $($Arguments -join ' ')" }
 }
@@ -337,20 +338,59 @@ function Assert-Endpoint([string]$Service, [string]$Uri) {
     if ($null -eq $response -or $response.status -ne 'ok' -or $response.service -ne $Service) { Fail "SERVICE_ENDPOINT=FAIL service=$Service uri=$Uri" }
 }
 
+function Get-HttpText(
+    [string]$Uri,
+    [int]$TimeoutSec = 5
+) {
+    $response = Invoke-WebRequest `
+        -Uri $Uri `
+        -Method Get `
+        -TimeoutSec $TimeoutSec `
+        -SkipHttpErrorCheck `
+        -NoProxy
+
+    if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
+        Fail "HTTP_TEXT=FAIL uri=$Uri status=$($response.StatusCode)"
+    }
+
+    if ($response.Content -is [byte[]]) {
+        return ([Text.Encoding]::UTF8.GetString([byte[]]$response.Content)).Trim()
+    }
+
+    return ([string]$response.Content).Trim()
+}
+
 function Assert-CanonicalRuntime([hashtable]$EnvMap) {
     Assert-OneShotSucceeded -Service 'identity-migrate'
     Assert-OneShotSucceeded -Service 'dsh-migrate'
+    Assert-OneShotSucceeded -Service 'js-deps'
     Assert-RunningService -Service 'postgres' -Healthy
     Assert-RunningService -Service 'mailpit'
     Assert-RunningService -Service 'identity' -Healthy
     Assert-RunningService -Service 'dsh' -Healthy
+    Assert-RunningService -Service 'control' -Healthy
+    Assert-RunningService -Service 'metro-client' -Healthy
+    Assert-RunningService -Service 'metro-partner' -Healthy
+    Assert-RunningService -Service 'metro-captain' -Healthy
+    Assert-RunningService -Service 'metro-field' -Healthy
 
     $identityPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_IDENTITY_PORT'
     $dshPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_DSH_PORT'
     $mailpitPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_MAILPIT_WEB_PORT'
+    $controlPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_CONTROL_PORT'
+    $clientPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
+    $partnerPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
+    $captainPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+    $fieldPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
+
     Assert-CanonicalPublishedPort -Port $identityPort -ExpectedService 'identity'
     Assert-CanonicalPublishedPort -Port $dshPort -ExpectedService 'dsh'
     Assert-CanonicalPublishedPort -Port $mailpitPort -ExpectedService 'mailpit'
+    Assert-CanonicalPublishedPort -Port $controlPort -ExpectedService 'control'
+    Assert-CanonicalPublishedPort -Port $clientPort -ExpectedService 'metro-client'
+    Assert-CanonicalPublishedPort -Port $partnerPort -ExpectedService 'metro-partner'
+    Assert-CanonicalPublishedPort -Port $captainPort -ExpectedService 'metro-captain'
+    Assert-CanonicalPublishedPort -Port $fieldPort -ExpectedService 'metro-field'
 
     $identityBase = (Require-EnvValue -Map $EnvMap -Name 'IDENTITY_API_BASE_URL').TrimEnd('/')
     $dshBase = (Require-EnvValue -Map $EnvMap -Name 'DSH_API_BASE_URL').TrimEnd('/')
@@ -358,9 +398,57 @@ function Assert-CanonicalRuntime([hashtable]$EnvMap) {
     Assert-Endpoint -Service 'identity' -Uri "$identityBase/identity/readiness"
     Assert-Endpoint -Service 'dsh' -Uri "$dshBase/dsh/health"
     Assert-Endpoint -Service 'dsh' -Uri "$dshBase/dsh/readiness"
-    try { $mailpit = Invoke-WebRequest -Uri "http://127.0.0.1:$mailpitPort/" -Method Get -TimeoutSec 5 -SkipHttpErrorCheck }
-    catch { Fail "MAILPIT_READY=FAIL error=$($_.Exception.Message)" }
-    if ($mailpit.StatusCode -lt 200 -or $mailpit.StatusCode -ge 500) { Fail "MAILPIT_READY=FAIL status=$($mailpit.StatusCode)" }
+
+    try {
+        $mailpit = Invoke-WebRequest `
+            -Uri "http://127.0.0.1:$mailpitPort/" `
+            -Method Get `
+            -TimeoutSec 5 `
+            -SkipHttpErrorCheck `
+            -NoProxy
+    } catch {
+        Fail "MAILPIT_READY=FAIL error=$($_.Exception.Message)"
+    }
+
+    if ($mailpit.StatusCode -lt 200 -or $mailpit.StatusCode -ge 500) {
+        Fail "MAILPIT_READY=FAIL status=$($mailpit.StatusCode)"
+    }
+
+    try {
+        $control = Invoke-WebRequest `
+            -Uri "http://127.0.0.1:$controlPort/" `
+            -Method Get `
+            -TimeoutSec 10 `
+            -SkipHttpErrorCheck `
+            -NoProxy
+    } catch {
+        Fail "CONTROL_READY=FAIL error=$($_.Exception.Message)"
+    }
+
+    if ($control.StatusCode -ge 500) {
+        Fail "CONTROL_READY=FAIL status=$($control.StatusCode)"
+    }
+
+    foreach ($entry in @(
+        @{ Name = 'client'; Port = $clientPort },
+        @{ Name = 'partner'; Port = $partnerPort },
+        @{ Name = 'captain'; Port = $captainPort },
+        @{ Name = 'field'; Port = $fieldPort }
+    )) {
+        try {
+            $status = Get-HttpText `
+                -Uri "http://127.0.0.1:$($entry.Port)/status" `
+                -TimeoutSec 5
+        } catch {
+            Fail "MOBILE_METRO_READY=FAIL app=$($entry.Name) port=$($entry.Port) error=$($_.Exception.Message)"
+        }
+
+        if ($status -ne 'packager-status:running') {
+            Fail "MOBILE_METRO_READY=FAIL app=$($entry.Name) port=$($entry.Port) status=$status"
+        }
+
+        Write-Host "MOBILE_METRO_READY=PASS app=$($entry.Name) port=$($entry.Port)"
+    }
 }
 
 function Test-CanonicalRuntimeReady([hashtable]$EnvMap) {
@@ -371,21 +459,277 @@ function Test-CanonicalRuntimeReady([hashtable]$EnvMap) {
     } catch { return $false }
 }
 
+function Get-RuntimeInputFingerprint([string[]]$RelativePaths) {
+    $entries = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($relativePath in $RelativePaths) {
+        $fullPath = Join-Path $RepoRoot $relativePath
+
+        if (Test-Path -LiteralPath $fullPath -PathType Leaf) {
+            $files = @(Get-Item -LiteralPath $fullPath)
+        }
+        elseif (Test-Path -LiteralPath $fullPath -PathType Container) {
+            $files = @(
+                Get-ChildItem `
+                    -LiteralPath $fullPath `
+                    -Recurse `
+                    -File `
+                    -Force
+            )
+        }
+        else {
+            Fail "BUILD_INPUT=FAIL missing=$relativePath"
+        }
+
+        foreach ($file in $files) {
+            $repoRelative = [IO.Path]::GetRelativePath(
+                $RepoRoot,
+                $file.FullName
+            ).Replace('\','/')
+
+            $fileHash = (
+                Get-FileHash `
+                    -LiteralPath $file.FullName `
+                    -Algorithm SHA256
+            ).Hash.ToLowerInvariant()
+
+            $entries.Add("$repoRelative|$fileHash")
+        }
+    }
+
+    if ($entries.Count -eq 0) {
+        Fail 'BUILD_INPUT=FAIL empty=1'
+    }
+
+    $manifest = (
+        @($entries | Sort-Object -Unique) -join "`n"
+    )
+
+    $bytes = [Text.Encoding]::UTF8.GetBytes($manifest)
+    $hash = [Security.Cryptography.SHA256]::HashData($bytes)
+
+    return [Convert]::ToHexString($hash).ToLowerInvariant()
+}
+
+function Read-RuntimeBuildState {
+    if (-not (
+        Test-Path `
+            -LiteralPath $RuntimeBuildStatePath `
+            -PathType Leaf
+    )) {
+        return @{}
+    }
+
+    try {
+        $raw = Get-Content `
+            -LiteralPath $RuntimeBuildStatePath `
+            -Raw
+
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return @{}
+        }
+
+        $state = $raw | ConvertFrom-Json -AsHashtable
+        if ($null -eq $state) {
+            return @{}
+        }
+
+        return $state
+    }
+    catch {
+        Write-Host 'BUILD_STATE=STALE action=rebuild-safe'
+        return @{}
+    }
+}
+
+function Write-RuntimeBuildState([hashtable]$State) {
+    $directory = Split-Path `
+        -Parent `
+        $RuntimeBuildStatePath
+
+    New-Item `
+        -ItemType Directory `
+        -Force `
+        -Path $directory *> $null
+
+    $json = $State |
+        ConvertTo-Json -Depth 8
+
+    $temporary = "$RuntimeBuildStatePath.tmp"
+
+    [IO.File]::WriteAllText(
+        $temporary,
+        $json + [Environment]::NewLine,
+        [Text.UTF8Encoding]::new($false)
+    )
+
+    Move-Item `
+        -LiteralPath $temporary `
+        -Destination $RuntimeBuildStatePath `
+        -Force
+}
+
+function Test-RuntimeImage([string]$Image) {
+    & docker image inspect $Image *> $null
+    return $LASTEXITCODE -eq 0
+}
+
+function Reconcile-RuntimeBuildComponent(
+    [string]$Name,
+    [string[]]$BuildServices,
+    [string[]]$Images,
+    [string[]]$Inputs,
+    [hashtable]$State
+) {
+    $fingerprint = Get-RuntimeInputFingerprint `
+        -RelativePaths $Inputs
+
+    $previous = if ($State.ContainsKey($Name)) {
+        [string]$State[$Name]
+    } else {
+        ''
+    }
+
+    $missingImages = @(
+        $Images |
+            Where-Object {
+                -not (Test-RuntimeImage -Image $_)
+            }
+    )
+
+    if (
+        $previous -eq $fingerprint -and
+        $missingImages.Count -eq 0
+    ) {
+        Write-Host "BUILD_RECONCILE=REUSED component=$Name fingerprint=$fingerprint"
+        return
+    }
+
+    $reason = if ($missingImages.Count -gt 0) {
+        'image-missing'
+    }
+    elseif ([string]::IsNullOrWhiteSpace($previous)) {
+        'state-missing'
+    }
+    else {
+        'inputs-changed'
+    }
+
+    Write-Host "BUILD_RECONCILE=BUILD component=$Name reason=$reason"
+
+    Invoke-Compose `
+        -Arguments (@('build') + $BuildServices)
+
+    foreach ($image in $Images) {
+        if (-not (Test-RuntimeImage -Image $image)) {
+            Fail "BUILD_RECONCILE=FAIL component=$Name image=$image"
+        }
+    }
+
+    $State[$Name] = $fingerprint
+    Write-RuntimeBuildState -State $State
+
+    Write-Host "BUILD_RECONCILE=BUILT component=$Name fingerprint=$fingerprint"
+}
+
+function Reconcile-CanonicalBuildImages {
+    $state = Read-RuntimeBuildState
+
+    Reconcile-RuntimeBuildComponent `
+        -Name 'identity' `
+        -BuildServices @('identity-migrate','identity') `
+        -Images @(
+            'samrim-local-identity-migrate:dev',
+            'samrim-local-identity:dev'
+        ) `
+        -Inputs @(
+            '.dockerignore',
+            'infra/local/compose/compose.yaml',
+            'services/identity/backend',
+            'services/identity/database/migrations'
+        ) `
+        -State $state
+
+    Reconcile-RuntimeBuildComponent `
+        -Name 'dsh' `
+        -BuildServices @('dsh-migrate','dsh') `
+        -Images @(
+            'samrim-local-dsh-migrate:dev',
+            'samrim-local-dsh:dev'
+        ) `
+        -Inputs @(
+            '.dockerignore',
+            'infra/local/compose/compose.yaml',
+            'services/dsh/backend',
+            'services/identity/clients/go'
+        ) `
+        -State $state
+
+    Reconcile-RuntimeBuildComponent `
+        -Name 'js-runtime' `
+        -BuildServices @('js-deps') `
+        -Images @('samrim-local-js-runtime:dev') `
+        -Inputs @(
+            'infra/local/compose/compose.yaml',
+            'infra/local/docker/js-runtime.Dockerfile'
+        ) `
+        -State $state
+
+    Write-Host 'BUILD_RECONCILE=PASS'
+}
 function Start-CanonicalRuntime {
     $envMap = Ensure-Environment
     Set-CanonicalEnvironment -Map $envMap
     Ensure-Docker
     Assert-NoParallelRuntimeResidue
     Assert-NoNativeBackendProcesses
+
+    $lan = Get-MobileLanContext
+    [Environment]::SetEnvironmentVariable('SAMRIM_HOTSPOT_IP', [string]$lan.IP, 'Process')
+
     if (-not (Test-Path -LiteralPath $ComposePath -PathType Leaf)) { Fail "Canonical Compose file is missing: $ComposePath" }
+
     Invoke-Compose -Arguments @('config','--quiet') -Quiet
-    Assert-PublishedPortSafe -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') -ExpectedService 'identity'
-    Assert-PublishedPortSafe -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') -ExpectedService 'dsh'
-    Assert-PublishedPortSafe -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_MAILPIT_WEB_PORT') -ExpectedService 'mailpit'
-    Invoke-Compose -Arguments @('up','-d','--build','--wait','--wait-timeout','180','--remove-orphans')
+
+    $portContracts = @(
+        @{ Key = 'SAMRIM_IDENTITY_PORT'; Service = 'identity' },
+        @{ Key = 'SAMRIM_DSH_PORT'; Service = 'dsh' },
+        @{ Key = 'SAMRIM_MAILPIT_WEB_PORT'; Service = 'mailpit' },
+        @{ Key = 'SAMRIM_CONTROL_PORT'; Service = 'control' },
+        @{ Key = 'SAMRIM_APP_CLIENT_METRO_PORT'; Service = 'metro-client' },
+        @{ Key = 'SAMRIM_APP_PARTNER_METRO_PORT'; Service = 'metro-partner' },
+        @{ Key = 'SAMRIM_APP_CAPTAIN_METRO_PORT'; Service = 'metro-captain' },
+        @{ Key = 'SAMRIM_APP_FIELD_METRO_PORT'; Service = 'metro-field' }
+    )
+
+    foreach ($contract in $portContracts) {
+        Assert-PublishedPortSafe `
+            -Port (Require-TcpPort -Map $envMap -Name $contract.Key) `
+            -ExpectedService $contract.Service
+    }
+
+    Reconcile-CanonicalBuildImages
+    Invoke-Compose -Arguments @('up','-d','--no-build','--wait','--wait-timeout','300','--remove-orphans')
+
     Assert-CanonicalRuntime -EnvMap $envMap
+
+    $metroPorts = @(
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
+    )
+
+    Ensure-MobileLanInfrastructure `
+        -Lan $lan `
+        -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
+        -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
+        -MetroPorts $metroPorts
+
     Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS'
-    Write-Host 'DOCKER_OWNS=postgres,mailpit,identity,dsh'
+    Write-Host 'DOCKER_OWNS=postgres,mailpit,identity,dsh,control,metro-client,metro-partner,metro-captain,metro-field'
+    Write-Host "MOBILE_TRANSPORT=WIFI_LAN hotspot=$($lan.IP)"
+    Write-Host 'ADB_REVERSE_DEPENDENCY=0'
     return $envMap
 }
 
@@ -394,19 +738,37 @@ function Ensure-CanonicalRuntime {
     Set-CanonicalEnvironment -Map $envMap
     Ensure-Docker
     Assert-NoNativeBackendProcesses
+
     if (Test-CanonicalRuntimeReady -EnvMap $envMap) {
+        $lan = Get-MobileLanContext
+        [Environment]::SetEnvironmentVariable('SAMRIM_HOTSPOT_IP', [string]$lan.IP, 'Process')
+
+        $metroPorts = @(
+            Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
+            Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
+            Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+            Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
+        )
+
+        Ensure-MobileLanInfrastructure `
+            -Lan $lan `
+            -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
+            -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
+            -MetroPorts $metroPorts
+
         Write-Host 'CANONICAL_LOCAL_RUNTIME=READY'
         return $envMap
     }
+
     return Start-CanonicalRuntime
 }
 
 function Stop-CanonicalRuntime {
-    $envMap = Ensure-Environment
+    $null = Ensure-Environment
     Ensure-Docker
-    Remove-MobileLanInfrastructure -EnvMap $envMap
     Invoke-Compose -Arguments @('down','--remove-orphans')
     if (@(Get-ProjectResourceIds -Kind container -Project $CanonicalProject).Count) { Fail 'CANONICAL_RUNTIME_STOP=FAIL containers remain.' }
+    Write-Host 'MOBILE_LAN_INFRA=PRESERVED'
     Write-Host 'CANONICAL_RUNTIME_STOP=PASS data_volume=preserved'
 }
 
@@ -465,9 +827,20 @@ function Reset-CanonicalRuntime {
         }
     }
     if (@(Get-NonCanonicalSamrimProjects).Count) { Fail 'RUNTIME_RESET=FAIL noncanonical samrim Compose projects remain.' }
-    Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') -Component 'identity'
-    Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') -Component 'dsh'
-    Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name 'SAMRIM_MAILPIT_WEB_PORT') -Component 'mailpit-web'
+    foreach ($contract in @(
+        @{ Key = 'SAMRIM_IDENTITY_PORT'; Component = 'identity' },
+        @{ Key = 'SAMRIM_DSH_PORT'; Component = 'dsh' },
+        @{ Key = 'SAMRIM_MAILPIT_WEB_PORT'; Component = 'mailpit-web' },
+        @{ Key = 'SAMRIM_CONTROL_PORT'; Component = 'control-panel' },
+        @{ Key = 'SAMRIM_APP_CLIENT_METRO_PORT'; Component = 'metro-client' },
+        @{ Key = 'SAMRIM_APP_PARTNER_METRO_PORT'; Component = 'metro-partner' },
+        @{ Key = 'SAMRIM_APP_CAPTAIN_METRO_PORT'; Component = 'metro-captain' },
+        @{ Key = 'SAMRIM_APP_FIELD_METRO_PORT'; Component = 'metro-field' }
+    )) {
+        Assert-PortFree `
+            -Port (Require-TcpPort -Map $envMap -Name $contract.Key) `
+            -Component $contract.Component
+    }
     Assert-NoNativeBackendProcesses
     Write-Host 'PARALLEL_RUNTIME_RESIDUE=0'
     Write-Host 'RUNTIME_RESET=PASS final_state=DOWN secrets=preserved'
@@ -475,18 +848,12 @@ function Reset-CanonicalRuntime {
 
 function Start-ControlPanel {
     $envMap = Ensure-CanonicalRuntime
-    Set-CanonicalEnvironment -Map $envMap
-    $originRaw = Require-EnvValue -Map $envMap -Name 'CONTROL_PANEL_PUBLIC_ORIGIN'
-    try { $origin = [Uri]::new($originRaw, [UriKind]::Absolute) } catch { Fail "Invalid Control Panel origin: $originRaw" }
-    $authority = $origin.GetLeftPart([UriPartial]::Authority)
-    if ($origin.Scheme -ne 'http' -or $origin.Host -ne '127.0.0.1' -or $origin.IsDefaultPort -or $origin.AbsolutePath -ne '/' -or $authority -ne $originRaw.TrimEnd('/')) { Fail "CONTROL_PANEL_ORIGIN_CONTRACT=FAIL observed=$originRaw" }
-    $cors = Require-EnvValue -Map $envMap -Name 'IDENTITY_CORS_ALLOWED_ORIGINS'
-    if ($cors.TrimEnd('/') -ne $authority) { Fail "CONTROL_PANEL_CORS_CONTRACT=FAIL control_origin=$authority identity_cors=$cors" }
-    Assert-PortFree -Port $origin.Port -Component 'control-panel'
-    $controlRoot = Join-Path $RepoRoot 'apps\control-panel'
-    Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=control-panel origin=$authority backend_owner=docker"
-    & pnpm --dir $controlRoot exec next dev -H $origin.Host -p $origin.Port
-    if ($LASTEXITCODE -ne 0) { Fail "Control Panel exited with code $LASTEXITCODE." }
+    $controlPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_CONTROL_PORT'
+    Assert-RunningService -Service 'control' -Healthy
+    Assert-CanonicalPublishedPort -Port $controlPort -ExpectedService 'control'
+    Write-Host "CONTROL_PANEL_OWNER=DOCKER"
+    Write-Host "CONTROL_PANEL_READY=PASS url=http://127.0.0.1:$controlPort"
+    Write-Host 'CONTROL_PANEL_OPEN=MANUAL'
 }
 
 function Resolve-AdbTargetSerial([string]$RequestedSerial) {
@@ -581,11 +948,12 @@ function Get-PortProxyMappings {
 function Test-MobileLanInfrastructure(
     [pscustomobject]$Lan,
     [int]$IdentityPort,
-    [int]$DshPort
+    [int]$DshPort,
+    [int[]]$MetroPorts
 ) {
     $rules = @(
         Get-NetFirewallRule `
-            -DisplayName 'BThwani Samrim Mobile LAN' `
+            -Group $MobileLanFirewallGroup `
             -ErrorAction SilentlyContinue
     )
 
@@ -598,77 +966,110 @@ function Test-MobileLanInfrastructure(
     $direction = [string]$rules[0].Direction
     $action = [string]$rules[0].Action
 
-    if (
-        $enabled -ne 'True' -or
-        $direction -ne 'Inbound' -or
-        $action -ne 'Allow'
-    ) {
+    if ($enabled -ne 'True' -or $direction -ne 'Inbound' -or $action -ne 'Allow') {
         Write-Host "MOBILE_LAN_FIREWALL_CHECK=FAIL enabled=$enabled direction=$direction action=$action"
         return $false
     }
 
+    $managedPorts = @($IdentityPort,$DshPort) + @($MetroPorts) |
+        Sort-Object -Unique
+
+    $mappings = @(Get-PortProxyMappings)
+
+    foreach ($port in $managedPorts) {
+        $matches = @(
+            $mappings |
+                Where-Object {
+                    $_.ListenAddress -eq $Lan.IP -and
+                    $_.ListenPort -eq $port -and
+                    $_.ConnectAddress -eq '127.0.0.1' -and
+                    $_.ConnectPort -eq $port
+                }
+        )
+
+        if ($matches.Count -ne 1) {
+            Write-Host "MOBILE_LAN_PORTPROXY_CHECK=FAIL port=$port count=$($matches.Count)"
+            return $false
+        }
+    }
+
     Write-Host 'MOBILE_LAN_FIREWALL_CHECK=PASS'
+    Write-Host 'MOBILE_LAN_PORTPROXY_CHECK=PASS'
 
     $identityUri = "http://$($Lan.IP):$IdentityPort/identity/health"
     $dshUri = "http://$($Lan.IP):$DshPort/dsh/health"
 
-    $identityError = ''
-    $dshError = ''
+    $lastError = ''
 
-    # portproxy can require a short moment before accepting the
-    # first connection. Prove the real HTTP path with retries.
+    # Windows portproxy can require a short moment before accepting
+    # the first connection after a mapping is created or reconciled.
     for ($attempt = 1; $attempt -le 12; $attempt++) {
-        $identity = $null
-        $dsh = $null
-        $identityError = ''
-        $dshError = ''
-
         try {
             $identity = Invoke-RestMethod `
                 -Uri $identityUri `
                 -Method Get `
                 -TimeoutSec 3 `
                 -NoProxy
-        }
-        catch {
-            $identityError = $_.Exception.Message
-        }
 
-        try {
             $dsh = Invoke-RestMethod `
                 -Uri $dshUri `
                 -Method Get `
                 -TimeoutSec 3 `
                 -NoProxy
+
+            $identityOk = (
+                $null -ne $identity -and
+                $identity.service -eq 'identity' -and
+                $identity.status -eq 'ok'
+            )
+
+            $dshOk = (
+                $null -ne $dsh -and
+                $dsh.service -eq 'dsh' -and
+                $dsh.status -eq 'ok'
+            )
+
+            $metroOk = $true
+            foreach ($port in $MetroPorts) {
+                $status = Get-HttpText `
+                    -Uri "http://$($Lan.IP):$port/status" `
+                    -TimeoutSec 3
+
+                if ($status -ne 'packager-status:running') {
+                    $lastError = "metro port=$port status=$status"
+                    $metroOk = $false
+                    break
+                }
+            }
+
+            if ($identityOk -and $dshOk -and $metroOk) {
+                Write-Host "MOBILE_LAN_IDENTITY=PASS uri=$identityUri"
+                Write-Host "MOBILE_LAN_DSH=PASS uri=$dshUri"
+
+                foreach ($port in $MetroPorts) {
+                    Write-Host "MOBILE_LAN_METRO=PASS port=$port"
+                }
+
+                return $true
+            }
+
+            if (-not $identityOk) {
+                $lastError = 'identity health contract not ready'
+            }
+            elseif (-not $dshOk) {
+                $lastError = 'dsh health contract not ready'
+            }
         }
         catch {
-            $dshError = $_.Exception.Message
+            $lastError = $_.Exception.Message
         }
 
-        $identityOk = (
-            $null -ne $identity -and
-            $identity.service -eq 'identity' -and
-            $identity.status -eq 'ok'
-        )
-
-        $dshOk = (
-            $null -ne $dsh -and
-            $dsh.service -eq 'dsh' -and
-            $dsh.status -eq 'ok'
-        )
-
-        if ($identityOk -and $dshOk) {
-            Write-Host "MOBILE_LAN_IDENTITY=PASS uri=$identityUri"
-            Write-Host "MOBILE_LAN_DSH=PASS uri=$dshUri"
-            return $true
+        if ($attempt -lt 12) {
+            Start-Sleep -Milliseconds 250
         }
-
-        Start-Sleep -Milliseconds 250
     }
 
-    Write-Host "MOBILE_LAN_IDENTITY=FAIL uri=$identityUri error=$identityError"
-    Write-Host "MOBILE_LAN_DSH=FAIL uri=$dshUri error=$dshError"
-
+    Write-Host "MOBILE_LAN_CONNECTIVITY=FAIL identity_uri=$identityUri dsh_uri=$dshUri error=$lastError"
     Write-Host 'MOBILE_LAN_PORTPROXY_DIAGNOSTIC_BEGIN'
     netsh interface portproxy show v4tov4 |
         ForEach-Object { Write-Host $_ }
@@ -686,19 +1087,19 @@ function Ensure-MobileLanInfrastructure(
         Test-MobileLanInfrastructure `
             -Lan $Lan `
             -IdentityPort $IdentityPort `
-            -DshPort $DshPort
+            -DshPort $DshPort `
+            -MetroPorts $MetroPorts
     ) {
         Write-Host "MOBILE_LAN_INFRA=READY hotspot=$($Lan.IP)"
         return
     }
 
     if (-not (Test-Administrator)) {
-        Fail 'MOBILE_LAN_ADMIN_REQUIRED=1 Run this mobile command once from PowerShell 7 as Administrator.'
+        Fail 'MOBILE_LAN_ADMIN_REQUIRED=1 Run pnpm runtime:up once from PowerShell 7 as Administrator after Docker cutover.'
     }
 
-    $managedPorts = @($IdentityPort,$DshPort)
+    $managedPorts = @($IdentityPort,$DshPort) + @($MetroPorts) | Sort-Object -Unique
 
-    # Remove stale Samrim backend bridges only.
     foreach ($mapping in @(Get-PortProxyMappings)) {
         if (
             $mapping.ConnectAddress -eq '127.0.0.1' -and
@@ -723,18 +1124,11 @@ function Ensure-MobileLanInfrastructure(
         }
     }
 
-    # One canonical firewall rule set for APIs + all Metro ports.
     Get-NetFirewallRule `
         -Group $MobileLanFirewallGroup `
         -ErrorAction SilentlyContinue |
         Remove-NetFirewallRule `
             -ErrorAction SilentlyContinue
-
-    $allPorts = @(
-        $IdentityPort
-        $DshPort
-        $MetroPorts
-    ) | Sort-Object -Unique
 
     New-NetFirewallRule `
         -DisplayName 'BThwani Samrim Mobile LAN' `
@@ -743,7 +1137,7 @@ function Ensure-MobileLanInfrastructure(
         -Action Allow `
         -Protocol TCP `
         -LocalAddress $Lan.IP `
-        -LocalPort $allPorts `
+        -LocalPort $managedPorts `
         -InterfaceAlias $Lan.Adapter `
         -RemoteAddress "$($Lan.IP)/$($Lan.Prefix)" `
         -Profile Any *> $null
@@ -756,7 +1150,8 @@ function Ensure-MobileLanInfrastructure(
         Test-MobileLanInfrastructure `
             -Lan $Lan `
             -IdentityPort $IdentityPort `
-            -DshPort $DshPort
+            -DshPort $DshPort `
+            -MetroPorts $MetroPorts
     )) {
         Fail 'MOBILE_LAN_INFRA=FAIL'
     }
@@ -767,22 +1162,16 @@ function Ensure-MobileLanInfrastructure(
 function Remove-MobileLanInfrastructure(
     [hashtable]$EnvMap
 ) {
-    if (-not $IsWindows) {
-        return
-    }
-
-    $identityPort = Require-TcpPort `
-        -Map $EnvMap `
-        -Name 'SAMRIM_IDENTITY_PORT'
-
-    $dshPort = Require-TcpPort `
-        -Map $EnvMap `
-        -Name 'SAMRIM_DSH_PORT'
+    if (-not $IsWindows) { return }
 
     $managedPorts = @(
-        $identityPort
-        $dshPort
-    )
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_IDENTITY_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_DSH_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
+    ) | Sort-Object -Unique
 
     $mappings = @(
         Get-PortProxyMappings |
@@ -799,10 +1188,7 @@ function Remove-MobileLanInfrastructure(
             -ErrorAction SilentlyContinue
     )
 
-    if (
-        $mappings.Count -eq 0 -and
-        $rules.Count -eq 0
-    ) {
+    if ($mappings.Count -eq 0 -and $rules.Count -eq 0) {
         Write-Host 'MOBILE_LAN_INFRA=ABSENT'
         return
     }
@@ -815,16 +1201,13 @@ function Remove-MobileLanInfrastructure(
         netsh interface portproxy delete v4tov4 `
             "listenaddress=$($mapping.ListenAddress)" `
             "listenport=$($mapping.ListenPort)" *> $null
-
         if ($LASTEXITCODE -ne 0) {
             Fail "MOBILE_LAN_PORTPROXY_REMOVE=FAIL address=$($mapping.ListenAddress) port=$($mapping.ListenPort)"
         }
     }
 
     if ($rules.Count -gt 0) {
-        $rules |
-            Remove-NetFirewallRule `
-                -ErrorAction Stop
+        $rules | Remove-NetFirewallRule -ErrorAction Stop
     }
 
     $remainingMappings = @(
@@ -842,15 +1225,13 @@ function Remove-MobileLanInfrastructure(
             -ErrorAction SilentlyContinue
     )
 
-    if (
-        $remainingMappings.Count -ne 0 -or
-        $remainingRules.Count -ne 0
-    ) {
+    if ($remainingMappings.Count -ne 0 -or $remainingRules.Count -ne 0) {
         Fail 'MOBILE_LAN_CLEANUP=FAIL'
     }
 
     Write-Host 'MOBILE_LAN_INFRA=REMOVED'
 }
+
 function Remove-SamrimAdbReverse(
     [string]$Serial,
     [int[]]$Ports
@@ -909,158 +1290,6 @@ function Assert-SamrimAdbReverseAbsent(
     Write-Host "ADB_REVERSE_DEPENDENCY=0 serial=$Serial"
 }
 
-function Wait-MobileMetroReady(
-    [System.Diagnostics.Process]$Process,
-    [int]$Port,
-    [int]$Attempts = 120
-) {
-    $uri = "http://localhost:$Port/_expo/open?platform=android&runtime=custom"
-
-    $lastError = ''
-
-    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
-        if ($Process.HasExited) {
-            Fail "MOBILE_METRO_PROCESS=FAIL exit=$($Process.ExitCode)"
-        }
-
-        try {
-            $descriptor = Invoke-RestMethod `
-                -Uri $uri `
-                -Method Get `
-                -TimeoutSec 2 `
-                -NoProxy
-
-            if (
-                $null -ne $descriptor -and
-                -not [string]::IsNullOrWhiteSpace(
-                    [string]$descriptor.url
-                )
-            ) {
-                Write-Host "MOBILE_METRO_READY=PASS port=$Port"
-                return
-            }
-        }
-        catch {
-            $lastError = $_.Exception.Message
-        }
-
-        Start-Sleep -Milliseconds 500
-    }
-
-    Fail "MOBILE_METRO_READY=FAIL port=$Port error=$lastError"
-}
-function Open-MobileDevClientOverLan(
-    [string]$Serial,
-    [string]$AppRoot,
-    [string]$HotspotIP,
-    [int]$MetroPort,
-    [int[]]$ManagedPorts
-) {
-    if ([string]::IsNullOrWhiteSpace($Serial)) {
-        Write-Host 'MOBILE_DEV_CLIENT_OPEN=SKIP adb_target=none'
-        return
-    }
-
-    $mobileConfig = Get-Content `
-        -LiteralPath (Join-Path $AppRoot 'mobile.config.json') `
-        -Raw |
-        ConvertFrom-Json
-
-    $expectedAppId = [string]$mobileConfig.androidPackage
-
-    if ([string]::IsNullOrWhiteSpace($expectedAppId)) {
-        Fail 'MOBILE_ANDROID_PACKAGE=FAIL'
-    }
-
-    $openUri =
-        "http://127.0.0.1:$MetroPort/_expo/open?platform=android&runtime=custom"
-
-    $open = Invoke-RestMethod `
-        -Uri $openUri `
-        -Method Get `
-        -TimeoutSec 10 `
-        -NoProxy
-
-    if ([string]$open.runtime -ne 'custom') {
-        Fail "MOBILE_DEV_CLIENT_RUNTIME=FAIL actual=$($open.runtime)"
-    }
-
-    if ([string]$open.appId -ne $expectedAppId) {
-        Fail "MOBILE_DEV_CLIENT_APP_ID=FAIL expected=$expectedAppId actual=$($open.appId)"
-    }
-
-    $url = [string]$open.url
-
-    if ([string]::IsNullOrWhiteSpace($url)) {
-        Fail 'MOBILE_DEV_CLIENT_URL=FAIL'
-    }
-
-    $decoded = [Uri]::UnescapeDataString($url)
-
-    $expectedManifest =
-        "http://$HotspotIP`:$MetroPort"
-
-    if (-not $decoded.Contains($expectedManifest)) {
-        Write-Host "MOBILE_DEV_CLIENT_URL=$decoded"
-        Fail "MOBILE_DEV_CLIENT_LAN_URL=FAIL expected=$expectedManifest"
-    }
-
-    $installed = @(
-        adb -s $Serial shell `
-            pm path $expectedAppId
-    )
-
-    if (
-        $LASTEXITCODE -ne 0 -or
-        ($installed -join "`n") -notmatch '^package:'
-    ) {
-        Fail "MOBILE_DEV_CLIENT_INSTALLED=FAIL appId=$expectedAppId"
-    }
-
-    adb -s $Serial shell `
-        am force-stop $expectedAppId *> $null
-
-    if ($LASTEXITCODE -ne 0) {
-        Fail "MOBILE_DEV_CLIENT_FORCE_STOP=FAIL appId=$expectedAppId"
-    }
-
-    $launch = @(
-        adb -s $Serial shell `
-            am start `
-            -W `
-            -a android.intent.action.VIEW `
-            -d $url 2>&1
-    )
-
-    if (
-        $LASTEXITCODE -ne 0 -or
-        ($launch -join "`n") -notmatch
-            '(?m)^Status:\s+ok\s*$'
-    ) {
-        $launch | Write-Host
-        Fail "MOBILE_DEV_CLIENT_OPEN=FAIL appId=$expectedAppId"
-    }
-
-    Start-Sleep -Seconds 1
-
-    $pidValue = (
-        adb -s $Serial shell `
-            pidof $expectedAppId
-    ).Trim()
-
-    if (-not $pidValue) {
-        $launch | Write-Host
-        Fail "MOBILE_DEV_CLIENT_PROCESS=FAIL appId=$expectedAppId"
-    }
-
-    Assert-SamrimAdbReverseAbsent `
-        -Serial $Serial `
-        -Ports $ManagedPorts
-
-    Write-Host "MOBILE_DEV_CLIENT_URL=$decoded"
-    Write-Host "MOBILE_DEV_CLIENT_PID=$pidValue"
-    Write-Host "MOBILE_DEV_CLIENT_OPEN=PASS appId=$expectedAppId transport=WIFI_LAN"
-}
 function Start-Mobile(
     [ValidateSet(
         'app-client',
@@ -1071,271 +1300,30 @@ function Start-Mobile(
     [string]$App
 ) {
     $envMap = Ensure-CanonicalRuntime
-    Set-CanonicalEnvironment -Map $envMap
 
-    $appRoot = Join-Path $RepoRoot ("apps\" + $App)
-
-    foreach ($required in @(
-        'package.json',
-        'project.json',
-        'mobile.config.json'
-    )) {
-        if (
-            -not (
-                Test-Path `
-                    -LiteralPath (Join-Path $appRoot $required) `
-                    -PathType Leaf
-            )
-        ) {
-            Fail "Missing mobile prerequisite: $App/$required"
-        }
+    $contract = switch ($App) {
+        'app-client'  { @{ Service = 'metro-client';  PortKey = 'SAMRIM_APP_CLIENT_METRO_PORT' } }
+        'app-partner' { @{ Service = 'metro-partner'; PortKey = 'SAMRIM_APP_PARTNER_METRO_PORT' } }
+        'app-captain' { @{ Service = 'metro-captain'; PortKey = 'SAMRIM_APP_CAPTAIN_METRO_PORT' } }
+        'app-field'   { @{ Service = 'metro-field';   PortKey = 'SAMRIM_APP_FIELD_METRO_PORT' } }
     }
 
-    $package = Get-Content `
-        -LiteralPath (Join-Path $appRoot 'package.json') `
-        -Raw |
-        ConvertFrom-Json
-
-    if ($null -ne $package.scripts.PSObject.Properties['start']) {
-        Fail "$App exposes forbidden secondary local start authority."
-    }
-
-    $project = Get-Content `
-        -LiteralPath (Join-Path $appRoot 'project.json') `
-        -Raw |
-        ConvertFrom-Json
-
-    if (
-        @($project.tags) -notcontains 'type:app' -or
-        [string]$project.root -ne ("apps/" + $App)
-    ) {
-        Fail "$App ownership metadata is invalid."
-    }
-
-    $appToken = (
-        $App -replace '[^A-Za-z0-9]','_'
-    ).ToUpperInvariant()
-
-    $metroPort = Require-TcpPort `
-        -Map $envMap `
-        -Name "SAMRIM_${appToken}_METRO_PORT"
-
-    $identityPort = Require-TcpPort `
-        -Map $envMap `
-        -Name 'SAMRIM_IDENTITY_PORT'
-
-    $dshPort = Require-TcpPort `
-        -Map $envMap `
-        -Name 'SAMRIM_DSH_PORT'
-
-    $allMetroPorts = @(
-        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
-        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
-        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
-        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
-    )
-
-    Assert-PortFree -Port $metroPort -Component $App
-
-    Assert-CanonicalPublishedPort `
-        -Port $identityPort `
-        -ExpectedService 'identity'
-
-    Assert-CanonicalPublishedPort `
-        -Port $dshPort `
-        -ExpectedService 'dsh'
+    $metroPort = Require-TcpPort -Map $envMap -Name $contract.PortKey
+    Assert-RunningService -Service $contract.Service -Healthy
+    Assert-CanonicalPublishedPort -Port $metroPort -ExpectedService $contract.Service
 
     $lan = Get-MobileLanContext
 
-    Ensure-MobileLanInfrastructure `
-        -Lan $lan `
-        -IdentityPort $identityPort `
-        -DshPort $dshPort `
-        -MetroPorts $allMetroPorts
-
-    $identityLanUrl = "http://$($lan.IP):$identityPort"
-    $dshLanUrl      = "http://$($lan.IP):$dshPort"
-    $metroLanUrl    = "http://$($lan.IP):$metroPort"
-
-    [Environment]::SetEnvironmentVariable(
-        'EXPO_PUBLIC_IDENTITY_API_URL',
-        $identityLanUrl,
-        'Process'
-    )
-
-    [Environment]::SetEnvironmentVariable(
-        'EXPO_PUBLIC_DSH_API_URL',
-        $dshLanUrl,
-        'Process'
-    )
-
-    [Environment]::SetEnvironmentVariable(
-        'EXPO_PACKAGER_PROXY_URL',
-        $metroLanUrl,
-        'Process'
-    )
-
-    $adbSerial = Resolve-AdbTargetSerial `
-        -RequestedSerial $DeviceSerial
-
-    if ($adbSerial) {
-        $adbPorts = @(
-            $identityPort
-            $dshPort
-        ) + $allMetroPorts
-
-        Remove-SamrimAdbReverse `
-            -Serial $adbSerial `
-            -Ports $adbPorts
-
-        Write-Host "ADB_TARGET=PASS serial=$adbSerial transport=control-only"
-    }
-    else {
-        Write-Host 'ADB_TARGET=NONE transport=not-required'
-    }
-
-    $nodeOptions = [Environment]::GetEnvironmentVariable(
-        'NODE_OPTIONS',
-        'Process'
-    )
-
-    if ([string]::IsNullOrWhiteSpace($nodeOptions)) {
-        $nodeOptions = '--dns-result-order=ipv4first'
-    }
-    elseif ($nodeOptions -match '(?i)(^|\s)--dns-result-order=\S+') {
-        $nodeOptions = [regex]::Replace(
-            $nodeOptions,
-            '(?i)(^|\s)--dns-result-order=\S+',
-            '$1--dns-result-order=ipv4first'
-        )
-    }
-    else {
-        $nodeOptions = "$nodeOptions --dns-result-order=ipv4first"
-    }
-
-    [Environment]::SetEnvironmentVariable(
-        'NODE_OPTIONS',
-        $nodeOptions,
-        'Process'
-    )
-
-    $expoArgs = @(
-        '--dir',
-        $appRoot,
-        'exec',
-        'expo',
-        'start',
-        '--dev-client',
-        '--port',
-        [string]$metroPort
-    )
-
-    if ($ClearCache) {
-        $expoArgs += '--clear'
-    }
-
     Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=$App"
+    Write-Host "MOBILE_OWNER=DOCKER service=$($contract.Service)"
     Write-Host "MOBILE_TRANSPORT=WIFI_LAN hotspot=$($lan.IP)"
-    Write-Host "METRO_LAN_URL=$metroLanUrl"
-    Write-Host "IDENTITY_LAN_URL=$identityLanUrl"
-    Write-Host "DSH_LAN_URL=$dshLanUrl"
+    Write-Host "METRO_LAN_URL=http://$($lan.IP):$metroPort"
+    Write-Host "IDENTITY_LAN_URL=http://$($lan.IP):$(Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT')"
+    Write-Host "DSH_LAN_URL=http://$($lan.IP):$(Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT')"
     Write-Host 'ADB_REVERSE_DEPENDENCY=0'
-    Write-Host 'BACKEND_OWNER=docker'
-
-    $managedAdbPorts = @(
-        $identityPort
-        $dshPort
-    ) + $allMetroPorts
-
-    $expoProcess = $null
-
-    $expoArgsJson = ConvertTo-Json `
-        -Compress `
-        -InputObject @($expoArgs)
-
-    $previousExpoArgsJson =
-        [Environment]::GetEnvironmentVariable(
-            'SAMRIM_EXPO_ARGS_JSON',
-            'Process'
-        )
-
-    [Environment]::SetEnvironmentVariable(
-        'SAMRIM_EXPO_ARGS_JSON',
-        $expoArgsJson,
-        'Process'
-    )
-
-    $runnerScript = '$ErrorActionPreference = "Continue"; $arguments = @(ConvertFrom-Json -InputObject $env:SAMRIM_EXPO_ARGS_JSON); & pnpm @arguments 2>&1 | ForEach-Object { Write-Output $_ }; $code = $LASTEXITCODE; exit $code'
-
-    $encodedRunner = [Convert]::ToBase64String(
-        [Text.Encoding]::Unicode.GetBytes(
-            $runnerScript
-        )
-    )
-
-    try {
-        $expoProcess = Start-Process `
-            -FilePath 'pwsh' `
-            -ArgumentList @(
-                '-NoProfile'
-                '-EncodedCommand'
-                $encodedRunner
-            ) `
-            -WorkingDirectory $RepoRoot `
-            -NoNewWindow `
-            -PassThru
-    }
-    finally {
-        [Environment]::SetEnvironmentVariable(
-            'SAMRIM_EXPO_ARGS_JSON',
-            $previousExpoArgsJson,
-            'Process'
-        )
-    }
-    try {
-        Wait-MobileMetroReady `
-            -Process $expoProcess `
-            -Port $metroPort
-
-        if ($adbSerial) {
-            # Expo is intentionally non-interactive. Any reverse mapping
-            # appearing here is therefore an invariant violation.
-            Assert-SamrimAdbReverseAbsent `
-                -Serial $adbSerial `
-                -Ports $managedAdbPorts
-
-            Open-MobileDevClientOverLan `
-                -Serial $adbSerial `
-                -AppRoot $appRoot `
-                -HotspotIP $lan.IP `
-                -MetroPort $metroPort `
-                -ManagedPorts $managedAdbPorts
-        }
-        else {
-            Write-Host 'MOBILE_DEV_CLIENT_OPEN=SKIP adb_target=none'
-        }
-
-        Write-Host 'MOBILE_EXPO_INTERACTIVE=0'
-        Write-Host 'MOBILE_ANDROID_LAUNCH_OWNER=tools/dev/runtime.ps1'
-
-        $expoProcess.WaitForExit()
-
-        if ($expoProcess.ExitCode -ne 0) {
-            Fail "$App Expo runtime exited with code $($expoProcess.ExitCode)."
-        }
-    }
-    finally {
-        if (
-            $null -ne $expoProcess -and
-            -not $expoProcess.HasExited
-        ) {
-            taskkill `
-                /PID $expoProcess.Id `
-                /T `
-                /F *> $null
-        }
-    }
+    Write-Host 'MOBILE_DEV_CLIENT_OPEN=MANUAL'
 }
+
 Push-Location $RepoRoot
 try {
     switch ($Action) {

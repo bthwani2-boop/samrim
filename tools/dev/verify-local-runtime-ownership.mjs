@@ -86,10 +86,27 @@ const composeDir = path.join(repoRoot, "infra/local/compose");
 const composeFiles = fs.readdirSync(composeDir).filter((name) => /^compose(?:\..+)?\.ya?ml$/i.test(name));
 assert(composeFiles.length === 1 && composeFiles[0] === "compose.yaml", `exactly one local Compose file is required; found: ${composeFiles.join(",")}`);
 assert(!exists("infra/local/compose/compose.integration.yaml"), "parallel integration Compose file must not exist");
+assert(exists("infra/local/docker/js-runtime.Dockerfile"), "canonical JS runtime Dockerfile is missing");
+assert(!exists("infra/local/docker/js-dev.Dockerfile"), "retired JS workspace-build Dockerfile must not survive");
+assert(exists("tools/dev/js-deps.mjs"), "canonical JS dependency synchronizer is missing");
+assert(exists(".dockerignore"), "repository Docker build context guard is missing");
+const pnpmWorkspace = read("pnpm-workspace.yaml");
+const jsRuntimeDockerfile = read("infra/local/docker/js-runtime.Dockerfile");
+const jsDeps = read("tools/dev/js-deps.mjs");
+assert(/^nodeLinker:\s*isolated\s*$/m.test(pnpmWorkspace), "canonical workspace must retain isolated pnpm linking");
+assert(!jsRuntimeDockerfile.includes("COPY . ."), "JS runtime image must not copy repository source");
+assert(!/pnpm\s+install/.test(jsRuntimeDockerfile), "JS runtime image must not install workspace dependencies");
+assert(jsRuntimeDockerfile.includes("pnpm@10.34.0"), "JS runtime image must pin canonical pnpm");
+assert(jsDeps.includes("--frozen-lockfile"), "JS dependency synchronizer must use frozen lockfile installation");
+assert(jsDeps.includes(".samrim-js-deps-fingerprint"), "JS dependency synchronizer must persist a dependency fingerprint");
+assert(jsDeps.includes('CI: "true"'), "JS dependency synchronizer must explicitly run pnpm in non-interactive CI mode");
 
 const compose = read("infra/local/compose/compose.yaml");
+assert(compose.includes("  js-deps:"), "canonical Compose must own one JS dependency one-shot service");
+assert(compose.includes("image: samrim-local-js-runtime:dev"), "Control/Metro must share one canonical JS runtime image");
+assert(compose.includes("samrim-js-pnpm-store:/pnpm/store"), "JS dependency preparation must retain a Docker-owned pnpm store");
 assert(/^name:\s*samrim-local\s*$/m.test(compose), "canonical Compose project must be samrim-local");
-for (const service of ["postgres", "mailpit", "identity-migrate", "identity", "dsh-migrate", "dsh"]) {
+for (const service of ["postgres", "mailpit", "identity-migrate", "identity", "dsh-migrate", "dsh", "js-deps", "control", "metro-client", "metro-partner", "metro-captain", "metro-field"]) {
   assert(new RegExp(`^  ${service}:\\s*$`, "m").test(compose), `canonical Compose missing service: ${service}`);
 }
 assert(!compose.includes("profiles:"), "canonical Compose must not expose alternate profiles");
@@ -107,6 +124,7 @@ for (const key of [
   "SAMRIM_MAILPIT_WEB_PORT",
   "SAMRIM_IDENTITY_PORT",
   "SAMRIM_DSH_PORT",
+  "SAMRIM_CONTROL_PORT",
   "SAMRIM_APP_CLIENT_METRO_PORT",
   "SAMRIM_APP_PARTNER_METRO_PORT",
   "SAMRIM_APP_CAPTAIN_METRO_PORT",
@@ -130,7 +148,7 @@ for (const marker of [
   "function New-RandomHex",
   "Assert-NoParallelRuntimeResidue",
   "Get-NonCanonicalSamrimProjects",
-  "DOCKER_OWNS=postgres,mailpit,identity,dsh",
+  "DOCKER_OWNS=postgres,mailpit,identity,dsh,control,metro-client,metro-partner,metro-captain,metro-field",
   "CANONICAL_LOCAL_RUNTIME=PASS",
   "RUNTIME_RESET=PASS",
   "Assert-CanonicalPublishedPort",
@@ -138,41 +156,25 @@ for (const marker of [
   assert(runtime.includes(marker), `canonical runtime owner missing invariant: ${marker}`);
 }
 assert(!runtime.includes("ensure-local-env.ps1"), "canonical runtime owner must not delegate environment reconciliation to a second executable");
-assert(/['"]exec['"]\s*,\s*['"]expo['"]\s*,\s*['"]start['"]/.test(runtime), "canonical runtime owner must launch Expo through pnpm exec expo start");
-assert(!runtime.includes("ADB_REVERSE=READY"), "mobile runtime must not restore adb reverse transport");
-assert(!/['"]--localhost['"]/.test(runtime), "mobile Expo runtime must not use localhost-only transport");
-assert(runtime.includes("EXPO_PACKAGER_PROXY_URL"), "mobile runtime must advertise its resolved LAN Metro URL");
+assert(
+  !/['"]exec['"]\s*,\s*['"]expo['"]\s*,\s*['"]start['"]/.test(runtime),
+  "canonical runtime owner must not launch Expo/Metro as a host process after Docker cutover",
+);
+assert(
+  !/next\s+dev/.test(runtime),
+  "canonical runtime owner must not launch Next.js as a host process after Docker cutover",
+);
 assert(runtime.includes("Ensure-MobileLanInfrastructure"), "mobile runtime must own Wi-Fi LAN infrastructure");
 assert(runtime.includes("MOBILE_TRANSPORT=WIFI_LAN"), "mobile runtime must identify Wi-Fi LAN transport");
 assert(runtime.includes("ADB_REVERSE_DEPENDENCY=0"), "mobile runtime must assert zero adb reverse dependency");
-assert(!runtime.includes("& pnpm @expoArgs"), "mobile runtime must not hand blocking interactive ownership to Expo");
-assert(
-  !/SetEnvironmentVariable\(\s*'CI'\s*,\s*'1'\s*,\s*'Process'\s*\)/s.test(runtime),
-  "mobile Expo runtime must not force CI mode",
-);
-assert(
-  runtime.includes("SAMRIM_EXPO_ARGS_JSON"),
-  "mobile Expo runtime must pass canonical arguments through a non-TTY runner",
-);
-assert(
-  runtime.includes("2>&1 | ForEach-Object"),
-  "mobile Expo child output must be piped so Expo does not own the terminal TTY",
-);
-assert(
-  runtime.includes("/_expo/open?platform=android&runtime=custom"),
-  "mobile runtime must resolve the canonical Expo dev-client launch URL",
-);
-assert(
-  runtime.includes("MOBILE_ANDROID_LAUNCH_OWNER=tools/dev/runtime.ps1"),
-  "mobile Android launch must be runtime-owned",
-);
-assert(
-  runtime.includes("MOBILE_DEV_CLIENT_OPEN=PASS"),
-  "mobile runtime must prove the development client launch",
-);
+assert(runtime.includes("MOBILE_OWNER=DOCKER"), "mobile runtime must report Docker ownership");
+assert(runtime.includes("CONTROL_PANEL_OWNER=DOCKER"), "Control Panel runtime must report Docker ownership");
+assert(runtime.includes("function Get-HttpText"), "canonical runtime must own one byte-safe HTTP text boundary");
+assert(!runtime.includes(".Content.Trim()"), "canonical runtime must not call Trim directly on an untyped HTTP response body");
+assert(runtime.includes("Assert-OneShotSucceeded -Service 'js-deps'"), "canonical runtime must prove JS dependency preparation");
 assert(
   runtime.includes("function Remove-MobileLanInfrastructure"),
-  "canonical runtime must own mobile LAN cleanup",
+  "canonical runtime must retain explicit mobile LAN cleanup for destructive reset",
 );
 
 const wifiLanStopStart =
@@ -183,10 +185,16 @@ const wifiLanStopEnd =
 assert(
   wifiLanStopStart >= 0 &&
     wifiLanStopEnd > wifiLanStopStart &&
-    runtime
+    !runtime
       .slice(wifiLanStopStart, wifiLanStopEnd)
       .includes("Remove-MobileLanInfrastructure"),
-  "mobile LAN infrastructure must be cleaned by runtime down",
+  "mobile LAN infrastructure must survive ordinary runtime down",
+);
+assert(
+  runtime
+    .slice(wifiLanStopStart, wifiLanStopEnd)
+    .includes("MOBILE_LAN_INFRA=PRESERVED"),
+  "runtime down must explicitly report preserved mobile LAN infrastructure",
 );
 
 const wifiLanResetStart =
@@ -304,6 +312,84 @@ for (const command of ["pnpm runtime:up", "pnpm runtime:doctor", "pnpm control",
 }
 assert(workflow.includes("--env-file infra/local/compose/.env"), "CI runtime inspection must use the reconciled canonical .env");
 
+// DOCKER_CUTOVER_ROOT_CLOSURE_GUARD_BEGIN
+assert(
+  runtime.includes('for ($attempt = 1; $attempt -le 12; $attempt++)'),
+  "mobile LAN readiness must retain bounded retry for Windows portproxy activation",
+);
+
+const resetRuntimeBlock = runtime.slice(
+  runtime.indexOf("function Reset-CanonicalRuntime"),
+  runtime.indexOf("function Start-ControlPanel"),
+);
+
+for (const key of [
+  "SAMRIM_IDENTITY_PORT",
+  "SAMRIM_DSH_PORT",
+  "SAMRIM_MAILPIT_WEB_PORT",
+  "SAMRIM_CONTROL_PORT",
+  "SAMRIM_APP_CLIENT_METRO_PORT",
+  "SAMRIM_APP_PARTNER_METRO_PORT",
+  "SAMRIM_APP_CAPTAIN_METRO_PORT",
+  "SAMRIM_APP_FIELD_METRO_PORT",
+]) {
+  assert(
+    resetRuntimeBlock.includes(key),
+    `runtime reset must prove Docker-owned port is free: ${key}`,
+  );
+}
+
+const dockerIgnore = read(".dockerignore");
+for (const ignored of [".bthwani-local/", ".diagnostics/"]) {
+  assert(
+    dockerIgnore.split(/\r?\n/).includes(ignored),
+    `.dockerignore must exclude local-only Docker context path: ${ignored}`,
+  );
+}
+// DOCKER_CUTOVER_ROOT_CLOSURE_GUARD_END
+// FAST_DOCKER_DEV_GUARD_BEGIN
+const controlNextConfig = read("apps/control-panel/next.config.mjs");
+assert(
+  controlNextConfig.includes('allowedDevOrigins: ["127.0.0.1"]'),
+  "Control Panel dev server must explicitly allow the canonical 127.0.0.1 origin",
+);
+assert(
+  compose.includes("samrim-js-control-next:/workspace/apps/control-panel/.next"),
+  "Control Panel .next cache must live on a Docker Linux volume",
+);
+assert(
+  compose.includes("  samrim-js-control-next:"),
+  "Control Panel .next Docker volume must be declared",
+);
+for (const image of [
+  "samrim-local-identity-migrate:dev",
+  "samrim-local-identity:dev",
+  "samrim-local-dsh-migrate:dev",
+  "samrim-local-dsh:dev",
+]) {
+  assert(compose.includes(`image: ${image}`), `canonical backend image name missing: ${image}`);
+}
+assert(
+  runtime.includes(".bthwani-local\\runtime-build-state.json"),
+  "runtime must persist local build fingerprints under the ignored .bthwani-local authority",
+);
+assert(
+  runtime.includes("function Reconcile-CanonicalBuildImages"),
+  "runtime must own change-aware image reconciliation",
+);
+assert(
+  runtime.includes("BUILD_RECONCILE=REUSED"),
+  "runtime must prove unchanged image reuse",
+);
+assert(
+  !runtime.includes("@('up','-d','--build'"),
+  "runtime:up must not build every image unconditionally",
+);
+assert(
+  runtime.includes("@('up','-d','--no-build'"),
+  "runtime:up must explicitly prohibit implicit Compose builds after reconciliation",
+);
+// FAST_DOCKER_DEV_GUARD_END
 if (failures.length) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
   for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
@@ -317,8 +403,8 @@ console.log("SHADOW_RUNTIME_EXECUTORS=0");
 console.log("CANONICAL_RUNTIME_OWNER=tools/dev/runtime.ps1");
 console.log("IDENTITY_OWNER=DOCKER");
 console.log("DSH_OWNER=DOCKER");
-console.log("CONTROL_PANEL_OWNER=HOST_RUNTIME_PS1");
-console.log("MOBILE_OWNER=HOST_RUNTIME_PS1");
+console.log("CONTROL_PANEL_OWNER=DOCKER");
+console.log("MOBILE_OWNER=DOCKER");
 console.log("PARALLEL_LOCAL_RUNTIME_AUTHORITY=0");
 console.log("NATIVE_BACKEND_START_PATHS=0");
 console.log("PORT_FALLBACK_PATHS=0");

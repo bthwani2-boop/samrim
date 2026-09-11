@@ -2,6 +2,7 @@
 const isProduction = process.env.NODE_ENV === "production";
 
 const nextConfig = {
+  allowedDevOrigins: ["127.0.0.1"],
   transpilePackages: ["@bthwani/identity", "@bthwani/design-system"],
   poweredByHeader: false,
   // Keep Next dev from scaffolding agent instruction files inside this app.

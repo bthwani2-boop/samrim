@@ -1,5 +1,45 @@
 name: samrim-local
 
+x-js-volumes: &js-volumes
+  - ../../..:/workspace
+  - samrim-js-root-node-modules:/workspace/node_modules
+  - samrim-js-client-node-modules:/workspace/apps/app-client/node_modules
+  - samrim-js-partner-node-modules:/workspace/apps/app-partner/node_modules
+  - samrim-js-captain-node-modules:/workspace/apps/app-captain/node_modules
+  - samrim-js-field-node-modules:/workspace/apps/app-field/node_modules
+  - samrim-js-control-node-modules:/workspace/apps/control-panel/node_modules
+  - samrim-js-identity-node-modules:/workspace/services/identity/node_modules
+  - samrim-js-dsh-node-modules:/workspace/services/dsh/node_modules
+  - samrim-js-design-system-node-modules:/workspace/packages/design-system/node_modules
+
+x-control-volumes: &control-volumes
+  - ../../..:/workspace
+  - samrim-js-root-node-modules:/workspace/node_modules
+  - samrim-js-client-node-modules:/workspace/apps/app-client/node_modules
+  - samrim-js-partner-node-modules:/workspace/apps/app-partner/node_modules
+  - samrim-js-captain-node-modules:/workspace/apps/app-captain/node_modules
+  - samrim-js-field-node-modules:/workspace/apps/app-field/node_modules
+  - samrim-js-control-node-modules:/workspace/apps/control-panel/node_modules
+  - samrim-js-identity-node-modules:/workspace/services/identity/node_modules
+  - samrim-js-dsh-node-modules:/workspace/services/dsh/node_modules
+  - samrim-js-design-system-node-modules:/workspace/packages/design-system/node_modules
+  - samrim-js-control-next:/workspace/apps/control-panel/.next
+
+x-js-runtime: &js-runtime
+  image: samrim-local-js-runtime:dev
+  pull_policy: never
+  restart: unless-stopped
+  init: true
+  working_dir: /workspace
+  volumes: *js-volumes
+
+x-js-env: &js-env
+  NODE_ENV: "development"
+  BTHWANI_ENV: "development"
+  NODE_OPTIONS: "--dns-result-order=ipv4first"
+  NEXT_TELEMETRY_DISABLED: "1"
+  EXPO_NO_TELEMETRY: "1"
+
 services:
   postgres:
     image: postgis/postgis:16-3.4-alpine
@@ -24,6 +64,7 @@ services:
       - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-58026}:8025"
 
   identity-migrate:
+    image: samrim-local-identity-migrate:dev
     restart: "no"
     build:
       context: ../../..
@@ -42,6 +83,7 @@ services:
     entrypoint: ["/migrate"]
 
   identity:
+    image: samrim-local-identity:dev
     restart: unless-stopped
     build:
       context: ../../..
@@ -90,6 +132,7 @@ services:
       start_period: 10s
 
   dsh-migrate:
+    image: samrim-local-dsh-migrate:dev
     restart: "no"
     build:
       context: ../../..
@@ -108,6 +151,7 @@ services:
     entrypoint: ["/migrate"]
 
   dsh:
+    image: samrim-local-dsh:dev
     restart: unless-stopped
     build:
       context: ../../..
@@ -141,5 +185,162 @@ services:
       retries: 30
       start_period: 10s
 
+  js-deps:
+    image: samrim-local-js-runtime:dev
+    pull_policy: build
+    build:
+      context: ../docker
+      dockerfile: js-runtime.Dockerfile
+    restart: "no"
+    init: true
+    working_dir: /workspace
+    volumes:
+      - ../../..:/workspace
+      - samrim-js-root-node-modules:/workspace/node_modules
+      - samrim-js-client-node-modules:/workspace/apps/app-client/node_modules
+      - samrim-js-partner-node-modules:/workspace/apps/app-partner/node_modules
+      - samrim-js-captain-node-modules:/workspace/apps/app-captain/node_modules
+      - samrim-js-field-node-modules:/workspace/apps/app-field/node_modules
+      - samrim-js-control-node-modules:/workspace/apps/control-panel/node_modules
+      - samrim-js-identity-node-modules:/workspace/services/identity/node_modules
+      - samrim-js-dsh-node-modules:/workspace/services/dsh/node_modules
+      - samrim-js-design-system-node-modules:/workspace/packages/design-system/node_modules
+      - samrim-js-pnpm-store:/pnpm/store
+    command: ["node", "tools/dev/js-deps.mjs"]
+
+  control:
+    <<: *js-runtime
+    volumes: *control-volumes
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      CONTROL_PANEL_PUBLIC_ORIGIN: "${CONTROL_PANEL_PUBLIC_ORIGIN}"
+      IDENTITY_API_BASE_URL: "http://identity:8082"
+      DSH_API_BASE_URL: "http://dsh:8080"
+      IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN: "${IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN}"
+      DSH_PLATFORM_CONTROL_SERVICE_TOKEN: "${DSH_PLATFORM_CONTROL_SERVICE_TOKEN}"
+    command: ["pnpm", "--dir", "apps/control-panel", "exec", "next", "dev", "-H", "0.0.0.0", "-p", "13000"]
+    ports:
+      - "127.0.0.1:${SAMRIM_CONTROL_PORT:-13000}:13000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:13000/').then(r=>{if(r.status>=500)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  metro-client:
+    <<: *js-runtime
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_DSH_PORT:-58080}"
+      EXPO_PACKAGER_PROXY_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_APP_CLIENT_METRO_PORT:-18101}"
+    command: ["pnpm", "--dir", "apps/app-client", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18101"]
+    ports:
+      - "127.0.0.1:${SAMRIM_APP_CLIENT_METRO_PORT:-18101}:18101"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18101/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  metro-partner:
+    <<: *js-runtime
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_DSH_PORT:-58080}"
+      EXPO_PACKAGER_PROXY_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_APP_PARTNER_METRO_PORT:-18102}"
+    command: ["pnpm", "--dir", "apps/app-partner", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18102"]
+    ports:
+      - "127.0.0.1:${SAMRIM_APP_PARTNER_METRO_PORT:-18102}:18102"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18102/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  metro-captain:
+    <<: *js-runtime
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_DSH_PORT:-58080}"
+      EXPO_PACKAGER_PROXY_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_APP_CAPTAIN_METRO_PORT:-18103}"
+    command: ["pnpm", "--dir", "apps/app-captain", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18103"]
+    ports:
+      - "127.0.0.1:${SAMRIM_APP_CAPTAIN_METRO_PORT:-18103}:18103"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18103/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  metro-field:
+    <<: *js-runtime
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_DSH_PORT:-58080}"
+      EXPO_PACKAGER_PROXY_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_APP_FIELD_METRO_PORT:-18104}"
+    command: ["pnpm", "--dir", "apps/app-field", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18104"]
+    ports:
+      - "127.0.0.1:${SAMRIM_APP_FIELD_METRO_PORT:-18104}:18104"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18104/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
 volumes:
   samrim-postgres-data:
+  samrim-js-pnpm-store:
+  samrim-js-root-node-modules:
+  samrim-js-client-node-modules:
+  samrim-js-partner-node-modules:
+  samrim-js-captain-node-modules:
+  samrim-js-field-node-modules:
+  samrim-js-control-node-modules:
+  samrim-js-control-next:
+  samrim-js-identity-node-modules:
+  samrim-js-dsh-node-modules:
+  samrim-js-design-system-node-modules:
