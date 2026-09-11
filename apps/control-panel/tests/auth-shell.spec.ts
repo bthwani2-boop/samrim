@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 async function stubSession(page: Page, status: number) {
   await page.route("**/api/auth/session**", async (route) => {
@@ -80,6 +80,35 @@ test("operator direct navigation to access is restricted without granting a clie
 
   await expect(page.getByRole("heading", { name: "إدارة الوصول مقصورة على مالك المنصة" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "تهيئة أو إيقاف الحساب" })).toHaveCount(0);
+});
+
+test("partner bootstrap resolves the actor id from the partner phone", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let requestBody: unknown;
+  await page.route("**/api/partners/bootstrap", async (route) => {
+    requestBody = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        partnerOrganization: { id: "org_test", ownerActorId: "act_generated" },
+        firstStore: { id: "store_test", partnerOrganizationId: "org_test", name: "متجر الاختبار" },
+        idempotentReplay: false,
+      }),
+    });
+  });
+
+  await page.goto("/partners");
+  await expect(page.getByRole("heading", { name: "تهيئة الشركاء" })).toBeVisible();
+  await expect(page.getByLabel("معرّف Actor الشريك")).toHaveCount(0);
+  await expect(page.getByLabel("رقم هاتف الشريك")).toBeVisible();
+
+  await page.getByLabel("رقم هاتف الشريك").fill("96777000100");
+  await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
+  await page.getByRole("button", { name: "إنشاء المنظمة والمتجر" }).click();
+
+  await expect(page.getByRole("status")).toContainText("مولّد تلقائيًا من Identity");
+  expect(requestBody).toEqual({ partnerPhone: "96777000100", storeName: "متجر الاختبار" });
 });
 
 test("authenticated workspace keeps navigation meaning across light and dark themes", async ({ page }) => {

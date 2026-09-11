@@ -22,6 +22,7 @@ const records = execFileSync("git", ["ls-files", "-s", "-z"], {
   .filter((record) => fs.existsSync(path.join(repoRoot, record.file)));
 
 const tracked = records.map((record) => record.file);
+const trackedSet = new Set(tracked);
 const failures = [];
 const classifications = new Map();
 
@@ -65,6 +66,111 @@ function classify(file, category) {
     return;
   }
   classifications.set(file, category);
+}
+
+const executablePathExtension = /\.(?:mjs|cjs|js|mts|cts|ts|tsx|jsx|ps1|psm1|bat|cmd|sh|bash|zsh|fish|py|rb|pl|go)$/i;
+
+function shellTokens(script) {
+  const tokens = [];
+  let token = "";
+  let quote = null;
+  let escaped = false;
+
+  const flush = () => {
+    if (token) tokens.push(token);
+    token = "";
+  };
+
+  for (const character of script) {
+    if (escaped) {
+      token += character;
+      escaped = false;
+      continue;
+    }
+    if (character === "\\" && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = null;
+      else token += character;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (/\s/.test(character)) {
+      flush();
+      continue;
+    }
+    if ([";", "|", "&", "(", ")"].includes(character)) {
+      flush();
+      tokens.push(character);
+      continue;
+    }
+    token += character;
+  }
+  if (escaped) token += "\\";
+  flush();
+  return tokens;
+}
+
+function repoRelativePath(absolutePath) {
+  const relative = path.relative(repoRoot, absolutePath);
+  if (!relative || path.isAbsolute(relative) || relative === ".." || relative.startsWith(".." + path.sep)) return null;
+  return relative.replaceAll(path.sep, "/");
+}
+
+function packageScriptTarget(manifest, operand) {
+  const normalizedOperand = operand.replaceAll("\\", "/").replace(/^[,]+|[,]+$/g, "");
+  if (!executablePathExtension.test(normalizedOperand)) return null;
+  if (!normalizedOperand || normalizedOperand.startsWith("-") || normalizedOperand.includes("://") || /[*?$`]/.test(normalizedOperand)) return null;
+  if (normalizedOperand.startsWith("@")) return null;
+
+  const manifestPath = path.join(repoRoot, manifest);
+  const absolutePath = path.isAbsolute(normalizedOperand)
+    ? path.resolve(normalizedOperand)
+    : path.resolve(path.dirname(manifestPath), normalizedOperand);
+  const relative = repoRelativePath(absolutePath);
+  if (!relative || relative === "node_modules" || relative.startsWith("node_modules/")) return null;
+
+  const isExplicitPath = normalizedOperand.startsWith(".") || normalizedOperand.startsWith("/") || /^[A-Za-z]:\//.test(normalizedOperand);
+  const topLevel = relative.split("/")[0];
+  const isKnownRepositoryPath = manifest === "package.json"
+    || isExplicitPath
+    || trackedSet.has(topLevel)
+    || [...trackedSet].some((file) => file.startsWith(topLevel + "/"));
+  return isKnownRepositoryPath ? { absolutePath, relative } : null;
+}
+
+let packageScriptPathCount = 0;
+for (const manifest of tracked.filter((file) => path.posix.basename(file) === "package.json")) {
+  let packageJson;
+  try {
+    packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, manifest), "utf8"));
+  } catch (error) {
+    failures.push("Unable to parse package manifest: " + manifest + " (" + error.message + ")");
+    continue;
+  }
+  if (!packageJson.scripts || typeof packageJson.scripts !== "object" || Array.isArray(packageJson.scripts)) continue;
+
+  for (const [scriptName, script] of Object.entries(packageJson.scripts)) {
+    if (typeof script !== "string") {
+      failures.push("Package script must be a string: " + manifest + " scripts." + scriptName);
+      continue;
+    }
+    for (const operand of shellTokens(script)) {
+      const target = packageScriptTarget(manifest, operand);
+      if (!target) continue;
+      packageScriptPathCount += 1;
+      const exists = fs.existsSync(target.absolutePath);
+      const trackedTarget = trackedSet.has(target.relative);
+      if (!exists) failures.push("Missing package script target: " + manifest + " scripts." + scriptName + " -> " + target.relative);
+      else if (!fs.statSync(target.absolutePath).isFile()) failures.push("Package script target is not a file: " + manifest + " scripts." + scriptName + " -> " + target.relative);
+      else if (!trackedTarget) failures.push("Package script target is not tracked: " + manifest + " scripts." + scriptName + " -> " + target.relative);
+    }
+  }
 }
 
 const rootAgentLawOwner = "AGENTS.md";
@@ -244,6 +350,8 @@ console.log("TRACKED_SYMLINKS_OR_SUBMODULES=0");
 console.log("FORBIDDEN_HISTORICAL_TEMP_PATHS=0");
 console.log("README_ONLY_CONTAINERS=0");
 console.log("GENERATED_BUILD_OUTPUT_TRACKED=0");
+console.log("PACKAGE_SCRIPT_LOCAL_PATHS_CHECKED=" + packageScriptPathCount);
+console.log("PACKAGE_SCRIPT_LOCAL_PATHS=PASS");
 console.log("CANONICAL_TEXT_EOL_POLICY=PASS");
 console.log("STRUCTURAL_HYGIENE=PASS");
 console.log("CLASSIFICATION_COUNTS=" + JSON.stringify(counts));

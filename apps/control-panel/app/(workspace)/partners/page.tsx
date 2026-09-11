@@ -23,7 +23,7 @@ export default function PartnersPage() {
       <div className="workspace-page-heading">
         <p className="eyebrow">DSH · J2.1</p>
         <h1 id="partners-page-title">تهيئة الشركاء</h1>
-        <p className="lead">المسار الحالي يربط مشغلًا موثقًا بشريك Identity موجود، ثم يعيد قراءة منظمة الشريك وأول متجر من DSH.</p>
+        <p className="lead">أدخل رقم هاتف الشريك واسم متجره الأول؛ يحدد Identity معرّف Actor تلقائيًا ثم يعيد قراءة منظمة الشريك وأول متجر من DSH.</p>
       </div>
       <PartnerBootstrapPanel />
     </section>
