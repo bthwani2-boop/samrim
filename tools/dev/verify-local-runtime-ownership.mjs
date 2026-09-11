@@ -302,20 +302,56 @@ assert(!playwright.includes("http://127.0.0.1:13001"), "Playwright config retain
 assert(!playwright.includes('|| "http://127.0.0.1:13000"'), "Playwright retains a hard-coded canonical-port fallback");
 assert(playwright.includes("PLAYWRIGHT_BASE_URL or CONTROL_PANEL_PUBLIC_ORIGIN is required"), "Playwright must fail closed when canonical origin is not supplied");
 
-const workflow = read(".github/workflows/baseline-guard.yml");
-assert(workflow.includes("infra/local/compose/compose.yaml"), "CI must use the canonical Compose topology");
-assert(!workflow.includes("compose.integration.yaml"), "CI retains parallel Compose topology");
-assert(!workflow.includes(retiredProject), "CI retains parallel Compose project");
-assert(!workflow.includes("tools/dev/doctor.ps1"), "CI retains deleted duplicate doctor wrapper");
-assert(!workflow.includes("verify-integration-runtime.ps1"), "CI retains deleted integration-runtime wrapper");
-assert(!workflow.includes("ensure-local-env.ps1"), "CI retains deleted environment wrapper");
-assert(!workflow.includes("127.0.0.1:13001"), "CI retains alternate Control Panel origin");
-assert(!/docker compose[^\n]*(?:\bup\b|\bdown\b|\bstart\b|\bstop\b|\brestart\b)/i.test(workflow), "CI must not own local Compose lifecycle outside runtime.ps1");
-assert(!/\bnext\s+(?:dev|start)\b/.test(workflow), "CI must not launch Control Panel outside runtime.ps1");
-for (const command of ["pnpm runtime:up", "pnpm runtime:doctor", "pnpm control", "pnpm runtime:reset"]) {
-  assert(workflow.includes(command), `CI canonical runtime proof must use ${command}`);
+const baselineWorkflow = read(".github/workflows/baseline-guard.yml");
+const backendWorkflow = read(".github/workflows/backend-integration.yml");
+
+assert(baselineWorkflow.includes("infra/local/compose/compose.yaml"), "baseline CI must validate the canonical Compose topology");
+assert(!baselineWorkflow.includes("compose.integration.yaml"), "baseline CI retains parallel Compose topology");
+assert(!baselineWorkflow.includes(retiredProject), "baseline CI retains parallel Compose project");
+assert(!backendWorkflow.includes("compose.integration.yaml"), "backend CI retains parallel Compose topology");
+assert(!backendWorkflow.includes(retiredProject), "backend CI retains parallel Compose project");
+
+for (const stale of [
+  "tools/dev/doctor.ps1",
+  "verify-integration-runtime.ps1",
+  "ensure-local-env.ps1",
+  "127.0.0.1:13001",
+]) {
+  assert(!baselineWorkflow.includes(stale), `baseline CI retains stale local-runtime token: ${stale}`);
+  assert(!backendWorkflow.includes(stale), `backend CI retains stale local-runtime token: ${stale}`);
 }
-assert(workflow.includes("--env-file infra/local/compose/.env"), "CI runtime inspection must use the reconciled canonical .env");
+
+for (const command of [
+  "pnpm runtime:up",
+  "pnpm runtime:doctor",
+  "pnpm runtime:reset",
+  "pnpm control",
+  "pnpm client",
+  "pnpm partner",
+  "pnpm captain",
+  "pnpm field",
+]) {
+  assert(!baselineWorkflow.includes(command), `baseline CI must not invoke local runtime command: ${command}`);
+  assert(!backendWorkflow.includes(command), `backend CI must not invoke local runtime command: ${command}`);
+}
+
+assert(!baselineWorkflow.includes(runtimeOwner), "baseline CI must not execute the local runtime owner");
+assert(!backendWorkflow.includes(runtimeOwner), "backend CI must not execute the local runtime owner");
+assert(!/\bnext\s+(?:dev|start)\b/.test(baselineWorkflow), "baseline CI must not launch Control Panel runtime");
+assert(!/\bnext\s+(?:dev|start)\b/.test(backendWorkflow), "backend CI must not launch Control Panel runtime");
+assert(!/docker compose[^\n]*(?:\bup\b|\bdown\b|\bstart\b|\bstop\b|\brestart\b)/i.test(baselineWorkflow), "baseline CI must not own runtime lifecycle");
+
+assert(backendWorkflow.includes("infra/local/compose/compose.yaml"), "backend CI must reuse the canonical Compose service definitions");
+assert(backendWorkflow.includes("--env-file infra/local/compose/.env.example"), "backend CI must use committed deterministic test configuration");
+assert(backendWorkflow.includes("postgres mailpit identity dsh"), "backend CI must start only the backend integration service roots");
+assert(
+  backendWorkflow.includes("for local_only in control js-deps metro-client metro-partner metro-captain metro-field; do"),
+  "backend CI must fail if any local-only runtime service is created",
+);
+assert(backendWorkflow.includes("REMOTE_CI_LOCAL_RUNTIME_SERVICES=0"), "backend CI must emit explicit zero-local-runtime proof");
+assert(backendWorkflow.includes("verify-identity-runtime.mjs"), "backend CI must retain Identity runtime semantic proof");
+assert(backendWorkflow.includes("verify-dsh-runtime.mjs"), "backend CI must retain DSH runtime semantic proof");
+assert(backendWorkflow.includes("verify-migration-v13-to-v15.mjs"), "backend CI must retain migration proof");
 
 // DOCKER_CUTOVER_ROOT_CLOSURE_GUARD_BEGIN
 assert(
@@ -415,5 +451,6 @@ console.log("NATIVE_BACKEND_START_PATHS=0");
 console.log("PORT_FALLBACK_PATHS=0");
 console.log("CONTROL_PANEL_ALTERNATE_ORIGINS=0");
 console.log("MOBILE_SHADOW_LAUNCHERS=0");
+console.log("REMOTE_CI_LOCAL_RUNTIME_SERVICES=0");
 console.log(`CONTROL_PANEL_ORIGIN=${controlOrigin}`);
 console.log("LOCAL_RUNTIME_OWNERSHIP=PASS");
