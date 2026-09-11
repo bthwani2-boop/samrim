@@ -137,6 +137,7 @@ for (const key of [
 ]) {
   const value = Number(envMap.get(key));
   assert(Number.isInteger(value) && value >= 1 && value <= 65535, `invalid canonical runtime port ${key}`);
+  assert(value < 49152, `canonical fixed runtime port must stay below the Windows dynamic range: ${key}`);
 }
 const identityApiUrl = envMap.get("IDENTITY_API_BASE_URL");
 const dshApiUrl = envMap.get("DSH_API_BASE_URL");
@@ -272,7 +273,7 @@ assert(mobileIdentity.includes("IDENTITY_BASE_URL_REQUIRED"), "mobile Identity r
 const partnerProduct = read("apps/app-partner/src/partner-product.ts");
 assert(partnerProduct.includes("EXPO_PUBLIC_DSH_API_URL"), "Partner DSH binding must consume the canonical public DSH URL");
 assert(!partnerProduct.includes("Constants.expoConfig"), "Partner DSH binding retains Expo-host fallback");
-assert(!partnerProduct.includes("58080"), "Partner DSH binding hard-codes a local backend port");
+assert(!/https?:\/\//i.test(partnerProduct), "Partner DSH binding hard-codes an API origin");
 
 for (const verifier of [
   "tools/dev/verify-identity-runtime.mjs",

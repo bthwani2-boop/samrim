@@ -6,7 +6,7 @@ info:
     Canonical operational contract for DSH (Delivery, Shopping, Hospitality/Operations).
     Owns operational boundaries, managed-role provisioning delegation to Identity, and role lifecycle orchestration for partner, captain, and field roles.
 servers:
-  - url: http://127.0.0.1:58080
+  - url: http://127.0.0.1:18080
 
 paths:
   /dsh/health:

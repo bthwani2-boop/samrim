@@ -51,7 +51,7 @@ func main() {
 		}
 		return managedAccess.Ready(ctx)
 	}
-	if err := serviceruntime.RunWithRoutesAndReadiness("dsh", "/dsh", "58080", register, readiness); err != nil {
+	if err := serviceruntime.RunWithRoutesAndReadiness("dsh", "/dsh", "18080", register, readiness); err != nil {
 		log.Fatal(err)
 	}
 }
