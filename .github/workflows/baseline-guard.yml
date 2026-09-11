@@ -241,9 +241,9 @@ jobs:
         shell: bash
         run: node tools/dev/verify-workspace-dependencies.mjs
 
-      - name: Verify repository liveness
+      - name: Verify canonical static candidate
         shell: bash
-        run: pnpm run repository:verify-liveness
+        run: pnpm run candidate:verify:static
 
       - name: Verify Nx project tags
         shell: bash
@@ -256,10 +256,6 @@ jobs:
       - name: Verify developer bootstrap
         shell: pwsh
         run: ./tools/dev/bootstrap.ps1
-
-      - name: Verify workspace
-        shell: bash
-        run: pnpm run workspace:verify
 
       - name: Verify dependency vulnerability surface
         shell: bash
@@ -454,12 +450,6 @@ jobs:
         shell: bash
         run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
 
-      - name: Run required live Control Panel browser journeys
-        shell: bash
-        run: |
-          pnpm --dir apps/control-panel test:e2e
-          echo "PLAYWRIGHT_REQUIRED_GATE=PASS"
-
       - name: Verify repository runtime composition
         shell: bash
         run: |
@@ -529,17 +519,9 @@ jobs:
           echo "DSH_RUNTIME_TRUST_STORE=PASS"
           echo "DSH_RUNTIME_NON_ROOT=PASS"
 
-      - name: Verify migration v13 to v15 upgrade and six-digit cutover
+      - name: Verify canonical runtime candidate
         shell: bash
-        run: node tools/dev/verify-migration-v13-to-v15.mjs
-
-      - name: Verify Identity activation-session semantics
-        shell: bash
-        run: node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env
-
-      - name: Verify DSH managed-access runtime boundary
-        shell: bash
-        run: node tools/dev/verify-dsh-runtime.mjs --env-file=infra/local/compose/.env
+        run: pnpm run candidate:verify:runtime -- --env-file=infra/local/compose/.env
 
       - name: Verify runtime proof did not mutate repository
         shell: bash

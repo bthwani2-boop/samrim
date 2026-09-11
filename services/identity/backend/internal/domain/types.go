@@ -55,10 +55,6 @@ type ProvisionActorRoleInput struct {
 	Password  string `json:"password,omitempty"`
 }
 
-type PasswordResetRequest struct {
-	Password string `json:"password"`
-}
-
 type PhoneRequest struct {
 	Phone string `json:"phone"`
 }
@@ -244,10 +240,6 @@ func CanReadRole(caller, role string) bool {
 
 func CanSetRoleEnabled(caller, role string) bool {
 	return CanReadRole(caller, role)
-}
-
-func CanResetCredential(caller, role string) bool {
-	return strings.EqualFold(strings.TrimSpace(caller), "platform-control") && strings.EqualFold(strings.TrimSpace(role), "operator")
 }
 
 func CanIssueOperatorEnrollmentTokenForRole(caller, role string) bool {

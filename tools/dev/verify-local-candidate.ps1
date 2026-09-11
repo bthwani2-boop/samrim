@@ -13,6 +13,9 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $envPath = Join-Path $repo 'infra\local\compose\.env'
 $composePath = Join-Path $repo 'infra\local\compose\compose.yaml'
 $runtimeStarted = $false
+$controlPanelProcess = $null
+$controlPanelStdout = $null
+$controlPanelStderr = $null
 
 function Fail([string]$Message) {
     throw $Message
@@ -31,6 +34,63 @@ function Assert-CleanTree([string]$Context) {
     if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect Git status during $Context." }
     if ($status.Count -gt 0) {
         Fail ("Repository must remain clean during ${Context}:" + [Environment]::NewLine + ($status -join [Environment]::NewLine))
+    }
+}
+
+function Start-ControlPanelForVerification {
+    Run-Step 'Control Panel build' { pnpm --dir apps/control-panel build }
+
+    $envMap = Read-EnvMap -Path $envPath
+    $origin = $envMap['CONTROL_PANEL_PUBLIC_ORIGIN']
+    if ([string]::IsNullOrWhiteSpace($origin)) { Fail 'CONTROL_PANEL_PUBLIC_ORIGIN is required for browser verification.' }
+
+    $tempRoot = [IO.Path]::GetTempPath()
+    $nonce = [Guid]::NewGuid().ToString('N')
+    $stdoutPath = Join-Path $tempRoot "samrim-control-panel-$nonce.out.log"
+    $stderrPath = Join-Path $tempRoot "samrim-control-panel-$nonce.err.log"
+    $pnpm = (Get-Command pnpm -ErrorAction Stop).Source
+    $process = Start-Process -FilePath $pnpm -ArgumentList @('control') -WorkingDirectory $repo -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+
+    try {
+        for ($attempt = 1; $attempt -le 60; $attempt++) {
+            try {
+                $response = Invoke-WebRequest -Uri $origin -UseBasicParsing -TimeoutSec 5
+                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+                    Write-Host 'CONTROL_PANEL_RUNTIME=PASS'
+                    return [pscustomobject]@{ Process = $process; Stdout = $stdoutPath; Stderr = $stderrPath }
+                }
+            }
+            catch {
+                # The canonical runtime may still be starting.
+            }
+            $process.Refresh()
+            if ($process.HasExited) {
+                $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -Raw -LiteralPath $stdoutPath } else { '' }
+                $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -Raw -LiteralPath $stderrPath } else { '' }
+                Fail "Control Panel exited before becoming ready.`n$stdout`n$stderr"
+            }
+            Start-Sleep -Seconds 1
+        }
+        $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -Raw -LiteralPath $stdoutPath } else { '' }
+        $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -Raw -LiteralPath $stderrPath } else { '' }
+        Fail "Control Panel did not become ready at $origin.`n$stdout`n$stderr"
+    }
+    catch {
+        if (-not $process.HasExited) { & taskkill.exe /PID $process.Id /T /F *> $null }
+        throw
+    }
+}
+
+function Stop-ControlPanelForVerification($Handle) {
+    if ($null -eq $Handle) { return }
+    try {
+        $Handle.Process.Refresh()
+        if (-not $Handle.Process.HasExited) { & taskkill.exe /PID $Handle.Process.Id /T /F *> $null }
+    }
+    finally {
+        foreach ($path in @($Handle.Stdout, $Handle.Stderr)) {
+            if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+        }
     }
 }
 
@@ -77,7 +137,7 @@ try {
     Run-Step 'Nx project tags' { pnpm run nx:verify-tags }
     Run-Step 'Developer bootstrap' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1 }
     Assert-CleanTree 'developer bootstrap'
-    Run-Step 'Workspace verification' { pnpm run workspace:verify }
+    Run-Step 'Canonical static verification' { node tools/dev/verify-candidate-static.mjs }
 
     Run-Step 'Canonical compose config' {
         docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f $composePath config --quiet
@@ -88,11 +148,8 @@ try {
             Run-Step 'Canonical runtime up' { pnpm runtime:up }
             $runtimeStarted = $true
             Run-Step 'Canonical runtime doctor' { pnpm runtime:doctor }
-            Run-Step 'Identity exact schema' { Invoke-CanonicalSchemaVerify -Service 'identity' }
-            Run-Step 'DSH exact schema' { Invoke-CanonicalSchemaVerify -Service 'dsh' }
-            Run-Step 'Identity migration upgrade proof' { node tools/dev/verify-migration-v13-to-v15.mjs "--env-file=$envPath" }
-            Run-Step 'Identity runtime semantics' { node tools/dev/verify-identity-runtime.mjs "--env-file=$envPath" }
-            Run-Step 'DSH managed-access runtime' { node tools/dev/verify-dsh-runtime.mjs "--env-file=$envPath" }
+            $controlPanelProcess = Start-ControlPanelForVerification
+            Run-Step 'Canonical runtime verification' { node tools/dev/verify-candidate-runtime.mjs "--env-file=$envPath" }
             Run-Step 'Canonical runtime status' { pnpm runtime:status }
             Write-Host 'LOCAL_CANDIDATE_RUNTIME=PASS'
         }
@@ -110,6 +167,9 @@ try {
     Write-Host 'LOCAL_CANDIDATE_WINDOWS_PROOF=PASS'
 }
 finally {
+    if ($null -ne $controlPanelProcess) {
+        try { Stop-ControlPanelForVerification $controlPanelProcess } catch {}
+    }
     if ($runtimeStarted) {
         try { pnpm runtime:down *> $null } catch {}
     }

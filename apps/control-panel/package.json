@@ -9,7 +9,8 @@
   "scripts": {
     "build": "next build",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
-    "test:e2e": "playwright test --config playwright.config.ts"
+    "test:e2e": "playwright test --config playwright.config.ts",
+    "test:e2e:live": "node ../../tools/dev/run-playwright-live.mjs"
   },
   "dependencies": {
     "@bthwani/design-system": "workspace:*",

@@ -682,67 +682,6 @@ FROM identity_actors a WHERE a.id=$1 FOR UPDATE`, actorID).Scan(&current, &curre
 	return tx.Commit()
 }
 
-func (s *Service) ResetOperatorPassword(ctx context.Context, caller, actorID, password, correlationID, operatorActorID string, expectedVersion int) error {
-	caller = strings.ToLower(strings.TrimSpace(caller))
-	actorID = strings.TrimSpace(actorID)
-	operatorActorID = strings.TrimSpace(operatorActorID)
-	if actorID == "" || !domain.CanResetCredential(caller, "operator") {
-		return domain.ErrForbidden
-	}
-	if caller == "platform-control" && operatorActorID == "" {
-		return domain.ErrInvalidInput
-	}
-	if expectedVersion < 1 {
-		return domain.ErrInvalidInput
-	}
-	hash, err := identitysecurity.HashPassword(password)
-	if err != nil {
-		return domain.ErrInvalidInput
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var currentVersion int
-	err = tx.QueryRowContext(ctx, "SELECT version FROM identity_password_credentials WHERE actor_id=$1 AND role='operator' FOR UPDATE", actorID).Scan(&currentVersion)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	if currentVersion != expectedVersion {
-		return domain.ErrConflict
-	}
-
-	result, err := tx.ExecContext(ctx, "UPDATE identity_password_credentials SET password_hash=$1,version=version+1,updated_at=clock_timestamp() WHERE actor_id=$2 AND role='operator'", hash, actorID)
-	if err != nil {
-		return err
-	}
-	count, _ := result.RowsAffected()
-	if count != 1 {
-		return domain.ErrNotFound
-	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role='operator' AND revoked_at IS NULL", actorID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role='operator' AND status='pending'", actorID); err != nil {
-		return err
-	}
-	auditPrincipal := caller
-	meta := map[string]any{"role": "operator", "workload": caller}
-	if operatorActorID != "" {
-		auditPrincipal = caller + ":" + operatorActorID
-		meta["operatorActorId"] = operatorActorID
-	}
-	if err := auditTx(ctx, tx, "credential.password_reset", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
 func (s *Service) RecoverPlatformOwner(ctx context.Context, newPhone, newPassword string) (string, error) {
 	hash, err := identitysecurity.HashPassword(newPassword)
 	if err != nil {

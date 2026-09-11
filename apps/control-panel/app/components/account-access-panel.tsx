@@ -1,11 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  validatePasswordInputShape,
-  type ActorType,
-  type OperatorEnrollmentToken,
-} from "@bthwani/identity";
+import { type ActorType, type OperatorEnrollmentToken } from "@bthwani/identity";
 import { identityFetch, isRequestFailure, responseMessage } from "./identity-client";
 
 type ManagedAccountStatus = Readonly<{
@@ -17,7 +13,6 @@ type ManagedAccountStatus = Readonly<{
   actorId?: string;
   actorVersion?: number;
   roleVersion?: number;
-  credentialVersion?: number;
 }>;
 
 export function AccountAccessPanel() {
@@ -26,9 +21,6 @@ export function AccountAccessPanel() {
   const [reason, setReason] = useState("");
   const [status, setStatus] = useState<ManagedAccountStatus | null>(null);
   const [result, setResult] = useState<OperatorEnrollmentToken | null>(null);
-  const [operatorResetPassword, setOperatorResetPassword] = useState("");
-  const [operatorResetPasswordConfirmation, setOperatorResetPasswordConfirmation] = useState("");
-  const [resetSuccess, setResetSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [finalStateUnverified, setFinalStateUnverified] = useState(false);
@@ -69,9 +61,6 @@ export function AccountAccessPanel() {
     const id = ++requestId.current;
     setResult(null);
     setError("");
-    setOperatorResetPassword("");
-    setOperatorResetPasswordConfirmation("");
-    setResetSuccess("");
     setReason("");
     setStatus(null);
     setFinalStateUnverified(false);
@@ -99,7 +88,7 @@ export function AccountAccessPanel() {
 
   const managedRole = role === "partner" || role === "captain" || role === "field" || role === "operator";
 
-  async function provision(recover = false) {
+  async function provision(reenroll = false) {
     setBusy(true);
     setError("");
     setResult(null);
@@ -108,7 +97,7 @@ export function AccountAccessPanel() {
       const response = await identityFetch("/api/access/managed-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, role, recover }),
+        body: JSON.stringify({ phone, role, reenroll }),
       });
       if (!response.ok) {
         setError(await responseMessage(response));
@@ -168,57 +157,8 @@ export function AccountAccessPanel() {
     }
   }
 
-  async function resetOperatorCredential() {
-    if (reason.trim().length < 5) {
-      setError("اكتب سببًا واضحًا من 5 أحرف على الأقل قبل إعادة تعيين كلمة المرور.");
-      return;
-    }
-    const validation = validatePasswordInputShape(operatorResetPassword, operatorResetPasswordConfirmation);
-    if (!validation.valid) {
-      setError(validation.message ?? "كلمة المرور غير صالحة.");
-      return;
-    }
-    const expectedVersion = status?.credentialVersion;
-    if (expectedVersion === undefined || expectedVersion === null || expectedVersion < 1) {
-      setError("تعذر تحديد إصدار كلمة المرور للتحقق من التزامن. أعد تحميل الحالة وحاول مرة أخرى.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    setResetSuccess("");
-    let mutationApplied = false;
-    try {
-      const response = await identityFetch("/api/access/managed-user/operator-reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, password: operatorResetPassword, reason, expectedVersion }),
-      });
-      if (!response.ok) {
-        const message = await responseMessage(response);
-        const reconciled = await reconcileAfterMutationFailure();
-        if (response.status === 409 || response.status === 412) {
-          setError(reconciled ? "تعارض في إصدار كلمة المرور: تم تحميل الحالة الكانونية، راجع الإصدار ثم أعد المحاولة." : "حدث تعارض في إصدار كلمة المرور وتعذر التحقق من الحالة الكانونية. أعد تحميل الحالة قبل المحاولة.");
-        } else {
-          setError(message);
-        }
-        return;
-      }
-      mutationApplied = true;
-      setOperatorResetPassword("");
-      setOperatorResetPasswordConfirmation("");
-      await refreshCanonicalStatus();
-      setResetSuccess("تمت إعادة تعيين كلمة مرور موظف لوحة التحكم بنجاح وإلغاء جميع الجلسات القديمة.");
-    } catch (cause) {
-      if (mutationApplied) markFinalStateUnverified();
-      else if (isRequestFailure(cause)) setError(cause.message);
-      else setError("تعذر إعادة تعيين كلمة مرور الموظف.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const canIssueActivation = managedRole && status !== null && !status.activated;
-  const canIssueRecovery = managedRole && role !== "operator" && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
+  const canIssueReenrollment = managedRole && role !== "operator" && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
   const activationBlocked = status?.exists === true && status.enabled === false;
   const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true);
 
@@ -260,28 +200,9 @@ export function AccountAccessPanel() {
               {status.activated && managedRole ? (
                 <div className="managed-status managed-status-warning" role="alert">
                   <strong>تم تفعيل هذا الدور من قبل.</strong>
-                  <p>{canIssueRecovery ? "يمكنك إصدار رمز جديد لاسترداد وإعادة تفعيل الحساب الموجود؛ ستُلغى الجلسات السابقة." : role === "operator" ? "حساب موظف لوحة التحكم مفعل. يمكنك إدارة حالته أو إعادة تعيين كلمة مروره إداريًا أدناه." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
-                  {canIssueRecovery ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ استرداد الحساب…" : "استرداد وإعادة تفعيل الحساب"}</button> : null}
+                  <p>{canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات السابقة." : role === "operator" ? "حساب موظف لوحة التحكم مفعل. يستعيد الموظف كلمة مروره بنفسه عبر مسار استرداد الحساب." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
+                  {canIssueReenrollment ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ إصدار دعوة إعادة التسجيل…" : "إصدار دعوة إعادة تسجيل الدور"}</button> : null}
                 </div>
-              ) : null}
-              {role === "operator" && status.activated && status.enabled && status.securityEnabled ? (
-                <section className="managed-status managed-status-info" aria-label="إعادة تعيين كلمة مرور الموظف">
-                  <strong>إعادة تعيين كلمة مرور الموظف (إداريًا)</strong>
-                  <p>بصفتك مالك المنصة، يمكنك تعيين كلمة مرور جديدة للموظف مع إلغاء كل جلساته القديمة فورًا (إصدار الاعتماد: {status.credentialVersion ?? "غير متاح"}).</p>
-                  <label className="field-label" htmlFor="operator-reset-new-password">
-                    كلمة المرور الجديدة
-                    <input id="operator-reset-new-password" type="password" autoComplete="new-password" disabled={busy} value={operatorResetPassword} onChange={(event) => setOperatorResetPassword(event.target.value)} />
-                    <span className="field-help">١٥ حرفاً على الأقل</span>
-                  </label>
-                  <label className="field-label" htmlFor="operator-reset-confirm-password">
-                    تأكيد كلمة المرور
-                    <input id="operator-reset-confirm-password" type="password" autoComplete="new-password" disabled={busy} value={operatorResetPasswordConfirmation} onChange={(event) => setOperatorResetPasswordConfirmation(event.target.value)} />
-                  </label>
-                  <button type="button" className="button button-primary" disabled={busy || !validatePasswordInputShape(operatorResetPassword, operatorResetPasswordConfirmation).valid || reason.trim().length < 5} onClick={() => void resetOperatorCredential()}>
-                    {busy ? "جارٍ التعيين…" : "إعادة تعيين كلمة مرور الموظف"}
-                  </button>
-                  {resetSuccess ? <p className="success-inline" role="status">{resetSuccess}</p> : null}
-                </section>
               ) : null}
               <label className="field-label" htmlFor="access-reason">
                 سبب التغيير

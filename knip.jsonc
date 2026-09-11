@@ -5,6 +5,10 @@
     "apps/*/src/identity.ts",
     "apps/control-panel/app/**/route.ts",
     "services/identity/project.json",
+    "tools/dev/verify-candidate-runtime.mjs",
+    "tools/dev/verify-dsh-runtime.mjs",
+    "tools/dev/verify-identity-runtime.mjs",
+    "tools/dev/verify-migration-v13-to-v15.mjs",
     "tools/mobile/export-mobile-smoke.mjs",
     "tools/mobile/test-mobile-app.mjs"
   ],
@@ -29,6 +33,7 @@
     "gofmt",
     "playwright",
     "pwsh",
+    "taskkill.exe",
     "typecheck"
   ]
 }

@@ -26,7 +26,6 @@ for (const route of [
   "/internal/actors/{actorId}/roles/{role}/disable:",
   "/internal/actors/{actorId}/roles/{role}/enable:",
   "/internal/actors/{actorId}/roles/{role}/reenrollment:",
-  "/internal/actors/{actorId}/operator-password/reset:",
   "/internal/actors/{actorId}/roles/{role}/sessions:",
 ]) {
   if (!contract.includes(route)) failures.push("missing canonical route " + route);
@@ -48,6 +47,8 @@ for (const forbidden of [
   "/auth/managed/state:",
   "/auth/control-panel/state:",
   "activationCode:",
+  "/internal/actors/{actorId}/operator-password/reset:",
+  "PasswordResetRequest:",
 ]) {
   if (contract.includes(forbidden)) failures.push("legacy/premature Identity authority remains: " + forbidden);
 }

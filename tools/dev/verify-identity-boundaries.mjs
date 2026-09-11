@@ -261,8 +261,14 @@ for (const route of ["start", "complete"]) {
 for (const required of ["/api/auth/login/start", "/api/auth/login/complete", "التحقق الثاني", "تم توثيق جلستك بعاملين"]) {
   if (!controlPage.includes(required)) failures.push("control-panel UI missing MFA flow " + required);
 }
-for (const required of ["ابدأ برقم الهاتف", "login-role", "account-role", "الدور الإداري", "استرداد وإعادة تفعيل الحساب"]) {
+for (const required of ["ابدأ برقم الهاتف", "login-role", "account-role", "الدور الإداري", "إصدار دعوة إعادة تسجيل الدور"]) {
   if (!controlPage.includes(required)) failures.push("control-panel UI missing separated phone-first login or administrative provisioning flow " + required);
+}
+const managedAccessRoute = read("apps/control-panel/app/api/access/managed-user/route.ts");
+if (!managedAccessRoute.includes("reenroll")) failures.push("control-panel managed access route missing canonical reenrollment contract");
+if (!managedAccessRoute.includes("body?.recover !== undefined")) failures.push("control-panel managed access route must reject retired recover contract");
+if (fs.existsSync(path.join(root, "apps/control-panel/app/api/access/managed-user/operator-reset/route.ts"))) {
+  failures.push("control-panel retains the administrative operator password reset route");
 }
 if (controlPage.includes("/api/auth/state")) failures.push("control-panel UI retains a public authentication-state oracle");
 if (controlPage.includes("ManagedAccessPanel")) failures.push("control-panel retains a shadow managed provisioning panel");
@@ -281,10 +287,10 @@ for (const forbidden of ["ProvisionOperator", "Username", "X-Service-Caller"]) {
 }
 
 const goClient = read("services/identity/clients/go/client.go");
-for (const required of ["IdentityOperationProvisionActorRole", "IdentityOperationSearchActorRoles", "identityRoute", "IdentityOperationAuthorizeManagedRoleReenrollment", "IdentityOperationDisableActorSecurity", "IdentityOperationResetOperatorPassword", "AuthorizeReenrollmentByPhone"]) {
+for (const required of ["IdentityOperationProvisionActorRole", "IdentityOperationSearchActorRoles", "identityRoute", "IdentityOperationAuthorizeManagedRoleReenrollment", "IdentityOperationDisableActorSecurity", "AuthorizeReenrollmentByPhone"]) {
   if (!goClient.includes(required)) failures.push("Identity Go client missing canonical route " + required);
 }
-for (const forbidden of ["Username", "X-Service-Caller", "/activations"]) {
+for (const forbidden of ["Username", "X-Service-Caller", "/activations", "ResetOperatorPassword", "operator-password/reset", "PasswordResetRequest"]) {
   if (goClient.includes(forbidden)) failures.push("Identity Go client contains retired authority " + forbidden);
 }
 
@@ -307,7 +313,7 @@ if (sixDigitPatterns.length < 3) failures.push("Identity contract must expose si
 if (!contract.includes('pattern: "^[0-9]{6}$"') || !contract.includes("minLength: 6")) failures.push("Identity contract must expose six-digit activation schemas");
 if (contract.includes('pattern: "^[0-9]{4}$"')) failures.push("Identity contract contains retired four-digit challenge schema");
 if (contract.includes("minLength: 12")) failures.push("Identity contract contains retired twelve-character password minimum");
-for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller", "/internal/managed-activation-codes:"]) {
+for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller", "/internal/managed-activation-codes:", "/internal/actors/{actorId}/operator-password/reset:", "PasswordResetRequest:"]) {
   if (contract.includes(forbidden)) failures.push("Identity contract contains retired auth shape " + forbidden);
 }
 
@@ -340,6 +346,9 @@ for (const forbidden of [
   "export type LoginRequest =",
   "export type ManagedActivationCode =",
   "readonly username",
+  "ResetOperatorPassword",
+  "operator-password/reset",
+  "PasswordResetRequest",
 ]) {
   if (generated.includes(forbidden)) failures.push("generated Identity types retain old auth shape " + forbidden);
 }
@@ -348,7 +357,7 @@ const domain = read("services/identity/backend/internal/domain/types.go");
 for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole", "CanIssueOperatorEnrollmentToken", "RequiresEnrollmentToken"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
 }
-for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "Roles []string", "Permissions []", "CanIssueManagedActivationCode"]) {
+for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "Roles []string", "Permissions []", "CanIssueManagedActivationCode", "CanResetCredential", "PasswordResetRequest"]) {
   if (domain.includes(forbidden)) failures.push("Identity domain contains collapsed/retired authority " + forbidden);
 }
 
@@ -360,11 +369,11 @@ for (const required of [
   "MarkManagedActivatedTx",
   "AuthorizeReenrollment",
   "ResetClientPasswordTx",
-  "ResetOperatorPassword",
 ]) {
   if (!actor.includes(required)) failures.push("Identity actor service missing " + required);
 }
 if (actor.includes("username")) failures.push("Identity actor service still owns username");
+if (actor.includes("ResetOperatorPassword") || actor.includes("operator-password/reset")) failures.push("Identity actor service retains administrative operator password reset");
 if (!/return\s+"act_"\s*\+\s*token/.test(actor)) failures.push("Identity actor_id generation drifted");
 
 const challenge = read("services/identity/backend/internal/challenge/service.go");

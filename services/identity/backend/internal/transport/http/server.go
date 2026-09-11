@@ -62,7 +62,6 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/reenrollment", s.internal(s.authorizeReenrollment))
 	mux.HandleFunc("POST /internal/actors/{actorId}/security/disable", s.internal(s.disableActorSecurity))
 	mux.HandleFunc("POST /internal/actors/{actorId}/security/enable", s.internal(s.enableActorSecurity))
-	mux.HandleFunc("POST /internal/actors/{actorId}/operator-password/reset", s.internal(s.resetOperatorPassword))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}/sessions", s.internal(s.listRoleSessions))
 	mux.HandleFunc("DELETE /internal/actors/{actorId}/roles/{role}/sessions/{sessionId}", s.internal(s.revokeRoleSession))
 	mux.HandleFunc("DELETE /internal/actors/{actorId}/roles/{role}/sessions", s.internal(s.revokeRoleSessions))
@@ -474,35 +473,6 @@ func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if err := s.actors.SetSecurityEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-func (s *Server) resetOperatorPassword(w http.ResponseWriter, r *http.Request, caller string) {
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
-	}
-	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
-		return
-	}
-	expectedVersion, err := parseExpectedVersion(r)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error()))
-		return
-	}
-	if expectedVersion < 1 {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for operator password reset and must be a positive integer >= 1"))
-		return
-	}
-	var input domain.PasswordResetRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	if err := s.actors.ResetOperatorPassword(r.Context(), caller, r.PathValue("actorId"), input.Password, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID, expectedVersion); err != nil {
 		writeDomainError(w, err)
 		return
 	}

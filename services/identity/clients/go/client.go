@@ -138,10 +138,6 @@ func (c *Client) SetActorSecurityEnabledWithContext(ctx context.Context, actorID
 	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
 	return c.doWithContext(ctx, operation.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, nil, nil)
 }
-func (c *Client) ResetOperatorPasswordWithContext(ctx context.Context, actorID, password, correlationID, operatorActorID string, expectedVersion int) error {
-	pathname := identityRoute(IdentityOperationResetOperatorPassword.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
-	return c.doWithContext(ctx, IdentityOperationResetOperatorPassword.Method, pathname, correlationID, "", operatorActorID, expectedVersion, PasswordResetRequest{Password: password}, nil)
-}
 func (c *Client) Readiness(ctx context.Context) error {
 	return c.do(ctx, IdentityOperationIdentityReadiness.Method, IdentityOperationIdentityReadiness.Path, "", nil, nil)
 }

@@ -518,62 +518,6 @@ const recoveredOperatorPair = await expect("POST", "/auth/operator/login/complet
   body: { phone: sharedPhone, role: "operator", code: recoveredOperatorStart.code, deviceFingerprint: "device-operator-recovered-" + suffix },
 });
 assertSession(recoveredOperatorPair, "operator", "control-panel", actorId);
-const staleOperatorStart = await requestChallenge(
-  "/auth/operator/login/start",
-  { phone: sharedPhone, role: "operator", password: recoveredOperatorPassword },
-  "operator_mfa",
-);
-const resetOperatorPassword = "Operator-Reset-" + suffix + "-Strong-Password";
-const operatorRoleBeforeReset = await expect(
-  "GET",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/operator",
-  200,
-  { headers: service(platformToken) },
-);
-const opCredVersion = operatorRoleBeforeReset.credentialVersion;
-assert(typeof opCredVersion === "number" && opCredVersion >= 1, "operator credential version missing or invalid");
-
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 400, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
-  body: { password: resetOperatorPassword },
-});
-
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 409, {
-  headers: service(platformToken, {
-    "X-Acting-Actor-ID": platformOwnerActorId,
-    "X-Expected-Version": String(opCredVersion + 999),
-  }),
-  body: { password: resetOperatorPassword },
-});
-
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 400, {
-  headers: service(platformToken, {
-    "X-Expected-Version": String(opCredVersion),
-  }),
-  body: { password: resetOperatorPassword },
-});
-
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
-  headers: service(platformToken, {
-    "X-Acting-Actor-ID": platformOwnerActorId,
-    "X-Expected-Version": String(opCredVersion),
-  }),
-  body: { password: resetOperatorPassword },
-});
-
-const operatorRoleAfterReset = await expect(
-  "GET",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/operator",
-  200,
-  { headers: service(platformToken) },
-);
-assert(
-  operatorRoleAfterReset.credentialVersion === opCredVersion + 1,
-  "operator credential version did not increment on reset",
-);
-await expect("POST", "/auth/operator/login/complete", 401, {
-  body: { phone: sharedPhone, role: "operator", code: staleOperatorStart.code, deviceFingerprint: "device-operator-stale-" + suffix },
-});
 
 const recoveryPhone = phone();
 const recoveryOldPassword = "Recovery-" + suffix + "-Old-Password";
@@ -742,22 +686,17 @@ await expect("POST", "/auth/refresh", 401, {
 });
 await expect("GET", "/auth/session", 401, { token: rotated.accessToken });
 
-const newOperatorPassword = operatorPassword + "-Reset";
-const opRoleForSessionRevoke = await expect(
-  "GET",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/operator",
-  200,
-  { headers: service(platformToken) },
+const secondOperatorRecovery = await requestChallenge(
+  "/auth/managed/recovery/request",
+  { phone: sharedPhone, role: "operator" },
+  "managed_recover",
 );
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/operator-password/reset", 204, {
-  headers: service(platformToken, {
-    "X-Correlation-ID": "operator-reset-" + suffix,
-    "X-Acting-Actor-ID": platformOwnerActorId,
-    "X-Expected-Version": String(opRoleForSessionRevoke.credentialVersion),
-  }),
-  body: { password: newOperatorPassword },
+const secondOperatorPassword = "Operator-Recovered-Again-" + suffix + "-Strong-Password";
+const secondOperatorRecoveryResult = await expect("POST", "/auth/managed/recover", 200, {
+  body: { phone: sharedPhone, role: "operator", code: secondOperatorRecovery.code, password: secondOperatorPassword },
 });
-await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
+assert(secondOperatorRecoveryResult.status === "recovery_complete", "second operator recovery did not return the canonical completion result");
+await expect("GET", "/auth/session", 401, { token: recoveredOperatorPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 await expect("GET", "/auth/session", 200, { token: reactivatedCaptain.accessToken });
 
@@ -797,17 +736,17 @@ await expect(
   { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Expected-Version": String(captainVersion + 1) }) },
 );
 
-const operatorAfterResetStart = await requestChallenge(
+const operatorAfterRecoveryStart = await requestChallenge(
   "/auth/operator/login/start",
-  { phone: sharedPhone, role: "operator", password: newOperatorPassword },
+  { phone: sharedPhone, role: "operator", password: secondOperatorPassword },
   "operator_mfa",
 );
-const operatorAfterReset = await expect("POST", "/auth/operator/login/complete", 200, {
+const operatorAfterRecovery = await expect("POST", "/auth/operator/login/complete", 200, {
   body: {
     phone: sharedPhone,
     role: "operator",
-    code: operatorAfterResetStart.code,
-    deviceFingerprint: "device-operator-reset-" + suffix,
+    code: operatorAfterRecoveryStart.code,
+    deviceFingerprint: "device-operator-recovered-again-" + suffix,
   },
 });
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 403, {
@@ -833,7 +772,7 @@ await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/secur
   headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "1", "X-Reason": "security disable invariant test" }),
 });
 await expect("GET", "/auth/session", 401, { token: clientPair.accessToken });
-await expect("GET", "/auth/session", 401, { token: operatorAfterReset.accessToken });
+await expect("GET", "/auth/session", 401, { token: operatorAfterRecovery.accessToken });
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/enable", 204, {
   headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "2", "X-Reason": "security enable invariant test" }),
 });
@@ -863,5 +802,4 @@ console.log("LEGACY_ACTIVATION_CODE_RUNTIME_NAME=0");
 console.log("OPERATOR_ENROLLMENT_TOKEN_CONTRACT_DRIFT=0");
 console.log("CANONICAL_MUTATION_SHORTCUT=0");
 console.log("ADMIN_MUTATION_WITHOUT_REQUIRED_ATTRIBUTION=0");
-console.log("OPERATOR_RESET_EXPECTED_VERSION_REQUIRED=1");
-console.log("OPERATOR_RESET_CONTRACT_RUNTIME_DRIFT=0");
+console.log("OPERATOR_PASSWORD_RECOVERY_SELF_SERVICE=PASS");

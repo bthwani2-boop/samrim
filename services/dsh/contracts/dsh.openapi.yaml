@@ -482,7 +482,7 @@ components:
 
     ManagedRoleStatusResponse:
       type: object
-      required: [exists, enabled, activated, securityEnabled, recoverable, state, role]
+      required: [exists, enabled, activated, securityEnabled, reenrollable, state, role]
       properties:
         actorId:
           type: string
@@ -494,7 +494,7 @@ components:
           type: boolean
         securityEnabled:
           type: boolean
-        recoverable:
+        reenrollable:
           type: boolean
         state:
           type: string

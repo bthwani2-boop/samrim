@@ -30,7 +30,7 @@ export async function GET(request: Request) {
       enabled: record?.enabled ?? false,
       activated: Boolean(record?.activatedAt),
       securityEnabled: record?.securityEnabled ?? false,
-      recoverable: Boolean(record?.enabled && record?.activatedAt),
+      reenrollable: Boolean(record?.enabled && record?.activatedAt),
       role,
       actorVersion: record?.actorVersion,
       roleVersion: record?.roleVersion,

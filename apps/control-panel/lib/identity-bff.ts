@@ -160,17 +160,6 @@ export async function setIdentitySecurityEnabled(phone: string, role: ActorType,
   await identityInternalClient().setActorSecurityEnabled(record.actorId, enabled, reason, context);
 }
 
-export async function resetOperatorPasswordByPhone(phone: string, password: string, context: VersionedMutationContext): Promise<void> {
-  const record = await lookupIdentityRole(phone, "operator");
-  if (!record) throw missingIdentityRole();
-  await identityInternalClient().resetOperatorPassword(record.actorId, password, context);
-}
-
-async function resetOperatorPasswordById(actorId: string, password: string, context: VersionedMutationContext): Promise<void> {
-  if (!actorId) throw missingIdentityRole();
-  await identityInternalClient().resetOperatorPassword(actorId, password, context);
-}
-
 export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const store = await cookies();
   const accessToken = store.get(accessCookie)?.value;

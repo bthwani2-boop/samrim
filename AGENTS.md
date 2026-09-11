@@ -78,6 +78,7 @@ DIAGNOSE
 → MUTATE ITS SOURCE ONLY WHEN THAT CORRECTION IS MATERIAL TO THE AUTHORIZED OUTCOME
 ~~~
 An unresolved conflict capable of changing the safe canonical decision remains open. Do not create a workaround or competing truth merely to satisfy a stale source.
+If conflict cannot be safely reconciled, block the affected action, preserve the authorized remainder and surface the evidence-backed blocker.
 
 Before material reasoning, pin repository, branch/ref, exact HEAD, objective, authority envelope and environment; resolve `governance.lock.json`; load only decision-relevant evidence. Revalidate live HEAD immediately before every material write. If HEAD moved: do not overwrite; inspect the foreign change, reconcile it, invalidate affected evidence and re-diagnose before writing.
 
@@ -88,6 +89,9 @@ CAPABILITY != AUTHORITY. Repository access, credentials, authenticated tools, re
 END-TO-END OUTCOME OWNERSHIP IS NON-DELEGABLE.
 
 ONE MATERIAL TASK → ONE PRIMARY AGENT → ONE RECONCILED CURRENT MODEL → ONE FINAL DECISION / INTEGRATION / CLOSURE AUTHORITY.
+LOCAL SUCCESS != SYSTEM COMPLETENESS.
+IN-SCOPE MATERIAL OBLIGATION → TREATED_AND_PROVEN | EVIDENCE-BACKED BLOCKER.
+NO MATERIAL FINDING MAY REMAIN OWNERLESS.
 
 For every material task, execute this reasoning kernel before mutation:
 
@@ -220,6 +224,7 @@ NOTHING NEW IS ADMITTED BY DEFAULT. A new owner, service, boundary, package, abs
 Every surviving material artifact in the affected cone must re-earn its right to exist. Age, history, donor origin, existing tests or current use alone grant no survival privilege. Preserve required meaning/data/contracts/provenance/external identity; delete, merge or rehome unjustified residue.
 
 COMPATIBILITY_JUST_IN_CASE = FORBIDDEN. Temporary compatibility requires a proven live coexistence need, explicit owner, bounded scope, exit condition and deletion trigger.
+BASELINE / ALLOWLIST / SUPPRESSION / EXCEPTION != TREATMENT. Any temporary exception requires a real bounded transition and an explicit removal condition.
 
 PREFER THE REPOSITORY-OWNED MECHANISM FOR THE OPERATION OR CLAIM WHEN IT IS CURRENT AND FIT FOR PURPOSE. REPOSITORY TOOL != INFALLIBLE. If the canonical mechanism itself is suspect, diagnose it instead of blindly bypassing or trusting it.
 
@@ -259,8 +264,8 @@ Use the smallest adequate evidence combination. Typical current routes:
 SOURCE / CONTRACT OWNERSHIP → exact source/config/contract inspection
 DATABASE / PERSISTENCE → schema/query/migration/readback
 WEB INTERACTION / JOURNEY → Playwright
-MOBILE REPEATABLE JOURNEY → Maestro
-MOBILE EXPLORATION / CONTROL / INSPECTION → agent-device
+MOBILE JOURNEY / EXPLORATION / CONTROL / INSPECTION → AGENT-DEVICE
+EXPO APP / NATIVE RUNTIME / APP DIAGNOSTICS → EXPO MCP
 LOW-LEVEL ANDROID / PROCESS / PACKAGE / LOG → ADB
 RUNTIME OWNERSHIP → executable config + repository mechanism + process/container/network readback
 PERFORMANCE → measurement/profiling, not intuition
@@ -291,6 +296,7 @@ ACTOR / USER INTENT
 USER EXPERIENCE IS A SYSTEM OUTCOME, NOT SCREEN AESTHETICS. DESIGN READINESS PRECEDES UI IMPLEMENTATION. Donor/screenshots/components are evidence, never design authority. Every visible control or persistent pattern must earn task value; decorative noise, duplicate navigation, cognitive overload and inaccessible/inconsistent behavior are defects.
 
 For cross-surface journeys preserve material actor, authorization, exact-candidate provenance and state/test-data lineage. Exercise material positive, negative, failure, recovery, retry/replay, concurrency and lifecycle states capable of falsifying the claim. Use a real device when OS lifecycle, permissions, notifications, location, backgrounding, networking, hardware/OEM or device resources matter.
+A material runtime defect reopens the causal cone: diagnose the highest root, treat it when authorized, restart the affected journey from a valid state, and persist the smallest durable repeatable regression proof in the correct assurance layer. If repeatable automation is genuinely unavailable, keep the regression claim open with an explicit proof limit rather than pretending durable coverage.
 
 CI / PR are integration assurance, not substitutes for diagnosis or claim-specific/runtime proof. Applicable required checks for the exact candidate/base must run and pass; SKIPPED / NOT-RUN / STALE REQUIRED EVIDENCE != PASS.
 

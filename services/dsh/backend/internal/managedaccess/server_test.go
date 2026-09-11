@@ -174,7 +174,7 @@ func TestStatusByPhoneReadsCanonicalIdentityState(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Exists || !body.Enabled || !body.Activated || !body.Recoverable || body.Role != "captain" {
+	if !body.Exists || !body.Enabled || !body.Activated || !body.Reenrollable || body.Role != "captain" {
 		t.Fatalf("unexpected role status: %#v", body)
 	}
 }

@@ -28,8 +28,7 @@ async function waitForMailpitCode(mailpitBaseUrl: string, phone: string): Promis
   throw new Error("operator MFA challenge was not delivered to Mailpit for the expected phone");
 }
 
-test("platform owner MFA persists through reload and logout revokes the live session", async ({ page }) => {
-  test.skip(process.env.PLAYWRIGHT_LIVE_IDENTITY !== "1", "requires the repository integration runtime");
+test("@live platform owner MFA persists through reload and logout revokes the live session", async ({ page }) => {
   test.setTimeout(45_000);
 
   const identityBaseUrl = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");

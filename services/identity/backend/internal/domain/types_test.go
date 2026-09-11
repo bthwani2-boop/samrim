@@ -45,9 +45,6 @@ func TestTrustedCallerOperationBoundaries(t *testing.T) {
 			t.Fatalf("unexpected role read: %s for %s", pair[0], pair[1])
 		}
 	}
-	if !CanResetCredential("platform-control", "operator") || CanResetCredential("platform-control", "client") {
-		t.Fatal("operator credential reset must be operation-scoped")
-	}
 }
 
 func TestManagedRoleBoundary(t *testing.T) {
