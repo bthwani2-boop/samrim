@@ -72,6 +72,7 @@ const rootAgentRoutingAdapters = new Set(["CLAUDE.md", "GEMINI.md"]);
 const githubAgentRoutingAdapter = ".github/copilot-instructions.md";
 
 const rootFiles = new Set([
+  ".dockerignore",
   ".editorconfig",
   ".gitattributes",
   ".gitignore",
