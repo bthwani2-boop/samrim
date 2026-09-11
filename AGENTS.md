@@ -19,15 +19,15 @@ BTHWANI ORIENTATION KEYS ARE DISCOVERY KEYS, NOT PROOF OR SEMANTIC AUTHORITY.
 PLATFORM
 → one unified BThwani multi-surface commerce, fulfillment, operations and financial platform
 
-SURFACE ORIENTATION
+SURFACES
 → app-client / app-partner / app-captain / app-field / control-panel
-→ app hosts own deployable shell/navigation/composition/presentation, not business truth by display location
-→ control-panel is an administrative host, not an automatic business/domain owner
+→ app hosts own shell/navigation/composition/presentation, not business truth by display location
+→ control-panel is an administrative host, not automatic domain ownership
 
 CURRENT DOMAIN ORIENTATION
 → Identity: identity / access / authentication / activation / session class
-→ DSH: operational commerce / partner-store / order / dispatch / delivery / support class
-→ WLT: financial / wallet / ledger / payment / refund / settlement / reconciliation class when materially applicable
+→ DSH: commerce / partner-store / order / dispatch / delivery / support class
+→ WLT: wallet / ledger / payment / refund / settlement / reconciliation class when materially applicable
 
 SHARED TECHNICAL ORIENTATION
 → Design System is the reusable domain-neutral presentation lane
@@ -44,6 +44,11 @@ TESTED != COMPLETE.
 GREEN != CORRECT.
 SOURCE AGREEMENT != TRUTH.
 SOURCE COUNT != EVIDENCE STRENGTH.
+OBJECTIVE != PROJECT TRUTH.
+OBJECTIVE != FACT AUTHORITY.
+OBJECTIVE != ARCHITECTURAL EXCEPTION.
+
+CURRENT-STATE FIRST. Establish exact current Samrim source/config/runtime/DB/readback before selecting a target model. CURRENT SOURCE = FIRST EVIDENCE FOR WHAT EXISTS NOW. CURRENT SOURCE != AUTOMATICALLY CORRECT DESIGN.
 
 No source has global precedence. Authority is fact-specific and must be proven for the claim:
 
@@ -54,11 +59,11 @@ CURRENT HUMAN INSTRUCTION
 EXACT SOURCE / CONFIG / DB / RUNTIME / AUTHORITATIVE READBACK
 → what currently exists, executes, persists or actually happened
 
-PINNED GOVERNANCE / governance.lock.json
-→ exact durable knowledge baseline to inspect; challengeable evidence, never infallible or current implementation truth
+PINNED GOVERNANCE / knowledge.sources.json
+→ exact durable knowledge baseline to inspect; valuable challengeable evidence, never infallible or current implementation truth
 
 DOCS
-→ method / development / operations evidence; not automatic correctness or current-state authority
+→ valuable method / development / operations evidence; not automatic correctness or current-state authority
 
 CURRENT PRIMARY OFFICIAL / OPEN SOURCE
 → mutable external platform / framework / provider / standard evidence; verify currency, scope and fit
@@ -67,7 +72,9 @@ DONOR / HISTORY / OSS / REFERENCES / BEST PRACTICE
 → forensic evidence, alternatives and falsification; never automatic target authority
 ~~~
 
-Evidence strength depends on fact-specific authority, directness, currentness, applicability, attributable observable/executable proof and independent corroboration. SOURCE AGREEMENT != INDEPENDENT CORROBORATION when sources inherit the same claim.
+GOVERNANCE / DOCS ARE VALUABLE EVIDENCE, NOT ORACLES. Inspect applicable knowledge that can change the decision; challenge it against current evidence; neither ignore nor mechanically obey it.
+
+Evidence strength depends on fact-specific authority, directness, currentness, applicability and observable/executable proof. SOURCE AGREEMENT != INDEPENDENT CORROBORATION when sources inherit the same claim.
 
 CONFLICT:
 ~~~text
@@ -77,17 +84,15 @@ DIAGNOSE
 → DO NOT PROPAGATE IT
 → MUTATE ITS SOURCE ONLY WHEN THAT CORRECTION IS MATERIAL TO THE AUTHORIZED OUTCOME
 ~~~
-An unresolved conflict capable of changing the safe canonical decision remains open. Do not create a workaround or competing truth merely to satisfy a stale source.
-If conflict cannot be safely reconciled, block the affected action, preserve the authorized remainder and surface the evidence-backed blocker.
+A decision-changing unresolved conflict remains open. Never create competing truth to satisfy a stale source; if it cannot be reconciled safely, block the affected action and surface the evidence-backed blocker.
 
-Before material reasoning, pin repository, branch/ref, exact HEAD, objective, authority envelope and environment; resolve `governance.lock.json`; load only decision-relevant evidence. Revalidate live HEAD immediately before every material write. If HEAD moved: do not overwrite; inspect the foreign change, reconcile it, invalidate affected evidence and re-diagnose before writing.
+Before material reasoning, pin repository, branch/ref, exact HEAD, objective, authority envelope and environment; resolve `knowledge.sources.json`; establish current Samrim reality first; then load only decision-relevant Governance/Docs/reference evidence. Revalidate live HEAD immediately before every material write. If HEAD moved: do not overwrite; inspect the foreign change, reconcile it, invalidate affected evidence and re-diagnose before writing.
 
-CAPABILITY != AUTHORITY. Repository access, credentials, authenticated tools, reachable endpoints or connected devices do not authorize staging/Production mutation, promotion/release, destructive durable-data effects, paid/provider/financial effects, credential rotation/revocation, cloud deletion, destructive device operations, store/OTA publication or equivalent high-impact effects without explicit target-specific human authority.
+CAPABILITY != AUTHORITY. Access, credentials, tools or reachable targets never authorize staging/Production, release, destructive data/provider/financial/credential/cloud/device/store effects without explicit target-specific human authority.
 
 ## 1. BThwani task and affected-cone resolution
 
 END-TO-END OUTCOME OWNERSHIP IS NON-DELEGABLE.
-
 ONE MATERIAL TASK → ONE PRIMARY AGENT → ONE RECONCILED CURRENT MODEL → ONE FINAL DECISION / INTEGRATION / CLOSURE AUTHORITY.
 LOCAL SUCCESS != SYSTEM COMPLETENESS.
 IN-SCOPE MATERIAL OBLIGATION → TREATED_AND_PROVEN | EVIDENCE-BACKED BLOCKER.
@@ -97,20 +102,22 @@ For every material task, execute this reasoning kernel before mutation:
 
 ~~~text
 PIN EXACT SAMRIM STATE
+→ ESTABLISH CURRENT SAMRIM REALITY
 → UNDERSTAND AUTHORIZED OBJECTIVE
+→ LOAD APPLICABLE GOVERNANCE / DOCS AS VALUABLE CHALLENGEABLE EVIDENCE
 → BUILD CURRENT BTHWANI MODEL
-→ IDENTIFY ACTOR / USER OUTCOME
-→ IDENTIFY CAPABILITY / JOURNEY
+→ IDENTIFY ACTOR / USER OUTCOME + CAPABILITY / JOURNEY
 → CENSUS MATERIAL AFFECTED CONE
 → RESOLVE OWNER / WRITER / READBACK / CONSUMERS
 → RESOLVE DATA / CONTRACT / EVENT / SURFACE / RUNTIME BOUNDARIES
 → CLASSIFY FACT / INFERENCE / HYPOTHESIS / ASSUMPTION / UNKNOWN
 → DIAGNOSE CAUSAL PROBLEM
-→ DEFINE SUCCESS / FAILURE + MATERIAL QUALITY DIMENSIONS
+→ DEFINE SUCCESS / FAILURE + MATERIAL QUALITY DIMENSIONS / INVARIANTS
 → GENERATE VIABLE BTHWANI-FIT SOLUTIONS
 → ELIMINATE INVALID / DUPLICATE / SPECULATIVE / UNSAFE / OVERCOMPLEX OPTIONS
-→ SELECT BEST WHOLE-OUTCOME FIT
+→ SELECT SIMPLEST COMPLETE DURABLE CANONICAL BEST FIT
 → TRY TO FALSIFY IT
+→ CLASSIFY DURABLE GOVERNANCE / DOCS IMPACT
 → EXECUTE WHEN SAFE + AUTHORIZED
 → PROVE CLAIMS + REASONS THE SOLUTION WON
 → FRESH ADVERSARIAL RE-CENSUS
@@ -120,7 +127,6 @@ PIN EXACT SAMRIM STATE
 Every plausibly material dimension must be classified as AFFECTED, PROVEN UNAFFECTED, or NOT APPLICABLE WITH REASON. UNEXAMINED != UNAFFECTED.
 
 BThwani affected-cone census, as applicable:
-
 ~~~text
 ACTOR / USER OUTCOME
 CAPABILITY / JOURNEY
@@ -138,13 +144,13 @@ FAILURE / RECOVERY / RETRY / CONCURRENCY / LIFECYCLE
 ASSURANCE / REGRESSION / CLEANUP
 ~~~
 
-Audit the complete material causal cone, not merely the visible request, file or symptom. Expand breadth only while evidence can change root cause, owner/boundary, prerequisite, sequence, safety, selected solution, migration/cutover or proof. Do not expand into unrelated future breadth.
+Audit the material causal cone, not only the visible symptom. Expand only while evidence can change root cause, owner/boundary, sequence, safety, solution, cutover or proof.
 
-RIGOR SCALES WITH CONSEQUENCE + UNCERTAINTY + BLAST RADIUS + IRREVERSIBILITY. Small reversible work still requires correct context; high-risk or broad work requires deeper independent/adversarial investigation.
+RIGOR SCALES WITH CONSEQUENCE + UNCERTAINTY + BLAST RADIUS + IRREVERSIBILITY. High-risk/broad work requires deeper independent/adversarial investigation.
 
-DURABLE TARGET MODEL != CURRENT IMPLEMENTATION INVENTORY != CURRENT AUTHORIZED DELIVERY SLICE. A governed or imagined future responsibility does not authorize creating a service, API, table, screen, abstraction or placeholder now. CURRENT NEED + CAUSAL PREREQUISITE + AUTHORIZED OBJECTIVE must justify current implementation.
+DURABLE TARGET MODEL != CURRENT IMPLEMENTATION INVENTORY != CURRENT AUTHORIZED DELIVERY SLICE. Future responsibility does not authorize implementation now; CURRENT NEED + CAUSAL PREREQUISITE + AUTHORIZED OBJECTIVE must justify it.
 
-When complex/broad/uncertain work benefits from parallel intelligence, use independent diagnostic, specialist and adversarial inquiries. Subagents share the same pin/objective/authority envelope; SUBAGENT OUTPUT = EVIDENCE, NOT AUTHORITY; SUBAGENT CONSENSUS != PROOF. Overlapping mutable cones serialize under the primary integration writer.
+Use independent specialist/adversarial inquiries when materially useful. SUBAGENT OUTPUT = EVIDENCE, NOT AUTHORITY; SUBAGENT CONSENSUS != PROOF. Overlapping mutable cones serialize under the primary writer.
 
 ## 2. Causal reasoning and best-fit decision
 
@@ -158,7 +164,6 @@ APP_HOST != BUSINESS_CAPABILITY_OWNER.
 CURRENT IMPLEMENTATION != CORRECT ARCHITECTURE.
 
 When causality is not directly proven:
-
 ~~~text
 OBSERVATION
 → COMPETING CAUSAL HYPOTHESES
@@ -169,22 +174,21 @@ OBSERVATION
 → CORRECT TREATMENT OWNER
 ~~~
 
-Do not infer causation from sequence, correlation, one successful test, documentation, popularity, absence of evidence, or one explanation consistent with the symptom. Where useful, apply counterfactual reasoning: if the alleged cause were removed or changed, what materially different observation should follow, and could another cause produce the same evidence?
+Do not infer causation from sequence, correlation, one test, documentation, popularity, absence of evidence or one compatible explanation. Use counterfactual reasoning when useful.
 
-READINESS PRECEDES IMPLEMENTATION. Do not mutate while a decision-critical unknown can materially change current need, root cause, owner/boundary, sequence/timing, safety, migration/recovery or falsifiable proof path.
+READINESS PRECEDES IMPLEMENTATION. Do not mutate while a decision-critical unknown can change need, root cause, owner, safety, migration/recovery or proof.
 
 RIGHT CHANGE + WRONG OWNER = WRONG CHANGE.
 RIGHT CHANGE + WRONG ORDER = WRONG CHANGE.
 RIGHT CHANGE + WRONG TIME = WRONG CHANGE.
 POSSIBLE FUTURE NEED != CURRENT PREREQUISITE.
 
-TREAT THE HIGHEST PROVEN CAUSAL ROOT. A finding is evidence, not treatment. Renaming, moving, documenting, governing, wrapping, suppressing or hiding a defect is not treatment when the underlying causal/ownership defect survives.
+TREAT THE HIGHEST PROVEN CAUSAL ROOT. A finding is evidence, not treatment. Moving/documenting/wrapping/suppressing a defect is not treatment while its causal/ownership defect survives.
 
 Decision law:
-
 ~~~text
 PROVE ACTUAL NEED + CONSTRAINTS
-→ DEFINE SUCCESS / FAILURE
+→ DEFINE SUCCESS / FAILURE + REQUIRED INVARIANTS
 → DETERMINE MATERIAL QUALITY DIMENSIONS
 → GENERATE VIABLE OPTIONS
 → ELIMINATE INVALID / DOMINATED / REDUNDANT / UNSAFE / NONCANONICAL / UNJUSTIFIABLY COMPLEX OPTIONS
@@ -195,15 +199,32 @@ PROVE ACTUAL NEED + CONSTRAINTS
 → PROVE THE REASONS THE SOLUTION WON
 ~~~
 
+BEST FIT = Cause Removal + Correct Owner + Canonical Simplicity + Strong Invariants + Minimal Necessary Complexity + Lowest Long-Term Entropy + Safe Cutover + Full Consumer Consistency + Verifiable Failure/Recovery.
+
 RESEARCH / ENUMERATION / SUMMARY != DECISION.
 FIRST WORKING SOLUTION != BEST SOLUTION.
 LOCAL OPTIMUM != WHOLE-PLATFORM OUTCOME.
 BEST PRACTICE != AUTOMATIC BEST FIT.
 NO COMPLEXITY WITHOUT MATERIAL BENEFIT.
+SMALLEST DIFF != SIMPLEST SYSTEM.
 
-Prefer the simplest solution that fully satisfies material requirements, not the smallest patch and not the most sophisticated solution. Do not manufacture numeric precision for qualitative trade-offs. If priorities are not explicitly given but can be derived from the objective/constraints, derive them; expose only an inferred priority capable of changing the decision.
+Prefer the simplest complete solution, not the smallest patch or most sophisticated design. Reject a winner while a simpler equivalent correct complete design exists.
 
-When evidence supports one winner, choose it; do not return a menu to avoid judgment. If surviving options cannot be distinguished, identify the smallest decision-critical discriminator and keep only that uncertainty open. Never convert uncertainty into confidence.
+DONOR / OSS / REFERENCE EXTRACTION:
+~~~text
+EXACT MATERIAL QUESTION
+→ EXTRACT INVARIANTS / EDGE CASES / STATE MACHINES / FAILURE-RECOVERY / SECURITY / FINANCIAL / TEST-ORACLE VALUE
+→ MAP VALUE TO CURRENT BTHWANI OWNER
+→ PRESERVE / REFINE / REIMPLEMENT / REHOME / REJECT
+→ VERIFY AGAINST CURRENT BTHWANI EVIDENCE
+~~~
+DONOR_VALUE != DONOR_AUTHORITY. GOOD_REFERENCE != RIGHT_TO_COPY_TOPOLOGY. External technical authority may prove external technical facts; it does not define BThwani Product semantics or target topology.
+
+Research stops when the material question, owner/gap, invariants and failure-recovery model are sufficient and no high-risk decision-changing unknown remains. Do not collect sources for volume.
+
+When evidence supports one winner, choose it. If survivors remain indistinguishable, keep only the smallest decision-critical discriminator open. Never convert uncertainty into confidence.
+
+DURABLE GOVERNANCE RECONCILIATION: Proven durable BThwani Product/System/Policy truth requires Governance/Docs impact classification. Correct a wrong/stale/incomplete/missing canonical Governance owner when material and authorized; correct material stale Docs; reconcile implementation/consumers; verify convergence. CLEAR IMPLEMENTATION DECISION != AUTOMATIC GOVERNANCE CHANGE. DURABLE BTHWANI TRUTH → GOVERNANCE MUST CONVERGE. Without authority to correct the knowledge owner, surface a blocker; never encode parallel truth.
 
 ## 3. Canonical execution, cutover and safety
 
@@ -224,12 +245,12 @@ SIMILARITY != SAME SEMANTICS. Remove duplicate authority, not legitimate indepen
 
 NOTHING NEW IS ADMITTED BY DEFAULT. A new owner, service, boundary, package, abstraction, dependency, guard, registry or persistent artifact must prove current necessity, unique responsibility, correct ownership, real consumption/proof value, no stronger existing mechanism, justified complexity and no parallel authority.
 
-Every surviving material artifact in the affected cone must re-earn its right to exist. Age, history, donor origin, existing tests or current use alone grant no survival privilege. Preserve required meaning/data/contracts/provenance/external identity; delete, merge or rehome unjustified residue.
+Every material survivor must re-earn existence. Age, donor origin, tests or current use grant no privilege. Preserve required meaning/data/contracts/provenance/external identity; delete, merge or rehome residue.
 
-COMPATIBILITY_JUST_IN_CASE = FORBIDDEN. Temporary compatibility requires a proven live coexistence need, explicit owner, bounded scope, exit condition and deletion trigger.
+COMPATIBILITY_JUST_IN_CASE = FORBIDDEN. Temporary compatibility requires proven coexistence need, owner, bounded scope, exit condition and deletion trigger.
 BASELINE / ALLOWLIST / SUPPRESSION / EXCEPTION != TREATMENT. Any temporary exception requires a real bounded transition and an explicit removal condition.
 
-PREFER THE REPOSITORY-OWNED MECHANISM FOR THE OPERATION OR CLAIM WHEN IT IS CURRENT AND FIT FOR PURPOSE. REPOSITORY TOOL != INFALLIBLE. If the canonical mechanism itself is suspect, diagnose it instead of blindly bypassing or trusting it.
+PREFER THE REPOSITORY-OWNED MECHANISM FOR THE OPERATION OR CLAIM WHEN IT IS CURRENT AND FIT FOR PURPOSE. REPOSITORY TOOL != INFALLIBLE. Diagnose a suspect canonical mechanism; do not bypass or trust it blindly.
 
 AUDIT-ONLY IS NOT COMPLETION. If an in-scope finding has a safe, derivable, authorized treatment, treat and verify it.
 
@@ -276,10 +297,9 @@ MUTABLE PLATFORM/API RULE → current primary official source
 ~~~
 These are evidence routes, not eternal tool mandates; replace a route when a stronger current evidence producer exists.
 
-MATERIAL INTERACTIVE BEHAVIOR MUST BE EXERCISED IN THE REAL AUTHORIZED RUNTIME when behavior, lifecycle or rendering is part of the claim. Source/build/API/screenshot/CI cannot substitute for required journey proof.
+MATERIAL INTERACTIVE BEHAVIOR MUST BE EXERCISED IN THE REAL AUTHORIZED RUNTIME when behavior/lifecycle/rendering is claimed. Static evidence cannot substitute for required journey proof.
 
 For material user-facing work:
-
 ~~~text
 ACTOR / USER INTENT
 → PRIMARY TASK / JOURNEY
@@ -296,10 +316,10 @@ ACTOR / USER INTENT
 → USER OUTCOME
 ~~~
 
-USER EXPERIENCE IS A SYSTEM OUTCOME, NOT SCREEN AESTHETICS. DESIGN READINESS PRECEDES UI IMPLEMENTATION. Donor/screenshots/components are evidence, never design authority. Every visible control or persistent pattern must earn task value; decorative noise, duplicate navigation, cognitive overload and inaccessible/inconsistent behavior are defects.
+USER EXPERIENCE IS A SYSTEM OUTCOME, NOT SCREEN AESTHETICS. DESIGN READINESS PRECEDES UI IMPLEMENTATION. Donor/screenshots/components are evidence, never design authority. Visible controls/patterns must earn task value.
 
-For cross-surface journeys preserve material actor, authorization, exact-candidate provenance and state/test-data lineage. Exercise material positive, negative, failure, recovery, retry/replay, concurrency and lifecycle states capable of falsifying the claim. Use a real device when OS lifecycle, permissions, notifications, location, backgrounding, networking, hardware/OEM or device resources matter.
-A material runtime defect reopens the causal cone: diagnose the highest root, treat it when authorized, restart the affected journey from a valid state, and persist the smallest durable repeatable regression proof in the correct assurance layer. If repeatable automation is genuinely unavailable, keep the regression claim open with an explicit proof limit rather than pretending durable coverage.
+For cross-surface journeys preserve actor, authorization, candidate and state/test-data lineage. Exercise material positive/negative/failure/recovery/retry/concurrency/lifecycle states. Use a real device when OS/device behavior matters.
+A material runtime defect reopens the causal cone: diagnose/treat the highest root and re-prove from valid state. If durable automation is unavailable, keep an explicit proof limit.
 
 CI / PR are integration assurance, not substitutes for diagnosis or claim-specific/runtime proof. Applicable required checks for the exact candidate/base must run and pass; SKIPPED / NOT-RUN / STALE REQUIRED EVIDENCE != PASS.
 
@@ -309,7 +329,7 @@ IMPLEMENTATION SUCCESS != DECISION SUCCESS.
 TREATMENT DOES NOT PROVE CLOSURE.
 CLOSURE IS ADVERSARIAL, NOT CONFIRMATORY.
 
-Before closure, perform a fresh adversarial re-census from the resulting exact state as if the prior finding list did not exist. Re-audit the full material affected cone and negative space for forgotten consumers, stale paths/evidence, duplicate/shadow authority, partial cutovers, unjustified survivors, hidden failure modes, lost meaning/data/identity and premature future work.
+Before closure, perform a fresh adversarial re-census from the resulting exact state. Re-audit the affected cone/negative space for forgotten consumers, stale evidence, shadow authority, partial cutovers, hidden failures, lost meaning/data/identity and knowledge drift.
 
 Closure requires the resulting state to prove both the objective and the material reasons the selected solution won.
 
@@ -322,13 +342,14 @@ REQUIRED JOURNEYS / FAILURE / RECOVERY = PROVEN
 MATERIAL REGRESSIONS = NONE KNOWN
 DECISION-CRITICAL UNKNOWNS = 0
 UNEXPLAINED MATERIAL CONTRADICTIONS = 0
+KNOWN MATERIAL DURABLE GOVERNANCE DRIFT = 0
 KNOWN PARTIAL CUTOVERS = 0
 KNOWN PARALLEL / SHADOW TRUTH = 0
 KNOWN UNJUSTIFIED RESIDUE = 0
 INVALIDATED REQUIRED EVIDENCE = 0
 ~~~
 
-An unaccounted material consumer, surface, writer, readback, external identity/effect or decision-critical unknown keeps the cone open.
+An unaccounted material consumer, surface, writer, readback, external identity/effect, durable knowledge conflict or decision-critical unknown keeps the cone open.
 
 A coherent verified recovery-safe unit must be reviewed before checkpoint:
 ~~~text

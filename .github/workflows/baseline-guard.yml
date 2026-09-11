@@ -44,7 +44,7 @@ jobs:
             README.md
             SECURITY.md
             CONTRIBUTING.md
-            governance.lock.json
+            knowledge.sources.json
             AGENTS.md
             .github/CODEOWNERS
             .github/pull_request_template.md

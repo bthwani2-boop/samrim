@@ -13,12 +13,12 @@ Durable documentation must not hard-code a temporary working branch as permanent
 
 ## Repository roles
 
-- `governance.lock.json` — exact immutable pin to the canonical `bthwani2-boop/governance-and-docs` commit. No tracked local `governance/` or `docs/` copy is permitted.
+- `knowledge.sources.json` — canonical machine-readable routing manifest for external knowledge/evidence roots. It records the Governance/Docs repository and navigation branch while pinning the exact immutable commit, plus donor provenance and non-authoritative external reference URLs. Branch names are navigational; the exact commit SHA is the immutable knowledge pin.
 - `AGENTS.md` — concise repository-local agent operating/safety contract; not Product or current-state truth.
 - `tools/` — machine safeguards, automation, inspection, generation and evidence; not Product Truth.
 - `apps/`, `services/`, `packages/`, `contracts/`, `infra/` — executable implementation roots whose durable placement/admission rules come from the exact pinned Governance; their current contents and existence are proven by live source.
 
-Logical paths beginning with `governance/` or `docs/` refer to the exact commit pinned by `governance.lock.json`. Use `pnpm knowledge:sync` to materialize that immutable commit into ignored local cache when direct file inspection is required.
+Logical paths beginning with `governance/` or `docs/` refer to the exact Governance/Docs commit pinned by `knowledge.sources.json`. Use `pnpm knowledge:sync` to materialize that immutable commit into ignored local cache when direct file inspection is required. Donor and external-source entries in the manifest are evidence routes, not automatic Product/System/adoption authority, and mutable external facts must be revalidated at use.
 
 ## Secrets
 

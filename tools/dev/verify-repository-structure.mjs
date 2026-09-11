@@ -76,7 +76,23 @@ for (const top of actualTopLevelDirectories) {
 for (const required of [".github", "tools"]) {
   assert(actualTopLevelDirectories.includes(required), "Required repository knowledge/tooling root missing: " + required);
 }
-assert(trackedSet.has("governance.lock.json"), "governance.lock.json is required as the canonical external knowledge pin");
+
+const knowledgeManifest = "knowledge.sources.json";
+const legacyKnowledgeManifest = ["governance", "lock", "json"].join(".");
+assert(trackedSet.has(knowledgeManifest), knowledgeManifest + " is required as the canonical knowledge/evidence source manifest");
+assert(!trackedSet.has(legacyKnowledgeManifest), "retired knowledge manifest must not remain tracked: " + legacyKnowledgeManifest);
+
+for (const file of tracked) {
+  const absolute = path.join(repoRoot, file);
+  if (!fs.statSync(absolute).isFile()) continue;
+  let content;
+  try {
+    content = fs.readFileSync(absolute, "utf8");
+  } catch {
+    continue;
+  }
+  if (content.includes(legacyKnowledgeManifest)) failures.push("tracked artifact retains retired knowledge-manifest reference: " + file);
+}
 
 for (const forbiddenRoot of ["core/", "shared/"]) {
   assert(
@@ -132,11 +148,7 @@ for (const app of appNames) {
   if (isNext) {
     const hasNextConfig = trackedSet.has(base + "next.config.ts") || trackedSet.has(base + "next.config.js") || trackedSet.has(base + "next.config.mjs");
     assert(hasNextConfig, app + " missing Next config substrate");
-    for (const relative of [
-      "app/layout.tsx",
-      "app/page.tsx",
-      "tsconfig.json",
-    ]) {
+    for (const relative of ["app/layout.tsx", "app/page.tsx", "tsconfig.json"]) {
       assert(trackedSet.has(base + relative), app + " missing Next host substrate: " + relative);
     }
   }
@@ -156,11 +168,7 @@ for (const service of serviceNames) {
 
   const hasGoBackend = trackedSet.has(base + "backend/go.mod");
   if (hasGoBackend) {
-    for (const relative of [
-      "backend/Dockerfile",
-      "backend/cmd/api/main.go",
-      "backend/internal/runtime/server.go",
-    ]) {
+    for (const relative of ["backend/Dockerfile", "backend/cmd/api/main.go", "backend/internal/runtime/server.go"]) {
       assert(trackedSet.has(base + relative), service + " missing Go service substrate: " + relative);
     }
   }
@@ -169,10 +177,7 @@ for (const service of serviceNames) {
     const laneFiles = tracked.filter((item) => item.startsWith(base + lane));
     if (laneFiles.length > 0) {
       const materialLaneFiles = laneFiles.filter((item) => !item.endsWith("/README.md"));
-      assert(
-        materialLaneFiles.length > 0,
-        service + " has an empty admitted lane: " + lane,
-      );
+      assert(materialLaneFiles.length > 0, service + " has an empty admitted lane: " + lane);
     }
   }
 }
@@ -181,46 +186,24 @@ const forbiddenAppContainers = new Set(appNames);
 for (const item of tracked) {
   if (!item.startsWith("services/")) continue;
   const segments = item.split("/");
-  if (segments.some((segment, index) => index > 1 && forbiddenAppContainers.has(segment))) {
-    failures.push("Service contains app-shaped ownership container: " + item);
-  }
-  if (/^services\/[^/]+\/frontend\//.test(item)) {
-    failures.push("Service contains non-admitted frontend tree: " + item);
-  }
+  if (segments.some((segment, index) => index > 1 && forbiddenAppContainers.has(segment))) failures.push("Service contains app-shaped ownership container: " + item);
+  if (/^services\/[^/]+\/frontend\//.test(item)) failures.push("Service contains non-admitted frontend tree: " + item);
 }
 
 const codeLikeServiceFiles = tracked.filter(
-  (item) =>
-    item.startsWith("services/") &&
-    /\.(go|ts|tsx|js|jsx|mjs|cjs|json|yaml|yml)$/.test(item),
+  (item) => item.startsWith("services/") && /\.(go|ts|tsx|js|jsx|mjs|cjs|json|yaml|yml)$/.test(item),
 );
-
 for (const item of codeLikeServiceFiles) {
-  const absolute = path.join(repoRoot, item);
-  const content = fs.readFileSync(absolute, "utf8");
-
-  if (
-    /github\.com\/bthwani2-boop\/samrim\/apps\//.test(content) ||
-    /(?:\.\.\/)+apps\//.test(content)
-  ) {
-    failures.push("SERVICE_TO_APP_DEPENDENCY: " + item);
-  }
+  const content = fs.readFileSync(path.join(repoRoot, item), "utf8");
+  if (/github\.com\/bthwani2-boop\/samrim\/apps\//.test(content) || /(?:\.\.\/)+apps\//.test(content)) failures.push("SERVICE_TO_APP_DEPENDENCY: " + item);
 }
 
 const rootContractFiles = tracked.filter((item) => item.startsWith("contracts/"));
 for (const item of rootContractFiles) {
   if (item === "contracts/README.md") continue;
-
   const relative = item.slice("contracts/".length);
-  if (
-    !relative.startsWith("protocol/") &&
-    !relative.startsWith("generated/") &&
-    !relative.startsWith("catalog/")
-  ) {
-    failures.push(
-      "Root contracts file requires explicit cross-service protocol/generated/catalog placement: " +
-        item,
-    );
+  if (!relative.startsWith("protocol/") && !relative.startsWith("generated/") && !relative.startsWith("catalog/")) {
+    failures.push("Root contracts file requires explicit cross-service protocol/generated/catalog placement: " + item);
   }
 }
 
@@ -228,35 +211,24 @@ const packageNames = directChildren("packages");
 for (const packageName of packageNames) {
   const record = projectFor("packages", packageName, "type:package");
   if (!record) continue;
-
   const { base, project } = record;
   assert(project.projectType === "library", base + " projectType must be library");
   assert(trackedSet.has(base + "package.json"), packageName + " missing package.json");
-
   for (const forbidden of ["backend/", "database/", "migrations/", "cmd/"]) {
-    assert(
-      !tracked.some((item) => item.startsWith(base + forbidden)),
-      "Reusable package contains service/storage ownership lane: " + base + forbidden,
-    );
+    assert(!tracked.some((item) => item.startsWith(base + forbidden)), "Reusable package contains service/storage ownership lane: " + base + forbidden);
   }
 }
 
 for (const item of tracked) {
   if (!item.startsWith("infra/")) continue;
-
-  if (
-    /\/(?:contracts?|database|migrations?|schema)(?:\/|$)/i.test(item) ||
-    /\/(?:orders?|wallet|ledger|catalog|checkout|identity)(?:\/|$)/i.test(item)
-  ) {
+  if (/\/(?:contracts?|database|migrations?|schema)(?:\/|$)/i.test(item) || /\/(?:orders?|wallet|ledger|catalog|checkout|identity)(?:\/|$)/i.test(item)) {
     failures.push("Infra contains service/business ownership path: " + item);
   }
 }
 
 if (failures.length) {
   console.error("REPOSITORY_STRUCTURE=FAIL");
-  for (const failure of [...new Set(failures)].sort()) {
-    console.error("  " + failure);
-  }
+  for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);
   process.exit(1);
 }
 
@@ -271,4 +243,6 @@ console.log("ROOT_CONTRACT_PLACEMENT=PASS");
 console.log("PACKAGES_TECHNICAL_BOUNDARY=PASS");
 console.log("INFRA_OWNERSHIP_BOUNDARY=PASS");
 console.log("MANUAL_PROJECT_NAME_REGISTRY=0");
+console.log("KNOWLEDGE_SOURCE_MANIFEST=PASS");
+console.log("RETIRED_KNOWLEDGE_MANIFEST_REFERENCES=0");
 console.log("REPOSITORY_STRUCTURE=PASS");
