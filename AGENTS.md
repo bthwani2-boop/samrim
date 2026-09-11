@@ -209,6 +209,9 @@ When evidence supports one winner, choose it; do not return a menu to avoid judg
 
 CHOOSE THE MINIMUM COMPLETE CANONICAL TREATMENT. MINIMUM != PARTIAL.
 
+LOCAL_INTEGRATION RUNTIME LAW:
+Docker is the sole canonical runtime owner for PostgreSQL, Mailpit, Identity, DSH, Control Panel, and all four Metro servers. Host-native or parallel launch paths for these components are forbidden. Runtime lifecycle must route through `tools/dev/runtime.ps1`; Windows owns development/device tooling only, and Android app execution remains device-owned.
+
 ~~~text
 ONE MATERIAL MEANING → ONE SEMANTIC OWNER
 ONE MUTABLE FACT → ONE CANONICAL WRITER
