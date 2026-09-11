@@ -28,6 +28,7 @@ function parseEnv(text, label) {
 const rootPackage = JSON.parse(read("package.json"));
 const scripts = rootPackage.scripts ?? {};
 const runtimeOwner = "tools/dev/runtime.ps1";
+const deviceToolOwner = "tools/dev/scrcpy.ps1";
 const pwshPrefix = `pwsh -NoProfile -ExecutionPolicy Bypass -File ${runtimeOwner} -Action `;
 
 const expectedRuntimeScripts = new Map([
@@ -60,12 +61,16 @@ for (const [name, action] of [
   ["partner", "Partner"],
   ["captain", "Captain"],
   ["field", "Field"],
-  ["scr", "Scrcpy"],
 ]) {
   assert(scripts[name] === `${pwshPrefix}${action}`, `${name} must route directly to ${runtimeOwner}`);
 }
 
 assert(exists(runtimeOwner), `canonical runtime owner is missing: ${runtimeOwner}`);
+assert(
+  scripts.scr === `pwsh -NoProfile -ExecutionPolicy Bypass -File ${deviceToolOwner}`,
+  `scr must route directly to ${deviceToolOwner}`,
+);
+assert(exists(deviceToolOwner), `canonical device tool owner is missing: ${deviceToolOwner}`);
 for (const retired of [
   "tools/dev/local-runtime.ps1",
   "tools/dev/run-go-service.ps1",

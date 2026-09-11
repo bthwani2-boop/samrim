@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Control','Client','Partner','Captain','Field','Scrcpy')]
+    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Control','Client','Partner','Captain','Field')]
     [string]$Action,
     [string]$DeviceSerial = $env:BTHWANI_ADB_SERIAL,
     [switch]$ClearCache
@@ -1339,11 +1339,6 @@ try {
         'Partner' { Start-Mobile -App 'app-partner' }
         'Captain' { Start-Mobile -App 'app-captain' }
         'Field'   { Start-Mobile -App 'app-field' }
-        'Scrcpy'  {
-            if (-not (Get-Command scrcpy -ErrorAction SilentlyContinue)) { Fail 'scrcpy is not available on PATH.' }
-            Write-Host 'RUNTIME_OWNER=tools/dev/runtime.ps1 component=scrcpy'
-            & scrcpy --tcpip
-            if ($LASTEXITCODE -ne 0) { Fail "scrcpy exited with code $LASTEXITCODE." }
-        }
+
     }
 } finally { Pop-Location }

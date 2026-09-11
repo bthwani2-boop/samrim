@@ -12,7 +12,7 @@
     "partner": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Partner",
     "captain": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Captain",
     "field": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Field",
-    "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Scrcpy",
+    "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scrcpy.ps1",
     "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
     "brand:check": "node tools/mobile/verify-brand-assets.mjs",
     "control": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Control",
