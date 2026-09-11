@@ -402,8 +402,9 @@ function Ensure-CanonicalRuntime {
 }
 
 function Stop-CanonicalRuntime {
-    $null = Ensure-Environment
+    $envMap = Ensure-Environment
     Ensure-Docker
+    Remove-MobileLanInfrastructure -EnvMap $envMap
     Invoke-Compose -Arguments @('down','--remove-orphans')
     if (@(Get-ProjectResourceIds -Kind container -Project $CanonicalProject).Count) { Fail 'CANONICAL_RUNTIME_STOP=FAIL containers remain.' }
     Write-Host 'CANONICAL_RUNTIME_STOP=PASS data_volume=preserved'
@@ -452,6 +453,7 @@ function Invoke-RuntimeDoctor {
 function Reset-CanonicalRuntime {
     $envMap = Ensure-Environment
     Ensure-Docker
+    Remove-MobileLanInfrastructure -EnvMap $envMap
     Write-Host 'RUNTIME_RESET=DESTRUCTIVE_LOCAL_DATA scope=samrim Docker containers/networks/volumes; local .env secrets are preserved'
     $parallelProjects = @(Get-NonCanonicalSamrimProjects)
     try { Invoke-Compose -Arguments @('down','--volumes','--remove-orphans') } catch { Write-Host "Canonical compose teardown was not complete: $($_.Exception.Message)" }
@@ -500,45 +502,840 @@ function Resolve-AdbTargetSerial([string]$RequestedSerial) {
     return ''
 }
 
-function Start-Mobile([ValidateSet('app-client','app-partner','app-captain','app-field')][string]$App) {
-    $envMap = Ensure-CanonicalRuntime
-    Set-CanonicalEnvironment -Map $envMap
-    $appRoot = Join-Path $RepoRoot ("apps\" + $App)
-    foreach ($required in @('package.json','project.json','mobile.config.json')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $appRoot $required) -PathType Leaf)) { Fail "Missing mobile prerequisite: $App/$required" }
-    }
-    $package = Get-Content -LiteralPath (Join-Path $appRoot 'package.json') -Raw | ConvertFrom-Json
-    if ($null -ne $package.scripts.PSObject.Properties['start']) { Fail "$App exposes forbidden secondary local start authority." }
-    $project = Get-Content -LiteralPath (Join-Path $appRoot 'project.json') -Raw | ConvertFrom-Json
-    if (@($project.tags) -notcontains 'type:app' -or [string]$project.root -ne ("apps/" + $App)) { Fail "$App ownership metadata is invalid." }
-    $appToken = ($App -replace '[^A-Za-z0-9]','_').ToUpperInvariant()
-    $metroPort = Require-TcpPort -Map $envMap -Name "SAMRIM_${appToken}_METRO_PORT"
-    $identityPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT'
-    $dshPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT'
-    Assert-PortFree -Port $metroPort -Component $App
-    Assert-CanonicalPublishedPort -Port $identityPort -ExpectedService 'identity'
-    Assert-CanonicalPublishedPort -Port $dshPort -ExpectedService 'dsh'
-    $adbSerial = Resolve-AdbTargetSerial -RequestedSerial $DeviceSerial
-    if ($adbSerial) {
-        foreach ($port in @($metroPort,$identityPort,$dshPort)) {
-            & adb -s $adbSerial reverse "tcp:$port" "tcp:$port" *> $null
-            if ($LASTEXITCODE -ne 0) { Fail "ADB reverse failed for $adbSerial port $port." }
-        }
-        Write-Host "ADB_TARGET=PASS serial=$adbSerial app=$App"
-        Write-Host "ADB_REVERSE=READY serial=$adbSerial ports=$metroPort,$identityPort,$dshPort"
-    }
-    $nodeOptions = [Environment]::GetEnvironmentVariable('NODE_OPTIONS','Process')
-    if ([string]::IsNullOrWhiteSpace($nodeOptions)) { $nodeOptions = '--dns-result-order=ipv4first' }
-    elseif ($nodeOptions -match '(?i)(^|\s)--dns-result-order=\S+') { $nodeOptions = [regex]::Replace($nodeOptions,'(?i)(^|\s)--dns-result-order=\S+','$1--dns-result-order=ipv4first') }
-    else { $nodeOptions = "$nodeOptions --dns-result-order=ipv4first" }
-    [Environment]::SetEnvironmentVariable('NODE_OPTIONS',$nodeOptions,'Process')
-    $expoArgs = @('--dir',$appRoot,'exec','expo','start','--dev-client','--localhost','--port',[string]$metroPort)
-    if ($ClearCache) { $expoArgs += '--clear' }
-    Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=$App metro_port=$metroPort backend_owner=docker"
-    & pnpm @expoArgs
-    if ($LASTEXITCODE -ne 0) { Fail "$App Expo runtime exited with code $LASTEXITCODE." }
+$MobileLanFirewallGroup = 'BThwani Samrim Mobile LAN'
+
+function Test-Administrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    return $principal.IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator
+    )
 }
 
+function Get-MobileLanContext {
+    if (-not $IsWindows) {
+        Fail 'MOBILE_LAN_PLATFORM=FAIL Windows Mobile Hotspot requires Windows.'
+    }
+
+    $found = @()
+
+    foreach ($adapter in @(
+        Get-NetAdapter -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Status -eq 'Up' -and
+                $_.InterfaceDescription -match 'Wi-Fi Direct'
+            }
+    )) {
+        foreach ($address in @(
+            Get-NetIPAddress `
+                -InterfaceIndex $adapter.ifIndex `
+                -AddressFamily IPv4 `
+                -ErrorAction SilentlyContinue |
+                Where-Object {
+                    $_.IPAddress -and
+                    $_.IPAddress -ne '127.0.0.1' -and
+                    $_.IPAddress -notmatch '^169\.254\.'
+                }
+        )) {
+            $found += [pscustomobject]@{
+                Adapter = $adapter.Name
+                IfIndex = $adapter.ifIndex
+                IP      = $address.IPAddress
+                Prefix  = [int]$address.PrefixLength
+            }
+        }
+    }
+
+    if ($found.Count -eq 0) {
+        Fail 'MOBILE_LAN=FAIL Windows Mobile Hotspot is not active.'
+    }
+
+    if ($found.Count -ne 1) {
+        $found | Format-Table -AutoSize
+        Fail "MOBILE_LAN=FAIL candidates=$($found.Count)"
+    }
+
+    return $found[0]
+}
+
+function Get-PortProxyMappings {
+    $result = @()
+
+    foreach ($line in @(netsh interface portproxy show v4tov4)) {
+        if (
+            $line -match
+            '^\s*(\d+\.\d+\.\d+\.\d+)\s+(\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+)\s*$'
+        ) {
+            $result += [pscustomobject]@{
+                ListenAddress  = $Matches[1]
+                ListenPort     = [int]$Matches[2]
+                ConnectAddress = $Matches[3]
+                ConnectPort    = [int]$Matches[4]
+            }
+        }
+    }
+
+    return $result
+}
+
+function Test-MobileLanInfrastructure(
+    [pscustomobject]$Lan,
+    [int]$IdentityPort,
+    [int]$DshPort
+) {
+    $rules = @(
+        Get-NetFirewallRule `
+            -DisplayName 'BThwani Samrim Mobile LAN' `
+            -ErrorAction SilentlyContinue
+    )
+
+    if ($rules.Count -ne 1) {
+        Write-Host "MOBILE_LAN_FIREWALL_CHECK=FAIL count=$($rules.Count)"
+        return $false
+    }
+
+    $enabled = [string]$rules[0].Enabled
+    $direction = [string]$rules[0].Direction
+    $action = [string]$rules[0].Action
+
+    if (
+        $enabled -ne 'True' -or
+        $direction -ne 'Inbound' -or
+        $action -ne 'Allow'
+    ) {
+        Write-Host "MOBILE_LAN_FIREWALL_CHECK=FAIL enabled=$enabled direction=$direction action=$action"
+        return $false
+    }
+
+    Write-Host 'MOBILE_LAN_FIREWALL_CHECK=PASS'
+
+    $identityUri = "http://$($Lan.IP):$IdentityPort/identity/health"
+    $dshUri = "http://$($Lan.IP):$DshPort/dsh/health"
+
+    $identityError = ''
+    $dshError = ''
+
+    # portproxy can require a short moment before accepting the
+    # first connection. Prove the real HTTP path with retries.
+    for ($attempt = 1; $attempt -le 12; $attempt++) {
+        $identity = $null
+        $dsh = $null
+        $identityError = ''
+        $dshError = ''
+
+        try {
+            $identity = Invoke-RestMethod `
+                -Uri $identityUri `
+                -Method Get `
+                -TimeoutSec 3 `
+                -NoProxy
+        }
+        catch {
+            $identityError = $_.Exception.Message
+        }
+
+        try {
+            $dsh = Invoke-RestMethod `
+                -Uri $dshUri `
+                -Method Get `
+                -TimeoutSec 3 `
+                -NoProxy
+        }
+        catch {
+            $dshError = $_.Exception.Message
+        }
+
+        $identityOk = (
+            $null -ne $identity -and
+            $identity.service -eq 'identity' -and
+            $identity.status -eq 'ok'
+        )
+
+        $dshOk = (
+            $null -ne $dsh -and
+            $dsh.service -eq 'dsh' -and
+            $dsh.status -eq 'ok'
+        )
+
+        if ($identityOk -and $dshOk) {
+            Write-Host "MOBILE_LAN_IDENTITY=PASS uri=$identityUri"
+            Write-Host "MOBILE_LAN_DSH=PASS uri=$dshUri"
+            return $true
+        }
+
+        Start-Sleep -Milliseconds 250
+    }
+
+    Write-Host "MOBILE_LAN_IDENTITY=FAIL uri=$identityUri error=$identityError"
+    Write-Host "MOBILE_LAN_DSH=FAIL uri=$dshUri error=$dshError"
+
+    Write-Host 'MOBILE_LAN_PORTPROXY_DIAGNOSTIC_BEGIN'
+    netsh interface portproxy show v4tov4 |
+        ForEach-Object { Write-Host $_ }
+    Write-Host 'MOBILE_LAN_PORTPROXY_DIAGNOSTIC_END'
+
+    return $false
+}
+function Ensure-MobileLanInfrastructure(
+    [pscustomobject]$Lan,
+    [int]$IdentityPort,
+    [int]$DshPort,
+    [int[]]$MetroPorts
+) {
+    if (
+        Test-MobileLanInfrastructure `
+            -Lan $Lan `
+            -IdentityPort $IdentityPort `
+            -DshPort $DshPort
+    ) {
+        Write-Host "MOBILE_LAN_INFRA=READY hotspot=$($Lan.IP)"
+        return
+    }
+
+    if (-not (Test-Administrator)) {
+        Fail 'MOBILE_LAN_ADMIN_REQUIRED=1 Run this mobile command once from PowerShell 7 as Administrator.'
+    }
+
+    $managedPorts = @($IdentityPort,$DshPort)
+
+    # Remove stale Samrim backend bridges only.
+    foreach ($mapping in @(Get-PortProxyMappings)) {
+        if (
+            $mapping.ConnectAddress -eq '127.0.0.1' -and
+            $mapping.ConnectPort -in $managedPorts -and
+            $mapping.ListenPort -eq $mapping.ConnectPort
+        ) {
+            netsh interface portproxy delete v4tov4 `
+                "listenaddress=$($mapping.ListenAddress)" `
+                "listenport=$($mapping.ListenPort)" *> $null
+        }
+    }
+
+    foreach ($port in $managedPorts) {
+        netsh interface portproxy add v4tov4 `
+            "listenaddress=$($Lan.IP)" `
+            listenport=$port `
+            connectaddress=127.0.0.1 `
+            connectport=$port *> $null
+
+        if ($LASTEXITCODE -ne 0) {
+            Fail "MOBILE_LAN_PORTPROXY=FAIL port=$port"
+        }
+    }
+
+    # One canonical firewall rule set for APIs + all Metro ports.
+    Get-NetFirewallRule `
+        -Group $MobileLanFirewallGroup `
+        -ErrorAction SilentlyContinue |
+        Remove-NetFirewallRule `
+            -ErrorAction SilentlyContinue
+
+    $allPorts = @(
+        $IdentityPort
+        $DshPort
+        $MetroPorts
+    ) | Sort-Object -Unique
+
+    New-NetFirewallRule `
+        -DisplayName 'BThwani Samrim Mobile LAN' `
+        -Group $MobileLanFirewallGroup `
+        -Direction Inbound `
+        -Action Allow `
+        -Protocol TCP `
+        -LocalAddress $Lan.IP `
+        -LocalPort $allPorts `
+        -InterfaceAlias $Lan.Adapter `
+        -RemoteAddress "$($Lan.IP)/$($Lan.Prefix)" `
+        -Profile Any *> $null
+
+    if ($LASTEXITCODE -ne 0) {
+        Fail 'MOBILE_LAN_FIREWALL=FAIL'
+    }
+
+    if (-not (
+        Test-MobileLanInfrastructure `
+            -Lan $Lan `
+            -IdentityPort $IdentityPort `
+            -DshPort $DshPort
+    )) {
+        Fail 'MOBILE_LAN_INFRA=FAIL'
+    }
+
+    Write-Host "MOBILE_LAN_INFRA=PASS hotspot=$($Lan.IP)"
+}
+
+function Remove-MobileLanInfrastructure(
+    [hashtable]$EnvMap
+) {
+    if (-not $IsWindows) {
+        return
+    }
+
+    $identityPort = Require-TcpPort `
+        -Map $EnvMap `
+        -Name 'SAMRIM_IDENTITY_PORT'
+
+    $dshPort = Require-TcpPort `
+        -Map $EnvMap `
+        -Name 'SAMRIM_DSH_PORT'
+
+    $managedPorts = @(
+        $identityPort
+        $dshPort
+    )
+
+    $mappings = @(
+        Get-PortProxyMappings |
+            Where-Object {
+                $_.ConnectAddress -eq '127.0.0.1' -and
+                $_.ConnectPort -in $managedPorts -and
+                $_.ListenPort -eq $_.ConnectPort
+            }
+    )
+
+    $rules = @(
+        Get-NetFirewallRule `
+            -Group $MobileLanFirewallGroup `
+            -ErrorAction SilentlyContinue
+    )
+
+    if (
+        $mappings.Count -eq 0 -and
+        $rules.Count -eq 0
+    ) {
+        Write-Host 'MOBILE_LAN_INFRA=ABSENT'
+        return
+    }
+
+    if (-not (Test-Administrator)) {
+        Fail 'MOBILE_LAN_CLEANUP_ADMIN_REQUIRED=1'
+    }
+
+    foreach ($mapping in $mappings) {
+        netsh interface portproxy delete v4tov4 `
+            "listenaddress=$($mapping.ListenAddress)" `
+            "listenport=$($mapping.ListenPort)" *> $null
+
+        if ($LASTEXITCODE -ne 0) {
+            Fail "MOBILE_LAN_PORTPROXY_REMOVE=FAIL address=$($mapping.ListenAddress) port=$($mapping.ListenPort)"
+        }
+    }
+
+    if ($rules.Count -gt 0) {
+        $rules |
+            Remove-NetFirewallRule `
+                -ErrorAction Stop
+    }
+
+    $remainingMappings = @(
+        Get-PortProxyMappings |
+            Where-Object {
+                $_.ConnectAddress -eq '127.0.0.1' -and
+                $_.ConnectPort -in $managedPorts -and
+                $_.ListenPort -eq $_.ConnectPort
+            }
+    )
+
+    $remainingRules = @(
+        Get-NetFirewallRule `
+            -Group $MobileLanFirewallGroup `
+            -ErrorAction SilentlyContinue
+    )
+
+    if (
+        $remainingMappings.Count -ne 0 -or
+        $remainingRules.Count -ne 0
+    ) {
+        Fail 'MOBILE_LAN_CLEANUP=FAIL'
+    }
+
+    Write-Host 'MOBILE_LAN_INFRA=REMOVED'
+}
+function Remove-SamrimAdbReverse(
+    [string]$Serial,
+    [int[]]$Ports
+) {
+    if ([string]::IsNullOrWhiteSpace($Serial)) {
+        return
+    }
+
+    foreach ($port in $Ports) {
+        & adb -s $Serial reverse --remove "tcp:$port" *> $null
+    }
+
+    $remaining = @(adb -s $Serial reverse --list)
+
+    foreach ($port in $Ports) {
+        if (
+            @(
+                $remaining |
+                    Where-Object { $_ -match "tcp:$port(\s|$)" }
+            ).Count -gt 0
+        ) {
+            Fail "ADB_REVERSE_REMOVAL=FAIL port=$port"
+        }
+    }
+
+    Write-Host "ADB_REVERSE=0 serial=$Serial"
+}
+
+function Assert-SamrimAdbReverseAbsent(
+    [string]$Serial,
+    [int[]]$Ports
+) {
+    if ([string]::IsNullOrWhiteSpace($Serial)) {
+        return
+    }
+
+    $remaining = @(adb -s $Serial reverse --list)
+
+    if ($LASTEXITCODE -ne 0) {
+        Fail 'ADB_REVERSE_INSPECTION=FAIL'
+    }
+
+    foreach ($port in $Ports) {
+        if (
+            @(
+                $remaining |
+                    Where-Object {
+                        $_ -match "tcp:$port(\s|$)"
+                    }
+            ).Count -gt 0
+        ) {
+            Fail "ADB_REVERSE_DEPENDENCY=FAIL port=$port"
+        }
+    }
+
+    Write-Host "ADB_REVERSE_DEPENDENCY=0 serial=$Serial"
+}
+
+function Wait-MobileMetroReady(
+    [System.Diagnostics.Process]$Process,
+    [int]$Port,
+    [int]$Attempts = 120
+) {
+    $uri = "http://localhost:$Port/_expo/open?platform=android&runtime=custom"
+
+    $lastError = ''
+
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        if ($Process.HasExited) {
+            Fail "MOBILE_METRO_PROCESS=FAIL exit=$($Process.ExitCode)"
+        }
+
+        try {
+            $descriptor = Invoke-RestMethod `
+                -Uri $uri `
+                -Method Get `
+                -TimeoutSec 2 `
+                -NoProxy
+
+            if (
+                $null -ne $descriptor -and
+                -not [string]::IsNullOrWhiteSpace(
+                    [string]$descriptor.url
+                )
+            ) {
+                Write-Host "MOBILE_METRO_READY=PASS port=$Port"
+                return
+            }
+        }
+        catch {
+            $lastError = $_.Exception.Message
+        }
+
+        Start-Sleep -Milliseconds 500
+    }
+
+    Fail "MOBILE_METRO_READY=FAIL port=$Port error=$lastError"
+}
+function Open-MobileDevClientOverLan(
+    [string]$Serial,
+    [string]$AppRoot,
+    [string]$HotspotIP,
+    [int]$MetroPort,
+    [int[]]$ManagedPorts
+) {
+    if ([string]::IsNullOrWhiteSpace($Serial)) {
+        Write-Host 'MOBILE_DEV_CLIENT_OPEN=SKIP adb_target=none'
+        return
+    }
+
+    $mobileConfig = Get-Content `
+        -LiteralPath (Join-Path $AppRoot 'mobile.config.json') `
+        -Raw |
+        ConvertFrom-Json
+
+    $expectedAppId = [string]$mobileConfig.androidPackage
+
+    if ([string]::IsNullOrWhiteSpace($expectedAppId)) {
+        Fail 'MOBILE_ANDROID_PACKAGE=FAIL'
+    }
+
+    $openUri =
+        "http://127.0.0.1:$MetroPort/_expo/open?platform=android&runtime=custom"
+
+    $open = Invoke-RestMethod `
+        -Uri $openUri `
+        -Method Get `
+        -TimeoutSec 10 `
+        -NoProxy
+
+    if ([string]$open.runtime -ne 'custom') {
+        Fail "MOBILE_DEV_CLIENT_RUNTIME=FAIL actual=$($open.runtime)"
+    }
+
+    if ([string]$open.appId -ne $expectedAppId) {
+        Fail "MOBILE_DEV_CLIENT_APP_ID=FAIL expected=$expectedAppId actual=$($open.appId)"
+    }
+
+    $url = [string]$open.url
+
+    if ([string]::IsNullOrWhiteSpace($url)) {
+        Fail 'MOBILE_DEV_CLIENT_URL=FAIL'
+    }
+
+    $decoded = [Uri]::UnescapeDataString($url)
+
+    $expectedManifest =
+        "http://$HotspotIP`:$MetroPort"
+
+    if (-not $decoded.Contains($expectedManifest)) {
+        Write-Host "MOBILE_DEV_CLIENT_URL=$decoded"
+        Fail "MOBILE_DEV_CLIENT_LAN_URL=FAIL expected=$expectedManifest"
+    }
+
+    $installed = @(
+        adb -s $Serial shell `
+            pm path $expectedAppId
+    )
+
+    if (
+        $LASTEXITCODE -ne 0 -or
+        ($installed -join "`n") -notmatch '^package:'
+    ) {
+        Fail "MOBILE_DEV_CLIENT_INSTALLED=FAIL appId=$expectedAppId"
+    }
+
+    adb -s $Serial shell `
+        am force-stop $expectedAppId *> $null
+
+    if ($LASTEXITCODE -ne 0) {
+        Fail "MOBILE_DEV_CLIENT_FORCE_STOP=FAIL appId=$expectedAppId"
+    }
+
+    $launch = @(
+        adb -s $Serial shell `
+            am start `
+            -W `
+            -a android.intent.action.VIEW `
+            -d $url 2>&1
+    )
+
+    if (
+        $LASTEXITCODE -ne 0 -or
+        ($launch -join "`n") -notmatch
+            '(?m)^Status:\s+ok\s*$'
+    ) {
+        $launch | Write-Host
+        Fail "MOBILE_DEV_CLIENT_OPEN=FAIL appId=$expectedAppId"
+    }
+
+    Start-Sleep -Seconds 1
+
+    $pidValue = (
+        adb -s $Serial shell `
+            pidof $expectedAppId
+    ).Trim()
+
+    if (-not $pidValue) {
+        $launch | Write-Host
+        Fail "MOBILE_DEV_CLIENT_PROCESS=FAIL appId=$expectedAppId"
+    }
+
+    Assert-SamrimAdbReverseAbsent `
+        -Serial $Serial `
+        -Ports $ManagedPorts
+
+    Write-Host "MOBILE_DEV_CLIENT_URL=$decoded"
+    Write-Host "MOBILE_DEV_CLIENT_PID=$pidValue"
+    Write-Host "MOBILE_DEV_CLIENT_OPEN=PASS appId=$expectedAppId transport=WIFI_LAN"
+}
+function Start-Mobile(
+    [ValidateSet(
+        'app-client',
+        'app-partner',
+        'app-captain',
+        'app-field'
+    )]
+    [string]$App
+) {
+    $envMap = Ensure-CanonicalRuntime
+    Set-CanonicalEnvironment -Map $envMap
+
+    $appRoot = Join-Path $RepoRoot ("apps\" + $App)
+
+    foreach ($required in @(
+        'package.json',
+        'project.json',
+        'mobile.config.json'
+    )) {
+        if (
+            -not (
+                Test-Path `
+                    -LiteralPath (Join-Path $appRoot $required) `
+                    -PathType Leaf
+            )
+        ) {
+            Fail "Missing mobile prerequisite: $App/$required"
+        }
+    }
+
+    $package = Get-Content `
+        -LiteralPath (Join-Path $appRoot 'package.json') `
+        -Raw |
+        ConvertFrom-Json
+
+    if ($null -ne $package.scripts.PSObject.Properties['start']) {
+        Fail "$App exposes forbidden secondary local start authority."
+    }
+
+    $project = Get-Content `
+        -LiteralPath (Join-Path $appRoot 'project.json') `
+        -Raw |
+        ConvertFrom-Json
+
+    if (
+        @($project.tags) -notcontains 'type:app' -or
+        [string]$project.root -ne ("apps/" + $App)
+    ) {
+        Fail "$App ownership metadata is invalid."
+    }
+
+    $appToken = (
+        $App -replace '[^A-Za-z0-9]','_'
+    ).ToUpperInvariant()
+
+    $metroPort = Require-TcpPort `
+        -Map $envMap `
+        -Name "SAMRIM_${appToken}_METRO_PORT"
+
+    $identityPort = Require-TcpPort `
+        -Map $envMap `
+        -Name 'SAMRIM_IDENTITY_PORT'
+
+    $dshPort = Require-TcpPort `
+        -Map $envMap `
+        -Name 'SAMRIM_DSH_PORT'
+
+    $allMetroPorts = @(
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
+    )
+
+    Assert-PortFree -Port $metroPort -Component $App
+
+    Assert-CanonicalPublishedPort `
+        -Port $identityPort `
+        -ExpectedService 'identity'
+
+    Assert-CanonicalPublishedPort `
+        -Port $dshPort `
+        -ExpectedService 'dsh'
+
+    $lan = Get-MobileLanContext
+
+    Ensure-MobileLanInfrastructure `
+        -Lan $lan `
+        -IdentityPort $identityPort `
+        -DshPort $dshPort `
+        -MetroPorts $allMetroPorts
+
+    $identityLanUrl = "http://$($lan.IP):$identityPort"
+    $dshLanUrl      = "http://$($lan.IP):$dshPort"
+    $metroLanUrl    = "http://$($lan.IP):$metroPort"
+
+    [Environment]::SetEnvironmentVariable(
+        'EXPO_PUBLIC_IDENTITY_API_URL',
+        $identityLanUrl,
+        'Process'
+    )
+
+    [Environment]::SetEnvironmentVariable(
+        'EXPO_PUBLIC_DSH_API_URL',
+        $dshLanUrl,
+        'Process'
+    )
+
+    [Environment]::SetEnvironmentVariable(
+        'EXPO_PACKAGER_PROXY_URL',
+        $metroLanUrl,
+        'Process'
+    )
+
+    $adbSerial = Resolve-AdbTargetSerial `
+        -RequestedSerial $DeviceSerial
+
+    if ($adbSerial) {
+        $adbPorts = @(
+            $identityPort
+            $dshPort
+        ) + $allMetroPorts
+
+        Remove-SamrimAdbReverse `
+            -Serial $adbSerial `
+            -Ports $adbPorts
+
+        Write-Host "ADB_TARGET=PASS serial=$adbSerial transport=control-only"
+    }
+    else {
+        Write-Host 'ADB_TARGET=NONE transport=not-required'
+    }
+
+    $nodeOptions = [Environment]::GetEnvironmentVariable(
+        'NODE_OPTIONS',
+        'Process'
+    )
+
+    if ([string]::IsNullOrWhiteSpace($nodeOptions)) {
+        $nodeOptions = '--dns-result-order=ipv4first'
+    }
+    elseif ($nodeOptions -match '(?i)(^|\s)--dns-result-order=\S+') {
+        $nodeOptions = [regex]::Replace(
+            $nodeOptions,
+            '(?i)(^|\s)--dns-result-order=\S+',
+            '$1--dns-result-order=ipv4first'
+        )
+    }
+    else {
+        $nodeOptions = "$nodeOptions --dns-result-order=ipv4first"
+    }
+
+    [Environment]::SetEnvironmentVariable(
+        'NODE_OPTIONS',
+        $nodeOptions,
+        'Process'
+    )
+
+    $expoArgs = @(
+        '--dir',
+        $appRoot,
+        'exec',
+        'expo',
+        'start',
+        '--dev-client',
+        '--port',
+        [string]$metroPort
+    )
+
+    if ($ClearCache) {
+        $expoArgs += '--clear'
+    }
+
+    Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=$App"
+    Write-Host "MOBILE_TRANSPORT=WIFI_LAN hotspot=$($lan.IP)"
+    Write-Host "METRO_LAN_URL=$metroLanUrl"
+    Write-Host "IDENTITY_LAN_URL=$identityLanUrl"
+    Write-Host "DSH_LAN_URL=$dshLanUrl"
+    Write-Host 'ADB_REVERSE_DEPENDENCY=0'
+    Write-Host 'BACKEND_OWNER=docker'
+
+    $managedAdbPorts = @(
+        $identityPort
+        $dshPort
+    ) + $allMetroPorts
+
+    $expoProcess = $null
+
+    $expoArgsJson = ConvertTo-Json `
+        -Compress `
+        -InputObject @($expoArgs)
+
+    $previousExpoArgsJson =
+        [Environment]::GetEnvironmentVariable(
+            'SAMRIM_EXPO_ARGS_JSON',
+            'Process'
+        )
+
+    [Environment]::SetEnvironmentVariable(
+        'SAMRIM_EXPO_ARGS_JSON',
+        $expoArgsJson,
+        'Process'
+    )
+
+    $runnerScript = '$ErrorActionPreference = "Continue"; $arguments = @(ConvertFrom-Json -InputObject $env:SAMRIM_EXPO_ARGS_JSON); & pnpm @arguments 2>&1 | ForEach-Object { Write-Output $_ }; $code = $LASTEXITCODE; exit $code'
+
+    $encodedRunner = [Convert]::ToBase64String(
+        [Text.Encoding]::Unicode.GetBytes(
+            $runnerScript
+        )
+    )
+
+    try {
+        $expoProcess = Start-Process `
+            -FilePath 'pwsh' `
+            -ArgumentList @(
+                '-NoProfile'
+                '-EncodedCommand'
+                $encodedRunner
+            ) `
+            -WorkingDirectory $RepoRoot `
+            -NoNewWindow `
+            -PassThru
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable(
+            'SAMRIM_EXPO_ARGS_JSON',
+            $previousExpoArgsJson,
+            'Process'
+        )
+    }
+    try {
+        Wait-MobileMetroReady `
+            -Process $expoProcess `
+            -Port $metroPort
+
+        if ($adbSerial) {
+            # Expo is intentionally non-interactive. Any reverse mapping
+            # appearing here is therefore an invariant violation.
+            Assert-SamrimAdbReverseAbsent `
+                -Serial $adbSerial `
+                -Ports $managedAdbPorts
+
+            Open-MobileDevClientOverLan `
+                -Serial $adbSerial `
+                -AppRoot $appRoot `
+                -HotspotIP $lan.IP `
+                -MetroPort $metroPort `
+                -ManagedPorts $managedAdbPorts
+        }
+        else {
+            Write-Host 'MOBILE_DEV_CLIENT_OPEN=SKIP adb_target=none'
+        }
+
+        Write-Host 'MOBILE_EXPO_INTERACTIVE=0'
+        Write-Host 'MOBILE_ANDROID_LAUNCH_OWNER=tools/dev/runtime.ps1'
+
+        $expoProcess.WaitForExit()
+
+        if ($expoProcess.ExitCode -ne 0) {
+            Fail "$App Expo runtime exited with code $($expoProcess.ExitCode)."
+        }
+    }
+    finally {
+        if (
+            $null -ne $expoProcess -and
+            -not $expoProcess.HasExited
+        ) {
+            taskkill `
+                /PID $expoProcess.Id `
+                /T `
+                /F *> $null
+        }
+    }
+}
 Push-Location $RepoRoot
 try {
     switch ($Action) {

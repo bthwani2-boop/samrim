@@ -139,6 +139,69 @@ for (const marker of [
 }
 assert(!runtime.includes("ensure-local-env.ps1"), "canonical runtime owner must not delegate environment reconciliation to a second executable");
 assert(/['"]exec['"]\s*,\s*['"]expo['"]\s*,\s*['"]start['"]/.test(runtime), "canonical runtime owner must launch Expo through pnpm exec expo start");
+assert(!runtime.includes("ADB_REVERSE=READY"), "mobile runtime must not restore adb reverse transport");
+assert(!/['"]--localhost['"]/.test(runtime), "mobile Expo runtime must not use localhost-only transport");
+assert(runtime.includes("EXPO_PACKAGER_PROXY_URL"), "mobile runtime must advertise its resolved LAN Metro URL");
+assert(runtime.includes("Ensure-MobileLanInfrastructure"), "mobile runtime must own Wi-Fi LAN infrastructure");
+assert(runtime.includes("MOBILE_TRANSPORT=WIFI_LAN"), "mobile runtime must identify Wi-Fi LAN transport");
+assert(runtime.includes("ADB_REVERSE_DEPENDENCY=0"), "mobile runtime must assert zero adb reverse dependency");
+assert(!runtime.includes("& pnpm @expoArgs"), "mobile runtime must not hand blocking interactive ownership to Expo");
+assert(
+  !/SetEnvironmentVariable\(\s*'CI'\s*,\s*'1'\s*,\s*'Process'\s*\)/s.test(runtime),
+  "mobile Expo runtime must not force CI mode",
+);
+assert(
+  runtime.includes("SAMRIM_EXPO_ARGS_JSON"),
+  "mobile Expo runtime must pass canonical arguments through a non-TTY runner",
+);
+assert(
+  runtime.includes("2>&1 | ForEach-Object"),
+  "mobile Expo child output must be piped so Expo does not own the terminal TTY",
+);
+assert(
+  runtime.includes("/_expo/open?platform=android&runtime=custom"),
+  "mobile runtime must resolve the canonical Expo dev-client launch URL",
+);
+assert(
+  runtime.includes("MOBILE_ANDROID_LAUNCH_OWNER=tools/dev/runtime.ps1"),
+  "mobile Android launch must be runtime-owned",
+);
+assert(
+  runtime.includes("MOBILE_DEV_CLIENT_OPEN=PASS"),
+  "mobile runtime must prove the development client launch",
+);
+assert(
+  runtime.includes("function Remove-MobileLanInfrastructure"),
+  "canonical runtime must own mobile LAN cleanup",
+);
+
+const wifiLanStopStart =
+  runtime.indexOf("function Stop-CanonicalRuntime");
+const wifiLanStopEnd =
+  runtime.indexOf("function Show-RuntimeStatus");
+
+assert(
+  wifiLanStopStart >= 0 &&
+    wifiLanStopEnd > wifiLanStopStart &&
+    runtime
+      .slice(wifiLanStopStart, wifiLanStopEnd)
+      .includes("Remove-MobileLanInfrastructure"),
+  "mobile LAN infrastructure must be cleaned by runtime down",
+);
+
+const wifiLanResetStart =
+  runtime.indexOf("function Reset-CanonicalRuntime");
+const wifiLanResetEnd =
+  runtime.indexOf("function Start-ControlPanel");
+
+assert(
+  wifiLanResetStart >= 0 &&
+    wifiLanResetEnd > wifiLanResetStart &&
+    runtime
+      .slice(wifiLanResetStart, wifiLanResetEnd)
+      .includes("Remove-MobileLanInfrastructure"),
+  "mobile LAN infrastructure must be cleaned by runtime reset",
+);
 const nativeApiToken = "go run ./cmd/" + "api";
 const nativeMigrationToken = "go run ./cmd/" + "migrate";
 assert(!runtime.includes(nativeApiToken), "canonical runtime owner must not launch Identity/DSH natively");
