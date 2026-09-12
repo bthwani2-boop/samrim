@@ -23,48 +23,27 @@ BEGIN
     END IF;
 END $$;
 
--- If an actor somehow has both legacy owner and operator rows, merge into the
--- operator row before removing the legacy row so the migration is deterministic.
-UPDATE identity_actor_roles AS operator_role
-SET enabled = operator_role.enabled OR owner_role.enabled,
-    activated_at = COALESCE(operator_role.activated_at, owner_role.activated_at),
-    version = GREATEST(operator_role.version, owner_role.version) + 1,
-    updated_at = clock_timestamp()
-FROM identity_actor_roles AS owner_role
-WHERE operator_role.actor_id = owner_role.actor_id
-  AND operator_role.role = 'operator'
-  AND owner_role.role = 'platform_owner';
+-- Materialize the canonical operator parent row before migrating children that
+-- reference (actor_id, role). This avoids changing a referenced composite key
+-- in place and keeps the cutover valid with non-deferrable foreign keys.
+INSERT INTO identity_actor_roles(actor_id, role, enabled, activated_at, version)
+SELECT actor_id, 'operator', enabled, activated_at, version
+FROM identity_actor_roles
+WHERE role = 'platform_owner'
+ON CONFLICT (actor_id, role) DO UPDATE
+SET enabled = identity_actor_roles.enabled OR EXCLUDED.enabled,
+    activated_at = COALESCE(identity_actor_roles.activated_at, EXCLUDED.activated_at),
+    version = GREATEST(identity_actor_roles.version, EXCLUDED.version) + 1,
+    updated_at = clock_timestamp();
 
-DELETE FROM identity_actor_roles AS owner_role
-USING identity_actor_roles AS operator_role
-WHERE owner_role.actor_id = operator_role.actor_id
-  AND owner_role.role = 'platform_owner'
-  AND operator_role.role = 'operator';
-
-UPDATE identity_actor_roles
-SET role = 'operator', updated_at = clock_timestamp()
-WHERE role = 'platform_owner';
-
--- Preserve the legacy owner's password as the operator credential if both rows
--- exist; otherwise rename the legacy credential in place.
-UPDATE identity_password_credentials AS operator_credential
-SET password_hash = owner_credential.password_hash,
-    version = GREATEST(operator_credential.version, owner_credential.version) + 1,
-    updated_at = clock_timestamp()
-FROM identity_password_credentials AS owner_credential
-WHERE operator_credential.actor_id = owner_credential.actor_id
-  AND operator_credential.role = 'operator'
-  AND owner_credential.role = 'platform_owner';
-
-DELETE FROM identity_password_credentials AS owner_credential
-USING identity_password_credentials AS operator_credential
-WHERE owner_credential.actor_id = operator_credential.actor_id
-  AND owner_credential.role = 'platform_owner'
-  AND operator_credential.role = 'operator';
-
-UPDATE identity_password_credentials
-SET role = 'operator', updated_at = clock_timestamp()
-WHERE role = 'platform_owner';
+INSERT INTO identity_password_credentials(actor_id, role, password_hash, version)
+SELECT actor_id, 'operator', password_hash, version
+FROM identity_password_credentials
+WHERE role = 'platform_owner'
+ON CONFLICT (actor_id, role) DO UPDATE
+SET password_hash = EXCLUDED.password_hash,
+    version = GREATEST(identity_password_credentials.version, EXCLUDED.version) + 1,
+    updated_at = clock_timestamp();
 
 UPDATE identity_challenges
 SET role = 'operator', updated_at = clock_timestamp()
@@ -76,6 +55,12 @@ WHERE role = 'platform_owner';
 
 UPDATE identity_password_attempts
 SET role = 'operator', updated_at = clock_timestamp()
+WHERE role = 'platform_owner';
+
+DELETE FROM identity_password_credentials
+WHERE role = 'platform_owner';
+
+DELETE FROM identity_actor_roles
 WHERE role = 'platform_owner';
 
 ALTER TABLE identity_actor_roles
