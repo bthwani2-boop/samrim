@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { validatePasswordInputShape, type ActorIdentity, type ControlPanelRole } from "@bthwani/identity";
+import { validatePasswordInputShape, type ActorIdentity } from "@bthwani/identity";
 import { identityFetch, responseMessage } from "./identity-client";
 import { useSession } from "./session-provider";
 
@@ -85,7 +85,6 @@ export function IdentitySurface() {
   const { state, authenticate } = useSession();
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [loginRole, setLoginRole] = useState<ControlPanelRole>("operator");
   const [authMode, setAuthMode] = useState<"login" | "activate" | "recover">("login");
   const [controlStep, setControlStep] = useState<"phone" | "password" | "activation" | "recovery">("phone");
   const [operatorEnrollmentToken, setOperatorEnrollmentToken] = useState("");
@@ -131,7 +130,7 @@ export function IdentitySurface() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: authMode === "login"
-            ? JSON.stringify({ phone, password, role: loginRole })
+            ? JSON.stringify({ phone, password, role: "operator" })
             : authMode === "activate"
               ? JSON.stringify({ phone, operatorEnrollmentToken })
               : JSON.stringify({ phone }),
@@ -161,7 +160,7 @@ export function IdentitySurface() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: authMode === "login"
-            ? JSON.stringify({ phone, code, role: loginRole })
+            ? JSON.stringify({ phone, code, role: "operator" })
             : authMode === "activate"
               ? JSON.stringify({ phone, operatorEnrollmentToken, verificationCode: code, password: activationPassword })
               : JSON.stringify({ phone, code, password: recoveryPassword }),
@@ -222,37 +221,26 @@ export function IdentitySurface() {
         <div className="auth-card">
           <div className="auth-card-header">
             <span className="step-chip">{challengeStarted ? "02 / 02" : "01 / 02"}</span>
-            <p className="eyebrow">{controlStep === "activation" ? "تفعيل موظف" : controlStep === "recovery" ? "استرداد موظف" : challengeStarted ? "التحقق الثاني" : "هوية لوحة التحكم"}</p>
-            <h2>{controlStep === "phone" ? "ابدأ برقم الهاتف" : controlStep === "activation" ? "تفعيل حساب الموظف" : controlStep === "recovery" ? "استعادة كلمة المرور" : challengeStarted ? "تحقق من الجهاز الثاني" : "تسجيل دخول لوحة التحكم"}</h2>
-            <p className="muted">{controlStep === "phone" ? "اختر الدور والغرض من الدخول؛ لن نكشف حالة الحساب قبل اكتمال التحقق." : controlStep === "activation" ? "أدخل رمز التفعيل الصادر من مالك المنصة، ثم رمز تحقق الهاتف." : controlStep === "recovery" ? "أثبت ملكية الهاتف برمز تحقق ثم أنشئ كلمة مرور جديدة." : challengeStarted ? "أدخل الرمز الأخير الذي وصلك عبر قناة التحقق المهيأة." : "أدخل كلمة المرور للمتابعة إلى التحقق الثاني."}</p>
+            <p className="eyebrow">{controlStep === "activation" ? "تفعيل مشغل" : controlStep === "recovery" ? "استرداد حساب المشغل" : challengeStarted ? "التحقق الثاني" : "هوية لوحة التحكم"}</p>
+            <h2>{controlStep === "phone" ? "ابدأ برقم الهاتف" : controlStep === "activation" ? "تفعيل حساب المشغل" : controlStep === "recovery" ? "استعادة كلمة المرور" : challengeStarted ? "تحقق من الجهاز الثاني" : "تسجيل دخول لوحة التحكم"}</h2>
+            <p className="muted">{controlStep === "phone" ? "أدخل رقم هاتف المشغل ثم اختر تسجيل الدخول أو التفعيل أو الاسترداد." : controlStep === "activation" ? "أدخل دعوة المشغل الآمنة الصادرة من مشغل مخول، ثم رمز تحقق الهاتف." : controlStep === "recovery" ? "أثبت ملكية الهاتف برمز تحقق ثم أنشئ كلمة مرور جديدة." : challengeStarted ? "أدخل الرمز الأخير الذي وصلك عبر قناة التحقق المهيأة." : "أدخل كلمة المرور للمتابعة إلى التحقق الثاني."}</p>
           </div>
           <form onSubmit={(event) => { event.preventDefault(); if (challengeStarted) void completeLogin(); else void startLogin(); }} noValidate>
             {controlStep === "phone" && !challengeStarted ? (
-              <>
-                <label className="field-label" htmlFor="login-role">
-                  الدور
-                  <select id="login-role" value={loginRole} disabled={busy} onChange={(event) => setLoginRole(event.target.value as ControlPanelRole)}>
-                    <option value="operator">موظف لوحة التحكم</option>
-                    <option value="platform_owner">مالك المنصة</option>
-                  </select>
-                </label>
-                {loginRole === "operator" ? (
-                  <div className="auth-intent-actions">
-                    <button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("activate"); setControlStep("activation"); setError(""); setNotice(""); }}>
-                      تفعيل حساب موظف
-                    </button>
-                  </div>
-                ) : null}
-              </>
+              <div className="auth-intent-actions">
+                <button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("activate"); setControlStep("activation"); setError(""); setNotice(""); }}>
+                  تفعيل حساب مشغل
+                </button>
+              </div>
             ) : null}
-            {controlStep !== "phone" && !challengeStarted ? <p className="field-help">الدور المختار: {loginRole === "platform_owner" ? "مالك المنصة" : "موظف لوحة التحكم"}</p> : null}
+            {controlStep !== "phone" && !challengeStarted ? <p className="field-help">الدور: مشغل لوحة التحكم</p> : null}
             <label className="field-label" htmlFor="operator-phone">
               رقم الهاتف
               <input id="operator-phone" autoComplete="tel" disabled={challengeStarted || busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} />
             </label>
             {controlStep === "activation" && !challengeStarted ? (
               <label className="field-label" htmlFor="operator-enrollment-token">
-                دعوة الموظف الآمنة
+                دعوة المشغل الآمنة
                 <input id="operator-enrollment-token" autoComplete="one-time-code" maxLength={256} value={operatorEnrollmentToken} onChange={(event) => setOperatorEnrollmentToken(event.target.value.trim())} placeholder="ألصق الدعوة عالية الأمان" />
               </label>
             ) : null}
@@ -315,12 +303,12 @@ export function IdentitySurface() {
                 <button className="button button-primary" disabled={busy || !canStart} type="submit">
                   {busy ? "جارٍ التنفيذ…" : controlStep === "phone" ? "متابعة" : controlStep === "activation" ? "إرسال رمز تحقق الهاتف" : controlStep === "recovery" ? "إرسال رمز الاسترداد" : "متابعة إلى التحقق الثاني"}
                 </button>
-                {controlStep === "password" && loginRole === "operator" ? (
+                {controlStep === "password" ? (
                   <button className="text-button" disabled={busy} type="button" onClick={() => { setAuthMode("recover"); setControlStep("recovery"); setError(""); setNotice(""); }}>
                     نسيت كلمة المرور؟
                   </button>
                 ) : null}
-                <p className="security-note"><span aria-hidden="true">⌁</span> {controlStep === "activation" ? "رمز التفعيل ثم رمز تحقق الهاتف" : controlStep === "recovery" ? "سيتم إلغاء الجلسات القديمة بعد تغيير كلمة المرور" : "اخترت العملية والدور يدويًا؛ لا تظهر حالة الحساب قبل التحقق."}</p>
+                <p className="security-note"><span aria-hidden="true">⌁</span> {controlStep === "activation" ? "دعوة المشغل ثم رمز تحقق الهاتف" : controlStep === "recovery" ? "سيتم إلغاء الجلسات القديمة بعد تغيير كلمة المرور" : "الوصول مخصص للمشغل فقط ولا تُعرض حالة الحساب قبل التحقق."}</p>
               </div>
             )}
           </form>
