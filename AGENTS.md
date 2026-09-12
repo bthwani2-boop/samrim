@@ -21,6 +21,10 @@ PLATFORM
 SURFACES
 → app-client / app-partner / app-captain / app-field / control-panel
 → hosts own shell/navigation/composition/presentation, not displayed business truth
+FIELD ACTOR / APP-FIELD ORIENTATION
+→ field / Field worker uses app-field only for assigned Partner/first-Store onboarding field assistance when the active onboarding policy requires field capture, verification, visit/checks, documents/evidence and submission for owner review
+→ app-field is not a general Field Operations, fulfillment, support or unrelated operational-task surface
+→ Field participation does not own onboarding truth: DSH owns Partner/Store onboarding operational state; Identity owns trusted identity/session context; applicable owner review/approval remains separate
 CURRENT DOMAIN ORIENTATION
 → Identity: identity / access / authentication / activation / session
 → DSH: commerce / partner-store / order / dispatch / delivery / support
