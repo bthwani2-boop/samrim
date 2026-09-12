@@ -67,7 +67,11 @@ function Start-ControlPanelForVerification {
     $nonce = [Guid]::NewGuid().ToString('N')
     $stdoutPath = Join-Path $tempRoot "samrim-control-panel-$nonce.out.log"
     $stderrPath = Join-Path $tempRoot "samrim-control-panel-$nonce.err.log"
-    $pnpm = (Get-Command pnpm -ErrorAction Stop).Source
+    $pnpmCommand = Get-Command pnpm.cmd -CommandType Application -ErrorAction SilentlyContinue
+    if ($null -eq $pnpmCommand) {
+        $pnpmCommand = Get-Command pnpm -CommandType Application -ErrorAction Stop
+    }
+    $pnpm = $pnpmCommand.Source
     $process = Start-Process -FilePath $pnpm -ArgumentList @('control') -WorkingDirectory $repo -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
 
     try {
