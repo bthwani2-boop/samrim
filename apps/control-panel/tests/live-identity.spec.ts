@@ -10,9 +10,7 @@ function requiredEnv(name: string): string {
 async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose: string): Promise<string> {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      const response = await fetch(mailpitBaseUrl + "/view/latest.txt", {
-        signal: AbortSignal.timeout(2_000),
-      });
+      const response = await fetch(mailpitBaseUrl + "/view/latest.txt", { signal: AbortSignal.timeout(2_000) });
       if (response.ok) {
         const message = await response.text();
         if (message.includes("Phone: " + phone) && message.includes("Purpose: " + purpose)) {
@@ -28,29 +26,31 @@ async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose
   throw new Error(purpose + " challenge was not delivered to Mailpit for the expected phone");
 }
 
-test("@live platform owner MFA persists through reload and logout revokes the live session", async ({ page }) => {
+test("@live first operator MFA persists through reload and logout revokes the live session", async ({ page }) => {
   test.setTimeout(45_000);
 
   const identityBaseUrl = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
   const mailpitBaseUrl = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
   const bootstrapToken = requiredEnv("PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN");
   const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
-  const password = "Owner-" + randomUUID() + "-Aa1!";
+  const password = "Operator-" + randomUUID() + "-Aa1!";
 
-  const bootstrap = await fetch(identityBaseUrl + "/internal/bootstrap/platform-owner", {
+  const bootstrap = await fetch(identityBaseUrl + "/internal/bootstrap/operator", {
     method: "POST",
     headers: {
       Accept: "application/json",
       Authorization: "Bearer " + bootstrapToken,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ phoneE164: phone, password }),
+    body: JSON.stringify({ phoneE164: phone, role: "operator", password }),
     signal: AbortSignal.timeout(5_000),
   });
-  expect(bootstrap.status, "platform-owner bootstrap must succeed on a fresh integration database").toBe(201);
+  expect(bootstrap.status, "first-operator bootstrap must succeed on a fresh integration database").toBe(201);
+  const bootstrapBody = await bootstrap.json() as { role?: unknown };
+  expect(bootstrapBody.role).toBe("operator");
 
   await page.goto("/");
-  await page.getByLabel("الدور").selectOption("platform_owner");
+  await expect(page.getByLabel("الدور")).toHaveCount(0);
   await page.getByLabel("رقم الهاتف").fill(phone);
   await page.getByRole("button", { name: "متابعة" }).click();
 
@@ -64,14 +64,15 @@ test("@live platform owner MFA persists through reload and logout revokes the li
   await page.getByRole("button", { name: "إكمال تسجيل الدخول" }).click();
 
   await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
-  await expect(page.getByText("مالك المنصة", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("مشغل لوحة التحكم", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("مالك المنصة", { exact: true })).toHaveCount(0);
 
   const authenticatedReadback = await page.evaluate(async () => {
     const response = await fetch("/api/auth/session", { cache: "no-store" });
     return { status: response.status, body: await response.json() };
   });
   expect(authenticatedReadback.status).toBe(200);
-  expect(authenticatedReadback.body.identity.role).toBe("platform_owner");
+  expect(authenticatedReadback.body.identity.role).toBe("operator");
   expect(authenticatedReadback.body.identity.surface).toBe("control-panel");
 
   await page.getByRole("link", { name: "الحسابات والأدوار" }).click();
@@ -136,17 +137,17 @@ test("@live platform owner MFA persists through reload and logout revokes the li
   await page.getByLabel("اسم المتجر الأول").fill(storeName);
   await page.getByRole("button", { name: "إنشاء المتجر الأول" }).click();
   const bootstrapResponse = await bootstrapResponsePromise;
-  const bootstrapBody = await bootstrapResponse.json() as {
+  const partnerBootstrapBody = await bootstrapResponse.json() as {
     partnerActorId?: unknown;
     firstStore?: { id?: unknown; partnerActorId?: unknown; name?: unknown };
     idempotentReplay?: unknown;
   };
-  expect(bootstrapResponse.status(), `Control Panel Partner Bootstrap must create the canonical DSH Store relationship: ${JSON.stringify(bootstrapBody)}`).toBe(201);
-  expect(bootstrapBody.idempotentReplay).toBe(false);
-  expect(bootstrapBody.partnerActorId).toBe(managedReadback.body.actorId);
-  expect(bootstrapBody.firstStore?.id).toEqual(expect.any(String));
-  expect(bootstrapBody.firstStore?.partnerActorId).toBe(managedReadback.body.actorId);
-  expect(bootstrapBody.firstStore?.name).toBe(storeName);
+  expect(bootstrapResponse.status(), `Control Panel Partner Bootstrap must create the canonical DSH Store relationship: ${JSON.stringify(partnerBootstrapBody)}`).toBe(201);
+  expect(partnerBootstrapBody.idempotentReplay).toBe(false);
+  expect(partnerBootstrapBody.partnerActorId).toBe(managedReadback.body.actorId);
+  expect(partnerBootstrapBody.firstStore?.id).toEqual(expect.any(String));
+  expect(partnerBootstrapBody.firstStore?.partnerActorId).toBe(managedReadback.body.actorId);
+  expect(partnerBootstrapBody.firstStore?.name).toBe(storeName);
 
   const bootstrapStatus = page.locator('section[aria-labelledby="partner-bootstrap-title"] div[role="status"]');
   await expect(bootstrapStatus).toContainText("تم إنشاء التهيئة الكانونية");
@@ -165,8 +166,8 @@ test("@live platform owner MFA persists through reload and logout revokes the li
   await page.getByRole("button", { name: "إيقاف الدور" }).click();
   await expect(cleanupAccountStatus).toContainText("الدور موقوف · الهوية مسموحة");
 
-  const accountReadback = await page.evaluate(async (phone) => {
-    const params = new URLSearchParams({ phone, role: "partner" });
+  const accountReadback = await page.evaluate(async (phoneValue) => {
+    const params = new URLSearchParams({ phone: phoneValue, role: "partner" });
     const response = await fetch("/api/access/managed-user/status?" + params.toString(), { cache: "no-store" });
     return { status: response.status, body: await response.json() };
   }, managedPhone);
