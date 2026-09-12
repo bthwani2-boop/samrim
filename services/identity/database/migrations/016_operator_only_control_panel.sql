@@ -84,7 +84,7 @@ ALTER TABLE identity_actor_roles
 ALTER TABLE identity_password_credentials
     DROP CONSTRAINT identity_password_credential_role_check,
     ADD CONSTRAINT identity_password_credential_role_check
-    CHECK (role IN ('client','operator'));
+    CHECK (role IN ('client','partner','captain','field','operator'));
 
 ALTER TABLE identity_challenges
     DROP CONSTRAINT identity_challenge_role_check,
@@ -95,8 +95,7 @@ ALTER TABLE identity_challenges
     DROP CONSTRAINT identity_challenge_purpose_role_check,
     ADD CONSTRAINT identity_challenge_purpose_role_check CHECK (
         (purpose IN ('client_register','client_recover') AND role='client') OR
-        (purpose='managed_activate' AND role IN ('partner','captain','field','operator')) OR
-        (purpose='managed_recover' AND role IN ('partner','captain','field','operator')) OR
+        (purpose IN ('managed_activate','managed_recover') AND role IN ('partner','captain','field','operator')) OR
         (purpose='operator_mfa' AND role='operator')
     );
 
@@ -108,7 +107,7 @@ ALTER TABLE identity_sessions
 ALTER TABLE identity_password_attempts
     DROP CONSTRAINT identity_password_attempt_role_check,
     ADD CONSTRAINT identity_password_attempt_role_check
-    CHECK (role IN ('client','operator'));
+    CHECK (role IN ('client','partner','captain','field','operator'));
 
 INSERT INTO identity_schema_migrations(version)
 VALUES (16)
