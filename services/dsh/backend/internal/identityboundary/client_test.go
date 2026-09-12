@@ -70,7 +70,11 @@ func TestDSHIdentityBoundaryPinsRoleAndUsesCredentialAsCallerIdentity(t *testing
 			}))
 			defer server.Close()
 
-			client, err := New(server.URL, "dsh-service-token-1234567890")
+			endpoint, err := ResolveBaseURL(server.URL, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client, err := New(endpoint, "dsh-service-token-1234567890")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,8 +86,8 @@ func TestDSHIdentityBoundaryPinsRoleAndUsesCredentialAsCallerIdentity(t *testing
 }
 
 func TestResolveBaseURLUsesHTTPOnlyForLocalEnvironments(t *testing.T) {
-	if got, err := ResolveBaseURL("", "development"); err != nil || got != "http://identity:8082" {
-		t.Fatalf("development default = %q, err=%v", got, err)
+	if got, err := ResolveBaseURL("", "development"); err != nil || got.String() != "http://identity:8082" {
+		t.Fatalf("development default = %q, err=%v", got.String(), err)
 	}
 	if _, err := ResolveBaseURL("http://identity:8082", "production"); err == nil {
 		t.Fatal("production accepted an HTTP Identity URL")
@@ -91,7 +95,10 @@ func TestResolveBaseURLUsesHTTPOnlyForLocalEnvironments(t *testing.T) {
 	if _, err := ResolveBaseURL("", "production"); err == nil {
 		t.Fatal("production accepted a missing Identity URL")
 	}
-	if got, err := ResolveBaseURL("https://identity.example.com/", "production"); err != nil || got != "https://identity.example.com" {
-		t.Fatalf("production HTTPS URL = %q, err=%v", got, err)
+	if got, err := ResolveBaseURL("https://identity.example.com/", "production", "identity.example.com"); err != nil || got.String() != "https://identity.example.com" {
+		t.Fatalf("production HTTPS URL = %q, err=%v", got.String(), err)
+	}
+	if _, err := ResolveBaseURL("https://identity.example.com/", "production"); err == nil {
+		t.Fatal("production accepted a missing Identity host allowlist")
 	}
 }

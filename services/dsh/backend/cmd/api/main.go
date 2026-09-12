@@ -16,11 +16,11 @@ import (
 )
 
 func main() {
-	identityBaseURL, err := identityboundary.ResolveBaseURL(os.Getenv("DSH_IDENTITY_API_BASE_URL"), os.Getenv("BTHWANI_ENV"))
+	identityEndpoint, err := identityboundary.ResolveBaseURL(os.Getenv("DSH_IDENTITY_API_BASE_URL"), os.Getenv("BTHWANI_ENV"), os.Getenv("DSH_IDENTITY_API_ALLOWED_HOSTS"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	identityClient, err := identityboundary.New(identityBaseURL, os.Getenv("IDENTITY_DSH_SERVICE_TOKEN"))
+	identityClient, err := identityboundary.New(identityEndpoint, os.Getenv("IDENTITY_DSH_SERVICE_TOKEN"))
 	if err != nil {
 		log.Fatal(err)
 	}

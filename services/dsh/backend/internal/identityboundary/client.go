@@ -13,32 +13,53 @@ type ActorInput struct{ PhoneE164 string }
 
 type Client struct{ inner *identityclient.Client }
 
-func ResolveBaseURL(raw, runtimeEnvironment string) (string, error) {
+func ResolveBaseURL(raw, runtimeEnvironment string, allowedHostValues ...string) (identityclient.Endpoint, error) {
 	environment := strings.ToLower(strings.TrimSpace(runtimeEnvironment))
 	switch environment {
 	case "development", "test", "staging", "production":
 	default:
-		return "", errors.New("BTHWANI_ENV must be development, test, staging, or production")
+		return identityclient.Endpoint{}, errors.New("BTHWANI_ENV must be development, test, staging, or production")
 	}
 	value := strings.TrimRight(strings.TrimSpace(raw), "/")
 	if value == "" {
 		if environment == "development" || environment == "test" {
-			return "http://identity:8082", nil
+			value = "http://identity:8082"
+		} else {
+			return identityclient.Endpoint{}, errors.New("DSH_IDENTITY_API_BASE_URL is required outside local environments")
 		}
-		return "", errors.New("DSH_IDENTITY_API_BASE_URL is required outside local environments")
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return "", errors.New("DSH_IDENTITY_API_BASE_URL is invalid")
+		return identityclient.Endpoint{}, errors.New("DSH_IDENTITY_API_BASE_URL is invalid")
 	}
 	if (environment == "staging" || environment == "production") && parsed.Scheme != "https" {
-		return "", errors.New("DSH_IDENTITY_API_BASE_URL must use HTTPS outside local environments")
+		return identityclient.Endpoint{}, errors.New("DSH_IDENTITY_API_BASE_URL must use HTTPS outside local environments")
 	}
-	return value, nil
+	allowedHosts := parseAllowedHosts(allowedHostValues...)
+	if len(allowedHosts) == 0 && (environment == "development" || environment == "test") {
+		allowedHosts = []string{"identity", "localhost", "127.0.0.1", "::1"}
+	}
+	if len(allowedHosts) == 0 {
+		return identityclient.Endpoint{}, errors.New("DSH_IDENTITY_API_ALLOWED_HOSTS is required outside local environments")
+	}
+	return identityclient.ParseEndpoint(value, allowedHosts)
 }
 
-func New(baseURL, serviceToken string) (*Client, error) {
-	inner, err := identityclient.New(baseURL, serviceToken)
+func parseAllowedHosts(values ...string) []string {
+	var hosts []string
+	for _, value := range values {
+		for _, host := range strings.Split(value, ",") {
+			host = strings.TrimSpace(host)
+			if host != "" {
+				hosts = append(hosts, host)
+			}
+		}
+	}
+	return hosts
+}
+
+func New(endpoint identityclient.Endpoint, serviceToken string) (*Client, error) {
+	inner, err := identityclient.New(endpoint, serviceToken)
 	if err != nil {
 		return nil, err
 	}
