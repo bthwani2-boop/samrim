@@ -196,12 +196,11 @@ var (
 )
 
 var roleSurface = map[string]string{
-	"client":         "app-client",
-	"partner":        "app-partner",
-	"captain":        "app-captain",
-	"field":          "app-field",
-	"operator":       "control-panel",
-	"platform_owner": "control-panel",
+	"client":   "app-client",
+	"partner":  "app-partner",
+	"captain":  "app-captain",
+	"field":    "app-field",
+	"operator": "control-panel",
 }
 
 func SurfaceForRole(role string) (string, bool) {
@@ -214,15 +213,15 @@ func CanProvisionRole(caller, role string) bool {
 	switch strings.ToLower(strings.TrimSpace(caller)) {
 	case "dsh":
 		return IsManagedRole(role)
-	case "platform-control":
+	case "control-panel":
 		return role == "operator"
 	default:
 		return false
 	}
 }
 
-func CanBootstrapPlatformOwner(caller string) bool {
-	return strings.EqualFold(strings.TrimSpace(caller), "platform-bootstrap")
+func CanBootstrapFirstOperator(caller string) bool {
+	return strings.EqualFold(strings.TrimSpace(caller), "operator-bootstrap")
 }
 
 func CanReadRole(caller, role string) bool {
@@ -230,8 +229,8 @@ func CanReadRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch caller {
 	case "dsh":
-		return IsManagedRole(role) || role == "operator" || role == "platform_owner"
-	case "platform-control":
+		return IsManagedRole(role) || role == "operator"
+	case "control-panel":
 		return role == "client" || role == "operator"
 	default:
 		return false
@@ -245,7 +244,7 @@ func CanSetRoleEnabled(caller, role string) bool {
 func CanIssueOperatorEnrollmentTokenForRole(caller, role string) bool {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role = strings.ToLower(strings.TrimSpace(role))
-	return caller == "platform-control" && role == "operator"
+	return caller == "control-panel" && role == "operator"
 }
 
 func RequiresEnrollmentToken(role string) bool {
@@ -267,6 +266,5 @@ func IsManagedActivationRole(role string) bool {
 }
 
 func IsControlPanelRole(role string) bool {
-	role = strings.ToLower(strings.TrimSpace(role))
-	return role == "operator" || role == "platform_owner"
+	return strings.EqualFold(strings.TrimSpace(role), "operator")
 }
