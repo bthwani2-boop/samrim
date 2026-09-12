@@ -87,12 +87,14 @@ function verifyRetiredFulfillmentResidue() {
     .filter(Boolean)
     .map((file) => file.replaceAll("\\", "/"));
 
+  // These sequences are specific to the retired commerce/fulfillment model.
+  // Do not ban generic transport vocabulary used by unrelated domains such as
+  // Identity challenge delivery (Mailpit/Twilio/webhook selection).
   const retired = [
     ["part" + "ner", "del" + "ivery"],
     ["cli" + "ent", "pick" + "up"],
     ["part" + "ner", "fle" + "et"],
     ["fulfill" + "ment", "mo" + "de"],
-    ["del" + "ivery", "mo" + "de"],
   ];
   const failures = [];
 
