@@ -100,11 +100,20 @@ function Open-DevelopmentClient(
 
     Write-Host "MOBILE_OPEN=START app=$Name metro=$projectUrl"
     $output = @(& adb -s $Serial shell am start -W -a android.intent.action.VIEW -d $deepLink 2>&1)
-    if ($LASTEXITCODE -ne 0 -or @($output | Where-Object { $_ -match 'Error:|unable to resolve Intent|Activity not started' }).Count -gt 0) {
-        $output | ForEach-Object { Write-Host $_ }
-        Fail "MOBILE_OPEN=FAIL app=$Name package=$Package"
+    $exitCode = $LASTEXITCODE
+    $lines = @($output | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    $explicitErrors = @($lines | Where-Object { $_ -match '^Error:|unable to resolve Intent' })
+    $statusOk = @($lines | Where-Object { $_ -match '^Status:\s+ok\s*$' }).Count -eq 1
+    $activityOk = @($lines | Where-Object { $_ -match "^Activity:\s+$([regex]::Escape($Package))/" }).Count -eq 1
+    $launchStateLine = @($lines | Where-Object { $_ -match '^LaunchState:\s+' } | Select-Object -First 1)
+    $launchState = if ($launchStateLine.Count -eq 1) { ($launchStateLine[0] -replace '^LaunchState:\s+', '').Trim() } else { 'UNKNOWN' }
+
+    if ($exitCode -ne 0 -or $explicitErrors.Count -gt 0 -or -not $statusOk -or -not $activityOk) {
+        $lines | ForEach-Object { Write-Host $_ }
+        Fail "MOBILE_OPEN=FAIL app=$Name package=$Package exit=$exitCode status_ok=$statusOk activity_ok=$activityOk"
     }
-    Write-Host "MOBILE_OPEN=PASS app=$Name metro=$projectUrl"
+
+    Write-Host "MOBILE_OPEN=PASS app=$Name metro=$projectUrl launch=$launchState"
 }
 
 if (-not (Get-Command adb -ErrorAction SilentlyContinue)) { Fail 'ADB CLI is required.' }

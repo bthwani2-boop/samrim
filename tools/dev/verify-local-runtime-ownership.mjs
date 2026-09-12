@@ -93,6 +93,10 @@ for (const marker of [
 assert(opener.includes("reverse --list"), "post-runtime mobile opener must prove adb reverse readiness");
 assert(!opener.includes("reverse \"tcp:"), "post-runtime mobile opener must not own adb reverse creation");
 assert(opener.includes("Where-Object { $_.Kind -eq 'USB' }"), "post-runtime mobile opener must prefer USB when both transports are present");
+assert(opener.includes("^Status:\\s+ok\\s*$"), "post-runtime mobile opener must require Android Activity Manager Status: ok");
+assert(opener.includes("^Activity:\\s+"), "post-runtime mobile opener must prove the resolved activity belongs to the expected package");
+assert(!opener.includes("Activity not started"), "Android brought-to-front warnings must not be treated as launch failures");
+assert(opener.includes("launch=$launchState"), "post-runtime mobile opener must report the COLD/WARM/HOT launch state");
 
 const startRuntimeStart = runtime.indexOf("function Start-CanonicalRuntime");
 const startRuntimeEnd = runtime.indexOf("function Ensure-CanonicalRuntime");
