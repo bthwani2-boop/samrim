@@ -1,266 +1,72 @@
 #Requires -Version 7.4
 
-[CmdletBinding()]
-param()
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
-# ============================================================
-# Canonical local Galaxy Wireless ADB configuration
-# ============================================================
+function Fail([string]$Message) { throw $Message }
 
-$DeviceIp  = '192.168.137.156'
-$StateDir  = Join-Path $env:LOCALAPPDATA 'BThwani'
-$StateFile = Join-Path $StateDir 'scrcpy-wireless.json'
-
-function Fail {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Message
-    )
-
-    throw $Message
+function Test-Target([string]$Value) {
+    return $Value -match '^\d{1,3}(?:\.\d{1,3}){3}:\d{1,5}$'
 }
 
-function Test-Port {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Value
+function Get-ConnectedWireless {
+    $devices = @(
+        & adb devices 2>$null |
+            ForEach-Object {
+                if ($_ -match '^\s*(\d{1,3}(?:\.\d{1,3}){3}:\d+)\s+device\s*$') {
+                    $Matches[1]
+                }
+            } |
+            Sort-Object -Unique
     )
-
-    if ($Value -notmatch '^\d{1,5}$') {
-        return $false
-    }
-
-    $port = [int]$Value
-
-    return $port -ge 1 -and $port -le 65535
-}
-
-function Get-ConnectedDevice {
-    $devices = @()
-
-    foreach ($line in @(& adb devices -l 2>$null)) {
-        if (
-            $line -match
-            ('^\s*(' + [regex]::Escape($DeviceIp) + ':\d+)\s+device(?:\s|$)')
-        ) {
-            $devices += $Matches[1]
-        }
-    }
-
-    $devices = @($devices | Sort-Object -Unique)
 
     if ($devices.Count -gt 1) {
         Fail "ADB_DEVICE=AMBIGUOUS devices=$($devices -join ',')"
     }
 
-    if ($devices.Count -eq 1) {
-        return [string]$devices[0]
-    }
-
+    if ($devices.Count -eq 1) { return [string]$devices[0] }
     return $null
 }
 
-function Get-MdnsConnectTargets {
-    $targets = @()
-
-    foreach ($line in @(& adb mdns services 2>$null)) {
-        if (
-            $line -match
-            '_adb-tls-connect\._tcp\.?\s+(\d{1,3}(?:\.\d{1,3}){3}):(\d+)'
-        ) {
-            $ip   = $Matches[1]
-            $port = $Matches[2]
-
-            if ($ip -eq $DeviceIp) {
-                $targets += "${ip}:${port}"
-            }
-        }
-    }
-
-    return @($targets | Sort-Object -Unique)
-}
-
-function Get-SavedConnectionPort {
-    if (-not (Test-Path -LiteralPath $StateFile)) {
-        return $null
-    }
-
-    try {
-        $state = Get-Content -LiteralPath $StateFile -Raw |
-            ConvertFrom-Json
-
-        $port = [string]$state.connectionPort
-
-        if (Test-Port $port) {
-            return $port
-        }
-    }
-    catch {
-        return $null
-    }
-
-    return $null
-}
-
-function Save-ConnectionPort {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Port
+function Get-MdnsTargets {
+    return @(
+        & adb mdns services 2>$null |
+            ForEach-Object {
+                if ($_ -match '_adb-tls-connect\._tcp\.?\s+(\d{1,3}(?:\.\d{1,3}){3}:\d+)') {
+                    $Matches[1]
+                }
+            } |
+            Sort-Object -Unique
     )
-
-    if (-not (Test-Port $Port)) {
-        return
-    }
-
-    New-Item `
-        -ItemType Directory `
-        -Path $StateDir `
-        -Force |
-        Out-Null
-
-    @{
-        deviceIp       = $DeviceIp
-        connectionPort = [int]$Port
-    } |
-        ConvertTo-Json |
-        Set-Content `
-            -LiteralPath $StateFile `
-            -Encoding utf8
 }
 
-function Try-Connect {
-    param(
-        [Parameter(Mandatory)]
-        [string]$Target
-    )
+function Connect-Target([string]$Target) {
+    if (-not (Test-Target $Target)) { Fail 'ADB_TARGET=INVALID expected=IP:PORT' }
 
     Write-Host "ADB_CONNECT_TARGET=$Target"
+    & adb connect $Target
+    Start-Sleep -Milliseconds 300
 
-    $output = @(
-        & adb connect $Target 2>&1
-    )
-
-    if ($output.Count -gt 0) {
-        Write-Host ($output -join "`n")
-    }
-
-    Start-Sleep -Milliseconds 400
-
-    return Get-ConnectedDevice
-}
-
-function Try-SavedConnection {
-    $port = Get-SavedConnectionPort
-
-    if ($null -eq $port) {
-        return $null
-    }
-
-    return Try-Connect -Target "${DeviceIp}:${port}"
-}
-
-function Try-MdnsConnection {
-    foreach ($target in @(Get-MdnsConnectTargets)) {
-        $serial = Try-Connect -Target $target
-
-        if ($null -ne $serial) {
-            $port = ($serial -split ':')[-1]
-            Save-ConnectionPort -Port $port
-            return $serial
-        }
-    }
+    $state = (& adb -s $Target get-state 2>$null | Select-Object -First 1)
+    if ($LASTEXITCODE -eq 0 -and $state -eq 'device') { return $Target }
 
     return $null
 }
 
-function Invoke-Pairing {
-    Write-Host ''
-    Write-Host 'ADB_PAIRING_REQUIRED=1'
-    Write-Host ''
-    Write-Host 'On Galaxy:'
-    Write-Host 'Developer options'
-    Write-Host '-> Wireless debugging'
-    Write-Host '-> Pair device with pairing code'
-    Write-Host ''
-    Write-Host "Device IP: $DeviceIp"
-    Write-Host ''
+function Resolve-Wireless {
+    $serial = Get-ConnectedWireless
+    if ($null -ne $serial) { return $serial }
 
-    $pairingPort = (
-        Read-Host 'Pairing port'
-    ).Trim()
+    $targets = @(Get-MdnsTargets)
+    if ($targets.Count -eq 1) { return Connect-Target $targets[0] }
 
-    if (-not (Test-Port $pairingPort)) {
-        Fail 'ADB_PAIRING_PORT=INVALID'
+    if ($targets.Count -gt 1) {
+        Write-Host "ADB_MDNS=AMBIGUOUS targets=$($targets -join ',')"
     }
 
-    $pairingCode = (
-        Read-Host '6-digit pairing code'
-    ).Trim()
-
-    if ($pairingCode -notmatch '^\d{6}$') {
-        Fail 'ADB_PAIRING_CODE=INVALID expected=6-digits'
-    }
-
-    $pairAddress = "${DeviceIp}:${pairingPort}"
-
-    Write-Host "ADB_PAIR_TARGET=$pairAddress"
-
-    $pairOutput = @(
-        & adb pair $pairAddress $pairingCode 2>&1
-    )
-
-    $pairExitCode = $LASTEXITCODE
-    $pairText = $pairOutput -join "`n"
-
-    if ($pairOutput.Count -gt 0) {
-        Write-Host $pairText
-    }
-
-    if (
-        $pairExitCode -ne 0 -or
-        $pairText -notmatch 'Successfully paired'
-    ) {
-        Fail 'ADB_PAIRING=FAIL'
-    }
-
-    Write-Host 'ADB_PAIRING=PASS'
+    return $null
 }
-
-function Get-ManualConnection {
-    Write-Host ''
-    Write-Host 'CONNECTION_PORT_REQUIRED=1'
-    Write-Host ''
-    Write-Host 'Galaxy is paired, but the normal connection port'
-    Write-Host 'could not be discovered automatically.'
-    Write-Host ''
-    Write-Host 'Open the MAIN Wireless debugging screen.'
-    Write-Host "IP is already fixed: $DeviceIp"
-    Write-Host ''
-
-    $connectionPort = (
-        Read-Host 'Connection port'
-    ).Trim()
-
-    if (-not (Test-Port $connectionPort)) {
-        Fail 'ADB_CONNECTION_PORT=INVALID'
-    }
-
-    $serial = Try-Connect -Target "${DeviceIp}:${connectionPort}"
-
-    if ($null -ne $serial) {
-        Save-ConnectionPort -Port $connectionPort
-    }
-
-    return $serial
-}
-
-# ============================================================
-# Preconditions
-# ============================================================
 
 foreach ($command in @('adb', 'scrcpy')) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
@@ -270,149 +76,56 @@ foreach ($command in @('adb', 'scrcpy')) {
 
 Write-Host 'DEVICE_OWNER=WINDOWS'
 Write-Host 'DEVICE_TRANSPORT=WIFI_LAN'
-Write-Host "DEVICE_IP=$DeviceIp"
 Write-Host 'DOCKER_DEPENDENCY=0'
 Write-Host 'ADB_REVERSE_DEPENDENCY=0'
 
 & adb start-server *> $null
+if ($LASTEXITCODE -ne 0) { Fail 'ADB_SERVER=FAIL' }
 
-if ($LASTEXITCODE -ne 0) {
-    Fail 'ADB_SERVER=FAIL'
-}
-
-# ============================================================
-# 1. Already connected
-# ============================================================
-
-$serial = Get-ConnectedDevice
-
-if ($null -ne $serial) {
-    Write-Host "ADB_ALREADY_CONNECTED=1 serial=$serial"
-}
-
-# ============================================================
-# 2. Try last successful connection port
-# ============================================================
-
-if ($null -eq $serial) {
-    $serial = Try-SavedConnection
-}
-
-# ============================================================
-# 3. Try mDNS connection discovery
-# ============================================================
-
-if ($null -eq $serial) {
-    $serial = Try-MdnsConnection
-}
-
-# ============================================================
-# 4. Decide: known paired connection port OR pairing
-# ============================================================
+$serial = Resolve-Wireless
 
 if ($null -eq $serial) {
     Write-Host ''
-    Write-Host 'ADB_AUTO_CONNECT=NOT_FOUND'
-    Write-Host ''
-    Write-Host 'If Galaxy is already paired:'
-    Write-Host '  enter its CONNECTION PORT.'
-    Write-Host ''
-    Write-Host 'If Galaxy is NOT paired:'
-    Write-Host '  press ENTER.'
+    Write-Host 'Open Galaxy > Developer options > Wireless debugging.'
+    Write-Host 'Enter the IP address & Port shown on the MAIN screen.'
+    Write-Host 'Enter P only if this computer is not paired.'
     Write-Host ''
 
-    $answer = (
-        Read-Host 'Connection port or ENTER to pair'
-    ).Trim()
+    $answer = (Read-Host 'Connection target IP:PORT or P to pair').Trim()
 
-    if ([string]::IsNullOrWhiteSpace($answer)) {
-        Invoke-Pairing
+    if ($answer -ieq 'P') {
+        Write-Host ''
+        Write-Host 'Galaxy > Wireless debugging > Pair device with pairing code'
+        $pairTarget = (Read-Host 'Pairing target IP:PORT').Trim()
+        $pairCode = (Read-Host '6-digit pairing code').Trim()
 
-        # Android may expose/connect the normal ADB service
-        # immediately after pairing.
-        Start-Sleep -Milliseconds 500
+        if (-not (Test-Target $pairTarget)) { Fail 'ADB_PAIR_TARGET=INVALID expected=IP:PORT' }
+        if ($pairCode -notmatch '^\d{6}$') { Fail 'ADB_PAIR_CODE=INVALID expected=6-digits' }
 
-        $serial = Get-ConnectedDevice
+        & adb pair $pairTarget $pairCode
+        if ($LASTEXITCODE -ne 0) { Fail 'ADB_PAIRING=FAIL' }
+
+        Start-Sleep -Seconds 1
+        $serial = Resolve-Wireless
 
         if ($null -eq $serial) {
-            for ($attempt = 1; $attempt -le 4; $attempt++) {
-                $serial = Try-MdnsConnection
-
-                if ($null -ne $serial) {
-                    break
-                }
-
-                Start-Sleep -Milliseconds 500
-            }
-        }
-
-        if ($null -eq $serial) {
-            $serial = Get-ManualConnection
+            Write-Host ''
+            Write-Host 'Pairing succeeded. Now use the IP address & Port from the MAIN Wireless debugging screen.'
+            $answer = (Read-Host 'Connection target IP:PORT').Trim()
+            $serial = Connect-Target $answer
         }
     }
     else {
-        if (-not (Test-Port $answer)) {
-            Fail 'ADB_CONNECTION_PORT=INVALID'
-        }
-
-        $serial = Try-Connect -Target "${DeviceIp}:${answer}"
-
-        if ($null -ne $serial) {
-            Save-ConnectionPort -Port $answer
-        }
+        $serial = Connect-Target $answer
     }
 }
 
-if ($null -eq $serial) {
-    Fail 'ADB_CONNECT=FAIL'
-}
+if ($null -eq $serial) { Fail 'ADB_CONNECT=FAIL' }
 
-# ============================================================
-# Persist successful connection port
-# ============================================================
-
-$connectedPort = ($serial -split ':')[-1]
-
-if (Test-Port $connectedPort) {
-    Save-ConnectionPort -Port $connectedPort
-}
-
-# ============================================================
-# scrcpy
-# ============================================================
-
-Write-Host ''
 Write-Host "ADB_CONNECT=PASS serial=$serial"
 Write-Host 'SCRCPY=START'
-Write-Host ''
 
 & scrcpy -s $serial
-
-$scrcpyExitCode = $LASTEXITCODE
-
-if ($scrcpyExitCode -ne 0) {
-    Write-Host "SCRCPY_RECOVERY=START exit=$scrcpyExitCode"
-
-    $recoveredSerial = Try-SavedConnection
-
-    if ($null -eq $recoveredSerial) {
-        $recoveredSerial = Try-MdnsConnection
-    }
-
-    if ($null -eq $recoveredSerial) {
-        Fail 'SCRCPY_RECOVERY=FAIL'
-    }
-
-    $serial = $recoveredSerial
-    Write-Host "SCRCPY_RECOVERY=RECONNECTED serial=$serial"
-    & scrcpy -s $serial
-    $scrcpyExitCode = $LASTEXITCODE
-
-    if ($scrcpyExitCode -ne 0) {
-        Fail "SCRCPY=FAIL exit=$scrcpyExitCode"
-    }
-
-    Write-Host 'SCRCPY_RECOVERY=PASS'
-}
+if ($LASTEXITCODE -ne 0) { Fail "SCRCPY=FAIL exit=$LASTEXITCODE" }
 
 Write-Host 'SCRCPY=PASS'
