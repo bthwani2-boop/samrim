@@ -4,8 +4,8 @@
     "repository": "bthwani2-boop/governance-and-docs",
     "branch": "a",
     "branch_url": "https://github.com/bthwani2-boop/governance-and-docs/tree/a",
-    "commit": "7f51ceba3b2e94a994b2b42803d183e9d10ddde0",
-    "commit_url": "https://github.com/bthwani2-boop/governance-and-docs/commit/7f51ceba3b2e94a994b2b42803d183e9d10ddde0",
+    "commit": "b59e72fe50d802e43d3312553784421e0c9cd18b",
+    "commit_url": "https://github.com/bthwani2-boop/governance-and-docs/commit/b59e72fe50d802e43d3312553784421e0c9cd18b",
     "role": "DURABLE_BTHWANI_KNOWLEDGE",
     "authority": "CHALLENGEABLE_DURABLE_BASELINE"
   },
@@ -57,7 +57,7 @@
       {"name": "ZITADEL", "urls": ["https://github.com/zitadel/zitadel", "https://zitadel.com/docs"]},
       {"name": "Ory", "urls": ["https://github.com/ory", "https://www.ory.sh/docs/"]},
       {"name": "OpenFGA", "urls": ["https://github.com/openfga/openfga", "https://openfga.dev/docs"]},
-      {"name": "OpenFeature", "urls": ["https://github.com/open-feature", "https://openfeature.dev/docs/"]},
+      {"name": "OpenFeature", "urls": ["https://github.com/open-feature", "https://openfeature.dev/docs"]},
       {"name": "LaunchDarkly docs", "urls": ["https://docs.launchdarkly.com/"]}
     ],
     "engineering": [
