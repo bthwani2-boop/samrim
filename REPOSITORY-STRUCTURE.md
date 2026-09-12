@@ -122,7 +122,9 @@ apps/<mobile-host>/
 │   │       └── components/          only when feature-local components exist
 │   ├── bootstrap/                   only real app/session bootstrap
 │   ├── shell/                       only real host shell/navigation composition
-│   └── native/                      only OS/native adapters
+│   └── native/                      only OS/native adapters used from JS/TS app code
+├── plugins/                         OPTIONAL app-specific Expo config plugins
+├── modules/                         OPTIONAL app-local Expo Modules API modules
 ├── assets/
 ├── app.config.ts
 ├── mobile.config.json
@@ -130,10 +132,13 @@ apps/<mobile-host>/
 ├── fingerprint.config.js
 ├── index.js
 ├── metro.config.cjs
+├── babel.config.<ext>               OPTIONAL only when current tooling requires customization
 ├── package.json
 ├── project.json
 └── tsconfig.json
 ~~~
+
+Every optional lane above is absent until a real dependency or native responsibility requires it. Installing an Expo package does not create a same-named repository folder.
 
 #### Expo router-root atomicity
 
@@ -162,6 +167,59 @@ src/features/dispatch-offers/
 Do not pre-create `catalog`, `orders`, `payments`, `support`, `analytics`, `notifications` or any other future feature because it exists in a target capability catalog.
 
 If the same bounded-context interaction semantics are later proven identical across multiple real deployable hosts, reusable presentation may move to `services/<owner>/clients/presentation/` only after the service composition criteria are proven. Do not create a generic UI package to make domain UI look shared.
+
+#### Expo packages, config plugins, local modules and native projects
+
+Expo libraries are implementation dependencies, not repository ownership classes. Place their use by responsibility:
+
+~~~text
+EXPO ROUTING / NAVIGATION            → active Expo Router root (`app/` or `src/app/`)
+SURFACE PRODUCT PRESENTATION         → `src/features/<semantic-feature>/`
+APP STARTUP / SESSION BINDING        → `src/bootstrap/`
+HOST SHELL / NAVIGATION COMPOSITION  → `src/shell/`
+JS/TS NATIVE-OS ADAPTER              → `src/native/<responsibility>/`
+APP CONFIG / PLUGIN REGISTRATION     → `app.config.ts`
+APP-SPECIFIC LOCAL CONFIG PLUGIN     → `plugins/`
+APP-LOCAL NATIVE EXPO MODULE         → `modules/<module>/`
+CROSS-MOBILE BUILD/CONFIG TOOLING    → `tools/mobile/` when repository-wide and tooling-only
+PROVEN MULTI-APP NATIVE LIBRARY      → `packages/<cohesive-module>/` after package admission
+~~~
+
+A third-party Expo package that ships its own config plugin remains in package dependencies and is referenced from `app.config.ts`; do not copy that plugin into the repository. Create `apps/<host>/plugins/` only for BThwani app-specific native configuration that cannot be expressed by ordinary app config or an installed package plugin.
+
+Local Config Plugin rules:
+
+- plugin files describe native build/config transformation only; they never own Product/business/authentication truth;
+- conventionally name the exported plugin `with<Responsibility>`;
+- JavaScript/CommonJS is valid; TypeScript local plugins are valid only when the app config/toolchain explicitly provides TypeScript evaluation (for example the required `tsx` parser binding);
+- register the plugin through `app.config.ts` and prove resolved Expo config/prebuild behavior when material;
+- a plugin used as cohesive repository-wide build/config tooling across multiple mobile hosts may live under `tools/mobile/` instead of being duplicated per app, provided it remains tooling-only and has no deployable/runtime business authority.
+
+An app-local Expo Modules API module belongs under:
+
+~~~text
+apps/<mobile-host>/modules/<module>/
+├── android/                         native Android source only when supported
+├── ios/                             native iOS source only when supported
+├── src/                             JavaScript/TypeScript module API when applicable
+├── expo-module.config.json          Expo module registration/configuration
+└── index.ts                         module public entrypoint
+~~~
+
+`modules/<module>/android` and `modules/<module>/ios` are **module source**, not generated application projects, and may be tracked when that local module is real. Do not confuse them with app-root `android/` and `ios/`.
+
+If the same native module becomes a real cohesive dependency of multiple deployable apps, do not maintain copied local modules. Reassess it for a standalone technical package under `packages/<cohesive-module>/`, with its own public boundary and lifecycle, only after the normal package-admission requirements are proven.
+
+Under the current Continuous Native Generation model, app-root native projects are generated outputs:
+
+~~~text
+apps/<mobile-host>/android/           UNTRACKED BY DEFAULT
+apps/<mobile-host>/ios/               UNTRACKED BY DEFAULT
+~~~
+
+Native changes that must survive regeneration belong in app config, a config plugin, or an Expo module as appropriate. Intentionally making app-root native projects canonical/tracked is a separate architecture/runtime decision that must be explicitly justified and must update this contract and structural verifiers in the same change; generated CNG roots must never silently become source authority.
+
+`babel.config.*` and other package-specific host config files are conditional. Add them only when the installed toolchain or a proven customization requires them; do not create boilerplate configuration for hypothetical future packages.
 
 ### 4.2 Control Panel structure
 
@@ -508,6 +566,8 @@ apps/<host>/src/common/
 apps/<host>/src/utils/
 apps/<host>/src/helpers/
 apps/<host>/app/ + apps/<host>/src/app/ simultaneously
+apps/<mobile-host>/android/            tracked app-root CNG output without explicit architecture change
+apps/<mobile-host>/ios/                tracked app-root CNG output without explicit architecture change
 apps/control-panel/lib/NEW_GENERIC_BUCKET
 apps/control-panel/app/components/NEW_BUSINESS_FEATURE
 services/<owner>/frontend/
@@ -558,7 +618,7 @@ samrim/
 ├── apps/
 │   ├── app-client/       ┐
 │   ├── app-partner/      │ mobile-host rule: exactly one router root + src feature ownership
-│   ├── app-captain/      │
+│   ├── app-captain/      │ conditional plugins/modules/native adapters only when proven
 │   ├── app-field/        ┘
 │   └── control-panel/      exactly one Next router root + feature/server/shell/session ownership
 │
