@@ -1,13 +1,27 @@
 {
-  "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": [
-    "apps/*/app/index.tsx",
-    "apps/*/src/identity.ts",
-    "apps/control-panel/app/**/route.ts",
-    "services/identity/project.json",
-    "tools/mobile/export-mobile-smoke.mjs",
-    "tools/mobile/test-mobile-app.mjs"
-  ],
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "tools/dev/js-deps.mjs",
+        "tools/dev/verify-candidate-runtime.mjs",
+        "tools/dev/verify-dsh-runtime.mjs",
+        "tools/dev/verify-identity-runtime.mjs",
+        "tools/dev/verify-migration-v13-to-v16.mjs",
+        "tools/mobile/export-mobile-smoke.mjs",
+        "tools/mobile/test-mobile-app.mjs"
+      ]
+    },
+    "apps/control-panel": {
+      "entry": [
+        "app/**/route.ts",
+        "playwright.config.ts",
+        "playwright.global-setup.ts",
+        "tests/**/*.spec.ts"
+      ],
+      "playwright": false
+    }
+  },
   "ignore": [
     // Expo/EAS host projections are loaded by Expo's config and fingerprint tooling.
     "apps/*/fingerprint.config.js",
@@ -23,18 +37,13 @@
     "expo"
   ],
   "ignoreBinaries": [
-    // CI, Nx project target and developer-host binaries are resolved outside the JS graph.
+    // CI, Nx project targets and developer-host binaries are resolved outside the JS graph.
     "build",
-    "captain",
-    "client",
-    "dev",
-    "field",
     "go",
     "gofmt",
-    "partner",
     "playwright",
     "pwsh",
-    "scrcpy",
+    "taskkill.exe",
     "typecheck"
   ]
 }

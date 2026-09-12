@@ -10,7 +10,7 @@ CURRENT_COMMAND_AUTHORITY: LIVE_PACKAGE_SCRIPTS_AND_TOOL_SOURCE
 
 tools/ contains genuinely cross-repository automation, inspection, generation and evidence helpers. It is not a Product, architecture, ownership, readiness or closure authority.
 
-Durable rules are owned by governance/policies/tooling-and-assurance.md.
+Durable rules are owned by the exact pinned `governance/policies/tooling-and-assurance.md` resolved through `knowledge.sources.json` from `bthwani2-boop/governance-and-docs`. The manifest also records donor and external-reference provenance; those entries remain evidence routes rather than execution/Product/adoption authority.
 
 ## Placement rule
 
@@ -26,7 +26,6 @@ Do not move service/app-specific behavior into tools/ merely for convenience.
 
 - tools/dev/ — repository development/verification/derivation helpers;
 - tools/mobile/ — cross-app mobile development helpers only;
-- tools/prompting/bthwani-orchestrator/ — execution/closure constitution and evidence templates.
 
 Exact scripts/commands are discovered from package.json, workflow files and the live tool sources. This README does not freeze an inventory.
 
@@ -34,7 +33,7 @@ Exact scripts/commands are discovered from package.json, workflow files and the 
 
 A generated registry/map/catalog must identify its canonical inputs and be reproducible. Do not edit a derived artifact as a second source of truth.
 
-Use source-derived knowledge queries where appropriate:
+Use source-derived knowledge queries where appropriate. They materialize only the exact pinned external Governance/Docs commit into ignored local cache:
 
 ~~~text
 pnpm knowledge:query -- list capabilities
@@ -63,6 +62,6 @@ Before adding a material tool/guard/registry/manifest:
 
 ## Removing or replacing a tool
 
-Account for package scripts, CI/workflows, docs, agent adapters and callers. Remove obsolete wrappers, path filters, allowlists, generated outputs and stale docs after cutover.
+Account for package scripts, CI/workflows, Docs, `AGENTS.md` and callers. Remove obsolete wrappers, path filters, allowlists, generated outputs and stale docs after cutover.
 
 Green output proves only the tool's claim; it never certifies Product/architecture/closure by itself.

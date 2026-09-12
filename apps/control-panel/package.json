@@ -7,11 +7,10 @@
     "node": ">=24.17.0 <25"
   },
   "scripts": {
-    "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -Command \"$envFile = Join-Path (Get-Location) '../../infra/local/compose/.env'; Get-Content -LiteralPath $envFile | ForEach-Object { if ($_ -match '^\\s*([^#=][^=]*)=(.*)$') { $name = $matches[1].Trim(); $value = $matches[2].Trim(); [Environment]::SetEnvironmentVariable($name, $value, 'Process') } }; node .\\node_modules\\next\\dist\\bin\\next dev -p 13000\"",
     "build": "next build",
-    "start": "next start -p 13000",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
-    "test:e2e": "playwright test --config playwright.config.ts"
+    "test:e2e": "playwright test --config playwright.config.ts",
+    "test:e2e:live": "node ../../tools/dev/run-playwright-live.mjs"
   },
   "dependencies": {
     "@bthwani/design-system": "workspace:*",

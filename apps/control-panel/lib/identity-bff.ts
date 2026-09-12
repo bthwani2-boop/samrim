@@ -28,10 +28,7 @@ const refreshInFlight = new Map<string, Promise<ActorIdentity | null>>();
 
 function identityBaseUrl(): string {
   const explicit = process.env.IDENTITY_API_BASE_URL?.trim();
-  if (explicit) {
-    return validateServiceUrl(explicit, "IDENTITY_API_BASE_URL");
-  }
-  if (process.env.NODE_ENV === "development") return "http://127.0.0.1:18082";
+  if (explicit) return validateServiceUrl(explicit, "IDENTITY_API_BASE_URL");
   throw new Error("IDENTITY_API_BASE_URL_REQUIRED");
 }
 
@@ -40,18 +37,13 @@ function identityClient() {
 }
 
 function identityInternalClient() {
-  const token = process.env.IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN?.trim();
-  if (!token) throw new Error("IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN_REQUIRED");
+  const token = process.env.CONTROL_PANEL_SERVICE_TOKEN?.trim();
+  if (!token) throw new Error("CONTROL_PANEL_SERVICE_TOKEN_REQUIRED");
   return createIdentityInternalClient(identityBaseUrl(), token);
 }
 
 function cookieOptions() {
-  return {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict" as const,
-    path: "/",
-  };
+  return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, path: "/" };
 }
 
 async function operatorDeviceFingerprint(): Promise<string> {
@@ -64,9 +56,7 @@ async function operatorDeviceFingerprint(): Promise<string> {
 }
 
 async function writeTokens(pair: TokenPair, deviceFingerprint: string): Promise<void> {
-	if (!isControlPanelIdentity(pair.identity)) {
-		throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
-	}
+  if (!isControlPanelIdentity(pair.identity)) throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
   const store = await cookies();
   store.set(accessCookie, pair.accessToken, { ...cookieOptions(), expires: new Date(pair.accessExpiresAt) });
   store.set(refreshCookie, pair.refreshToken, { ...cookieOptions(), maxAge: 7 * 24 * 60 * 60 });
@@ -74,7 +64,7 @@ async function writeTokens(pair: TokenPair, deviceFingerprint: string): Promise<
 }
 
 function isControlPanelRole(role: ActorType): role is ControlPanelRole {
-  return role === "operator" || role === "platform_owner";
+  return role === "operator";
 }
 
 function isControlPanelIdentity(identity: ActorIdentity): boolean {
@@ -83,19 +73,17 @@ function isControlPanelIdentity(identity: ActorIdentity): boolean {
 
 async function clearOperatorCookies(): Promise<void> {
   const store = await cookies();
-  for (const key of [accessCookie, refreshCookie, deviceCookie]) {
-    store.set(key, "", { ...cookieOptions(), maxAge: 0 });
-  }
+  for (const key of [accessCookie, refreshCookie, deviceCookie]) store.set(key, "", { ...cookieOptions(), maxAge: 0 });
 }
 
-export async function startOperatorLogin(phone: string, password: string, role: ControlPanelRole): Promise<Challenge> {
+export async function startOperatorLogin(phone: string, password: string): Promise<Challenge> {
   await operatorDeviceFingerprint();
-  return identityClient().startOperatorLogin({ phone, password, role });
+  return identityClient().startOperatorLogin({ phone, password });
 }
 
-export async function completeOperatorLogin(phone: string, code: string, role: ControlPanelRole): Promise<ActorIdentity> {
+export async function completeOperatorLogin(phone: string, code: string): Promise<ActorIdentity> {
   const deviceFingerprint = await operatorDeviceFingerprint();
-  const pair = await identityClient().completeOperatorLogin({ phone, code, role, deviceFingerprint });
+  const pair = await identityClient().completeOperatorLogin({ phone, code, deviceFingerprint });
   await writeTokens(pair, deviceFingerprint);
   return pair.identity;
 }
@@ -161,17 +149,6 @@ export async function setIdentitySecurityEnabled(phone: string, role: ActorType,
   await identityInternalClient().setActorSecurityEnabled(record.actorId, enabled, reason, context);
 }
 
-export async function resetOperatorPasswordByPhone(phone: string, password: string, context: VersionedMutationContext): Promise<void> {
-  const record = await lookupIdentityRole(phone, "operator");
-  if (!record) throw missingIdentityRole();
-  await identityInternalClient().resetOperatorPassword(record.actorId, password, context);
-}
-
-async function resetOperatorPasswordById(actorId: string, password: string, context: VersionedMutationContext): Promise<void> {
-  if (!actorId) throw missingIdentityRole();
-  await identityInternalClient().resetOperatorPassword(actorId, password, context);
-}
-
 export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const store = await cookies();
   const accessToken = store.get(accessCookie)?.value;
@@ -187,7 +164,6 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
 }
 
 async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>>, accessToken?: string, refreshToken?: string, deviceFingerprint?: string): Promise<ActorIdentity | null> {
-
   if (accessToken) {
     try {
       const identity = await identityClient().session(accessToken);
@@ -248,9 +224,7 @@ export async function logoutOperator(): Promise<void> {
     if (!tokenToRevoke && refreshToken && deviceFingerprint) {
       try {
         const pair = await identityClient().refresh({ refreshToken, deviceFingerprint });
-        if (!isControlPanelIdentity(pair.identity)) {
-          throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
-        }
+        if (!isControlPanelIdentity(pair.identity)) throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
         tokenToRevoke = pair.accessToken;
       } catch (error) {
         if (!(isIdentityClientError(error) && error.kind === "http" && error.status === 401)) remoteError = error;

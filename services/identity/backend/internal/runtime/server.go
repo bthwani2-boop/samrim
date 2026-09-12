@@ -21,6 +21,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/challenge"
 	challengedelivery "github.com/bthwani2-boop/samrim/services/identity/backend/internal/integrations/challenge"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/lifecycle"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/opsafety"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/storage/postgres"
 	identityhttp "github.com/bthwani2-boop/samrim/services/identity/backend/internal/transport/http"
@@ -29,6 +30,7 @@ import (
 
 type config struct {
 	port                   string
+	listenHost             string
 	runtimeEnvironment     string
 	databaseURL            string
 	maintenanceDatabaseURL string
@@ -47,6 +49,9 @@ type config struct {
 func Run(_, _, defaultPort string) error {
 	cfg, err := loadConfig(defaultPort)
 	if err != nil {
+		return err
+	}
+	if _, err := opsafety.RequireOrdinaryCLIEnvironment(cfg.runtimeEnvironment, "identity service runtime"); err != nil {
 		return err
 	}
 	db, err := sql.Open("postgres", cfg.databaseURL)
@@ -99,14 +104,18 @@ func Run(_, _, defaultPort string) error {
 		return postgres.VerifyMigrationHistory(ctx, db, migrationRecords)
 	}
 	handler := identityhttp.New(actors, challenges, sessions, identityhttp.Config{InternalServiceTokens: cfg.internalTokens, AllowedOrigins: cfg.allowedOrigins, AbuseIPSecret: cfg.abuseIPSecret, TrustedProxies: cfg.trustedProxies, Readiness: readiness})
-	server := &http.Server{Addr: ":" + cfg.port, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: net.JoinHostPort(cfg.listenHost, cfg.port), Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return err
+	}
 	serverErrCh := make(chan error, 1)
 	deliveryErrCh := make(chan error, 1)
 	go func() {
 		log.Printf("identity API listening on %s", server.Addr)
-		serverErrCh <- server.ListenAndServe()
+		serverErrCh <- server.Serve(listener)
 	}()
 	go func() { deliveryErrCh <- challenges.RunDeliveryWorker(ctx) }()
 	go cleaner.Run(ctx)
@@ -137,6 +146,7 @@ func Run(_, _, defaultPort string) error {
 
 func loadConfig(defaultPort string) (config, error) {
 	port := env("PORT", defaultPort)
+	listenHost := strings.TrimSpace(os.Getenv("BTHWANI_LISTEN_HOST"))
 	runtimeEnvironment := strings.ToLower(strings.TrimSpace(os.Getenv("BTHWANI_ENV")))
 	switch runtimeEnvironment {
 	case "development", "test", "staging", "production":
@@ -185,17 +195,17 @@ func loadConfig(defaultPort string) (config, error) {
 	if len(abuseSecret) < 32 {
 		return config{}, errors.New("IDENTITY_ABUSE_HMAC_SECRET must contain at least 32 bytes")
 	}
-	tokens := map[string]string{"dsh": strings.TrimSpace(os.Getenv("IDENTITY_DSH_SERVICE_TOKEN")), "platform-control": strings.TrimSpace(os.Getenv("IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN"))}
-	bootstrapToken := strings.TrimSpace(os.Getenv("IDENTITY_PLATFORM_BOOTSTRAP_SECRET"))
+	tokens := map[string]string{"dsh": strings.TrimSpace(os.Getenv("IDENTITY_DSH_SERVICE_TOKEN")), "control-panel": strings.TrimSpace(os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"))}
+	bootstrapToken := strings.TrimSpace(os.Getenv("OPERATOR_BOOTSTRAP_SECRET"))
 	autoMigrate := strings.EqualFold(strings.TrimSpace(os.Getenv("IDENTITY_AUTO_MIGRATE")), "true")
 	if (runtimeEnvironment == "staging" || runtimeEnvironment == "production") && autoMigrate {
 		return config{}, errors.New("IDENTITY_AUTO_MIGRATE is forbidden outside local and test environments")
 	}
 	if runtimeEnvironment == "production" && bootstrapToken != "" {
-		return config{}, errors.New("IDENTITY_PLATFORM_BOOTSTRAP_SECRET is forbidden in production runtime")
+		return config{}, errors.New("OPERATOR_BOOTSTRAP_SECRET is forbidden in production runtime")
 	}
 	if bootstrapToken != "" {
-		tokens["platform-bootstrap"] = bootstrapToken
+		tokens["operator-bootstrap"] = bootstrapToken
 	}
 	seen := map[string]string{}
 	for caller, token := range tokens {
@@ -220,10 +230,7 @@ func loadConfig(defaultPort string) (config, error) {
 	}
 	originConfig := strings.TrimSpace(os.Getenv("IDENTITY_CORS_ALLOWED_ORIGINS"))
 	if originConfig == "" {
-		if runtimeEnvironment == "production" || runtimeEnvironment == "staging" {
-			return config{}, errors.New("IDENTITY_CORS_ALLOWED_ORIGINS is required outside local environments")
-		}
-		originConfig = "http://localhost:13000"
+		return config{}, errors.New("IDENTITY_CORS_ALLOWED_ORIGINS is required")
 	}
 	origins := map[string]bool{}
 	for _, origin := range strings.Split(originConfig, ",") {
@@ -286,7 +293,7 @@ func loadConfig(defaultPort string) (config, error) {
 	} else if runtimeEnvironment == "staging" || runtimeEnvironment == "production" {
 		return config{}, errors.New("IDENTITY_PROVIDER_BUDGET_PER_HOUR is required outside local environments")
 	}
-	return config{port: port, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget}, nil
+	return config{port: port, listenHost: listenHost, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget}, nil
 }
 
 func databaseURLUser(raw string) (string, error) {
@@ -309,7 +316,11 @@ func validateDatabaseTransport(runtimeEnvironment, databaseURL string) error {
 }
 
 func loadDelivery(runtimeEnvironment string) (challengedelivery.Sender, error) {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("IDENTITY_CHALLENGE_DELIVERY_MODE"))) {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("IDENTITY_CHALLENGE_DELIVERY_MODE")))
+	if (runtimeEnvironment == "development" || runtimeEnvironment == "test") && mode != "mailpit" {
+		return nil, errors.New("external challenge delivery modes are forbidden in ordinary development/test runtime; use mailpit")
+	}
+	switch mode {
 	case "mailpit":
 		if runtimeEnvironment == "production" || runtimeEnvironment == "staging" {
 			return nil, errors.New("mailpit challenge delivery is forbidden outside local environments")

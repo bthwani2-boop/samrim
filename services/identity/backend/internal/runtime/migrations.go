@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/opsafety"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/storage/postgres"
 )
 
@@ -84,6 +85,9 @@ func applyMigrations(ctx context.Context, db *sql.DB, directory string, records 
 }
 
 func RunMigrations(ctx context.Context, runtimeEnvironment, databaseURL, directory string) error {
+	if _, err := opsafety.RequireOrdinaryCLIEnvironment(runtimeEnvironment, "identity migration"); err != nil {
+		return err
+	}
 	if err := validateDatabaseTransport(runtimeEnvironment, databaseURL); err != nil {
 		return err
 	}
@@ -115,6 +119,9 @@ func RunMigrations(ctx context.Context, runtimeEnvironment, databaseURL, directo
 }
 
 func VerifySchema(ctx context.Context, runtimeEnvironment, databaseURL, directory string) error {
+	if _, err := opsafety.RequireOrdinaryCLIEnvironment(runtimeEnvironment, "identity schema verification"); err != nil {
+		return err
+	}
 	if err := validateDatabaseTransport(runtimeEnvironment, databaseURL); err != nil {
 		return err
 	}

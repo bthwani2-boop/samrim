@@ -17,13 +17,14 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV15Upgrade(t *testing.T) {
+func TestMigrationV13ToV16Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
-		databaseURL = "postgres://samrim_local:change-me-local-only@127.0.0.1:58432/samrim_local?sslmode=disable"
+		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
+		return
 	}
 
-	// Connect to root postgres maintenance to create isolated test database
+	// Connect to root postgres maintenance to create isolated test database.
 	rootDB, err := sql.Open("postgres", databaseURL)
 	if err != nil {
 		t.Fatalf("open postgres: %v", err)
@@ -34,8 +35,7 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 	defer cancel()
 
 	if err := rootDB.PingContext(ctx); err != nil {
-		t.Skipf("skipping migration test: postgres not reachable at %s (%v)", databaseURL, err)
-		return
+		t.Fatalf("configured postgres is not reachable: %v", err)
 	}
 
 	testDBName := fmt.Sprintf("id_mig_test_%d", time.Now().UnixNano())
@@ -46,7 +46,7 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		_, _ = rootDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE)", testDBName))
 	}()
 
-	// Construct test DB connection URL
+	// Construct test DB connection URL.
 	parsedURL, err := url.Parse(databaseURL)
 	if err != nil {
 		t.Fatalf("parse database URL: %v", err)
@@ -60,7 +60,7 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 	}
 	defer testDB.Close()
 
-	// Locate migrations directory
+	// Locate migrations directory.
 	candidates := []string{
 		"../../../../database/migrations",
 		"../../database/migrations",
@@ -84,7 +84,7 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("read migrations dir: %v", err)
 	}
 
-	// Apply migrations 1 through 13
+	// Apply migrations 1 through 13.
 	for _, file := range files {
 		name := file.Name()
 		if !strings.HasSuffix(name, ".sql") {
@@ -108,7 +108,7 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		}
 	}
 
-	// Verify schema is at v13
+	// Verify schema is at v13.
 	v13, err := postgres.CurrentSchemaVersion(ctx, testDB)
 	if err != nil {
 		t.Fatalf("read schema version at v13: %v", err)
@@ -117,14 +117,14 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("expected schema version 13, got %d", v13)
 	}
 
-	// Insert representative pre-v14 data
+	// Insert representative pre-v14 data.
 	const (
 		ownerActorID    = "act_owner_test_13"
 		operatorActorID = "act_operator_test_13"
 		testTokenID     = "tok_test_13"
 	)
 
-	// 1. Platform owner
+	// 1. Platform owner.
 	if _, err := testDB.ExecContext(ctx, "INSERT INTO identity_actors(id, phone_e164, security_enabled, version) VALUES($1, $2, true, 1)", ownerActorID, "+967770001300"); err != nil {
 		t.Fatalf("insert owner actor: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("insert owner credential: %v", err)
 	}
 
-	// 2. Operator
+	// 2. Operator.
 	if _, err := testDB.ExecContext(ctx, "INSERT INTO identity_actors(id, phone_e164, security_enabled, version) VALUES($1, $2, true, 1)", operatorActorID, "+967770001301"); err != nil {
 		t.Fatalf("insert operator actor: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("insert operator role: %v", err)
 	}
 
-	// 3. Pre-v14 table: identity_managed_activation_codes (operator token + legacy partner code)
+	// 3. Pre-v14 table: identity_managed_activation_codes (operator token + legacy partner code).
 	if _, err := testDB.ExecContext(ctx, `
 		INSERT INTO identity_managed_activation_codes(id, actor_id, role, phone_e164, code_hash, status, attempts, expires_at, created_by)
 		VALUES($1, $2, 'operator', '+967770001301', 'dummy_code_hash', 'pending', 0, clock_timestamp() + interval '1 hour', 'platform-control')`,
@@ -165,12 +165,12 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("insert legacy partner code: %v", err)
 	}
 
-	// 4. Password attempt
+	// 4. Password attempt.
 	if _, err := testDB.ExecContext(ctx, "INSERT INTO identity_password_attempts(phone_e164, role, ip_hash, succeeded, reserved) VALUES('+967770001300', 'platform_owner', '0000000000000000000000000000000000000000000000000000000000000000', false, true)"); err != nil {
 		t.Fatalf("insert password attempt: %v", err)
 	}
 
-	// Now apply migration 014!
+	// Apply migration 014.
 	var v14Name string
 	var v14Content []byte
 	for _, file := range files {
@@ -194,7 +194,7 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("apply migration 014 on v13 database: %v", err)
 	}
 
-	// Verify schema version is now 14
+	// Verify schema version is now 14.
 	v14, err := postgres.CurrentSchemaVersion(ctx, testDB)
 	if err != nil {
 		t.Fatalf("read schema version at v14: %v", err)
@@ -203,8 +203,7 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("expected schema version 14, got %d", v14)
 	}
 
-	// Assertions for v13 -> v14 correctness:
-	// 1. Table identity_operator_enrollment_tokens exists and has the token row
+	// Assertions for v13 -> v14 correctness.
 	var tokenPhone, tokenRole, tokenStatus string
 	err = testDB.QueryRowContext(ctx, "SELECT phone_e164, role, status FROM identity_operator_enrollment_tokens WHERE id=$1", testTokenID).Scan(&tokenPhone, &tokenRole, &tokenStatus)
 	if err != nil {
@@ -214,21 +213,18 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("token data corrupted during rename: got phone=%s role=%s status=%s", tokenPhone, tokenRole, tokenStatus)
 	}
 
-	// 2. Old table identity_managed_activation_codes no longer exists
 	var oldTable sql.NullString
 	_ = testDB.QueryRowContext(ctx, "SELECT to_regclass('public.identity_managed_activation_codes')").Scan(&oldTable)
 	if oldTable.Valid && oldTable.String != "" {
 		t.Fatalf("old table identity_managed_activation_codes still exists after rename")
 	}
 
-	// 2b. Legacy non-operator activation code was cleansed from operator enrollment table
 	var nonOpCount int
 	err = testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_operator_enrollment_tokens WHERE role <> 'operator'").Scan(&nonOpCount)
 	if err != nil || nonOpCount != 0 {
 		t.Fatalf("expected 0 non-operator tokens in identity_operator_enrollment_tokens, got %d (err: %v)", nonOpCount, err)
 	}
 
-	// 3. identity_bootstrap_state was backfilled with owner actor
 	var bootstrapOwner string
 	err = testDB.QueryRowContext(ctx, "SELECT platform_owner_actor_id FROM identity_bootstrap_state WHERE id=1").Scan(&bootstrapOwner)
 	if err != nil {
@@ -238,7 +234,6 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("expected bootstrap owner %s, got %s", ownerActorID, bootstrapOwner)
 	}
 
-	// 4. identity_password_attempts has column reserved_until
 	var colCount int
 	err = testDB.QueryRowContext(ctx, "SELECT count(*) FROM information_schema.columns WHERE table_name='identity_password_attempts' AND column_name='reserved_until'").Scan(&colCount)
 	if err != nil || colCount != 1 {
@@ -332,7 +327,91 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("legacy pending delivery residue remains: count=%d err=%v", activeLegacyDeliveries, err)
 	}
 
-	// 5. Zero data loss on actors, roles, credentials
+	// Insert privileged artifacts that must be revoked rather than translated
+	// into a new operator session/challenge during the persona cutover.
+	if _, err := testDB.ExecContext(ctx, `
+		INSERT INTO identity_challenges(id, actor_id, role, purpose, phone_e164, code_hash, request_ip_hash, admissible, status, attempts, expires_at)
+		VALUES('challenge_legacy_operator', $1, 'platform_owner', 'operator_mfa', '+967770001300', repeat('d', 64), repeat('e', 64), true, 'pending', 0, clock_timestamp() + interval '1 hour')`, ownerActorID); err != nil {
+		t.Fatalf("insert legacy operator challenge: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx, `
+		INSERT INTO identity_sessions(id, actor_id, role, access_token_hash, refresh_token_hash, device_fingerprint_hash, access_expires_at, refresh_expires_at, absolute_expires_at)
+		VALUES('session_legacy_operator', $1, 'platform_owner', repeat('f', 64), repeat('g', 64), repeat('h', 64), clock_timestamp() + interval '1 hour', clock_timestamp() + interval '2 hours', clock_timestamp() + interval '3 hours')`, ownerActorID); err != nil {
+		t.Fatalf("insert legacy operator session: %v", err)
+	}
+
+	// Apply migration 016 and prove the operator-only cutover is coherent.
+	var v16Name string
+	var v16Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "016_") {
+			v16Name = file.Name()
+			v16Content, err = os.ReadFile(filepath.Join(migDir, v16Name))
+			if err != nil {
+				t.Fatalf("read 016: %v", err)
+			}
+			break
+		}
+	}
+	if v16Name == "" {
+		t.Fatal("migration 016 not found")
+	}
+	hash16 := sha256.Sum256(v16Content)
+	shaHex16 := hex.EncodeToString(hash16[:])
+	if err := postgres.Migrate(ctx, testDB, 16, v16Name, shaHex16, string(v16Content)); err != nil {
+		t.Fatalf("apply migration 016 on v15 database: %v", err)
+	}
+	if v16, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || v16 != 16 {
+		t.Fatalf("expected schema version 16, got %d (err: %v)", v16, err)
+	}
+
+	var bootstrapOperator string
+	if err := testDB.QueryRowContext(ctx, "SELECT initial_operator_actor_id FROM identity_bootstrap_state WHERE id=1").Scan(&bootstrapOperator); err != nil {
+		t.Fatalf("query initial operator bootstrap state: %v", err)
+	}
+	if bootstrapOperator != ownerActorID {
+		t.Fatalf("expected initial operator %s, got %s", ownerActorID, bootstrapOperator)
+	}
+
+	var legacyRoleCount, legacyCredentialCount, legacyChallengeCount, legacySessionCount, legacyAttemptCount int
+	queries := []struct {
+		name  string
+		query string
+		out   *int
+	}{
+		{"legacy roles", "SELECT count(*) FROM identity_actor_roles WHERE role='platform_owner'", &legacyRoleCount},
+		{"legacy credentials", "SELECT count(*) FROM identity_password_credentials WHERE role='platform_owner'", &legacyCredentialCount},
+		{"legacy challenges", "SELECT count(*) FROM identity_challenges WHERE role='platform_owner'", &legacyChallengeCount},
+		{"legacy sessions", "SELECT count(*) FROM identity_sessions WHERE role='platform_owner'", &legacySessionCount},
+		{"legacy attempts", "SELECT count(*) FROM identity_password_attempts WHERE role='platform_owner'", &legacyAttemptCount},
+	}
+	for _, check := range queries {
+		if err := testDB.QueryRowContext(ctx, check.query).Scan(check.out); err != nil {
+			t.Fatalf("query %s: %v", check.name, err)
+		}
+	}
+	if legacyRoleCount != 0 || legacyCredentialCount != 0 || legacyChallengeCount != 0 || legacySessionCount != 0 || legacyAttemptCount != 0 {
+		t.Fatalf("legacy operator artifacts remain: roles=%d credentials=%d challenges=%d sessions=%d attempts=%d", legacyRoleCount, legacyCredentialCount, legacyChallengeCount, legacySessionCount, legacyAttemptCount)
+	}
+	var ownerRole, ownerPassword string
+	if err := testDB.QueryRowContext(ctx, "SELECT role FROM identity_actor_roles WHERE actor_id=$1", ownerActorID).Scan(&ownerRole); err != nil {
+		t.Fatalf("query canonical owner role: %v", err)
+	}
+	if ownerRole != "operator" {
+		t.Fatalf("legacy owner was not materialized as operator: %s", ownerRole)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT password_hash FROM identity_password_credentials WHERE actor_id=$1 AND role='operator'", ownerActorID).Scan(&ownerPassword); err != nil {
+		t.Fatalf("query canonical operator credential: %v", err)
+	}
+	if ownerPassword != "dummy_owner_hash" {
+		t.Fatalf("canonical operator credential was not preserved")
+	}
+	var legacyIndexCount int
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND indexname='identity_actor_roles_platform_owner_uq'").Scan(&legacyIndexCount); err != nil || legacyIndexCount != 0 {
+		t.Fatalf("legacy operator uniqueness index remains: count=%d err=%v", legacyIndexCount, err)
+	}
+
+	// Verify zero data loss on actors, roles and credentials.
 	var actorCount, roleCount, credCount int
 	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_actors").Scan(&actorCount); err != nil || actorCount != 3 {
 		t.Fatalf("actor count mismatch: got %d want 3", actorCount)
@@ -344,10 +423,10 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("credential count mismatch: got %d want 1", credCount)
 	}
 
-	// 6. Verify full postgres.Ready passes on this upgraded database
+	// Verify full postgres.Ready passes on this upgraded database.
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	t.Log("Migration v13 -> v15 upgrade, data preservation and six-digit cutover test PASSED successfully!")
+	t.Log("Migration v13 -> v16 upgrade, data preservation and operator-only cutover test PASSED successfully!")
 }

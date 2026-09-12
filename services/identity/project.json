@@ -24,12 +24,6 @@
         "cwd": "services/identity/backend"
       }
     },
-    "serve": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/run-go-service.ps1 -Service identity"
-      }
-    },
     "typecheck": {
       "executor": "nx:run-commands",
       "options": {

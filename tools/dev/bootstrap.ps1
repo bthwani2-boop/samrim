@@ -5,7 +5,6 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-& (Join-Path $PSScriptRoot "ensure-local-env.ps1")
 
 Push-Location $repo
 try {

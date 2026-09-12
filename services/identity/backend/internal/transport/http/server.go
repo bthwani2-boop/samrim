@@ -54,7 +54,7 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /auth/logout", s.logout)
 	mux.HandleFunc("GET /auth/session", s.currentSession)
 	mux.HandleFunc("POST /internal/actor-roles/provision", s.internal(s.provisionRole))
-	mux.HandleFunc("POST /internal/bootstrap/platform-owner", s.internal(s.bootstrapPlatformOwner))
+	mux.HandleFunc("POST /internal/bootstrap/operator", s.internal(s.bootstrapFirstOperator))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}", s.internal(s.getRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/disable", s.internal(s.disableRole))
@@ -62,7 +62,6 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/reenrollment", s.internal(s.authorizeReenrollment))
 	mux.HandleFunc("POST /internal/actors/{actorId}/security/disable", s.internal(s.disableActorSecurity))
 	mux.HandleFunc("POST /internal/actors/{actorId}/security/enable", s.internal(s.enableActorSecurity))
-	mux.HandleFunc("POST /internal/actors/{actorId}/operator-password/reset", s.internal(s.resetOperatorPassword))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}/sessions", s.internal(s.listRoleSessions))
 	mux.HandleFunc("DELETE /internal/actors/{actorId}/roles/{role}/sessions/{sessionId}", s.internal(s.revokeRoleSession))
 	mux.HandleFunc("DELETE /internal/actors/{actorId}/roles/{role}/sessions", s.internal(s.revokeRoleSessions))
@@ -206,8 +205,8 @@ func (s *Server) issueOperatorEnrollmentToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+	if caller == "control-panel" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for control-panel operations"))
 		return
 	}
 	var input domain.OperatorEnrollmentTokenIssueRequest
@@ -313,7 +312,7 @@ func (s *Server) provisionRole(w http.ResponseWriter, r *http.Request, caller st
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if (caller == "platform-control" || caller == "dsh") && operatorActorID == "" {
+	if (caller == "control-panel" || caller == "dsh") && operatorActorID == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for administrative operations"))
 		return
 	}
@@ -332,8 +331,8 @@ func (s *Server) provisionRole(w http.ResponseWriter, r *http.Request, caller st
 	}
 	writeJSON(w, status, view)
 }
-func (s *Server) bootstrapPlatformOwner(w http.ResponseWriter, r *http.Request, caller string) {
-	if !domain.CanBootstrapPlatformOwner(caller) {
+func (s *Server) bootstrapFirstOperator(w http.ResponseWriter, r *http.Request, caller string) {
+	if !domain.CanBootstrapFirstOperator(caller) {
 		writeDomainError(w, domain.ErrForbidden)
 		return
 	}
@@ -341,7 +340,7 @@ func (s *Server) bootstrapPlatformOwner(w http.ResponseWriter, r *http.Request, 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	view, err := s.actors.ProvisionPlatformOwnerBootstrap(r.Context(), caller, input)
+	view, err := s.actors.ProvisionFirstOperatorBootstrap(r.Context(), caller, input)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -418,11 +417,11 @@ func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller s
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if (caller == "platform-control" || caller == "dsh") && operatorActorID == "" {
+	if (caller == "control-panel" || caller == "dsh") && operatorActorID == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for administrative operations"))
 		return
 	}
-	if (caller == "platform-control" || caller == "dsh") && expectedVersion < 1 {
+	if (caller == "control-panel" || caller == "dsh") && expectedVersion < 1 {
 		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for administrative operations and must be a positive integer >= 1"))
 		return
 	}
@@ -465,44 +464,15 @@ func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+	if caller == "control-panel" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for control-panel operations"))
 		return
 	}
-	if caller == "platform-control" && expectedVersion < 1 {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for platform-control operations and must be a positive integer >= 1"))
+	if caller == "control-panel" && expectedVersion < 1 {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for control-panel operations and must be a positive integer >= 1"))
 		return
 	}
 	if err := s.actors.SetSecurityEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-func (s *Server) resetOperatorPassword(w http.ResponseWriter, r *http.Request, caller string) {
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
-	}
-	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
-		return
-	}
-	expectedVersion, err := parseExpectedVersion(r)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error()))
-		return
-	}
-	if expectedVersion < 1 {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for operator password reset and must be a positive integer >= 1"))
-		return
-	}
-	var input domain.PasswordResetRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	if err := s.actors.ResetOperatorPassword(r.Context(), caller, r.PathValue("actorId"), input.Password, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID, expectedVersion); err != nil {
 		writeDomainError(w, err)
 		return
 	}
@@ -527,8 +497,8 @@ func (s *Server) revokeRoleSession(w http.ResponseWriter, r *http.Request, calle
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+	if caller == "control-panel" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for control-panel operations"))
 		return
 	}
 	actorID, role := r.PathValue("actorId"), strings.ToLower(strings.TrimSpace(r.PathValue("role")))
@@ -548,8 +518,8 @@ func (s *Server) revokeRoleSessions(w http.ResponseWriter, r *http.Request, call
 		return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
+	if caller == "control-panel" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for control-panel operations"))
 		return
 	}
 	actorID, role := r.PathValue("actorId"), strings.ToLower(strings.TrimSpace(r.PathValue("role")))
@@ -594,17 +564,14 @@ func remoteIP(r *http.Request) string {
 	}
 	return strings.TrimSpace(r.RemoteAddr)
 }
-
 func (s *Server) ipHash(r *http.Request) string {
 	return identitysecurity.HMAC256Hex(s.config.AbuseIPSecret, "client-ip", s.clientIP(r))
 }
-
 func (s *Server) clientIP(r *http.Request) string {
 	peer := net.ParseIP(remoteIP(r))
 	if peer == nil || !s.isTrustedProxy(peer) {
 		return remoteIP(r)
 	}
-
 	forwarded := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
 	if len(forwarded) > 0 && strings.TrimSpace(forwarded[0]) != "" {
 		chain := make([]net.IP, 0, len(forwarded))
@@ -625,14 +592,11 @@ func (s *Server) clientIP(r *http.Request) string {
 			}
 		}
 	}
-	if candidate := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); candidate != nil {
-		if !s.isTrustedProxy(candidate) {
-			return candidate.String()
-		}
+	if candidate := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); candidate != nil && !s.isTrustedProxy(candidate) {
+		return candidate.String()
 	}
 	return peer.String()
 }
-
 func (s *Server) isTrustedProxy(candidate net.IP) bool {
 	for _, network := range s.config.TrustedProxies {
 		if network != nil && network.Contains(candidate) {

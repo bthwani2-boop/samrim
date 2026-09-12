@@ -1,271 +1,200 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
-    [string] $ExpectedBranch = "",
-    [switch] $SkipFetch,
-    [switch] $SkipRuntime
+    [string]$ExpectedBranch = '',
+    [switch]$SkipFetch,
+    [switch]$SkipRuntime
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 
-$repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$envPath = Join-Path $repo 'infra\local\compose\.env'
+$composePath = Join-Path $repo 'infra\local\compose\compose.yaml'
+$runtimeStarted = $false
+$controlPanelProcess = $null
+$controlPanelStdout = $null
+$controlPanelStderr = $null
 
-function Fail([string] $Message) {
-    Write-Error $Message
-    exit 1
+function Fail([string]$Message) {
+    throw $Message
 }
 
-function Run-NativeStep([string] $Name, [scriptblock] $Action) {
-    Write-Host ""
+function Read-EnvMap([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        Fail "Canonical local runtime environment is missing: $Path"
+    }
+
+    $map = @{}
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
+        $parts = $trimmed.Split('=', 2)
+        if ($parts.Count -ne 2) { Fail "Malformed local runtime environment line in ${Path}: $line" }
+        $name = $parts[0].Trim()
+        if ([string]::IsNullOrWhiteSpace($name)) { Fail "Empty local runtime environment key in $Path" }
+        if ($map.ContainsKey($name)) { Fail "Duplicate local runtime environment key '$name'" }
+        $map[$name] = $parts[1].Trim()
+    }
+    return $map
+}
+
+function Run-Step([string]$Name, [scriptblock]$Action) {
+    Write-Host ''
     Write-Host "=== $Name ==="
     $global:LASTEXITCODE = 0
     & $Action
-    if ($LASTEXITCODE -ne 0) {
-        Fail "$Name failed with exit code $LASTEXITCODE"
-    }
+    if ($LASTEXITCODE -ne 0) { Fail "$Name failed with exit code $LASTEXITCODE" }
 }
 
-function Assert-CleanTree([string] $Context) {
+function Assert-CleanTree([string]$Context) {
     $status = @(& git status --porcelain --untracked-files=all)
-    if ($LASTEXITCODE -ne 0) {
-        Fail "Unable to inspect Git status during $Context."
-    }
-
+    if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect Git status during $Context." }
     if ($status.Count -gt 0) {
-        Fail (
-            "Repository must remain clean during ${Context}:" +
-            [Environment]::NewLine +
-            ($status -join [Environment]::NewLine)
-        )
+        Fail ("Repository must remain clean during ${Context}:" + [Environment]::NewLine + ($status -join [Environment]::NewLine))
     }
 }
 
-function Assert-Equal(
-    [string] $Label,
-    [AllowNull()] $Actual,
-    [AllowNull()] $Expected
-) {
-    if ([string] $Actual -ne [string] $Expected) {
-        Fail "$Label mismatch: actual='$Actual' expected='$Expected'"
+function Start-ControlPanelForVerification {
+    Run-Step 'Control Panel build' { pnpm --dir apps/control-panel build }
+
+    $envMap = Read-EnvMap -Path $envPath
+    $origin = $envMap['CONTROL_PANEL_PUBLIC_ORIGIN']
+    if ([string]::IsNullOrWhiteSpace($origin)) { Fail 'CONTROL_PANEL_PUBLIC_ORIGIN is required for browser verification.' }
+
+    $tempRoot = [IO.Path]::GetTempPath()
+    $nonce = [Guid]::NewGuid().ToString('N')
+    $stdoutPath = Join-Path $tempRoot "samrim-control-panel-$nonce.out.log"
+    $stderrPath = Join-Path $tempRoot "samrim-control-panel-$nonce.err.log"
+    $pnpmCommand = Get-Command pnpm.cmd -CommandType Application -ErrorAction SilentlyContinue
+    if ($null -eq $pnpmCommand) {
+        $pnpmCommand = Get-Command pnpm -CommandType Application -ErrorAction Stop
     }
-}
-
-function Verify-ExpoConfig([string] $App) {
-    $appRoot = Join-Path $repo ("apps\" + $App)
-    $mobileConfigPath = Join-Path $appRoot "mobile.config.json"
-
-    if (-not (Test-Path $mobileConfigPath -PathType Leaf)) {
-        Fail "$App mobile.config.json is missing."
-    }
-
-    $mobile = Get-Content $mobileConfigPath -Raw | ConvertFrom-Json
-
-    $utf8 = [Text.UTF8Encoding]::new($false)
-    $processInfo = [Diagnostics.ProcessStartInfo]::new()
-    $processInfo.FileName = "cmd.exe"
-    $processInfo.WorkingDirectory = $appRoot
-    $processInfo.UseShellExecute = $false
-    $processInfo.CreateNoWindow = $true
-    $processInfo.RedirectStandardOutput = $true
-    $processInfo.RedirectStandardError = $true
-    $processInfo.StandardOutputEncoding = $utf8
-    $processInfo.StandardErrorEncoding = $utf8
-    $null = $processInfo.ArgumentList.Add("/d")
-    $null = $processInfo.ArgumentList.Add("/s")
-    $null = $processInfo.ArgumentList.Add("/c")
-    $null = $processInfo.ArgumentList.Add("pnpm exec expo config --type public --json")
-
-    $process = [Diagnostics.Process]::new()
-    $process.StartInfo = $processInfo
+    $pnpm = $pnpmCommand.Source
+    $process = Start-Process -FilePath $pnpm -ArgumentList @('control') -WorkingDirectory $repo -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
 
     try {
-        if (-not $process.Start()) {
-            Fail "$App Expo config process failed to start."
-        }
-
-        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-        $stderrTask = $process.StandardError.ReadToEndAsync()
-        $process.WaitForExit()
-
-        $jsonText = $stdoutTask.GetAwaiter().GetResult().Trim()
-        $stderr = $stderrTask.GetAwaiter().GetResult().Trim()
-
-        if ($process.ExitCode -ne 0) {
-            if (-not [string]::IsNullOrWhiteSpace($stderr)) {
-                Write-Host $stderr
+        for ($attempt = 1; $attempt -le 60; $attempt++) {
+            try {
+                $response = Invoke-WebRequest -Uri $origin -UseBasicParsing -TimeoutSec 5
+                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+                    Write-Host 'CONTROL_PANEL_RUNTIME=PASS'
+                    return [pscustomobject]@{ Process = $process; Stdout = $stdoutPath; Stderr = $stderrPath }
+                }
             }
-            Fail "$App Expo config resolution failed with exit code $($process.ExitCode)."
+            catch {
+                # The canonical runtime may still be starting.
+            }
+            $process.Refresh()
+            if ($process.HasExited) {
+                $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -Raw -LiteralPath $stdoutPath } else { '' }
+                $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -Raw -LiteralPath $stderrPath } else { '' }
+                Fail "Control Panel exited before becoming ready.`n$stdout`n$stderr"
+            }
+            Start-Sleep -Seconds 1
         }
-    }
-    finally {
-        $process.Dispose()
-    }
-
-    if ([string]::IsNullOrWhiteSpace($jsonText)) {
-        Fail "$App Expo config returned empty output."
-    }
-
-    try {
-        $resolved = $jsonText | ConvertFrom-Json
+        $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -Raw -LiteralPath $stdoutPath } else { '' }
+        $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -Raw -LiteralPath $stderrPath } else { '' }
+        Fail "Control Panel did not become ready at $origin.`n$stdout`n$stderr"
     }
     catch {
-        Fail "$App Expo config did not return valid JSON: $($_.Exception.Message)"
+        if (-not $process.HasExited) { & taskkill.exe /PID $process.Id /T /F *> $null }
+        throw
     }
+}
 
-    Assert-Equal "$App name" $resolved.name $mobile.name
-    Assert-Equal "$App slug" $resolved.slug $mobile.slug
-    Assert-Equal "$App owner" $resolved.owner $mobile.owner
-    Assert-Equal "$App scheme" $resolved.scheme $mobile.scheme
-    Assert-Equal "$App version" $resolved.version $mobile.version
-    Assert-Equal "$App Android package" $resolved.android.package $mobile.androidPackage
-    Assert-Equal "$App iOS bundleIdentifier" $resolved.ios.bundleIdentifier $mobile.iosBundleIdentifier
-    Assert-Equal "$App EAS projectId" $resolved.extra.eas.projectId $mobile.projectId
-    Assert-Equal "$App update URL" $resolved.updates.url ("https://u.expo.dev/" + $mobile.projectId)
+function Stop-ControlPanelForVerification($Handle) {
+    if ($null -eq $Handle) { return }
+    try {
+        $Handle.Process.Refresh()
+        if (-not $Handle.Process.HasExited) { & taskkill.exe /PID $Handle.Process.Id /T /F *> $null }
+    }
+    finally {
+        foreach ($path in @($Handle.Stdout, $Handle.Stderr)) {
+            if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+        }
+    }
+}
 
-    Write-Host "EXPO_CONFIG=PASS $App"
+function Invoke-CanonicalSchemaVerify([string]$Service) {
+    & docker compose --project-name samrim-local --env-file $envPath -f $composePath exec -T $Service /schema-verify
+    if ($LASTEXITCODE -ne 0) { Fail "$Service exact schema verification failed." }
 }
 
 Push-Location $repo
 try {
-    Write-Host "Repository: $repo"
-
     $branch = (& git branch --show-current).Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) {
-        Fail "Unable to determine current Git branch."
-    }
-
-    Write-Host "Branch: $branch"
-
-    $verificationBranch = if ([string]::IsNullOrWhiteSpace($ExpectedBranch)) {
-        $branch
-    }
-    else {
-        $ExpectedBranch
-    }
-
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) { Fail 'Unable to determine current Git branch.' }
+    $verificationBranch = if ([string]::IsNullOrWhiteSpace($ExpectedBranch)) { $branch } else { $ExpectedBranch }
     if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $branch -ne $ExpectedBranch) {
         Fail "Expected branch '$ExpectedBranch', found '$branch'."
     }
 
-    Assert-CleanTree "local candidate proof start"
+    Assert-CleanTree 'candidate start'
 
     if (-not $SkipFetch) {
-        Run-NativeStep "Fetch exact remote candidate" {
-            git fetch origin $verificationBranch --prune
-        }
-
+        Run-Step 'Fetch exact remote candidate' { git fetch origin $verificationBranch --prune }
         $localHead = (& git rev-parse HEAD).Trim()
         $remoteHead = (& git rev-parse ("origin/" + $verificationBranch)).Trim()
-
-        if ($LASTEXITCODE -ne 0) {
-            Fail "Unable to resolve exact local/remote candidate."
-        }
-
-        Assert-Equal "Exact candidate HEAD" $localHead $remoteHead
+        if ($localHead -ne $remoteHead) { Fail "Exact candidate HEAD mismatch: local=$localHead remote=$remoteHead" }
         Write-Host "EXACT_HEAD_SHA=$localHead"
     }
 
-    $nodeVersion = (& node --version).Trim()
-    $pnpmVersion = (& pnpm --version).Trim()
-    $goVersion = (& go version | Out-String).Trim()
+    if ((& node --version).Trim() -ne 'v24.17.0') { Fail 'Node version mismatch.' }
+    if ((& pnpm --version).Trim() -ne '10.34.0') { Fail 'pnpm version mismatch.' }
+    if ((& go version | Out-String).Trim() -notmatch '\bgo1\.27\.1\b') { Fail 'Go version mismatch.' }
+    & docker version *> $null
+    if ($LASTEXITCODE -ne 0) { Fail 'Docker is unavailable.' }
 
-    Assert-Equal "Node" $nodeVersion "v24.17.0"
-    Assert-Equal "pnpm" $pnpmVersion "10.34.0"
-    if ($goVersion -notmatch "\bgo1\.27\.1\b") {
-        Fail "Expected Go 1.27.1, found '$goVersion'."
+    Run-Step 'Repository structure' { node tools/dev/verify-repository-structure.mjs }
+    Run-Step 'Structural hygiene' { node tools/dev/verify-structural-hygiene.mjs }
+    Run-Step 'Runtime ownership' { node tools/dev/verify-local-runtime-ownership.mjs }
+    Run-Step 'Theme authority' { pnpm run theme:verify }
+    Run-Step 'Docs parity' { pnpm run docs:verify:all }
+    Run-Step 'Knowledge invariants' { pnpm run knowledge:verify:all }
+    Run-Step 'PowerShell syntax' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 }
+    Run-Step 'Frozen workspace install' { pnpm install --frozen-lockfile }
+    Run-Step 'Mobile deployable identities' { pnpm run mobile:verify-config }
+    Run-Step 'Workspace dependency references' { node tools/dev/verify-workspace-dependencies.mjs }
+    Run-Step 'Nx project tags' { pnpm run nx:verify-tags }
+    Run-Step 'Developer bootstrap' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1 }
+    Assert-CleanTree 'developer bootstrap'
+    Run-Step 'Canonical static verification' { node tools/dev/verify-candidate-static.mjs }
+
+    Run-Step 'Canonical compose config' {
+        docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f $composePath config --quiet
     }
-
-    Run-NativeStep "Docker daemon availability" {
-        docker version *> $null
-    }
-
-    Run-NativeStep "Repository structure" {
-        node tools/dev/verify-repository-structure.mjs
-    }
-
-    Run-NativeStep "Structural hygiene" {
-        node tools/dev/verify-structural-hygiene.mjs
-    }
-
-    Run-NativeStep "Theme authority" {
-        node --loader ./tools/dev/ts-resolver.mjs tools/dev/verify-theme-authority.mjs
-    }
-
-    Run-NativeStep "Docs parity" {
-        pnpm run docs:verify:all
-    }
-
-    Run-NativeStep "Knowledge-system invariants" {
-        pnpm run knowledge:verify:all
-    }
-
-    Run-NativeStep "PowerShell syntax" {
-        pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1
-    }
-
-    Run-NativeStep "Frozen workspace install" {
-        pnpm install --frozen-lockfile
-    }
-
-    Run-NativeStep "Mobile deployable identity schema" {
-        pnpm run mobile:verify-config
-    }
-
-    Run-NativeStep "Workspace dependency references" {
-        node tools/dev/verify-workspace-dependencies.mjs
-    }
-
-    Run-NativeStep "Nx project tags" {
-        pnpm run nx:verify-tags
-    }
-
-    Run-NativeStep "Nx project discovery" {
-        pnpm run nx:projects
-    }
-
-    foreach ($app in @("app-client", "app-partner", "app-captain", "app-field")) {
-        Write-Host ""
-        Write-Host "=== Resolve Expo host config: $app ==="
-        Verify-ExpoConfig -App $app
-    }
-
-    Run-NativeStep "Developer doctor" {
-        pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/doctor.ps1 -ExpectedBranch $verificationBranch
-    }
-
-    Run-NativeStep "Developer bootstrap" {
-        pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1
-    }
-
-    Assert-CleanTree "developer bootstrap"
-
-    Run-NativeStep "Workspace verification" {
-        pnpm run workspace:verify
-    }
-
-    Run-NativeStep "Integration compose config" {
-        docker compose --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml --profile integration config *> $null
-    }
-
-    Assert-CleanTree "pre-runtime integration proof"
 
     if (-not $SkipRuntime) {
-        Run-NativeStep "Integration runtime closure" {
-            pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/close-integration-runtime.ps1 -ExpectedBranch $verificationBranch
+        try {
+            Run-Step 'Canonical runtime up' { pnpm runtime:up }
+            $runtimeStarted = $true
+            Run-Step 'Canonical runtime doctor' { pnpm runtime:doctor }
+            $controlPanelProcess = Start-ControlPanelForVerification
+            Run-Step 'Canonical runtime verification' { node tools/dev/verify-candidate-runtime.mjs "--env-file=$envPath" }
+            Run-Step 'Canonical runtime status' { pnpm runtime:status }
+            Write-Host 'LOCAL_CANDIDATE_RUNTIME=PASS'
+        }
+        finally {
+            if ($runtimeStarted) {
+                pnpm runtime:down
+                if ($LASTEXITCODE -ne 0) { Fail 'runtime:down failed.' }
+                $runtimeStarted = $false
+            }
         }
     }
 
-    Assert-CleanTree "local candidate proof completion"
-
-    Write-Host ""
-    Write-Host "LOCAL_CANDIDATE_WINDOWS_PROOF=PASS"
-    Write-Host "LOCAL_CANDIDATE_EXPO_CONFIG=PASS"
-    Write-Host "LOCAL_CANDIDATE_WORKSPACE=PASS"
-    if (-not $SkipRuntime) {
-        Write-Host "LOCAL_CANDIDATE_RUNTIME=PASS"
-    }
+    Assert-CleanTree 'candidate completion'
+    Write-Host 'LOCAL_CANDIDATE_WORKSPACE=PASS'
+    Write-Host 'LOCAL_CANDIDATE_WINDOWS_PROOF=PASS'
 }
 finally {
+    if ($null -ne $controlPanelProcess) {
+        try { Stop-ControlPanelForVerification $controlPanelProcess } catch {}
+    }
+    if ($runtimeStarted) {
+        try { pnpm runtime:down *> $null } catch {}
+    }
     Pop-Location
 }

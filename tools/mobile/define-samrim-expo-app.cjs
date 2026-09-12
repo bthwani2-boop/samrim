@@ -147,7 +147,8 @@ function buildIosConfig(appKey, app, capabilities) {
   return ios;
 }
 
-function buildSentryPlugin(sentry) {
+function buildSentryPlugin(appKey, sentry) {
+  if (!hasRuntimeDependency(appKey, "@sentry/react-native")) return undefined;
   if (!sentry.dsn || !sentry.organization || !sentry.project) return undefined;
   return [
     "@sentry/react-native/expo",
@@ -183,7 +184,7 @@ function buildPlugins(appKey, capabilities, sentry) {
     plugins.push("expo-document-picker");
   }
 
-  const sentryPlugin = buildSentryPlugin(sentry);
+  const sentryPlugin = buildSentryPlugin(appKey, sentry);
   if (sentryPlugin) plugins.push(sentryPlugin);
 
   if (capabilities.includes("maps") && hasRuntimeDependency(appKey, "react-native-maps")) {
@@ -272,6 +273,16 @@ function buildPlugins(appKey, capabilities, sentry) {
     ]);
   }
   if (capabilities.includes("secureStore")) plugins.push("expo-secure-store");
+  if (capabilities.includes("localization") && hasRuntimeDependency(appKey, "expo-localization")) {
+    plugins.push([
+      "expo-localization",
+      {
+        supportedLocales: { ios: ["ar"], android: ["ar"] },
+        forcesRTL: true,
+        allowDynamicLocaleChangesAndroid: false,
+      },
+    ]);
+  }
 
   return plugins;
 }
@@ -283,7 +294,10 @@ function defineSamrimExpoApp(appKey) {
   const googleServicesFile = resolveGoogleServicesFile(appKey, process.env);
   const androidMapsKey = resolveAppEnvironmentValue("GOOGLE_MAPS_ANDROID_API_KEY", appKey);
   const iosMapsKey = resolveAppEnvironmentValue("GOOGLE_MAPS_IOS_API_KEY", appKey);
-  const sentryNativeConfigured = Boolean(sentry.dsn && sentry.organization && sentry.project);
+  const sentryDependencyInstalled = hasRuntimeDependency(appKey, "@sentry/react-native");
+  const sentryNativeConfigured = Boolean(
+    sentryDependencyInstalled && sentry.dsn && sentry.organization && sentry.project,
+  );
   const hasMapsCapability = capabilities.includes("maps");
 
   return {
@@ -312,8 +326,9 @@ function defineSamrimExpoApp(appKey) {
       sourceRepo: "samrim",
       nativeCapabilities: capabilities,
       sentry: {
-        enabled: Boolean(sentry.dsn),
+        enabled: Boolean(sentryDependencyInstalled && sentry.dsn),
         nativeConfigured: sentryNativeConfigured,
+        nativeDependencyInstalled: sentryDependencyInstalled,
         dsn: sentry.dsn,
         organization: sentry.organization,
         project: sentry.project,

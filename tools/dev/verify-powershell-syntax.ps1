@@ -53,10 +53,10 @@ foreach ($item in ($Path | Sort-Object -Unique)) {
     )
 
     if ($errors.Count -gt 0) {
-        foreach ($error in $errors) {
-            $line = $error.Extent.StartLineNumber
-            $column = $error.Extent.StartColumnNumber
-            $failures += "${item}:${line}:${column} -> $($error.Message)"
+        foreach ($parseError in $errors) {
+            $line = $parseError.Extent.StartLineNumber
+            $column = $parseError.Extent.StartColumnNumber
+            $failures += "${item}:${line}:${column} -> $($parseError.Message)"
         }
     }
     else {

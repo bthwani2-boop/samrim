@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const failures = [];
+const retiredHumanRole = ["platform", "owner"].join("_");
 
 function read(relative, optional = false) {
   const file = path.join(root, relative);
@@ -213,7 +215,7 @@ try {
   const pkg = JSON.parse(read(controlPackagePath));
   if (pkg.dependencies?.["@bthwani/identity"] !== "workspace:*") failures.push("control-panel must consume @bthwani/identity via workspace:*");
 } catch {
-  failures.push("control-panel package.json is invalid");
+  failures.push("control-panel package.json is invalid JSON");
 }
 const bff = read("apps/control-panel/lib/identity-bff.ts");
 for (const required of [
@@ -231,7 +233,12 @@ for (const forbidden of ["loginOperator(", "username", "activateOperator", "loca
 if (fs.existsSync(path.join(root, "apps/control-panel/app/api/auth/login/route.ts"))) {
   failures.push("single-step operator login BFF route still exists");
 }
-const controlPage = read("apps/control-panel/app/page.tsx");
+const controlPage = [
+  "apps/control-panel/app/page.tsx",
+  "apps/control-panel/app/components/public-shell.tsx",
+  "apps/control-panel/app/components/account-access-panel.tsx",
+  "apps/control-panel/app/(workspace)/workspace/page.tsx",
+].map((relative) => read(relative)).join("\n");
 const identityClient = read("services/identity/clients/client.ts");
 for (const required of [
   "export type AttributedMutationContext",
@@ -256,8 +263,14 @@ for (const route of ["start", "complete"]) {
 for (const required of ["/api/auth/login/start", "/api/auth/login/complete", "التحقق الثاني", "تم توثيق جلستك بعاملين"]) {
   if (!controlPage.includes(required)) failures.push("control-panel UI missing MFA flow " + required);
 }
-for (const required of ["ابدأ برقم الهاتف", "login-role", "account-role", "الدور الإداري", "استرداد وإعادة تفعيل الحساب"]) {
+for (const required of ["ابدأ برقم الهاتف", "account-role", "الدور الإداري", "إصدار دعوة إعادة تسجيل الدور"]) {
   if (!controlPage.includes(required)) failures.push("control-panel UI missing separated phone-first login or administrative provisioning flow " + required);
+}
+const managedAccessRoute = read("apps/control-panel/app/api/access/managed-user/route.ts");
+if (!managedAccessRoute.includes("reenroll")) failures.push("control-panel managed access route missing canonical reenrollment contract");
+if (!managedAccessRoute.includes("body?.recover !== undefined")) failures.push("control-panel managed access route must reject retired recover contract");
+if (fs.existsSync(path.join(root, "apps/control-panel/app/api/access/managed-user/operator-reset/route.ts"))) {
+  failures.push("control-panel retains the administrative operator password reset route");
 }
 if (controlPage.includes("/api/auth/state")) failures.push("control-panel UI retains a public authentication-state oracle");
 if (controlPage.includes("ManagedAccessPanel")) failures.push("control-panel retains a shadow managed provisioning panel");
@@ -276,10 +289,10 @@ for (const forbidden of ["ProvisionOperator", "Username", "X-Service-Caller"]) {
 }
 
 const goClient = read("services/identity/clients/go/client.go");
-for (const required of ["IdentityOperationProvisionActorRole", "IdentityOperationSearchActorRoles", "identityRoute", "IdentityOperationAuthorizeManagedRoleReenrollment", "IdentityOperationDisableActorSecurity", "IdentityOperationResetOperatorPassword", "AuthorizeReenrollmentByPhone"]) {
+for (const required of ["IdentityOperationProvisionActorRole", "IdentityOperationSearchActorRoles", "identityRoute", "IdentityOperationAuthorizeManagedRoleReenrollment", "IdentityOperationDisableActorSecurity", "AuthorizeReenrollmentByPhone"]) {
   if (!goClient.includes(required)) failures.push("Identity Go client missing canonical route " + required);
 }
-for (const forbidden of ["Username", "X-Service-Caller", "/activations"]) {
+for (const forbidden of ["Username", "X-Service-Caller", "/activations", "ResetOperatorPassword", "operator-password/reset", "PasswordResetRequest"]) {
   if (goClient.includes(forbidden)) failures.push("Identity Go client contains retired authority " + forbidden);
 }
 
@@ -293,7 +306,7 @@ for (const required of [
   "/auth/operator/login/complete:",
   "/internal/actors/{actorId}/roles/{role}/reenrollment:",
   "/internal/operator-enrollment-tokens:",
-  "/internal/bootstrap/platform-owner:",
+   "/internal/bootstrap/operator:",
 ]) {
   if (!contract.includes(required)) failures.push("Identity contract missing " + required);
 }
@@ -302,7 +315,7 @@ if (sixDigitPatterns.length < 3) failures.push("Identity contract must expose si
 if (!contract.includes('pattern: "^[0-9]{6}$"') || !contract.includes("minLength: 6")) failures.push("Identity contract must expose six-digit activation schemas");
 if (contract.includes('pattern: "^[0-9]{4}$"')) failures.push("Identity contract contains retired four-digit challenge schema");
 if (contract.includes("minLength: 12")) failures.push("Identity contract contains retired twelve-character password minimum");
-for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller", "/internal/managed-activation-codes:"]) {
+for (const forbidden of ["/auth/otp/request:", "\n  /auth/login:", "username:", "X-Service-Caller", "/internal/managed-activation-codes:", "/internal/actors/{actorId}/operator-password/reset:", "PasswordResetRequest:"]) {
   if (contract.includes(forbidden)) failures.push("Identity contract contains retired auth shape " + forbidden);
 }
 
@@ -335,6 +348,9 @@ for (const forbidden of [
   "export type LoginRequest =",
   "export type ManagedActivationCode =",
   "readonly username",
+  "ResetOperatorPassword",
+  "operator-password/reset",
+  "PasswordResetRequest",
 ]) {
   if (generated.includes(forbidden)) failures.push("generated Identity types retain old auth shape " + forbidden);
 }
@@ -343,7 +359,7 @@ const domain = read("services/identity/backend/internal/domain/types.go");
 for (const required of ["type ActorRole struct", "ActivatedAt *time.Time", "ChallengeClientRegister", "ChallengeManagedActivate", "ChallengeOperatorMFA", "IsManagedRole", "CanIssueOperatorEnrollmentToken", "RequiresEnrollmentToken"]) {
   if (!domain.includes(required)) failures.push("Identity domain missing " + required);
 }
-for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "Roles []string", "Permissions []", "CanIssueManagedActivationCode"]) {
+for (const forbidden of ["Username", "PasswordHash", "IsPublicOtpRole", "Roles []string", "Permissions []", "CanIssueManagedActivationCode", "CanResetCredential", "PasswordResetRequest"]) {
   if (domain.includes(forbidden)) failures.push("Identity domain contains collapsed/retired authority " + forbidden);
 }
 
@@ -355,11 +371,11 @@ for (const required of [
   "MarkManagedActivatedTx",
   "AuthorizeReenrollment",
   "ResetClientPasswordTx",
-  "ResetOperatorPassword",
 ]) {
   if (!actor.includes(required)) failures.push("Identity actor service missing " + required);
 }
 if (actor.includes("username")) failures.push("Identity actor service still owns username");
+if (actor.includes("ResetOperatorPassword") || actor.includes("operator-password/reset")) failures.push("Identity actor service retains administrative operator password reset");
 if (!/return\s+"act_"\s*\+\s*token/.test(actor)) failures.push("Identity actor_id generation drifted");
 
 const challenge = read("services/identity/backend/internal/challenge/service.go");
@@ -477,18 +493,20 @@ for (const required of ["passwordBlocklistVersion", "commonPasswordBlocklistV1",
   if (!passwordBlocklist.includes(required)) failures.push("Identity local password blocklist missing " + required);
 }
 const actorService = read("services/identity/backend/internal/actor/service.go");
-for (const required of ["SELECT EXISTS(SELECT 1 FROM identity_actor_roles WHERE role='platform_owner')", "platform_owner", "activatedAt.Valid"]) {
-  if (!actorService.includes(required)) failures.push("Identity owner bootstrap fence missing " + required);
+for (const required of ["SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1) OR EXISTS(SELECT 1 FROM identity_actor_roles WHERE role='operator')", "identity_bootstrap_state", "activatedAt.Valid"]) {
+  if (!actorService.includes(required)) failures.push("Identity first-operator bootstrap fence missing " + required);
 }
 const domainTypes = read("services/identity/backend/internal/domain/types.go");
-for (const required of ["func CanBootstrapPlatformOwner", "return strings.EqualFold(strings.TrimSpace(caller), \"platform-bootstrap\")"]) {
-  if (!domainTypes.includes(required)) failures.push("Identity platform bootstrap caller boundary missing " + required);
+for (const required of ["func CanBootstrapFirstOperator", "return strings.EqualFold(strings.TrimSpace(caller), \"operator-bootstrap\")"]) {
+  if (!domainTypes.includes(required)) failures.push("Identity first-operator bootstrap caller boundary missing " + required);
 }
+const dshReadBoundary = domainTypes.slice(domainTypes.indexOf('case "dsh":'), domainTypes.indexOf('case "control-panel":'));
+if (dshReadBoundary.includes('role == "operator"')) failures.push("DSH Identity read boundary still includes operator authority");
 const runtimeConfig = read("services/identity/backend/internal/runtime/server.go");
-if (!runtimeConfig.includes('tokens["platform-bootstrap"] = bootstrapToken')) failures.push("Identity platform bootstrap secret is not runtime-configured");
+if (!runtimeConfig.includes('tokens["operator-bootstrap"] = bootstrapToken')) failures.push("Identity operator bootstrap secret is not runtime-configured");
 const httpServer = read("services/identity/backend/internal/transport/http/server.go");
-for (const required of ["/internal/bootstrap/platform-owner", "CanBootstrapPlatformOwner(caller)"]) {
-  if (!httpServer.includes(required)) failures.push("Identity platform bootstrap route fence missing " + required);
+for (const required of ["/internal/bootstrap/operator", "CanBootstrapFirstOperator(caller)"]) {
+  if (!httpServer.includes(required)) failures.push("Identity operator bootstrap route fence missing " + required);
 }
 if (!httpServer.includes("s.challenges.LoginManaged(r.Context(), input, s.ipHash(r))")) failures.push("managed login is not bound to canonical client IP hashing");
 if (httpServer.includes("SHA256Hex(remoteIP(r))")) failures.push("managed login derives abuse identity from raw peer IP");
@@ -501,7 +519,7 @@ for (const required of ["net.ParseCIDR(proxy)", "invalid CIDR", "invalid IP"]) {
 
 const readiness = read("services/identity/backend/internal/storage/postgres/migrate.go");
 for (const required of [
-  "const SchemaVersion = 15",
+  "const SchemaVersion = 16",
   "CurrentSchemaVersion",
   "migration history is non-contiguous",
   "identity_password_credentials",
@@ -526,8 +544,16 @@ for (const required of ["VerifyRuntimePrivileges", "VerifyMaintenancePrivileges"
   if (!privilegeBoundary.includes(required)) failures.push("Identity database privilege boundary missing " + required);
 }
 const controlLifetimeMigration = read("services/identity/database/migrations/009_control_session_lifetimes.sql");
-for (const required of ["role IN ('operator', 'platform_owner')", "refresh_expires_at = LEAST", "absolute_expires_at = LEAST"]) {
+for (const required of ["refresh_expires_at = LEAST", "absolute_expires_at = LEAST"]) {
   if (!controlLifetimeMigration.includes(required)) failures.push("Identity control-session lifetime migration missing " + required);
+}
+const operatorCutoverMigration = read("services/identity/database/migrations/016_operator_only_control_panel.sql");
+const retiredOperatorIndex = "identity_actor_roles_" + retiredHumanRole + "_uq";
+for (const required of ["identity_bootstrap_state_initial_operator_actor_id_fkey", "DROP INDEX IF EXISTS " + retiredOperatorIndex, "DELETE FROM identity_sessions", "DELETE FROM identity_challenges", "DELETE FROM identity_password_attempts", "DROP CONSTRAINT identity_password_attempt_role_check"]) {
+  if (!operatorCutoverMigration.includes(required)) failures.push("Identity operator-only cutover migration missing " + required);
+}
+if (operatorCutoverMigration.includes("UPDATE identity_sessions") || operatorCutoverMigration.includes("UPDATE identity_password_attempts")) {
+  failures.push("Identity operator-only cutover must not translate legacy auth artifacts in place");
 }
 const migrationRuntime = read("services/identity/backend/internal/runtime/migrations.go");
 for (const required of ["postgres.SchemaVersion", "missing identity migration version", "postgres.Migrate(ctx, db, record.Version, record.Name, record.SHA256", "SynchronizeMigrationHistory"]) {
@@ -544,6 +570,22 @@ if (!dockerfile.includes("COPY services/identity/database/migrations /app/migrat
   failures.push("Identity image must package the canonical ordered migration directory");
 }
 
+const canonicalCompose = read("infra/local/compose/compose.yaml");
+for (const required of [
+  "identity-migrate:",
+  "identity:",
+  "dsh-migrate:",
+  "dsh:",
+  "IDENTITY_CHALLENGE_HMAC_SECRET",
+  "IDENTITY_ABUSE_HMAC_SECRET",
+  'IDENTITY_MAILPIT_SMTP_ADDR: "mailpit:1025"',
+  'DSH_IDENTITY_API_BASE_URL: "http://identity:8082"',
+]) {
+  if (!canonicalCompose.includes(required)) failures.push("canonical local Compose missing " + required);
+}
+if (fs.existsSync(path.join(root, "infra/local/compose/compose.integration.yaml"))) {
+  failures.push("parallel local integration Compose topology remains");
+}
 for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.env.example", "services/identity/backend/internal/runtime/server.go"]) {
   const body = read(file);
   if (!body.includes("IDENTITY_CHALLENGE_HMAC_SECRET")) failures.push(file + " missing challenge secret configuration");
@@ -551,6 +593,18 @@ for (const file of ["infra/local/compose/compose.yaml", "infra/local/compose/.en
   if (body.includes("IDENTITY_ACTIVATION_HMAC_SECRET") || body.includes("IDENTITY_ACTIVATION_DELIVERY_MODE")) {
     failures.push(file + " retains activation-only runtime configuration");
   }
+}
+for (const [file, required] of [
+  ["infra/local/compose/compose.yaml", "CONTROL_PANEL_SERVICE_TOKEN"],
+  ["infra/local/compose/compose.yaml", "OPERATOR_BOOTSTRAP_SECRET"],
+  ["infra/local/compose/.env.example", "CONTROL_PANEL_SERVICE_TOKEN="],
+  ["infra/local/compose/.env.example", "OPERATOR_BOOTSTRAP_SECRET="],
+  ["services/identity/backend/internal/runtime/server.go", "CONTROL_PANEL_SERVICE_TOKEN"],
+  ["services/identity/backend/internal/runtime/server.go", "OPERATOR_BOOTSTRAP_SECRET"],
+  ["apps/control-panel/lib/identity-bff.ts", "CONTROL_PANEL_SERVICE_TOKEN"],
+  ["apps/control-panel/lib/dsh-bff.ts", "CONTROL_PANEL_SERVICE_TOKEN"],
+]) {
+  if (!read(file).includes(required)) failures.push(file + " missing canonical control-panel runtime setting " + required);
 }
 const runtimeServer = read("services/identity/backend/internal/runtime/server.go");
 for (const required of ["applyMigrations", "RunDeliveryWorker", "deliveryErrCh", "IDENTITY_MIGRATION_DIR", "BTHWANI_ENV", "IDENTITY_AUTO_MIGRATE is forbidden outside local and test environments", "mailpit challenge delivery is forbidden outside local environments"]) {
@@ -564,7 +618,6 @@ const schemaCommand = read("services/identity/backend/cmd/schema-verify/main.go"
 for (const required of ["IDENTITY_SCHEMA_DATABASE_URL", "VerifySchema", "outside local environments"]) {
   if (!schemaCommand.includes(required)) failures.push("Identity exact schema verification command missing " + required);
 }
-
 
 if (fs.existsSync(path.join(root, "services/identity/backend/internal/activation/service.go"))) {
   failures.push("retired universal activation package remains");
@@ -594,6 +647,10 @@ for (const required of [
   "/dsh/managed-roles/disable:",
   "/dsh/managed-roles/enable:",
   "/dsh/managed-roles/reenrollment:",
+  "/dsh/partner-bootstrap:",
+  "/dsh/partner-bootstrap/self:",
+  "Idempotency-Key",
+  "userBearer",
   "X-Acting-Actor-ID",
   "X-Expected-Version",
   "actorVersion",
@@ -617,6 +674,8 @@ for (const required of [
   "dshOperationPaths.disableManagedRole",
   "dshOperationPaths.enableManagedRole",
   "dshOperationPaths.reenrollManagedRoleByPhone",
+  "dshOperationPaths.createPartnerBootstrap",
+  "Idempotency-Key",
   "X-Acting-Actor-ID",
   "X-Expected-Version",
 ]) {
@@ -643,6 +702,24 @@ for (const required of [
 ]) {
   if (!dshServer.includes(required)) failures.push("DSH managed access server missing " + required);
 }
+const partnerBootstrapServer = read("services/dsh/backend/internal/partnerbootstrap/server.go");
+for (const required of [
+  "CreatePermission",
+  "ReadActorRole",
+  "ReadSession",
+  "CreatePartnerBootstrap",
+  "Idempotency-Key",
+  "X-Acting-Actor-ID",
+]) {
+  if (!partnerBootstrapServer.includes(required)) failures.push("DSH partner bootstrap server missing " + required);
+}
+if (partnerBootstrapServer.includes('ReadActorRole(ctx, actorID, "operator")') || partnerBootstrapServer.includes(retiredHumanRole)) {
+  failures.push("DSH partner bootstrap retains operator-role authority lookup");
+}
+const dshStorage = read("services/dsh/backend/internal/storage/postgres/partner_bootstrap.go");
+for (const required of ["pg_advisory_xact_lock", "ErrIdempotencyConflict", "ErrAlreadyBootstrapped", "partner_bootstrap_audit"]) {
+  if (!dshStorage.includes(required)) failures.push("DSH partner bootstrap storage missing " + required);
+}
 
 const dshGeneratedTypes = read("services/dsh/clients/generated/dsh-types.ts");
 const dshGeneratedOperations = read("services/dsh/clients/generated/dsh-operations.ts");
@@ -661,9 +738,49 @@ for (const required of ["actorVersion", "roleVersion", "credentialVersion"]) {
     failures.push("DSH generated response lineage missing " + required);
   }
 }
-if (dshGeneratedTypes.includes("readonly version:") || dshGeneratedGo.includes("\n\tVersion int")) {
+const actorRoleViewStart = dshGeneratedGo.indexOf("type ActorRoleView struct");
+const actorRoleViewBody = actorRoleViewStart >= 0 ? dshGeneratedGo.slice(actorRoleViewStart, dshGeneratedGo.indexOf("\n}", actorRoleViewStart) + 2) : "";
+const actorRoleTypeStart = dshGeneratedTypes.indexOf("export type ActorRoleView =");
+const actorRoleTypeBody = actorRoleTypeStart >= 0 ? dshGeneratedTypes.slice(actorRoleTypeStart, dshGeneratedTypes.indexOf("\n};", actorRoleTypeStart) + 3) : "";
+if (actorRoleTypeBody.includes("readonly version:") || actorRoleViewBody.includes("\n\tVersion int")) {
   failures.push("DSH generated response lineage retains obsolete version field");
 }
+
+// Current-authority residue guard. Historical migrations and the migration
+// upgrade fixture may name the retired role because they transform old data;
+// every other tracked artifact must be free of executable/config/API/docs
+// references to that persona and its superseded runtime keys.
+const retiredRuntimeKeys = [
+  ["IDENTITY", "PLATFORM", "CONTROL", "SERVICE", "TOKEN"].join("_"),
+  ["DSH", "PLATFORM", "CONTROL", "SERVICE", "TOKEN"].join("_"),
+  ["IDENTITY", "PLATFORM", "BOOTSTRAP", "SECRET"].join("_"),
+  ["IDENTITY", "OPERATOR", "BOOTSTRAP", "SECRET"].join("_"),
+  ["/internal/bootstrap", ["platform", "owner"].join("-")].join("/"),
+];
+const historicalMigrationPattern = /^services\/identity\/database\/migrations\/(?:004|005|006|009|010|012|014|016)_/;
+const historicalFixture = "services/identity/backend/internal/storage/postgres/migrate_test.go";
+let residueMatches = 0;
+let trackedFiles = [];
+try {
+  trackedFiles = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
+} catch (error) {
+  failures.push("unable to enumerate tracked files for Identity cutover residue proof: " + error.message);
+}
+for (const file of trackedFiles) {
+  const normalized = file.replaceAll("\\", "/");
+  if (historicalMigrationPattern.test(normalized) || normalized === historicalFixture) continue;
+  if (!fs.existsSync(path.join(root, file))) continue;
+  const body = fs.readFileSync(path.join(root, file));
+  if (body.includes(0)) continue;
+  const text = body.toString("utf8");
+  for (const token of [retiredHumanRole, retiredHumanRole.replaceAll("_", "-"), ...retiredRuntimeKeys]) {
+    if (!text.includes(token)) continue;
+    residueMatches += 1;
+    failures.push("Identity current-authority residue: " + normalized + " contains " + token);
+    break;
+  }
+}
+if (residueMatches > 0) failures.push("Identity current-authority residue count is non-zero: " + residueMatches);
 
 if (failures.length > 0) {
   console.error("IDENTITY_BOUNDARY_VERIFY=FAIL");

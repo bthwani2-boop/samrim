@@ -12,8 +12,8 @@ func setRuntimeConfigBaseline(t *testing.T) {
 	t.Setenv("IDENTITY_CHALLENGE_HMAC_SECRET", "01234567890123456789012345678901")
 	t.Setenv("IDENTITY_ABUSE_HMAC_SECRET", "abcdefghijklmnopqrstuvwxyz123456")
 	t.Setenv("IDENTITY_DSH_SERVICE_TOKEN", "dsh-service-token-01234567890123456789")
-	t.Setenv("IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN", "platform-control-token-0123456789")
-	t.Setenv("IDENTITY_PLATFORM_BOOTSTRAP_SECRET", "")
+	t.Setenv("CONTROL_PANEL_SERVICE_TOKEN", "control-panel-service-token-0123456789")
+	t.Setenv("OPERATOR_BOOTSTRAP_SECRET", "")
 	t.Setenv("IDENTITY_CORS_ALLOWED_ORIGINS", "https://control.example.com")
 	t.Setenv("IDENTITY_CHALLENGE_DELIVERY_MODE", "webhook")
 	t.Setenv("IDENTITY_CHALLENGE_WEBHOOK_URL", "https://challenge.example.com/deliver")
@@ -48,7 +48,7 @@ func TestProductionRejectsAutoMigrate(t *testing.T) {
 
 func TestProductionRejectsBootstrapSecret(t *testing.T) {
 	setRuntimeConfigBaseline(t)
-	t.Setenv("IDENTITY_PLATFORM_BOOTSTRAP_SECRET", "bootstrap-secret-01234567890123456789")
+	t.Setenv("OPERATOR_BOOTSTRAP_SECRET", "bootstrap-secret-01234567890123456789")
 	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "BOOTSTRAP_SECRET") {
 		t.Fatalf("production bootstrap secret configuration was accepted: %v", err)
 	}
@@ -91,5 +91,22 @@ func TestProductionRequiresProviderBudgetHour(t *testing.T) {
 	t.Setenv("IDENTITY_PROVIDER_BUDGET_PER_HOUR", "")
 	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "IDENTITY_PROVIDER_BUDGET_PER_HOUR is required") {
 		t.Fatalf("production accepted missing budget per hour: %v", err)
+	}
+}
+
+func TestIdentityRunBlocksProductionBeforeDatabaseAccess(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	err := Run("identity", "/identity", "8082")
+	if err == nil || !strings.Contains(err.Error(), "blocked in production") {
+		t.Fatalf("production identity runtime was not blocked before database access: %v", err)
+	}
+}
+
+func TestDevelopmentRejectsNonLocalChallengeDeliveryMode(t *testing.T) {
+	setRuntimeConfigBaseline(t)
+	t.Setenv("BTHWANI_ENV", "development")
+	t.Setenv("IDENTITY_CHALLENGE_DELIVERY_MODE", "nonlocal")
+	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "external challenge delivery modes are forbidden") {
+		t.Fatalf("development external delivery mode was accepted: %v", err)
 	}
 }

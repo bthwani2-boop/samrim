@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "governance": {
+    "repository": "bthwani2-boop/governance-and-docs",
+    "branch": "a",
+    "branch_url": "https://github.com/bthwani2-boop/governance-and-docs/tree/a",
+    "commit": "b59e72fe50d802e43d3312553784421e0c9cd18b",
+    "commit_url": "https://github.com/bthwani2-boop/governance-and-docs/commit/b59e72fe50d802e43d3312553784421e0c9cd18b",
+    "role": "DURABLE_BTHWANI_KNOWLEDGE",
+    "authority": "CHALLENGEABLE_DURABLE_BASELINE"
+  },
+  "donor": {
+    "repository": "bthwani2-boop/bthwani-suite-next",
+    "branch": "h",
+    "branch_url": "https://github.com/bthwani2-boop/bthwani-suite-next/tree/h",
+    "commit": "14c2ef2fd5a0ffadda00d307c9dea81d5cf49799",
+    "commit_url": "https://github.com/bthwani2-boop/bthwani-suite-next/commit/14c2ef2fd5a0ffadda00d307c9dea81d5cf49799",
+    "role": "FORENSIC_REFERENCE",
+    "authority": "NONE"
+  },
+  "reference_indexes": {
+    "commerce": "docs/reference/commerce.md",
+    "finance": "docs/reference/finance.md",
+    "identity": "docs/reference/identity.md",
+    "engineering": "docs/reference/engineering.md",
+    "experience": "docs/reference/experience.md",
+    "donor": "docs/reference/donor.md"
+  },
+  "external_sources": {
+    "policy": {
+      "authority": "NONE",
+      "role": "REFERENCE_FALSIFICATION_INPUT",
+      "freshness": "REVALIDATE_AT_USE",
+      "adoption": "SEPARATE_PROOF_REQUIRED"
+    },
+    "commerce": [
+      {"name": "Shopify developer docs", "urls": ["https://shopify.dev/docs"]},
+      {"name": "commercetools docs", "urls": ["https://docs.commercetools.com/"]},
+      {"name": "Saleor", "urls": ["https://github.com/saleor/saleor", "https://docs.saleor.io/"]},
+      {"name": "Medusa", "urls": ["https://github.com/medusajs/medusa", "https://docs.medusajs.com/"]},
+      {"name": "Fleetbase", "urls": ["https://github.com/fleetbase/fleetbase"]},
+      {"name": "Traccar", "urls": ["https://github.com/traccar/traccar"]},
+      {"name": "Valhalla", "urls": ["https://github.com/valhalla/valhalla"]},
+      {"name": "VROOM", "urls": ["https://github.com/VROOM-Project/vroom"]},
+      {"name": "Google Maps developer docs", "urls": ["https://developers.google.com/maps"]}
+    ],
+    "finance": [
+      {"name": "Stripe docs", "urls": ["https://docs.stripe.com/"]},
+      {"name": "Adyen docs", "urls": ["https://docs.adyen.com/"]},
+      {"name": "TigerBeetle", "urls": ["https://github.com/tigerbeetle/tigerbeetle", "https://docs.tigerbeetle.com/"]},
+      {"name": "Formance Ledger", "urls": ["https://github.com/formancehq/ledger", "https://docs.formance.com/"]},
+      {"name": "Blnk", "urls": ["https://github.com/blnkfinance/blnk", "https://docs.blnkfinance.com/"]},
+      {"name": "Apache Fineract", "urls": ["https://github.com/apache/fineract"]}
+    ],
+    "identity": [
+      {"name": "Keycloak", "urls": ["https://github.com/keycloak/keycloak", "https://www.keycloak.org/documentation"]},
+      {"name": "ZITADEL", "urls": ["https://github.com/zitadel/zitadel", "https://zitadel.com/docs"]},
+      {"name": "Ory", "urls": ["https://github.com/ory", "https://www.ory.sh/docs/"]},
+      {"name": "OpenFGA", "urls": ["https://github.com/openfga/openfga", "https://openfga.dev/docs"]}
+    ],
+    "engineering": [
+      {"name": "OpenAPI Specification", "urls": ["https://spec.openapis.org/oas/latest.html"]},
+      {"name": "Redocly docs", "urls": ["https://redocly.com/docs/"]},
+      {"name": "Schemathesis", "urls": ["https://github.com/schemathesis/schemathesis"]},
+      {"name": "Testcontainers-Go", "urls": ["https://github.com/testcontainers/testcontainers-go"]},
+      {"name": "OpenTelemetry", "urls": ["https://opentelemetry.io/docs/"]},
+      {"name": "Sentry docs", "urls": ["https://docs.sentry.io/"]},
+      {"name": "k6", "urls": ["https://github.com/grafana/k6"]},
+      {"name": "SLSA", "urls": ["https://slsa.dev/"]}
+    ],
+    "experience": [
+      {"name": "W3C WCAG", "urls": ["https://www.w3.org/WAI/standards-guidelines/wcag/"]},
+      {"name": "Style Dictionary", "urls": ["https://www.styledictionary.org/"]},
+      {"name": "Base UI accessibility", "urls": ["https://base-ui.com/react/overview/accessibility"]},
+      {"name": "React Aria", "urls": ["https://react-spectrum.adobe.com/react-aria/"]},
+      {"name": "Cloudscape patterns", "urls": ["https://cloudscape.design/patterns/"]},
+      {"name": "Storybook", "urls": ["https://storybook.js.org/docs"]},
+      {"name": "Playwright", "urls": ["https://playwright.dev/docs/"]},
+      {"name": "axe-core", "urls": ["https://github.com/dequelabs/axe-core"]},
+      {"name": "Maestro", "urls": ["https://maestro.dev/"], "active_toolchain": false}
+    ]
+  }
+}

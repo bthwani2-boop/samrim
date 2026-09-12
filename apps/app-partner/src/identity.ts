@@ -1,4 +1,3 @@
-import Constants from "expo-constants";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 
@@ -20,12 +19,12 @@ const runtime = createManagedMobileIdentityBinding({
     removeItem: (key) => SecureStore.deleteItemAsync(key),
   },
   cryptoRandomUUID: () => Crypto.randomUUID(),
-  getExpoHostUri: () => (Constants.expoConfig as { hostUri?: string } | null)?.hostUri,
   explicitApiUrl: process.env.EXPO_PUBLIC_IDENTITY_API_URL,
 });
 
 export const restoreIdentitySession = runtime.restoreIdentitySession;
 export const currentIdentityState = runtime.currentIdentityState;
+export const readIdentityAccessToken = runtime.readAccessToken;
 export const logoutIdentity = runtime.logoutIdentity;
 export const requestManagedActivation = runtime.requestManagedActivation;
 export const activateManagedIdentity = runtime.activateManagedIdentity;

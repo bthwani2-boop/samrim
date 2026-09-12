@@ -11,3 +11,10 @@ The tooling may derive Expo/Metro behavior from those app-owned facts. It must n
 Current commands are designed for the existing installed Expo Development Builds. They do not run `eas build`, `expo prebuild`, `expo run:android`, or native dependency upgrades.
 
 Before claiming an existing Development Build remains compatible after a cutover, compare native characteristics and resolved native configuration. JavaScript/TypeScript/path-only changes are not by themselves permission to claim native equivalence.
+
+
+## Local development preparation
+
+`pnpm mobile:prepare` validates the canonical external mobile secret bindings and proves whether an existing Android EAS development build matches the current native fingerprint for each mobile app. It does not create a new EAS build.
+
+Use `pnpm mobile:prepare -- -InstallMatchingBuilds` only when an Android device is connected and the matching existing development builds should be downloaded from EAS and installed on that device. Secret values remain external and are never copied into tracked source.
