@@ -106,7 +106,7 @@ if (!presentationFlow) {
     }
   }
 }
-const clientIdentityPage = read("apps/app-client/src/identity-gate.tsx");
+const clientIdentityPage = read("apps/app-client/src/features/access/identity-gate.tsx");
 const clientPressables = clientIdentityPage.match(/<Pressable\b/g)?.length ?? 0;
 const clientPressableRoles = clientIdentityPage.match(/accessibilityRole="(?:button|link)"/g)?.length ?? 0;
 if (clientPressables !== clientPressableRoles) {
@@ -127,7 +127,7 @@ for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
   }
 }
 
-const clientBinding = read("apps/app-client/src/identity.ts");
+const clientBinding = read("apps/app-client/src/bootstrap/identity.ts");
 for (const required of [
   'const role = "client" as const',
   'from "@bthwani/identity"',
@@ -170,7 +170,7 @@ for (const [app, role, surface] of [
   ["app-captain", "captain", "app-captain"],
   ["app-field", "field", "app-field"],
 ]) {
-  const runtimePath = "apps/" + app + "/src/identity.ts";
+  const runtimePath = "apps/" + app + "/src/bootstrap/identity.ts";
   const runtime = read(runtimePath);
   for (const required of [
     'const role = "' + role + '" as const',
@@ -186,7 +186,7 @@ for (const [app, role, surface] of [
   for (const forbidden of ["requestOtp(", "loginClient(", "actorType"]) {
     if (runtime.includes(forbidden)) failures.push(runtimePath + " contains wrong auth flow " + forbidden);
   }
-  const page = read("apps/" + app + "/src/identity-gate.tsx");
+  const page = read("apps/" + app + "/src/features/access/identity-gate.tsx");
   if (!page.includes("ManagedIdentityFlow")) {
     failures.push(app + " UI is not bound to canonical ManagedIdentityFlow");
   }

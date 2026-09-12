@@ -1,1 +1,1 @@
-export { default } from "../src/identity-gate";
+export { default } from "../src/features/access/identity-gate";

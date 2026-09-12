@@ -15,7 +15,7 @@ function verifyPartnerModel() {
     "apps/control-panel/app/(workspace)/partners/page.tsx",
     "apps/control-panel/src/features/partner-onboarding/partner-bootstrap-panel.tsx",
     "apps/control-panel/tests/live-identity.spec.ts",
-    "apps/app-partner/src/partner-product-gate.tsx",
+    "apps/app-partner/src/features/partner-onboarding/store-readback.tsx",
   ];
   for (const relative of requiredFiles) {
     const absolute = path.join(root, ...relative.split("/"));

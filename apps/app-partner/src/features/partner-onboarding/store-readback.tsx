@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
-import { isPartnerBootstrapNotFound, readOwnPartnerBootstrap } from "./partner-product";
+import { isPartnerBootstrapNotFound, readOwnPartnerBootstrap } from "./store-readback";
 
-export function PartnerProductReadback() {
+export function StoreReadback() {
   const [state, setState] = useState<
     | { kind: "loading" }
     | { kind: "ready"; value: Awaited<ReturnType<typeof readOwnPartnerBootstrap>> }

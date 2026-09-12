@@ -10,8 +10,7 @@ import {
   restoreIdentitySession,
   role,
   surface,
-} from "./identity";
-import { PartnerProductReadback } from "./partner-product-gate";
+} from "../../bootstrap/identity";
 
 const identity = { role, surface, restoreIdentitySession, currentIdentityState, logoutIdentity, requestManagedActivation, activateManagedIdentity, loginManagedIdentity, requestManagedRecovery, recoverManagedIdentity };
 
@@ -20,9 +19,8 @@ export default function IdentityGate() {
     <ManagedIdentityFlow
       managedRole={role}
       surface={surface}
-      roleLabel="الشريك"
+      roleLabel="الكابتن"
       binding={identity}
-      authenticatedContent={<PartnerProductReadback />}
     />
   );
 }

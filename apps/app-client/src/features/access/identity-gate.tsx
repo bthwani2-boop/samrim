@@ -23,7 +23,7 @@ import {
   requestClientRecovery,
   requestClientRegistration,
   restoreIdentitySession,
-} from "./identity";
+} from "../../bootstrap/identity";
 import { identityPresentation, type IdentityCopy } from "./identity-presentation";
 
 type AuthMode = "login" | "register" | "recover";

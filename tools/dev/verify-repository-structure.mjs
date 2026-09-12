@@ -185,6 +185,18 @@ assert(
   "Control Panel non-route ownership must not remain under lib/",
 );
 
+for (const mobileApp of ["app-client", "app-partner", "app-captain", "app-field"]) {
+  const legacyFlat = tracked.filter((item) => new RegExp(`^apps/${mobileApp}/src/[^/]+\\.(?:ts|tsx)$`).test(item));
+  assert(
+    legacyFlat.length === 0,
+    `${mobileApp} retains flat non-route source placement: ${legacyFlat.join(", ")}`,
+  );
+  assert(
+    !tracked.some((item) => item.startsWith(`apps/${mobileApp}/src/app/`)),
+    `${mobileApp} must keep the current root app/ router until an atomic cutover`,
+  );
+}
+
 const serviceNames = directChildren("services");
 for (const service of serviceNames) {
   const record = projectFor("services", service, "type:service");

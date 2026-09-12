@@ -10,7 +10,7 @@ import {
   restoreIdentitySession,
   role,
   surface,
-} from "./identity";
+} from "../../bootstrap/identity";
 
 const identity = { role, surface, restoreIdentitySession, currentIdentityState, logoutIdentity, requestManagedActivation, activateManagedIdentity, loginManagedIdentity, requestManagedRecovery, recoverManagedIdentity };
 

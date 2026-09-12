@@ -10,7 +10,8 @@ import {
   restoreIdentitySession,
   role,
   surface,
-} from "./identity";
+} from "../../bootstrap/identity";
+import { StoreReadback } from "../partner-onboarding/store-readback";
 
 const identity = { role, surface, restoreIdentitySession, currentIdentityState, logoutIdentity, requestManagedActivation, activateManagedIdentity, loginManagedIdentity, requestManagedRecovery, recoverManagedIdentity };
 
@@ -19,8 +20,9 @@ export default function IdentityGate() {
     <ManagedIdentityFlow
       managedRole={role}
       surface={surface}
-      roleLabel="الكابتن"
+      roleLabel="الشريك"
       binding={identity}
+      authenticatedContent={<StoreReadback />}
     />
   );
 }

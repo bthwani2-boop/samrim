@@ -1,5 +1,5 @@
 import { createDshMobileClient, type PartnerBootstrapResponse } from "@bthwani/dsh";
-import { readIdentityAccessToken } from "./identity";
+import { readIdentityAccessToken } from "../../bootstrap/identity";
 
 function dshBaseUrl(): string {
   const explicit = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
