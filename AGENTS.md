@@ -150,6 +150,31 @@ RIGOR SCALES WITH CONSEQUENCE + UNCERTAINTY + BLAST RADIUS + IRREVERSIBILITY. Hi
 
 DURABLE TARGET MODEL != CURRENT IMPLEMENTATION INVENTORY != CURRENT AUTHORIZED DELIVERY SLICE. Future responsibility does not authorize implementation now; CURRENT NEED + CAUSAL PREREQUISITE + AUTHORIZED OBJECTIVE must justify it.
 
+PLATFORM PROGRESSION LAW:
+BTHWANI PROGRESSES BY BUSINESS CAPABILITY / JOURNEY ACROSS ITS MATERIAL OWNERS, PARTICIPANTS AND CONSUMERS, NOT BY EXHAUSTING ONE ACTOR, APP, SERVICE OR SURFACE BACKLOG.
+DOMAIN OWNS TRUTH. JOURNEY DRIVES DELIVERY ORDER. SURFACE HOSTS PARTICIPATE ONLY WHEN MATERIALLY REQUIRED. SHARED PLATFORM / CORE GROWS ONLY FROM PROVEN CURRENT JOURNEY NEED.
+
+For each material progression candidate:
+~~~text
+USER / BUSINESS OUTCOME
+→ SEMANTIC OWNER + CANONICAL STATE / WRITER / READBACK
+→ REQUIRED CONTRACT / EVENT / AUTHORIZATION INVARIANTS
+→ MATERIALLY REQUIRED ACTORS / SURFACES / SERVICES / CONSUMERS
+→ MINIMUM CAUSALLY REQUIRED SHARED PLATFORM SPINE
+→ THIN COHERENT END-TO-END IMPLEMENTATION
+→ CROSS-BOUNDARY / CROSS-SURFACE PROOF
+→ MATERIAL FAILURE / RECOVERY PROOF
+→ THEN DEEPEN THE CAPABILITY OR ADVANCE TO THE NEXT PROVEN JOURNEY
+~~~
+
+When choosing the next material delivery slice, prefer the smallest coherent journey that advances real current value while proving the earliest unresolved material shared boundary; do not deepen one surface merely because adjacent surface-local backlog is available.
+
+SURFACE-FIRST DEEPENING IS NONCANONICAL when it advances one participant while an earlier shared capability remains unproven across another materially required participant or consumer.
+CROSS-SURFACE-FIRST != ALL-SURFACES-EVERY-TIME. Include every materially affected current participant and no participant merely because it exists.
+CORE-FIRST != SPECULATIVE FOUNDATION-FIRST. Do not build shared abstractions, frameworks, services or generalized future capability without proven current journey need, correct ownership, real consumers and material reduction of inconsistency, duplication or delivery risk.
+EARLY INTEGRATION PRECEDES INDEPENDENT DEPTH when it can expose material owner, state, contract, authorization, lifecycle or recovery defects before expensive surface-local expansion.
+A CAPABILITY IS NOT COMPLETE BECAUSE ONE SURFACE IS COMPLETE. Completion requires its canonical owner/state/contracts and every materially affected current consumer in the authorized delivery slice to be reconciled and proven.
+
 Use independent specialist/adversarial inquiries when materially useful. SUBAGENT OUTPUT = EVIDENCE, NOT AUTHORITY; SUBAGENT CONSENSUS != PROOF. Overlapping mutable cones serialize under the primary writer.
 
 ## 2. Causal reasoning and best-fit decision
