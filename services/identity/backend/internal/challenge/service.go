@@ -466,10 +466,7 @@ func (s *Service) consumeOperatorEnrollmentTokenTx(ctx context.Context, tx *sql.
 }
 
 func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorLoginStartRequest, ipHash string) (domain.Challenge, error) {
-	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.IsControlPanelRole(role) {
-		return domain.Challenge{}, domain.ErrInvalidInput
-	}
+	role := "operator"
 	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
 	if err != nil {
 		return domain.Challenge{}, domain.ErrInvalidInput
@@ -509,10 +506,7 @@ func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorL
 }
 
 func (s *Service) CompleteOperatorLogin(ctx context.Context, input domain.OperatorLoginCompleteRequest) (domain.TokenPair, error) {
-	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.IsControlPanelRole(role) {
-		return domain.TokenPair{}, domain.ErrInvalidInput
-	}
+	role := "operator"
 	return s.consume(ctx, input.Phone, role, domain.ChallengeOperatorMFA, input.Code, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
 		if actorID == "" {
 			return domain.TokenPair{}, domain.ErrUnauthenticated

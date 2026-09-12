@@ -27,9 +27,18 @@ export function proxy(request: NextRequest) {
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", csp);
 
-  if (request.nextUrl.pathname.startsWith("/api/") && UNSAFE_METHODS.has(request.method.toUpperCase()) && !verifySameOrigin(request)) {
+  if (
+    request.nextUrl.pathname.startsWith("/api/") &&
+    UNSAFE_METHODS.has(request.method.toUpperCase()) &&
+    !verifySameOrigin(request)
+  ) {
     const response = NextResponse.json(
-      { error: "FORBIDDEN_CROSS_ORIGIN", message: "Cross-origin requests are forbidden for control-panel mutations" },
+      {
+        error: {
+          code: "FORBIDDEN_CROSS_ORIGIN",
+          message: "Cross-origin requests are forbidden for control-panel mutations",
+        },
+      },
       { status: 403 },
     );
     response.headers.set("Content-Security-Policy", csp);

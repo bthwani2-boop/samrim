@@ -1,18 +1,22 @@
 ## Summary
 
-<!-- What canonical outcome does this PR produce? -->
+<!-- What exact authorized outcome does this PR produce? -->
 
-## Exact candidate and authorized scope
+## Exact candidate and authorized objective
 
-<!-- Pin the candidate/ref used for verification. State PRODUCT_BREADTH and ACTIVE_PRODUCT_SLICE/FULL_TARGET authorization. Do not infer future Product breadth from LEVEL_4. -->
+<!-- Pin the candidate/ref used for verification. State the current human-authorized objective, material constraints, and any operation/environment boundary that matters. -->
 
-## Scope and ownership
+## Affected cone and ownership
 
-<!-- Which apps/services/packages/contracts/infra/governance owners are materially affected? Confirm surface-specific feature UI remains app-owned and business/data/financial/authentication truth stays with its canonical owner. -->
+<!-- Which apps/services/packages/contracts/infra and pinned Governance owners are materially affected? Confirm one canonical owner/writer/contract provenance remains. -->
+
+## Diagnosis and decision
+
+<!-- What current evidence was inspected? What is the root cause? Which alternatives were considered, and why is this the smallest safe canonical solution? -->
 
 ## Migration / Cutover
 
-<!-- If replacing an authority/path/contract/writer/data shape, describe migration, consumer cutover, old-write disablement and loser deletion. Use N/A only when proven. -->
+<!-- If replacing an authority/path/contract/writer/data shape, describe truth preservation, migration/backfill/reconciliation, consumer cutover, old-write disablement and loser deletion. Use N/A only when proven. -->
 
 ## Deployable identity / runtime
 
@@ -24,7 +28,7 @@
 
 ## Verification
 
-<!-- Exact checks/evidence executed against the same candidate. Cover only applicable layers: static/domain/integration/runtime/journey/security/financial/accessibility/build. State what each proof does and does not prove. -->
+<!-- Exact checks/evidence executed against the same candidate. State the material claims, proof class, negative/failure/recovery coverage, and what remains unproven. For user-facing changes include design-readiness evidence, representative responsive/RTL/theme/accessibility/error states, and real browser/device journey proof where material. -->
 
 ## Security / Secrets
 
@@ -32,7 +36,7 @@
 
 ## Docs / knowledge
 
-<!-- State whether Governance/Docs/agent routing changed. Confirm current implementation state remains sourced from executable code/runtime, not documentation. -->
+<!-- State whether pinned Governance/Docs or AGENTS.md changed. If knowledge was corrected, state the evidence that made the prior rule incomplete/stale/wrong. -->
 
 ## Negative space
 
@@ -40,13 +44,12 @@
 
 ## Checklist
 
-- [ ] Exact candidate and authorized Product breadth are explicit.
-- [ ] Required truth is preserved.
+- [ ] Exact candidate and current authorized objective are explicit.
+- [ ] Required truth and deployable/external identities are preserved.
 - [ ] One canonical owner/writer/contract provenance remains.
 - [ ] No secret values or machine-local bindings are committed.
-- [ ] Migration/cutover is complete where applicable.
-- [ ] Deployable identities/runtime bindings are preserved or deliberately migrated where applicable.
+- [ ] Migration/cutover and loser deletion are complete where applicable.
 - [ ] New dependency/provider adoption passed current review where applicable.
-- [ ] Losing authorities/residue are removed where applicable.
-- [ ] Applicable verification and fresh re-census are complete.
-- [ ] Green tools/CI are not presented as broader closure than they actually prove.
+- [ ] Material failure/recovery/negative cases and canonical readback are proven.
+- [ ] No known losing/shadow authority remains in the affected cone.
+- [ ] Green tools/CI are not presented as broader proof than they actually provide.

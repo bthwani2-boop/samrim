@@ -24,11 +24,11 @@ func (s *Service) ProvisionTrustedWithContext(ctx context.Context, caller string
 	return s.provisionTrusted(ctx, caller, input, false, actingActorID)
 }
 
-func (s *Service) ProvisionPlatformOwnerBootstrap(ctx context.Context, caller string, input domain.ProvisionActorRoleInput) (domain.ActorRoleView, error) {
-	if !domain.CanBootstrapPlatformOwner(caller) {
+func (s *Service) ProvisionFirstOperatorBootstrap(ctx context.Context, caller string, input domain.ProvisionActorRoleInput) (domain.ActorRoleView, error) {
+	if !domain.CanBootstrapFirstOperator(caller) {
 		return domain.ActorRoleView{}, domain.ErrForbidden
 	}
-	input.Role = "platform_owner"
+	input.Role = "operator"
 	return s.provisionTrusted(ctx, caller, input, true, "")
 }
 
@@ -37,14 +37,14 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 	actingActorID = strings.TrimSpace(actingActorID)
 	role := strings.ToLower(strings.TrimSpace(input.Role))
 	if bootstrapOnly {
-		if !domain.CanBootstrapPlatformOwner(caller) || role != "platform_owner" {
+		if !domain.CanBootstrapFirstOperator(caller) || role != "operator" {
 			return domain.ActorRoleView{}, domain.ErrForbidden
 		}
 	} else {
 		if !domain.CanProvisionRole(caller, role) {
 			return domain.ActorRoleView{}, domain.ErrForbidden
 		}
-		if (caller == "platform-control" || caller == "dsh") && actingActorID == "" {
+		if (caller == "control-panel" || caller == "dsh") && actingActorID == "" {
 			return domain.ActorRoleView{}, domain.ErrInvalidInput
 		}
 	}
@@ -54,7 +54,7 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 	}
 
 	passwordHash := ""
-	if role == "platform_owner" {
+	if bootstrapOnly {
 		passwordHash, err = identitysecurity.HashPassword(input.Password)
 		if err != nil {
 			return domain.ActorRoleView{}, domain.ErrInvalidInput
@@ -69,21 +69,16 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 	}
 	defer func() { _ = tx.Rollback() }()
 	lockKey := "identity:phone:" + phone
-	if role == "platform_owner" {
-		lockKey = "identity:bootstrap:platform-owner"
+	if bootstrapOnly {
+		lockKey = "identity:bootstrap:first-operator"
 	}
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", lockKey); err != nil {
 		return domain.ActorRoleView{}, err
 	}
-	if role == "platform_owner" {
+	if bootstrapOnly {
 		var exists bool
-		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM identity_actor_roles WHERE role='platform_owner')").Scan(&exists); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state WHERE id=1) OR EXISTS(SELECT 1 FROM identity_actor_roles WHERE role='operator')").Scan(&exists); err != nil {
 			return domain.ActorRoleView{}, err
-		}
-		if !exists {
-			if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM identity_bootstrap_state)").Scan(&exists); err != nil {
-				return domain.ActorRoleView{}, err
-			}
 		}
 		if exists {
 			return domain.ActorRoleView{}, domain.ErrConflict
@@ -125,14 +120,14 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 	roleCreated := false
 	if errors.Is(err, sql.ErrNoRows) {
 		activatedAtValue := "NULL"
-		if role == "platform_owner" {
+		if bootstrapOnly {
 			activatedAtValue = "clock_timestamp()"
 		}
 		if _, err := tx.ExecContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,$2,true,"+activatedAtValue+",1)", a.ID, role); err != nil {
 			return domain.ActorRoleView{}, err
 		}
-		if role == "platform_owner" {
-			if _, err := tx.ExecContext(ctx, "INSERT INTO identity_bootstrap_state(id,platform_owner_actor_id) VALUES(1,$1)", a.ID); err != nil {
+		if bootstrapOnly {
+			if _, err := tx.ExecContext(ctx, "INSERT INTO identity_bootstrap_state(id,initial_operator_actor_id) VALUES(1,$1)", a.ID); err != nil {
 				return domain.ActorRoleView{}, err
 			}
 		}
@@ -150,32 +145,19 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		return domain.ActorRoleView{}, err
 	} else if !enabled {
 		return domain.ActorRoleView{}, domain.ErrConflict
+	} else if bootstrapOnly {
+		return domain.ActorRoleView{}, domain.ErrConflict
 	}
-	if role == "platform_owner" && !activatedAt.Valid {
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_actor_roles SET activated_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2", a.ID, role); err != nil {
-			return domain.ActorRoleView{}, err
-		}
-	}
-	if role == "platform_owner" {
+
+	if bootstrapOnly {
 		if err := tx.QueryRowContext(ctx, "SELECT enabled,activated_at,version FROM identity_actor_roles WHERE actor_id=$1 AND role=$2", a.ID, role).Scan(&enabled, &activatedAt, &roleVersion); err != nil {
 			return domain.ActorRoleView{}, err
 		}
-	}
-
-	if role == "platform_owner" {
-		var currentHash string
-		err := tx.QueryRowContext(ctx, "SELECT password_hash FROM identity_password_credentials WHERE actor_id=$1 AND role=$2 FOR UPDATE", a.ID, role).Scan(&currentHash)
-		if errors.Is(err, sql.ErrNoRows) {
-			if _, err := tx.ExecContext(ctx, "INSERT INTO identity_password_credentials(actor_id,role,password_hash,version) VALUES($1,$2,$3,1)", a.ID, role, passwordHash); err != nil {
-				return domain.ActorRoleView{}, err
-			}
-			if err := auditTx(ctx, tx, "credential.password_created", a.ID, caller, "success", "", map[string]any{"role": role}); err != nil {
-				return domain.ActorRoleView{}, err
-			}
-		} else if err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO identity_password_credentials(actor_id,role,password_hash,version) VALUES($1,$2,$3,1)", a.ID, role, passwordHash); err != nil {
 			return domain.ActorRoleView{}, err
-		} else if !identitysecurity.VerifyPassword(currentHash, input.Password) {
-			return domain.ActorRoleView{}, domain.ErrConflict
+		}
+		if err := auditTx(ctx, tx, "credential.password_created", a.ID, caller, "success", "", map[string]any{"role": role}); err != nil {
+			return domain.ActorRoleView{}, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -187,7 +169,7 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		activated = &value
 	}
 	credVersion := 0
-	if role == "platform_owner" {
+	if bootstrapOnly {
 		credVersion = 1
 	}
 	return domain.ActorRoleView{ActorID: a.ID, PhoneE164: a.PhoneE164, Role: role, Enabled: enabled, ActivatedAt: activated, SecurityEnabled: a.SecurityEnabled, ActorVersion: a.Version, RoleVersion: roleVersion, CredentialVersion: credVersion, ActorCreated: actorCreated, RoleCreated: roleCreated}, nil
@@ -519,10 +501,10 @@ func (s *Service) SetRoleEnabledWithContext(ctx context.Context, caller, actorID
 	if actorID == "" || !domain.CanSetRoleEnabled(caller, role) || len(strings.TrimSpace(reason)) > 500 {
 		return domain.ErrForbidden
 	}
-	if (caller == "platform-control" || caller == "dsh") && operatorActorID == "" {
+	if (caller == "control-panel" || caller == "dsh") && operatorActorID == "" {
 		return domain.ErrInvalidInput
 	}
-	if (caller == "platform-control" || caller == "dsh") && expectedVersion < 1 {
+	if (caller == "control-panel" || caller == "dsh") && expectedVersion < 1 {
 		return domain.ErrInvalidInput
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -626,7 +608,7 @@ func (s *Service) SetSecurityEnabledWithContext(ctx context.Context, caller, act
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	actorID = strings.TrimSpace(actorID)
 	operatorActorID = strings.TrimSpace(operatorActorID)
-	if caller != "platform-control" || actorID == "" || len(strings.TrimSpace(reason)) > 500 {
+	if caller != "control-panel" || actorID == "" || len(strings.TrimSpace(reason)) > 500 {
 		return domain.ErrForbidden
 	}
 	if operatorActorID == "" || expectedVersion < 1 {
@@ -637,10 +619,9 @@ func (s *Service) SetSecurityEnabledWithContext(ctx context.Context, caller, act
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var current, hasPlatformOwner bool
+	var current bool
 	var currentVersion int
-	err = tx.QueryRowContext(ctx, `SELECT a.security_enabled, a.version, EXISTS(SELECT 1 FROM identity_actor_roles r WHERE r.actor_id=a.id AND r.role='platform_owner')
-FROM identity_actors a WHERE a.id=$1 FOR UPDATE`, actorID).Scan(&current, &currentVersion, &hasPlatformOwner)
+	err = tx.QueryRowContext(ctx, "SELECT security_enabled, version FROM identity_actors WHERE id=$1 FOR UPDATE", actorID).Scan(&current, &currentVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ErrNotFound
 	}
@@ -649,9 +630,6 @@ FROM identity_actors a WHERE a.id=$1 FOR UPDATE`, actorID).Scan(&current, &curre
 	}
 	if currentVersion != expectedVersion {
 		return domain.ErrConflict
-	}
-	if hasPlatformOwner && !enabled {
-		return domain.ErrForbidden
 	}
 	if current == enabled {
 		return tx.Commit()
@@ -680,133 +658,6 @@ FROM identity_actors a WHERE a.id=$1 FOR UPDATE`, actorID).Scan(&current, &curre
 		return err
 	}
 	return tx.Commit()
-}
-
-func (s *Service) ResetOperatorPassword(ctx context.Context, caller, actorID, password, correlationID, operatorActorID string, expectedVersion int) error {
-	caller = strings.ToLower(strings.TrimSpace(caller))
-	actorID = strings.TrimSpace(actorID)
-	operatorActorID = strings.TrimSpace(operatorActorID)
-	if actorID == "" || !domain.CanResetCredential(caller, "operator") {
-		return domain.ErrForbidden
-	}
-	if caller == "platform-control" && operatorActorID == "" {
-		return domain.ErrInvalidInput
-	}
-	if expectedVersion < 1 {
-		return domain.ErrInvalidInput
-	}
-	hash, err := identitysecurity.HashPassword(password)
-	if err != nil {
-		return domain.ErrInvalidInput
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var currentVersion int
-	err = tx.QueryRowContext(ctx, "SELECT version FROM identity_password_credentials WHERE actor_id=$1 AND role='operator' FOR UPDATE", actorID).Scan(&currentVersion)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domain.ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	if currentVersion != expectedVersion {
-		return domain.ErrConflict
-	}
-
-	result, err := tx.ExecContext(ctx, "UPDATE identity_password_credentials SET password_hash=$1,version=version+1,updated_at=clock_timestamp() WHERE actor_id=$2 AND role='operator'", hash, actorID)
-	if err != nil {
-		return err
-	}
-	count, _ := result.RowsAffected()
-	if count != 1 {
-		return domain.ErrNotFound
-	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role='operator' AND revoked_at IS NULL", actorID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role='operator' AND status='pending'", actorID); err != nil {
-		return err
-	}
-	auditPrincipal := caller
-	meta := map[string]any{"role": "operator", "workload": caller}
-	if operatorActorID != "" {
-		auditPrincipal = caller + ":" + operatorActorID
-		meta["operatorActorId"] = operatorActorID
-	}
-	if err := auditTx(ctx, tx, "credential.password_reset", actorID, auditPrincipal, "success", correlationID, meta); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func (s *Service) RecoverPlatformOwner(ctx context.Context, newPhone, newPassword string) (string, error) {
-	hash, err := identitysecurity.HashPassword(newPassword)
-	if err != nil {
-		return "", domain.ErrInvalidInput
-	}
-	var phoneE164 string
-	if strings.TrimSpace(newPhone) != "" {
-		phoneE164, err = identitysecurity.NormalizePhoneE164(newPhone)
-		if err != nil {
-			return "", domain.ErrInvalidInput
-		}
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	var actorID string
-	err = tx.QueryRowContext(ctx, "SELECT platform_owner_actor_id FROM identity_bootstrap_state WHERE id=1").Scan(&actorID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", domain.ErrNotFound
-		}
-		return "", err
-	}
-
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtext('identity:actors:' || $1))", actorID); err != nil {
-		return "", err
-	}
-
-	if phoneE164 != "" {
-		if _, err := tx.ExecContext(ctx, "UPDATE identity_actors SET phone_e164=$1, version=version+1, updated_at=clock_timestamp() WHERE id=$2", phoneE164, actorID); err != nil {
-			return "", err
-		}
-	}
-
-	result, err := tx.ExecContext(ctx, "UPDATE identity_password_credentials SET password_hash=$1, version=version+1, updated_at=clock_timestamp() WHERE actor_id=$2 AND role='platform_owner'", hash, actorID)
-	if err != nil {
-		return "", err
-	}
-	count, _ := result.RowsAffected()
-	if count != 1 {
-		return "", domain.ErrNotFound
-	}
-
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()), version=version+1 WHERE actor_id=$1 AND role='platform_owner' AND revoked_at IS NULL", actorID); err != nil {
-		return "", err
-	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked', updated_at=clock_timestamp() WHERE actor_id=$1 AND status='pending'", actorID); err != nil {
-		return "", err
-	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM identity_password_attempts WHERE actor_id=$1", actorID); err != nil {
-		return "", err
-	}
-
-	if err := auditTx(ctx, tx, "actor.platform_owner_emergency_recovery", actorID, "platform-owner-recovery-cli", "success", "", map[string]any{
-		"role":          "platform_owner",
-		"phone_updated": phoneE164 != "",
-	}); err != nil {
-		return "", err
-	}
-
-	return actorID, tx.Commit()
 }
 
 func newActorID() (string, error) {

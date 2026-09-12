@@ -21,7 +21,7 @@ try {
     execSync(`pnpm exec expo export --platform ${platform} --output-dir dist`, {
       cwd: appDir,
       stdio: "inherit",
-      env: { ...process.env, CI: "1" },
+      env: { ...process.env, CI: "1", EXPO_NO_TELEMETRY: "1" },
     });
 
     if (!fs.existsSync(distDir)) {

@@ -1,13 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
+import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
+const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
 const failures = [];
 const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
+const readKnowledge = (p) => fs.readFileSync(path.join(knowledgeRoot, p), "utf8");
 
 const packageJson = JSON.parse(read("package.json"));
-const workflowGuide = read("docs/development/workflow/developer-workflow.md");
-const runtimeGuide = read("docs/development/runtime/runtime-and-configuration.md");
+const workflowGuide = readKnowledge("docs/development/workflow.md");
+const runtimeGuide = readKnowledge("docs/development/runtime.md");
 const compose = read("infra/local/compose/compose.yaml");
 const envExample = read("infra/local/compose/.env.example");
 
@@ -41,8 +44,20 @@ for (const mod of allGoMods) {
   if (version !== goVersion) failures.push(mod + " Go version differs from go.work");
 }
 
-for (const [label, value] of [["Node", nodeVersion], ["pnpm", pnpmVersion], ["Go", goVersion]]) {
-  if (value && !workflowGuide.includes(value)) failures.push("developer workflow does not reflect pinned " + label + " " + value);
+if (!workflowGuide.includes("Use repository-declared versions and scripts")) {
+  failures.push("developer workflow must route toolchain/version truth to executable repository declarations");
+}
+if (!workflowGuide.includes("CURRENT_COMMAND_TRUTH_SOURCE: package.json / pnpm-workspace.yaml / repository scripts")) {
+  failures.push("developer workflow must identify repository manifests/scripts as command truth");
+}
+if (!runtimeGuide.includes("CURRENT_RUNTIME_TRUTH_SOURCE: live repository scripts/configuration")) {
+  failures.push("runtime guide must identify live repository scripts/configuration as runtime truth");
+}
+if (!runtimeGuide.includes("Resolve them from the consuming repository's exact pinned `package.json`, runtime scripts and executable configuration")) {
+  failures.push("runtime guide must route runtime command truth to the exact consuming repository");
+}
+if (/runtime:integration:|runtime:daily:/i.test(runtimeGuide + "\n" + workflowGuide)) {
+  failures.push("development guides must not freeze retired parallel runtime command families");
 }
 
 for (const key of new Set([...runtimeGuide.matchAll(/\bIDENTITY_[A-Z0-9_]+\b/g)].map((m) => m[0]))) {
@@ -58,15 +73,14 @@ for (const file of (function collect(dir) {
     else if (entry.isFile() && entry.name.endsWith(".md")) out.push(absolute);
   }
   return out;
-})(path.join(root, "docs/development"))) {
+})(path.join(knowledgeRoot, "docs/development"))) {
   const body = fs.readFileSync(file, "utf8");
   if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(body)) {
-    failures.push(path.relative(root, file).split(path.sep).join("/") + " hard-codes a local port");
+    failures.push(path.relative(knowledgeRoot, file).split(path.sep).join("/") + " hard-codes a local port");
   }
 }
 
 if (/docker compose/i.test(read("tools/dev/bootstrap.ps1"))) failures.push("bootstrap must remain independent of runtime composition");
-if (!runtimeGuide.includes("Current integration-runtime commands are derived from")) failures.push("runtime guide must route command truth to package.json");
 
 if (failures.length) {
   console.error("DOC_CONFIG_PARITY=FAIL");

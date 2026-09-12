@@ -24,22 +24,58 @@ func (e *Error) Error() string {
 }
 
 type Client struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	endpoint Endpoint
+	token    string
+	http     *http.Client
 }
 
-func New(baseURL, serviceToken string) (*Client, error) {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	serviceToken = strings.TrimSpace(serviceToken)
+// Endpoint is an already-validated Identity service origin. Its fields remain
+// private so callers cannot bypass the host policy enforced by ParseEndpoint.
+type Endpoint struct {
+	baseURL url.URL
+}
+
+// ParseEndpoint validates an Identity service origin against exact, authorized
+// hostnames. The allowlist is supplied by the owning runtime boundary; an
+// arbitrary configured URL is never sufficient to authorize an HTTP target.
+func ParseEndpoint(raw string, allowedHosts []string) (Endpoint, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(raw), "/")
 	parsed, err := url.Parse(baseURL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
+		return Endpoint{}, errors.New("identity client base URL is invalid")
+	}
+	if !authorizedHostname(parsed.Hostname(), allowedHosts) {
+		return Endpoint{}, errors.New("identity client base URL host is not authorized")
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	return Endpoint{baseURL: *parsed}, nil
+}
+
+func authorizedHostname(hostname string, allowedHosts []string) bool {
+	hostname = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(hostname)), ".")
+	if hostname == "" {
+		return false
+	}
+	for _, allowed := range allowedHosts {
+		allowed = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(allowed)), ".")
+		if allowed != "" && hostname == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func (e Endpoint) String() string { return e.baseURL.String() }
+
+func New(endpoint Endpoint, serviceToken string) (*Client, error) {
+	serviceToken = strings.TrimSpace(serviceToken)
+	if endpoint.baseURL.Scheme == "" || endpoint.baseURL.Host == "" {
 		return nil, errors.New("identity client base URL is invalid")
 	}
 	if len(serviceToken) < 24 {
 		return nil, errors.New("identity client service token is too short")
 	}
-	return &Client{baseURL: baseURL, token: serviceToken, http: &http.Client{Timeout: 8 * time.Second}}, nil
+	return &Client{endpoint: endpoint, token: serviceToken, http: &http.Client{Timeout: 8 * time.Second}}, nil
 }
 
 func (c *Client) IssueOperatorEnrollmentTokenWithContext(ctx context.Context, input OperatorEnrollmentTokenIssueRequest, correlationID, operatorActorID string) (OperatorEnrollmentToken, error) {
@@ -57,6 +93,19 @@ func (c *Client) ReadRole(ctx context.Context, actorID, role string) (ActorRoleV
 	var result ActorRoleView
 	pathname := identityRoute(IdentityOperationReadActorRole.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)), "role", url.PathEscape(strings.TrimSpace(role)))
 	err := c.do(ctx, IdentityOperationReadActorRole.Method, pathname, "", nil, &result)
+	return result, err
+}
+
+// ReadSession validates an end-user access token at the canonical Identity
+// session boundary. The token is deliberately not sent to an internal route
+// with the DSH service credential.
+func (c *Client) ReadSession(ctx context.Context, accessToken string) (ActorIdentity, error) {
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return ActorIdentity{}, &Error{Status: http.StatusUnauthorized, Code: "UNAUTHENTICATED", Message: "access token is required"}
+	}
+	var result ActorIdentity
+	err := c.doWithToken(ctx, IdentityOperationReadCurrentSession.Method, IdentityOperationReadCurrentSession.Path, accessToken, "", "", "", 0, nil, &result)
 	return result, err
 }
 func (c *Client) SearchRoles(ctx context.Context, role, query string) (ActorRoleSearchPage, error) {
@@ -125,10 +174,6 @@ func (c *Client) SetActorSecurityEnabledWithContext(ctx context.Context, actorID
 	pathname := identityRoute(operation.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
 	return c.doWithContext(ctx, operation.Method, pathname, correlationID, reason, operatorActorID, expectedVersion, nil, nil)
 }
-func (c *Client) ResetOperatorPasswordWithContext(ctx context.Context, actorID, password, correlationID, operatorActorID string, expectedVersion int) error {
-	pathname := identityRoute(IdentityOperationResetOperatorPassword.Path, "actorId", url.PathEscape(strings.TrimSpace(actorID)))
-	return c.doWithContext(ctx, IdentityOperationResetOperatorPassword.Method, pathname, correlationID, "", operatorActorID, expectedVersion, PasswordResetRequest{Password: password}, nil)
-}
 func (c *Client) Readiness(ctx context.Context) error {
 	return c.do(ctx, IdentityOperationIdentityReadiness.Method, IdentityOperationIdentityReadiness.Path, "", nil, nil)
 }
@@ -145,6 +190,14 @@ func (c *Client) do(ctx context.Context, method, pathname, correlationID string,
 }
 
 func (c *Client) doWithContext(ctx context.Context, method, pathname, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
+	return c.doWithToken(ctx, method, pathname, c.token, correlationID, reason, operatorActorID, expectedVersion, body, target)
+}
+
+func (c *Client) doWithToken(ctx context.Context, method, pathname, token, correlationID, reason, operatorActorID string, expectedVersion int, body any, target any) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return &Error{Status: http.StatusUnauthorized, Code: "UNAUTHENTICATED", Message: "access token is required"}
+	}
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -153,12 +206,16 @@ func (c *Client) doWithContext(ctx context.Context, method, pathname, correlatio
 		}
 		reader = bytes.NewReader(raw)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+pathname, reader)
+	requestURL, err := c.requestURL(pathname)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, reader)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -193,4 +250,16 @@ func (c *Client) doWithContext(ctx context.Context, method, pathname, correlatio
 		return nil
 	}
 	return json.NewDecoder(io.LimitReader(response.Body, 256*1024)).Decode(target)
+}
+
+func (c *Client) requestURL(pathname string) (string, error) {
+	parsedPath, err := url.ParseRequestURI(pathname)
+	if err != nil || parsedPath.IsAbs() || parsedPath.Host != "" || parsedPath.User != nil || parsedPath.Fragment != "" || !strings.HasPrefix(parsedPath.Path, "/") || strings.HasPrefix(parsedPath.Path, "//") {
+		return "", errors.New("identity client request path is invalid")
+	}
+	requestURL := c.endpoint.baseURL
+	requestURL.Path = parsedPath.Path
+	requestURL.RawPath = parsedPath.RawPath
+	requestURL.RawQuery = parsedPath.RawQuery
+	return requestURL.String(), nil
 }

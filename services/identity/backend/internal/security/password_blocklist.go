@@ -21,7 +21,7 @@ var commonPasswordBlocklistV1 = map[string]struct{}{
 	"welcome-welcome": {}, "let-me-in-let-me-in": {}, "correcthorsebatterystaple": {},
 	"bthwani-password": {}, "bthwani2026password": {}, "samrim-password": {},
 	"samrim2026password": {}, "samrim-samrim-2026": {}, "identity-password": {},
-	"identityidentity": {}, "control-panel-password": {}, "platform-owner-password": {},
+	"identityidentity": {}, "control-panel-password": {}, "operator-bootstrap-password": {},
 }
 
 func PasswordBlocklistVersion() string {

@@ -68,7 +68,7 @@ func (s *Service) ResolveAccessToken(ctx context.Context, accessToken string) (d
 	var expires time.Time
 	err := s.db.QueryRowContext(ctx, `SELECT s.actor_id,s.id,s.role,s.access_expires_at FROM identity_sessions s
 JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role JOIN identity_actors a ON a.id=s.actor_id
-	WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp() AND s.last_used_at>clock_timestamp()-CASE WHEN s.role IN ('operator','platform_owner') THEN INTERVAL '1 hour' ELSE INTERVAL '24 hours' END AND r.enabled=true AND a.security_enabled=true`, identitysecurity.SHA256Hex(accessToken)).Scan(&actorID, &sessionID, &role, &expires)
+	WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp() AND s.last_used_at>clock_timestamp()-CASE WHEN s.role='operator' THEN INTERVAL '1 hour' ELSE INTERVAL '24 hours' END AND r.enabled=true AND a.security_enabled=true`, identitysecurity.SHA256Hex(accessToken)).Scan(&actorID, &sessionID, &role, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ActorIdentity{}, domain.ErrUnauthenticated
 	}
@@ -279,13 +279,13 @@ func identityOf(actorID, sessionID, role string, expires time.Time) domain.Actor
 	return domain.ActorIdentity{Subject: actorID, SessionID: sessionID, Role: role, Surface: surface, ExpiresAt: expires}
 }
 func sessionAbsoluteLifetime(role string) time.Duration {
-	if role == "operator" || role == "platform_owner" {
+	if role == "operator" {
 		return 24 * time.Hour
 	}
 	return 30 * 24 * time.Hour
 }
 func sessionIdleLifetime(role string) time.Duration {
-	if role == "operator" || role == "platform_owner" {
+	if role == "operator" {
 		return time.Hour
 	}
 	return 24 * time.Hour

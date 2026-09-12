@@ -55,6 +55,7 @@ secrets.local.*
 *.p8
 *.pem
 *.key
+tools/dev-app-credentials.csv
 
 # Local-only BThwani materialization
 .bthwani-local/

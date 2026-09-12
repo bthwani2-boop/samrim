@@ -11,13 +11,17 @@ const tracked = execFileSync("git", ["ls-files", "-z"], {
   .filter(Boolean)
   .map((item) => item.replaceAll("\\", "/"));
 
-const excluded = (file) =>
-  file === ".github/workflows/baseline-guard.yml";
+const excluded = (file) => file === ".github/workflows/baseline-guard.yml";
+const donorProvenanceFiles = new Set([
+  "knowledge.sources.json",
+  "tools/dev/knowledge-source.mjs",
+  "tools/dev/verify-knowledge-system.mjs",
+]);
 
 const donorRepoName = "bthwani-suite" + "-next";
 const patterns = [
-  { label: "donor repository", value: "bthwani2-boop/" + donorRepoName },
-  { label: "donor repository name", value: donorRepoName },
+  { label: "donor repository", value: "bthwani2-boop/" + donorRepoName, provenanceAllowed: true },
+  { label: "donor repository name", value: donorRepoName, provenanceAllowed: true },
   { label: "donor Windows path", value: "D:\\" + donorRepoName },
   { label: "old secret path", value: "C:\\" + "bthwani-" + "secrets" },
   { label: "retired donor branch residue", value: ["origin", "h"].join("/") },
@@ -25,9 +29,7 @@ const patterns = [
   { label: "retired donor head marker residue", value: "UNKNOWN_CURRENT_" + "h" + "_HEAD" },
   {
     label: "obsolete completion token",
-    value:
-      "H_TRUSTWORTHY_CANONICAL_" +
-      "BASELINE_REFOUNDATION_COMPLETE",
+    value: "H_TRUSTWORTHY_CANONICAL_" + "BASELINE_REFOUNDATION_COMPLETE",
   },
 ];
 
@@ -38,21 +40,14 @@ for (const file of tracked) {
 
   const absolute = path.join(repoRoot, file);
   const buffer = fs.readFileSync(absolute);
-
   if (buffer.includes(0)) continue;
 
   const lines = buffer.toString("utf8").split("\n");
-
   for (let index = 0; index < lines.length; index++) {
     for (const pattern of patterns) {
+      if (pattern.provenanceAllowed && donorProvenanceFiles.has(file)) continue;
       if (lines[index].includes(pattern.value)) {
-        failures.push(
-          file +
-            ":" +
-            (index + 1) +
-            " -> " +
-            pattern.label,
-        );
+        failures.push(file + ":" + (index + 1) + " -> " + pattern.label);
       }
     }
   }
@@ -64,5 +59,6 @@ if (failures.length) {
   process.exit(1);
 }
 
+console.log("DONOR_PROVENANCE_FILES=" + donorProvenanceFiles.size);
 console.log("DONOR_RESIDUE=0");
 console.log("DONOR_RESIDUE_VERIFY=PASS");

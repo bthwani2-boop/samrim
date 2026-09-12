@@ -11,6 +11,19 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityboundary"
 )
 
+func newTestIdentityClient(t *testing.T, rawURL string) *identityboundary.Client {
+	t.Helper()
+	endpoint, err := identityboundary.ResolveBaseURL(rawURL, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	identityClient, err := identityboundary.New(endpoint, "identity-service-token-123456789")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identityClient
+}
+
 func TestProvisionManagedRoleUsesAuthenticatedIdentityBoundary(t *testing.T) {
 	identityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/internal/actor-roles/provision" {
@@ -32,10 +45,7 @@ func TestProvisionManagedRoleUsesAuthenticatedIdentityBoundary(t *testing.T) {
 	}))
 	defer identityServer.Close()
 
-	identityClient, err := identityboundary.New(identityServer.URL, "identity-service-token-123456789")
-	if err != nil {
-		t.Fatal(err)
-	}
+	identityClient := newTestIdentityClient(t, identityServer.URL)
 	const accessToken = "control-panel-service-token-123456789"
 	managed, err := New(identityClient, accessToken)
 	if err != nil {
@@ -73,10 +83,7 @@ func TestProvisionManagedRoleUsesAuthenticatedIdentityBoundary(t *testing.T) {
 }
 
 func TestProvisionManagedRoleRejectsMissingAuthority(t *testing.T) {
-	identityClient, err := identityboundary.New("http://identity.invalid", "identity-service-token-123456789")
-	if err != nil {
-		t.Fatal(err)
-	}
+	identityClient := newTestIdentityClient(t, "http://identity:8082")
 	managed, err := New(identityClient, "control-panel-service-token-123456789")
 	if err != nil {
 		t.Fatal(err)
@@ -114,10 +121,7 @@ func TestReenrollByPhoneResolvesCanonicalActorBeforeAuthorization(t *testing.T) 
 	}))
 	defer identityServer.Close()
 
-	identityClient, err := identityboundary.New(identityServer.URL, "identity-service-token-123456789")
-	if err != nil {
-		t.Fatal(err)
-	}
+	identityClient := newTestIdentityClient(t, identityServer.URL)
 	const accessToken = "control-panel-service-token-123456789"
 	managed, err := New(identityClient, accessToken)
 	if err != nil {
@@ -151,10 +155,7 @@ func TestStatusByPhoneReadsCanonicalIdentityState(t *testing.T) {
 	}))
 	defer identityServer.Close()
 
-	identityClient, err := identityboundary.New(identityServer.URL, "identity-service-token-123456789")
-	if err != nil {
-		t.Fatal(err)
-	}
+	identityClient := newTestIdentityClient(t, identityServer.URL)
 	const accessToken = "control-panel-service-token-123456789"
 	managed, err := New(identityClient, accessToken)
 	if err != nil {
@@ -174,7 +175,7 @@ func TestStatusByPhoneReadsCanonicalIdentityState(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if !body.Exists || !body.Enabled || !body.Activated || !body.Recoverable || body.Role != "captain" {
+	if !body.Exists || !body.Enabled || !body.Activated || !body.Reenrollable || body.Role != "captain" {
 		t.Fatalf("unexpected role status: %#v", body)
 	}
 }

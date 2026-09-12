@@ -17,7 +17,7 @@ identity_security_audit
 identity_operator_enrollment_tokens
 ```
 
-`identity_actors` owns the permanent `actor_id`, current verified phone identifier and minimal Identity-wide `security_enabled` state. Passwords are not actor columns: client/operator/platform-owner password credentials are role-scoped in `identity_password_credentials`. Managed-role and operator one-time enrollment are represented by `identity_actor_roles.activated_at`.
+`identity_actors` owns the permanent `actor_id`, current verified phone identifier and minimal Identity-wide `security_enabled` state. Passwords are not actor columns: client and operator password credentials are role-scoped in `identity_password_credentials`. Managed-role and operator one-time enrollment are represented by `identity_actor_roles.activated_at`.
 
 `identity_challenges` is purpose-bound. Current purposes distinguish client registration, client recovery, managed activation and operator MFA. A challenge cannot silently become a business-role grant, recurring login credential or recovery authority for another role.
 

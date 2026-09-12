@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,10 +28,14 @@ func RunWithRoutes(service, prefix, defaultPort string, register func(*http.Serv
 }
 
 func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register func(*http.ServeMux), readiness func(context.Context) error) error {
+	if err := requireOrdinaryRuntimeEnvironment(os.Getenv("BTHWANI_ENV")); err != nil {
+		return err
+	}
 	port := strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
 		port = defaultPort
 	}
+	listenHost := strings.TrimSpace(os.Getenv("BTHWANI_LISTEN_HOST"))
 
 	mux := http.NewServeMux()
 	writeStatus := func(w http.ResponseWriter, _ *http.Request) {
@@ -58,7 +63,7 @@ func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register fun
 	}
 
 	server := &http.Server{
-		Addr:              ":" + port,
+		Addr:              net.JoinHostPort(listenHost, port),
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -68,11 +73,15 @@ func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register fun
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return err
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("%s API listening on %s", service, server.Addr)
-		errCh <- server.ListenAndServe()
+		errCh <- server.Serve(listener)
 	}()
 
 	select {

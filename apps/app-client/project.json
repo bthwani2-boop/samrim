@@ -4,12 +4,6 @@
   "sourceRoot": "apps/app-client",
   "projectType": "application",
   "targets": {
-    "serve": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pnpm client"
-      }
-    },
     "typecheck": {
       "executor": "nx:run-commands",
       "options": {

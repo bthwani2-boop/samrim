@@ -25,6 +25,7 @@ export interface ManagedIdentityFlowProps {
   surface: string;
   roleLabel: string;
   binding: ManagedIdentityBinding;
+  authenticatedContent?: ReactNode;
 }
 
 function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
@@ -39,7 +40,7 @@ function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
   );
 }
 
-export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }: ManagedIdentityFlowProps) {
+export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, authenticatedContent }: ManagedIdentityFlowProps) {
   if (binding.role && binding.role !== managedRole) {
     throw new Error(`MANAGED_FLOW_ROLE_MISMATCH: binding role ${binding.role} !== prop role ${managedRole}`);
   }
@@ -224,6 +225,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding }
         </View>
         <Text style={styles.title}>مرحباً بك في مساحة {roleLabel}</Text>
         <Text style={styles.description}>تم تفعيل جلسة هذا الجهاز بنجاح.</Text>
+        {authenticatedContent}
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <Pressable
           accessibilityRole="button"

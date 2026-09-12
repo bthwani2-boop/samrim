@@ -29,7 +29,6 @@ const roleSurface: Readonly<Record<ActorType, IdentitySurface>> = Object.freeze(
   captain: "app-captain",
   field: "app-field",
   operator: "control-panel",
-  platform_owner: "control-panel",
 });
 
 export function identityRoleSurface(role: ActorType): IdentitySurface {
@@ -113,6 +112,10 @@ export class IdentitySessionManager {
 
   get state(): IdentitySessionState {
     return this.stateValue;
+  }
+
+  getAccessToken(): string | null {
+    return this.tokens?.accessToken ?? null;
   }
 
   async restore(): Promise<IdentitySessionState> {

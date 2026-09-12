@@ -1,5 +1,45 @@
 name: samrim-local
 
+x-js-volumes: &js-volumes
+  - ../../..:/workspace
+  - samrim-js-root-node-modules:/workspace/node_modules
+  - samrim-js-client-node-modules:/workspace/apps/app-client/node_modules
+  - samrim-js-partner-node-modules:/workspace/apps/app-partner/node_modules
+  - samrim-js-captain-node-modules:/workspace/apps/app-captain/node_modules
+  - samrim-js-field-node-modules:/workspace/apps/app-field/node_modules
+  - samrim-js-control-node-modules:/workspace/apps/control-panel/node_modules
+  - samrim-js-identity-node-modules:/workspace/services/identity/node_modules
+  - samrim-js-dsh-node-modules:/workspace/services/dsh/node_modules
+  - samrim-js-design-system-node-modules:/workspace/packages/design-system/node_modules
+
+x-control-volumes: &control-volumes
+  - ../../..:/workspace
+  - samrim-js-root-node-modules:/workspace/node_modules
+  - samrim-js-client-node-modules:/workspace/apps/app-client/node_modules
+  - samrim-js-partner-node-modules:/workspace/apps/app-partner/node_modules
+  - samrim-js-captain-node-modules:/workspace/apps/app-captain/node_modules
+  - samrim-js-field-node-modules:/workspace/apps/app-field/node_modules
+  - samrim-js-control-node-modules:/workspace/apps/control-panel/node_modules
+  - samrim-js-identity-node-modules:/workspace/services/identity/node_modules
+  - samrim-js-dsh-node-modules:/workspace/services/dsh/node_modules
+  - samrim-js-design-system-node-modules:/workspace/packages/design-system/node_modules
+  - samrim-js-control-next:/workspace/apps/control-panel/.next
+
+x-js-runtime: &js-runtime
+  image: samrim-local-js-runtime:dev
+  pull_policy: never
+  restart: unless-stopped
+  init: true
+  working_dir: /workspace
+  volumes: *js-volumes
+
+x-js-env: &js-env
+  NODE_ENV: "development"
+  BTHWANI_ENV: "development"
+  NODE_OPTIONS: "--dns-result-order=ipv4first"
+  NEXT_TELEMETRY_DISABLED: "1"
+  EXPO_NO_TELEMETRY: "1"
+
 services:
   postgres:
     image: postgis/postgis:16-3.4-alpine
@@ -8,8 +48,6 @@ services:
       POSTGRES_USER: "${SAMRIM_POSTGRES_USER}"
       POSTGRES_PASSWORD: "${SAMRIM_POSTGRES_PASSWORD}"
       POSTGRES_DB: "${SAMRIM_POSTGRES_DB}"
-    ports:
-      - "127.0.0.1:${SAMRIM_POSTGRES_PORT:-58432}:5432"
     volumes:
       - samrim-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -23,11 +61,10 @@ services:
     image: axllent/mailpit:v1.27.8
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${SAMRIM_MAILPIT_SMTP_PORT:-58025}:1025"
-      - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-58026}:8025"
+      - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-18026}:8025"
 
   identity-migrate:
-    profiles: ["integration"]
+    image: samrim-local-identity-migrate:dev
     restart: "no"
     build:
       context: ../../..
@@ -38,11 +75,15 @@ services:
     environment:
       BTHWANI_ENV: "development"
       IDENTITY_MIGRATION_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
+      BTHWANI_EXPECTED_DATABASE_PORT: "5432"
+      BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
+      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
       IDENTITY_MIGRATION_DIR: "/app/migrations"
     entrypoint: ["/migrate"]
 
   identity:
-    profiles: ["integration"]
+    image: samrim-local-identity:dev
     restart: unless-stopped
     build:
       context: ../../..
@@ -56,9 +97,14 @@ services:
         condition: service_completed_successfully
     environment:
       PORT: "8082"
+      BTHWANI_LISTEN_HOST: "0.0.0.0"
       BTHWANI_ENV: "development"
       IDENTITY_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       IDENTITY_MAINTENANCE_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
+      BTHWANI_EXPECTED_DATABASE_PORT: "5432"
+      BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
+      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
       IDENTITY_AUTO_MIGRATE: "false"
       IDENTITY_RETENTION_CHALLENGE_DAYS: "${IDENTITY_RETENTION_CHALLENGE_DAYS:-30}"
       IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS: "${IDENTITY_RETENTION_PASSWORD_ATTEMPT_DAYS:-30}"
@@ -69,30 +115,232 @@ services:
       IDENTITY_CHALLENGE_HMAC_SECRET: "${IDENTITY_CHALLENGE_HMAC_SECRET}"
       IDENTITY_ABUSE_HMAC_SECRET: "${IDENTITY_ABUSE_HMAC_SECRET}"
       IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"
-      IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN: "${IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN}"
-      IDENTITY_PLATFORM_BOOTSTRAP_SECRET: "${IDENTITY_PLATFORM_BOOTSTRAP_SECRET:-}"
+      CONTROL_PANEL_SERVICE_TOKEN: "${CONTROL_PANEL_SERVICE_TOKEN}"
+      OPERATOR_BOOTSTRAP_SECRET: "${OPERATOR_BOOTSTRAP_SECRET:-}"
       IDENTITY_TRUSTED_PROXY_IPS: "${IDENTITY_TRUSTED_PROXY_IPS:-}"
       IDENTITY_CHALLENGE_DELIVERY_MODE: "${IDENTITY_CHALLENGE_DELIVERY_MODE}"
       IDENTITY_MAILPIT_SMTP_ADDR: "mailpit:1025"
       IDENTITY_MAILPIT_RECIPIENT: "${IDENTITY_MAILPIT_RECIPIENT}"
       IDENTITY_CORS_ALLOWED_ORIGINS: "${IDENTITY_CORS_ALLOWED_ORIGINS}"
     ports:
-      - "${SAMRIM_IDENTITY_BIND_HOST:-0.0.0.0}:${SAMRIM_IDENTITY_PORT:-18082}:8082"
+      - "127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}:8082"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8082/identity/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  dsh-migrate:
+    image: samrim-local-dsh-migrate:dev
+    restart: "no"
+    build:
+      context: ../../..
+      dockerfile: services/dsh/backend/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BTHWANI_ENV: "development"
+      DSH_MIGRATION_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
+      BTHWANI_EXPECTED_DATABASE_PORT: "5432"
+      BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
+      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
+      DSH_MIGRATION_DIR: "/app/migrations"
+    entrypoint: ["/migrate"]
 
   dsh:
-    profiles: ["integration"]
+    image: samrim-local-dsh:dev
     restart: unless-stopped
     build:
       context: ../../..
       dockerfile: services/dsh/backend/Dockerfile
+    depends_on:
+      identity:
+        condition: service_healthy
+      dsh-migrate:
+        condition: service_completed_successfully
     environment:
       PORT: "8080"
+      BTHWANI_LISTEN_HOST: "0.0.0.0"
       BTHWANI_ENV: "development"
       DSH_IDENTITY_API_BASE_URL: "http://identity:8082"
+      DSH_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      DSH_MIGRATION_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      DSH_SCHEMA_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
+      BTHWANI_EXPECTED_DATABASE_PORT: "5432"
+      BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
+      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
+      DSH_MIGRATION_DIR: "/app/migrations"
       IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"
-      DSH_PLATFORM_CONTROL_SERVICE_TOKEN: "${DSH_PLATFORM_CONTROL_SERVICE_TOKEN}"
+      CONTROL_PANEL_SERVICE_TOKEN: "${CONTROL_PANEL_SERVICE_TOKEN}"
     ports:
-      - "127.0.0.1:${SAMRIM_DSH_PORT:-58080}:8080"
+      - "127.0.0.1:${SAMRIM_DSH_PORT:-18080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/dsh/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  js-deps:
+    image: samrim-local-js-runtime:dev
+    pull_policy: build
+    build:
+      context: ../docker
+      dockerfile: js-runtime.Dockerfile
+    restart: "no"
+    init: true
+    working_dir: /workspace
+    volumes:
+      - ../../..:/workspace
+      - samrim-js-root-node-modules:/workspace/node_modules
+      - samrim-js-client-node-modules:/workspace/apps/app-client/node_modules
+      - samrim-js-partner-node-modules:/workspace/apps/app-partner/node_modules
+      - samrim-js-captain-node-modules:/workspace/apps/app-captain/node_modules
+      - samrim-js-field-node-modules:/workspace/apps/app-field/node_modules
+      - samrim-js-control-node-modules:/workspace/apps/control-panel/node_modules
+      - samrim-js-identity-node-modules:/workspace/services/identity/node_modules
+      - samrim-js-dsh-node-modules:/workspace/services/dsh/node_modules
+      - samrim-js-design-system-node-modules:/workspace/packages/design-system/node_modules
+      - samrim-js-pnpm-store:/pnpm/store
+    command: ["node", "tools/dev/js-deps.mjs"]
+
+  control:
+    <<: *js-runtime
+    volumes: *control-volumes
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      NODE_ENV: "production"
+      CONTROL_PANEL_PUBLIC_ORIGIN: "${CONTROL_PANEL_PUBLIC_ORIGIN}"
+      IDENTITY_API_BASE_URL: "http://identity:8082"
+      DSH_API_BASE_URL: "http://dsh:8080"
+      CONTROL_PANEL_SERVICE_TOKEN: "${CONTROL_PANEL_SERVICE_TOKEN}"
+    command: ["sh", "-c", "pnpm --dir apps/control-panel build && pnpm --dir apps/control-panel exec next start -H 0.0.0.0 -p 13000"]
+    ports:
+      - "127.0.0.1:${SAMRIM_CONTROL_PORT:-13000}:13000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:13000/').then(r=>{if(r.status>=500)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  metro-client:
+    <<: *js-runtime
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://127.0.0.1:${SAMRIM_DSH_PORT:-18080}"
+      EXPO_PACKAGER_PROXY_URL: "http://127.0.0.1:${SAMRIM_APP_CLIENT_METRO_PORT:-18101}"
+    command: ["pnpm", "--dir", "apps/app-client", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18101"]
+    ports:
+      - "127.0.0.1:${SAMRIM_APP_CLIENT_METRO_PORT:-18101}:18101"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18101/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  metro-partner:
+    <<: *js-runtime
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://127.0.0.1:${SAMRIM_DSH_PORT:-18080}"
+      EXPO_PACKAGER_PROXY_URL: "http://127.0.0.1:${SAMRIM_APP_PARTNER_METRO_PORT:-18102}"
+    command: ["pnpm", "--dir", "apps/app-partner", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18102"]
+    ports:
+      - "127.0.0.1:${SAMRIM_APP_PARTNER_METRO_PORT:-18102}:18102"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18102/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  metro-captain:
+    <<: *js-runtime
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://127.0.0.1:${SAMRIM_DSH_PORT:-18080}"
+      EXPO_PACKAGER_PROXY_URL: "http://127.0.0.1:${SAMRIM_APP_CAPTAIN_METRO_PORT:-18103}"
+    command: ["pnpm", "--dir", "apps/app-captain", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18103"]
+    ports:
+      - "127.0.0.1:${SAMRIM_APP_CAPTAIN_METRO_PORT:-18103}:18103"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18103/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  metro-field:
+    <<: *js-runtime
+    depends_on:
+      js-deps:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      dsh:
+        condition: service_healthy
+    environment:
+      <<: *js-env
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://127.0.0.1:${SAMRIM_DSH_PORT:-18080}"
+      EXPO_PACKAGER_PROXY_URL: "http://127.0.0.1:${SAMRIM_APP_FIELD_METRO_PORT:-18104}"
+    command: ["pnpm", "--dir", "apps/app-field", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18104"]
+    ports:
+      - "127.0.0.1:${SAMRIM_APP_FIELD_METRO_PORT:-18104}:18104"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18104/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
 
 volumes:
   samrim-postgres-data:
+  samrim-js-pnpm-store:
+  samrim-js-root-node-modules:
+  samrim-js-client-node-modules:
+  samrim-js-partner-node-modules:
+  samrim-js-captain-node-modules:
+  samrim-js-field-node-modules:
+  samrim-js-control-node-modules:
+  samrim-js-control-next:
+  samrim-js-identity-node-modules:
+  samrim-js-dsh-node-modules:
+  samrim-js-design-system-node-modules:

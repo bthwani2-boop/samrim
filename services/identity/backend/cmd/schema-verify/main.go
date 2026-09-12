@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/opsafety"
 	serviceruntime "github.com/bthwani2-boop/samrim/services/identity/backend/internal/runtime"
 )
 
@@ -22,6 +23,12 @@ func main() {
 			log.Fatal("IDENTITY_SCHEMA_DATABASE_URL is required outside local environments")
 		}
 		databaseURL = strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
+	}
+	if _, err := opsafety.RequireOrdinaryCLIEnvironment(environment, "identity schema verification"); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := opsafety.RequireExpectedDatabaseTarget(databaseURL, os.Getenv); err != nil {
+		log.Fatal(err)
 	}
 	directory := strings.TrimSpace(os.Getenv("IDENTITY_MIGRATION_DIR"))
 	if directory == "" {

@@ -2,6 +2,9 @@ module github.com/bthwani2-boop/samrim/services/dsh/backend
 
 go 1.27.1
 
-require github.com/bthwani2-boop/samrim/services/identity/clients/go v0.0.0
+require (
+	github.com/bthwani2-boop/samrim/services/identity/clients/go v0.0.0
+	github.com/lib/pq v1.12.3
+)
 
 replace github.com/bthwani2-boop/samrim/services/identity/clients/go => ../../identity/clients/go

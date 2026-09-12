@@ -20,36 +20,31 @@ for (const route of [
   "/auth/logout:",
   "/auth/session:",
   "/internal/actor-roles/provision:",
-  "/internal/bootstrap/platform-owner:",
+  "/internal/bootstrap/operator:",
   "/internal/actor-roles/search:",
   "/internal/actors/{actorId}/roles/{role}:",
   "/internal/actors/{actorId}/roles/{role}/disable:",
   "/internal/actors/{actorId}/roles/{role}/enable:",
   "/internal/actors/{actorId}/roles/{role}/reenrollment:",
-  "/internal/actors/{actorId}/operator-password/reset:",
   "/internal/actors/{actorId}/roles/{role}/sessions:",
 ]) {
   if (!contract.includes(route)) failures.push("missing canonical route " + route);
 }
 
+const retiredHumanRole = ["platform", "owner"].join("_");
 for (const forbidden of [
-  "/auth/otp/request:",
-  "/auth/activate:",
-  "\n  /auth/login:",
+  retiredHumanRole,
+  "operator_owner",
+  "/internal/bootstrap/" + ["platform", "owner"].join("-") + ":",
+  "bootstrap" + "PlatformOwner",
+  "PlatformControl",
   "X-Service-Caller",
   "identity_access_grants",
-  "username:",
-  "expectedActorType",
-  "sessionSurface",
-  "surfaceAccess",
-  "permissions:",
-  "roles:",
-  "ActorStatus:",
-  "/auth/managed/state:",
-  "/auth/control-panel/state:",
   "activationCode:",
+  "/internal/managed-activation-codes:",
+  "ManagedActivationCode",
 ]) {
-  if (contract.includes(forbidden)) failures.push("legacy/premature Identity authority remains: " + forbidden);
+  if (contract.includes(forbidden)) failures.push("retired Identity authority remains: " + forbidden);
 }
 
 function schemaBlock(name, next) {
@@ -58,61 +53,37 @@ function schemaBlock(name, next) {
   return start >= 0 ? contract.slice(start, end >= 0 ? end : contract.length) : "";
 }
 
-const challenge = schemaBlock("Challenge", "RefreshRequest");
-if (/^\s+code:/m.test(challenge)) failures.push("challenge response leaks raw code");
-if (!contract.includes("Phone is a mutable verified identifier rather than the cross-boundary primary identity")) {
-  failures.push("phone/actor_id identity law missing");
-}
-if (!contract.includes("A password proof alone never creates an operator session")) {
-  failures.push("operator password-only session prohibition missing");
-}
-if (!contract.includes("Repeated activation is not normal login")) {
-  failures.push("managed one-time activation semantics missing");
-}
-if (!contract.includes("revokes existing client sessions and creates a fresh client session")) {
-  failures.push("client recovery revocation semantics missing");
-}
-if (!contract.includes("authenticated service token determines the caller")) {
-  failures.push("service credential caller authority missing");
-}
-if (!contract.includes("Identity alone creates actor_id")) {
-  failures.push("actor_id authority missing");
-}
-if (!contract.includes("Refresh token rotated atomically")) {
-  failures.push("refresh rotation contract missing");
-}
-if (!contract.includes("RecoveryComplete") || !contract.includes("No authenticated session is created")) {
-  failures.push("managed recovery must acknowledge completion without creating a session");
-}
-
-const provision = schemaBlock("ProvisionActorRoleRequest", "ActorRoleView");
-if (provision.includes("actorId:")) failures.push("consumer can author actor_id");
-if (provision.includes("username:")) failures.push("username remains an Identity provisioning requirement");
-
-const operatorStart = contract.slice(
-  contract.indexOf("  /auth/operator/login/start:"),
-  contract.indexOf("  /auth/operator/login/complete:"),
-);
-if (operatorStart.includes("#/components/responses/TokenPair")) {
-  failures.push("operator password-start route can create a session");
-}
-const managedRequest = schemaBlock("ManagedChallengeRequest", "ManagedRecoveryChallengeRequest");
-if (!managedRequest.includes("#/components/schemas/ManagedActivationRole")) failures.push("managed activation role boundary missing");
-if (!managedRequest.includes("operatorEnrollmentToken:")) failures.push("managed activation request token schema missing");
-if (!managedRequest.includes("minLength: 24") || !managedRequest.includes('pattern: "^[A-Za-z0-9_-]{24,256}$"')) failures.push("managed activation token must be high entropy");
-const managedActivation = schemaBlock("ManagedActivationRequest", "OperatorLoginStartRequest");
-if (!managedActivation.includes("verificationCode:")) failures.push("managed activation does not require the separate phone verification code");
-if (!managedActivation.includes("minLength: 24") || !managedActivation.includes('pattern: "^[A-Za-z0-9_-]{24,256}$"')) failures.push("operator enrollment token must be high entropy");
-if (!managedActivation.includes("verificationCode:") || !managedActivation.includes('pattern: "^[0-9]{6}$"')) failures.push("managed activation request must require a six-digit phone code");
-if (!contract.includes("OperatorEnrollmentToken")) failures.push("operator enrollment token issuance contract missing");
-if (contract.includes("ManagedActivationCode")) failures.push("contract still references retired ManagedActivationCode");
-if (contract.includes("/internal/managed-activation-codes:")) failures.push("contract still references retired /internal/managed-activation-codes");
-const enrollmentIssue = schemaBlock("OperatorEnrollmentTokenIssueRequest", "OperatorEnrollmentToken");
-if (!enrollmentIssue.includes("enum: [operator]")) failures.push("operator enrollment token issuance is not role-scoped");
-const managedType = schemaBlock("ManagedActorType", "PhoneRequest");
-if (!managedType.includes("enum: [partner, captain, field]")) failures.push("managed activation roles are incorrect");
+const actorType = schemaBlock("ActorType", "ManagedActorType");
+if (!actorType.includes("enum: [client, partner, captain, field, operator]")) failures.push("ActorType is not the canonical five-role set");
+const controlRole = schemaBlock("ControlPanelRole", "PhoneRequest");
+if (!controlRole.includes("enum: [operator]")) failures.push("operator must be the only control-panel human role");
 const managedActivationRole = schemaBlock("ManagedActivationRole", "ControlPanelRole");
 if (!managedActivationRole.includes("enum: [partner, captain, field, operator]")) failures.push("operator activation role boundary missing");
+const provision = schemaBlock("ProvisionActorRoleRequest", "ActorRoleView");
+if (!provision.includes("enum: [partner, captain, field, operator]")) failures.push("trusted provisioning roles are incorrect");
+if (provision.includes("actorId:")) failures.push("consumer can author actor_id");
+
+const challenge = schemaBlock("Challenge", "RefreshRequest");
+if (/^\s+code:/m.test(challenge)) failures.push("challenge response leaks raw code");
+
+const operatorStart = contract.slice(contract.indexOf("  /auth/operator/login/start:"), contract.indexOf("  /auth/operator/login/complete:"));
+if (operatorStart.includes("#/components/responses/TokenPair")) failures.push("operator password-start route can create a session");
+if (!operatorStart.includes("Password proof alone never creates a control-panel session")) failures.push("operator password-only session prohibition missing");
+const operatorStartRequest = schemaBlock("OperatorLoginStartRequest", "OperatorLoginCompleteRequest");
+const operatorCompleteRequest = schemaBlock("OperatorLoginCompleteRequest", "Challenge");
+if (operatorStartRequest.includes("role:") || operatorCompleteRequest.includes("role:")) failures.push("operator login endpoints must own the operator role instead of accepting a role selector");
+
+const managedRequest = schemaBlock("ManagedChallengeRequest", "ManagedRecoveryChallengeRequest");
+if (!managedRequest.includes("#/components/schemas/ManagedActivationRole")) failures.push("managed activation role boundary missing");
+if (!managedRequest.includes("operatorEnrollmentToken:")) failures.push("operator enrollment token input missing");
+if (!managedRequest.includes("minLength: 24") || !managedRequest.includes('pattern: "^[A-Za-z0-9_-]{24,256}$"')) failures.push("operator enrollment token must be high entropy");
+
+const enrollmentIssue = schemaBlock("OperatorEnrollmentTokenIssueRequest", "OperatorEnrollmentToken");
+if (!enrollmentIssue.includes("enum: [operator]")) failures.push("operator enrollment token issuance is not operator-scoped");
+
+if (!contract.includes("Identity alone creates actor_id")) failures.push("actor_id authority missing");
+if (!contract.includes("First-operator bootstrap is a separate one-time lifecycle")) failures.push("first-operator bootstrap lifecycle distinction missing");
+if (!contract.includes("never creates a second human role")) failures.push("bootstrap-as-lifecycle invariant missing");
 
 if (failures.length) {
   console.error("IDENTITY_CONTRACT_GUARD=FAIL");

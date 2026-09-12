@@ -12,7 +12,7 @@ import {
   useColorScheme,
 } from "react-native";
 
-import { resolveTheme } from "@bthwani/design-system";
+import { resolveTextAlign, resolveTheme, resolveRowDirection } from "@bthwani/design-system";
 import { identityErrorMessage, isIdentityClientError, validatePasswordInputShape, type IdentitySessionState } from "@bthwani/identity";
 import {
   currentIdentityState,
@@ -24,6 +24,7 @@ import {
   requestClientRegistration,
   restoreIdentitySession,
 } from "./identity";
+import { identityPresentation, type IdentityCopy } from "./identity-presentation";
 
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
@@ -49,11 +50,11 @@ function getColors(isDark: boolean) {
 
 type GateColors = ReturnType<typeof getColors>;
 
-const modeDetails: Record<AuthMode, { title: string }> = {
-  login: { title: "تسجيل الدخول" },
-  register: { title: "إنشاء حساب" },
-  recover: { title: "استعادة كلمة المرور" },
-};
+const modeDetails = {
+  login: "loginTitle",
+  register: "registerTitle",
+  recover: "recoverTitle",
+} as const satisfies Record<AuthMode, keyof IdentityCopy>;
 
 function isCredentialFailure(value: unknown): boolean {
   return isIdentityClientError(value) && value.kind === "http" && value.status === 401;
@@ -61,9 +62,10 @@ function isCredentialFailure(value: unknown): boolean {
 
 export default function IdentityGate() {
   const colorScheme = useColorScheme();
+  const { direction, copy } = identityPresentation;
   const isDark = colorScheme === "dark";
   const colors = useMemo(() => getColors(isDark), [isDark]);
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const styles = useMemo(() => createStyles(colors, direction), [colors]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [mode, setMode] = useState<AuthMode>("login");
@@ -84,7 +86,7 @@ export default function IdentityGate() {
     try {
       setState(await restoreIdentitySession());
     } catch (cause) {
-      setError(identityErrorMessage(cause));
+      setError(identityErrorMessage(cause, "general", copy.errors));
       setState({ kind: "signed_out" });
     } finally {
       setBusy(false);
@@ -149,9 +151,9 @@ export default function IdentityGate() {
         return;
       }
       setProofRequested(true);
-      setNotice("إذا كانت البيانات صالحة، سيصلك رمز التحقق عبر القناة المهيأة.");
+      setNotice(copy.proofNotice);
     } catch (cause) {
-      setError(identityErrorMessage(cause));
+      setError(identityErrorMessage(cause, "general", copy.errors));
     } finally {
       setBusy(false);
     }
@@ -176,7 +178,7 @@ export default function IdentityGate() {
       setMode("login");
     } catch (cause) {
       setLoginFailed(mode === "login" && isCredentialFailure(cause));
-      setError(identityErrorMessage(cause, mode === "login" ? "login" : mode === "recover" ? "recovery" : "general"));
+      setError(identityErrorMessage(cause, mode === "login" ? "login" : mode === "recover" ? "recovery" : "general", copy.errors));
     } finally {
       setBusy(false);
     }
@@ -194,7 +196,7 @@ export default function IdentityGate() {
     } finally {
       setState(currentIdentityState());
       resetSignedOutAuthState();
-      if (!remoteRevocationConfirmed) setNotice("تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم.");
+      if (!remoteRevocationConfirmed) setNotice(copy.remoteLogoutFailure);
       setBusy(false);
     }
   }
@@ -203,7 +205,7 @@ export default function IdentityGate() {
     return (
       <View style={styles.container}>
         <ActivityIndicator color={colors.actionBackground} />
-        <Text style={styles.muted}>جارٍ التحقق من الجلسة الحية…</Text>
+        <Text style={styles.muted}>{copy.restoringSession}</Text>
       </View>
     );
   }
@@ -211,18 +213,18 @@ export default function IdentityGate() {
   if (state.kind === "authenticated") {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>بثواني</Text>
-        <Text style={styles.status}>تم تسجيل الدخول</Text>
+        <Text style={styles.title}>{copy.brand}</Text>
+        <Text style={styles.status}>{copy.authenticatedStatus}</Text>
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="تسجيل الخروج"
+          accessibilityLabel={copy.logout}
           accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={logout}
           style={styles.primaryButton}
         >
-          <Text style={styles.primaryButtonText}>{busy ? "جارٍ التنفيذ…" : "تسجيل الخروج"}</Text>
+          <Text style={styles.primaryButtonText}>{busy ? copy.busyAction : copy.logout}</Text>
         </Pressable>
       </View>
     );
@@ -231,17 +233,17 @@ export default function IdentityGate() {
   if (state.kind === "service_unavailable") {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>بثواني</Text>
-        <Text style={styles.status}>خدمة الهوية غير متاحة</Text>
+        <Text style={styles.title}>{copy.brand}</Text>
+        <Text style={styles.status}>{copy.serviceUnavailable}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="إعادة التحقق"
+          accessibilityLabel={copy.retryVerification}
           accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={restore}
           style={styles.secondaryButton}
         >
-          <Text style={styles.secondaryButtonText}>إعادة التحقق</Text>
+          <Text style={styles.secondaryButtonText}>{copy.retryVerification}</Text>
         </Pressable>
       </View>
     );
@@ -250,18 +252,18 @@ export default function IdentityGate() {
   if (state.kind === "refresh_conflict") {
     return (
       <View style={styles.container}>
-        <Text style={styles.title}>بثواني</Text>
-        <Text style={styles.status}>تحديث جلسة العميل</Text>
-        <Text style={styles.muted}>تم تجديد بيانات الجلسة من عملية متزامنة. أعد مزامنة الجلسة للمتابعة دون إعادة تسجيل الدخول.</Text>
+        <Text style={styles.title}>{copy.brand}</Text>
+        <Text style={styles.status}>{copy.refreshingSession}</Text>
+        <Text style={styles.muted}>{copy.refreshConflict}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="مزامنة الجلسة"
+          accessibilityLabel={copy.syncSession}
           accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={restore}
           style={styles.primaryButton}
         >
-          <Text style={styles.primaryButtonText}>{busy ? "جارٍ المزامنة…" : "مزامنة الجلسة"}</Text>
+          <Text style={styles.primaryButtonText}>{busy ? copy.syncing : copy.syncSession}</Text>
         </Pressable>
       </View>
     );
@@ -285,23 +287,23 @@ export default function IdentityGate() {
       >
         <View style={styles.authShell}>
           <View style={styles.brandBlock}>
-            <Text style={styles.brand}>بثواني</Text>
+            <Text style={styles.brand}>{copy.brand}</Text>
             <View style={styles.brandAccent} />
           </View>
 
           <View style={styles.authCard}>
-            <Text style={styles.formTitle}>{modeDetails[mode].title}</Text>
+            <Text style={styles.formTitle}>{copy[modeDetails[mode]]}</Text>
 
             <View style={styles.fieldBlock}>
-              <Text style={styles.fieldLabel}>رقم الهاتف</Text>
+              <Text style={styles.fieldLabel}>{copy.phoneLabel}</Text>
               <TextInput
-                accessibilityLabel="رقم الهاتف"
+                accessibilityLabel={copy.phoneLabel}
                 autoCapitalize="none"
                 keyboardType="phone-pad"
                 onBlur={() => setFocusedField(null)}
                 onChangeText={updatePhone}
                 onFocus={() => setFocusedField("phone")}
-                placeholder="+967..."
+                placeholder={copy.phonePlaceholder}
                 placeholderTextColor={colors.muted}
                 style={[styles.input, styles.numericInput, focusedField === "phone" && styles.inputFocused]}
                 value={phone}
@@ -312,7 +314,7 @@ export default function IdentityGate() {
               <>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={proofRequested ? "إعادة إرسال رمز التحقق" : "إرسال رمز التحقق"}
+                  accessibilityLabel={proofRequested ? copy.resendCode : copy.sendCode}
                   accessibilityState={{ busy, disabled: busy || !phone.trim() }}
                   disabled={busy || !phone.trim()}
                   onPress={requestProof}
@@ -329,22 +331,22 @@ export default function IdentityGate() {
                       (busy || !phone.trim()) && styles.disabledText,
                     ]}
                   >
-                    {proofRequested ? "إعادة إرسال رمز التحقق" : "إرسال رمز التحقق"}
+                    {proofRequested ? copy.resendCode : copy.sendCode}
                   </Text>
                 </Pressable>
 
                 {proofRequested ? (
                   <>
                     <View style={styles.fieldBlock}>
-                      <Text style={styles.fieldLabel}>رمز التحقق</Text>
+                      <Text style={styles.fieldLabel}>{copy.verificationCodeLabel}</Text>
                       <TextInput
-                        accessibilityLabel="رمز التحقق"
+                        accessibilityLabel={copy.verificationCodeLabel}
                         keyboardType="number-pad"
                         maxLength={6}
                         onBlur={() => setFocusedField(null)}
                         onChangeText={(value) => setCode(value.replace(/\D/g, "").slice(0, 6))}
                         onFocus={() => setFocusedField("code")}
-                        placeholder="أدخل الرمز المكوّن من 6 أرقام"
+                        placeholder={copy.verificationCodePlaceholder}
                         placeholderTextColor={colors.muted}
                         style={[styles.input, styles.numericInput, focusedField === "code" && styles.inputFocused]}
                         value={code}
@@ -353,16 +355,16 @@ export default function IdentityGate() {
 
                     <View style={styles.fieldBlock}>
                       <Text style={styles.fieldLabel}>
-                        {mode === "recover" ? "كلمة المرور الجديدة" : "كلمة المرور"}
+                        {mode === "recover" ? copy.newPasswordLabel : copy.passwordLabel}
                       </Text>
                       <TextInput
-                        accessibilityLabel={mode === "recover" ? "كلمة المرور الجديدة" : "كلمة المرور"}
+                        accessibilityLabel={mode === "recover" ? copy.newPasswordLabel : copy.passwordLabel}
                         autoCapitalize="none"
                         autoComplete="new-password"
                         onBlur={() => setFocusedField(null)}
                         onChangeText={setPassword}
                         onFocus={() => setFocusedField("password")}
-                        placeholder="15 حرفًا على الأقل"
+                        placeholder={copy.newPasswordPlaceholder}
                         placeholderTextColor={colors.muted}
                         secureTextEntry
                         style={[styles.input, focusedField === "password" && styles.inputFocused]}
@@ -371,15 +373,15 @@ export default function IdentityGate() {
                     </View>
 
                     <View style={styles.fieldBlock}>
-                      <Text style={styles.fieldLabel}>تأكيد كلمة المرور</Text>
+                      <Text style={styles.fieldLabel}>{copy.passwordConfirmationLabel}</Text>
                       <TextInput
-                        accessibilityLabel="تأكيد كلمة المرور"
+                        accessibilityLabel={copy.passwordConfirmationLabel}
                         autoCapitalize="none"
                         autoComplete="new-password"
                         onBlur={() => setFocusedField(null)}
                         onChangeText={setPasswordConfirmation}
                         onFocus={() => setFocusedField("passwordConfirmation")}
-                        placeholder="أعد إدخال كلمة المرور"
+                        placeholder={copy.passwordConfirmationPlaceholder}
                         placeholderTextColor={colors.muted}
                         secureTextEntry
                         style={[styles.input, focusedField === "passwordConfirmation" && styles.inputFocused]}
@@ -391,15 +393,15 @@ export default function IdentityGate() {
               </>
             ) : (
               <View style={styles.fieldBlock}>
-                <Text style={styles.fieldLabel}>كلمة المرور</Text>
+                <Text style={styles.fieldLabel}>{copy.passwordLabel}</Text>
                 <TextInput
-                  accessibilityLabel="كلمة المرور"
+                  accessibilityLabel={copy.passwordLabel}
                   autoCapitalize="none"
                   autoComplete="current-password"
                   onBlur={() => setFocusedField(null)}
                   onChangeText={updatePassword}
                   onFocus={() => setFocusedField("password")}
-                  placeholder="أدخل كلمة المرور"
+                  placeholder={copy.loginPasswordPlaceholder}
                   placeholderTextColor={colors.muted}
                   secureTextEntry
                   style={[styles.input, focusedField === "password" && styles.inputFocused]}
@@ -411,14 +413,14 @@ export default function IdentityGate() {
             {(!needsProof || proofRequested) ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={modeDetails[mode].title}
+                accessibilityLabel={copy[modeDetails[mode]]}
                 accessibilityState={{ busy, disabled: busy || !canSubmit }}
                 disabled={busy || !canSubmit}
                 onPress={submit}
                 style={[styles.primaryButton, (busy || !canSubmit) && styles.primaryButtonDisabled]}
               >
                 <Text style={[styles.primaryButtonText, (busy || !canSubmit) && styles.primaryButtonTextDisabled]}>
-                  {busy ? "جارٍ التنفيذ…" : mode === "login" ? "تسجيل الدخول" : mode === "register" ? "إنشاء الحساب" : "تعيين كلمة المرور"}
+                  {busy ? copy.busyAction : mode === "login" ? copy.loginButton : mode === "register" ? copy.registerButton : copy.recoverButton}
                 </Text>
               </Pressable>
             ) : null}
@@ -429,25 +431,25 @@ export default function IdentityGate() {
             {mode === "login" && loginFailed ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="نسيت كلمة المرور؟"
+                accessibilityLabel={copy.forgotPassword}
                 accessibilityState={{ busy, disabled: busy }}
                 onPress={() => selectMode("recover")}
                 style={styles.recoveryButton}
               >
-                <Text style={styles.recoveryButtonText}>نسيت كلمة المرور؟</Text>
+                <Text style={styles.recoveryButtonText}>{copy.forgotPassword}</Text>
               </Pressable>
             ) : null}
           </View>
 
           <View style={styles.modeLinks}>
             {mode !== "login" ? (
-              <Pressable accessibilityRole="link" accessibilityLabel="دخول" onPress={() => selectMode("login")}>
-                <Text style={styles.modeLinkText}>دخول</Text>
+              <Pressable accessibilityRole="link" accessibilityLabel={copy.signInLink} onPress={() => selectMode("login")}>
+                <Text style={styles.modeLinkText}>{copy.signInLink}</Text>
               </Pressable>
             ) : null}
             {mode !== "register" ? (
-              <Pressable accessibilityRole="link" accessibilityLabel="حساب جديد" onPress={() => selectMode("register")}>
-                <Text style={styles.modeLinkText}>حساب جديد</Text>
+              <Pressable accessibilityRole="link" accessibilityLabel={copy.newAccountLink} onPress={() => selectMode("register")}>
+                <Text style={styles.modeLinkText}>{copy.newAccountLink}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -457,9 +459,12 @@ export default function IdentityGate() {
   );
 }
 
-function createStyles(colors: GateColors) {
+function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
+  const startTextAlign = resolveTextAlign("start", activeDirection);
+  const endCrossAxisAlignment = activeDirection === "rtl" ? "flex-end" : "flex-start";
+
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
+    container: { flex: 1, backgroundColor: colors.background, direction: activeDirection },
     scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32 },
     authShell: { width: "100%", maxWidth: 480, alignSelf: "center" },
     brandBlock: { alignItems: "center", marginBottom: 24 },
@@ -478,18 +483,18 @@ function createStyles(colors: GateColors) {
       shadowRadius: 20,
       elevation: 3,
     },
-    formTitle: { color: colors.navy, fontSize: 22, fontWeight: "800", marginBottom: 16, textAlign: "right" },
+    formTitle: { color: colors.navy, fontSize: 22, fontWeight: "800", marginBottom: 16, textAlign: startTextAlign },
     fieldBlock: { marginBottom: 14 },
-    fieldLabel: { color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7, textAlign: "right" },
-    input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13, textAlign: "right" },
-    numericInput: { textAlign: "left" },
+    fieldLabel: { color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7, textAlign: startTextAlign },
+    input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13, textAlign: startTextAlign, writingDirection: activeDirection },
+    numericInput: { textAlign: "left", writingDirection: "ltr" },
     inputFocused: { borderColor: colors.focus, borderWidth: 2 },
-    codeAction: { alignSelf: "flex-end", paddingBottom: 8, paddingTop: 2 },
+    codeAction: { alignSelf: endCrossAxisAlignment, paddingBottom: 8, paddingTop: 2 },
     codeActionText: { color: colors.interactiveText, fontSize: 14, fontWeight: "800" },
     codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: colors.actionBackground, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
     codeActionPrimaryText: { color: colors.surface, fontSize: 16 },
     codeActionDisabled: { backgroundColor: colors.disabled },
-    modeLinks: { alignItems: "center", flexDirection: "row-reverse", flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
+    modeLinks: { alignItems: "center", flexDirection: resolveRowDirection(activeDirection), flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
     modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline" },
     recoveryButton: { alignItems: "center", borderColor: colors.interactiveText, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
     recoveryButtonText: { color: colors.interactiveText, fontSize: 15, fontWeight: "800" },
@@ -502,7 +507,7 @@ function createStyles(colors: GateColors) {
     primaryButtonDisabled: { backgroundColor: colors.disabled },
     primaryButtonText: { color: colors.surface, fontSize: 16, fontWeight: "800" },
     primaryButtonTextDisabled: { color: colors.muted },
-    notice: { backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10, textAlign: "right" },
-    error: { backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10, textAlign: "right" },
+    notice: { backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10, textAlign: startTextAlign, writingDirection: activeDirection },
+    error: { backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10, textAlign: startTextAlign, writingDirection: activeDirection },
   });
 }

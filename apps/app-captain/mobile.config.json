@@ -13,6 +13,7 @@
     "constants",
     "crypto",
     "splashScreen",
-    "secureStore"
+    "secureStore",
+    "localization"
   ]
 }

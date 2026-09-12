@@ -2,7 +2,6 @@ package managedaccess
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,14 +9,15 @@ import (
 	"strconv"
 	"strings"
 
+	auth "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	contract "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityboundary "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityboundary"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 type Server struct {
-	identity    *identityboundary.Client
-	accessToken []byte
+	identity *identityboundary.Client
+	auth     *auth.ServiceToken
 }
 
 func New(identity *identityboundary.Client, accessToken string) (*Server, error) {
@@ -25,7 +25,11 @@ func New(identity *identityboundary.Client, accessToken string) (*Server, error)
 	if identity == nil || len(accessToken) < 24 {
 		return nil, errors.New("dsh managed access configuration is invalid")
 	}
-	return &Server{identity: identity, accessToken: []byte(accessToken)}, nil
+	authorizer, err := auth.NewServiceToken(accessToken)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{identity: identity, auth: authorizer}, nil
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
@@ -55,7 +59,7 @@ func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) && identityErr.Status == http.StatusNotFound {
-			writeRoleStatus(w, contract.ManagedRoleStatusResponse{Role: contract.ManagedRole(role), Exists: false, Recoverable: false, State: "not_provisioned"})
+			writeRoleStatus(w, contract.ManagedRoleStatusResponse{Role: contract.ManagedRole(role), Exists: false, Reenrollable: false, State: "not_provisioned"})
 			return
 		}
 		writeIdentityError(w, err)
@@ -69,14 +73,14 @@ func (s *Server) statusByPhone(w http.ResponseWriter, r *http.Request) {
 	} else if view.ActivatedAt == nil {
 		canonicalState = "pending_activation"
 	}
-	isRecoverable := view.Enabled && view.SecurityEnabled && view.ActivatedAt != nil
+	isReenrollable := view.Enabled && view.SecurityEnabled && view.ActivatedAt != nil
 	writeRoleStatus(w, contract.ManagedRoleStatusResponse{
 		ActorID:         view.ActorID,
 		Exists:          true,
 		Enabled:         view.Enabled,
 		Activated:       view.ActivatedAt != nil,
 		SecurityEnabled: view.SecurityEnabled,
-		Recoverable:     isRecoverable,
+		Reenrollable:    isReenrollable,
 		State:           canonicalState,
 		Role:            contract.ManagedRole(role),
 		ActorVersion:    view.ActorVersion,
@@ -241,13 +245,7 @@ func (s *Server) reenrollByPhone(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authorized(r *http.Request) bool {
-	value := strings.TrimSpace(r.Header.Get("Authorization"))
-	const prefix = "Bearer "
-	if !strings.HasPrefix(value, prefix) {
-		return false
-	}
-	provided := strings.TrimSpace(strings.TrimPrefix(value, prefix))
-	return len(provided) == len(s.accessToken) && subtle.ConstantTimeCompare([]byte(provided), s.accessToken) == 1
+	return s.auth.Authorized(r)
 }
 
 func writeIdentityError(w http.ResponseWriter, err error) {

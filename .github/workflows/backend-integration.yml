@@ -1,0 +1,129 @@
+name: Repository Backend Integration
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-backend-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-integration:
+    name: repository-backend-integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Set up Node for backend semantic proof
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+
+      - name: Start backend-only CI services
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose \
+            --project-name samrim-local \
+            --env-file infra/local/compose/.env.example \
+            -f infra/local/compose/compose.yaml \
+            up -d --build --wait --wait-timeout 300 \
+            postgres mailpit identity dsh
+
+      - name: Prove CI runtime boundary and backend readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose=(
+            docker compose
+            --project-name samrim-local
+            --env-file infra/local/compose/.env.example
+            -f infra/local/compose/compose.yaml
+          )
+
+          mapfile -t running < <("${compose[@]}" ps --status running --services | sort)
+          expected=(dsh identity mailpit postgres)
+          if [[ "${running[*]}" != "${expected[*]}" ]]; then
+            printf 'running=%s\n' "${running[*]}"
+            printf 'expected=%s\n' "${expected[*]}"
+            echo "::error::Backend CI service census mismatch"
+            exit 1
+          fi
+
+          for local_only in control js-deps metro-client metro-partner metro-captain metro-field; do
+            if [[ -n "$("${compose[@]}" ps -a -q "$local_only")" ]]; then
+              echo "::error::Local-only service started in remote CI: $local_only"
+              exit 1
+            fi
+          done
+
+          for migration in identity-migrate dsh-migrate; do
+            cid="$("${compose[@]}" ps -a -q "$migration")"
+            [[ -n "$cid" ]] || { echo "::error::Missing migration service: $migration"; exit 1; }
+            state="$(docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}' "$cid")"
+            [[ "$state" == "exited|0" ]] || { echo "::error::Migration failed: $migration state=$state"; exit 1; }
+          done
+
+          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:18026/ >/dev/null
+          for endpoint in \
+            http://127.0.0.1:18082/identity/health \
+            http://127.0.0.1:18082/identity/readiness \
+            http://127.0.0.1:18080/dsh/health \
+            http://127.0.0.1:18080/dsh/readiness; do
+            body="$(curl --fail --silent --show-error --max-time 5 "$endpoint")"
+            jq -e '.status == "ok"' <<<"$body" >/dev/null
+          done
+
+          "${compose[@]}" exec -T identity /schema-verify
+          "${compose[@]}" exec -T dsh /schema-verify
+          "${compose[@]}" exec -T dsh sh -ceu '
+            test -s /etc/ssl/certs/ca-certificates.crt
+            test "$(id -u)" -ne 0
+          '
+
+          echo "REMOTE_CI_LOCAL_RUNTIME_SERVICES=0"
+          echo "BACKEND_CI_RUNTIME=PASS"
+
+      - name: Verify backend migrations and runtime semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/dev/verify-migration-v13-to-v16.mjs --env-file=infra/local/compose/.env.example
+          node tools/dev/verify-dsh-baseline.mjs --env-file=infra/local/compose/.env.example
+          node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env.example
+          node tools/dev/verify-dsh-runtime.mjs --env-file=infra/local/compose/.env.example
+
+      - name: Verify backend proof did not mutate repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          drift="$(git status --porcelain --untracked-files=all)"
+          if [[ -n "$drift" ]]; then
+            printf '%s\n' "$drift"
+            git diff -- . || true
+            echo "::error::Backend CI proof mutated repository state"
+            exit 1
+          fi
+          echo "BACKEND_CI_REPOSITORY_MUTATION=0"
+
+      - name: Purge backend CI services
+        if: always()
+        shell: bash
+        run: |
+          docker compose \
+            --project-name samrim-local \
+            --env-file infra/local/compose/.env.example \
+            -f infra/local/compose/compose.yaml \
+            down --volumes --remove-orphans

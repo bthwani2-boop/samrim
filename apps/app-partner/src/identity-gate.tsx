@@ -11,6 +11,7 @@ import {
   role,
   surface,
 } from "./identity";
+import { PartnerProductReadback } from "./partner-product-gate";
 
 const identity = { role, surface, restoreIdentitySession, currentIdentityState, logoutIdentity, requestManagedActivation, activateManagedIdentity, loginManagedIdentity, requestManagedRecovery, recoverManagedIdentity };
 
@@ -21,6 +22,7 @@ export default function IdentityGate() {
       surface={surface}
       roleLabel="الشريك"
       binding={identity}
+      authenticatedContent={<PartnerProductReadback />}
     />
   );
 }

@@ -1,152 +1,240 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
-const root = path.resolve(import.meta.dirname, "../..");
+const repoRoot = path.resolve(import.meta.dirname, "../..");
 const failures = [];
 
-const cases = [
-  {
-    id: "surface_ui_owner",
-    source: "governance/architecture/APP-SERVICE-COMPOSITION.md",
-    include: [
-      "SURFACE_SPECIFIC_APP_COMPOSITION → APP HOST",
-      "PROVEN_BOUNDED_CONTEXT_PRESENTATION_CLIENT → SERVICE PUBLIC CLIENT BOUNDARY",
-    ],
-  },
-  {
-    id: "service_admission",
-    source: "governance/architecture/REPOSITORY-TOPOLOGY.md",
-    include: ["container is admitted only when the corresponding semantic responsibility"],
-  },
-  {
-    id: "no_empty_readiness_lanes",
-    source: "governance/architecture/PLATFORM-SUBSTRATE.md",
-    include: ["EMPTY_LANE_AS_READINESS_EVIDENCE = FORBIDDEN"],
-  },
-  {
-    id: "level4_not_future_breadth",
-    source: "tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md",
-    include: ["`LEVEL_4` defines completion depth", "never future Product breadth"],
-  },
-  {
-    id: "causal_not_global_stage",
-    source: "tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md",
-    include: ["There is one execution cycle, not a mandatory stage pipeline"],
-  },
-  {
-    id: "structural_substrate_conditional",
-    source: "tools/prompting/bthwani-orchestrator/profiles/structural-substrate.md",
-    include: ["conditional", "EMPTY FUTURE LANES = FORBIDDEN"],
-  },
-  {
-    id: "active_slice_terminal",
-    source: "tools/prompting/bthwani-orchestrator/verify/unit-and-scope-closure.md",
-    include: ["BTHWANI_ACTIVE_PRODUCT_SLICE_LEVEL_4_COMPLETE"],
-  },
-  {
-    id: "donor_not_topology",
-    source: "tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md",
-    include: ["DONOR_PATH != TARGET_PATH_AUTHORITY", "COPIED_BECAUSE_DONOR_HAD_IT = FORBIDDEN"],
-  },
-  {
-    id: "financial_truth",
-    source: "governance/product/FINANCIAL-MODEL.md",
-    include: ["WLT is the sole authoritative owner of internal financial truth"],
-  },
-  {
-    id: "identity_public_non_enumeration",
-    source: "governance/product/capabilities/access/identity-activation-sessions.md",
-    include: ["public_auth_state_enumeration"],
-  },
-  {
-    id: "managed_activation_one_time",
-    source: "governance/product/capabilities/access/identity-activation-sessions.md",
-    include: ["one-time activation before their first role session", "repeated_managed_activation"],
-  },
-  {
-    id: "operator_mfa",
-    source: "governance/product/capabilities/access/identity-activation-sessions.md",
-    include: ["Operator normal access requires password plus a second authentication factor/challenge"],
-  },
-  {
-    id: "provider_unknown_no_blind_failover",
-    source: "governance/policies/providers-and-integrations.md",
-    include: ["BLIND_FALLBACK_ON_UNKNOWN_MUTATION=0"],
-  },
-  {
-    id: "deployable_identity_preserved",
-    source: "governance/policies/delivery/change-qualification.md",
-    include: ["REPOSITORY_PATH_CHANGE != DEPLOYABLE_IDENTITY_CHANGE"],
-  },
-  {
-    id: "docs_not_current_state",
-    source: "governance/GOVERNANCE.md",
-    include: ["SOURCE       = CURRENT EXECUTABLE IMPLEMENTATION / CONFIGURATION / RUNTIME"],
-  },
-  {
-    id: "governance_reconstruction_completeness",
-    source: "governance/GOVERNANCE.md",
-    include: ["Developer reconstruction acceptance", "UNACCOUNTED_MATERIAL_PRODUCT_RESPONSIBILITIES=0", "UNMAPPED_REQUIRED_FAILURE/RECOVERY_SEMANTICS=0"],
-  },
-  {
-    id: "rollout_fail_closed_and_effective_readback",
-    source: "governance/product/capabilities/access/platform-sovereign-control-plane.md",
-    include: ["EMPTY_OR_UNKNOWN_TARGET_SELECTOR = FAIL_CLOSED", "CONTROL_PLANE_READBACK != EFFECTIVE_CONSUMER_APPLICATION", "ROLLBACK_MUST_NOT_OVERWRITE_NEWER_REVISION"],
-  },
-  {
-    id: "anti_forgetting_candidate_proof",
-    source: "tools/prompting/bthwani-orchestrator/templates/candidate-proof-matrix.md",
-    include: ["Complete affected-cone accounting", "Full binding chain", "Supporting-value accounting", "UNACCOUNTED_FAILURE_UNKNOWN_RECOVERY=0"],
-  },
-  {
-    id: "donor_semantic_zero_loss",
-    source: "tools/prompting/bthwani-orchestrator/profiles/clean-target-reconstruction.md",
-    include: ["Semantic-atom accounting record", "ACTIVE_SLICE_DONOR_CONE_ACCOUNTING=COMPLETE", "UNINSPECTED_DONOR_HISTORY_MATERIAL_TO_ACTIVE_SLICE=0"],
-  },
-  {
-    id: "failure_not_hidden_by_rerun",
-    source: "tools/prompting/bthwani-orchestrator/verify/evidence-falsification.md",
-    include: ["BLIND_RERUN_UNTIL_GREEN = FORBIDDEN", "FAILURE_SUPPRESSION/ALLOWLIST_TO_MANUFACTURE_GREEN = FORBIDDEN"],
-  },
-  {
-    id: "documentation_not_implementation_closure",
-    source: "tools/prompting/bthwani-orchestrator/verify/evidence-falsification.md",
-    include: ["No documentation-only closure", "IMPLEMENTATION_ROOT_EXISTS + ONLY_DOC/GOVERNANCE/PLAN_CHANGED → NOT_CLOSED"],
-  },
-  {
-    id: "no_live_adr_tree",
-    source: "governance/GOVERNANCE.md",
-    include: ["No live ADR tree"],
-  },
-];
-
-for (const test of cases) {
-  const absolute = path.join(root, test.source);
-  if (!fs.existsSync(absolute)) {
-    failures.push(test.id + " missing source: " + test.source);
-    continue;
+function read(relativePath) {
+  const absolute = path.join(repoRoot, ...relativePath.split("/"));
+  if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
+    failures.push("missing repository artifact: " + relativePath);
+    return "";
   }
-  const body = fs.readFileSync(absolute, "utf8");
-  for (const token of test.include) {
-    if (!body.includes(token)) failures.push(test.id + " missing invariant in " + test.source + ": " + token);
-  }
+  return fs.readFileSync(absolute, "utf8").replaceAll("\r\n", "\n");
 }
 
-for (const forbidden of [
-  "governance/decisions",
-  "docs/platform-engineering-lifecycle",
-  "docs/reference/target-operations",
-  "tools/prompting/bthwani-refoundation",
-  "tools/prompting/bthwani-orchestrator/templates/required-truth-census.md",
-  "tools/prompting/bthwani-orchestrator/templates/donor-zero-loss-accounting.md",
-]) {
-  if (fs.existsSync(path.join(root, forbidden))) failures.push("forbidden live artifact exists: " + forbidden);
+function requireTokens(relativePath, tokens, id) {
+  const body = read(relativePath);
+  for (const token of tokens) {
+    if (!body.includes(token)) failures.push(`${id} missing invariant in ${relativePath}: ${token}`);
+  }
+  return body;
 }
+
+function forbidTokens(relativePath, tokens, id) {
+  const body = read(relativePath);
+  for (const token of tokens) {
+    if (body.toLowerCase().includes(token.toLowerCase())) failures.push(`${id} forbidden token in ${relativePath}: ${token}`);
+  }
+  return body;
+}
+
+const agentBody = requireTokens(
+  "AGENTS.md",
+  [
+    "ARTIFACT_CLASS: REPOSITORY_AGENT_OPERATING_CONSTITUTION",
+    "REPOSITORY_AGENT_LAW_AUTHORITY: CANONICAL",
+    "PRODUCT_SEMANTIC_AUTHORITY: NONE",
+    "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
+    "BTHWANI ORIENTATION KEYS ARE DISCOVERY KEYS, NOT PROOF OR SEMANTIC AUTHORITY.",
+    "ORIENTATION != PROOF.",
+    "SPECIALIZATION != BLIND TRUST.",
+    "GOVERNED != INFALLIBLE.",
+    "DOCUMENTED != CORRECT.",
+    "OBJECTIVE != PROJECT TRUTH.",
+    "OBJECTIVE != FACT AUTHORITY.",
+    "OBJECTIVE != ARCHITECTURAL EXCEPTION.",
+    "CURRENT-STATE FIRST.",
+    "CURRENT SOURCE = FIRST EVIDENCE FOR WHAT EXISTS NOW.",
+    "CURRENT SOURCE != AUTOMATICALLY CORRECT DESIGN.",
+    "No source has global precedence. Authority is fact-specific",
+    "PINNED GOVERNANCE / knowledge.sources.json",
+    "GOVERNANCE / DOCS ARE VALUABLE EVIDENCE, NOT ORACLES.",
+    "SOURCE AGREEMENT != INDEPENDENT CORROBORATION",
+    "MUTATE ITS SOURCE ONLY WHEN THAT CORRECTION IS MATERIAL TO THE AUTHORIZED OUTCOME",
+    "PIN EXACT SAMRIM STATE",
+    "CENSUS MATERIAL AFFECTED CONE",
+    "UNEXAMINED != UNAFFECTED.",
+    "RIGOR SCALES WITH CONSEQUENCE + UNCERTAINTY + BLAST RADIUS + IRREVERSIBILITY.",
+    "DURABLE TARGET MODEL != CURRENT IMPLEMENTATION INVENTORY != CURRENT AUTHORIZED DELIVERY SLICE.",
+    "SUBAGENT CONSENSUS != PROOF.",
+    "CONCLUSION MUST FOLLOW FROM EVIDENCE.",
+    "FACT != INFERENCE != HYPOTHESIS != ASSUMPTION.",
+    "NECESSARY CONDITION != SUFFICIENT PROOF.",
+    "ONE COMPATIBLE EXPLANATION != PROVEN CAUSE.",
+    "VISIBLE FAILURE != DEFECT OWNER.",
+    "APP_HOST != BUSINESS_CAPABILITY_OWNER.",
+    "TREAT THE HIGHEST PROVEN CAUSAL ROOT.",
+    "FIRST WORKING SOLUTION != BEST SOLUTION.",
+    "LOCAL OPTIMUM != WHOLE-PLATFORM OUTCOME.",
+    "SMALLEST DIFF != SIMPLEST SYSTEM.",
+    "DONOR_VALUE != DONOR_AUTHORITY.",
+    "GOOD_REFERENCE != RIGHT_TO_COPY_TOPOLOGY.",
+    "DURABLE BTHWANI TRUTH → GOVERNANCE MUST CONVERGE.",
+    "NO COMPLEXITY WITHOUT MATERIAL BENEFIT.",
+    "ONE MATERIAL MEANING → ONE SEMANTIC OWNER",
+    "ONE MUTABLE FACT → ONE CANONICAL WRITER",
+    "NOTHING NEW IS ADMITTED BY DEFAULT.",
+    "COMPATIBILITY_JUST_IN_CASE = FORBIDDEN.",
+    "PREFER THE REPOSITORY-OWNED MECHANISM FOR THE OPERATION OR CLAIM WHEN IT IS CURRENT AND FIT FOR PURPOSE.",
+    "REPOSITORY TOOL != INFALLIBLE.",
+    "CAPABILITY != AUTHORITY.",
+    "NEVER CHECKPOINT",
+    "FALSIFY BEFORE TRUSTING.",
+    "CLAIM",
+    "→ REQUIRED EVIDENCE CLASS",
+    "MATERIAL INTERACTIVE BEHAVIOR MUST BE EXERCISED IN THE REAL AUTHORIZED RUNTIME",
+    "USER EXPERIENCE IS A SYSTEM OUTCOME, NOT SCREEN AESTHETICS.",
+    "DESIGN READINESS PRECEDES UI IMPLEMENTATION.",
+    "SKIPPED / NOT-RUN / STALE REQUIRED EVIDENCE != PASS.",
+    "IMPLEMENTATION SUCCESS != DECISION SUCCESS.",
+    "TREATMENT DOES NOT PROVE CLOSURE.",
+    "FRESH ADVERSARIAL RE-CENSUS",
+    "DECISION-CRITICAL UNKNOWNS = 0",
+    "KNOWN MATERIAL DURABLE GOVERNANCE DRIFT = 0",
+    "KNOWN PARALLEL / SHADOW TRUTH = 0",
+    "REPOSITORY-OWNED SAFE PUSH",
+    "CONFIRM EXACT REMOTE SHA",
+  ],
+  "agent_constitution",
+);
+
+for (const section of [
+  "## 0. BThwani orientation and authority",
+  "## 1. BThwani task and affected-cone resolution",
+  "## 2. Causal reasoning and best-fit decision",
+  "## 3. Canonical execution, cutover and safety",
+  "## 4. Claim-specific verification and BThwani experience",
+  "## 5. Adversarial closure, commit and continuation",
+]) if (!agentBody.includes(section)) failures.push("agent_constitution missing canonical section: " + section);
+
+forbidTokens(
+  "AGENTS.md",
+  [
+    "Platform Control",
+    "orchestrator",
+    "docs/method/",
+    "tools/prompting",
+    "LEVEL_4",
+    "ACTIVE_SLICE",
+    "FULL_TARGET",
+    "RECOVERY_FRONTIER",
+    "NEXT_REQUIRED_ACTION",
+    "UNIT_CLOSED",
+    "CAMPAIGN_COMPLETE",
+    "CURRENT_CAUSAL_ROOT",
+    "AUTHORIZED_SCOPE_FIXED_POINT",
+  ],
+  "agent_constitution",
+);
+
+if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agentBody)) failures.push("AGENTS.md must not hard-code mutable local runtime ports");
+
+const agentBytes = Buffer.byteLength(agentBody, "utf8");
+if (agentBytes > 20000) failures.push(`AGENTS.md exceeds compact-contract ceiling: ${agentBytes} bytes`);
+
+const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+  .split("\0")
+  .filter(Boolean)
+  .map((item) => item.replaceAll("\\", "/"));
+
+const agentLawFiles = tracked.filter((item) => /(^|\/)AGENTS\.md$/i.test(item));
+if (agentLawFiles.length !== 1 || agentLawFiles[0] !== "AGENTS.md") failures.push("AGENTS.md must be the only tracked AGENTS law owner; found: " + agentLawFiles.join(", "));
+
+const unexpectedInstructionFiles = tracked.filter((item) => /\.instructions\.md$/i.test(item));
+if (unexpectedInstructionFiles.length > 0) failures.push("unexpected path-specific instruction authority: " + unexpectedInstructionFiles.join(", "));
+
+const adapterPaths = {
+  copilot: tracked.filter((item) => /(^|\/)copilot-instructions\.md$/i.test(item)),
+  claude: tracked.filter((item) => /(^|\/)CLAUDE\.md$/i.test(item)),
+  gemini: tracked.filter((item) => /(^|\/)GEMINI\.md$/i.test(item)),
+};
+for (const [name, paths] of Object.entries(adapterPaths)) {
+  const expectedPath = name === "copilot" ? ".github/copilot-instructions.md" : name === "claude" ? "CLAUDE.md" : "GEMINI.md";
+  if (paths.length !== 1 || paths[0] !== expectedPath) failures.push(`${name} routing adapter must exist exactly once at ${expectedPath}; found: ${paths.join(", ")}`);
+}
+
+const tick = String.fromCharCode(96);
+const canonicalAdapters = {
+  ".github/copilot-instructions.md": [
+    "# GitHub Copilot Routing Adapter",
+    "",
+    "ADAPTER_CLASS: DERIVED_AGENT_ROUTING",
+    "SEMANTIC_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+    "CLOSURE_AUTHORITY: NONE",
+    "",
+    "Use " + tick + "AGENTS.md" + tick + " as the repository routing entrypoint before material code or repository changes.",
+    "",
+    "This adapter owns no Product, architecture, execution, branch, migration, deletion, verification or closure semantics. Canonical owners routed by " + tick + "AGENTS.md" + tick + " remain authoritative within their classes.",
+    "",
+  ].join("\n"),
+  "CLAUDE.md": [
+    "# Claude Code Routing Adapter",
+    "",
+    "ADAPTER_CLASS: DERIVED_AGENT_ROUTING",
+    "SEMANTIC_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+    "CLOSURE_AUTHORITY: NONE",
+    "",
+    "Read and follow " + tick + "AGENTS.md" + tick + " first for repository authority routing.",
+    "",
+    "This file adds no Product, architecture, execution, branch, deletion, migration, verification or closure law. If it ever conflicts with " + tick + "AGENTS.md" + tick + " or a canonical owner routed by " + tick + "AGENTS.md" + tick + ", this adapter is stale and must be corrected or deleted.",
+    "",
+  ].join("\n"),
+  "GEMINI.md": [
+    "# Gemini CLI Routing Adapter",
+    "",
+    "ADAPTER_CLASS: DERIVED_AGENT_ROUTING",
+    "SEMANTIC_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+    "CLOSURE_AUTHORITY: NONE",
+    "",
+    "Read and follow " + tick + "AGENTS.md" + tick + " first for repository authority routing.",
+    "",
+    "This file adds no Product, architecture, execution, branch, deletion, migration, verification or closure law. If it ever conflicts with " + tick + "AGENTS.md" + tick + " or a canonical owner routed by " + tick + "AGENTS.md" + tick + ", this adapter is stale and must be corrected or deleted.",
+    "",
+  ].join("\n"),
+};
+for (const [relativePath, expected] of Object.entries(canonicalAdapters)) {
+  if (read(relativePath) !== expected) failures.push(`${relativePath} must remain an exact routing-only adapter with zero independent agent law`);
+}
+
+requireTokens(
+  ".github/workflows/pr-policy.yml",
+  [
+    "PR_POLICY_DRAFT=DEFERRED_UNTIL_READY",
+    "PR_POLICY_HUMAN_AGENT_EVIDENCE=PASS",
+    "## Exact candidate and authorized objective",
+    "## Affected cone and ownership",
+    "## Diagnosis and decision",
+    "## Verification",
+    "## Negative space",
+  ],
+  "pr_policy_derivation",
+);
+requireTokens(
+  ".github/pull_request_template.md",
+  [
+    "## Exact candidate and authorized objective",
+    "## Affected cone and ownership",
+    "## Diagnosis and decision",
+    "## Verification",
+    "## Negative space",
+  ],
+  "pr_template_derivation",
+);
 
 if (failures.length) {
   console.error("AGENT_KNOWLEDGE_CONTRACT=FAIL");
-  for (const failure of failures) console.error("  " + failure);
+  for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);
   process.exit(1);
 }
+
+console.log("AGENT_LAW_OWNER=AGENTS.md");
+console.log("AGENT_CONTRACT_BYTES=" + agentBytes);
+console.log("NESTED_AGENT_LAW_OWNERS=0");
+console.log("PATH_SPECIFIC_AGENT_LAW_OWNERS=0");
+console.log("ROUTING_ADAPTER_SHADOW_LAW=0");
 console.log("AGENT_KNOWLEDGE_CONTRACT=PASS");
-console.log("CASES=" + cases.length);

@@ -1,5 +1,5 @@
 import { validateServiceUrl, type ManagedActivationRole } from "@bthwani/identity";
-import { type ActorRoleView, type ManagedRole, type ManagedRoleStatusResponse, dshOperationPaths } from "@bthwani/dsh";
+import { type ActorRoleView, type CreatePartnerBootstrapRequest, type ManagedRole, type ManagedRoleStatusResponse, type PartnerBootstrapResponse, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -14,6 +14,9 @@ export type DshAttributedMutationContext = Readonly<{
 export type DshVersionedMutationContext = DshAttributedMutationContext & Readonly<{
   expectedVersion: number;
 }>;
+export type PartnerBootstrapMutationContext = DshAttributedMutationContext & Readonly<{
+  idempotencyKey: string;
+}>;
 
 const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field"]);
 
@@ -26,12 +29,11 @@ function dshBaseUrl(): string {
       throw { kind: "config", message: "dsh service must use HTTPS" } satisfies DshClientError;
     }
   }
-  if (process.env.NODE_ENV === "development") return "http://127.0.0.1:58080";
   throw { kind: "config", message: "dsh service configuration is incomplete" } satisfies DshClientError;
 }
 
 function dshToken(): string {
-  const token = process.env.DSH_PLATFORM_CONTROL_SERVICE_TOKEN?.trim();
+  const token = process.env.CONTROL_PANEL_SERVICE_TOKEN?.trim();
   if (!token || token.length < 24) throw { kind: "config", message: "dsh service configuration is incomplete" } satisfies DshClientError;
   return token;
 }
@@ -75,6 +77,46 @@ export function dshErrorPayload(error: unknown): Readonly<{ code: string; messag
 export function dshHttpStatus(error: unknown): number {
   if (!isDshClientError(error)) return 502;
   return error.kind === "network" ? 502 : error.kind === "config" ? 500 : error.status;
+}
+
+export async function createPartnerBootstrap(
+  input: CreatePartnerBootstrapRequest,
+  context: PartnerBootstrapMutationContext,
+): Promise<Readonly<{ status: number; payload: PartnerBootstrapResponse }>> {
+  if (!input.partnerActorId.trim() || !input.storeName.trim()) throw new Error("DSH_BOOTSTRAP_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_BOOTSTRAP_IDEMPOTENCY_INVALID");
+  const baseUrl = dshBaseUrl();
+  const token = dshToken();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    let response: Response;
+    try {
+      response = await fetch(`${baseUrl}${dshOperationPaths.createPartnerBootstrap.path}`, {
+        method: dshOperationPaths.createPartnerBootstrap.method,
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Acting-Actor-ID": context.operatorActorId.trim(),
+          "X-Correlation-ID": context.correlationId.trim(),
+          "Idempotency-Key": context.idempotencyKey.trim(),
+        },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
+    }
+    if (!response.ok) {
+      const parsed = parseErrorPayload(await response.json().catch(() => null));
+      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
+    }
+    return { status: response.status, payload: await response.json() as PartnerBootstrapResponse };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function provisionManagedRole(

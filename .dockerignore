@@ -1,0 +1,15 @@
+.git
+.git/**
+**/.env
+**/.env.*
+!**/.env.example
+**/node_modules
+**/.next
+**/.expo
+**/dist
+**/coverage
+**/.nx
+**/*.log
+secrets.local.mobile.json
+.bthwani-local/
+.diagnostics/

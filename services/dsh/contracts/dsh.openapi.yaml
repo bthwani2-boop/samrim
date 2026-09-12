@@ -6,7 +6,7 @@ info:
     Canonical operational contract for DSH (Delivery, Shopping, Hospitality/Operations).
     Owns operational boundaries, managed-role provisioning delegation to Identity, and role lifecycle orchestration for partner, captain, and field roles.
 servers:
-  - url: http://127.0.0.1:58080
+  - url: http://127.0.0.1:18080
 
 paths:
   /dsh/health:
@@ -38,6 +38,97 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusResponse"
+
+  /dsh/partner-bootstrap:
+    post:
+      operationId: createPartnerBootstrap
+      summary: Create the Partner first Store atomically
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdRequired"
+        - $ref: "#/components/parameters/ActingActorIdRequired"
+        - $ref: "#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePartnerBootstrapRequest"
+      responses:
+        "201":
+          description: Partner first Store was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerBootstrapResponse"
+        "200":
+          description: The idempotency key replayed the canonical result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerBootstrapResponse"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/DependencyUnavailable"
+
+  /dsh/partner-bootstrap/{partnerActorId}:
+    get:
+      operationId: readPartnerBootstrap
+      summary: Read the Partner first Store for a control operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/ActingActorIdRequired"
+        - name: partnerActorId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Canonical Partner bootstrap readback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerBootstrapResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/DependencyUnavailable"
+
+  /dsh/partner-bootstrap/self:
+    get:
+      operationId: readOwnPartnerBootstrap
+      summary: Read the Partner first Store for the authenticated Partner surface
+      security:
+        - userBearer: []
+      responses:
+        "200":
+          description: Canonical Partner bootstrap readback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartnerBootstrapResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/DependencyUnavailable"
 
   /dsh/managed-roles/provision:
     post:
@@ -188,6 +279,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: token
+    userBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: token
 
   parameters:
     CorrelationId:
@@ -210,6 +305,22 @@ components:
       required: true
       schema:
         type: string
+        maxLength: 128
+    CorrelationIdRequired:
+      name: X-Correlation-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    IdempotencyKeyRequired:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
         maxLength: 128
     ExpectedVersion:
       name: X-Expected-Version
@@ -274,6 +385,53 @@ components:
         role:
           $ref: "#/components/schemas/ManagedRole"
 
+    CreatePartnerBootstrapRequest:
+      type: object
+      required: [partnerActorId, storeName]
+      additionalProperties: false
+      properties:
+        partnerActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeName:
+          type: string
+          minLength: 2
+          maxLength: 160
+
+    StoreView:
+      type: object
+      required: [id, partnerActorId, name, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        partnerActorId:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PartnerBootstrapResponse:
+      type: object
+      required: [partnerActorId, firstStore, idempotentReplay]
+      additionalProperties: false
+      properties:
+        partnerActorId:
+          type: string
+        firstStore:
+          $ref: "#/components/schemas/StoreView"
+        idempotentReplay:
+          type: boolean
+
     ActorRoleView:
       type: object
       required: [actorId, phoneE164, role, enabled, securityEnabled, actorVersion, roleVersion]
@@ -308,7 +466,7 @@ components:
 
     ManagedRoleStatusResponse:
       type: object
-      required: [exists, enabled, activated, securityEnabled, recoverable, state, role]
+      required: [exists, enabled, activated, securityEnabled, reenrollable, state, role]
       properties:
         actorId:
           type: string
@@ -320,7 +478,7 @@ components:
           type: boolean
         securityEnabled:
           type: boolean
-        recoverable:
+        reenrollable:
           type: boolean
         state:
           type: string
@@ -362,6 +520,34 @@ components:
 
     IdentityUnavailable:
       description: Upstream identity dependency error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Forbidden:
+      description: The authenticated actor is not permitted to perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Conflict:
+      description: The request conflicts with canonical state or idempotency.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: The requested canonical record was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    DependencyUnavailable:
+      description: A required DSH or Identity dependency is unavailable.
       content:
         application/json:
           schema:
