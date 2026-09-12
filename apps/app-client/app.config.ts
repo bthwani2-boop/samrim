@@ -1,3 +1,7 @@
 import { defineSamrimExpoApp } from "../../tools/mobile/define-samrim-expo-app.cjs";
+import { withCanonicalAndroidDevelopmentClient } from "../../tools/mobile/with-android-development-client.cjs";
 
-export default defineSamrimExpoApp("app-client");
+export default withCanonicalAndroidDevelopmentClient(
+  defineSamrimExpoApp("app-client"),
+  "app-client",
+);
