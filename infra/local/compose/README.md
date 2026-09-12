@@ -24,14 +24,20 @@ Use only:
 - `pnpm runtime:logs`
 - `pnpm runtime:doctor`
 - `pnpm runtime:reset`
+- `pnpm runtime:mobile-lan` (explicit, narrow Windows Administrator repair)
+- `pnpm runtime:purge` (explicit destructive factory cleanup)
 
-`runtime:reset` is a destructive local-data recovery operation scoped to Samrim Docker resources. It preserves the generated local `.env` and its local secret values, removes canonical disposable runtime state and any proven non-canonical `samrim-*` Compose residue, then finishes with the runtime down.
+`runtime:reset` is a destructive local-data recovery operation scoped to the disposable PostgreSQL application state. It preserves the generated local `.env`, dependency/image caches, and Mobile LAN host infrastructure, removes canonical runtime containers and any proven non-canonical `samrim-*` Compose residue, then finishes with the runtime down. It does not require Administrator elevation.
+
+`runtime:mobile-lan` is the only normal command that may mutate BThwani-owned Windows Mobile LAN artifacts. It reconciles one current Hotspot IP/interface, one exact Firewall rule, and the canonical Identity/DSH/Metro port proxies, then recreates Docker-owned Metro services so their public URLs use the current Hotspot address. Run it elevated only when Mobile LAN is missing or stale.
+
+`runtime:purge` is an explicit factory cleanup. It removes all canonical Docker volumes, including dependency caches, and BThwani-owned Mobile LAN artifacts. It preserves the generated local `.env` and its local secret values.
 
 There is no separate daily/integration Docker topology and no native Identity/DSH development launcher. Integration is a test class executed against the canonical topology, not a second runtime owner.
 
-## Host-owned applications
+## Docker-owned application runtime and host-owned tooling
 
-The Control Panel and mobile applications remain host-owned and are launched only through `tools/dev/runtime.ps1`:
+The Control Panel and all four Metro servers are Docker-owned and are launched only through `tools/dev/runtime.ps1`:
 
 - `pnpm control`
 - `pnpm client`
@@ -40,7 +46,7 @@ The Control Panel and mobile applications remain host-owned and are launched onl
 - `pnpm field`
 - `pnpm scr`
 
-Starting a host application first ensures that the canonical Docker backend is ready. Expo/Metro, ADB, scrcpy, Maestro and browser/device tooling remain on the host.
+Starting an application first ensures that the canonical Docker runtime is ready. ADB, scrcpy, browser tooling, and the physical Android device remain host/device-owned. Mobile app traffic uses Wi-Fi LAN; ADB reverse is not a runtime dependency. If the Hotspot is unavailable, Docker and browser runtime can still run, while the mobile command reports the precise LAN blocker.
 
 ## Local configuration
 

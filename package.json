@@ -31,6 +31,8 @@
     "runtime:logs": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Logs",
     "runtime:doctor": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Doctor",
     "runtime:reset": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Reset",
+    "runtime:purge": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Purge",
+    "runtime:mobile-lan": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action MobileLan",
     "runtime:verify-ownership": "node tools/dev/verify-local-runtime-ownership.mjs",
     "bootstrap": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1",
     "safe:push": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1",

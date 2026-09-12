@@ -39,6 +39,8 @@ const expectedRuntimeScripts = new Map([
   ["runtime:logs", `${pwshPrefix}Logs`],
   ["runtime:doctor", `${pwshPrefix}Doctor`],
   ["runtime:reset", `${pwshPrefix}Reset`],
+  ["runtime:purge", `${pwshPrefix}Purge`],
+  ["runtime:mobile-lan", `${pwshPrefix}MobileLan`],
 ]);
 for (const [name, expected] of expectedRuntimeScripts) {
   assert(scripts[name] === expected, `${name} must route directly to ${runtimeOwner}`);
@@ -171,6 +173,9 @@ assert(
   "canonical runtime owner must not launch Next.js as a host process after Docker cutover",
 );
 assert(runtime.includes("Ensure-MobileLanInfrastructure"), "mobile runtime must own Wi-Fi LAN infrastructure");
+assert(runtime.includes("Get-MobileLanCandidates"), "mobile runtime must diagnose optional Wi-Fi LAN availability");
+assert(runtime.includes("Get-MobileLanFirewallInspection"), "mobile runtime must inspect exact Wi-Fi LAN firewall filters");
+assert(runtime.includes("Get-MobileLanPortProxyInspection"), "mobile runtime must inspect exact Wi-Fi LAN portproxy state");
 assert(runtime.includes("MOBILE_TRANSPORT=WIFI_LAN"), "mobile runtime must identify Wi-Fi LAN transport");
 assert(runtime.includes("ADB_REVERSE_DEPENDENCY=0"), "mobile runtime must assert zero adb reverse dependency");
 assert(runtime.includes("MOBILE_OWNER=DOCKER"), "mobile runtime must report Docker ownership");
@@ -206,15 +211,60 @@ assert(
 const wifiLanResetStart =
   runtime.indexOf("function Reset-CanonicalRuntime");
 const wifiLanResetEnd =
-  runtime.indexOf("function Start-ControlPanel");
+  runtime.indexOf("function Purge-CanonicalRuntime");
 
 assert(
   wifiLanResetStart >= 0 &&
     wifiLanResetEnd > wifiLanResetStart &&
-    runtime
+    !runtime
       .slice(wifiLanResetStart, wifiLanResetEnd)
       .includes("Remove-MobileLanInfrastructure"),
-  "mobile LAN infrastructure must be cleaned by runtime reset",
+  "mobile LAN infrastructure must survive normal runtime reset",
+);
+assert(
+  wifiLanResetStart >= 0 &&
+    wifiLanResetEnd > wifiLanResetStart &&
+    runtime.slice(wifiLanResetStart, wifiLanResetEnd).includes("dependency_volumes=preserved"),
+  "normal runtime reset must preserve dependency volumes",
+);
+const purgeRuntimeStart = runtime.indexOf("function Purge-CanonicalRuntime");
+const purgeRuntimeEnd = runtime.indexOf("function Start-ControlPanel");
+assert(
+  purgeRuntimeStart >= 0 &&
+    purgeRuntimeEnd > purgeRuntimeStart &&
+    runtime.slice(purgeRuntimeStart, purgeRuntimeEnd).includes("Remove-MobileLanInfrastructure"),
+  "explicit runtime purge must own mobile LAN cleanup",
+);
+assert(
+  purgeRuntimeStart >= 0 &&
+    purgeRuntimeEnd > purgeRuntimeStart &&
+    runtime.slice(purgeRuntimeStart, purgeRuntimeEnd).includes("--volumes"),
+  "explicit runtime purge must be the only full Docker volume cleanup path",
+);
+const startRuntimeStart = runtime.indexOf("function Start-CanonicalRuntime");
+const startRuntimeEnd = runtime.indexOf("function Ensure-CanonicalRuntime");
+assert(
+  startRuntimeStart >= 0 &&
+    startRuntimeEnd > startRuntimeStart &&
+    !runtime.slice(startRuntimeStart, startRuntimeEnd).includes("Ensure-MobileLanInfrastructure"),
+  "daily runtime up must not perform privileged Mobile LAN mutation",
+);
+const doctorStart = runtime.indexOf("function Invoke-RuntimeDoctor");
+const doctorEnd = runtime.indexOf("function Reset-CanonicalRuntime");
+assert(
+  doctorStart >= 0 &&
+    doctorEnd > doctorStart &&
+    runtime.slice(doctorStart, doctorEnd).includes("Read-CanonicalEnvironment") &&
+    !runtime.slice(doctorStart, doctorEnd).includes("Ensure-Environment") &&
+    !runtime.slice(doctorStart, doctorEnd).includes("Set-CanonicalEnvironment"),
+  "runtime doctor must be read-only and must not reconcile local environment",
+);
+assert(
+  runtime.includes("MOBILE_LAN_FIREWALL_FILTERS") &&
+    runtime.includes("Get-NetFirewallPortFilter") &&
+    runtime.includes("Get-NetFirewallAddressFilter") &&
+    runtime.includes("Get-NetFirewallInterfaceFilter"),
+  "Mobile LAN verification must inspect effective Firewall filters",
 );
 const nativeApiToken = "go run ./cmd/" + "api";
 const nativeMigrationToken = "go run ./cmd/" + "migrate";

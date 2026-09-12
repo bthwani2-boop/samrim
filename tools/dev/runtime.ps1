@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Control','Client','Partner','Captain','Field')]
+    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Purge','MobileLan','Control','Client','Partner','Captain','Field')]
     [string]$Action,
     [string]$DeviceSerial = $env:BTHWANI_ADB_SERIAL,
     [switch]$ClearCache
@@ -139,6 +139,18 @@ function Ensure-Environment {
     return $map
 }
 
+function Read-CanonicalEnvironment {
+    if (-not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) {
+        Fail "LOCAL_RUNTIME_ENV=NOT_READY reason=missing_env path=$EnvPath"
+    }
+
+    $map = Read-EnvMap -Path $EnvPath
+    if ((Require-EnvValue -Map $map -Name 'BTHWANI_ENV') -ne 'development') {
+        Fail 'LOCAL_RUNTIME_ENV=NOT_READY reason=BTHWANI_ENV_must_be_development'
+    }
+    return $map
+}
+
 function Set-CanonicalEnvironment([hashtable]$Map) {
     foreach ($entry in $Map.GetEnumerator()) {
         [Environment]::SetEnvironmentVariable([string]$entry.Key, [string]$entry.Value, [EnvironmentVariableTarget]::Process)
@@ -212,16 +224,18 @@ function Assert-NoParallelRuntimeResidue {
     }
 }
 
-function Remove-ProjectResources([string]$Project) {
+function Remove-ProjectResources([string]$Project, [switch]$RemoveVolumes) {
     $containers = @(Get-ProjectResourceIds -Kind container -Project $Project)
     if ($containers.Count) {
         & docker rm -f @containers *> $null
         if ($LASTEXITCODE -ne 0) { Fail "Failed removing containers for $Project." }
     }
-    $volumes = @(Get-ProjectResourceIds -Kind volume -Project $Project)
-    if ($volumes.Count) {
-        & docker volume rm -f @volumes *> $null
-        if ($LASTEXITCODE -ne 0) { Fail "Failed removing volumes for $Project." }
+    if ($RemoveVolumes) {
+        $volumes = @(Get-ProjectResourceIds -Kind volume -Project $Project)
+        if ($volumes.Count) {
+            & docker volume rm -f @volumes *> $null
+            if ($LASTEXITCODE -ne 0) { Fail "Failed removing volumes for $Project." }
+        }
     }
     $networks = @(Get-ProjectResourceIds -Kind network -Project $Project)
     foreach ($network in $networks) {
@@ -684,8 +698,10 @@ function Start-CanonicalRuntime {
     Assert-NoParallelRuntimeResidue
     Assert-NoNativeBackendProcesses
 
-    $lan = Get-MobileLanContext
-    [Environment]::SetEnvironmentVariable('SAMRIM_HOTSPOT_IP', [string]$lan.IP, 'Process')
+    $lanCandidates = @(Get-MobileLanCandidates)
+    $lan = if ($lanCandidates.Count -eq 1) { $lanCandidates[0] } else { $null }
+    $hotspotIp = if ($null -ne $lan) { [string]$lan.IP } else { '127.0.0.1' }
+    [Environment]::SetEnvironmentVariable('SAMRIM_HOTSPOT_IP', $hotspotIp, 'Process')
 
     if (-not (Test-Path -LiteralPath $ComposePath -PathType Leaf)) { Fail "Canonical Compose file is missing: $ComposePath" }
 
@@ -720,15 +736,31 @@ function Start-CanonicalRuntime {
         Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
     )
 
-    Ensure-MobileLanInfrastructure `
-        -Lan $lan `
-        -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
-        -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
-        -MetroPorts $metroPorts
-
     Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS'
+    Write-Host 'DOCKER_RUNTIME=PASS'
+    Write-Host 'BROWSER_RUNTIME=PASS'
     Write-Host 'DOCKER_OWNS=postgres,mailpit,identity,dsh,control,metro-client,metro-partner,metro-captain,metro-field'
-    Write-Host "MOBILE_TRANSPORT=WIFI_LAN hotspot=$($lan.IP)"
+    if ($null -eq $lan) {
+        $reason = if ($lanCandidates.Count -eq 0) { 'HOTSPOT_OFF_OR_UNAVAILABLE' } else { "MULTIPLE_HOTSPOT_CANDIDATES count=$($lanCandidates.Count)" }
+        Write-Host "MOBILE_LAN=NOT_READY reason=$reason"
+        Write-Host "ANDROID_RUNTIME=BLOCKED reason=$reason"
+    }
+    else {
+        $lanReady = Test-MobileLanInfrastructure `
+            -Lan $lan `
+            -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
+            -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
+            -MetroPorts $metroPorts
+        if ($lanReady) {
+            Write-Host "MOBILE_LAN=PASS hotspot=$($lan.IP)"
+            Write-Host 'ANDROID_RUNTIME=READY_FOR_DEVICE_PROOF'
+        }
+        else {
+            Write-Host "MOBILE_LAN=NOT_READY reason=REPAIR_REQUIRED hotspot=$($lan.IP)"
+            Write-Host 'ANDROID_RUNTIME=BLOCKED reason=MOBILE_LAN_NOT_READY'
+        }
+    }
+    Write-Host "MOBILE_TRANSPORT=WIFI_LAN hotspot=$hotspotIp"
     Write-Host 'ADB_REVERSE_DEPENDENCY=0'
     return $envMap
 }
@@ -740,22 +772,9 @@ function Ensure-CanonicalRuntime {
     Assert-NoNativeBackendProcesses
 
     if (Test-CanonicalRuntimeReady -EnvMap $envMap) {
-        $lan = Get-MobileLanContext
-        [Environment]::SetEnvironmentVariable('SAMRIM_HOTSPOT_IP', [string]$lan.IP, 'Process')
-
-        $metroPorts = @(
-            Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
-            Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
-            Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
-            Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
-        )
-
-        Ensure-MobileLanInfrastructure `
-            -Lan $lan `
-            -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
-            -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
-            -MetroPorts $metroPorts
-
+        Write-Host 'DOCKER_RUNTIME=PASS'
+        Write-Host 'BROWSER_RUNTIME=PASS'
+        Write-Host 'MOBILE_LAN=UNCHANGED explicit_repair=pnpm runtime:mobile-lan'
         Write-Host 'CANONICAL_LOCAL_RUNTIME=READY'
         return $envMap
     }
@@ -773,8 +792,23 @@ function Stop-CanonicalRuntime {
 }
 
 function Show-RuntimeStatus {
-    $null = Ensure-Environment
-    Ensure-Docker
+    $envMap = $null
+    try { $envMap = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' }
+    catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)" }
+
+    & docker version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host 'DOCKER_RUNTIME=NOT_READY reason=daemon_unavailable'
+        return
+    }
+
+    if ($null -eq $envMap) {
+        & docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject"
+        if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical runtime.' }
+        Write-Host 'DOCKER_RUNTIME=NOT_READY reason=LOCAL_ENV_NOT_READY'
+        return
+    }
+
     $base = Get-ComposeBaseArgs
     & docker @base ps -a
     if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical runtime.' }
@@ -782,6 +816,26 @@ function Show-RuntimeStatus {
     Write-Host "PARALLEL_RUNTIME_PROJECTS=$($parallelProjects.Count)"
     foreach ($project in $parallelProjects) {
         Write-Host "NONCANONICAL_PROJECT=$project containers=$(@(Get-ProjectResourceIds -Kind container -Project $project).Count) volumes=$(@(Get-ProjectResourceIds -Kind volume -Project $project).Count) networks=$(@(Get-ProjectResourceIds -Kind network -Project $project).Count)"
+    }
+
+    $lanCandidates = @(Get-MobileLanCandidates)
+    if ($lanCandidates.Count -eq 0) {
+        Write-Host 'MOBILE_LAN=NOT_READY reason=HOTSPOT_OFF_OR_UNAVAILABLE'
+    }
+    elseif ($lanCandidates.Count -ne 1) {
+        Write-Host "MOBILE_LAN=NOT_READY reason=MULTIPLE_HOTSPOT_CANDIDATES count=$($lanCandidates.Count)"
+    }
+    elseif ($null -eq $envMap) {
+        Write-Host 'MOBILE_LAN=NOT_READY reason=LOCAL_ENV_NOT_READY'
+    }
+    else {
+        $lan = $lanCandidates[0]
+        $ports = Get-ExpectedMobileLanPorts -EnvMap $envMap
+        $firewall = Get-MobileLanFirewallInspection -Lan $lan -Ports $ports
+        $proxy = Get-MobileLanPortProxyInspection -Lan $lan -Ports $ports
+        Write-Host "MOBILE_LAN_FIREWALL=$(if($firewall.Exact){'PASS'}else{'NOT_READY'}) reason=$($firewall.Reason)"
+        Write-Host "MOBILE_LAN_PORTPROXY=$(if($proxy.Exact){'PASS'}else{'NOT_READY'}) reason=$($proxy.Reason)"
+        Write-Host "MOBILE_LAN_STALE_ARTIFACTS=$($proxy.Stale.Count + $proxy.Duplicates.Count)"
     }
 }
 
@@ -794,39 +848,396 @@ function Show-RuntimeLogs {
 }
 
 function Invoke-RuntimeDoctor {
-    $envMap = Ensure-Environment
-    Set-CanonicalEnvironment -Map $envMap
-    Ensure-Docker
-    $composeFiles = @(Get-ChildItem -LiteralPath $ComposeDir -File | Where-Object { $_.Name -match '^compose(?:\..+)?\.ya?ml$' })
-    if ($composeFiles.Count -ne 1 -or $composeFiles[0].FullName -ne $ComposePath) { Fail "CANONICAL_LOCAL_COMPOSE_FILES=FAIL observed=$($composeFiles.Name -join ',')" }
-    Write-Host 'CANONICAL_LOCAL_COMPOSE_FILES=1'
-    Invoke-Compose -Arguments @('config','--quiet') -Quiet
-    Assert-NoParallelRuntimeResidue
-    Assert-NoNativeBackendProcesses
-    Assert-CanonicalRuntime -EnvMap $envMap
-    & node $OwnershipVerifier
-    if ($LASTEXITCODE -ne 0) { Fail 'Repository runtime ownership verifier failed.' }
-    Write-Host 'PARALLEL_LOCAL_RUNTIME_AUTHORITY=0'
-    Write-Host 'PORT_OWNERSHIP=PASS'
-    Write-Host 'SERVICE_HEALTH=PASS'
-    Write-Host 'RUNTIME_DOCTOR=PASS'
+    $failures = @()
+    $envMap = $null
+    Write-Host "HOST_OS=$([Environment]::OSVersion.VersionString)"
+    Write-Host "POWERSHELL_VERSION=$($PSVersionTable.PSVersion)"
+    Write-Host "ADMIN_STATE=$(if(Test-Administrator){'ELEVATED'}else{'NOT_ELEVATED'})"
+    try {
+        $envMap = Read-CanonicalEnvironment
+        Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only'
+    }
+    catch {
+        $failures += 'local environment is not readable'
+        Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)"
+    }
+
+    $dockerReady = $false
+    if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
+        Write-Host 'DOCKER_CLI=NOT_READY reason=missing'
+        $failures += 'Docker CLI is missing'
+    }
+    else {
+        Write-Host 'DOCKER_CLI=PASS'
+        & docker version *> $null
+        $dockerReady = $LASTEXITCODE -eq 0
+        if ($dockerReady) { Write-Host 'DOCKER_DAEMON=PASS' }
+        else {
+            Write-Host 'DOCKER_DAEMON=NOT_READY reason=unavailable'
+            $failures += 'Docker daemon is unavailable'
+        }
+    }
+
+    if ($dockerReady) {
+        $composeFiles = @(Get-ChildItem -LiteralPath $ComposeDir -File | Where-Object { $_.Name -match '^compose(?:\..+)?\.ya?ml$' })
+        if ($composeFiles.Count -eq 1 -and $composeFiles[0].FullName -eq $ComposePath) {
+            Write-Host 'CANONICAL_COMPOSE=PASS files=1'
+        }
+        else {
+            Write-Host "CANONICAL_COMPOSE=NOT_READY observed=$($composeFiles.Name -join ',')"
+            $failures += 'canonical Compose topology is not unique'
+        }
+        if ($null -ne $envMap) {
+            try {
+                Invoke-Compose -Arguments @('config','--quiet') -Quiet
+                Write-Host 'CANONICAL_COMPOSE_CONFIG=PASS'
+            }
+            catch {
+                Write-Host "CANONICAL_COMPOSE_CONFIG=NOT_READY reason=$($_.Exception.Message)"
+                $failures += 'canonical Compose config is invalid'
+            }
+        }
+    }
+
+    if ($dockerReady) {
+        try {
+            $parallelProjects = @(Get-NonCanonicalSamrimProjects)
+            Write-Host "PARALLEL_RUNTIME_RESIDUE=$($parallelProjects.Count)"
+            foreach ($project in $parallelProjects) {
+                Write-Host "NONCANONICAL_PROJECT=$project containers=$(@(Get-ProjectResourceIds -Kind container -Project $project).Count) volumes=$(@(Get-ProjectResourceIds -Kind volume -Project $project).Count) networks=$(@(Get-ProjectResourceIds -Kind network -Project $project).Count)"
+            }
+            if ($parallelProjects.Count) { $failures += 'noncanonical Samrim Compose projects remain' }
+        }
+        catch {
+            Write-Host "PARALLEL_RUNTIME_RESIDUE=UNKNOWN reason=$($_.Exception.Message)"
+            $failures += 'parallel runtime residue could not be inspected'
+        }
+
+        try { Assert-NoNativeBackendProcesses }
+        catch {
+            Write-Host "NATIVE_RUNTIME_RESIDUE=FAIL reason=$($_.Exception.Message)"
+            $failures += 'native backend runtime residue remains'
+        }
+    }
+    else {
+        Write-Host 'PARALLEL_RUNTIME_RESIDUE=UNKNOWN reason=docker_unavailable'
+        Write-Host 'NATIVE_RUNTIME_RESIDUE=UNKNOWN reason=docker_unavailable'
+    }
+
+    if ($null -ne (Get-Command node -ErrorAction SilentlyContinue)) {
+        & node $OwnershipVerifier
+        if ($LASTEXITCODE -eq 0) { Write-Host 'CANONICAL_RUNTIME_OWNERSHIP=PASS' }
+        else { Write-Host 'CANONICAL_RUNTIME_OWNERSHIP=NOT_READY'; $failures += 'repository runtime ownership verifier failed' }
+    }
+    else { Write-Host 'CANONICAL_RUNTIME_OWNERSHIP=UNKNOWN reason=node_missing' }
+
+    $services = @(
+        @{ Name = 'postgres'; Healthy = $true; Kind = 'running' },
+        @{ Name = 'mailpit'; Healthy = $false; Kind = 'running' },
+        @{ Name = 'identity-migrate'; Healthy = $false; Kind = 'oneshot' },
+        @{ Name = 'identity'; Healthy = $true; Kind = 'running' },
+        @{ Name = 'dsh-migrate'; Healthy = $false; Kind = 'oneshot' },
+        @{ Name = 'dsh'; Healthy = $true; Kind = 'running' },
+        @{ Name = 'js-deps'; Healthy = $false; Kind = 'oneshot' },
+        @{ Name = 'control'; Healthy = $true; Kind = 'running' },
+        @{ Name = 'metro-client'; Healthy = $true; Kind = 'running' },
+        @{ Name = 'metro-partner'; Healthy = $true; Kind = 'running' },
+        @{ Name = 'metro-captain'; Healthy = $true; Kind = 'running' },
+        @{ Name = 'metro-field'; Healthy = $true; Kind = 'running' }
+    )
+    $serviceFailures = @()
+    if ($dockerReady) {
+        foreach ($service in $services) {
+            $ids = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --filter "label=com.docker.compose.service=$($service.Name)" --format '{{.ID}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            if ($ids.Count -ne 1) {
+                $serviceFailures += "$($service.Name):container_count=$($ids.Count)"
+                continue
+            }
+            $state = (& docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}' $ids[0]).Trim()
+            $expectedState = if ($service.Kind -eq 'oneshot') { 'exited|0' } else { 'running|0' }
+            if ($state -ne $expectedState) { $serviceFailures += "$($service.Name):state=$state" }
+            if ($service.Healthy -and $state -eq 'running|0') {
+                $health = (& docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' $ids[0]).Trim()
+                if ($health -ne 'healthy') { $serviceFailures += "$($service.Name):health=$health" }
+            }
+        }
+        if ($serviceFailures.Count) {
+            Write-Host "SERVICE_STATE=NOT_READY details=$($serviceFailures -join ',')"
+            if (@($serviceFailures | Where-Object { $_ -like 'postgres:*' }).Count) { Write-Host 'DATABASE_STATE=NOT_READY reason=postgres_not_ready' }
+            else { Write-Host 'DATABASE_STATE=PASS' }
+            $failures += 'one or more canonical services are not ready'
+        }
+        else {
+            Write-Host 'SERVICE_STATE=PASS'
+            Write-Host 'SERVICE_HEALTH=PASS'
+            Write-Host 'DATABASE_STATE=PASS'
+            Write-Host 'DOCKER_RUNTIME=PASS'
+            Write-Host 'BROWSER_RUNTIME=PASS'
+        }
+    }
+    else {
+        Write-Host 'SERVICE_STATE=UNKNOWN reason=docker_unavailable'
+        Write-Host 'DATABASE_STATE=UNKNOWN reason=docker_unavailable'
+    }
+
+    if ($dockerReady -and $null -ne $envMap) {
+        $portFailures = @()
+        foreach ($contract in @(
+            @{ Key = 'SAMRIM_IDENTITY_PORT'; Service = 'identity' },
+            @{ Key = 'SAMRIM_DSH_PORT'; Service = 'dsh' },
+            @{ Key = 'SAMRIM_MAILPIT_WEB_PORT'; Service = 'mailpit' },
+            @{ Key = 'SAMRIM_CONTROL_PORT'; Service = 'control' },
+            @{ Key = 'SAMRIM_APP_CLIENT_METRO_PORT'; Service = 'metro-client' },
+            @{ Key = 'SAMRIM_APP_PARTNER_METRO_PORT'; Service = 'metro-partner' },
+            @{ Key = 'SAMRIM_APP_CAPTAIN_METRO_PORT'; Service = 'metro-captain' },
+            @{ Key = 'SAMRIM_APP_FIELD_METRO_PORT'; Service = 'metro-field' }
+        )) {
+            try { Assert-CanonicalPublishedPort -Port (Require-TcpPort -Map $envMap -Name $contract.Key) -ExpectedService $contract.Service }
+            catch { $portFailures += "$($contract.Key):$($_.Exception.Message)" }
+        }
+        if ($portFailures.Count) {
+            Write-Host "PORT_OWNERSHIP=NOT_READY details=$($portFailures -join ',')"
+            $failures += 'canonical published port ownership is not ready'
+        }
+        else { Write-Host 'PORT_OWNERSHIP=PASS' }
+
+        $volumeNames = @(Get-ProjectResourceIds -Kind volume -Project $CanonicalProject)
+        $requiredJsVolumes = @('samrim-js-pnpm-store','samrim-js-root-node-modules','samrim-js-partner-node-modules','samrim-js-control-node-modules')
+        $missingJsVolumes = @($requiredJsVolumes | Where-Object {
+            $expectedVolume = $_
+            @($volumeNames | Where-Object { $_ -match [regex]::Escape($expectedVolume) }).Count -ne 1
+        })
+        $pnpmStoreVolumeCount = @($volumeNames | Where-Object { $_ -match 'samrim-js-pnpm-store$' }).Count
+        $jsDepsReady = $serviceFailures.Count -eq 0 -and $pnpmStoreVolumeCount -eq 1
+        if ($jsDepsReady -and $missingJsVolumes.Count -eq 0) { Write-Host 'JS_DEPS_STATE=PASS fingerprinted_volume=present' }
+        else { Write-Host "JS_DEPS_STATE=NOT_READY missing_volumes=$($missingJsVolumes -join ',')"; $failures += 'JS dependency runtime state is not ready' }
+
+        $requiredImages = @(
+            'samrim-local-identity:dev',
+            'samrim-local-dsh:dev',
+            'samrim-local-js-runtime:dev'
+        )
+        $missingImages = @($requiredImages | Where-Object { -not (Test-RuntimeImage -Image $_) })
+        if ($missingImages.Count -eq 0) { Write-Host 'BUILD_CACHE_STATE=PASS required_images=present' }
+        else { Write-Host "BUILD_CACHE_STATE=NOT_READY missing=$($missingImages -join ',')"; $failures += 'required runtime images are missing' }
+    }
+    else {
+        Write-Host 'PORT_OWNERSHIP=UNKNOWN reason=docker_or_env_unavailable'
+        Write-Host 'JS_DEPS_STATE=UNKNOWN reason=docker_or_env_unavailable'
+        Write-Host 'BUILD_CACHE_STATE=UNKNOWN reason=docker_or_env_unavailable'
+    }
+
+    $lanCandidates = @(Get-MobileLanCandidates)
+    $mobileReady = $false
+    $mobileLanExact = $false
+    if ($lanCandidates.Count -eq 0) {
+        Write-Host 'HOTSPOT_STATE=OFF_OR_UNAVAILABLE'
+        Write-Host 'HOTSPOT_ADAPTER=NONE'
+        Write-Host 'HOTSPOT_IP=NONE'
+        Write-Host 'HOTSPOT_SUBNET=NONE'
+        Write-Host 'MOBILE_LAN=NOT_READY reason=HOTSPOT_OFF_OR_UNAVAILABLE'
+        Write-Host 'MOBILE_LAN_FIREWALL=NOT_READY reason=HOTSPOT_OFF_OR_UNAVAILABLE'
+        Write-Host 'MOBILE_LAN_FIREWALL_FILTERS=NOT_READY reason=HOTSPOT_OFF_OR_UNAVAILABLE'
+        Write-Host 'MOBILE_LAN_PORTPROXY=NOT_READY reason=HOTSPOT_OFF_OR_UNAVAILABLE'
+        Write-Host 'MOBILE_LAN_STALE_ARTIFACTS=UNKNOWN reason=hotspot_unavailable'
+    }
+    elseif ($lanCandidates.Count -ne 1) {
+        Write-Host 'HOTSPOT_STATE=AMBIGUOUS'
+        Write-Host 'HOTSPOT_ADAPTER=MULTIPLE'
+        Write-Host 'HOTSPOT_IP=MULTIPLE'
+        Write-Host 'HOTSPOT_SUBNET=MULTIPLE'
+        Write-Host "HOTSPOT_CANDIDATES=$($lanCandidates.Count)"
+        Write-Host 'MOBILE_LAN=NOT_READY reason=MULTIPLE_HOTSPOT_CANDIDATES'
+        Write-Host 'MOBILE_LAN_FIREWALL=NOT_READY reason=MULTIPLE_HOTSPOT_CANDIDATES'
+        Write-Host 'MOBILE_LAN_FIREWALL_FILTERS=NOT_READY reason=MULTIPLE_HOTSPOT_CANDIDATES'
+        Write-Host 'MOBILE_LAN_PORTPROXY=NOT_READY reason=MULTIPLE_HOTSPOT_CANDIDATES'
+        Write-Host 'MOBILE_LAN_STALE_ARTIFACTS=UNKNOWN reason=hotspot_ambiguous'
+    }
+    elseif ($null -eq $envMap) {
+        Write-Host "HOTSPOT_STATE=ON adapter=$($lanCandidates[0].Adapter)"
+        Write-Host "HOTSPOT_IP=$($lanCandidates[0].IP)"
+        Write-Host "HOTSPOT_SUBNET=$(Get-MobileLanNetworkCidr -Lan $lanCandidates[0])"
+        Write-Host 'MOBILE_LAN=NOT_READY reason=LOCAL_ENV_NOT_READY'
+        Write-Host 'MOBILE_LAN_FIREWALL=UNKNOWN reason=LOCAL_ENV_NOT_READY'
+        Write-Host 'MOBILE_LAN_FIREWALL_FILTERS=UNKNOWN reason=LOCAL_ENV_NOT_READY'
+        Write-Host 'MOBILE_LAN_PORTPROXY=UNKNOWN reason=LOCAL_ENV_NOT_READY'
+        Write-Host 'MOBILE_LAN_STALE_ARTIFACTS=UNKNOWN reason=local_env_unavailable'
+    }
+    else {
+        $lan = $lanCandidates[0]
+        $ports = Get-ExpectedMobileLanPorts -EnvMap $envMap
+        Write-Host "HOTSPOT_STATE=ON adapter=$($lan.Adapter)"
+        Write-Host "HOTSPOT_ADAPTER=$($lan.Adapter)"
+        Write-Host "HOTSPOT_IP=$($lan.IP)"
+        Write-Host "HOTSPOT_SUBNET=$(Get-MobileLanNetworkCidr -Lan $lan)"
+        $firewall = Get-MobileLanFirewallInspection -Lan $lan -Ports $ports
+        $proxy = Get-MobileLanPortProxyInspection -Lan $lan -Ports $ports
+        $staleCount = $proxy.Stale.Count + $proxy.Duplicates.Count
+        $mobileLanExact = $firewall.Exact -and $proxy.Exact
+        Write-Host "MOBILE_LAN_FIREWALL=$(if($firewall.Exact){'PASS'}else{'NOT_READY'}) reason=$($firewall.Reason)"
+        Write-Host "MOBILE_LAN_FIREWALL_FILTERS=$(if($firewall.Exact){'PASS'}else{'FAIL'})"
+        Write-Host "MOBILE_LAN_PORTPROXY=$(if($proxy.Exact){'PASS'}else{'NOT_READY'}) reason=$($proxy.Reason)"
+        Write-Host "MOBILE_LAN_STALE_ARTIFACTS=$staleCount"
+        if ($mobileLanExact -and $serviceFailures.Count -eq 0) {
+            try {
+                $mobileReady = Test-MobileLanInfrastructure `
+                    -Lan $lan `
+                    -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
+                    -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
+                    -MetroPorts @(
+                        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
+                        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
+                        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+                        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
+                    )
+            }
+            catch { Write-Host "MOBILE_LAN_HOST_CONNECTIVITY=NOT_READY reason=$($_.Exception.Message)" }
+        }
+        elseif ($mobileLanExact) {
+            Write-Host 'MOBILE_LAN_HOST_CONNECTIVITY=BLOCKED reason=DOCKER_SERVICES_NOT_READY'
+        }
+        if ($mobileReady) { Write-Host "MOBILE_LAN=PASS hotspot=$($lan.IP)" }
+        elseif ($mobileLanExact) { Write-Host "MOBILE_LAN=NOT_READY reason=DOCKER_SERVICES_NOT_READY hotspot=$($lan.IP)" }
+        else { Write-Host "MOBILE_LAN=NOT_READY reason=REPAIR_REQUIRED hotspot=$($lan.IP)" }
+    }
+
+    $adbRecords = @()
+    if ($null -eq (Get-Command adb -ErrorAction SilentlyContinue)) {
+        Write-Host 'ADB_STATE=NOT_READY reason=missing'
+        Write-Host 'ADB_DEVICE_SELECTION=NOT_READY reason=adb_missing'
+        Write-Host 'ADB_REVERSE_DEPENDENCY=UNKNOWN reason=adb_missing'
+    }
+    else {
+        $adbRows = @(& adb devices -l 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host 'ADB_STATE=NOT_READY reason=query_failed'
+            Write-Host 'ADB_DEVICE_SELECTION=NOT_READY reason=query_failed'
+            Write-Host 'ADB_REVERSE_DEPENDENCY=UNKNOWN reason=query_failed'
+        }
+        else {
+            foreach ($row in $adbRows) {
+                if ($row -match '^([^\s]+)\s+device(?:\s|$)') {
+                    $serial = $Matches[1]
+                    $identity = ((& adb -s $serial shell getprop ro.serialno 2>$null | Out-String).Trim())
+                    if ([string]::IsNullOrWhiteSpace($identity)) { $identity = ((& adb -s $serial shell getprop ro.boot.serialno 2>$null | Out-String).Trim()) }
+                    $adbRecords += [pscustomobject]@{ Serial = $serial; Identity = if ($identity) { $identity } else { 'unknown' } }
+                }
+            }
+            Write-Host "ADB_STATE=PASS devices=$($adbRecords.Count)"
+            $physicalGroups = @($adbRecords | Group-Object Identity)
+            if ($adbRecords.Count -eq 0) {
+                Write-Host 'ADB_DEVICE_SELECTION=NOT_READY reason=no_device'
+            }
+            elseif ($physicalGroups.Count -eq 1) {
+                $selected = @($adbRecords | Sort-Object Serial)[0]
+                Write-Host "ADB_DEVICE_SELECTION=PASS identity=$($selected.Identity) serial=$($selected.Serial) transports=$($adbRecords.Count)"
+            }
+            else {
+                Write-Host "ADB_DEVICE_SELECTION=NOT_READY reason=multiple_physical_devices count=$($physicalGroups.Count)"
+            }
+            $reverseFailures = @()
+            if ($null -ne $envMap) {
+                $reversePorts = Get-ExpectedMobileLanPorts -EnvMap $envMap
+                foreach ($record in $adbRecords) {
+                    $reverseRows = @(& adb -s $record.Serial reverse --list 2>&1)
+                    if ($LASTEXITCODE -ne 0) { $reverseFailures += "$($record.Serial):inspection_failed"; continue }
+                    foreach ($port in $reversePorts) {
+                        if (@($reverseRows | Where-Object { $_ -match "tcp:$port(\s|$)" }).Count -gt 0) { $reverseFailures += "$($record.Serial):tcp:$port" }
+                    }
+                }
+            }
+            if ($reverseFailures.Count) { Write-Host "ADB_REVERSE_DEPENDENCY=FAIL details=$($reverseFailures -join ',')" }
+            else { Write-Host 'ADB_REVERSE_DEPENDENCY=0' }
+        }
+    }
+
+    if ($mobileReady) {
+        Write-Host 'ANDROID_LAN_READINESS=NOT_PROVEN reason=AGENT_DEVICE_REQUIRED'
+    }
+    else {
+        Write-Host 'ANDROID_LAN_READINESS=BLOCKED reason=MOBILE_LAN_NOT_READY'
+    }
+
+    $rootCause = if (-not $dockerReady) { 'DOCKER_UNAVAILABLE' } elseif ($serviceFailures.Count) { 'DOCKER_SERVICES_NOT_READY' } elseif (-not $mobileReady) { 'MOBILE_LAN_NOT_READY' } else { 'NONE_DETECTED' }
+    $adminRequired = if ($mobileLanExact) { 0 } elseif ($lanCandidates.Count -eq 1) { 1 } else { 0 }
+    Write-Host "ROOT_CAUSE=$rootCause"
+    $affectedLayer = switch ($rootCause) {
+        'MOBILE_LAN_NOT_READY' { 'MOBILE_LAN_HOST_PROVISIONING' }
+        'NONE_DETECTED' { 'NONE' }
+        default { 'DOCKER_RUNTIME' }
+    }
+    $unaffectedLayers = if ($dockerReady -and $serviceFailures.Count -eq 0) { 'DOCKER_RUNTIME,BROWSER_RUNTIME,JS_DEPS,BUILD_CACHE' } else { 'NONE_PROVEN' }
+    $repairAction = if ($mobileReady -or $mobileLanExact) { 'none' } elseif ($lanCandidates.Count -eq 1) { 'pnpm runtime:mobile-lan' } else { 'enable_one_Windows_Mobile_Hotspot' }
+    Write-Host "AFFECTED_LAYER=$affectedLayer"
+    Write-Host "UNAFFECTED_LAYERS=$unaffectedLayers"
+    Write-Host "EXACT_REPAIR_ACTION=$repairAction"
+    Write-Host "ADMIN_REQUIRED=$adminRequired"
+    Write-Host 'DESTRUCTIVE=0'
+
+    if ($failures.Count -eq 0) {
+        Write-Host 'RUNTIME_DOCTOR=PASS'
+    }
+    else {
+        Write-Host "RUNTIME_DOCTOR=NOT_READY failures=$($failures.Count)"
+        exit 1
+    }
 }
 
 function Reset-CanonicalRuntime {
     $envMap = Ensure-Environment
     Ensure-Docker
-    Remove-MobileLanInfrastructure -EnvMap $envMap
-    Write-Host 'RUNTIME_RESET=DESTRUCTIVE_LOCAL_DATA scope=samrim Docker containers/networks/volumes; local .env secrets are preserved'
+    Write-Host 'RUNTIME_RESET=DESTRUCTIVE_LOCAL_DATA scope=postgres_application_state; dependency_volumes=preserved mobile_lan=preserved secrets=preserved'
+    $mobileLanBefore = Get-MobileLanArtifactSnapshot -EnvMap $envMap
     $parallelProjects = @(Get-NonCanonicalSamrimProjects)
-    try { Invoke-Compose -Arguments @('down','--volumes','--remove-orphans') } catch { Write-Host "Canonical compose teardown was not complete: $($_.Exception.Message)" }
+    $dependencyVolumesBefore = @(
+        Get-ProjectResourceIds -Kind volume -Project $CanonicalProject |
+            Where-Object { $_ -match 'samrim-js-' }
+    )
+    try { Invoke-Compose -Arguments @('down','--remove-orphans') } catch { Write-Host "Canonical compose teardown was not complete: $($_.Exception.Message)" }
     Remove-ProjectResources -Project $CanonicalProject
     foreach ($project in $parallelProjects) { Remove-ProjectResources -Project $project }
+
+    $postgresVolumes = @(
+        Get-ProjectResourceIds -Kind volume -Project $CanonicalProject |
+            Where-Object { $_ -match '(^|_)samrim-postgres-data$' }
+    )
+    if ($postgresVolumes.Count -gt 1) {
+        Fail "RUNTIME_RESET=FAIL postgres_data_volume_count=$($postgresVolumes.Count)"
+    }
+    if ($postgresVolumes.Count -eq 1) {
+        & docker volume rm -f $postgresVolumes[0] *> $null
+        if ($LASTEXITCODE -ne 0) { Fail 'RUNTIME_RESET=FAIL postgres_data_volume_remove=1' }
+    }
+
     foreach ($project in @($CanonicalProject) + $parallelProjects) {
         foreach ($kind in @('container','volume','network')) {
-            if (@(Get-ProjectResourceIds -Kind $kind -Project $project).Count) { Fail "RUNTIME_RESET=FAIL project=$project kind=$kind residue=present" }
+            if ($kind -eq 'volume' -and $project -eq $CanonicalProject) {
+                $remaining = @(Get-ProjectResourceIds -Kind volume -Project $project | Where-Object { $_ -match '(^|_)samrim-postgres-data$' })
+            }
+            else {
+                $remaining = @(Get-ProjectResourceIds -Kind $kind -Project $project)
+            }
+            if ($remaining.Count) { Fail "RUNTIME_RESET=FAIL project=$project kind=$kind residue=$($remaining -join ',')" }
         }
     }
     if (@(Get-NonCanonicalSamrimProjects).Count) { Fail 'RUNTIME_RESET=FAIL noncanonical samrim Compose projects remain.' }
+    $dependencyVolumesAfter = @(
+        Get-ProjectResourceIds -Kind volume -Project $CanonicalProject |
+            Where-Object { $_ -match 'samrim-js-' }
+    )
+    if (
+        $dependencyVolumesAfter.Count -ne $dependencyVolumesBefore.Count -or
+        (@(Compare-Object -ReferenceObject $dependencyVolumesBefore -DifferenceObject $dependencyVolumesAfter).Count -ne 0)
+    ) {
+        Fail 'RUNTIME_RESET=FAIL dependency_volumes_changed=1'
+    }
+    $mobileLanAfter = Get-MobileLanArtifactSnapshot -EnvMap $envMap
+    if (
+        (@(Compare-Object -ReferenceObject $mobileLanBefore.Mappings -DifferenceObject $mobileLanAfter.Mappings).Count -ne 0) -or
+        (@(Compare-Object -ReferenceObject $mobileLanBefore.Rules -DifferenceObject $mobileLanAfter.Rules).Count -ne 0)
+    ) {
+        Fail 'RUNTIME_RESET=FAIL mobile_lan_artifacts_changed=1'
+    }
     foreach ($contract in @(
         @{ Key = 'SAMRIM_IDENTITY_PORT'; Component = 'identity' },
         @{ Key = 'SAMRIM_DSH_PORT'; Component = 'dsh' },
@@ -843,7 +1254,40 @@ function Reset-CanonicalRuntime {
     }
     Assert-NoNativeBackendProcesses
     Write-Host 'PARALLEL_RUNTIME_RESIDUE=0'
+    Write-Host "DEPENDENCY_CACHE=PASS preserved=$($dependencyVolumesAfter.Count)"
+    Write-Host "MOBILE_LAN_INFRA=PRESERVED mappings=$(@($mobileLanAfter.Mappings).Count) rules=$(@($mobileLanAfter.Rules).Count)"
     Write-Host 'RUNTIME_RESET=PASS final_state=DOWN secrets=preserved'
+}
+
+function Purge-CanonicalRuntime {
+    $envMap = Ensure-Environment
+    Ensure-Docker
+    Remove-MobileLanInfrastructure -EnvMap $envMap
+    Write-Host 'RUNTIME_PURGE=DESTRUCTIVE_LOCAL_DATA_AND_HOST_NETWORK scope=samrim Docker containers/networks/volumes + BThwani Mobile LAN; local .env secrets are preserved'
+    $parallelProjects = @(Get-NonCanonicalSamrimProjects)
+    try { Invoke-Compose -Arguments @('down','--volumes','--remove-orphans') } catch { Write-Host "Canonical compose teardown was not complete: $($_.Exception.Message)" }
+    Remove-ProjectResources -Project $CanonicalProject -RemoveVolumes
+    foreach ($project in $parallelProjects) { Remove-ProjectResources -Project $project -RemoveVolumes }
+    foreach ($project in @($CanonicalProject) + $parallelProjects) {
+        foreach ($kind in @('container','volume','network')) {
+            if (@(Get-ProjectResourceIds -Kind $kind -Project $project).Count) { Fail "RUNTIME_PURGE=FAIL project=$project kind=$kind residue=present" }
+        }
+    }
+    if (@(Get-NonCanonicalSamrimProjects).Count) { Fail 'RUNTIME_PURGE=FAIL noncanonical samrim Compose projects remain.' }
+    foreach ($contract in @(
+        @{ Key = 'SAMRIM_IDENTITY_PORT'; Component = 'identity' },
+        @{ Key = 'SAMRIM_DSH_PORT'; Component = 'dsh' },
+        @{ Key = 'SAMRIM_MAILPIT_WEB_PORT'; Component = 'mailpit-web' },
+        @{ Key = 'SAMRIM_CONTROL_PORT'; Component = 'control-panel' },
+        @{ Key = 'SAMRIM_APP_CLIENT_METRO_PORT'; Component = 'metro-client' },
+        @{ Key = 'SAMRIM_APP_PARTNER_METRO_PORT'; Component = 'metro-partner' },
+        @{ Key = 'SAMRIM_APP_CAPTAIN_METRO_PORT'; Component = 'metro-captain' },
+        @{ Key = 'SAMRIM_APP_FIELD_METRO_PORT'; Component = 'metro-field' }
+    )) {
+        Assert-PortFree -Port (Require-TcpPort -Map $envMap -Name $contract.Key) -Component $contract.Component
+    }
+    Assert-NoNativeBackendProcesses
+    Write-Host 'RUNTIME_PURGE=PASS final_state=DOWN secrets=preserved'
 }
 
 function Start-ControlPanel {
@@ -879,13 +1323,10 @@ function Test-Administrator {
     )
 }
 
-function Get-MobileLanContext {
-    if (-not $IsWindows) {
-        Fail 'MOBILE_LAN_PLATFORM=FAIL Windows Mobile Hotspot requires Windows.'
-    }
+function Get-MobileLanCandidates {
+    if (-not $IsWindows) { return @() }
 
     $found = @()
-
     foreach ($adapter in @(
         Get-NetAdapter -ErrorAction SilentlyContinue |
             Where-Object {
@@ -913,16 +1354,44 @@ function Get-MobileLanContext {
         }
     }
 
+    return @($found)
+}
+
+function Get-MobileLanContext {
+    $found = @(Get-MobileLanCandidates)
     if ($found.Count -eq 0) {
-        Fail 'MOBILE_LAN=FAIL Windows Mobile Hotspot is not active.'
+        Fail 'MOBILE_LAN=NOT_READY reason=HOTSPOT_OFF_OR_UNAVAILABLE'
     }
 
     if ($found.Count -ne 1) {
         $found | Format-Table -AutoSize
-        Fail "MOBILE_LAN=FAIL candidates=$($found.Count)"
+        Fail "MOBILE_LAN=NOT_READY reason=MULTIPLE_HOTSPOT_CANDIDATES count=$($found.Count)"
     }
 
     return $found[0]
+}
+
+function Get-MobileLanNetworkCidr([pscustomobject]$Lan) {
+    $bytes = [Net.IPAddress]::Parse([string]$Lan.IP).GetAddressBytes()
+    $remaining = [int]$Lan.Prefix
+    $network = foreach ($byte in $bytes) {
+        $bits = [Math]::Min(8, [Math]::Max(0, $remaining))
+        $mask = if ($bits -eq 0) { 0 } else { 256 - [int][Math]::Pow(2, 8 - $bits) }
+        $remaining -= $bits
+        ([int]$byte -band $mask)
+    }
+    return "$($network -join '.')/$($Lan.Prefix)"
+}
+
+function Get-ExpectedMobileLanPorts([hashtable]$EnvMap) {
+    return @(
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_IDENTITY_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_DSH_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+        Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
+    ) | Sort-Object -Unique
 }
 
 function Get-PortProxyMappings {
@@ -945,56 +1414,188 @@ function Get-PortProxyMappings {
     return $result
 }
 
+function Normalize-FirewallFilterValue([string]$Value) {
+    $trimmed = $Value.Trim()
+    if ($trimmed -match '^((?:\d{1,3}\.){3}\d{1,3})/((?:\d{1,3}\.){3}\d{1,3})$') {
+        $prefixByMask = @{
+            '0' = 0; '128' = 1; '192' = 2; '224' = 3; '240' = 4
+            '248' = 5; '252' = 6; '254' = 7; '255' = 8
+        }
+        $prefix = 0
+        foreach ($octet in $Matches[2].Split('.')) {
+            if (-not $prefixByMask.ContainsKey($octet)) { return $trimmed }
+            $prefix += $prefixByMask[$octet]
+        }
+        return "$($Matches[1])/$prefix"
+    }
+    return $trimmed
+}
+
+function Get-NormalizedFilterValues([object]$Value) {
+    $values = @()
+    foreach ($item in @($Value)) {
+        foreach ($part in ([string]$item -split ',')) {
+            $trimmed = Normalize-FirewallFilterValue -Value $part
+            if ($trimmed) { $values += $trimmed }
+        }
+    }
+    return @($values | Sort-Object -Unique)
+}
+
+function Test-ExactFilterValues([object]$Actual, [string[]]$Expected) {
+    $actualValues = @(Get-NormalizedFilterValues -Value $Actual)
+    $expectedValues = @($Expected | ForEach-Object { [string]$_ } | Sort-Object -Unique)
+    return ($actualValues.Count -eq $expectedValues.Count) -and
+        (@(Compare-Object -ReferenceObject $expectedValues -DifferenceObject $actualValues).Count -eq 0)
+}
+
+function Get-MobileLanFirewallInspection(
+    [pscustomobject]$Lan,
+    [int[]]$Ports
+) {
+    $result = [ordered]@{
+        Exact  = $false
+        Count  = 0
+        Reason = 'missing'
+        Rule   = $null
+    }
+
+    try {
+        $rules = @(
+            Get-NetFirewallRule `
+                -Group $MobileLanFirewallGroup `
+                -ErrorAction SilentlyContinue
+        )
+        $result.Count = $rules.Count
+        if ($rules.Count -ne 1) {
+            $result.Reason = if ($rules.Count -eq 0) { 'missing' } else { "duplicate_rules count=$($rules.Count)" }
+            return [pscustomobject]$result
+        }
+
+        $rule = $rules[0]
+        $portFilter = @(Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop)
+        $addressFilter = @(Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop)
+        $interfaceFilter = @(Get-NetFirewallInterfaceFilter -AssociatedNetFirewallRule $rule -ErrorAction Stop)
+        if ($portFilter.Count -ne 1 -or $addressFilter.Count -ne 1 -or $interfaceFilter.Count -ne 1) {
+            $result.Reason = "filter_cardinality port=$($portFilter.Count) address=$($addressFilter.Count) interface=$($interfaceFilter.Count)"
+            return [pscustomobject]$result
+        }
+
+        $expectedPorts = @($Ports | ForEach-Object { [string]$_ })
+        $expectedNetwork = Get-MobileLanNetworkCidr -Lan $Lan
+        $exact =
+            ([string]$rule.Enabled -eq 'True') -and
+            ([string]$rule.Direction -eq 'Inbound') -and
+            ([string]$rule.Action -eq 'Allow') -and
+            ([string]$rule.Profile -eq 'Any') -and
+            (Test-ExactFilterValues -Actual $portFilter.Protocol -Expected @('TCP')) -and
+            (Test-ExactFilterValues -Actual $portFilter.LocalPort -Expected $expectedPorts) -and
+            (Test-ExactFilterValues -Actual $addressFilter.LocalAddress -Expected @([string]$Lan.IP)) -and
+            (Test-ExactFilterValues -Actual $addressFilter.RemoteAddress -Expected @($expectedNetwork)) -and
+            (Test-ExactFilterValues -Actual $interfaceFilter.InterfaceAlias -Expected @([string]$Lan.Adapter))
+
+        $result.Exact = $exact
+        $result.Rule = $rule
+        $result.Reason = if ($exact) { 'exact' } else { 'wrong_filters_or_rule_properties' }
+        return [pscustomobject]$result
+    }
+    catch {
+        $result.Reason = "inspection_error=$($_.Exception.Message)"
+        return [pscustomobject]$result
+    }
+}
+
+function Get-MobileLanPortProxyInspection(
+    [pscustomobject]$Lan,
+    [int[]]$Ports
+) {
+    $mappings = @(Get-PortProxyMappings)
+    $managed = @(
+        $mappings |
+            Where-Object {
+                $_.ConnectAddress -eq '127.0.0.1' -and
+                $_.ConnectPort -in $Ports -and
+                $_.ListenPort -eq $_.ConnectPort
+            }
+    )
+
+    $missing = @()
+    $duplicates = @()
+    foreach ($port in $Ports) {
+        $matches = @(
+            $managed |
+                Where-Object {
+                    $_.ListenAddress -eq $Lan.IP -and
+                    $_.ListenPort -eq $port -and
+                    $_.ConnectPort -eq $port
+                }
+        )
+        if ($matches.Count -eq 0) { $missing += $port }
+        if ($matches.Count -gt 1) { $duplicates += $port }
+    }
+
+    $stale = @(
+        $managed |
+            Where-Object {
+                $_.ListenAddress -ne $Lan.IP -or
+                $_.ListenPort -notin $Ports
+            }
+    )
+    $exact = $missing.Count -eq 0 -and $duplicates.Count -eq 0 -and $stale.Count -eq 0 -and $managed.Count -eq $Ports.Count
+    [pscustomobject]@{
+        Exact      = $exact
+        Missing    = @($missing)
+        Duplicates = @($duplicates)
+        Stale      = @($stale)
+        Managed    = @($managed)
+        Reason     = if ($exact) { 'exact' } else { "missing=$($missing -join ',') duplicates=$($duplicates -join ',') stale=$($stale.Count)" }
+    }
+}
+
+function Get-MobileLanArtifactSnapshot([hashtable]$EnvMap) {
+    if (-not $IsWindows) {
+        return [pscustomobject]@{ Mappings = @(); Rules = @() }
+    }
+
+    $ports = Get-ExpectedMobileLanPorts -EnvMap $EnvMap
+    $mappings = @(
+        Get-PortProxyMappings |
+            Where-Object {
+                $_.ConnectAddress -eq '127.0.0.1' -and
+                $_.ConnectPort -in $ports -and
+                $_.ListenPort -eq $_.ConnectPort
+            } |
+            ForEach-Object { "$($_.ListenAddress):$($_.ListenPort)>$($_.ConnectAddress):$($_.ConnectPort)" } |
+            Sort-Object
+    )
+    $rules = @(
+        Get-NetFirewallRule -Group $MobileLanFirewallGroup -ErrorAction SilentlyContinue |
+            ForEach-Object { "$($_.Name)|$($_.Enabled)|$($_.Direction)|$($_.Action)|$($_.Profile)" } |
+            Sort-Object
+    )
+    return [pscustomobject]@{ Mappings = $mappings; Rules = $rules }
+}
+
 function Test-MobileLanInfrastructure(
     [pscustomobject]$Lan,
     [int]$IdentityPort,
     [int]$DshPort,
     [int[]]$MetroPorts
 ) {
-    $rules = @(
-        Get-NetFirewallRule `
-            -Group $MobileLanFirewallGroup `
-            -ErrorAction SilentlyContinue
-    )
-
-    if ($rules.Count -ne 1) {
-        Write-Host "MOBILE_LAN_FIREWALL_CHECK=FAIL count=$($rules.Count)"
+    $managedPorts = @($IdentityPort,$DshPort) + @($MetroPorts) | Sort-Object -Unique
+    $firewall = Get-MobileLanFirewallInspection -Lan $Lan -Ports $managedPorts
+    if (-not $firewall.Exact) {
+        Write-Host "MOBILE_LAN_FIREWALL_EXACT=FAIL reason=$($firewall.Reason)"
         return $false
     }
+    Write-Host 'MOBILE_LAN_FIREWALL_EXACT=PASS'
 
-    $enabled = [string]$rules[0].Enabled
-    $direction = [string]$rules[0].Direction
-    $action = [string]$rules[0].Action
-
-    if ($enabled -ne 'True' -or $direction -ne 'Inbound' -or $action -ne 'Allow') {
-        Write-Host "MOBILE_LAN_FIREWALL_CHECK=FAIL enabled=$enabled direction=$direction action=$action"
+    $portProxy = Get-MobileLanPortProxyInspection -Lan $Lan -Ports $managedPorts
+    if (-not $portProxy.Exact) {
+        Write-Host "MOBILE_LAN_PORTPROXY_EXACT=FAIL reason=$($portProxy.Reason)"
         return $false
     }
-
-    $managedPorts = @($IdentityPort,$DshPort) + @($MetroPorts) |
-        Sort-Object -Unique
-
-    $mappings = @(Get-PortProxyMappings)
-
-    foreach ($port in $managedPorts) {
-        $matches = @(
-            $mappings |
-                Where-Object {
-                    $_.ListenAddress -eq $Lan.IP -and
-                    $_.ListenPort -eq $port -and
-                    $_.ConnectAddress -eq '127.0.0.1' -and
-                    $_.ConnectPort -eq $port
-                }
-        )
-
-        if ($matches.Count -ne 1) {
-            Write-Host "MOBILE_LAN_PORTPROXY_CHECK=FAIL port=$port count=$($matches.Count)"
-            return $false
-        }
-    }
-
-    Write-Host 'MOBILE_LAN_FIREWALL_CHECK=PASS'
-    Write-Host 'MOBILE_LAN_PORTPROXY_CHECK=PASS'
+    Write-Host 'MOBILE_LAN_PORTPROXY_EXACT=PASS'
 
     $identityUri = "http://$($Lan.IP):$IdentityPort/identity/health"
     $dshUri = "http://$($Lan.IP):$DshPort/dsh/health"
@@ -1095,7 +1696,7 @@ function Ensure-MobileLanInfrastructure(
     }
 
     if (-not (Test-Administrator)) {
-        Fail 'MOBILE_LAN_ADMIN_REQUIRED=1 Run pnpm runtime:up once from PowerShell 7 as Administrator after Docker cutover.'
+        Fail 'MOBILE_LAN_ADMIN_REQUIRED=1 Run pnpm runtime:mobile-lan from PowerShell 7 as Administrator.'
     }
 
     $managedPorts = @($IdentityPort,$DshPort) + @($MetroPorts) | Sort-Object -Unique
@@ -1139,12 +1740,9 @@ function Ensure-MobileLanInfrastructure(
         -LocalAddress $Lan.IP `
         -LocalPort $managedPorts `
         -InterfaceAlias $Lan.Adapter `
-        -RemoteAddress "$($Lan.IP)/$($Lan.Prefix)" `
-        -Profile Any *> $null
-
-    if ($LASTEXITCODE -ne 0) {
-        Fail 'MOBILE_LAN_FIREWALL=FAIL'
-    }
+        -RemoteAddress (Get-MobileLanNetworkCidr -Lan $Lan) `
+        -Profile Any `
+        -ErrorAction Stop *> $null
 
     if (-not (
         Test-MobileLanInfrastructure `
@@ -1290,6 +1888,86 @@ function Assert-SamrimAdbReverseAbsent(
     Write-Host "ADB_REVERSE_DEPENDENCY=0 serial=$Serial"
 }
 
+function Test-MobileLanMetroEnvironment(
+    [hashtable]$EnvMap,
+    [string]$HotspotIp
+) {
+    $identityPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_IDENTITY_PORT'
+    $dshPort = Require-TcpPort -Map $EnvMap -Name 'SAMRIM_DSH_PORT'
+    $expected = @(
+        @{ Service = 'metro-client'; PortKey = 'SAMRIM_APP_CLIENT_METRO_PORT' },
+        @{ Service = 'metro-partner'; PortKey = 'SAMRIM_APP_PARTNER_METRO_PORT' },
+        @{ Service = 'metro-captain'; PortKey = 'SAMRIM_APP_CAPTAIN_METRO_PORT' },
+        @{ Service = 'metro-field'; PortKey = 'SAMRIM_APP_FIELD_METRO_PORT' }
+    )
+
+    try {
+        foreach ($entry in $expected) {
+            $container = Get-ServiceContainerId -Service $entry.Service
+            $metroPort = Require-TcpPort -Map $EnvMap -Name $entry.PortKey
+            $rows = @(& docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $container)
+            foreach ($value in @(
+                "EXPO_PUBLIC_IDENTITY_API_URL=http://${HotspotIp}:$identityPort",
+                "EXPO_PUBLIC_DSH_API_URL=http://${HotspotIp}:$dshPort",
+                "EXPO_PACKAGER_PROXY_URL=http://${HotspotIp}:$metroPort"
+            )) {
+                if ($value -notin $rows) { return $false }
+            }
+        }
+        return $true
+    }
+    catch { return $false }
+}
+
+function Repair-MobileLan {
+    $lan = Get-MobileLanContext
+    $envMap = Ensure-CanonicalRuntime
+    [Environment]::SetEnvironmentVariable('SAMRIM_HOTSPOT_IP', [string]$lan.IP, 'Process')
+
+    $metroPorts = @(
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
+    )
+    $infraReady = Test-MobileLanInfrastructure `
+        -Lan $lan `
+        -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
+        -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
+        -MetroPorts $metroPorts
+
+    $metroReady = Test-MobileLanMetroEnvironment -EnvMap $envMap -HotspotIp $lan.IP
+    if (-not $infraReady) {
+        Ensure-MobileLanInfrastructure `
+            -Lan $lan `
+            -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
+            -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
+            -MetroPorts $metroPorts
+    }
+
+    if (-not $metroReady) {
+        Invoke-Compose -Arguments @(
+            'up','-d','--no-build','--force-recreate',
+            'metro-client','metro-partner','metro-captain','metro-field'
+        )
+    }
+
+    Assert-CanonicalRuntime -EnvMap $envMap
+    if (-not (
+        Test-MobileLanInfrastructure `
+            -Lan $lan `
+            -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
+            -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
+            -MetroPorts $metroPorts
+    )) {
+        Fail "MOBILE_LAN_REPAIR=FAIL hotspot=$($lan.IP)"
+    }
+
+    Write-Host "MOBILE_LAN_REPAIR=PASS hotspot=$($lan.IP)"
+    Write-Host 'MOBILE_LAN_PRIVILEGED_MUTATION=NARROW_ONLY'
+    Write-Host 'ADB_REVERSE_DEPENDENCY=0'
+}
+
 function Start-Mobile(
     [ValidateSet(
         'app-client',
@@ -1299,6 +1977,7 @@ function Start-Mobile(
     )]
     [string]$App
 ) {
+    $lan = Get-MobileLanContext
     $envMap = Ensure-CanonicalRuntime
 
     $contract = switch ($App) {
@@ -1312,7 +1991,21 @@ function Start-Mobile(
     Assert-RunningService -Service $contract.Service -Healthy
     Assert-CanonicalPublishedPort -Port $metroPort -ExpectedService $contract.Service
 
-    $lan = Get-MobileLanContext
+    $mobilePorts = @(
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+        Require-TcpPort -Map $envMap -Name 'SAMRIM_APP_FIELD_METRO_PORT'
+    )
+    if (-not (
+        Test-MobileLanInfrastructure `
+            -Lan $lan `
+            -IdentityPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT') `
+            -DshPort (Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT') `
+            -MetroPorts $mobilePorts
+    )) {
+        Fail "ANDROID_RUNTIME=BLOCKED reason=MOBILE_LAN_NOT_READY action=pnpm_runtime:mobile-lan hotspot=$($lan.IP)"
+    }
 
     Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=$App"
     Write-Host "MOBILE_OWNER=DOCKER service=$($contract.Service)"
@@ -1334,6 +2027,8 @@ try {
         'Logs'    { Show-RuntimeLogs }
         'Doctor'  { Invoke-RuntimeDoctor }
         'Reset'   { Reset-CanonicalRuntime }
+        'Purge'   { Purge-CanonicalRuntime }
+        'MobileLan' { Repair-MobileLan }
         'Control' { Start-ControlPanel }
         'Client'  { Start-Mobile -App 'app-client' }
         'Partner' { Start-Mobile -App 'app-partner' }
