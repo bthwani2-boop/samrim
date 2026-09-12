@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 2
+const SchemaVersion = 1
 
 type MigrationRecord struct {
 	Version int
@@ -24,13 +24,30 @@ type MigrationRecord struct {
 }
 
 var requiredTables = []struct {
-	name    string
-	columns []string
+	name        string
+	columns     []string
+	constraints []string
+	indexes     []string
 }{
-	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}},
-	{name: "dsh.stores", columns: []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at"}},
-	{name: "dsh.partner_bootstrap_idempotency", columns: []string{"idempotency_key", "request_hash", "partner_actor_id", "store_id", "created_at"}},
-	{name: "dsh.partner_bootstrap_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "partner_actor_id", "store_id", "request_hash", "created_at"}},
+	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},
+	{
+		name:        "dsh.stores",
+		columns:     []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at"},
+		constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk"},
+		indexes:     []string{"stores_partner_actor_idx"},
+	},
+	{
+		name:        "dsh.partner_bootstrap_idempotency",
+		columns:     []string{"idempotency_key", "request_hash", "partner_actor_id", "store_id", "created_at"},
+		constraints: []string{"partner_bootstrap_idempotency_pkey", "partner_bootstrap_idempotency_facts_uq", "partner_bootstrap_idempotency_store_partner_fk"},
+		indexes:     []string{"partner_bootstrap_idempotency_partner_idx"},
+	},
+	{
+		name:        "dsh.partner_bootstrap_audit",
+		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "partner_actor_id", "store_id", "request_hash", "created_at"},
+		constraints: []string{"partner_bootstrap_audit_pkey", "partner_bootstrap_audit_event_type_chk", "partner_bootstrap_audit_event_idempotency_uq", "partner_bootstrap_audit_idempotency_facts_fk"},
+		indexes:     []string{"partner_bootstrap_audit_partner_idx"},
+	},
 }
 
 func Open(databaseURL string) (*sql.DB, error) {
@@ -52,7 +69,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if strings.TrimSpace(directory) == "" {
 		return nil, nil, errors.New("DSH_MIGRATION_DIR is required")
 	}
-	names := []string{"001_partner_bootstrap.sql", "002_partner_actor_store_cutover.sql"}
+	names := []string{"001_partner_store_baseline.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {
@@ -192,13 +209,24 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 				return fmt.Errorf("DSH required column missing: %s.%s", table.name, column)
 			}
 		}
-	}
-	var retiredOrganizationTable bool
-	if err := db.QueryRowContext(ctx, "SELECT to_regclass('dsh.partner_organizations') IS NOT NULL").Scan(&retiredOrganizationTable); err != nil {
-		return fmt.Errorf("DSH retired partner organization relation check: %w", err)
-	}
-	if retiredOrganizationTable {
-		return errors.New("DSH retired relation exists: dsh.partner_organizations")
+		for _, constraint := range table.constraints {
+			var exists bool
+			if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=$1::regclass AND conname=$2)", table.name, constraint).Scan(&exists); err != nil {
+				return fmt.Errorf("DSH constraint check %s.%s: %w", table.name, constraint, err)
+			}
+			if !exists {
+				return fmt.Errorf("DSH required constraint missing: %s.%s", table.name, constraint)
+			}
+		}
+		for _, index := range table.indexes {
+			var exists bool
+			if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname=$1 AND tablename=$2 AND indexname=$3)", parts[0], parts[1], index).Scan(&exists); err != nil {
+				return fmt.Errorf("DSH index check %s.%s: %w", table.name, index, err)
+			}
+			if !exists {
+				return fmt.Errorf("DSH required index missing: %s.%s", table.name, index)
+			}
+		}
 	}
 	var databaseNow time.Time
 	if err := db.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&databaseNow); err != nil {

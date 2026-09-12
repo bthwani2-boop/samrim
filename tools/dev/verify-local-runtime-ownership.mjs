@@ -327,6 +327,7 @@ assert(!/https?:\/\//i.test(partnerProduct), "Partner DSH binding hard-codes an 
 
 for (const verifier of [
   "tools/dev/verify-identity-runtime.mjs",
+  "tools/dev/verify-dsh-baseline.mjs",
   "tools/dev/verify-dsh-runtime.mjs",
 ]) {
   const body = read(verifier);
@@ -401,6 +402,7 @@ assert(
 );
 assert(backendWorkflow.includes("REMOTE_CI_LOCAL_RUNTIME_SERVICES=0"), "backend CI must emit explicit zero-local-runtime proof");
 assert(backendWorkflow.includes("verify-identity-runtime.mjs"), "backend CI must retain Identity runtime semantic proof");
+assert(backendWorkflow.includes("verify-dsh-baseline.mjs"), "backend CI must retain DSH baseline proof");
 assert(backendWorkflow.includes("verify-dsh-runtime.mjs"), "backend CI must retain DSH runtime semantic proof");
 assert(backendWorkflow.includes("verify-migration-v13-to-v16.mjs"), "backend CI must retain migration proof");
 

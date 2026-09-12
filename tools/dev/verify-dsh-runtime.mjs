@@ -38,12 +38,19 @@ const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
 if (dshToken.length < 24 || bootstrapToken.length < 24) fail("canonical service/bootstrap tokens are too weak");
 
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
+const retiredPartnerTable = ["partner", "organizations"].join("_");
+const retiredPartnerColumn = ["partner", "organization", "id"].join("_");
 function sql(query) {
   try {
     return execFileSync("docker", [...composeArgs, "exec", "-T", "postgres", "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
   } catch (error) {
     fail("database proof failed", String(error?.stderr || error?.message || error));
   }
+}
+
+function expectSQL(query, expected, message) {
+  const observed = sql(query);
+  if (observed !== expected) fail(message, `expected=${expected} observed=${observed}`);
 }
 
 async function request(base, method, pathname, options = {}) {
@@ -76,6 +83,41 @@ for (const endpoint of ["/dsh/health", "/dsh/readiness"]) {
   if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body));
 }
 
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "1", "DSH baseline migration history is not exact");
+expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=1", "001_partner_store_baseline.sql", "DSH baseline migration name is not canonical");
+for (const [table, constraint] of [
+  ["dsh.schema_migrations", "schema_migrations_pkey"],
+  ["dsh.stores", "stores_pkey"],
+  ["dsh.stores", "stores_id_partner_actor_uq"],
+  ["dsh.stores", "stores_name_length_chk"],
+  ["dsh.stores", "stores_version_positive_chk"],
+  ["dsh.partner_bootstrap_idempotency", "partner_bootstrap_idempotency_pkey"],
+  ["dsh.partner_bootstrap_idempotency", "partner_bootstrap_idempotency_facts_uq"],
+  ["dsh.partner_bootstrap_idempotency", "partner_bootstrap_idempotency_store_partner_fk"],
+  ["dsh.partner_bootstrap_audit", "partner_bootstrap_audit_pkey"],
+  ["dsh.partner_bootstrap_audit", "partner_bootstrap_audit_event_type_chk"],
+  ["dsh.partner_bootstrap_audit", "partner_bootstrap_audit_event_idempotency_uq"],
+  ["dsh.partner_bootstrap_audit", "partner_bootstrap_audit_idempotency_facts_fk"],
+]) {
+  expectSQL(
+    `SELECT count(*) FROM pg_constraint WHERE conrelid='${table}'::regclass AND conname='${constraint}'`,
+    "1",
+    `DSH baseline constraint is missing: ${constraint}`,
+  );
+}
+for (const [table, index] of [
+  ["stores", "stores_partner_actor_idx"],
+  ["partner_bootstrap_idempotency", "partner_bootstrap_idempotency_partner_idx"],
+  ["partner_bootstrap_audit", "partner_bootstrap_audit_partner_idx"],
+]) {
+  expectSQL(
+    `SELECT count(*) FROM pg_indexes WHERE schemaname='dsh' AND tablename='${table}' AND indexname='${index}'`,
+    "1",
+    `DSH baseline index is missing: ${index}`,
+  );
+}
+console.log("DSH_BASELINE_SCHEMA=PASS");
+
 let actingOperatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
 if (!actingOperatorID) {
   const suffix = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -94,8 +136,8 @@ if (!actingOperatorID) {
 }
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
 
-if (sql("SELECT to_regclass('dsh.partner_organizations') IS NULL") !== "t") fail("retired partner organization table still exists");
-if (sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND column_name='partner_organization_id'") !== "0") fail("retired partner organization column still exists");
+if (sql(`SELECT to_regclass('dsh.' || '${retiredPartnerTable}') IS NULL`) !== "t") fail("retired partner organization table still exists");
+if (sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND column_name='${retiredPartnerColumn}'`) !== "0") fail("retired partner organization column still exists");
 
 const phone = "+96771" + String(Math.floor(1_000_000 + Math.random() * 9_000_000));
 const unauthenticated = await request(dshBase, "POST", "/dsh/managed-roles/provision", { body: { phoneE164: phone, role: "captain" } });

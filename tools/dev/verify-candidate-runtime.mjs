@@ -53,6 +53,7 @@ const checks = [
   ["Control Panel browser shell", pnpm, ["--dir", "apps/control-panel", "test:e2e"], runtimeEnv],
   ["Control Panel live Identity browser", pnpm, ["--dir", "apps/control-panel", "test:e2e:live"], { ...runtimeEnv, PLAYWRIGHT_LIVE_IDENTITY: "1" }],
   ["Identity migration v13 to v16", process.execPath, ["tools/dev/verify-migration-v13-to-v16.mjs", `--env-file=${envFile}`], runtimeEnv],
+  ["DSH fresh baseline integrity", process.execPath, ["tools/dev/verify-dsh-baseline.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["Identity runtime semantics", process.execPath, ["tools/dev/verify-identity-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH managed-access runtime", process.execPath, ["tools/dev/verify-dsh-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
 ];
