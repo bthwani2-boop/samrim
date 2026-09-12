@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -139,9 +140,10 @@ func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test fu
 	if err := testDB.PingContext(ctx); err != nil {
 		t.Fatalf("isolated DSH database is not reachable: %v", err)
 	}
-	records, migrationSQL, err := postgres.LoadMigrations(".")
+	migrationDirectory := filepath.Join("..", "..", "..", "database", "migrations")
+	records, migrationSQL, err := postgres.LoadMigrations(migrationDirectory)
 	if err != nil {
-		t.Fatalf("load DSH baseline: %v", err)
+		t.Fatalf("load DSH canonical migrations from %s: %v", migrationDirectory, err)
 	}
 	test(ctx, testDB, records, migrationSQL)
 }

@@ -14,7 +14,7 @@ WORKDIR /app
 COPY --from=build /out/api /api
 COPY --from=build /out/migrate /migrate
 COPY --from=build /out/schema-verify /schema-verify
-COPY services/dsh/backend/internal/storage/postgres/001_partner_store_baseline.sql /app/migrations/001_partner_store_baseline.sql
+COPY services/dsh/database/migrations /app/migrations
 ENV DSH_MIGRATION_DIR=/app/migrations
 USER dsh
 EXPOSE 8080

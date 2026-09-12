@@ -201,6 +201,24 @@ for (const service of serviceNames) {
   }
 }
 
+const dshMigrationFiles = tracked.filter((item) => /^services\/dsh\/.*\.sql$/i.test(item));
+const dshCanonicalMigrations = dshMigrationFiles.filter((item) => item.startsWith("services/dsh/database/migrations/"));
+const dshLegacyMigrations = dshMigrationFiles.filter((item) => item.startsWith("services/dsh/backend/internal/storage/postgres/"));
+assert(
+  dshLegacyMigrations.length === 0,
+  "DSH migration SQL must not remain under backend/internal/storage/postgres: " + dshLegacyMigrations.join(", "),
+);
+if (dshMigrationFiles.length > 0) {
+  assert(
+    dshCanonicalMigrations.length === dshMigrationFiles.length,
+    "DSH migration history must have one canonical location under services/dsh/database/migrations/",
+  );
+  assert(
+    dshCanonicalMigrations.includes("services/dsh/database/migrations/001_partner_store_baseline.sql"),
+    "DSH canonical baseline migration is missing",
+  );
+}
+
 const forbiddenAppContainers = new Set(appNames);
 for (const item of tracked) {
   if (!item.startsWith("services/")) continue;

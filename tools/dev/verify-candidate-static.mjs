@@ -60,7 +60,14 @@ function verifyPartnerModel() {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
   }
 
-  const migration = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storage/postgres/001_partner_store_baseline.sql"), "utf8");
+  const migrationPath = path.join(root, "services/dsh/database/migrations/001_partner_store_baseline.sql");
+  if (fs.existsSync(path.join(root, "services/dsh/backend/internal/storage/postgres/001_partner_store_baseline.sql"))) {
+    failures.push("DSH baseline migration remains in the legacy storage path");
+  }
+  if (!fs.existsSync(migrationPath)) {
+    failures.push("DSH canonical migration is missing: services/dsh/database/migrations/001_partner_store_baseline.sql");
+  }
+  const migration = fs.existsSync(migrationPath) ? fs.readFileSync(migrationPath, "utf8") : "";
   if (!migration.includes("partner_actor_id text NOT NULL")) failures.push("DSH baseline does not persist Store→partner_actor_id directly");
   for (const required of [
     "stores_id_partner_actor_uq",
