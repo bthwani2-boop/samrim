@@ -13,7 +13,7 @@ function verifyPartnerModel() {
     "services/dsh/backend/internal/storage/postgres/partner_bootstrap.go",
     "services/dsh/backend/internal/partnerbootstrap/server.go",
     "apps/control-panel/app/(workspace)/partners/page.tsx",
-    "apps/control-panel/app/components/partner-bootstrap-panel.tsx",
+    "apps/control-panel/src/features/partner-onboarding/partner-bootstrap-panel.tsx",
     "apps/control-panel/tests/live-identity.spec.ts",
     "apps/app-partner/src/partner-product-gate.tsx",
   ];

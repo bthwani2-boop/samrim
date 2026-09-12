@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { verifySameOrigin } from "../../../../lib/csrf";
-import { createPartnerBootstrap, dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus } from "../../../../lib/dsh-bff";
-import { readOperatorSession } from "../../../../lib/identity-bff";
+import { verifySameOrigin } from "../../../../src/server/security/csrf";
+import { createPartnerBootstrap, dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus } from "../../../../src/server/dsh/dsh-bff";
+import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });

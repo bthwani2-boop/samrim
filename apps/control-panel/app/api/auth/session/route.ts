@@ -1,4 +1,4 @@
-import { identityErrorPayload, identityHttpStatus, readOperatorSession } from "../../../../lib/identity-bff";
+import { identityErrorPayload, identityHttpStatus, readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 export async function GET() {
   try {

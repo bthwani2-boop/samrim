@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 import type { ActorType } from "@bthwani/identity";
-import { identityErrorPayload, identityHttpStatus, lookupIdentityRole, readOperatorSession } from "../../../../../lib/identity-bff";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus } from "../../../../../lib/dsh-bff";
+import { identityErrorPayload, identityHttpStatus, lookupIdentityRole, readOperatorSession } from "../../../../../src/server/identity/identity-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus } from "../../../../../src/server/dsh/dsh-bff";
 
 const managedRoles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
 

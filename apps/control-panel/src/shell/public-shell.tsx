@@ -3,8 +3,9 @@
 import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { validatePasswordInputShape, type ActorIdentity } from "@bthwani/identity";
-import { identityFetch, responseMessage } from "./identity-client";
-import { useSession } from "./session-provider";
+import { responseMessage } from "../features/access/identity-error-message";
+import { identityFetch } from "../session/identity-fetch";
+import { useSession } from "../session/session-provider";
 
 function BrandHeader() {
   return (

@@ -1,7 +1,7 @@
 "use client";
 
-import { AccountAccessPanel } from "../../components/account-access-panel";
-import { useSession } from "../../components/session-provider";
+import { AccountAccessPanel } from "../../../src/features/access/account-access-panel";
+import { useSession } from "../../../src/session/session-provider";
 
 export default function AccessPage() {
   const { state } = useSession();

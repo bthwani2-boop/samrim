@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ActorIdentity } from "@bthwani/identity";
-import { identityFetch, responseMessage } from "./identity-client";
+import { responseMessage } from "../features/access/identity-error-message";
+import { identityFetch } from "./identity-fetch";
 
 export type SessionState =
   | Readonly<{ kind: "loading" }>

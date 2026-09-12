@@ -176,6 +176,15 @@ for (const app of appNames) {
     app + " has no recognized deployable/runtime target");
 }
 
+assert(
+  !tracked.some((item) => item.startsWith("apps/control-panel/app/components/")),
+  "Control Panel non-route ownership must not remain under app/components/",
+);
+assert(
+  !tracked.some((item) => item.startsWith("apps/control-panel/lib/")),
+  "Control Panel non-route ownership must not remain under lib/",
+);
+
 const serviceNames = directChildren("services");
 for (const service of serviceNames) {
   const record = projectFor("services", service, "type:service");

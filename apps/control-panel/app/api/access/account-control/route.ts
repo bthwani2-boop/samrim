@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import type { ActorType } from "@bthwani/identity";
-import { identityErrorPayload, identityHttpStatus, readOperatorSession, setIdentityRoleEnabled, setIdentitySecurityEnabled } from "../../../../lib/identity-bff";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus, setManagedRoleEnabled } from "../../../../lib/dsh-bff";
-import { verifySameOrigin } from "../../../../lib/csrf";
+import { identityErrorPayload, identityHttpStatus, readOperatorSession, setIdentityRoleEnabled, setIdentitySecurityEnabled } from "../../../../src/server/identity/identity-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus, setManagedRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
+import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
 const roles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
 const roleNames = new Set<ActorType>(["partner", "captain", "field"]);

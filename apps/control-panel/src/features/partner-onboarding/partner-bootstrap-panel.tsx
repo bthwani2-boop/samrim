@@ -2,7 +2,7 @@
 
 import type { PartnerBootstrapResponse } from "@bthwani/dsh";
 import { useState } from "react";
-import { responseMessage } from "./identity-client";
+import { partnerErrorMessage } from "./partner-error-message";
 
 export function PartnerBootstrapPanel() {
   const [partnerPhone, setPartnerPhone] = useState("");
@@ -30,7 +30,7 @@ export function PartnerBootstrapPanel() {
         body: JSON.stringify({ partnerPhone: phone, storeName: name }),
       });
       if (!response.ok) {
-        setError(await responseMessage(response));
+        setError(await partnerErrorMessage(response));
         return;
       }
       setResult(await response.json() as PartnerBootstrapResponse);

@@ -4,8 +4,8 @@ import { useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ActorIdentity } from "@bthwani/identity";
-import { ControlShell, LoadingState, UnavailableState } from "../components/public-shell";
-import { useSession } from "../components/session-provider";
+import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
+import { useSession } from "../../src/session/session-provider";
 
 function WorkspaceHeader({ identity, busy, onLogout }: Readonly<{ identity: ActorIdentity; busy: boolean; onLogout: () => void }>) {
   return (

@@ -217,7 +217,7 @@ try {
 } catch {
   failures.push("control-panel package.json is invalid JSON");
 }
-const bff = read("apps/control-panel/lib/identity-bff.ts");
+const bff = read("apps/control-panel/src/server/identity/identity-bff.ts");
 for (const required of [
   "startOperatorLogin",
   "completeOperatorLogin",
@@ -235,8 +235,8 @@ if (fs.existsSync(path.join(root, "apps/control-panel/app/api/auth/login/route.t
 }
 const controlPage = [
   "apps/control-panel/app/page.tsx",
-  "apps/control-panel/app/components/public-shell.tsx",
-  "apps/control-panel/app/components/account-access-panel.tsx",
+  "apps/control-panel/src/shell/public-shell.tsx",
+  "apps/control-panel/src/features/access/account-access-panel.tsx",
   "apps/control-panel/app/(workspace)/workspace/page.tsx",
 ].map((relative) => read(relative)).join("\n");
 const identityClient = read("services/identity/clients/client.ts");
@@ -601,8 +601,8 @@ for (const [file, required] of [
   ["infra/local/compose/.env.example", "OPERATOR_BOOTSTRAP_SECRET="],
   ["services/identity/backend/internal/runtime/server.go", "CONTROL_PANEL_SERVICE_TOKEN"],
   ["services/identity/backend/internal/runtime/server.go", "OPERATOR_BOOTSTRAP_SECRET"],
-  ["apps/control-panel/lib/identity-bff.ts", "CONTROL_PANEL_SERVICE_TOKEN"],
-  ["apps/control-panel/lib/dsh-bff.ts", "CONTROL_PANEL_SERVICE_TOKEN"],
+  ["apps/control-panel/src/server/identity/identity-bff.ts", "CONTROL_PANEL_SERVICE_TOKEN"],
+  ["apps/control-panel/src/server/dsh/dsh-bff.ts", "CONTROL_PANEL_SERVICE_TOKEN"],
 ]) {
   if (!read(file).includes(required)) failures.push(file + " missing canonical control-panel runtime setting " + required);
 }
@@ -666,7 +666,7 @@ if (fs.existsSync(path.join(root, "apps/control-panel/app/api/access/managed-use
   failures.push("control-panel retains duplicate reenrollment route");
 }
 
-const dshBff = read("apps/control-panel/lib/dsh-bff.ts");
+const dshBff = read("apps/control-panel/src/server/dsh/dsh-bff.ts");
 for (const required of [
   'from "@bthwani/dsh"',
   "dshOperationPaths.provisionManagedRole",

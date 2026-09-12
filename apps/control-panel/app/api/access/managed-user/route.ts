@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 
 import type { ManagedActivationRole } from "@bthwani/identity";
-import { identityErrorPayload, identityHttpStatus, issueOperatorEnrollmentToken, provisionOperator, readOperatorSession } from "../../../../lib/identity-bff";
-import { authorizeManagedReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus, provisionManagedRole } from "../../../../lib/dsh-bff";
-import { verifySameOrigin } from "../../../../lib/csrf";
+import { identityErrorPayload, identityHttpStatus, issueOperatorEnrollmentToken, provisionOperator, readOperatorSession } from "../../../../src/server/identity/identity-bff";
+import { authorizeManagedReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus, provisionManagedRole } from "../../../../src/server/dsh/dsh-bff";
+import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
 const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field", "operator"]);
 

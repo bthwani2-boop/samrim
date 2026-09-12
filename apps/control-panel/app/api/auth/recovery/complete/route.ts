@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { validatePasswordInputShape } from "@bthwani/identity";
-import { completeOperatorRecovery, identityErrorPayload, identityHttpStatus } from "../../../../../lib/identity-bff";
+import { completeOperatorRecovery, identityErrorPayload, identityHttpStatus } from "../../../../../src/server/identity/identity-bff";
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { phone?: unknown; code?: unknown; password?: unknown } | null;

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { type ActorType, type OperatorEnrollmentToken } from "@bthwani/identity";
-import { identityFetch, isRequestFailure, responseMessage } from "./identity-client";
+import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
+import { responseMessage } from "./identity-error-message";
 
 type ManagedAccountStatus = Readonly<{
   exists: boolean;

@@ -1,4 +1,4 @@
-import { identityErrorPayload, identityHttpStatus, logoutOperator } from "../../../../lib/identity-bff";
+import { identityErrorPayload, identityHttpStatus, logoutOperator } from "../../../../src/server/identity/identity-bff";
 
 export async function POST() {
   try {
