@@ -311,10 +311,9 @@ services/<owner>/
 │   ├── Dockerfile
 │   ├── go.mod
 │   └── go.sum
-├── contracts/                        executable owner API/event schemas
-│   └── <owner>.openapi.yaml          when HTTP OpenAPI is the admitted contract
+├── contracts/                        executable owner contract source/artifacts only as real
 ├── clients/                          public consumer boundary
-│   ├── generated/                    deterministic contract-derived artifacts
+│   ├── generated/                    deterministic contract-derived consumer code
 │   ├── client.ts                     handwritten transport/client behavior when needed
 │   ├── mobile.ts                     only real mobile adaptation
 │   ├── go/                           only real Go consumer support
@@ -348,17 +347,60 @@ Use semantic capability names. Do not partition one service by app/actor surface
 
 ### 5.2 Contracts and public clients
 
-Service business API/event meaning stays under `services/<owner>/contracts/`. Public generated/handwritten clients stay under `services/<owner>/clients/`.
+Service business API/event meaning stays under `services/<owner>/contracts/`. Public generated/handwritten consumer code stays under `services/<owner>/clients/`.
+
+Contract topology is **demand-created, not pre-scaffolded**. An HTTP service may begin with one canonical authored OpenAPI document and remain that way while it is cohesive:
 
 ~~~text
-CONTRACT SOURCE
+VALID OPENAPI STATE A — SIMPLE SOURCE
+services/<owner>/contracts/
+└── <owner>.openapi.yaml
+~~~
+
+When real contract size, semantic cohesion or tooling needs justify modularization, perform one atomic source cutover to:
+
+~~~text
+VALID OPENAPI STATE B — MODULAR SOURCE
+services/<owner>/contracts/
+├── openapi/
+│   ├── <owner>.openapi.yaml          canonical authored entrypoint
+│   ├── paths/                        only real path groups, grouped by cohesive capability
+│   ├── schemas/                      only real cohesive schema groups
+│   └── components/                   only truly shared contract primitives
+└── generated/                        only when a real generated contract artifact is required
+    └── <owner>.openapi.bundle.yaml   deterministic bundle; never authored truth
+~~~
+
+State A and State B are alternatives, not simultaneous source trees. A service must have at most one authored canonical OpenAPI entrypoint. Never keep `contracts/<owner>.openapi.yaml` and `contracts/openapi/<owner>.openapi.yaml` as parallel authored authorities.
+
+`paths/`, `schemas/`, `components/` and `generated/` are absent until real tracked content needs them. Do not create an empty modular tree merely because the service may grow later.
+
+Partition modular OpenAPI by semantic cohesion, not by consuming surface and not mechanically one file per endpoint or one file per DTO. A capability-cohesive file may contain multiple related operations or schemas while that remains the simplest readable ownership. If one capability later becomes materially large, split that capability further only when the split reduces real complexity.
+
+The canonical flow is:
+
+~~~text
+AUTHORED CONTRACT SOURCE
 → VALIDATE
-→ GENERATE DETERMINISTIC OUTPUTS
+→ OPTIONAL DETERMINISTIC BUNDLE
+→ GENERATE DETERMINISTIC CONSUMER/BACKEND ARTIFACTS
 → PUBLIC CLIENT
 → CONSUMERS
 ~~~
 
-Do not duplicate request/response/status/action registries manually in apps or another service when they can derive from the owner contract.
+When a bundle is required, it belongs at `services/<owner>/contracts/generated/<owner>.openapi.bundle.yaml`. It is derived from the one canonical authored entrypoint, must never be hand-edited, and must never become a second contract authority. Persist/track the bundle only when a current verifier, generator, release/publishing workflow or real consumer requires a repository-stable artifact; otherwise treat it as generated build output.
+
+Generated contract artifacts and generated consumer code are different ownership lanes:
+
+~~~text
+contracts/generated/                  generated contract artifacts such as a bundled OpenAPI document
+clients/generated/                    generated consumer code/types/operations
+backend/internal/contract/            generated backend bindings when the backend requires them
+~~~
+
+Do not duplicate request/response/status/action registries manually in apps or another service when they can derive from the owner contract. Do not partition service contracts into `client`, `partner`, `captain`, `field` or `control-panel` source trees merely because those surfaces consume the API.
+
+A flat→modular or modular→flat contract source move is a structural cutover: update `$ref` paths, validators, generators, backend bindings, client generation, tests, documentation/tooling and structural verification as applicable, prove the exact candidate, then delete the losing source path. Compatibility copies are forbidden unless a real external coexistence requirement proves them necessary and provides an explicit deletion trigger.
 
 ### 5.3 Database and migration placement
 
@@ -384,6 +426,27 @@ services/<owner>/app-captain/          FORBIDDEN
 services/<owner>/app-field/            FORBIDDEN
 services/<owner>/control-panel/        FORBIDDEN
 ~~~
+
+### 5.5 WLT placement
+
+WLT has no special repository-topology exception. When authoritative Product/System evidence admits executable WLT responsibility, its artifacts follow the same canonical service placement rules in this section. The existence of WLT in the durable service-family taxonomy does **not** authorize creating `services/wlt/` or any child lane before real executable content needs it.
+
+When an admitted WLT capability exists, place artifacts by responsibility:
+
+~~~text
+financial domain/application policy    → services/wlt/backend/internal/<semantic-capability>/
+HTTP protocol adaptation               → services/wlt/backend/internal/transport/http/
+external financial/provider adapter    → services/wlt/backend/internal/integrations/<dependency>/
+PostgreSQL mechanics                    → services/wlt/backend/internal/storage/postgres/
+process/config/readiness                → services/wlt/backend/internal/runtime/
+service-owned OpenAPI/contracts         → services/wlt/contracts/ using §5.2
+public consumer boundary                → services/wlt/clients/
+service-owned SQL history               → services/wlt/database/migrations/
+~~~
+
+Named future WLT capability lanes such as wallet, ledger, payment, refund, settlement, payout or reconciliation remain absent until a current admitted responsibility actually requires them. Do not materialize those directories as a roadmap or capability catalog.
+
+A commerce or delivery workflow originating in DSH does not justify placing admitted WLT implementation inside DSH. Cross-service use follows the normal public contract/client dependency direction; neither service may reach into the other's private internals or database. This is a placement/dependency rule only; the semantic decision that a responsibility is WLT-owned must come from the applicable authoritative evidence, not from this file.
 
 ## 6. Reusable technical packages: `packages/`
 
@@ -483,7 +546,9 @@ cross-repository verification    tools/dev/ only when genuinely repository-wide
 
 Do not create a root `tests/` dumping ground without a separately admitted repository-wide test workspace.
 
-Generated source must have explicit deterministic provenance. Prefer an owner-local `generated/` lane for generated public clients. Build outputs (`dist`, `build`, `.next`, `.expo`, coverage, generated native projects) remain untracked unless a separate explicit rule admits a specific artifact.
+Generated artifacts must have explicit deterministic provenance and must live with the kind of artifact they are. Generated public consumer code belongs under `services/<owner>/clients/generated/`. A generated service-contract bundle, when currently required, belongs under `services/<owner>/contracts/generated/`. Generated backend contract bindings belong under `services/<owner>/backend/internal/contract/` when required. None of these generated lanes is an authored semantic authority.
+
+Build outputs (`dist`, `build`, `.next`, `.expo`, coverage, generated native projects, non-persisted contract bundles) remain untracked unless a separate explicit rule admits a specific artifact.
 
 ## 11. Dependency direction
 
@@ -536,6 +601,7 @@ root app/ ↔ src/app/ router migration
 legacy feature path ↔ src/features/<feature>/ rehome
 control-panel generic lib/components ↔ concrete src owner rehome
 service migration-history relocation
+flat OpenAPI source ↔ modular OpenAPI source
 contract/generated-client relocation
 local code ↔ extracted package
 service/app boundary correction
@@ -575,6 +641,7 @@ services/<owner>/<app-name>/
 services/<owner>/shared/
 services/<owner>/common/
 services/<owner>/core/
+services/<owner>/contracts/<owner>.openapi.yaml + services/<owner>/contracts/openapi/<owner>.openapi.yaml simultaneously
 packages/shared/
 packages/common/
 packages/core/
@@ -623,9 +690,9 @@ samrim/
 │   └── control-panel/      exactly one Next router root + feature/server/shell/session ownership
 │
 ├── services/
-│   ├── identity/           backend + contracts + clients + database + tests only as real
-│   ├── dsh/                backend + contracts + clients + database + tests only as real
-│   ├── wlt/                materialize only when executable WLT implementation is admitted
+│   ├── identity/           backend + conditional contracts/clients/database/tests only as real
+│   ├── dsh/                backend + conditional contracts/clients/database/tests only as real
+│   ├── wlt/                same service topology; absent until executable WLT implementation is admitted
 │   └── <future-service>/   materialize only after explicit service admission
 │
 ├── packages/
