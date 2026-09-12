@@ -56,9 +56,7 @@
       {"name": "Keycloak", "urls": ["https://github.com/keycloak/keycloak", "https://www.keycloak.org/documentation"]},
       {"name": "ZITADEL", "urls": ["https://github.com/zitadel/zitadel", "https://zitadel.com/docs"]},
       {"name": "Ory", "urls": ["https://github.com/ory", "https://www.ory.sh/docs/"]},
-      {"name": "OpenFGA", "urls": ["https://github.com/openfga/openfga", "https://openfga.dev/docs"]},
-      {"name": "OpenFeature", "urls": ["https://github.com/open-feature", "https://openfeature.dev/docs"]},
-      {"name": "LaunchDarkly docs", "urls": ["https://docs.launchdarkly.com/"]}
+      {"name": "OpenFGA", "urls": ["https://github.com/openfga/openfga", "https://openfga.dev/docs"]}
     ],
     "engineering": [
       {"name": "OpenAPI Specification", "urls": ["https://spec.openapis.org/oas/latest.html"]},
