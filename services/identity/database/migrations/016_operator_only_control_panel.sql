@@ -13,6 +13,14 @@ BEGIN
         ALTER TABLE identity_bootstrap_state
             RENAME COLUMN platform_owner_actor_id TO initial_operator_actor_id;
     END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'identity_bootstrap_state_platform_owner_actor_id_fkey'
+    ) THEN
+        ALTER TABLE identity_bootstrap_state
+            RENAME CONSTRAINT identity_bootstrap_state_platform_owner_actor_id_fkey
+            TO identity_bootstrap_state_initial_operator_actor_id_fkey;
+    END IF;
 END $$;
 
 -- If an actor somehow has both legacy owner and operator rows, merge into the
