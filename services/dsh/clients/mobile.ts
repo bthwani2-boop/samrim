@@ -1,12 +1,15 @@
-import type { PartnerBootstrapResponse } from "./generated/dsh-types";
 import { dshOperationPaths } from "./generated/dsh-operations";
+import type { PartnerBootstrapResponse } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
   | Readonly<{ kind: "network"; message: string }>;
 
 export function createDshMobileClient(rawBaseUrl: string, timeoutMs = 8_000) {
-  const baseUrl = rawBaseUrl.trim().replace(/\/+$/, "");
+  let baseUrl = rawBaseUrl.trim();
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl[end - 1] === "/") end -= 1;
+  baseUrl = baseUrl.slice(0, end);
   if (!/^https?:\/\//i.test(baseUrl)) throw new Error("DSH_BASE_URL_INVALID");
 
   return {

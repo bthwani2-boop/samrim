@@ -88,7 +88,5 @@ function withCanonicalAndroidDevelopmentClient(config, appKey) {
 }
 
 module.exports = {
-  LOCAL_ANDROID_METRO_CONTRACT,
-  resolveAndroidMetroPort,
   withCanonicalAndroidDevelopmentClient,
 };

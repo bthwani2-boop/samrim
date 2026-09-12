@@ -28,6 +28,7 @@
     // These are explicit Nx/Identity command entrypoints, not import-graph modules.
     "services/identity/tests/contract-guard.test.mjs",
     "tools/mobile/define-samrim-expo-app.d.cts",
+    "tools/mobile/with-android-development-client.d.cts",
     "tools/mobile/export-mobile-smoke.mjs",
     "tools/mobile/test-mobile-app.mjs"
   ],

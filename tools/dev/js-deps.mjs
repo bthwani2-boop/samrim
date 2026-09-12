@@ -1,7 +1,7 @@
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
 const checkOnly = process.argv.includes("--check");
@@ -61,9 +61,12 @@ function runtimeModulesPresent() {
 }
 
 const expected = calculateFingerprint();
-const current = fs.existsSync(fingerprintFile)
-  ? fs.readFileSync(fingerprintFile, "utf8").trim()
-  : "";
+let current = "";
+try {
+  current = fs.readFileSync(fingerprintFile, "utf8").trim();
+} catch (error) {
+  if (error?.code !== "ENOENT") throw error;
+}
 
 if (current === expected && runtimeModulesPresent()) {
   console.log(`JS_DEPS=READY fingerprint=${expected}`);
@@ -104,6 +107,15 @@ if (!runtimeModulesPresent()) {
 }
 
 fs.mkdirSync(path.dirname(fingerprintFile), { recursive: true });
-fs.writeFileSync(fingerprintFile, `${expected}\n`, "utf8");
+const fingerprintFd = fs.openSync(
+  fingerprintFile,
+  fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC,
+  0o600,
+);
+try {
+  fs.writeFileSync(fingerprintFd, `${expected}\n`, "utf8");
+} finally {
+  fs.closeSync(fingerprintFd);
+}
 
 console.log(`JS_DEPS=PASS fingerprint=${expected}`);
