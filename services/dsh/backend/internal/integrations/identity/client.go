@@ -1,4 +1,4 @@
-package identityboundary
+package identity
 
 import (
 	"context"

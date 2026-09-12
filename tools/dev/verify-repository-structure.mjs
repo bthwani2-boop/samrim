@@ -240,6 +240,25 @@ if (dshMigrationFiles.length > 0) {
   );
 }
 
+assert(
+  !tracked.some((item) => item.startsWith("services/dsh/backend/internal/identityboundary/")),
+  "DSH Identity integration must not remain under the legacy identityboundary path",
+);
+assert(
+  tracked.includes("services/dsh/backend/internal/integrations/identity/client.go"),
+  "DSH Identity integration must have one canonical adapter under internal/integrations/identity/",
+);
+assert(
+  tracked.includes("services/dsh/backend/internal/transport/http/managedaccess.go") &&
+    tracked.includes("services/dsh/backend/internal/transport/http/partnerbootstrap.go"),
+  "DSH HTTP route adaptation must be owned by internal/transport/http/",
+);
+assert(
+  !tracked.includes("services/dsh/backend/internal/managedaccess/server.go") &&
+    !tracked.includes("services/dsh/backend/internal/partnerbootstrap/server.go"),
+  "DSH capabilities must not retain mixed HTTP server files",
+);
+
 const forbiddenAppContainers = new Set(appNames);
 for (const item of tracked) {
   if (!item.startsWith("services/")) continue;

@@ -1,4 +1,4 @@
-package managedaccess
+package transporthttp
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	contract "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityboundary"
+	identityboundary "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 )
 
 func newTestIdentityClient(t *testing.T, rawURL string) *identityboundary.Client {
@@ -47,7 +47,7 @@ func TestProvisionManagedRoleUsesAuthenticatedIdentityBoundary(t *testing.T) {
 
 	identityClient := newTestIdentityClient(t, identityServer.URL)
 	const accessToken = "control-panel-service-token-123456789"
-	managed, err := New(identityClient, accessToken)
+	managed, err := NewManagedAccess(identityClient, accessToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestProvisionManagedRoleUsesAuthenticatedIdentityBoundary(t *testing.T) {
 
 func TestProvisionManagedRoleRejectsMissingAuthority(t *testing.T) {
 	identityClient := newTestIdentityClient(t, "http://identity:8082")
-	managed, err := New(identityClient, "control-panel-service-token-123456789")
+	managed, err := NewManagedAccess(identityClient, "control-panel-service-token-123456789")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestReenrollByPhoneResolvesCanonicalActorBeforeAuthorization(t *testing.T) 
 
 	identityClient := newTestIdentityClient(t, identityServer.URL)
 	const accessToken = "control-panel-service-token-123456789"
-	managed, err := New(identityClient, accessToken)
+	managed, err := NewManagedAccess(identityClient, accessToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestStatusByPhoneReadsCanonicalIdentityState(t *testing.T) {
 
 	identityClient := newTestIdentityClient(t, identityServer.URL)
 	const accessToken = "control-panel-service-token-123456789"
-	managed, err := New(identityClient, accessToken)
+	managed, err := NewManagedAccess(identityClient, accessToken)
 	if err != nil {
 		t.Fatal(err)
 	}

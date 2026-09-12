@@ -276,7 +276,7 @@ if (controlPage.includes("/api/auth/state")) failures.push("control-panel UI ret
 if (controlPage.includes("ManagedAccessPanel")) failures.push("control-panel retains a shadow managed provisioning panel");
 if (controlPage.includes("username")) failures.push("control-panel still requires username without Product need");
 
-const dsh = read("services/dsh/backend/internal/identityboundary/client.go");
+const dsh = read("services/dsh/backend/internal/integrations/identity/client.go");
 for (const required of [
   "ProvisionPartner", "ProvisionCaptain", "ProvisionField",
   "SetPartnerEnabled", "SetCaptainEnabled", "SetFieldEnabled",
@@ -689,7 +689,7 @@ for (const forbidden of ['headers["X-Actor-ID"]', 'headers["If-Match"]']) {
   if (dshBff.includes(forbidden)) failures.push("Control Panel DSH BFF retains legacy alias " + forbidden);
 }
 
-const dshServer = read("services/dsh/backend/internal/managedaccess/server.go");
+const dshServer = read("services/dsh/backend/internal/transport/http/managedaccess.go") + read("services/dsh/backend/internal/transport/http/helpers.go");
 for (const required of [
   'internal/contract',
   'toRoleView(view)',
@@ -702,7 +702,7 @@ for (const required of [
 ]) {
   if (!dshServer.includes(required)) failures.push("DSH managed access server missing " + required);
 }
-const partnerBootstrapServer = read("services/dsh/backend/internal/partnerbootstrap/server.go");
+const partnerBootstrapServer = read("services/dsh/backend/internal/transport/http/partnerbootstrap.go") + read("services/dsh/backend/internal/partnerbootstrap/service.go");
 for (const required of [
   "CreatePermission",
   "ReadActorRole",

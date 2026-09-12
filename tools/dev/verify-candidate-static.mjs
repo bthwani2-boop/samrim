@@ -11,7 +11,7 @@ function verifyPartnerModel() {
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/partner_bootstrap.go",
-    "services/dsh/backend/internal/partnerbootstrap/server.go",
+    "services/dsh/backend/internal/transport/http/partnerbootstrap.go",
     "apps/control-panel/app/(workspace)/partners/page.tsx",
     "apps/control-panel/src/features/partner-onboarding/partner-bootstrap-panel.tsx",
     "apps/control-panel/tests/live-identity.spec.ts",
