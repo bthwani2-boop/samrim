@@ -24,7 +24,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	managedAccess, err := managedaccess.New(identityClient, os.Getenv("DSH_PLATFORM_CONTROL_SERVICE_TOKEN"))
+	managedAccess, err := managedaccess.New(identityClient, os.Getenv("DSH_CONTROL_PANEL_SERVICE_TOKEN"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	partnerBootstrap, err := partnerbootstrap.New(identityClient, os.Getenv("DSH_PLATFORM_CONTROL_SERVICE_TOKEN"), database)
+	partnerBootstrap, err := partnerbootstrap.New(identityClient, os.Getenv("DSH_CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
 	}
