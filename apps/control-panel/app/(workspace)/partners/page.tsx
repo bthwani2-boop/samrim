@@ -6,7 +6,7 @@ import { useSession } from "../../components/session-provider";
 export default function PartnersPage() {
   const { state } = useSession();
   if (state.kind !== "authenticated") return null;
-  if (state.identity.role !== "operator" && state.identity.role !== "platform_owner") {
+  if (state.identity.role !== "operator") {
     return (
       <section className="state-content workspace-restricted" aria-labelledby="partners-restricted-title">
         <div className="state-card" role="alert">

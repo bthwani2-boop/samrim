@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = 15
+const SchemaVersion = 16
 
 type MigrationRecord struct {
 	Version int
@@ -25,7 +25,7 @@ type schemaRequirement struct {
 var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, indexes: []string{"identity_schema_migrations_pkey"}},
 	{table: "identity_actors", columns: []string{"id", "phone_e164", "security_enabled", "version", "created_at", "updated_at"}, indexes: []string{"identity_actors_pkey", "identity_actors_phone_uq"}},
-	{table: "identity_actor_roles", columns: []string{"actor_id", "role", "enabled", "activated_at", "version", "created_at", "updated_at"}, indexes: []string{"identity_actor_roles_pkey", "identity_actor_roles_role_idx", "identity_actor_roles_platform_owner_uq"}},
+	{table: "identity_actor_roles", columns: []string{"actor_id", "role", "enabled", "activated_at", "version", "created_at", "updated_at"}, indexes: []string{"identity_actor_roles_pkey", "identity_actor_roles_role_idx"}},
 	{table: "identity_password_credentials", columns: []string{"actor_id", "role", "password_hash", "version", "created_at", "updated_at"}, indexes: []string{"identity_password_credentials_pkey"}},
 	{table: "identity_challenges", columns: []string{"id", "actor_id", "role", "purpose", "phone_e164", "code_hash", "request_ip_hash", "admissible", "credential_version", "status", "attempts", "expires_at", "consumed_at", "created_at", "updated_at"}, indexes: []string{"identity_challenges_pkey", "identity_challenges_one_pending_uq", "identity_challenges_lookup_idx", "identity_challenges_ip_idx", "identity_challenges_phone_purpose_idx"}},
 	{table: "identity_challenge_deliveries", columns: []string{"challenge_id", "provider", "status", "attempts", "started_at", "finished_at", "created_at", "updated_at"}, indexes: []string{"identity_challenge_deliveries_pkey", "identity_challenge_deliveries_pending_idx"}},
@@ -34,7 +34,7 @@ var identitySchemaRequirements = []schemaRequirement{
 	{table: "identity_refresh_token_history", columns: []string{"session_id", "token_hash", "rotated_at"}, indexes: []string{"identity_refresh_token_history_pkey", "identity_refresh_token_history_hash_uq", "identity_refresh_token_history_session_idx"}},
 	{table: "identity_password_attempts", columns: []string{"id", "phone_e164", "role", "ip_hash", "succeeded", "reserved", "created_at", "reserved_until"}, indexes: []string{"identity_password_attempts_pkey", "identity_password_attempts_subject_idx", "identity_password_attempts_ip_idx"}},
 	{table: "identity_security_audit", columns: []string{"id", "event_type", "subject_actor_id", "principal", "outcome", "correlation_id", "metadata", "created_at"}, indexes: []string{"identity_security_audit_pkey", "identity_security_audit_subject_idx"}},
-	{table: "identity_bootstrap_state", columns: []string{"id", "bootstrap_completed_at", "platform_owner_actor_id"}, indexes: []string{"identity_bootstrap_state_pkey"}},
+	{table: "identity_bootstrap_state", columns: []string{"id", "bootstrap_completed_at", "initial_operator_actor_id"}, indexes: []string{"identity_bootstrap_state_pkey"}},
 }
 
 type queryer interface {

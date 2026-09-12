@@ -24,7 +24,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	managedAccess, err := managedaccess.New(identityClient, os.Getenv("DSH_CONTROL_PANEL_SERVICE_TOKEN"))
+	managedAccess, err := managedaccess.New(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,11 +33,11 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = database.Close() }()
-	record, _, err := loadMigration()
+	records, err := loadMigrations()
 	if err != nil {
 		log.Fatal(err)
 	}
-	partnerBootstrap, err := partnerbootstrap.New(identityClient, os.Getenv("DSH_CONTROL_PANEL_SERVICE_TOKEN"), database)
+	partnerBootstrap, err := partnerbootstrap.New(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func main() {
 		partnerBootstrap.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
-		if err := postgres.VerifySchema(ctx, database, record); err != nil {
+		if err := postgres.VerifySchema(ctx, database, records); err != nil {
 			return err
 		}
 		return managedAccess.Ready(ctx)
@@ -56,7 +56,7 @@ func main() {
 	}
 }
 
-func loadMigration() (postgres.MigrationRecord, string, error) {
+func loadMigrations() ([]postgres.MigrationRecord, error) {
 	directory := strings.TrimSpace(os.Getenv("DSH_MIGRATION_DIR"))
 	if directory == "" {
 		directory = filepath.Clean("../database/migrations")
@@ -64,5 +64,6 @@ func loadMigration() (postgres.MigrationRecord, string, error) {
 			directory = "/app/migrations"
 		}
 	}
-	return postgres.LoadMigration(directory)
+	records, _, err := postgres.LoadMigrations(directory)
+	return records, err
 }

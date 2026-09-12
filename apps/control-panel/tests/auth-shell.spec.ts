@@ -38,7 +38,7 @@ test("authenticated operator discovers access and partner responsibilities throu
 
   await expect(page).toHaveURL(/\/workspace$/);
   await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
-  await expect(page.getByText("مشغل لوحة التحكم", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("المشغل", { exact: true }).first()).toBeVisible();
   const accessLink = page.getByRole("link", { name: "الحسابات والأدوار" });
   await expect(accessLink).toBeVisible();
   await accessLink.click();
@@ -69,8 +69,8 @@ test("partner bootstrap resolves the actor id from the partner phone", async ({ 
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        partnerOrganization: { id: "org_test", ownerActorId: "act_generated" },
-        firstStore: { id: "store_test", partnerOrganizationId: "org_test", name: "متجر الاختبار" },
+        partnerActorId: "act_generated",
+        firstStore: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
@@ -83,9 +83,9 @@ test("partner bootstrap resolves the actor id from the partner phone", async ({ 
 
   await page.getByLabel("رقم هاتف الشريك").fill("96777000100");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
-  await page.getByRole("button", { name: "إنشاء المنظمة والمتجر" }).click();
+  await page.getByRole("button", { name: "إنشاء المتجر الأول" }).click();
 
-  await expect(page.getByRole("status")).toContainText("مولّد تلقائيًا من Identity");
+  await expect(page.getByRole("status")).toContainText("تم إنشاء التهيئة الكانونية");
   expect(requestBody).toEqual({ partnerPhone: "96777000100", storeName: "متجر الاختبار" });
 });
 

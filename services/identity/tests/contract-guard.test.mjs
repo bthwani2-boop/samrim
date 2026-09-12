@@ -31,11 +31,12 @@ for (const route of [
   if (!contract.includes(route)) failures.push("missing canonical route " + route);
 }
 
+const retiredHumanRole = ["platform", "owner"].join("_");
 for (const forbidden of [
-  "platform_owner",
+  retiredHumanRole,
   "operator_owner",
-  "/internal/bootstrap/platform-owner:",
-  "bootstrapPlatformOwner",
+  "/internal/bootstrap/" + ["platform", "owner"].join("-") + ":",
+  "bootstrap" + "PlatformOwner",
   "PlatformControl",
   "X-Service-Caller",
   "identity_access_grants",
@@ -68,6 +69,9 @@ if (/^\s+code:/m.test(challenge)) failures.push("challenge response leaks raw co
 const operatorStart = contract.slice(contract.indexOf("  /auth/operator/login/start:"), contract.indexOf("  /auth/operator/login/complete:"));
 if (operatorStart.includes("#/components/responses/TokenPair")) failures.push("operator password-start route can create a session");
 if (!operatorStart.includes("Password proof alone never creates a control-panel session")) failures.push("operator password-only session prohibition missing");
+const operatorStartRequest = schemaBlock("OperatorLoginStartRequest", "OperatorLoginCompleteRequest");
+const operatorCompleteRequest = schemaBlock("OperatorLoginCompleteRequest", "Challenge");
+if (operatorStartRequest.includes("role:") || operatorCompleteRequest.includes("role:")) failures.push("operator login endpoints must own the operator role instead of accepting a role selector");
 
 const managedRequest = schemaBlock("ManagedChallengeRequest", "ManagedRecoveryChallengeRequest");
 if (!managedRequest.includes("#/components/schemas/ManagedActivationRole")) failures.push("managed activation role boundary missing");

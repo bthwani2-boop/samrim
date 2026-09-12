@@ -42,13 +42,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	record, _, err := postgres.LoadMigration(directory)
+	records, _, err := postgres.LoadMigrations(directory)
 	if err != nil {
 		log.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := postgres.VerifySchema(ctx, db, record); err != nil {
+	if err := postgres.VerifySchema(ctx, db, records); err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("DSH_SCHEMA_EXACT=PASS schema v%d", postgres.SchemaVersion)

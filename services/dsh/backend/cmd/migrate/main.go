@@ -42,16 +42,16 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	record, migrationSQL, err := postgres.LoadMigration(directory)
+	records, migrationSQL, err := postgres.LoadMigrations(directory)
 	if err != nil {
 		log.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := postgres.Migrate(ctx, db, record, migrationSQL); err != nil {
+	if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
 		log.Fatal(err)
 	}
-	if err := postgres.VerifySchema(ctx, db, record); err != nil {
+	if err := postgres.VerifySchema(ctx, db, records); err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("DSH_SCHEMA_EXACT=PASS schema v%d", postgres.SchemaVersion)

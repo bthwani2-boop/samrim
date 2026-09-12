@@ -402,7 +402,7 @@ assert(
 assert(backendWorkflow.includes("REMOTE_CI_LOCAL_RUNTIME_SERVICES=0"), "backend CI must emit explicit zero-local-runtime proof");
 assert(backendWorkflow.includes("verify-identity-runtime.mjs"), "backend CI must retain Identity runtime semantic proof");
 assert(backendWorkflow.includes("verify-dsh-runtime.mjs"), "backend CI must retain DSH runtime semantic proof");
-assert(backendWorkflow.includes("verify-migration-v13-to-v15.mjs"), "backend CI must retain migration proof");
+assert(backendWorkflow.includes("verify-migration-v13-to-v16.mjs"), "backend CI must retain migration proof");
 
 // DOCKER_CUTOVER_ROOT_CLOSURE_GUARD_BEGIN
 assert(

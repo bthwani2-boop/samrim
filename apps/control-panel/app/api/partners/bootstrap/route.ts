@@ -14,7 +14,7 @@ export async function POST(request: Request) {
 
   const identity = await readOperatorSession();
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
-  if (identity.role !== "operator" && identity.role !== "platform_owner") {
+  if (identity.role !== "operator") {
     return errorResponse("FORBIDDEN", "control operator access is required", 403);
   }
 

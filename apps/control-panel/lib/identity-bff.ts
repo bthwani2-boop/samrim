@@ -37,8 +37,8 @@ function identityClient() {
 }
 
 function identityInternalClient() {
-  const token = process.env.IDENTITY_CONTROL_PANEL_SERVICE_TOKEN?.trim();
-  if (!token) throw new Error("IDENTITY_CONTROL_PANEL_SERVICE_TOKEN_REQUIRED");
+  const token = process.env.CONTROL_PANEL_SERVICE_TOKEN?.trim();
+  if (!token) throw new Error("CONTROL_PANEL_SERVICE_TOKEN_REQUIRED");
   return createIdentityInternalClient(identityBaseUrl(), token);
 }
 
@@ -76,14 +76,14 @@ async function clearOperatorCookies(): Promise<void> {
   for (const key of [accessCookie, refreshCookie, deviceCookie]) store.set(key, "", { ...cookieOptions(), maxAge: 0 });
 }
 
-export async function startOperatorLogin(phone: string, password: string, role: ControlPanelRole): Promise<Challenge> {
+export async function startOperatorLogin(phone: string, password: string): Promise<Challenge> {
   await operatorDeviceFingerprint();
-  return identityClient().startOperatorLogin({ phone, password, role });
+  return identityClient().startOperatorLogin({ phone, password });
 }
 
-export async function completeOperatorLogin(phone: string, code: string, role: ControlPanelRole): Promise<ActorIdentity> {
+export async function completeOperatorLogin(phone: string, code: string): Promise<ActorIdentity> {
   const deviceFingerprint = await operatorDeviceFingerprint();
-  const pair = await identityClient().completeOperatorLogin({ phone, code, role, deviceFingerprint });
+  const pair = await identityClient().completeOperatorLogin({ phone, code, deviceFingerprint });
   await writeTokens(pair, deviceFingerprint);
   return pair.identity;
 }

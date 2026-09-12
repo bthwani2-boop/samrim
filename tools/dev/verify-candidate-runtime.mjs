@@ -31,7 +31,7 @@ const runtimeEnv = { ...process.env, ...fileEnv };
 const controlOrigin = required(fileEnv, "CONTROL_PANEL_PUBLIC_ORIGIN");
 const identityBase = required(fileEnv, "IDENTITY_API_BASE_URL");
 const mailpitPort = required(fileEnv, "SAMRIM_MAILPIT_WEB_PORT");
-const bootstrapToken = required(fileEnv, "IDENTITY_PLATFORM_BOOTSTRAP_SECRET");
+const bootstrapToken = required(fileEnv, "OPERATOR_BOOTSTRAP_SECRET");
 const composeArgs = [
   "compose",
   "--project-name",
@@ -52,7 +52,7 @@ const checks = [
   ["DSH exact schema", "docker", [...composeArgs, "exec", "-T", "dsh", "/schema-verify"], runtimeEnv],
   ["Control Panel browser shell", pnpm, ["--dir", "apps/control-panel", "test:e2e"], runtimeEnv],
   ["Control Panel live Identity browser", pnpm, ["--dir", "apps/control-panel", "test:e2e:live"], { ...runtimeEnv, PLAYWRIGHT_LIVE_IDENTITY: "1" }],
-  ["Identity migration v13 to v15", process.execPath, ["tools/dev/verify-migration-v13-to-v15.mjs", `--env-file=${envFile}`], runtimeEnv],
+  ["Identity migration v13 to v16", process.execPath, ["tools/dev/verify-migration-v13-to-v16.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["Identity runtime semantics", process.execPath, ["tools/dev/verify-identity-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH managed-access runtime", process.execPath, ["tools/dev/verify-dsh-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
 ];

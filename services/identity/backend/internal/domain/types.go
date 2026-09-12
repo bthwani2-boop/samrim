@@ -121,13 +121,11 @@ type OperatorEnrollmentToken struct {
 type OperatorLoginStartRequest struct {
 	Phone    string `json:"phone"`
 	Password string `json:"password"`
-	Role     string `json:"role"`
 }
 
 type OperatorLoginCompleteRequest struct {
 	Phone             string `json:"phone"`
 	Code              string `json:"code"`
-	Role              string `json:"role"`
 	DeviceFingerprint string `json:"deviceFingerprint"`
 }
 
@@ -229,7 +227,7 @@ func CanReadRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch caller {
 	case "dsh":
-		return IsManagedRole(role) || role == "operator"
+		return IsManagedRole(role)
 	case "control-panel":
 		return role == "client" || role == "operator"
 	default:
@@ -238,7 +236,16 @@ func CanReadRole(caller, role string) bool {
 }
 
 func CanSetRoleEnabled(caller, role string) bool {
-	return CanReadRole(caller, role)
+	caller = strings.ToLower(strings.TrimSpace(caller))
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch caller {
+	case "dsh":
+		return IsManagedRole(role)
+	case "control-panel":
+		return role == "client" || role == "operator"
+	default:
+		return false
+	}
 }
 
 func CanIssueOperatorEnrollmentTokenForRole(caller, role string) bool {

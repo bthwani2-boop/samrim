@@ -39,20 +39,20 @@ const baseUrl = "http://" + runtimeHost + ":" + port;
 const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
 const abuseSecret = env.IDENTITY_ABUSE_HMAC_SECRET;
 const dshToken = env.IDENTITY_DSH_SERVICE_TOKEN;
-const platformToken = env.IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN;
-const bootstrapToken = env.IDENTITY_PLATFORM_BOOTSTRAP_SECRET;
+const controlPanelToken = env.CONTROL_PANEL_SERVICE_TOKEN;
+const bootstrapToken = env.OPERATOR_BOOTSTRAP_SECRET;
 
 for (const [name, value, minimum] of [
   ["IDENTITY_CHALLENGE_HMAC_SECRET", challengeSecret, 32],
   ["IDENTITY_ABUSE_HMAC_SECRET", abuseSecret, 32],
   ["IDENTITY_DSH_SERVICE_TOKEN", dshToken, 24],
-  ["IDENTITY_PLATFORM_CONTROL_SERVICE_TOKEN", platformToken, 24],
-  ["IDENTITY_PLATFORM_BOOTSTRAP_SECRET", bootstrapToken, 24],
+  ["CONTROL_PANEL_SERVICE_TOKEN", controlPanelToken, 24],
+  ["OPERATOR_BOOTSTRAP_SECRET", bootstrapToken, 24],
 ]) {
   if (typeof value !== "string" || value.length < minimum) fail(name + " is not configured strongly enough");
 }
-if (dshToken === platformToken) fail("internal service tokens must be distinct");
-if (bootstrapToken === platformToken || bootstrapToken === dshToken) fail("bootstrap token must be distinct from operational service tokens");
+if (dshToken === controlPanelToken) fail("internal service tokens must be distinct");
+if (bootstrapToken === controlPanelToken || bootstrapToken === dshToken) fail("bootstrap token must be distinct from operational service tokens");
 
 const composeFile = path.join(root, "infra/local/compose/compose.yaml");
 const composeArgs = [
@@ -207,21 +207,25 @@ async function requestChallenge(pathname, body, purpose) {
 await expect("GET", "/identity/health", 200);
 await expect("GET", "/identity/readiness", 200);
 
-await expect("POST", "/internal/bootstrap/platform-owner", 403, {
-  headers: service(platformToken),
-  body: { phoneE164: phone(), password: "Bootstrap-" + suffix + "-Strong-Password" },
+await expect("POST", "/internal/bootstrap/operator", 403, {
+  headers: service(controlPanelToken),
+  body: { phoneE164: phone(), role: "operator", password: "Bootstrap-" + suffix + "-Strong-Password" },
 });
 
-let platformOwnerActorId = sql("SELECT COALESCE(platform_owner_actor_id, '') FROM identity_bootstrap_state WHERE id=1");
-if (!platformOwnerActorId) {
-  const bootstrapOwnerPhone = phone();
-  const bootstrapped = await expect("POST", "/internal/bootstrap/platform-owner", 201, {
+let operatorActorId = sql("SELECT COALESCE(initial_operator_actor_id, '') FROM identity_bootstrap_state WHERE id=1");
+if (!operatorActorId) {
+  const bootstrapOperatorPhone = phone();
+  const bootstrapped = await expect("POST", "/internal/bootstrap/operator", 201, {
     headers: service(bootstrapToken),
-    body: { phoneE164: bootstrapOwnerPhone, password: "Bootstrap-" + suffix + "-Strong-Password" },
+    body: { phoneE164: bootstrapOperatorPhone, role: "operator", password: "Bootstrap-" + suffix + "-Strong-Password" },
   });
-  platformOwnerActorId = bootstrapped.actorId;
+  operatorActorId = bootstrapped.actorId;
 }
-assert(typeof platformOwnerActorId === "string" && platformOwnerActorId.startsWith("act_"), "platform_owner actorId invalid");
+assert(typeof operatorActorId === "string" && operatorActorId.startsWith("act_"), "operator actorId invalid");
+await expect("POST", "/internal/bootstrap/operator", 409, {
+  headers: service(bootstrapToken),
+  body: { phoneE164: phone(), role: "operator", password: "Bootstrap-repeat-" + suffix + "-Strong-Password" },
+});
 
 await expect("POST", "/auth/otp/request", 404, { body: { phone: phone(), role: "client" } });
 await expect("POST", "/auth/activate", 404, { body: {} });
@@ -298,12 +302,12 @@ await expect("POST", "/internal/actor-roles/provision", 400, {
   body: { phoneE164: phone(), role: "captain", username: "retired-identifier" },
 });
 await expect("POST", "/internal/actor-roles/provision", 403, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }),
   body: { phoneE164: phone(), role: "captain" },
 });
 await expect("POST", "/internal/actor-roles/provision", 403, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
-  body: { phoneE164: phone(), role: "platform_owner" },
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }),
+  body: { phoneE164: phone(), role: "client" },
 });
 
 const captainChallenge = await requestChallenge(
@@ -353,7 +357,7 @@ await expect("POST", "/internal/operator-enrollment-tokens", 403, {
 
 const operatorPassword = "Operator-" + suffix + "-Strong-Password";
 const operator = await expect("POST", "/internal/actor-roles/provision", 201, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }),
   body: { phoneE164: sharedPhone, role: "operator" },
 });
 assert(operator.actorId === actorId, "operator provisioning created a second actor");
@@ -363,7 +367,7 @@ await expect("POST", "/internal/actor-roles/provision", 403, {
 });
 
 const operatorActivation = await expect("POST", "/internal/operator-enrollment-tokens", 201, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }),
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }),
   body: { phoneE164: sharedPhone, role: "operator" },
 });
 assertEnrollmentToken(operatorActivation.code, "operator enrollment token");
@@ -399,14 +403,13 @@ assertSession(operatorActivationPair, "operator", "control-panel", actorId);
 
 const operatorStart = await requestChallenge(
   "/auth/operator/login/start",
-  { phone: sharedPhone, role: "operator", password: operatorPassword },
+  { phone: sharedPhone, password: operatorPassword },
   "operator_mfa",
 );
 assert(!("accessToken" in operatorStart.challenge), "operator password proof returned a session");
 const operatorPair = await expect("POST", "/auth/operator/login/complete", 200, {
   body: {
     phone: sharedPhone,
-    role: "operator",
     code: operatorStart.code,
     deviceFingerprint: "device-operator-" + suffix,
   },
@@ -416,13 +419,12 @@ assertSession(operatorPair, "operator", "control-panel", actorId);
 const unknownOperatorPhone = phone();
 const decoyOperator = await requestChallenge(
   "/auth/operator/login/start",
-  { phone: unknownOperatorPhone, role: "operator", password: "Wrong-" + suffix + "-Password" },
+  { phone: unknownOperatorPhone, password: "Wrong-" + suffix + "-Password" },
   "operator_mfa",
 );
 await expect("POST", "/auth/operator/login/complete", 401, {
   body: {
     phone: unknownOperatorPhone,
-    role: "operator",
     code: decoyOperator.code,
     deviceFingerprint: "device-decoy-operator-" + suffix,
   },
@@ -453,7 +455,7 @@ await expect(
   "POST",
   "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/reenrollment",
   403,
-  { headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId }) },
+  { headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }) },
 );
 await expect(
   "POST",
@@ -511,11 +513,11 @@ assert(!("accessToken" in operatorRecoveryResult), "operator recovery created an
 await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
 const recoveredOperatorStart = await requestChallenge(
   "/auth/operator/login/start",
-  { phone: sharedPhone, role: "operator", password: recoveredOperatorPassword },
+  { phone: sharedPhone, password: recoveredOperatorPassword },
   "operator_mfa",
 );
 const recoveredOperatorPair = await expect("POST", "/auth/operator/login/complete", 200, {
-  body: { phone: sharedPhone, role: "operator", code: recoveredOperatorStart.code, deviceFingerprint: "device-operator-recovered-" + suffix },
+  body: { phone: sharedPhone, code: recoveredOperatorStart.code, deviceFingerprint: "device-operator-recovered-" + suffix },
 });
 assertSession(recoveredOperatorPair, "operator", "control-panel", actorId);
 
@@ -738,13 +740,12 @@ await expect(
 
 const operatorAfterRecoveryStart = await requestChallenge(
   "/auth/operator/login/start",
-  { phone: sharedPhone, role: "operator", password: secondOperatorPassword },
+  { phone: sharedPhone, password: secondOperatorPassword },
   "operator_mfa",
 );
 const operatorAfterRecovery = await expect("POST", "/auth/operator/login/complete", 200, {
   body: {
     phone: sharedPhone,
-    role: "operator",
     code: operatorAfterRecoveryStart.code,
     deviceFingerprint: "device-operator-recovered-again-" + suffix,
   },
@@ -753,28 +754,28 @@ await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/secur
   headers: service(dshToken),
 });
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
-  headers: service(platformToken, { "X-Expected-Version": "1", "X-Reason": "negative test missing actor" }),
+  headers: service(controlPanelToken, { "X-Expected-Version": "1", "X-Reason": "negative test missing actor" }),
 });
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Actor-ID": platformOwnerActorId, "X-Expected-Version": "1", "X-Reason": "negative test legacy actor" }),
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Actor-ID": operatorActorId, "X-Expected-Version": "1", "X-Reason": "negative test legacy actor" }),
 });
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "If-Match": "1", "X-Expected-Version": "1", "X-Reason": "negative test if match" }),
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "If-Match": "1", "X-Expected-Version": "1", "X-Reason": "negative test if match" }),
 });
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "0", "X-Reason": "negative test version 0" }),
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Expected-Version": "0", "X-Reason": "negative test version 0" }),
 });
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 409, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "999", "X-Reason": "negative test version conflict" }),
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Expected-Version": "999", "X-Reason": "negative test version conflict" }),
 });
 
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 204, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "1", "X-Reason": "security disable invariant test" }),
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Expected-Version": "1", "X-Reason": "security disable invariant test" }),
 });
 await expect("GET", "/auth/session", 401, { token: clientPair.accessToken });
 await expect("GET", "/auth/session", 401, { token: operatorAfterRecovery.accessToken });
 await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/enable", 204, {
-  headers: service(platformToken, { "X-Acting-Actor-ID": platformOwnerActorId, "X-Expected-Version": "2", "X-Reason": "security enable invariant test" }),
+  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Expected-Version": "2", "X-Reason": "security enable invariant test" }),
 });
 await expect("POST", "/auth/client/login", 200, {
   body: { phone: sharedPhone, password: customerPassword, deviceFingerprint: "device-post-security-" + suffix },

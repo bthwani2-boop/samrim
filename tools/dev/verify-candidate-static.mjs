@@ -10,7 +10,6 @@ function verifyPartnerModel() {
     "services/dsh/contracts/dsh.openapi.yaml",
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
-    "services/dsh/backend/internal/storage/postgres/001_partner_bootstrap.sql",
     "services/dsh/backend/internal/storage/postgres/partner_bootstrap.go",
     "services/dsh/backend/internal/partnerbootstrap/server.go",
     "apps/control-panel/app/(workspace)/partners/page.tsx",
@@ -47,8 +46,8 @@ function verifyPartnerModel() {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
   }
 
-  const migration = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storage/postgres/001_partner_bootstrap.sql"), "utf8");
-  if (!migration.includes("partner_actor_id text NOT NULL")) failures.push("DSH migration does not persist Store→partner_actor_id directly");
+  const migration = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storage/postgres/002_partner_actor_store_cutover.sql"), "utf8");
+  if (!migration.includes("ADD COLUMN IF NOT EXISTS partner_actor_id text") || !migration.includes("ALTER COLUMN partner_actor_id SET NOT NULL")) failures.push("DSH migration does not persist Store→partner_actor_id directly");
   if (/CREATE TABLE IF NOT EXISTS dsh\.partners\b/.test(migration)) failures.push("DSH migration creates a redundant Partner shadow table");
 
   if (failures.length) {

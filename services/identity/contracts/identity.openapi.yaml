@@ -648,7 +648,7 @@ components:
     OperatorLoginStartRequest:
       type: object
       additionalProperties: false
-      required: [phone, password, role]
+      required: [phone, password]
       properties:
         phone:
           type: string
@@ -656,21 +656,17 @@ components:
           type: string
           minLength: 15
           maxLength: 128
-        role:
-          $ref: "#/components/schemas/ControlPanelRole"
 
     OperatorLoginCompleteRequest:
       type: object
       additionalProperties: false
-      required: [phone, code, role, deviceFingerprint]
+      required: [phone, code, deviceFingerprint]
       properties:
         phone:
           type: string
         code:
           type: string
           pattern: "^[0-9]{6}$"
-        role:
-          $ref: "#/components/schemas/ControlPanelRole"
         deviceFingerprint:
           type: string
           minLength: 8

@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 type MigrationRecord struct {
 	Version int
@@ -48,25 +48,30 @@ func Open(databaseURL string) (*sql.DB, error) {
 	return db, nil
 }
 
-func LoadMigration(directory string) (MigrationRecord, string, error) {
+func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if strings.TrimSpace(directory) == "" {
-		return MigrationRecord{}, "", errors.New("DSH_MIGRATION_DIR is required")
+		return nil, nil, errors.New("DSH_MIGRATION_DIR is required")
 	}
-	const version = 1
-	name := "001_partner_bootstrap.sql"
-	raw, err := os.ReadFile(filepath.Join(directory, name))
-	if err != nil {
-		return MigrationRecord{}, "", fmt.Errorf("read DSH migration %s: %w", name, err)
+	names := []string{"001_partner_bootstrap.sql", "002_partner_actor_store_cutover.sql"}
+	records := make([]MigrationRecord, 0, len(names))
+	sqls := make([]string, 0, len(names))
+	for version, name := range names {
+		raw, err := os.ReadFile(filepath.Join(directory, name))
+		if err != nil {
+			return nil, nil, fmt.Errorf("read DSH migration %s: %w", name, err)
+		}
+		if len(raw) == 0 {
+			return nil, nil, fmt.Errorf("DSH migration %s is empty", name)
+		}
+		digest := sha256.Sum256(raw)
+		records = append(records, MigrationRecord{Version: version + 1, Name: name, SHA256: hex.EncodeToString(digest[:])})
+		sqls = append(sqls, string(raw))
 	}
-	if len(raw) == 0 {
-		return MigrationRecord{}, "", errors.New("DSH migration is empty")
-	}
-	digest := sha256.Sum256(raw)
-	return MigrationRecord{Version: version, Name: name, SHA256: hex.EncodeToString(digest[:])}, string(raw), nil
+	return records, sqls, nil
 }
 
-func Migrate(ctx context.Context, db *sql.DB, record MigrationRecord, migrationSQL string) error {
-	if db == nil || migrationSQL == "" || record.Version != SchemaVersion {
+func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrationSQL []string) error {
+	if db == nil || len(records) != SchemaVersion || len(migrationSQL) != len(records) {
 		return errors.New("invalid DSH migration input")
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -95,45 +100,63 @@ func Migrate(ctx context.Context, db *sql.DB, record MigrationRecord, migrationS
 	if current > SchemaVersion {
 		return fmt.Errorf("DSH schema is newer than this binary: %d", current)
 	}
-	if current == SchemaVersion {
+	for _, record := range records {
+		if record.Version > current {
+			break
+		}
 		var name, digest string
-		if err := tx.QueryRowContext(ctx, "SELECT name, sha256 FROM dsh.schema_migrations WHERE version=$1", SchemaVersion).Scan(&name, &digest); err != nil {
-			return fmt.Errorf("read DSH migration v%d: %w", SchemaVersion, err)
+		if err := tx.QueryRowContext(ctx, "SELECT name, sha256 FROM dsh.schema_migrations WHERE version=$1", record.Version).Scan(&name, &digest); err != nil {
+			return fmt.Errorf("read DSH migration v%d: %w", record.Version, err)
 		}
 		if name != record.Name || digest != record.SHA256 {
-			return fmt.Errorf("DSH migration checksum mismatch at v%d", SchemaVersion)
+			return fmt.Errorf("DSH migration checksum mismatch at v%d", record.Version)
 		}
-		return tx.Commit()
 	}
-	if current != SchemaVersion-1 {
-		return fmt.Errorf("DSH migration v%d cannot follow schema v%d", SchemaVersion, current)
-	}
-	if _, err := tx.ExecContext(ctx, migrationSQL); err != nil {
-		return fmt.Errorf("apply DSH canonical migration v%d: %w", record.Version, err)
-	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.schema_migrations(version, name, sha256) VALUES($1,$2,$3)", record.Version, record.Name, record.SHA256); err != nil {
-		return fmt.Errorf("record DSH migration v%d: %w", record.Version, err)
+	for index := current; index < SchemaVersion; index++ {
+		record := records[index]
+		if record.Version != current+1 {
+			return fmt.Errorf("DSH migration v%d cannot follow schema v%d", record.Version, current)
+		}
+		if _, err := tx.ExecContext(ctx, migrationSQL[index]); err != nil {
+			return fmt.Errorf("apply DSH canonical migration v%d: %w", record.Version, err)
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.schema_migrations(version, name, sha256) VALUES($1,$2,$3)", record.Version, record.Name, record.SHA256); err != nil {
+			return fmt.Errorf("record DSH migration v%d: %w", record.Version, err)
+		}
+		current++
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit DSH migration v%d: %w", record.Version, err)
+		return fmt.Errorf("commit DSH migrations through v%d: %w", SchemaVersion, err)
 	}
 	return nil
 }
 
-func VerifySchema(ctx context.Context, db *sql.DB, record MigrationRecord) error {
+func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) error {
 	if db == nil {
 		return errors.New("DSH database is nil")
+	}
+	if len(records) != SchemaVersion {
+		return errors.New("invalid DSH migration records")
 	}
 	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("DSH database ping: %w", err)
 	}
-	var version int
-	var name, digest string
-	if err := db.QueryRowContext(ctx, "SELECT version, name, sha256 FROM dsh.schema_migrations WHERE version=$1", record.Version).Scan(&version, &name, &digest); err != nil {
-		return fmt.Errorf("DSH migration readback: %w", err)
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM dsh.schema_migrations").Scan(&count); err != nil {
+		return fmt.Errorf("DSH migration history count: %w", err)
 	}
-	if version != SchemaVersion || name != record.Name || digest != record.SHA256 {
-		return fmt.Errorf("DSH migration history does not match canonical v%d", SchemaVersion)
+	if count != len(records) {
+		return fmt.Errorf("DSH migration history count mismatch: got %d want %d", count, len(records))
+	}
+	for _, record := range records {
+		var version int
+		var name, digest string
+		if err := db.QueryRowContext(ctx, "SELECT version, name, sha256 FROM dsh.schema_migrations WHERE version=$1", record.Version).Scan(&version, &name, &digest); err != nil {
+			return fmt.Errorf("DSH migration readback v%d: %w", record.Version, err)
+		}
+		if version != record.Version || name != record.Name || digest != record.SHA256 {
+			return fmt.Errorf("DSH migration history does not match canonical v%d", record.Version)
+		}
 	}
 	for _, table := range requiredTables {
 		var exists bool

@@ -1,7 +1,6 @@
 package partnerbootstrap
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -64,10 +63,6 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partnerActorId and a storeName of 2 to 160 characters are required")
 		return
 	}
-	if err := s.authorizeOperator(r.Context(), actingActorID); err != nil {
-		writeAuthorizationError(w, err)
-		return
-	}
 	partner, err := s.identity.ReadActorRole(r.Context(), partnerActorID, "partner")
 	if err != nil {
 		writeIdentityError(w, err)
@@ -97,10 +92,6 @@ func (s *Server) readForOperator(w http.ResponseWriter, r *http.Request) {
 	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
 	if actingActorID == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
-		return
-	}
-	if err := s.authorizeOperator(r.Context(), actingActorID); err != nil {
-		writeAuthorizationError(w, err)
 		return
 	}
 	record, err := postgres.ReadPartnerBootstrap(r.Context(), s.db, strings.TrimSpace(r.PathValue("partnerActorId")))
@@ -133,29 +124,6 @@ func (s *Server) readForPartner(w http.ResponseWriter, r *http.Request) {
 	}
 	writeBootstrap(w, http.StatusOK, record)
 }
-
-func (s *Server) authorizeOperator(ctx context.Context, actorID string) error {
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return errors.New("acting actor is required")
-	}
-	for _, role := range []string{"operator", "platform_owner"} {
-		view, err := s.identity.ReadActorRole(ctx, actorID, role)
-		if err != nil {
-			var identityErr *identityclient.Error
-			if errors.As(err, &identityErr) && identityErr.Status == http.StatusNotFound {
-				continue
-			}
-			return err
-		}
-		if view.Enabled && view.SecurityEnabled && view.ActivatedAt != nil {
-			return nil
-		}
-	}
-	return errForbidden
-}
-
-var errForbidden = errors.New("acting actor lacks partner bootstrap permission")
 
 func requiredMutationHeaders(w http.ResponseWriter, r *http.Request) (string, string, string, bool) {
 	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
@@ -191,14 +159,6 @@ func writeIdentityError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "identity service is unavailable")
-}
-
-func writeAuthorizationError(w http.ResponseWriter, err error) {
-	if errors.Is(err, errForbidden) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "acting actor lacks partner bootstrap permission")
-		return
-	}
-	writeIdentityError(w, err)
 }
 
 func writeStorageError(w http.ResponseWriter, err error) {

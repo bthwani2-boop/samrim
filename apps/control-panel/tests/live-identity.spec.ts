@@ -64,7 +64,7 @@ test("@live first operator MFA persists through reload and logout revokes the li
   await page.getByRole("button", { name: "إكمال تسجيل الدخول" }).click();
 
   await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
-  await expect(page.getByText("مشغل لوحة التحكم", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("المشغل", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("مالك المنصة", { exact: true })).toHaveCount(0);
 
   const authenticatedReadback = await page.evaluate(async () => {

@@ -195,14 +195,14 @@ func loadConfig(defaultPort string) (config, error) {
 	if len(abuseSecret) < 32 {
 		return config{}, errors.New("IDENTITY_ABUSE_HMAC_SECRET must contain at least 32 bytes")
 	}
-	tokens := map[string]string{"dsh": strings.TrimSpace(os.Getenv("IDENTITY_DSH_SERVICE_TOKEN")), "control-panel": strings.TrimSpace(os.Getenv("IDENTITY_CONTROL_PANEL_SERVICE_TOKEN"))}
-	bootstrapToken := strings.TrimSpace(os.Getenv("IDENTITY_OPERATOR_BOOTSTRAP_SECRET"))
+	tokens := map[string]string{"dsh": strings.TrimSpace(os.Getenv("IDENTITY_DSH_SERVICE_TOKEN")), "control-panel": strings.TrimSpace(os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"))}
+	bootstrapToken := strings.TrimSpace(os.Getenv("OPERATOR_BOOTSTRAP_SECRET"))
 	autoMigrate := strings.EqualFold(strings.TrimSpace(os.Getenv("IDENTITY_AUTO_MIGRATE")), "true")
 	if (runtimeEnvironment == "staging" || runtimeEnvironment == "production") && autoMigrate {
 		return config{}, errors.New("IDENTITY_AUTO_MIGRATE is forbidden outside local and test environments")
 	}
 	if runtimeEnvironment == "production" && bootstrapToken != "" {
-		return config{}, errors.New("IDENTITY_OPERATOR_BOOTSTRAP_SECRET is forbidden in production runtime")
+		return config{}, errors.New("OPERATOR_BOOTSTRAP_SECRET is forbidden in production runtime")
 	}
 	if bootstrapToken != "" {
 		tokens["operator-bootstrap"] = bootstrapToken

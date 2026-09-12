@@ -13,8 +13,10 @@ BEGIN
         ALTER TABLE identity_bootstrap_state
             RENAME COLUMN platform_owner_actor_id TO initial_operator_actor_id;
     END IF;
+
     IF EXISTS (
-        SELECT 1 FROM pg_constraint
+        SELECT 1
+        FROM pg_constraint
         WHERE conname = 'identity_bootstrap_state_platform_owner_actor_id_fkey'
     ) THEN
         ALTER TABLE identity_bootstrap_state
@@ -23,16 +25,47 @@ BEGIN
     END IF;
 END $$;
 
--- Materialize the canonical operator parent row before migrating children that
--- reference (actor_id, role). This avoids changing a referenced composite key
--- in place and keeps the cutover valid with non-deferrable foreign keys.
+-- A pre-existing operator row may represent the same actor as the retired
+-- control-panel row. Never guess which security state or credential wins.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM identity_actor_roles legacy
+        JOIN identity_actor_roles canonical
+          ON canonical.actor_id = legacy.actor_id
+         AND canonical.role = 'operator'
+        WHERE legacy.role = 'platform_owner'
+          AND (
+              legacy.enabled IS DISTINCT FROM canonical.enabled
+              OR legacy.activated_at IS DISTINCT FROM canonical.activated_at
+          )
+    ) THEN
+        RAISE EXCEPTION 'operator-only cutover refused: role state collision between operator and platform_owner';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM identity_password_credentials legacy
+        JOIN identity_password_credentials canonical
+          ON canonical.actor_id = legacy.actor_id
+         AND canonical.role = 'operator'
+        WHERE legacy.role = 'platform_owner'
+          AND legacy.password_hash IS DISTINCT FROM canonical.password_hash
+    ) THEN
+        RAISE EXCEPTION 'operator-only cutover refused: password credential collision between operator and platform_owner';
+    END IF;
+END $$;
+
+-- Materialize the canonical operator parent row before deleting the retired
+-- composite-key parent. This keeps non-deferrable child foreign keys valid.
 INSERT INTO identity_actor_roles(actor_id, role, enabled, activated_at, version)
 SELECT actor_id, 'operator', enabled, activated_at, version
 FROM identity_actor_roles
 WHERE role = 'platform_owner'
 ON CONFLICT (actor_id, role) DO UPDATE
-SET enabled = identity_actor_roles.enabled OR EXCLUDED.enabled,
-    activated_at = COALESCE(identity_actor_roles.activated_at, EXCLUDED.activated_at),
+SET enabled = identity_actor_roles.enabled,
+    activated_at = identity_actor_roles.activated_at,
     version = GREATEST(identity_actor_roles.version, EXCLUDED.version) + 1,
     updated_at = clock_timestamp();
 
@@ -41,21 +74,21 @@ SELECT actor_id, 'operator', password_hash, version
 FROM identity_password_credentials
 WHERE role = 'platform_owner'
 ON CONFLICT (actor_id, role) DO UPDATE
-SET password_hash = EXCLUDED.password_hash,
-    version = GREATEST(identity_password_credentials.version, EXCLUDED.version) + 1,
+SET version = GREATEST(identity_password_credentials.version, EXCLUDED.version) + 1,
     updated_at = clock_timestamp();
 
-UPDATE identity_challenges
-SET role = 'operator', updated_at = clock_timestamp()
+-- Legacy auth artifacts are revoked by removal, not promoted into a new
+-- privilege. Session history and challenge delivery rows cascade with them.
+DELETE FROM identity_sessions
 WHERE role = 'platform_owner';
 
-UPDATE identity_sessions
-SET role = 'operator', updated_at = clock_timestamp()
+DELETE FROM identity_challenges
 WHERE role = 'platform_owner';
 
-UPDATE identity_password_attempts
-SET role = 'operator', updated_at = clock_timestamp()
+DELETE FROM identity_password_attempts
 WHERE role = 'platform_owner';
+
+DROP INDEX IF EXISTS identity_actor_roles_platform_owner_uq;
 
 DELETE FROM identity_password_credentials
 WHERE role = 'platform_owner';
@@ -101,7 +134,3 @@ ALTER TABLE identity_password_attempts
     DROP CONSTRAINT identity_password_attempt_role_check,
     ADD CONSTRAINT identity_password_attempt_role_check
     CHECK (role IN ('client','partner','captain','field','operator'));
-
-INSERT INTO identity_schema_migrations(version)
-VALUES (16)
-ON CONFLICT (version) DO NOTHING;

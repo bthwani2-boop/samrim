@@ -33,8 +33,8 @@ function required(values, name) {
 const env = readEnv(envPath);
 const dshBase = required(env, "DSH_API_BASE_URL").replace(/\/+$/, "");
 const identityBase = required(env, "IDENTITY_API_BASE_URL").replace(/\/+$/, "");
-const dshToken = required(env, "DSH_CONTROL_PANEL_SERVICE_TOKEN");
-const bootstrapToken = required(env, "IDENTITY_OPERATOR_BOOTSTRAP_SECRET");
+const dshToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
+const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
 if (dshToken.length < 24 || bootstrapToken.length < 24) fail("canonical service/bootstrap tokens are too weak");
 
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];

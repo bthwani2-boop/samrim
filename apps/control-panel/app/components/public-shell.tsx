@@ -130,7 +130,7 @@ export function IdentitySurface() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: authMode === "login"
-            ? JSON.stringify({ phone, password, role: "operator" })
+            ? JSON.stringify({ phone, password })
             : authMode === "activate"
               ? JSON.stringify({ phone, operatorEnrollmentToken })
               : JSON.stringify({ phone }),
@@ -160,7 +160,7 @@ export function IdentitySurface() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: authMode === "login"
-            ? JSON.stringify({ phone, code, role: "operator" })
+            ? JSON.stringify({ phone, code })
             : authMode === "activate"
               ? JSON.stringify({ phone, operatorEnrollmentToken, verificationCode: code, password: activationPassword })
               : JSON.stringify({ phone, code, password: recoveryPassword }),

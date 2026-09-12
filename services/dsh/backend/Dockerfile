@@ -15,6 +15,7 @@ COPY --from=build /out/api /api
 COPY --from=build /out/migrate /migrate
 COPY --from=build /out/schema-verify /schema-verify
 COPY services/dsh/backend/internal/storage/postgres/001_partner_bootstrap.sql /app/migrations/001_partner_bootstrap.sql
+COPY services/dsh/backend/internal/storage/postgres/002_partner_actor_store_cutover.sql /app/migrations/002_partner_actor_store_cutover.sql
 ENV DSH_MIGRATION_DIR=/app/migrations
 USER dsh
 EXPOSE 8080

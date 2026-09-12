@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV15Upgrade(t *testing.T) {
+func TestMigrationV13ToV16Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -327,6 +327,90 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("legacy pending delivery residue remains: count=%d err=%v", activeLegacyDeliveries, err)
 	}
 
+	// Insert privileged artifacts that must be revoked rather than translated
+	// into a new operator session/challenge during the persona cutover.
+	if _, err := testDB.ExecContext(ctx, `
+		INSERT INTO identity_challenges(id, actor_id, role, purpose, phone_e164, code_hash, request_ip_hash, admissible, status, attempts, expires_at)
+		VALUES('challenge_legacy_operator', $1, 'platform_owner', 'operator_mfa', '+967770001300', repeat('d', 64), repeat('e', 64), true, 'pending', 0, clock_timestamp() + interval '1 hour')`, ownerActorID); err != nil {
+		t.Fatalf("insert legacy operator challenge: %v", err)
+	}
+	if _, err := testDB.ExecContext(ctx, `
+		INSERT INTO identity_sessions(id, actor_id, role, access_token_hash, refresh_token_hash, device_fingerprint_hash, access_expires_at, refresh_expires_at, absolute_expires_at)
+		VALUES('session_legacy_operator', $1, 'platform_owner', repeat('f', 64), repeat('g', 64), repeat('h', 64), clock_timestamp() + interval '1 hour', clock_timestamp() + interval '2 hours', clock_timestamp() + interval '3 hours')`, ownerActorID); err != nil {
+		t.Fatalf("insert legacy operator session: %v", err)
+	}
+
+	// Apply migration 016 and prove the operator-only cutover is coherent.
+	var v16Name string
+	var v16Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "016_") {
+			v16Name = file.Name()
+			v16Content, err = os.ReadFile(filepath.Join(migDir, v16Name))
+			if err != nil {
+				t.Fatalf("read 016: %v", err)
+			}
+			break
+		}
+	}
+	if v16Name == "" {
+		t.Fatal("migration 016 not found")
+	}
+	hash16 := sha256.Sum256(v16Content)
+	shaHex16 := hex.EncodeToString(hash16[:])
+	if err := postgres.Migrate(ctx, testDB, 16, v16Name, shaHex16, string(v16Content)); err != nil {
+		t.Fatalf("apply migration 016 on v15 database: %v", err)
+	}
+	if v16, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || v16 != 16 {
+		t.Fatalf("expected schema version 16, got %d (err: %v)", v16, err)
+	}
+
+	var bootstrapOperator string
+	if err := testDB.QueryRowContext(ctx, "SELECT initial_operator_actor_id FROM identity_bootstrap_state WHERE id=1").Scan(&bootstrapOperator); err != nil {
+		t.Fatalf("query initial operator bootstrap state: %v", err)
+	}
+	if bootstrapOperator != ownerActorID {
+		t.Fatalf("expected initial operator %s, got %s", ownerActorID, bootstrapOperator)
+	}
+
+	var legacyRoleCount, legacyCredentialCount, legacyChallengeCount, legacySessionCount, legacyAttemptCount int
+	queries := []struct {
+		name  string
+		query string
+		out   *int
+	}{
+		{"legacy roles", "SELECT count(*) FROM identity_actor_roles WHERE role='platform_owner'", &legacyRoleCount},
+		{"legacy credentials", "SELECT count(*) FROM identity_password_credentials WHERE role='platform_owner'", &legacyCredentialCount},
+		{"legacy challenges", "SELECT count(*) FROM identity_challenges WHERE role='platform_owner'", &legacyChallengeCount},
+		{"legacy sessions", "SELECT count(*) FROM identity_sessions WHERE role='platform_owner'", &legacySessionCount},
+		{"legacy attempts", "SELECT count(*) FROM identity_password_attempts WHERE role='platform_owner'", &legacyAttemptCount},
+	}
+	for _, check := range queries {
+		if err := testDB.QueryRowContext(ctx, check.query).Scan(check.out); err != nil {
+			t.Fatalf("query %s: %v", check.name, err)
+		}
+	}
+	if legacyRoleCount != 0 || legacyCredentialCount != 0 || legacyChallengeCount != 0 || legacySessionCount != 0 || legacyAttemptCount != 0 {
+		t.Fatalf("legacy operator artifacts remain: roles=%d credentials=%d challenges=%d sessions=%d attempts=%d", legacyRoleCount, legacyCredentialCount, legacyChallengeCount, legacySessionCount, legacyAttemptCount)
+	}
+	var ownerRole, ownerPassword string
+	if err := testDB.QueryRowContext(ctx, "SELECT role FROM identity_actor_roles WHERE actor_id=$1", ownerActorID).Scan(&ownerRole); err != nil {
+		t.Fatalf("query canonical owner role: %v", err)
+	}
+	if ownerRole != "operator" {
+		t.Fatalf("legacy owner was not materialized as operator: %s", ownerRole)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT password_hash FROM identity_password_credentials WHERE actor_id=$1 AND role='operator'", ownerActorID).Scan(&ownerPassword); err != nil {
+		t.Fatalf("query canonical operator credential: %v", err)
+	}
+	if ownerPassword != "dummy_owner_hash" {
+		t.Fatalf("canonical operator credential was not preserved")
+	}
+	var legacyIndexCount int
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND indexname='identity_actor_roles_platform_owner_uq'").Scan(&legacyIndexCount); err != nil || legacyIndexCount != 0 {
+		t.Fatalf("legacy operator uniqueness index remains: count=%d err=%v", legacyIndexCount, err)
+	}
+
 	// Verify zero data loss on actors, roles and credentials.
 	var actorCount, roleCount, credCount int
 	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_actors").Scan(&actorCount); err != nil || actorCount != 3 {
@@ -344,5 +428,5 @@ func TestMigrationV13ToV15Upgrade(t *testing.T) {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	t.Log("Migration v13 -> v15 upgrade, data preservation and six-digit cutover test PASSED successfully!")
+	t.Log("Migration v13 -> v16 upgrade, data preservation and operator-only cutover test PASSED successfully!")
 }

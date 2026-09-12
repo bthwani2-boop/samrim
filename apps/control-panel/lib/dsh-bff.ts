@@ -33,7 +33,7 @@ function dshBaseUrl(): string {
 }
 
 function dshToken(): string {
-  const token = process.env.DSH_PLATFORM_CONTROL_SERVICE_TOKEN?.trim();
+  const token = process.env.CONTROL_PANEL_SERVICE_TOKEN?.trim();
   if (!token || token.length < 24) throw { kind: "config", message: "dsh service configuration is incomplete" } satisfies DshClientError;
   return token;
 }
