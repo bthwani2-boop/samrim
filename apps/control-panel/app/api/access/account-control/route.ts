@@ -14,22 +14,12 @@ function jsonError(code: string, message: string, status: number) {
 }
 
 export async function POST(request: Request) {
-  if (!verifySameOrigin(request)) {
-    return jsonError("FORBIDDEN", "cross-site requests are forbidden", 403);
-  }
-
+  if (!verifySameOrigin(request)) return jsonError("FORBIDDEN", "cross-site requests are forbidden", 403);
   const identity = await readOperatorSession();
   if (!identity) return jsonError("UNAUTHENTICATED", "authentication is required", 401);
-  if (identity.role !== "platform_owner") return jsonError("FORBIDDEN", "platform owner access is required", 403);
+  if (identity.role !== "operator") return jsonError("FORBIDDEN", "operator access is required", 403);
 
-  const body = (await request.json().catch(() => null)) as {
-    phone?: unknown;
-    role?: unknown;
-    action?: unknown;
-    reason?: unknown;
-    expectedVersion?: unknown;
-  } | null;
-
+  const body = (await request.json().catch(() => null)) as { phone?: unknown; role?: unknown; action?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
   const phone = typeof body?.phone === "string" ? body.phone.trim() : "";
   const roleValue = typeof body?.role === "string" ? body.role.trim().toLowerCase() : "";
   const role = roleValue as ActorType;
@@ -40,38 +30,19 @@ export async function POST(request: Request) {
   if (!phone || !roles.has(role) || !["disable-role", "enable-role", "disable-identity", "enable-identity"].includes(action) || reason.length < 5 || reason.length > 500) {
     return jsonError("INVALID_INPUT", "phone, role, action, and a reason of 5 to 500 characters are required", 400);
   }
-
-  if (rawExpectedVersion === undefined || rawExpectedVersion === null) {
-    return jsonError("PRECONDITION_REQUIRED", "expectedVersion is required for concurrency safety", 428);
-  }
-  let expectedVersion: number;
-  if (typeof rawExpectedVersion === "number") {
-    expectedVersion = rawExpectedVersion;
-  } else if (typeof rawExpectedVersion === "string" && /^[1-9]\d*$/.test(rawExpectedVersion.trim())) {
-    expectedVersion = Number(rawExpectedVersion.trim());
-  } else {
-    return jsonError("INVALID_INPUT", "expectedVersion must be a positive integer >= 1", 400);
-  }
-  if (!Number.isInteger(expectedVersion) || expectedVersion < 1) {
-    return jsonError("INVALID_INPUT", "expectedVersion must be a positive integer >= 1", 400);
-  }
+  if (rawExpectedVersion === undefined || rawExpectedVersion === null) return jsonError("PRECONDITION_REQUIRED", "expectedVersion is required for concurrency safety", 428);
+  const expectedVersion = typeof rawExpectedVersion === "number" ? rawExpectedVersion : typeof rawExpectedVersion === "string" && /^[1-9]\d*$/.test(rawExpectedVersion.trim()) ? Number(rawExpectedVersion.trim()) : NaN;
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 1) return jsonError("INVALID_INPUT", "expectedVersion must be a positive integer >= 1", 400);
 
   try {
-    const correlationId = randomUUID();
-    const mutationOptions = { operatorActorId: identity.subject, correlationId, expectedVersion };
+    const mutationOptions = { operatorActorId: identity.subject, correlationId: randomUUID(), expectedVersion };
     if (action === "disable-role" || action === "enable-role") {
       const enabled = action === "enable-role";
-      if (roleNames.has(role)) {
-        await setManagedRoleEnabled(phone, role as "partner" | "captain" | "field", enabled, reason, mutationOptions);
-      } else {
-        await setIdentityRoleEnabled(phone, role, enabled, reason, mutationOptions);
-      }
+      if (roleNames.has(role)) await setManagedRoleEnabled(phone, role as "partner" | "captain" | "field", enabled, reason, mutationOptions);
+      else await setIdentityRoleEnabled(phone, role, enabled, reason, mutationOptions);
     } else {
       let targetActorId: string | undefined;
-      if (roleNames.has(role)) {
-        const dshStatus = await lookupManagedRoleStatus(phone, role as "partner" | "captain" | "field");
-        targetActorId = dshStatus.actorId;
-      }
+      if (roleNames.has(role)) targetActorId = (await lookupManagedRoleStatus(phone, role as "partner" | "captain" | "field")).actorId;
       await setIdentitySecurityEnabled(phone, role, action === "enable-identity", reason, targetActorId, mutationOptions);
     }
     return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
