@@ -24,7 +24,7 @@
     "workspace:vet": "nx run-many -t vet --all --outputStyle=stream",
     "workspace:verify": "pnpm run workspace:typecheck && pnpm run workspace:test && pnpm run workspace:build && pnpm run workspace:mobile-export-smoke && pnpm run workspace:vet",
     "quality:lint": "biome lint apps packages services tools --diagnostic-level=error",
-    "runtime:up": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Up",
+    "runtime:up": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Up && pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/open-mobile-apps.ps1",
     "runtime:down": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Down",
     "runtime:restart": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Restart",
     "runtime:status": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Status",
