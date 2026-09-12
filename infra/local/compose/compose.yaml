@@ -220,9 +220,6 @@ services:
         condition: service_healthy
     environment:
       <<: *js-env
-      # The canonical browser proof exercises the deployable production shell.
-      # Metro remains development-owned; Control must not emit development CSP
-      # allowances such as 'unsafe-eval' or omit production HSTS.
       NODE_ENV: "production"
       CONTROL_PANEL_PUBLIC_ORIGIN: "${CONTROL_PANEL_PUBLIC_ORIGIN}"
       IDENTITY_API_BASE_URL: "http://identity:8082"
@@ -249,9 +246,9 @@ services:
         condition: service_healthy
     environment:
       <<: *js-env
-      EXPO_PUBLIC_IDENTITY_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_IDENTITY_PORT:-18082}"
-      EXPO_PUBLIC_DSH_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_DSH_PORT:-18080}"
-      EXPO_PACKAGER_PROXY_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_APP_CLIENT_METRO_PORT:-18101}"
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://127.0.0.1:${SAMRIM_DSH_PORT:-18080}"
+      EXPO_PACKAGER_PROXY_URL: "http://127.0.0.1:${SAMRIM_APP_CLIENT_METRO_PORT:-18101}"
     command: ["pnpm", "--dir", "apps/app-client", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18101"]
     ports:
       - "127.0.0.1:${SAMRIM_APP_CLIENT_METRO_PORT:-18101}:18101"
@@ -273,9 +270,9 @@ services:
         condition: service_healthy
     environment:
       <<: *js-env
-      EXPO_PUBLIC_IDENTITY_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_IDENTITY_PORT:-18082}"
-      EXPO_PUBLIC_DSH_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_DSH_PORT:-18080}"
-      EXPO_PACKAGER_PROXY_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_APP_PARTNER_METRO_PORT:-18102}"
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://127.0.0.1:${SAMRIM_DSH_PORT:-18080}"
+      EXPO_PACKAGER_PROXY_URL: "http://127.0.0.1:${SAMRIM_APP_PARTNER_METRO_PORT:-18102}"
     command: ["pnpm", "--dir", "apps/app-partner", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18102"]
     ports:
       - "127.0.0.1:${SAMRIM_APP_PARTNER_METRO_PORT:-18102}:18102"
@@ -297,9 +294,9 @@ services:
         condition: service_healthy
     environment:
       <<: *js-env
-      EXPO_PUBLIC_IDENTITY_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_IDENTITY_PORT:-18082}"
-      EXPO_PUBLIC_DSH_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_DSH_PORT:-18080}"
-      EXPO_PACKAGER_PROXY_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_APP_CAPTAIN_METRO_PORT:-18103}"
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://127.0.0.1:${SAMRIM_DSH_PORT:-18080}"
+      EXPO_PACKAGER_PROXY_URL: "http://127.0.0.1:${SAMRIM_APP_CAPTAIN_METRO_PORT:-18103}"
     command: ["pnpm", "--dir", "apps/app-captain", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18103"]
     ports:
       - "127.0.0.1:${SAMRIM_APP_CAPTAIN_METRO_PORT:-18103}:18103"
@@ -321,9 +318,9 @@ services:
         condition: service_healthy
     environment:
       <<: *js-env
-      EXPO_PUBLIC_IDENTITY_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_IDENTITY_PORT:-18082}"
-      EXPO_PUBLIC_DSH_API_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_DSH_PORT:-18080}"
-      EXPO_PACKAGER_PROXY_URL: "http://${SAMRIM_HOTSPOT_IP:-127.0.0.1}:${SAMRIM_APP_FIELD_METRO_PORT:-18104}"
+      EXPO_PUBLIC_IDENTITY_API_URL: "http://127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}"
+      EXPO_PUBLIC_DSH_API_URL: "http://127.0.0.1:${SAMRIM_DSH_PORT:-18080}"
+      EXPO_PACKAGER_PROXY_URL: "http://127.0.0.1:${SAMRIM_APP_FIELD_METRO_PORT:-18104}"
     command: ["pnpm", "--dir", "apps/app-field", "exec", "expo", "start", "--dev-client", "--host", "lan", "--port", "18104"]
     ports:
       - "127.0.0.1:${SAMRIM_APP_FIELD_METRO_PORT:-18104}:18104"
