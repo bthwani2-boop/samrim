@@ -22,11 +22,12 @@ DONOR/OSS    = evidence/falsification input only
 3. Load only materially applicable semantic owners through source-derived lookup.
 4. For repository mutation/refoundation/closure, read `tools/prompting/bthwani-orchestrator/00-ORCHESTRATOR.md` and only the modules it routes for the current state.
 5. Resolve `PRODUCT_BREADTH` and the authorized outcome. `LEVEL_4` never activates future Product breadth.
-6. Reconstruct current implementation only from executable source/history/runtime.
-7. Execute the complete causal affected cone of the authorized outcome; structural work is pulled forward only when diagnosis proves it is a prerequisite.
-8. Preserve one semantic owner, one material writer and one cross-boundary contract provenance.
-9. Do not create empty future lanes, fake Product screens/APIs/tables, shadow models, compatibility authorities or speculative frameworks.
-10. Verify the exact candidate and repeat the causal cycle until the authorized-scope fixed point or a legitimate blocker.
+6. When Product breadth is not explicitly fixed, select the smallest complete vertical journey increment across only the surfaces materially required by the current human-authorized outcome; never infer future breadth from target catalogs or complete one surface horizontally.
+7. Reconstruct current implementation only from executable source/history/runtime.
+8. Execute the complete causal affected cone of the authorized outcome; structural work is pulled forward only when diagnosis proves it is a prerequisite.
+9. Preserve one semantic owner, one material writer and one cross-boundary contract provenance.
+10. Do not create empty future lanes, fake Product screens/APIs/tables, shadow models, compatibility authorities or speculative frameworks.
+11. Verify the exact candidate and repeat the causal cycle until the authorized-scope fixed point or a legitimate blocker.
 
 ## Source-derived lookup
 
