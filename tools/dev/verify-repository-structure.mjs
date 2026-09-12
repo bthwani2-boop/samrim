@@ -78,8 +78,10 @@ for (const required of [".github", "tools"]) {
 }
 
 const knowledgeManifest = "knowledge.sources.json";
+const repositoryStructureContract = "REPOSITORY-STRUCTURE.md";
 const legacyKnowledgeManifest = ["governance", "lock", "json"].join(".");
 assert(trackedSet.has(knowledgeManifest), knowledgeManifest + " is required as the canonical knowledge/evidence source manifest");
+assert(trackedSet.has(repositoryStructureContract), repositoryStructureContract + " is required as the repository-local placement contract");
 assert(!trackedSet.has(legacyKnowledgeManifest), "retired knowledge manifest must not remain tracked: " + legacyKnowledgeManifest);
 
 for (const file of tracked) {
@@ -132,8 +134,6 @@ for (const app of appNames) {
     for (const relative of [
       ".easignore",
       "app.config.ts",
-      "app/_layout.tsx",
-      "app/index.tsx",
       "eas.json",
       "fingerprint.config.js",
       "index.js",
@@ -143,12 +143,31 @@ for (const app of appNames) {
     ]) {
       assert(trackedSet.has(base + relative), app + " missing Expo host substrate: " + relative);
     }
+
+    const hasRootRouter = tracked.some((item) => item.startsWith(base + "app/"));
+    const hasSrcRouter = tracked.some((item) => item.startsWith(base + "src/app/"));
+    assert(
+      Number(hasRootRouter) + Number(hasSrcRouter) === 1,
+      app + " must have exactly one Expo router root: app/ or src/app/",
+    );
+    const routerRoot = hasSrcRouter ? "src/app/" : "app/";
+    for (const relative of [routerRoot + "_layout.tsx", routerRoot + "index.tsx"]) {
+      assert(trackedSet.has(base + relative), app + " missing Expo route substrate: " + relative);
+    }
   }
 
   if (isNext) {
     const hasNextConfig = trackedSet.has(base + "next.config.ts") || trackedSet.has(base + "next.config.js") || trackedSet.has(base + "next.config.mjs");
     assert(hasNextConfig, app + " missing Next config substrate");
-    for (const relative of ["app/layout.tsx", "app/page.tsx", "tsconfig.json"]) {
+
+    const hasRootRouter = tracked.some((item) => item.startsWith(base + "app/"));
+    const hasSrcRouter = tracked.some((item) => item.startsWith(base + "src/app/"));
+    assert(
+      Number(hasRootRouter) + Number(hasSrcRouter) === 1,
+      app + " must have exactly one Next router root: app/ or src/app/",
+    );
+    const routerRoot = hasSrcRouter ? "src/app/" : "app/";
+    for (const relative of [routerRoot + "layout.tsx", routerRoot + "page.tsx", "tsconfig.json"]) {
       assert(trackedSet.has(base + relative), app + " missing Next host substrate: " + relative);
     }
   }
@@ -237,6 +256,7 @@ console.log("DISCOVERED_APPS=" + appNames.join(","));
 console.log("DISCOVERED_SERVICES=" + serviceNames.join(","));
 console.log("DISCOVERED_PACKAGES=" + packageNames.join(","));
 console.log("DIRECT_DEPLOYABLE_HOST_ROOTS=PASS");
+console.log("ROUTER_ROOT_ATOMICITY=PASS");
 console.log("SERVICE_TO_APP_DEPENDENCIES=0");
 console.log("SERVICE_FRONTEND_TREES=0");
 console.log("ROOT_CONTRACT_PLACEMENT=PASS");
@@ -244,5 +264,6 @@ console.log("PACKAGES_TECHNICAL_BOUNDARY=PASS");
 console.log("INFRA_OWNERSHIP_BOUNDARY=PASS");
 console.log("MANUAL_PROJECT_NAME_REGISTRY=0");
 console.log("KNOWLEDGE_SOURCE_MANIFEST=PASS");
+console.log("REPOSITORY_PLACEMENT_CONTRACT=PASS");
 console.log("RETIRED_KNOWLEDGE_MANIFEST_REFERENCES=0");
 console.log("REPOSITORY_STRUCTURE=PASS");
