@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: |
     Identity alone creates actor_id. Phone is a mutable verified identifier rather than the cross-boundary primary identity.
-    Public customer verification, governed managed-role activation, normal authentication and recovery/re-enrollment are distinct lifecycles.
+    Public client verification, governed managed-role activation, operator access, normal authentication and recovery/re-enrollment are distinct lifecycles.
 servers:
   - url: http://127.0.0.1:18082
 
@@ -32,7 +32,6 @@ paths:
     post:
       tags: [client-auth]
       operationId: requestClientRegistrationVerification
-      description: Requests phone verification for client registration without creating an actor before proof. Delivery is asynchronous and the acknowledgement does not report provider outcome.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/PhoneRequest" } } }
@@ -46,7 +45,6 @@ paths:
     post:
       tags: [client-auth]
       operationId: registerClient
-      description: Consumes phone-verification proof, creates/reuses the canonical actor, creates the client role and client-only password credential, then creates a client session.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ClientCredentialProofRequest" } } }
@@ -60,7 +58,6 @@ paths:
     post:
       tags: [client-auth]
       operationId: loginClient
-      description: Normal customer re-authentication is phone plus the client password credential; a valid stored session is restored instead of requiring login on every app open.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/PasswordLoginRequest" } } }
@@ -74,7 +71,6 @@ paths:
     post:
       tags: [client-auth]
       operationId: requestClientRecoveryVerification
-      description: Requests phone proof for client-password recovery without exposing whether an admissible client credential exists. Delivery is asynchronous and the acknowledgement does not report provider outcome.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/PhoneRequest" } } }
@@ -88,7 +84,6 @@ paths:
     post:
       tags: [client-auth]
       operationId: recoverClient
-      description: Consumes recovery phone proof, replaces only the client credential, revokes existing client sessions and creates a fresh client session.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ClientCredentialProofRequest" } } }
@@ -101,7 +96,7 @@ paths:
     post:
       tags: [managed-auth]
       operationId: requestManagedActivation
-      description: For operator roles, validates the one-time operator enrollment token issued by platform control, then requests a phone-verification challenge. For partner/captain/field roles, requests a phone-verification challenge directly for an admitted role. Neither grants role admission.
+      description: Operator enrollment requires the one-time operator enrollment token issued by the authenticated control-panel operator; partner/captain/field activation requires admitted role plus phone proof.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedChallengeRequest" } } }
@@ -116,7 +111,6 @@ paths:
     post:
       tags: [managed-auth]
       operationId: activateManagedRole
-      description: Consumes the phone-verification challenge (and operator enrollment token for operator roles), creates the role-scoped password credential, permanently records that initial activation, and creates the first role-scoped device-bound session. Repeated activation is not normal login.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationRequest" } } }
@@ -129,7 +123,6 @@ paths:
     post:
       tags: [managed-auth]
       operationId: loginManagedRole
-      description: Normal re-authentication for an activated partner, captain, or field role is phone plus that role's password credential. A valid stored session is restored instead of requiring login on every app open.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedPasswordLoginRequest" } } }
@@ -143,7 +136,6 @@ paths:
     post:
       tags: [managed-auth]
       operationId: requestManagedRecoveryVerification
-      description: Requests phone proof for password recovery of an already activated partner, captain, field, or operator role without exposing whether an admissible credential exists.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedRecoveryChallengeRequest" } } }
@@ -157,7 +149,6 @@ paths:
     post:
       tags: [managed-auth]
       operationId: recoverManagedRole
-      description: Consumes managed-role phone proof, replaces only that role credential, revokes that role's sessions, and returns a completion acknowledgement without creating a session.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ManagedRecoveryRequest" } } }
@@ -170,7 +161,7 @@ paths:
     post:
       tags: [operator-auth]
       operationId: startOperatorLogin
-      description: Validates the operator password internally and returns a challenge-shaped response. A password proof alone never creates an operator session; second-factor delivery is asynchronous and provider outcome is not exposed by this response.
+      description: Validates the operator password and issues the required second-factor challenge. Password proof alone never creates a control-panel session.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OperatorLoginStartRequest" } } }
@@ -184,7 +175,7 @@ paths:
     post:
       tags: [operator-auth]
       operationId: completeOperatorLogin
-      description: Consumes the required second-factor challenge and only then creates the operator session.
+      description: Consumes the required second-factor challenge and only then creates an operator session.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OperatorLoginCompleteRequest" } } }
@@ -197,7 +188,6 @@ paths:
     post:
       tags: [session]
       operationId: refreshSession
-      description: Refresh token rotated atomically while the exact role remains enabled and the presented device fingerprint still matches.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/RefreshRequest" } } }
@@ -221,9 +211,7 @@ paths:
       operationId: readCurrentSession
       security: [{ accessToken: [] }]
       responses:
-        "200":
-          description: Current single-role session identity.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ActorIdentity" } } }
+        "200": { description: Current single-role session identity., content: { application/json: { schema: { $ref: "#/components/schemas/ActorIdentity" } } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
 
   /internal/actor-roles/provision:
@@ -231,7 +219,7 @@ paths:
       tags: [internal-actor-roles]
       operationId: provisionActorRole
       security: [{ internalServiceToken: [] }]
-      description: The authenticated service token determines the caller. Identity alone creates actor_id. DSH may provision partner/captain/field; Platform Control may provision an operator. Platform-owner creation is forbidden on this general route and is available only through the one-time platform bootstrap route.
+      description: Identity alone creates actor_id. DSH may provision partner/captain/field; the control-panel service may provision a later operator. First-operator bootstrap is a separate one-time lifecycle.
       parameters:
         - { $ref: "#/components/parameters/CorrelationId" }
         - { $ref: "#/components/parameters/ActingActorId" }
@@ -246,17 +234,17 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
-  /internal/bootstrap/platform-owner:
+  /internal/bootstrap/operator:
     post:
       tags: [internal-actor-roles]
-      operationId: bootstrapPlatformOwner
+      operationId: bootstrapFirstOperator
       security: [{ internalServiceToken: [] }]
-      description: One-time platform-owner bootstrap. The dedicated bootstrap secret is accepted only while no platform-owner role exists; subsequent attempts and platform-control tokens are rejected.
+      description: Irreversible one-time first-operator bootstrap. It creates the initial operator actor-role and password credential, records bootstrap completion, and never creates a second human role.
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ProvisionActorRoleRequest" } } }
       responses:
-        "201": { description: Platform owner created., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
+        "201": { description: First operator created., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
         "400": { $ref: "#/components/responses/Invalid" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -270,7 +258,7 @@ paths:
       description: Issues a single-use enrollment token for an already admitted, enabled operator role. The token is returned once, stored only as a digest, and never creates or grants a role.
       parameters:
         - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/PlatformControlActingActorId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/OperatorEnrollmentTokenIssueRequest" } } }
@@ -356,7 +344,6 @@ paths:
       tags: [internal-actor-roles]
       operationId: authorizeManagedRoleReenrollment
       security: [{ internalServiceToken: [] }]
-      description: DSH-only explicit recovery action for partner/captain/field. Revokes that role's sessions and reopens one-time activation eligibility without changing role admission.
       parameters:
         - { $ref: "#/components/parameters/ActorId" }
         - { $ref: "#/components/parameters/Role" }
@@ -377,8 +364,8 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/ActorId" }
         - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/PlatformControlActingActorId" }
-        - { $ref: "#/components/parameters/PlatformControlExpectedVersion" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/ControlPanelExpectedVersion" }
         - { $ref: "#/components/parameters/MutationReason" }
       responses:
         "204": { description: Identity-wide authentication disabled and active sessions/challenges revoked. }
@@ -396,8 +383,8 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/ActorId" }
         - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/PlatformControlActingActorId" }
-        - { $ref: "#/components/parameters/PlatformControlExpectedVersion" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/ControlPanelExpectedVersion" }
         - { $ref: "#/components/parameters/MutationReason" }
       responses:
         "204": { description: Identity-wide authentication eligibility restored; no session is resurrected. }
@@ -414,9 +401,7 @@ paths:
       security: [{ internalServiceToken: [] }]
       parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }]
       responses:
-        "200":
-          description: Active sessions for the exact actor-role.
-          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SessionInfo" } } } }
+        "200": { description: Active sessions for the exact actor-role., content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SessionInfo" } } } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -428,7 +413,7 @@ paths:
         - { $ref: "#/components/parameters/ActorId" }
         - { $ref: "#/components/parameters/Role" }
         - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/PlatformControlActingActorId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
       responses:
         "204": { description: Active sessions for the exact actor-role revoked. }
         "400": { $ref: "#/components/responses/Invalid" }
@@ -446,7 +431,7 @@ paths:
         - { $ref: "#/components/parameters/Role" }
         - { name: sessionId, in: path, required: true, schema: { type: string } }
         - { $ref: "#/components/parameters/CorrelationId" }
-        - { $ref: "#/components/parameters/PlatformControlActingActorId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
       responses:
         "204": { description: Exact session revoked. }
         "400": { $ref: "#/components/responses/Invalid" }
@@ -464,9 +449,9 @@ components:
     Role: { name: role, in: path, required: true, schema: { $ref: "#/components/schemas/ActorType" } }
     CorrelationId: { name: X-Correlation-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
     ActingActorId: { name: X-Acting-Actor-ID, in: header, required: false, schema: { type: string, maxLength: 128 } }
-    PlatformControlActingActorId: { name: X-Acting-Actor-ID, in: header, required: true, schema: { type: string, maxLength: 128 } }
+    ControlPanelActingActorId: { name: X-Acting-Actor-ID, in: header, required: true, schema: { type: string, maxLength: 128 } }
     ExpectedVersion: { name: X-Expected-Version, in: header, required: false, schema: { type: integer, minimum: 1 } }
-    PlatformControlExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
+    ControlPanelExpectedVersion: { name: X-Expected-Version, in: header, required: true, schema: { type: integer, minimum: 1 } }
     MutationReason: { name: X-Reason, in: header, required: false, schema: { type: string, maxLength: 500 } }
 
   schemas:
@@ -483,7 +468,7 @@ components:
 
     ActorType:
       type: string
-      enum: [client, partner, captain, field, operator, platform_owner]
+      enum: [client, partner, captain, field, operator]
 
     ManagedActorType:
       type: string
@@ -495,7 +480,7 @@ components:
 
     ControlPanelRole:
       type: string
-      enum: [operator, platform_owner]
+      enum: [operator]
 
     PhoneRequest:
       type: object
@@ -516,7 +501,7 @@ components:
           $ref: "#/components/schemas/ManagedActivationRole"
         operatorEnrollmentToken:
           type: string
-          description: Required only for operator enrollment; platform-issued high-entropy token.
+          description: Required only for operator enrollment; high-entropy single-use token.
           minLength: 24
           maxLength: 256
           pattern: "^[A-Za-z0-9_-]{24,256}$"
@@ -536,112 +521,62 @@ components:
       additionalProperties: false
       required: [phone, code, password, deviceFingerprint]
       properties:
-        phone:
-          type: string
-        code:
-          type: string
-          pattern: "^[0-9]{6}$"
-        password:
-          type: string
-          minLength: 15
-          maxLength: 128
-        deviceFingerprint:
-          type: string
-          minLength: 8
-          maxLength: 256
+        phone: { type: string }
+        code: { type: string, pattern: "^[0-9]{6}$" }
+        password: { type: string, minLength: 15, maxLength: 128 }
+        deviceFingerprint: { type: string, minLength: 8, maxLength: 256 }
 
     PasswordLoginRequest:
       type: object
       additionalProperties: false
       required: [phone, password, deviceFingerprint]
       properties:
-        phone:
-          type: string
-        password:
-          type: string
-          minLength: 15
-          maxLength: 128
-        deviceFingerprint:
-          type: string
-          minLength: 8
-          maxLength: 256
+        phone: { type: string }
+        password: { type: string, minLength: 15, maxLength: 128 }
+        deviceFingerprint: { type: string, minLength: 8, maxLength: 256 }
 
     ManagedPasswordLoginRequest:
       type: object
       additionalProperties: false
       required: [phone, password, role, deviceFingerprint]
       properties:
-        phone:
-          type: string
-        password:
-          type: string
-          minLength: 15
-          maxLength: 128
+        phone: { type: string }
+        password: { type: string, minLength: 15, maxLength: 128 }
         role:
           $ref: "#/components/schemas/ManagedActorType"
-        deviceFingerprint:
-          type: string
-          minLength: 8
-          maxLength: 256
+        deviceFingerprint: { type: string, minLength: 8, maxLength: 256 }
 
     ManagedActivationRequest:
       type: object
       additionalProperties: false
       required: [phone, role, verificationCode, password, deviceFingerprint]
       properties:
-        phone:
-          type: string
+        phone: { type: string }
         role:
           $ref: "#/components/schemas/ManagedActivationRole"
-        operatorEnrollmentToken:
-          type: string
-          description: Required only for operator enrollment; platform-issued high-entropy token.
-          minLength: 24
-          maxLength: 256
-          pattern: "^[A-Za-z0-9_-]{24,256}$"
-        verificationCode:
-          type: string
-          minLength: 6
-          maxLength: 6
-          pattern: "^[0-9]{6}$"
-        password:
-          type: string
-          minLength: 15
-          maxLength: 128
-        deviceFingerprint:
-          type: string
-          minLength: 8
-          maxLength: 256
+        operatorEnrollmentToken: { type: string, minLength: 24, maxLength: 256, pattern: "^[A-Za-z0-9_-]{24,256}$" }
+        verificationCode: { type: string, minLength: 6, maxLength: 6, pattern: "^[0-9]{6}$" }
+        password: { type: string, minLength: 15, maxLength: 128 }
+        deviceFingerprint: { type: string, minLength: 8, maxLength: 256 }
 
     ManagedRecoveryRequest:
       type: object
       additionalProperties: false
       required: [phone, role, code, password]
       properties:
-        phone:
-          type: string
+        phone: { type: string }
         role:
           $ref: "#/components/schemas/ManagedActivationRole"
-        code:
-          type: string
-          minLength: 6
-          maxLength: 6
-          pattern: "^[0-9]{6}$"
-        password:
-          type: string
-          minLength: 15
-          maxLength: 128
+        code: { type: string, minLength: 6, maxLength: 6, pattern: "^[0-9]{6}$" }
+        password: { type: string, minLength: 15, maxLength: 128 }
+
     OperatorLoginStartRequest:
       type: object
       additionalProperties: false
       required: [phone, password, role]
       properties:
-        phone:
-          type: string
-        password:
-          type: string
-          minLength: 15
-          maxLength: 128
+        phone: { type: string }
+        password: { type: string, minLength: 15, maxLength: 128 }
         role:
           $ref: "#/components/schemas/ControlPanelRole"
 
@@ -650,72 +585,49 @@ components:
       additionalProperties: false
       required: [phone, code, role, deviceFingerprint]
       properties:
-        phone:
-          type: string
-        code:
-          type: string
-          pattern: "^[0-9]{6}$"
+        phone: { type: string }
+        code: { type: string, pattern: "^[0-9]{6}$" }
         role:
           $ref: "#/components/schemas/ControlPanelRole"
-        deviceFingerprint:
-          type: string
-          minLength: 8
-          maxLength: 256
+        deviceFingerprint: { type: string, minLength: 8, maxLength: 256 }
 
     Challenge:
       type: object
       additionalProperties: false
       required: [challengeId, maskedPhone, expiresAt]
       properties:
-        challengeId:
-          type: string
-        maskedPhone:
-          type: string
-        expiresAt:
-          type: string
-          format: date-time
+        challengeId: { type: string }
+        maskedPhone: { type: string }
+        expiresAt: { type: string, format: date-time }
 
     RefreshRequest:
       type: object
       additionalProperties: false
       required: [refreshToken, deviceFingerprint]
       properties:
-        refreshToken:
-          type: string
-        deviceFingerprint:
-          type: string
-          minLength: 8
-          maxLength: 256
+        refreshToken: { type: string }
+        deviceFingerprint: { type: string, minLength: 8, maxLength: 256 }
 
     ActorIdentity:
       type: object
       additionalProperties: false
       required: [subject, sessionId, role, surface, expiresAt]
       properties:
-        subject:
-          type: string
-        sessionId:
-          type: string
+        subject: { type: string }
+        sessionId: { type: string }
         role:
           $ref: "#/components/schemas/ActorType"
-        surface:
-          type: string
-        expiresAt:
-          type: string
-          format: date-time
+        surface: { type: string }
+        expiresAt: { type: string, format: date-time }
 
     TokenPair:
       type: object
       additionalProperties: false
       required: [accessToken, refreshToken, accessExpiresAt, identity]
       properties:
-        accessToken:
-          type: string
-        refreshToken:
-          type: string
-        accessExpiresAt:
-          type: string
-          format: date-time
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        accessExpiresAt: { type: string, format: date-time }
         identity:
           $ref: "#/components/schemas/ActorIdentity"
 
@@ -733,23 +645,18 @@ components:
       additionalProperties: false
       required: [phoneE164, role]
       properties:
-        phoneE164:
-          type: string
+        phoneE164: { type: string }
         role:
           type: string
-          enum: [partner, captain, field, operator, platform_owner]
-        password:
-          type: string
-          minLength: 15
-          maxLength: 128
+          enum: [partner, captain, field, operator]
+        password: { type: string, minLength: 15, maxLength: 128 }
 
     OperatorEnrollmentTokenIssueRequest:
       type: object
       additionalProperties: false
       required: [phoneE164, role]
       properties:
-        phoneE164:
-          type: string
+        phoneE164: { type: string }
         role:
           type: string
           enum: [operator]
@@ -759,48 +666,29 @@ components:
       additionalProperties: false
       required: [code, maskedPhone, role, expiresAt]
       properties:
-        code:
-          type: string
-          description: High-entropy operator enrollment token; shown once.
-        maskedPhone:
-          type: string
+        code: { type: string }
+        maskedPhone: { type: string }
         role:
           $ref: "#/components/schemas/ManagedActivationRole"
-        expiresAt:
-          type: string
-          format: date-time
+        expiresAt: { type: string, format: date-time }
 
     ActorRoleView:
       type: object
       additionalProperties: false
       required: [actorId, phoneE164, role, enabled, securityEnabled, actorVersion, roleVersion]
       properties:
-        actorId:
-          type: string
-        phoneE164:
-          type: string
+        actorId: { type: string }
+        phoneE164: { type: string }
         role:
           $ref: "#/components/schemas/ActorType"
-        enabled:
-          type: boolean
-        activatedAt:
-          type: string
-          format: date-time
-        securityEnabled:
-          type: boolean
-        actorVersion:
-          type: integer
-          minimum: 1
-        roleVersion:
-          type: integer
-          minimum: 1
-        credentialVersion:
-          type: integer
-          minimum: 1
-        actorCreated:
-          type: boolean
-        roleCreated:
-          type: boolean
+        enabled: { type: boolean }
+        activatedAt: { type: string, format: date-time }
+        securityEnabled: { type: boolean }
+        actorVersion: { type: integer, minimum: 1 }
+        roleVersion: { type: integer, minimum: 1 }
+        credentialVersion: { type: integer, minimum: 1 }
+        actorCreated: { type: boolean }
+        roleCreated: { type: boolean }
 
     ActorRoleSearchPage:
       type: object
@@ -811,36 +699,23 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ActorRoleView"
-        limit:
-          type: integer
-        nextCursor:
-          type: string
+        limit: { type: integer }
+        nextCursor: { type: string }
 
     SessionInfo:
       type: object
       additionalProperties: false
       required: [sessionId, role, surface, version, createdAt, expiresAt]
       properties:
-        sessionId:
-          type: string
+        sessionId: { type: string }
         role:
           $ref: "#/components/schemas/ActorType"
-        surface:
-          type: string
-        version:
-          type: integer
-        createdAt:
-          type: string
-          format: date-time
-        expiresAt:
-          type: string
-          format: date-time
-        lastUsedAt:
-          type: string
-          format: date-time
-        compromisedAt:
-          type: string
-          format: date-time
+        surface: { type: string }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        lastUsedAt: { type: string, format: date-time }
+        compromisedAt: { type: string, format: date-time }
 
     Error:
       type: object
@@ -853,16 +728,16 @@ components:
 
   responses:
     ChallengeIssued:
-      description: Challenge-shaped acknowledgement. Public decoys use the same shape, raw codes are never exposed, and provider delivery outcome is not reported.
+      description: Challenge-shaped acknowledgement; raw codes and provider delivery outcomes are not exposed.
       content: { application/json: { schema: { $ref: "#/components/schemas/Challenge" } } }
     OperatorEnrollmentTokenIssued:
-      description: One-time operator enrollment token. The plaintext token is returned only in this authorized response and is never stored.
+      description: One-time operator enrollment token returned only in this authorized response.
       content: { application/json: { schema: { $ref: "#/components/schemas/OperatorEnrollmentToken" } } }
     TokenPair:
       description: Role-scoped authenticated session.
       content: { application/json: { schema: { $ref: "#/components/schemas/TokenPair" } } }
     RecoveryComplete:
-      description: Credential recovery completed. No authenticated session is created.
+      description: Credential recovery completed without creating a session.
       content: { application/json: { schema: { $ref: "#/components/schemas/RecoveryResult" } } }
     Invalid:
       description: Request validation failed.
