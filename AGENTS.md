@@ -140,6 +140,7 @@ ASSURANCE / REGRESSION / CLEANUP
 Audit the causal cone, not only the visible symptom. Expand only while evidence can change root cause, owner/boundary, sequence, safety, solution, cutover or proof.
 RIGOR SCALES WITH CONSEQUENCE + UNCERTAINTY + BLAST RADIUS + IRREVERSIBILITY.
 DURABLE TARGET MODEL != CURRENT IMPLEMENTATION INVENTORY != CURRENT AUTHORIZED DELIVERY SLICE. Future responsibility needs CURRENT NEED + CAUSAL PREREQUISITE + AUTHORIZED OBJECTIVE.
+MINIMUM PRODUCT BREADTH LAW: unless explicitly required by the current human-authorized outcome, select and preserve only the smallest complete current delivery core/journey and its causal prerequisites; broader future Product breadth is unadmitted until a later proven need.
 
 PLATFORM PROGRESSION LAW:
 BTHWANI PROGRESSES BY BUSINESS CAPABILITY / JOURNEY ACROSS ITS MATERIAL OWNERS, PARTICIPANTS AND CONSUMERS, NOT BY EXHAUSTING ONE ACTOR, APP, SERVICE OR SURFACE BACKLOG.
