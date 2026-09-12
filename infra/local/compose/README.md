@@ -48,6 +48,8 @@ The Control Panel and all four Metro servers are Docker-owned and are launched o
 
 Starting an application first ensures that the canonical Docker runtime is ready. ADB, scrcpy, browser tooling, and the physical Android device remain host/device-owned. Mobile app traffic uses Wi-Fi LAN; ADB reverse is not a runtime dependency. If the Hotspot is unavailable, Docker and browser runtime can still run, while the mobile command reports the precise LAN blocker.
 
+`pnpm scr` reuses an already connected or paired Wireless ADB device. On the first run, open Wireless debugging's pairing-code screen on the Galaxy and enter the six-digit code when prompted; later runs connect and render the device without pairing again. It reports bounded pairing/connection progress and makes one bounded recovery attempt after a transient scrcpy disconnect.
+
 ## Local configuration
 
 `infra/local/compose/.env.example` is the tracked canonical source for local runtime keys and non-secret values. The ignored `.env` is an exact projection reconciled directly by `tools/dev/runtime.ps1`.
