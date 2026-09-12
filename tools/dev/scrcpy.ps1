@@ -6,30 +6,46 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 function Fail([string]$Message) { throw $Message }
 
-function Get-AdbDevices {
+function Get-AdbRows {
     return @(
-        & adb devices 2>$null |
+        & adb devices -l 2>$null |
+            Select-Object -Skip 1 |
             ForEach-Object {
-                if ($_ -match '^\s*(\S+)\s+device\s*$') { $Matches[1] }
-            } |
-            Sort-Object -Unique
+                if ($_ -match '^\s*(\S+)\s+(\S+)(?:\s+.*)?$') {
+                    [pscustomobject]@{
+                        Serial = $Matches[1]
+                        State  = $Matches[2]
+                    }
+                }
+            }
     )
 }
 
 function Get-Wifi5555 {
-    $devices = @(Get-AdbDevices | Where-Object { $_ -match '^\d{1,3}(?:\.\d{1,3}){3}:5555$' })
-    if ($devices.Count -gt 1) { Fail "ADB_WIFI=AMBIGUOUS devices=$($devices -join ',')" }
-    if ($devices.Count -eq 1) { return [string]$devices[0] }
+    $rows = @(
+        Get-AdbRows |
+            Where-Object {
+                $_.State -eq 'device' -and
+                $_.Serial -match '^\d{1,3}(?:\.\d{1,3}){3}:5555$'
+            }
+    )
+
+    if ($rows.Count -gt 1) { Fail "ADB_WIFI=AMBIGUOUS devices=$($rows.Serial -join ',')" }
+    if ($rows.Count -eq 1) { return [string]$rows[0].Serial }
     return $null
 }
 
-function Get-UsbDevice {
-    $devices = @(
-        Get-AdbDevices |
-            Where-Object { $_ -notmatch '^\d{1,3}(?:\.\d{1,3}){3}:\d+$' -and $_ -notmatch '^emulator-' }
+function Get-UsbRow {
+    $rows = @(
+        Get-AdbRows |
+            Where-Object {
+                $_.Serial -notmatch '^\d{1,3}(?:\.\d{1,3}){3}:\d+$' -and
+                $_.Serial -notmatch '^emulator-'
+            }
     )
-    if ($devices.Count -gt 1) { Fail "ADB_USB=AMBIGUOUS devices=$($devices -join ',')" }
-    if ($devices.Count -eq 1) { return [string]$devices[0] }
+
+    if ($rows.Count -gt 1) { Fail "ADB_USB=AMBIGUOUS devices=$($rows.Serial -join ',')" }
+    if ($rows.Count -eq 1) { return $rows[0] }
     return $null
 }
 
@@ -44,7 +60,9 @@ function Get-DeviceWifiIp([string]$Serial) {
 }
 
 foreach ($command in @('adb', 'scrcpy')) {
-    if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { Fail "$command is not available on PATH." }
+    if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
+        Fail "$command is not available on PATH."
+    }
 }
 
 Write-Host 'DEVICE_OWNER=WINDOWS'
@@ -59,19 +77,40 @@ if ($LASTEXITCODE -ne 0) { Fail 'ADB_SERVER=FAIL' }
 $serial = Get-Wifi5555
 
 if ($null -eq $serial) {
-    $usb = Get-UsbDevice
+    $usb = Get-UsbRow
+
     if ($null -eq $usb) {
-        Fail 'ADB_USB_REQUIRED connect Galaxy by USB, enable USB debugging, accept this computer, then rerun pnpm scr'
+        Write-Host ''
+        Write-Host 'ADB_DEVICES:'
+        & adb devices -l | Out-Host
+        Write-Host ''
+        Fail 'ADB_USB=NOT_VISIBLE Windows/MTP can see the phone while ADB cannot. Enable Developer options > USB debugging, unlock Galaxy, reconnect USB, and accept Allow USB debugging. If adb devices stays empty, check the Samsung Android ADB Interface driver/cable/USB port.'
     }
 
-    $ip = Get-DeviceWifiIp $usb
-    if ($null -eq $ip) { Fail 'ADB_WIFI_IP=NOT_FOUND ensure Galaxy Wi-Fi is connected, then rerun pnpm scr' }
+    if ($usb.State -eq 'unauthorized') {
+        Write-Host ''
+        & adb devices -l | Out-Host
+        Write-Host ''
+        Fail 'ADB_USB=UNAUTHORIZED unlock Galaxy and accept the Allow USB debugging RSA prompt for this computer, then rerun pnpm scr'
+    }
 
-    Write-Host "ADB_USB=PASS serial=$usb"
+    if ($usb.State -ne 'device') {
+        Write-Host ''
+        & adb devices -l | Out-Host
+        Write-Host ''
+        Fail "ADB_USB=$($usb.State.ToUpper()) reconnect USB and rerun pnpm scr"
+    }
+
+    $ip = Get-DeviceWifiIp $usb.Serial
+    if ($null -eq $ip) {
+        Fail 'ADB_WIFI_IP=NOT_FOUND ensure Galaxy Wi-Fi is connected, then rerun pnpm scr'
+    }
+
+    Write-Host "ADB_USB=PASS serial=$($usb.Serial)"
     Write-Host "DEVICE_IP=$ip"
     Write-Host 'ADB_TCPIP=START port=5555'
 
-    & adb -s $usb tcpip 5555
+    & adb -s $usb.Serial tcpip 5555
     if ($LASTEXITCODE -ne 0) { Fail 'ADB_TCPIP=FAIL' }
 
     $target = "${ip}:5555"
