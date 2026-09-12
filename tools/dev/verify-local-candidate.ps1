@@ -21,6 +21,25 @@ function Fail([string]$Message) {
     throw $Message
 }
 
+function Read-EnvMap([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        Fail "Canonical local runtime environment is missing: $Path"
+    }
+
+    $map = @{}
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
+        $parts = $trimmed.Split('=', 2)
+        if ($parts.Count -ne 2) { Fail "Malformed local runtime environment line in ${Path}: $line" }
+        $name = $parts[0].Trim()
+        if ([string]::IsNullOrWhiteSpace($name)) { Fail "Empty local runtime environment key in $Path" }
+        if ($map.ContainsKey($name)) { Fail "Duplicate local runtime environment key '$name'" }
+        $map[$name] = $parts[1].Trim()
+    }
+    return $map
+}
+
 function Run-Step([string]$Name, [scriptblock]$Action) {
     Write-Host ''
     Write-Host "=== $Name ==="
