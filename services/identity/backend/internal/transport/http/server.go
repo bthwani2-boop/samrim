@@ -54,7 +54,7 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /auth/logout", s.logout)
 	mux.HandleFunc("GET /auth/session", s.currentSession)
 	mux.HandleFunc("POST /internal/actor-roles/provision", s.internal(s.provisionRole))
-	mux.HandleFunc("POST /internal/bootstrap/platform-owner", s.internal(s.bootstrapPlatformOwner))
+	mux.HandleFunc("POST /internal/bootstrap/operator", s.internal(s.bootstrapFirstOperator))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
 	mux.HandleFunc("GET /internal/actors/{actorId}/roles/{role}", s.internal(s.getRole))
 	mux.HandleFunc("POST /internal/actors/{actorId}/roles/{role}/disable", s.internal(s.disableRole))
@@ -81,205 +81,121 @@ func (s *Server) readiness(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) requestClientRegistration(w http.ResponseWriter, r *http.Request) {
 	var input domain.PhoneRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.RequestClientRegistration(r.Context(), input, s.ipHash(r))
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusCreated, result)
 }
 func (s *Server) registerClient(w http.ResponseWriter, r *http.Request) {
 	var input domain.ClientCredentialProofRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.RegisterClient(r.Context(), input)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusCreated, result)
 }
 func (s *Server) loginClient(w http.ResponseWriter, r *http.Request) {
 	var input domain.PasswordLoginRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.LoginClient(r.Context(), input, s.ipHash(r))
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) requestClientRecovery(w http.ResponseWriter, r *http.Request) {
 	var input domain.PhoneRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.RequestClientRecovery(r.Context(), input, s.ipHash(r))
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusCreated, result)
 }
 func (s *Server) recoverClient(w http.ResponseWriter, r *http.Request) {
 	var input domain.ClientCredentialProofRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.RecoverClient(r.Context(), input)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) requestManagedActivation(w http.ResponseWriter, r *http.Request) {
 	var input domain.ManagedChallengeRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.RequestManagedActivation(r.Context(), input, s.ipHash(r))
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusCreated, result)
 }
 func (s *Server) activateManaged(w http.ResponseWriter, r *http.Request) {
 	var input domain.ManagedActivationRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.ActivateManaged(r.Context(), input)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) loginManaged(w http.ResponseWriter, r *http.Request) {
 	var input domain.ManagedPasswordLoginRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.LoginManaged(r.Context(), input, s.ipHash(r))
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) requestManagedRecovery(w http.ResponseWriter, r *http.Request) {
 	var input domain.ManagedRecoveryChallengeRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.RequestManagedRecovery(r.Context(), input, s.ipHash(r))
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusCreated, result)
 }
 func (s *Server) recoverManaged(w http.ResponseWriter, r *http.Request) {
 	var input domain.ManagedRecoveryRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.RecoverManaged(r.Context(), input)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) issueOperatorEnrollmentToken(w http.ResponseWriter, r *http.Request, caller string) {
 	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
+		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID")); return
 	}
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
-		return
+	if caller == "control-panel" && operatorActorID == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for control-panel operations")); return
 	}
 	var input domain.OperatorEnrollmentTokenIssueRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), input, caller, operatorActorID)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusCreated, result)
 }
 func (s *Server) startOperatorLogin(w http.ResponseWriter, r *http.Request) {
 	var input domain.OperatorLoginStartRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.StartOperatorLogin(r.Context(), input, s.ipHash(r))
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusCreated, result)
 }
 func (s *Server) completeOperatorLogin(w http.ResponseWriter, r *http.Request) {
 	var input domain.OperatorLoginCompleteRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.challenges.CompleteOperatorLogin(r.Context(), input)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	var input domain.RefreshRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	result, err := s.sessions.Refresh(r.Context(), input)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	token, ok := bearerToken(r)
-	if !ok {
-		writeDomainError(w, domain.ErrUnauthenticated)
-		return
-	}
-	if err := s.sessions.Logout(r.Context(), token); err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if !ok { writeDomainError(w, domain.ErrUnauthenticated); return }
+	if err := s.sessions.Logout(r.Context(), token); err != nil { writeDomainError(w, err); return }
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *Server) currentSession(w http.ResponseWriter, r *http.Request) {
 	token, ok := bearerToken(r)
-	if !ok {
-		writeDomainError(w, domain.ErrUnauthenticated)
-		return
-	}
+	if !ok { writeDomainError(w, domain.ErrUnauthenticated); return }
 	identity, err := s.sessions.ResolveAccessToken(r.Context(), token)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, identity)
 }
 
@@ -288,249 +204,119 @@ type internalHandler func(http.ResponseWriter, *http.Request, string)
 func (s *Server) internal(next internalHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, ok := bearerToken(r)
-		if !ok {
-			writeJSON(w, http.StatusUnauthorized, errorBody("UNAUTHENTICATED", "service authentication is required"))
-			return
-		}
+		if !ok { writeJSON(w, http.StatusUnauthorized, errorBody("UNAUTHENTICATED", "service authentication is required")); return }
 		caller := ""
 		for candidate, expected := range s.config.InternalServiceTokens {
-			if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1 {
-				caller = candidate
-			}
+			if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1 { caller = candidate }
 		}
-		if caller == "" {
-			writeJSON(w, http.StatusUnauthorized, errorBody("UNAUTHENTICATED", "service authentication is required"))
-			return
-		}
+		if caller == "" { writeJSON(w, http.StatusUnauthorized, errorBody("UNAUTHENTICATED", "service authentication is required")); return }
 		next(w, r, caller)
 	}
 }
 
 func (s *Server) provisionRole(w http.ResponseWriter, r *http.Request, caller string) {
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
-	}
+	if r.Header.Get("X-Actor-ID") != "" { writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID")); return }
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if (caller == "platform-control" || caller == "dsh") && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for administrative operations"))
-		return
-	}
+	if (caller == "control-panel" || caller == "dsh") && operatorActorID == "" { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for administrative operations")); return }
 	var input domain.ProvisionActorRoleInput
-	if !decodeJSON(w, r, &input) {
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
 	view, err := s.actors.ProvisionTrustedWithContext(r.Context(), caller, input, operatorActorID)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	status := http.StatusOK
-	if view.ActorCreated || view.RoleCreated {
-		status = http.StatusCreated
-	}
+	if view.ActorCreated || view.RoleCreated { status = http.StatusCreated }
 	writeJSON(w, status, view)
 }
-func (s *Server) bootstrapPlatformOwner(w http.ResponseWriter, r *http.Request, caller string) {
-	if !domain.CanBootstrapPlatformOwner(caller) {
-		writeDomainError(w, domain.ErrForbidden)
-		return
-	}
+func (s *Server) bootstrapFirstOperator(w http.ResponseWriter, r *http.Request, caller string) {
+	if !domain.CanBootstrapFirstOperator(caller) { writeDomainError(w, domain.ErrForbidden); return }
 	var input domain.ProvisionActorRoleInput
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	view, err := s.actors.ProvisionPlatformOwnerBootstrap(r.Context(), caller, input)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if !decodeJSON(w, r, &input) { return }
+	view, err := s.actors.ProvisionFirstOperatorBootstrap(r.Context(), caller, input)
+	if err != nil { writeDomainError(w, err); return }
 	status := http.StatusOK
-	if view.ActorCreated || view.RoleCreated {
-		status = http.StatusCreated
-	}
+	if view.ActorCreated || view.RoleCreated { status = http.StatusCreated }
 	writeJSON(w, status, view)
 }
 func (s *Server) searchRoles(w http.ResponseWriter, r *http.Request, caller string) {
 	limit := 25
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		value, err := strconv.Atoi(raw)
-		if err != nil {
-			writeDomainError(w, domain.ErrInvalidInput)
-			return
-		}
-		limit = value
+		value, err := strconv.Atoi(raw); if err != nil { writeDomainError(w, domain.ErrInvalidInput); return }; limit = value
 	}
 	var enabled *bool
 	if raw := strings.TrimSpace(r.URL.Query().Get("enabled")); raw != "" {
-		value, err := strconv.ParseBool(raw)
-		if err != nil {
-			writeDomainError(w, domain.ErrInvalidInput)
-			return
-		}
-		enabled = &value
+		value, err := strconv.ParseBool(raw); if err != nil { writeDomainError(w, domain.ErrInvalidInput); return }; enabled = &value
 	}
 	page, err := s.actors.Search(r.Context(), caller, domain.ActorSearchInput{Role: strings.TrimSpace(r.URL.Query().Get("role")), Query: strings.TrimSpace(r.URL.Query().Get("q")), Enabled: enabled, Limit: limit, Cursor: strings.TrimSpace(r.URL.Query().Get("cursor"))})
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, page)
 }
 func (s *Server) getRole(w http.ResponseWriter, r *http.Request, caller string) {
 	view, err := s.actors.GetRole(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"))
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, view)
 }
-func (s *Server) disableRole(w http.ResponseWriter, r *http.Request, caller string) {
-	s.setRoleEnabled(w, r, caller, false)
-}
-func (s *Server) enableRole(w http.ResponseWriter, r *http.Request, caller string) {
-	s.setRoleEnabled(w, r, caller, true)
-}
+func (s *Server) disableRole(w http.ResponseWriter, r *http.Request, caller string) { s.setRoleEnabled(w, r, caller, false) }
+func (s *Server) enableRole(w http.ResponseWriter, r *http.Request, caller string) { s.setRoleEnabled(w, r, caller, true) }
 func parseExpectedVersion(r *http.Request) (int, error) {
-	if r.Header.Get("If-Match") != "" {
-		return 0, errors.New("If-Match is forbidden; use canonical X-Expected-Version")
-	}
+	if r.Header.Get("If-Match") != "" { return 0, errors.New("If-Match is forbidden; use canonical X-Expected-Version") }
 	val := strings.TrimSpace(r.Header.Get("X-Expected-Version"))
-	if val == "" {
-		return 0, nil
-	}
+	if val == "" { return 0, nil }
 	v, err := strconv.Atoi(val)
-	if err != nil || v < 1 {
-		return 0, errors.New("expected version must be a positive integer >= 1")
-	}
+	if err != nil || v < 1 { return 0, errors.New("expected version must be a positive integer >= 1") }
 	return v, nil
 }
 
 func (s *Server) setRoleEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
-	}
+	if r.Header.Get("X-Actor-ID") != "" { writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID")); return }
 	expectedVersion, err := parseExpectedVersion(r)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error()))
-		return
-	}
+	if err != nil { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error())); return }
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if (caller == "platform-control" || caller == "dsh") && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for administrative operations"))
-		return
-	}
-	if (caller == "platform-control" || caller == "dsh") && expectedVersion < 1 {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for administrative operations and must be a positive integer >= 1"))
-		return
-	}
-	if err := s.actors.SetRoleEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if (caller == "control-panel" || caller == "dsh") && operatorActorID == "" { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for administrative operations")); return }
+	if (caller == "control-panel" || caller == "dsh") && expectedVersion < 1 { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for administrative operations and must be a positive integer >= 1")); return }
+	if err := s.actors.SetRoleEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil { writeDomainError(w, err); return }
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *Server) authorizeReenrollment(w http.ResponseWriter, r *http.Request, caller string) {
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
-	}
+	if r.Header.Get("X-Actor-ID") != "" { writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID")); return }
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for reenrollment operations"))
-		return
-	}
-	if err := s.actors.AuthorizeReenrollmentWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if operatorActorID == "" { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for reenrollment operations")); return }
+	if err := s.actors.AuthorizeReenrollmentWithContext(r.Context(), caller, r.PathValue("actorId"), r.PathValue("role"), strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil { writeDomainError(w, err); return }
 	w.WriteHeader(http.StatusNoContent)
 }
-func (s *Server) disableActorSecurity(w http.ResponseWriter, r *http.Request, caller string) {
-	s.setActorSecurityEnabled(w, r, caller, false)
-}
-func (s *Server) enableActorSecurity(w http.ResponseWriter, r *http.Request, caller string) {
-	s.setActorSecurityEnabled(w, r, caller, true)
-}
+func (s *Server) disableActorSecurity(w http.ResponseWriter, r *http.Request, caller string) { s.setActorSecurityEnabled(w, r, caller, false) }
+func (s *Server) enableActorSecurity(w http.ResponseWriter, r *http.Request, caller string) { s.setActorSecurityEnabled(w, r, caller, true) }
 func (s *Server) setActorSecurityEnabled(w http.ResponseWriter, r *http.Request, caller string, enabled bool) {
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
-	}
+	if r.Header.Get("X-Actor-ID") != "" { writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID")); return }
 	expectedVersion, err := parseExpectedVersion(r)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error()))
-		return
-	}
+	if err != nil { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", err.Error())); return }
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
-		return
-	}
-	if caller == "platform-control" && expectedVersion < 1 {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for platform-control operations and must be a positive integer >= 1"))
-		return
-	}
-	if err := s.actors.SetSecurityEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if caller == "control-panel" && operatorActorID == "" { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for control-panel operations")); return }
+	if caller == "control-panel" && expectedVersion < 1 { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "expected version is required for control-panel operations and must be a positive integer >= 1")); return }
+	if err := s.actors.SetSecurityEnabledWithContext(r.Context(), caller, r.PathValue("actorId"), enabled, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), strings.TrimSpace(r.Header.Get("X-Reason")), expectedVersion, operatorActorID); err != nil { writeDomainError(w, err); return }
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *Server) listRoleSessions(w http.ResponseWriter, r *http.Request, caller string) {
 	actorID, role := r.PathValue("actorId"), strings.ToLower(strings.TrimSpace(r.PathValue("role")))
-	if _, err := s.actors.GetRole(r.Context(), caller, actorID, role); err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if _, err := s.actors.GetRole(r.Context(), caller, actorID, role); err != nil { writeDomainError(w, err); return }
 	items, err := s.sessions.ListRole(r.Context(), actorID, role)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if err != nil { writeDomainError(w, err); return }
 	writeJSON(w, http.StatusOK, items)
 }
 func (s *Server) revokeRoleSession(w http.ResponseWriter, r *http.Request, caller string) {
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
-	}
+	if r.Header.Get("X-Actor-ID") != "" { writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID")); return }
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
-		return
-	}
+	if caller == "control-panel" && operatorActorID == "" { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for control-panel operations")); return }
 	actorID, role := r.PathValue("actorId"), strings.ToLower(strings.TrimSpace(r.PathValue("role")))
-	if _, err := s.actors.GetRole(r.Context(), caller, actorID, role); err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	if err := s.sessions.RevokeRoleSession(r.Context(), actorID, role, r.PathValue("sessionId"), caller, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if _, err := s.actors.GetRole(r.Context(), caller, actorID, role); err != nil { writeDomainError(w, err); return }
+	if err := s.sessions.RevokeRoleSession(r.Context(), actorID, role, r.PathValue("sessionId"), caller, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil { writeDomainError(w, err); return }
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *Server) revokeRoleSessions(w http.ResponseWriter, r *http.Request, caller string) {
-	if r.Header.Get("X-Actor-ID") != "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID"))
-		return
-	}
+	if r.Header.Get("X-Actor-ID") != "" { writeJSON(w, http.StatusBadRequest, errorBody("FORBIDDEN_LEGACY_HEADER", "X-Actor-ID is forbidden; use canonical X-Acting-Actor-ID")); return }
 	operatorActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
-	if caller == "platform-control" && operatorActorID == "" {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for platform-control operations"))
-		return
-	}
+	if caller == "control-panel" && operatorActorID == "" { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "acting actor ID is required for control-panel operations")); return }
 	actorID, role := r.PathValue("actorId"), strings.ToLower(strings.TrimSpace(r.PathValue("role")))
-	if _, err := s.actors.GetRole(r.Context(), caller, actorID, role); err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	if err := s.sessions.RevokeRoleAll(r.Context(), actorID, role, caller, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil {
-		writeDomainError(w, err)
-		return
-	}
+	if _, err := s.actors.GetRole(r.Context(), caller, actorID, role); err != nil { writeDomainError(w, err); return }
+	if err := s.sessions.RevokeRoleAll(r.Context(), actorID, role, caller, strings.TrimSpace(r.Header.Get("X-Correlation-ID")), operatorActorID); err != nil { writeDomainError(w, err); return }
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -538,125 +324,64 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_REQUEST", "request body is invalid"))
-		return false
-	}
+	if err := decoder.Decode(target); err != nil { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_REQUEST", "request body is invalid")); return false }
 	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_REQUEST", "request body must contain exactly one JSON value"))
-		return false
-	}
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) { writeJSON(w, http.StatusBadRequest, errorBody("INVALID_REQUEST", "request body must contain exactly one JSON value")); return false }
 	return true
 }
 func bearerToken(r *http.Request) (string, bool) {
 	value := strings.TrimSpace(r.Header.Get("Authorization"))
-	if len(value) < 8 || !strings.EqualFold(value[:7], "Bearer ") {
-		return "", false
-	}
+	if len(value) < 8 || !strings.EqualFold(value[:7], "Bearer ") { return "", false }
 	token := strings.TrimSpace(value[7:])
 	return token, token != ""
 }
 func remoteIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-	if err == nil && host != "" {
-		return host
-	}
+	if err == nil && host != "" { return host }
 	return strings.TrimSpace(r.RemoteAddr)
 }
-
-func (s *Server) ipHash(r *http.Request) string {
-	return identitysecurity.HMAC256Hex(s.config.AbuseIPSecret, "client-ip", s.clientIP(r))
-}
-
+func (s *Server) ipHash(r *http.Request) string { return identitysecurity.HMAC256Hex(s.config.AbuseIPSecret, "client-ip", s.clientIP(r)) }
 func (s *Server) clientIP(r *http.Request) string {
 	peer := net.ParseIP(remoteIP(r))
-	if peer == nil || !s.isTrustedProxy(peer) {
-		return remoteIP(r)
-	}
-
+	if peer == nil || !s.isTrustedProxy(peer) { return remoteIP(r) }
 	forwarded := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
 	if len(forwarded) > 0 && strings.TrimSpace(forwarded[0]) != "" {
-		chain := make([]net.IP, 0, len(forwarded))
-		valid := true
-		for _, candidate := range forwarded {
-			parsed := net.ParseIP(strings.TrimSpace(candidate))
-			if parsed == nil {
-				valid = false
-				break
-			}
-			chain = append(chain, parsed)
-		}
-		if valid {
-			for index := len(chain) - 1; index >= 0; index-- {
-				if !s.isTrustedProxy(chain[index]) {
-					return chain[index].String()
-				}
-			}
-		}
+		chain := make([]net.IP, 0, len(forwarded)); valid := true
+		for _, candidate := range forwarded { parsed := net.ParseIP(strings.TrimSpace(candidate)); if parsed == nil { valid = false; break }; chain = append(chain, parsed) }
+		if valid { for index := len(chain) - 1; index >= 0; index-- { if !s.isTrustedProxy(chain[index]) { return chain[index].String() } } }
 	}
-	if candidate := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); candidate != nil {
-		if !s.isTrustedProxy(candidate) {
-			return candidate.String()
-		}
-	}
+	if candidate := net.ParseIP(strings.TrimSpace(r.Header.Get("X-Real-IP"))); candidate != nil && !s.isTrustedProxy(candidate) { return candidate.String() }
 	return peer.String()
 }
-
 func (s *Server) isTrustedProxy(candidate net.IP) bool {
-	for _, network := range s.config.TrustedProxies {
-		if network != nil && network.Contains(candidate) {
-			return true
-		}
-	}
+	for _, network := range s.config.TrustedProxies { if network != nil && network.Contains(candidate) { return true } }
 	return false
 }
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
 		if origin != "" {
-			if !s.config.AllowedOrigins[origin] {
-				writeJSON(w, http.StatusForbidden, errorBody("ORIGIN_FORBIDDEN", "origin is not allowed"))
-				return
-			}
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			if !s.config.AllowedOrigins[origin] { writeJSON(w, http.StatusForbidden, errorBody("ORIGIN_FORBIDDEN", "origin is not allowed")); return }
+			w.Header().Set("Access-Control-Allow-Origin", origin); w.Header().Set("Vary", "Origin"); w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type"); w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
+		if r.Method == http.MethodOptions { w.WriteHeader(http.StatusNoContent); return }
 		next.ServeHTTP(w, r)
 	})
 }
 func writeDomainError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, domain.ErrInvalidInput):
-		writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "request is invalid"))
-	case errors.Is(err, domain.ErrRefreshStale):
-		writeJSON(w, http.StatusUnauthorized, errorBody("REFRESH_STALE", "refresh token was already rotated recently"))
-	case errors.Is(err, domain.ErrUnauthenticated), errors.Is(err, domain.ErrInvalidChallenge), errors.Is(err, domain.ErrInvalidActivation), errors.Is(err, domain.ErrInvalidRefresh):
-		writeJSON(w, http.StatusUnauthorized, errorBody("UNAUTHENTICATED", "authentication failed"))
-	case errors.Is(err, domain.ErrForbidden), errors.Is(err, domain.ErrActorBlocked):
-		writeJSON(w, http.StatusForbidden, errorBody("FORBIDDEN", "operation is forbidden"))
-	case errors.Is(err, domain.ErrNotFound):
-		writeJSON(w, http.StatusNotFound, errorBody("NOT_FOUND", "resource was not found"))
-	case errors.Is(err, domain.ErrConflict):
-		writeJSON(w, http.StatusConflict, errorBody("CONFLICT", "canonical identity state conflicts with request"))
-	case errors.Is(err, domain.ErrRateLimited):
-		w.Header().Set("Retry-After", "60")
-		writeJSON(w, http.StatusTooManyRequests, errorBody("RATE_LIMITED", "too many attempts"))
-	case errors.Is(err, domain.ErrUnavailable):
-		writeJSON(w, http.StatusServiceUnavailable, errorBody("IDENTITY_UNAVAILABLE", "identity dependency is unavailable"))
-	default:
-		writeJSON(w, http.StatusInternalServerError, errorBody("IDENTITY_INTERNAL_ERROR", "identity request failed"))
+	case errors.Is(err, domain.ErrInvalidInput): writeJSON(w, http.StatusBadRequest, errorBody("INVALID_INPUT", "request is invalid"))
+	case errors.Is(err, domain.ErrRefreshStale): writeJSON(w, http.StatusUnauthorized, errorBody("REFRESH_STALE", "refresh token was already rotated recently"))
+	case errors.Is(err, domain.ErrUnauthenticated), errors.Is(err, domain.ErrInvalidChallenge), errors.Is(err, domain.ErrInvalidActivation), errors.Is(err, domain.ErrInvalidRefresh): writeJSON(w, http.StatusUnauthorized, errorBody("UNAUTHENTICATED", "authentication failed"))
+	case errors.Is(err, domain.ErrForbidden), errors.Is(err, domain.ErrActorBlocked): writeJSON(w, http.StatusForbidden, errorBody("FORBIDDEN", "operation is forbidden"))
+	case errors.Is(err, domain.ErrNotFound): writeJSON(w, http.StatusNotFound, errorBody("NOT_FOUND", "resource was not found"))
+	case errors.Is(err, domain.ErrConflict): writeJSON(w, http.StatusConflict, errorBody("CONFLICT", "canonical identity state conflicts with request"))
+	case errors.Is(err, domain.ErrRateLimited): w.Header().Set("Retry-After", "60"); writeJSON(w, http.StatusTooManyRequests, errorBody("RATE_LIMITED", "too many attempts"))
+	case errors.Is(err, domain.ErrUnavailable): writeJSON(w, http.StatusServiceUnavailable, errorBody("IDENTITY_UNAVAILABLE", "identity dependency is unavailable"))
+	default: writeJSON(w, http.StatusInternalServerError, errorBody("IDENTITY_INTERNAL_ERROR", "identity request failed"))
 	}
 }
-func errorBody(code, message string) map[string]any {
-	return map[string]any{"error": map[string]string{"code": code, "message": message}}
-}
+func errorBody(code, message string) map[string]any { return map[string]any{"error": map[string]string{"code": code, "message": message}} }
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
