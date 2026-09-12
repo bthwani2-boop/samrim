@@ -52,8 +52,8 @@ export function PartnerBootstrapPanel() {
       <div className="access-card-heading">
         <span className="step-chip">J2.1 · DSH</span>
         <p className="eyebrow">تهيئة الشريك</p>
-        <h2 id="partner-bootstrap-title">إنشاء منظمة الشريك وأول متجر</h2>
-        <p className="muted">أدخل رقم هاتف الشريك فقط؛ يقرأ النظام معرّف Actor الذي أنشأه Identity تلقائيًا، ثم ينشئ الحقيقة التشغيلية في DSH بمعاملة واحدة قابلة لإعادة المحاولة بأمان.</p>
+        <h2 id="partner-bootstrap-title">إنشاء المتجر الأول للشريك</h2>
+        <p className="muted">أدخل رقم هاتف الشريك؛ يقرأ النظام معرّف <code>actor_id</code> الموثوق من Identity ويربط المتجر الأول به مباشرةً داخل DSH، دون إنشاء كيان شريك موازٍ.</p>
       </div>
       <div className="access-form">
         <label className="field-label" htmlFor="partner-phone">
@@ -65,15 +65,14 @@ export function PartnerBootstrapPanel() {
           <input id="first-store-name" disabled={busy} value={storeName} onChange={(event) => { setStoreName(event.target.value); resetRequest(); }} placeholder="اسم ظاهر للعميل" />
         </label>
         <button type="button" className="button button-primary" disabled={busy || !partnerPhone.trim() || storeName.trim().length < 2} onClick={() => void submit()}>
-          {busy ? "جارٍ إنشاء الحقيقة التشغيلية…" : "إنشاء المنظمة والمتجر"}
+          {busy ? "جارٍ إنشاء المتجر…" : "إنشاء المتجر الأول"}
         </button>
       </div>
       {result ? (
         <div className="managed-status managed-status-info" role="status">
           <strong>{result.idempotentReplay ? "تمت إعادة قراءة النتيجة الكانونية" : "تم إنشاء التهيئة الكانونية"}</strong>
-          <p>Organization: <code>{result.partnerOrganization.id}</code></p>
+          <p>Partner actor: <code>{result.partnerActorId}</code></p>
           <p>Store: <code>{result.firstStore.id}</code> · {result.firstStore.name}</p>
-          <p>معرّف Actor (مولّد تلقائيًا من Identity): <code>{result.partnerOrganization.ownerActorId}</code></p>
         </div>
       ) : null}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}

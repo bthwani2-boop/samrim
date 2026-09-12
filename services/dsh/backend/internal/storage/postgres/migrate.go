@@ -28,10 +28,9 @@ var requiredTables = []struct {
 	columns []string
 }{
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}},
-	{name: "dsh.partner_organizations", columns: []string{"id", "owner_actor_id", "version", "created_at", "updated_at"}},
-	{name: "dsh.stores", columns: []string{"id", "partner_organization_id", "name", "version", "created_at", "updated_at"}},
-	{name: "dsh.partner_bootstrap_idempotency", columns: []string{"idempotency_key", "request_hash", "owner_actor_id", "partner_organization_id", "store_id", "created_at"}},
-	{name: "dsh.partner_bootstrap_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "owner_actor_id", "partner_organization_id", "store_id", "request_hash", "created_at"}},
+	{name: "dsh.stores", columns: []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at"}},
+	{name: "dsh.partner_bootstrap_idempotency", columns: []string{"idempotency_key", "request_hash", "partner_actor_id", "store_id", "created_at"}},
+	{name: "dsh.partner_bootstrap_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "partner_actor_id", "store_id", "request_hash", "created_at"}},
 }
 
 func Open(databaseURL string) (*sql.DB, error) {
@@ -170,6 +169,13 @@ func VerifySchema(ctx context.Context, db *sql.DB, record MigrationRecord) error
 				return fmt.Errorf("DSH required column missing: %s.%s", table.name, column)
 			}
 		}
+	}
+	var retiredOrganizationTable bool
+	if err := db.QueryRowContext(ctx, "SELECT to_regclass('dsh.partner_organizations') IS NOT NULL").Scan(&retiredOrganizationTable); err != nil {
+		return fmt.Errorf("DSH retired partner organization relation check: %w", err)
+	}
+	if retiredOrganizationTable {
+		return errors.New("DSH retired relation exists: dsh.partner_organizations")
 	}
 	var databaseNow time.Time
 	if err := db.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&databaseNow); err != nil {

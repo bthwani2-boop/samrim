@@ -58,9 +58,9 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	ownerActorID := strings.TrimSpace(input.PartnerActorID)
+	partnerActorID := strings.TrimSpace(input.PartnerActorID)
 	storeName := strings.TrimSpace(input.StoreName)
-	if ownerActorID == "" || len(ownerActorID) > 128 || len(storeName) < 2 || len(storeName) > 160 {
+	if partnerActorID == "" || len(partnerActorID) > 128 || len(storeName) < 2 || len(storeName) > 160 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partnerActorId and a storeName of 2 to 160 characters are required")
 		return
 	}
@@ -68,7 +68,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		writeAuthorizationError(w, err)
 		return
 	}
-	partner, err := s.identity.ReadActorRole(r.Context(), ownerActorID, "partner")
+	partner, err := s.identity.ReadActorRole(r.Context(), partnerActorID, "partner")
 	if err != nil {
 		writeIdentityError(w, err)
 		return
@@ -77,7 +77,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "PARTNER_NOT_ACTIVE", "partner actor is not active")
 		return
 	}
-	record, err := postgres.CreatePartnerBootstrap(r.Context(), s.db, idempotencyKey, postgres.HashBootstrapRequest(ownerActorID, storeName), actingActorID, correlationID, ownerActorID, storeName)
+	record, err := postgres.CreatePartnerBootstrap(r.Context(), s.db, idempotencyKey, postgres.HashBootstrapRequest(partnerActorID, storeName), actingActorID, correlationID, partnerActorID, storeName)
 	if err != nil {
 		writeStorageError(w, err)
 		return
@@ -208,7 +208,7 @@ func writeStorageError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with a different request")
 	case errors.Is(err, postgres.ErrAlreadyBootstrapped):
-		writeError(w, http.StatusConflict, "PARTNER_ALREADY_BOOTSTRAPPED", "partner already has a canonical organization and first store")
+		writeError(w, http.StatusConflict, "PARTNER_ALREADY_BOOTSTRAPPED", "partner already has a canonical first store")
 	default:
 		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "DSH persistence is unavailable")
 	}
@@ -219,9 +219,16 @@ func writeBootstrap(w http.ResponseWriter, status int, record postgres.Bootstrap
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(contract.PartnerBootstrapResponse{
-		PartnerOrganization: contract.PartnerOrganizationView{ID: record.Organization.ID, OwnerActorID: record.Organization.OwnerActorID, Version: record.Organization.Version, CreatedAt: record.Organization.CreatedAt, UpdatedAt: record.Organization.UpdatedAt},
-		FirstStore:          contract.StoreView{ID: record.Store.ID, PartnerOrganizationID: record.Store.PartnerOrganizationID, Name: record.Store.Name, Version: record.Store.Version, CreatedAt: record.Store.CreatedAt, UpdatedAt: record.Store.UpdatedAt},
-		IdempotentReplay:    record.Replayed,
+		PartnerActorID: record.PartnerActorID,
+		FirstStore: contract.StoreView{
+			ID:             record.Store.ID,
+			PartnerActorID: record.Store.PartnerActorID,
+			Name:           record.Store.Name,
+			Version:        record.Store.Version,
+			CreatedAt:      record.Store.CreatedAt,
+			UpdatedAt:      record.Store.UpdatedAt,
+		},
+		IdempotentReplay: record.Replayed,
 	})
 }
 

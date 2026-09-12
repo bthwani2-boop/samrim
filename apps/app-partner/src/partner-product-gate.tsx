@@ -21,7 +21,7 @@ export function PartnerProductReadback() {
   }, []);
 
   if (state.kind === "loading") return <ActivityIndicator accessibilityLabel="جارٍ قراءة بيانات المتجر" />;
-  if (state.kind === "empty") return <Text>لم تُنشأ منظمة الشريك وأول متجر بعد.</Text>;
+  if (state.kind === "empty") return <Text>لم يُنشأ المتجر الأول للشريك بعد.</Text>;
   if (state.kind === "error") return <Text accessibilityRole="alert">تعذر قراءة بيانات الشريك من DSH.</Text>;
   return (
     <View>

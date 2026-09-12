@@ -152,13 +152,17 @@ if (!actingAdminId) {
   actingAdminId = owner.body.actorId;
 }
 
-console.log("1. Verifying DSH health and readiness...");
+console.log("1. Verifying DSH health, readiness, and canonical Partner schema...");
 const health = await expect("GET", "/dsh/health", 200);
 assert(health.status === "ok" && health.service === "dsh", "health status invalid");
 
 const readiness = await expect("GET", "/dsh/readiness", 200);
 assert(readiness.status === "ok" && readiness.service === "dsh", "readiness status invalid");
 assert(actingAdminId.startsWith("act_"), "platform owner actor id is invalid");
+assert(sql("SELECT to_regclass('dsh.partner_organizations') IS NULL") === "t", "retired dsh.partner_organizations table still exists");
+assert(sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND column_name='partner_organization_id'") === "0", "retired partner_organization_id column still exists");
+assert(sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND column_name='partner_actor_id'") === "3", "canonical partner_actor_id schema is incomplete");
+console.log("DSH_PARTNER_MODEL_SCHEMA=PASS");
 
 console.log("2. Verifying DSH authentication boundary...");
 await expect("POST", "/dsh/managed-roles/provision", 401, {
@@ -182,7 +186,7 @@ assert(provisioned.role === "captain", "provisioned role mismatch");
 assert(typeof provisioned.actorVersion === "number" && provisioned.actorVersion >= 1, "provisioned role missing actorVersion");
 assert(typeof provisioned.roleVersion === "number" && provisioned.roleVersion >= 1, "provisioned role missing roleVersion");
 
-console.log("5. Verifying the J2.1 partner bootstrap authorization and transaction...");
+console.log("5. Verifying the J2.1 Partner first-Store bootstrap authorization and transaction...");
 const partnerPhone = "+96772" + Math.floor(1000000 + Math.random() * 9000000);
 const partner = await expect("POST", "/dsh/managed-roles/provision", 201, {
   token: dshToken,
@@ -225,13 +229,14 @@ const createdBootstrap = await expect("POST", "/dsh/partner-bootstrap", 201, {
   body: { partnerActorId: partner.actorId, storeName: "متجر J2.1" },
 });
 assert(createdBootstrap.idempotentReplay === false, "new bootstrap was marked as replay");
-assert(createdBootstrap.partnerOrganization?.ownerActorId === partner.actorId, "organization owner readback mismatch");
-assert(createdBootstrap.firstStore?.partnerOrganizationId === createdBootstrap.partnerOrganization.id, "first store organization link mismatch");
+assert(createdBootstrap.partnerActorId === partner.actorId, "partner actor readback mismatch");
+assert(createdBootstrap.firstStore?.partnerActorId === partner.actorId, "first Store Partner link mismatch");
 assert(createdBootstrap.firstStore?.name === "متجر J2.1", "first store name readback mismatch");
 const operatorReadback = await expect("GET", "/dsh/partner-bootstrap/" + encodeURIComponent(partner.actorId), 200, {
   token: dshToken,
   headers: { "X-Acting-Actor-ID": actingAdminId },
 });
+assert(operatorReadback.partnerActorId === partner.actorId, "operator Partner actor readback mismatch");
 assert(operatorReadback.firstStore.id === createdBootstrap.firstStore.id, "operator canonical readback mismatch");
 const replayedBootstrap = await expect("POST", "/dsh/partner-bootstrap", 200, {
   token: dshToken,
@@ -239,6 +244,7 @@ const replayedBootstrap = await expect("POST", "/dsh/partner-bootstrap", 200, {
   body: { partnerActorId: partner.actorId, storeName: "متجر J2.1" },
 });
 assert(replayedBootstrap.idempotentReplay === true, "idempotent replay was not marked");
+assert(replayedBootstrap.partnerActorId === partner.actorId, "idempotent replay Partner actor mismatch");
 assert(replayedBootstrap.firstStore.id === createdBootstrap.firstStore.id, "idempotent replay created a duplicate store");
 await expect("POST", "/dsh/partner-bootstrap", 409, {
   token: dshToken,
@@ -252,10 +258,13 @@ await expect("POST", "/dsh/partner-bootstrap", 404, {
 });
 const persistedCount = Number(sql("SELECT count(*) FROM dsh.partner_bootstrap_audit WHERE idempotency_key='" + bootstrapKey.replaceAll("'", "''") + "'"));
 assert(persistedCount === 1, "bootstrap audit was not persisted exactly once");
+const persistedLink = sql("SELECT partner_actor_id || ':' || store_id FROM dsh.partner_bootstrap_idempotency WHERE idempotency_key='" + bootstrapKey.replaceAll("'", "''") + "'");
+assert(persistedLink === partner.actorId + ":" + createdBootstrap.firstStore.id, "canonical Partner→Store persistence mismatch");
 const selfReadback = await expect("GET", "/dsh/partner-bootstrap/self", 200, {
   headers: { Authorization: "Bearer " + partnerPair.body.accessToken },
 });
-assert(selfReadback.partnerOrganization.ownerActorId === partner.actorId, "partner self readback owner mismatch");
+assert(selfReadback.partnerActorId === partner.actorId, "partner self readback actor mismatch");
+assert(selfReadback.firstStore.partnerActorId === partner.actorId, "partner self readback Store link mismatch");
 assert(selfReadback.firstStore.id === createdBootstrap.firstStore.id, "partner self readback store mismatch");
 
 console.log("5. Restarting DSH and proving canonical bootstrap persistence...");
@@ -264,7 +273,8 @@ await waitForDshReadiness();
 const restartedReadback = await expect("GET", "/dsh/partner-bootstrap/self", 200, {
   headers: { Authorization: "Bearer " + partnerPair.body.accessToken },
 });
-assert(restartedReadback.partnerOrganization.id === createdBootstrap.partnerOrganization.id, "restart organization readback mismatch");
+assert(restartedReadback.partnerActorId === partner.actorId, "restart Partner actor readback mismatch");
+assert(restartedReadback.firstStore.partnerActorId === partner.actorId, "restart Partner→Store link mismatch");
 assert(restartedReadback.firstStore.id === createdBootstrap.firstStore.id, "restart store readback mismatch");
 console.log("DSH_BOOTSTRAP_RESTART_PERSISTENCE=PASS");
 

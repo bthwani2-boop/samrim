@@ -42,7 +42,7 @@ paths:
   /dsh/partner-bootstrap:
     post:
       operationId: createPartnerBootstrap
-      summary: Create a partner organization and its first store atomically
+      summary: Create the Partner first Store atomically
       security:
         - serviceBearer: []
       parameters:
@@ -57,7 +57,7 @@ paths:
               $ref: "#/components/schemas/CreatePartnerBootstrapRequest"
       responses:
         "201":
-          description: Partner organization and first store were created.
+          description: Partner first Store was created.
           content:
             application/json:
               schema:
@@ -82,7 +82,7 @@ paths:
   /dsh/partner-bootstrap/{partnerActorId}:
     get:
       operationId: readPartnerBootstrap
-      summary: Read the canonical partner organization and first store for a control operator
+      summary: Read the Partner first Store for a control operator
       security:
         - serviceBearer: []
       parameters:
@@ -94,7 +94,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Canonical partner bootstrap readback.
+          description: Canonical Partner bootstrap readback.
           content:
             application/json:
               schema:
@@ -111,12 +111,12 @@ paths:
   /dsh/partner-bootstrap/self:
     get:
       operationId: readOwnPartnerBootstrap
-      summary: Read the canonical partner bootstrap for the authenticated partner surface
+      summary: Read the Partner first Store for the authenticated Partner surface
       security:
         - userBearer: []
       responses:
         "200":
-          description: Canonical partner bootstrap readback.
+          description: Canonical Partner bootstrap readback.
           content:
             application/json:
               schema:
@@ -304,8 +304,8 @@ components:
       in: header
       required: true
       schema:
-          type: string
-          maxLength: 128
+        type: string
+        maxLength: 128
     CorrelationIdRequired:
       name: X-Correlation-ID
       in: header
@@ -399,31 +399,14 @@ components:
           minLength: 2
           maxLength: 160
 
-    PartnerOrganizationView:
-      type: object
-      required: [id, ownerActorId, version, createdAt, updatedAt]
-      properties:
-        id:
-          type: string
-        ownerActorId:
-          type: string
-        version:
-          type: integer
-          minimum: 1
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
     StoreView:
       type: object
-      required: [id, partnerOrganizationId, name, version, createdAt, updatedAt]
+      required: [id, partnerActorId, name, version, createdAt, updatedAt]
+      additionalProperties: false
       properties:
         id:
           type: string
-        partnerOrganizationId:
+        partnerActorId:
           type: string
         name:
           type: string
@@ -439,10 +422,11 @@ components:
 
     PartnerBootstrapResponse:
       type: object
-      required: [partnerOrganization, firstStore, idempotentReplay]
+      required: [partnerActorId, firstStore, idempotentReplay]
+      additionalProperties: false
       properties:
-        partnerOrganization:
-          $ref: "#/components/schemas/PartnerOrganizationView"
+        partnerActorId:
+          type: string
         firstStore:
           $ref: "#/components/schemas/StoreView"
         idempotentReplay:

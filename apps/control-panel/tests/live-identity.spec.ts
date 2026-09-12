@@ -134,19 +134,18 @@ test("@live platform owner MFA persists through reload and logout revokes the li
   const bootstrapResponsePromise = page.waitForResponse((response) => response.url().endsWith("/api/partners/bootstrap") && response.request().method() === "POST");
   await page.getByLabel("رقم هاتف الشريك").fill(managedPhone);
   await page.getByLabel("اسم المتجر الأول").fill(storeName);
-  await page.getByRole("button", { name: "إنشاء المنظمة والمتجر" }).click();
+  await page.getByRole("button", { name: "إنشاء المتجر الأول" }).click();
   const bootstrapResponse = await bootstrapResponsePromise;
   const bootstrapBody = await bootstrapResponse.json() as {
-    partnerOrganization?: { id?: unknown; ownerActorId?: unknown };
-    firstStore?: { id?: unknown; partnerOrganizationId?: unknown; name?: unknown };
+    partnerActorId?: unknown;
+    firstStore?: { id?: unknown; partnerActorId?: unknown; name?: unknown };
     idempotentReplay?: unknown;
   };
-  expect(bootstrapResponse.status(), `Control Panel Partner Bootstrap must create the canonical DSH records: ${JSON.stringify(bootstrapBody)}`).toBe(201);
+  expect(bootstrapResponse.status(), `Control Panel Partner Bootstrap must create the canonical DSH Store relationship: ${JSON.stringify(bootstrapBody)}`).toBe(201);
   expect(bootstrapBody.idempotentReplay).toBe(false);
-  expect(bootstrapBody.partnerOrganization?.id).toEqual(expect.any(String));
-  expect(bootstrapBody.partnerOrganization?.ownerActorId).toBe(managedReadback.body.actorId);
+  expect(bootstrapBody.partnerActorId).toBe(managedReadback.body.actorId);
   expect(bootstrapBody.firstStore?.id).toEqual(expect.any(String));
-  expect(bootstrapBody.firstStore?.partnerOrganizationId).toBe(bootstrapBody.partnerOrganization?.id);
+  expect(bootstrapBody.firstStore?.partnerActorId).toBe(managedReadback.body.actorId);
   expect(bootstrapBody.firstStore?.name).toBe(storeName);
 
   const bootstrapStatus = page.locator('section[aria-labelledby="partner-bootstrap-title"] div[role="status"]');
