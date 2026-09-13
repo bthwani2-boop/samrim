@@ -117,6 +117,26 @@ async function request(base, method, pathname, options = {}) {
   return { status: response.status, body };
 }
 
+async function waitForIdentity({ timeoutMs = 30_000, pollMs = 500 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let lastObservation = "no readiness response";
+
+  while (Date.now() < deadline) {
+    const response = await request(identityBase, "GET", "/identity/readiness", {
+      allowNetworkError: true,
+      timeoutMs: Math.min(2_000, Math.max(250, deadline - Date.now())),
+    });
+    if (response.status === 200 && response.body?.status === "ok") return;
+
+    lastObservation = `status=${response.status} body=${JSON.stringify(response.body)}`;
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, remainingMs)));
+  }
+
+  fail("Identity readiness did not recover within bounded timeout", `timeout_ms=${timeoutMs} last=${lastObservation}`);
+}
+
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) {
   const response = await request(dshBase, "GET", endpoint);
   if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body));
