@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../governance-and-docs"
+		}
+	],
+	"settings": {
+		"powershell.cwd": "samrim"
+	}
+}
