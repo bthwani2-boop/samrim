@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/catalog"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/partnerbootstrap"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -60,16 +60,24 @@ func writeIdentityError(w http.ResponseWriter, err error) {
 
 func writeStorageError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, postgres.ErrBootstrapNotFound):
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "partner bootstrap was not found")
-	case errors.Is(err, postgres.ErrIdempotencyConflict):
-		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with a different request")
-	case errors.Is(err, postgres.ErrAlreadyBootstrapped):
-		writeError(w, http.StatusConflict, "PARTNER_ALREADY_BOOTSTRAPPED", "partner already has a canonical first store")
-	case errors.Is(err, partnerbootstrap.ErrPartnerNotActive):
-		writeError(w, http.StatusConflict, "PARTNER_NOT_ACTIVE", "partner actor is not active")
-	case errors.Is(err, partnerbootstrap.ErrPartnerSessionForbidden):
+	case errors.Is(err, postgres.ErrJoiningCaseNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "joining case was not found")
+	case errors.Is(err, postgres.ErrJoiningCaseIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different joining case facts")
+	case errors.Is(err, postgres.ErrJoiningCaseVersion):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "joining case version is stale")
+	case errors.Is(err, postgres.ErrJoiningCaseState):
+		writeError(w, http.StatusConflict, "STATE_CONFLICT", "joining case state does not allow this transition")
+	case errors.Is(err, postgres.ErrJoiningCaseActor):
+		writeError(w, http.StatusConflict, "ACTOR_CONFLICT", "partner actor is already bound to another joining case")
+	case errors.Is(err, postgres.ErrJoiningCaseExists):
+		writeError(w, http.StatusConflict, "JOINING_CASE_EXISTS", "an active joining case already exists for this phone")
+	case errors.Is(err, postgres.ErrJoiningCaseStoreExists):
+		writeError(w, http.StatusConflict, "STORE_EXISTS", "partner already has a canonical store")
+	case errors.Is(err, catalog.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
+	case errors.Is(err, catalog.ErrStoreOwnershipForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "partner store ownership is required")
 	default:
 		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "DSH persistence is unavailable")
 	}
@@ -90,11 +98,19 @@ func toRoleView(view identityclient.ActorRoleView) contract.ActorRoleView {
 	}
 }
 
-func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness) contract.StoreView {
+func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness, catalogItems ...[]postgres.CatalogItemRecord) contract.StoreView {
+	items := []contract.CatalogItem{}
+	if len(catalogItems) > 0 {
+		items = make([]contract.CatalogItem, 0, len(catalogItems[0]))
+		for _, item := range catalogItems[0] {
+			items = append(items, toCatalogItem(item))
+		}
+	}
 	return contract.StoreView{
 		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, Version: store.Version,
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
 		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
+		Items:                items,
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
 }

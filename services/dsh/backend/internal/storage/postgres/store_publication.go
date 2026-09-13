@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -11,6 +12,25 @@ import (
 	"strings"
 	"time"
 )
+
+type StoreRecord struct {
+	ID                   string
+	PartnerActorID       string
+	Name                 string
+	Version              int
+	PublicationState     string
+	PublicationChangedAt *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+func newID(prefix string) (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("generate DSH identifier: %w", err)
+	}
+	return prefix + "_" + hex.EncodeToString(raw[:]), nil
+}
 
 var (
 	ErrInvalidPublicationState        = errors.New("store publication state is invalid")
@@ -35,6 +55,7 @@ type PublicStoreRecord struct {
 	PartnerActorID string
 	Name           string
 	Version        int
+	Items          []CatalogItemRecord
 	PublishedAt    time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -179,11 +200,12 @@ func ListPublishedStores(ctx context.Context, db *sql.DB) ([]PublicStoreRecord, 
 		return nil, errors.New("DSH database is nil")
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id, partner_actor_id, name, version, publication_changed_at, created_at, updated_at
-		FROM dsh.stores WHERE publication_state='published' AND publication_changed_at IS NOT NULL ORDER BY name ASC, id ASC`)
+		FROM dsh.stores WHERE publication_state='published' AND publication_changed_at IS NOT NULL
+		AND EXISTS (SELECT 1 FROM dsh.catalog_items i WHERE i.store_id=dsh.stores.id AND i.publication_state='published' AND i.availability=true)
+		ORDER BY name ASC, id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list published stores: %w", err)
 	}
-	defer rows.Close()
 	stores := make([]PublicStoreRecord, 0)
 	for rows.Next() {
 		var store PublicStoreRecord
@@ -195,6 +217,23 @@ func ListPublishedStores(ctx context.Context, db *sql.DB) ([]PublicStoreRecord, 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read published stores: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close published stores: %w", err)
+	}
+	storeIDs := make([]string, 0, len(stores))
+	for _, store := range stores {
+		storeIDs = append(storeIDs, store.ID)
+	}
+	itemsByStore, err := listCatalogItemsForStores(ctx, db, storeIDs, true)
+	if err != nil {
+		return nil, err
+	}
+	for index := range stores {
+		stores[index].Items = itemsByStore[stores[index].ID]
+		if stores[index].Items == nil {
+			stores[index].Items = []CatalogItemRecord{}
+		}
+	}
 	return stores, nil
 }
 
@@ -204,13 +243,18 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string) (Public
 	}
 	var store PublicStoreRecord
 	err := db.QueryRowContext(ctx, `SELECT id, partner_actor_id, name, version, publication_changed_at, created_at, updated_at
-		FROM dsh.stores WHERE id=$1 AND publication_state='published' AND publication_changed_at IS NOT NULL`, strings.TrimSpace(storeID)).Scan(
+		FROM dsh.stores WHERE id=$1 AND publication_state='published' AND publication_changed_at IS NOT NULL
+		AND EXISTS (SELECT 1 FROM dsh.catalog_items i WHERE i.store_id=dsh.stores.id AND i.publication_state='published' AND i.availability=true)`, strings.TrimSpace(storeID)).Scan(
 		&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PublicStoreRecord{}, ErrStoreNotFound
 	}
 	if err != nil {
 		return PublicStoreRecord{}, fmt.Errorf("read published store: %w", err)
+	}
+	store.Items, err = ListCatalogItems(ctx, db, store.ID, true)
+	if err != nil {
+		return PublicStoreRecord{}, err
 	}
 	return store, nil
 }

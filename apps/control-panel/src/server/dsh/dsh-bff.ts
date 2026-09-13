@@ -1,5 +1,5 @@
 import { validateServiceUrl, type ManagedActivationRole } from "@bthwani/identity";
-import { type ActorRoleView, type CreatePartnerBootstrapRequest, type ManagedRole, type ManagedRoleStatusResponse, type PartnerBootstrapResponse, type PublicationAction, type StorePublicationRequest, type StorePublicationResponse, dshOperationPaths } from "@bthwani/dsh";
+import { type ActorRoleView, type CreateJoiningCaseRequest, type JoiningCaseResponse, type ManagedRole, type ManagedRoleStatusResponse, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -14,7 +14,7 @@ export type DshAttributedMutationContext = Readonly<{
 export type DshVersionedMutationContext = DshAttributedMutationContext & Readonly<{
   expectedVersion: number;
 }>;
-export type PartnerBootstrapMutationContext = DshAttributedMutationContext & Readonly<{
+export type JoiningCaseMutationContext = DshAttributedMutationContext & Readonly<{
   idempotencyKey: string;
 }>;
 export type StorePublicationMutationContext = DshVersionedMutationContext & Readonly<{
@@ -85,13 +85,7 @@ export function dshHttpStatus(error: unknown): number {
   return error.kind === "network" ? 502 : error.kind === "config" ? 500 : error.status;
 }
 
-export async function createPartnerBootstrap(
-  input: CreatePartnerBootstrapRequest,
-  context: PartnerBootstrapMutationContext,
-): Promise<Readonly<{ status: number; payload: PartnerBootstrapResponse }>> {
-  if (!input.partnerActorId.trim() || !input.storeName.trim()) throw new Error("DSH_BOOTSTRAP_INPUT_INVALID");
-  validateAttributedMutationContext(context);
-  if (!context.idempotencyKey.trim()) throw new Error("DSH_BOOTSTRAP_IDEMPOTENCY_INVALID");
+async function requestDshJson<T>(method: string, path: string, body: unknown | undefined, headers: Record<string, string>): Promise<Readonly<{ status: number; payload: T }>> {
   const baseUrl = dshBaseUrl();
   const token = dshToken();
   const controller = new AbortController();
@@ -99,19 +93,7 @@ export async function createPartnerBootstrap(
   try {
     let response: Response;
     try {
-      response = await fetch(`${baseUrl}${dshOperationPaths.createPartnerBootstrap.path}`, {
-        method: dshOperationPaths.createPartnerBootstrap.method,
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          "X-Acting-Actor-ID": context.operatorActorId.trim(),
-          "X-Correlation-ID": context.correlationId.trim(),
-          "Idempotency-Key": context.idempotencyKey.trim(),
-        },
-        body: JSON.stringify(input),
-        signal: controller.signal,
-      });
+      response = await fetch(`${baseUrl}${path}`, { method, headers: { Accept: "application/json", Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: controller.signal });
     } catch (error) {
       throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
     }
@@ -119,10 +101,42 @@ export async function createPartnerBootstrap(
       const parsed = parseErrorPayload(await response.json().catch(() => null));
       throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
     }
-    return { status: response.status, payload: await response.json() as PartnerBootstrapResponse };
+    return { status: response.status, payload: await response.json() as T };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function createJoiningCase(
+  input: CreateJoiningCaseRequest,
+  context: JoiningCaseMutationContext,
+): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
+  if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim()) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_JOINING_CASE_IDEMPOTENCY_INVALID");
+  return requestDshJson<JoiningCaseResponse>(dshOperationPaths.createJoiningCase.method, dshOperationPaths.createJoiningCase.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function readJoiningCase(caseId: string, context: DshOperatorReadContext): Promise<JoiningCaseResponse> {
+  if (!caseId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_JOINING_CASE_READ_INPUT_INVALID");
+  const path = dshOperationPaths.readJoiningCase.path.replace("{caseId}", encodeURIComponent(caseId.trim()));
+  return (await requestDshJson<JoiningCaseResponse>(dshOperationPaths.readJoiningCase.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function submitJoiningCase(caseId: string, context: DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
+  if (!caseId.trim()) throw new Error("DSH_JOINING_CASE_ID_REQUIRED");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_JOINING_CASE_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.submitJoiningCase.path.replace("{caseId}", encodeURIComponent(caseId.trim()));
+  return requestDshJson<JoiningCaseResponse>(dshOperationPaths.submitJoiningCase.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function reviewJoiningCase(caseId: string, input: ReviewJoiningCaseRequest, context: DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
+  if (!caseId.trim() || !input.decision) throw new Error("DSH_JOINING_CASE_REVIEW_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_JOINING_CASE_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.reviewJoiningCase.path.replace("{caseId}", encodeURIComponent(caseId.trim()));
+  return requestDshJson<JoiningCaseResponse>(dshOperationPaths.reviewJoiningCase.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function readStorePublication(

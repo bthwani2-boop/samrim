@@ -1,21 +1,22 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
-import { isPartnerBootstrapNotFound, readOwnPartnerBootstrap } from "./store-readback-client";
+import { isJoiningCaseNotFound, readOwnJoiningCase } from "./store-readback-client";
+import { CatalogManagement } from "./catalog-management";
 
 export function StoreReadback() {
   const [state, setState] = useState<
     | { kind: "loading" }
-    | { kind: "ready"; value: Awaited<ReturnType<typeof readOwnPartnerBootstrap>> }
+    | { kind: "ready"; value: Awaited<ReturnType<typeof readOwnJoiningCase>> }
     | { kind: "empty" }
     | { kind: "error" }
   >({ kind: "loading" });
 
   useEffect(() => {
     let active = true;
-    void readOwnPartnerBootstrap().then(
+    void readOwnJoiningCase().then(
       (value) => { if (active) setState({ kind: "ready", value }); },
-      (error) => { if (active) setState({ kind: isPartnerBootstrapNotFound(error) ? "empty" : "error" }); },
+      (error) => { if (active) setState({ kind: isJoiningCaseNotFound(error) ? "empty" : "error" }); },
     );
     return () => { active = false; };
   }, []);
@@ -25,12 +26,10 @@ export function StoreReadback() {
   if (state.kind === "error") return <Text accessibilityRole="alert">تعذر قراءة بيانات الشريك من DSH.</Text>;
   return (
     <View>
-      <Text>المتجر الأول</Text>
-      <Text>{state.value.firstStore.name}</Text>
-      <Text>حالة النشر: {state.value.firstStore.publicationState}</Text>
-      <Text>جاهزية النشر: {state.value.firstStore.publicationReadiness.ready ? "جاهز" : "محجوب"}</Text>
-      {!state.value.firstStore.publicationReadiness.ready && state.value.firstStore.publicationReadiness.blockedReason === "PARTNER_IDENTITY_NOT_ELIGIBLE" ? <Text accessibilityRole="alert">هوية الشريك غير مؤهلة حاليًا للنشر.</Text> : null}
-      <Text>الإصدار الكانوني: {state.value.firstStore.version}</Text>
+      <Text>حالة انضمام الشريك</Text>
+      <Text>{state.value.case.businessName}</Text>
+      <Text>الحالة: {state.value.case.state}</Text>
+      {state.value.case.store ? <><Text>المتجر الأول: {state.value.case.store.name}</Text><Text>حالة النشر: {state.value.case.store.publicationState}</Text><Text>جاهزية النشر: {state.value.case.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</Text><Text>الإصدار الكانوني: {state.value.case.store.version}</Text><CatalogManagement storeId={state.value.case.store.id} /></> : null}
     </View>
   );
 }

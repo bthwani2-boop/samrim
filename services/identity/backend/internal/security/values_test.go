@@ -80,7 +80,7 @@ func TestPasswordPolicyNormalizesUnicodeAndRejectsWeakValues(t *testing.T) {
 	if PasswordAllowed("Samrim2026Password") {
 		t.Fatal("project-specific password accepted")
 	}
-	if PasswordBlocklistVersion() == "" || len(commonPasswordBlocklistV1) < 50 {
+	if PasswordBlocklistVersion() == "" || len(passwordBlocklistGenerated) < 50 {
 		t.Fatal("versioned local password blocklist is missing or too small")
 	}
 	if PasswordAllowed("short") {

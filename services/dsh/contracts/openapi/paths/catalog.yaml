@@ -1,0 +1,59 @@
+paths:
+  /dsh/stores/{storeId}/catalog:
+    get:
+      operationId: readOwnStoreCatalog
+      summary: Read all catalog items for the authenticated partner store
+      security: [{ userBearer: [] }]
+      parameters: [{ $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }]
+      responses:
+        "200": { description: Store catalog readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogItemListResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/stores/{storeId}/catalog/items:
+    post:
+      operationId: createCatalogItem
+      summary: Create a draft catalog item for the authenticated partner store
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogItemRequest" }
+      responses:
+        "201": { description: Catalog item created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogItemResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogItemResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/stores/{storeId}/catalog/items/{itemId}:
+    post:
+      operationId: updateCatalogItem
+      summary: Apply a versioned catalog item mutation for the authenticated partner store
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }
+        - { name: itemId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogItemRequest" }
+      responses:
+        "200": { description: Catalog item mutation result., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogItemResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }

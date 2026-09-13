@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 type MigrationRecord struct {
 	Version int
@@ -37,16 +37,40 @@ var requiredTables = []struct {
 		indexes:     []string{"stores_partner_actor_idx", "stores_publication_state_idx"},
 	},
 	{
-		name:        "dsh.partner_bootstrap_idempotency",
-		columns:     []string{"idempotency_key", "request_hash", "partner_actor_id", "store_id", "created_at"},
-		constraints: []string{"partner_bootstrap_idempotency_pkey", "partner_bootstrap_idempotency_facts_uq", "partner_bootstrap_idempotency_store_partner_fk"},
-		indexes:     []string{"partner_bootstrap_idempotency_partner_idx"},
+		name:        "dsh.joining_cases",
+		columns:     []string{"id", "contact_phone_e164", "business_name", "first_store_name", "partner_actor_id", "state", "correction_reason", "reviewed_by", "store_id", "version", "created_at", "updated_at"},
+		constraints: []string{"joining_cases_pkey", "joining_cases_phone_length_chk", "joining_cases_business_name_chk", "joining_cases_store_name_chk", "joining_cases_state_chk", "joining_cases_version_positive_chk", "joining_cases_store_fk"},
+		indexes:     []string{"joining_cases_active_phone_uq", "joining_cases_partner_actor_uq", "joining_cases_state_idx"},
 	},
 	{
-		name:        "dsh.partner_bootstrap_audit",
-		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "partner_actor_id", "store_id", "request_hash", "created_at"},
-		constraints: []string{"partner_bootstrap_audit_pkey", "partner_bootstrap_audit_event_type_chk", "partner_bootstrap_audit_event_idempotency_uq", "partner_bootstrap_audit_idempotency_facts_fk"},
-		indexes:     []string{"partner_bootstrap_audit_partner_idx"},
+		name:        "dsh.joining_case_mutation_idempotency",
+		columns:     []string{"idempotency_key", "request_hash", "case_id", "operation", "result_version", "result_state", "result_partner_actor_id", "result_store_id", "result_correction_reason", "created_at"},
+		constraints: []string{"joining_case_mutation_idempotency_pkey", "joining_case_idempotency_facts_uq", "joining_case_idempotency_operation_chk", "joining_case_idempotency_state_chk", "joining_case_idempotency_version_chk", "joining_case_idempotency_case_fk"},
+		indexes:     []string{"joining_case_idempotency_case_idx"},
+	},
+	{
+		name:        "dsh.joining_case_audit",
+		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "case_id", "from_state", "to_state", "result_version", "request_hash", "partner_actor_id", "store_id", "correction_reason", "created_at"},
+		constraints: []string{"joining_case_audit_pkey", "joining_case_audit_event_type_chk", "joining_case_audit_event_idempotency_uq", "joining_case_audit_case_fk", "joining_case_audit_version_chk"},
+		indexes:     []string{"joining_case_audit_case_idx"},
+	},
+	{
+		name:        "dsh.catalog_items",
+		columns:     []string{"id", "store_id", "name", "publication_state", "availability", "version", "created_at", "updated_at"},
+		constraints: []string{"catalog_items_pkey", "catalog_items_store_fk", "catalog_items_name_chk", "catalog_items_state_chk", "catalog_items_version_chk"},
+		indexes:     []string{"catalog_items_store_idx", "catalog_items_public_idx"},
+	},
+	{
+		name:        "dsh.catalog_item_mutation_idempotency",
+		columns:     []string{"idempotency_key", "request_hash", "store_id", "item_id", "operation", "result_name", "result_state", "result_availability", "result_version", "created_at"},
+		constraints: []string{"catalog_item_mutation_idempotency_pkey", "catalog_item_idempotency_facts_uq", "catalog_item_idempotency_operation_chk", "catalog_item_idempotency_state_chk", "catalog_item_idempotency_version_chk", "catalog_item_idempotency_store_fk", "catalog_item_idempotency_item_fk"},
+		indexes:     []string{"catalog_item_idempotency_store_idx"},
+	},
+	{
+		name:        "dsh.catalog_item_audit",
+		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "store_id", "item_id", "from_state", "to_state", "expected_version", "result_version", "request_hash", "availability", "created_at"},
+		constraints: []string{"catalog_item_audit_pkey", "catalog_item_audit_event_type_chk", "catalog_item_audit_event_idempotency_uq", "catalog_item_audit_store_fk", "catalog_item_audit_item_fk", "catalog_item_audit_version_chk"},
+		indexes:     []string{"catalog_item_audit_store_idx"},
 	},
 	{
 		name:        "dsh.store_publication_idempotency",
@@ -81,7 +105,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if strings.TrimSpace(directory) == "" {
 		return nil, nil, errors.New("DSH_MIGRATION_DIR is required")
 	}
-	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql"}
+	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {

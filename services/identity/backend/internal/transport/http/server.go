@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/authentication"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/challenge"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/passkey"
@@ -27,15 +28,16 @@ type Config struct {
 }
 
 type Server struct {
-	actors     *actor.Service
-	challenges *challenge.Service
-	sessions   *session.Service
-	passkeys   *passkey.Service
-	config     Config
+	actors         *actor.Service
+	authentication *authentication.Service
+	challenges     *challenge.Service
+	sessions       *session.Service
+	passkeys       *passkey.Service
+	config         Config
 }
 
-func New(actors *actor.Service, challenges *challenge.Service, sessions *session.Service, passkeys *passkey.Service, config Config) http.Handler {
-	s := &Server{actors: actors, challenges: challenges, sessions: sessions, passkeys: passkeys, config: config}
+func New(actors *actor.Service, authenticationService *authentication.Service, challenges *challenge.Service, sessions *session.Service, passkeys *passkey.Service, config Config) http.Handler {
+	s := &Server{actors: actors, authentication: authenticationService, challenges: challenges, sessions: sessions, passkeys: passkeys, config: config}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /identity/health", s.health)
 	mux.HandleFunc("GET /identity/readiness", s.readiness)
@@ -114,7 +116,7 @@ func (s *Server) loginClient(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.LoginClient(r.Context(), input, s.ipHash(r))
+	result, err := s.authentication.LoginClient(r.Context(), input, s.ipHash(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -174,7 +176,7 @@ func (s *Server) loginManaged(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.LoginManaged(r.Context(), input, s.ipHash(r))
+	result, err := s.authentication.LoginManaged(r.Context(), input, s.ipHash(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return

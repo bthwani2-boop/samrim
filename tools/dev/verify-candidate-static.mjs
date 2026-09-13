@@ -9,18 +9,21 @@ function verifyPartnerModel() {
   const requiredFiles = [
     "services/dsh/contracts/openapi/dsh.openapi.yaml",
     "services/dsh/contracts/openapi/paths/runtime.yaml",
-    "services/dsh/contracts/openapi/paths/partner-onboarding.yaml",
+    "services/dsh/contracts/openapi/paths/joining-cases.yaml",
+    "services/dsh/contracts/openapi/paths/catalog.yaml",
     "services/dsh/contracts/openapi/paths/store-publication.yaml",
     "services/dsh/contracts/openapi/paths/managed-access.yaml",
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
-    "services/dsh/backend/internal/storage/postgres/partner_bootstrap.go",
+    "services/dsh/backend/internal/storage/postgres/joining_case.go",
+    "services/dsh/backend/internal/storage/postgres/catalog.go",
     "services/dsh/backend/internal/storage/postgres/store_publication.go",
     "services/dsh/backend/internal/storepublication/service.go",
-    "services/dsh/backend/internal/transport/http/partnerbootstrap.go",
+    "services/dsh/backend/internal/transport/http/joiningcase.go",
+    "services/dsh/backend/internal/transport/http/catalog.go",
     "services/dsh/backend/internal/transport/http/storepublication.go",
     "apps/control-panel/app/(workspace)/partners/page.tsx",
-    "apps/control-panel/src/features/partner-onboarding/partner-bootstrap-panel.tsx",
+    "apps/control-panel/src/features/partner-onboarding/joining-case-panel.tsx",
     "apps/control-panel/tests/live-identity.spec.ts",
     "apps/app-partner/src/features/partner-onboarding/store-readback.tsx",
     "apps/app-client/src/features/store-discovery/store-discovery.tsx",
@@ -65,9 +68,9 @@ function verifyPartnerModel() {
     .map((relative) => fs.readFileSync(path.join(root, relative), "utf8"))
     .join("\n");
   for (const required of [
-    "required: [partnerActorId, firstStore, idempotentReplay]",
-    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, createdAt, updatedAt]",
-    "required: [id, name, version, publishedAt, createdAt, updatedAt]",
+    "required: [case, idempotentReplay]",
+    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, items, createdAt, updatedAt]",
+    "required: [id, name, version, items, publishedAt, createdAt, updatedAt]",
   ]) {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
   }
@@ -80,13 +83,16 @@ function verifyPartnerModel() {
     failures.push("DSH canonical migration is missing: services/dsh/database/migrations/001_partner_store_baseline.sql");
   }
   const migration = fs.existsSync(migrationPath) ? fs.readFileSync(migrationPath, "utf8") : "";
+  const joiningMigrationPath = path.join(root, "services/dsh/database/migrations/003_joining_cases_and_catalog.sql");
+  const joiningMigration = fs.existsSync(joiningMigrationPath) ? fs.readFileSync(joiningMigrationPath, "utf8") : "";
+  const dshMigrationGraph = migration + "\n" + joiningMigration;
   if (!migration.includes("partner_actor_id text NOT NULL")) failures.push("DSH baseline does not persist Store→partner_actor_id directly");
   for (const required of [
     "stores_id_partner_actor_uq",
-    "partner_bootstrap_idempotency_store_partner_fk",
-    "partner_bootstrap_audit_idempotency_facts_fk",
+    "joining_case_idempotency_case_fk",
+    "joining_case_audit_case_fk",
   ]) {
-    if (!migration.includes(required)) failures.push(`DSH baseline missing canonical integrity constraint: ${required}`);
+    if (!dshMigrationGraph.includes(required)) failures.push(`DSH migration graph missing canonical integrity constraint: ${required}`);
   }
   const publicationMigrationPath = path.join(root, "services/dsh/database/migrations/002_store_publication.sql");
   if (!fs.existsSync(publicationMigrationPath)) failures.push("DSH Store publication migration is missing");
@@ -124,7 +130,8 @@ function verifyPublicationReadiness() {
   const contract = [
     "services/dsh/contracts/openapi/dsh.openapi.yaml",
     "services/dsh/contracts/openapi/paths/runtime.yaml",
-    "services/dsh/contracts/openapi/paths/partner-onboarding.yaml",
+    "services/dsh/contracts/openapi/paths/joining-cases.yaml",
+    "services/dsh/contracts/openapi/paths/catalog.yaml",
     "services/dsh/contracts/openapi/paths/store-publication.yaml",
     "services/dsh/contracts/openapi/paths/managed-access.yaml",
   ].map((relative) => fs.readFileSync(path.join(root, relative), "utf8")).join("\n");
@@ -142,11 +149,11 @@ function verifyPublicationReadiness() {
     ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
     ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
     ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
-    ["runtime core proof", runtimeCore, ["/dsh/partner-bootstrap", "/auth/managed/activation/request", "READINESS_BLOCKED", "IDENTITY_UNAVAILABLE"]],
+    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/stores/", "/auth/managed/activation/request", "READINESS_BLOCKED", "IDENTITY_UNAVAILABLE"]],
   ]) {
     for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
   }
-  if (runtimeCore.includes("act_dsh_publication_runtime")) failures.push("runtime core proof still uses the retired synthetic positive Partner fixture");
+  if (runtimeCore.includes("/dsh/partner-bootstrap") || runtimeCore.includes("partnerBootstrap")) failures.push("runtime core proof still uses the retired Partner bootstrap contract");
   if (service.includes("return postgres.ListPublishedStores(ctx, s.db)")) failures.push("public discovery still bypasses live Partner readiness evaluation");
   if (service.includes("return postgres.SetStorePublication(ctx, s.db")) failures.push("publication write still bypasses the guarded canonical writer");
 

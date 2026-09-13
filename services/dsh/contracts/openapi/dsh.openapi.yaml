@@ -15,14 +15,29 @@ paths:
   /dsh/readiness:
     $ref: "./paths/runtime.yaml#/paths/~1dsh~1readiness"
 
-  /dsh/partner-bootstrap:
-    $ref: "./paths/partner-onboarding.yaml#/paths/~1dsh~1partner-bootstrap"
+  /dsh/joining-cases:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases"
 
-  /dsh/partner-bootstrap/{partnerActorId}:
-    $ref: "./paths/partner-onboarding.yaml#/paths/~1dsh~1partner-bootstrap~1{partnerActorId}"
+  /dsh/joining-cases/self:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1self"
 
-  /dsh/partner-bootstrap/self:
-    $ref: "./paths/partner-onboarding.yaml#/paths/~1dsh~1partner-bootstrap~1self"
+  /dsh/joining-cases/{caseId}:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}"
+
+  /dsh/joining-cases/{caseId}/submit:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1submit"
+
+  /dsh/joining-cases/{caseId}/review:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1review"
+
+  /dsh/stores/{storeId}/catalog:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog"
+
+  /dsh/stores/{storeId}/catalog/items:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1items"
+
+  /dsh/stores/{storeId}/catalog/items/{itemId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1items~1{itemId}"
 
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
@@ -168,19 +183,87 @@ components:
         role:
           $ref: "#/components/schemas/ManagedRole"
 
-    CreatePartnerBootstrapRequest:
+    CreateJoiningCaseRequest:
       type: object
-      required: [partnerActorId, storeName]
+      required: [contactPhoneE164, businessName, firstStoreName]
       additionalProperties: false
       properties:
-        partnerActorId:
+        contactPhoneE164:
           type: string
           minLength: 1
           maxLength: 128
-        storeName:
+        businessName:
           type: string
           minLength: 2
           maxLength: 160
+        firstStoreName:
+          type: string
+          minLength: 2
+          maxLength: 160
+
+    JoiningCaseState:
+      type: string
+      enum: [draft, submitted, needs_correction, approved]
+
+    JoiningCaseView:
+      type: object
+      required: [id, contactPhoneE164, businessName, firstStoreName, state, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        contactPhoneE164:
+          type: string
+        businessName:
+          type: string
+        firstStoreName:
+          type: string
+        partnerActorId:
+          type: string
+          nullable: true
+        state:
+          $ref: "#/components/schemas/JoiningCaseState"
+        correctionReason:
+          type: string
+          nullable: true
+        reviewedBy:
+          type: string
+          nullable: true
+        store:
+          $ref: "#/components/schemas/StoreView"
+          nullable: true
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    JoiningCaseResponse:
+      type: object
+      required: [case, idempotentReplay]
+      additionalProperties: false
+      properties:
+        case:
+          $ref: "#/components/schemas/JoiningCaseView"
+        idempotentReplay:
+          type: boolean
+
+    ReviewJoiningCaseRequest:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [approved, needs_correction]
+        correctionReason:
+          type: string
+          nullable: true
+          maxLength: 500
 
     StorePublicationReadiness:
       type: object
@@ -195,7 +278,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, createdAt, updatedAt]
+      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, items, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -215,6 +298,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItem"
         createdAt:
           type: string
           format: date-time
@@ -248,9 +335,82 @@ components:
         idempotentReplay:
           type: boolean
 
+    CatalogPublicationState:
+      type: string
+      enum: [draft, published, hidden]
+
+    CatalogItem:
+      type: object
+      required: [itemId, storeId, name, publicationState, availability, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        itemId:
+          type: string
+        storeId:
+          type: string
+        name:
+          type: string
+        publicationState:
+          $ref: "#/components/schemas/CatalogPublicationState"
+        availability:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCatalogItemRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+
+    UpdateCatalogItemRequest:
+      type: object
+      required: [name, publicationState, availability]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        publicationState:
+          $ref: "#/components/schemas/CatalogPublicationState"
+        availability:
+          type: boolean
+
+    CatalogItemResponse:
+      type: object
+      required: [item, idempotentReplay]
+      additionalProperties: false
+      properties:
+        item:
+          $ref: "#/components/schemas/CatalogItem"
+        idempotentReplay:
+          type: boolean
+
+    CatalogItemListResponse:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItem"
+
     PublicStoreView:
       type: object
-      required: [id, name, version, publishedAt, createdAt, updatedAt]
+      required: [id, name, version, items, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -260,6 +420,10 @@ components:
         version:
           type: integer
           minimum: 1
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItem"
         publishedAt:
           type: string
           format: date-time
@@ -279,18 +443,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublicStoreView"
-
-    PartnerBootstrapResponse:
-      type: object
-      required: [partnerActorId, firstStore, idempotentReplay]
-      additionalProperties: false
-      properties:
-        partnerActorId:
-          type: string
-        firstStore:
-          $ref: "#/components/schemas/StoreView"
-        idempotentReplay:
-          type: boolean
 
     ActorRoleView:
       type: object

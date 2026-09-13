@@ -41,7 +41,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	partnerBootstrap, err := transporthttp.NewPartnerBootstrap(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication)
+	joiningCaseServer, err := transporthttp.NewJoiningCase(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication)
+	if err != nil {
+		log.Fatal(err)
+	}
+	catalogServer, err := transporthttp.NewCatalog(identityClient, database)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -51,7 +55,8 @@ func main() {
 	}
 	register := func(mux *http.ServeMux) {
 		managedAccess.Register(mux)
-		partnerBootstrap.Register(mux)
+		joiningCaseServer.Register(mux)
+		catalogServer.Register(mux)
 		storePublicationServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {

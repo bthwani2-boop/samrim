@@ -60,55 +60,58 @@ test("operator direct navigation to access exposes the canonical access capabili
   await expect(page.getByRole("heading", { name: "تهيئة أو إيقاف الحساب" })).toBeVisible();
 });
 
-test("partner bootstrap resolves the actor id from the partner phone", async ({ page }) => {
+test("operator creates a DSH-owned joining case from prospective partner facts", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let requestBody: unknown;
-  await page.route("**/api/partners/bootstrap", async (route) => {
+  await page.route("**/api/partners/joining-cases", async (route) => {
     requestBody = route.request().postDataJSON();
     await route.fulfill({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        partnerActorId: "act_generated",
-        firstStore: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: true }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
   });
 
   await page.goto("/partners");
-  await expect(page.getByRole("heading", { name: "تهيئة الشركاء" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "انضمام الشركاء" })).toBeVisible();
   await expect(page.getByLabel("معرّف Actor الشريك")).toHaveCount(0);
   await expect(page.getByLabel("رقم هاتف الشريك")).toBeVisible();
 
   await page.getByLabel("رقم هاتف الشريك").fill("96777000100");
+  await page.getByLabel("اسم النشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
-  await page.getByRole("button", { name: "إنشاء المتجر الأول" }).click();
+  await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
 
-  await expect(page.getByRole("status")).toContainText("تم إنشاء التهيئة الكانونية");
-  expect(requestBody).toEqual({ partnerPhone: "96777000100", storeName: "متجر الاختبار" });
+  await expect(page.getByRole("status")).toContainText("الحالة: draft");
+  expect(requestBody).toEqual({ contactPhoneE164: "96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار" });
 });
 
-test("partner publication exposes a readiness block and reconciles the canonical state", async ({ page }) => {
+test("partner Store publication exposes the canonical readiness block", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  await page.route("**/api/partners/bootstrap", async (route) => {
+  await page.route("**/api/partners/joining-cases", async (route) => {
     await route.fulfill({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        partnerActorId: "act_generated",
-        firstStore: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", partnerActorId: "act_generated", state: "approved", version: 5, store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, items: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
   });
+  await page.route("**/api/stores/store_test/publication", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, items: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
+  });
   await page.goto("/partners");
   await page.getByLabel("رقم هاتف الشريك").fill("96777000100");
+  await page.getByLabel("اسم النشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
-  await page.getByRole("button", { name: "إنشاء المتجر الأول" }).click();
-  await expect(page.getByRole("status")).toContainText("جاهزية النشر: محجوب");
-  await expect(page.getByRole("status")).toContainText("هوية الشريك غير مؤهلة حاليًا للنشر");
-  await expect(page.getByRole("button", { name: "نشر المتجر" })).toBeDisabled();
+  await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
+  await page.getByRole("button", { name: "إعادة قراءة النشر" }).click();
+  await expect(page.getByRole("status")).toContainText("الجاهزية: محجوب");
+  await expect(page.getByRole("button", { name: "نشر Store" })).toBeDisabled();
 });
 
 test("authenticated workspace keeps navigation meaning across light and dark themes", async ({ page }) => {

@@ -284,7 +284,7 @@ assert(
 );
 assert(
   tracked.includes("services/dsh/backend/internal/transport/http/managedaccess.go") &&
-    tracked.includes("services/dsh/backend/internal/transport/http/partnerbootstrap.go"),
+  tracked.includes("services/dsh/backend/internal/transport/http/joiningcase.go"),
   "DSH HTTP route adaptation must be owned by internal/transport/http/",
 );
 assert(

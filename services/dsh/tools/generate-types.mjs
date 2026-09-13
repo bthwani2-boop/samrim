@@ -7,7 +7,8 @@ const root = path.resolve(import.meta.dirname, "../../..");
 const contractPath = path.join(root, "services/dsh/contracts/openapi/dsh.openapi.yaml");
 const pathModulePaths = [
   path.join(root, "services/dsh/contracts/openapi/paths/runtime.yaml"),
-  path.join(root, "services/dsh/contracts/openapi/paths/partner-onboarding.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/joining-cases.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/catalog.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/store-publication.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/managed-access.yaml"),
 ];
@@ -305,8 +306,9 @@ function goFieldName(name) {
 }
 
 function goPropertyType(lines, optional, context) {
+  const nullable = valueAfter(lines, "nullable:", 10) === "true";
   const ref = valueAfter(lines, "$ref:", 10);
-  if (ref) return refType(ref);
+  if (ref) return nullable ? "*" + refType(ref) : refType(ref);
 
   const constant = valueAfter(lines, "const:", 10);
   if (constant !== null) return "string";
