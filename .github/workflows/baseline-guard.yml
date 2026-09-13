@@ -151,10 +151,14 @@ jobs:
           set -euo pipefail
           node tools/dev/query-knowledge.mjs list capabilities | grep -Fx 'IDENTITY_ACTIVATION_SESSIONS'
           node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'SOURCE=governance/product/capabilities/access/identity-activation-sessions.md'
-          node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'public_auth_state_enumeration'
+          node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'Normal Operator login requires user-verified WebAuthn/Passkey'
           node tools/dev/query-knowledge.mjs journey J1 | grep -F 'SOURCE=governance/product/JOURNEYS.md'
-          node tools/dev/query-knowledge.mjs list owners | grep -F 'governance/product/FINANCIAL-MODEL.md'
-          node tools/dev/query-knowledge.mjs owner provider | grep -F 'governance/policies/providers-and-integrations.md'
+          node tools/dev/query-knowledge.mjs list owners | grep -F 'governance/policy/FINANCE.md'
+          node tools/dev/query-knowledge.mjs owner integrations | grep -F 'governance/policy/INTEGRATIONS.md'
+          node tools/dev/query-knowledge.mjs list references | grep -F 'EXPERIENCE_AND_DESIGN_EVIDENCE'
+          node tools/dev/query-knowledge.mjs reference experience | grep -F 'docs/reference/experience.md'
+          node tools/dev/query-knowledge.mjs list quality-dimensions | grep -Fx 'VISUAL_IDENTITY_DESIGN_SYSTEM'
+          node tools/dev/query-knowledge.mjs list quality-dimensions | grep -Fx 'SECURITY_AUTHORIZATION'
 
       - name: Verify adversarial agent knowledge contract
         shell: bash
