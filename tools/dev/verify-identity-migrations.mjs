@@ -9,9 +9,10 @@ const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) 
 const canonicalProject = "samrim-local";
 const goImage = "golang:1.27.1-alpine";
 const migrationTestPath = path.join(root, "services/identity/backend/internal/storage/postgres/migrate_test.go");
+const canonicalMigrationTest = "TestMigrationV13ToV17Upgrade";
 
 function fail(message, error) {
-  console.error(`MIGRATION_V13_TO_V17=FAIL ${message}`);
+  console.error(`IDENTITY_MIGRATION_PROOF=FAIL ${message}`);
   if (error?.stdout) console.error(String(error.stdout));
   if (error?.stderr) console.error(String(error.stderr));
   process.exit(1);
@@ -40,9 +41,12 @@ const migrationTestSource = fs.readFileSync(migrationTestPath, "utf8");
 if (/127\.0\.0\.1|localhost|55432/.test(migrationTestSource)) {
   fail("migration proof must not contain a host PostgreSQL fallback");
 }
+if (!migrationTestSource.includes(`func ${canonicalMigrationTest}`)) {
+  fail(`canonical migration test missing: ${canonicalMigrationTest}`);
+}
 
 console.log("==================================================");
-console.log("VERIFYING MIGRATION V13 -> V17 UPGRADE, DATA PRESERVATION & PASSKEY CUTOVER");
+console.log("VERIFYING CANONICAL IDENTITY MIGRATION UPGRADE, DATA PRESERVATION & CURRENT AUTH CUTOVER");
 console.log("==================================================");
 
 const env = readEnv(envPath);
@@ -102,7 +106,7 @@ try {
       "test",
       "-v",
       "-run",
-      "^TestMigrationV13ToV17Upgrade$",
+      `^${canonicalMigrationTest}$`,
       ".",
     ],
     { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
@@ -112,12 +116,13 @@ try {
 }
 
 console.log(output);
-if (output.includes("--- SKIP:") || !output.includes("--- PASS: TestMigrationV13ToV17Upgrade")) {
-  fail("migration test was skipped or did not pass");
+if (output.includes("--- SKIP:") || !output.includes(`--- PASS: ${canonicalMigrationTest}`)) {
+  fail("canonical migration test was skipped or did not pass");
 }
 
+console.log(`IDENTITY_MIGRATION_TEST=${canonicalMigrationTest}`);
 console.log(`MIGRATION_TEST_NETWORK=${networks[0]}`);
 console.log("MIGRATION_TEST_HOST_PORTS=0");
-console.log("MIGRATION_V13_TO_V17=PASS");
-console.log("MIGRATION_DATA_PRESERVATION=PASS");
-console.log("MIGRATION_OPERATOR_PASSKEY_CUTOVER=PASS");
+console.log("IDENTITY_MIGRATION_PROOF=PASS");
+console.log("IDENTITY_MIGRATION_DATA_PRESERVATION=PASS");
+console.log("IDENTITY_MIGRATION_CURRENT_AUTH_CUTOVER=PASS");

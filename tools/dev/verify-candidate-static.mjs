@@ -132,7 +132,8 @@ function verifyPublicationReadiness() {
   const generatedGo = fs.readFileSync(path.join(root, "services/dsh/backend/internal/contract/dsh_types_generated.go"), "utf8");
   const service = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storepublication/service.go"), "utf8");
   const storage = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storage/postgres/store_publication.go"), "utf8");
-  const runtime = fs.readFileSync(path.join(root, "tools/dev/verify-dsh-runtime.mjs"), "utf8");
+  const runtimeEntrypoint = fs.readFileSync(path.join(root, "tools/dev/verify-dsh-runtime.mjs"), "utf8");
+  const runtimeCore = fs.readFileSync(path.join(root, "tools/dev/verify-dsh-runtime-core.mjs"), "utf8");
 
   for (const [name, text, tokens] of [
     ["OpenAPI contract", contract, ["StorePublicationReadiness:", "PARTNER_IDENTITY_NOT_ELIGIBLE", "publicationReadiness:"]],
@@ -140,11 +141,12 @@ function verifyPublicationReadiness() {
     ["generated Go contract", generatedGo, ["type StorePublicationReadiness struct", "PublicationReadiness"]],
     ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
     ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
-    ["runtime proof", runtime, ["/dsh/partner-bootstrap", "/auth/managed/activation/request", "READINESS_BLOCKED", "IDENTITY_UNAVAILABLE"]],
+    ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
+    ["runtime core proof", runtimeCore, ["/dsh/partner-bootstrap", "/auth/managed/activation/request", "READINESS_BLOCKED", "IDENTITY_UNAVAILABLE"]],
   ]) {
     for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
   }
-  if (runtime.includes("act_dsh_publication_runtime")) failures.push("runtime proof still uses the retired synthetic positive Partner fixture");
+  if (runtimeCore.includes("act_dsh_publication_runtime")) failures.push("runtime core proof still uses the retired synthetic positive Partner fixture");
   if (service.includes("return postgres.ListPublishedStores(ctx, s.db)")) failures.push("public discovery still bypasses live Partner readiness evaluation");
   if (service.includes("return postgres.SetStorePublication(ctx, s.db")) failures.push("publication write still bypasses the guarded canonical writer");
 

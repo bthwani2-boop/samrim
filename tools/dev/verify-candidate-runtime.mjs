@@ -57,7 +57,7 @@ const checks = [
   ["DSH exact schema", "docker", [...composeArgs, "exec", "-T", "dsh", "/schema-verify"], runtimeEnv],
   ["Control Panel browser shell (deterministic single-worker)", pnpm, ["--dir", "apps/control-panel", "exec", "playwright", "test", "--config", "playwright.config.ts", "--workers=1"], runtimeEnv],
   ...(!preexistingRuntime ? [["Control Panel live Identity browser", pnpm, ["--dir", "apps/control-panel", "test:e2e:live"], { ...runtimeEnv, PLAYWRIGHT_LIVE_IDENTITY: "1" }]] : []),
-  ["Identity migration v13 to v17", process.execPath, ["tools/dev/verify-migration-v13-to-v17.mjs", `--env-file=${envFile}`], runtimeEnv],
+  ["Identity migration upgrade", process.execPath, ["tools/dev/verify-identity-migrations.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH fresh baseline integrity", process.execPath, ["tools/dev/verify-dsh-baseline.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["Identity runtime semantics", process.execPath, ["tools/dev/verify-identity-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH managed-access runtime", process.execPath, ["tools/dev/verify-dsh-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
