@@ -59,7 +59,7 @@ function verifyPartnerModel() {
   const contract = fs.readFileSync(path.join(root, "services/dsh/contracts/dsh.openapi.yaml"), "utf8");
   for (const required of [
     "required: [partnerActorId, firstStore, idempotentReplay]",
-    "required: [id, partnerActorId, name, version, publicationState, createdAt, updatedAt]",
+    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, createdAt, updatedAt]",
     "required: [id, name, version, publishedAt, createdAt, updatedAt]",
   ]) {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
@@ -110,6 +110,43 @@ function verifyPartnerModel() {
   console.log("PARTNER_SURFACE=app-partner");
   console.log("STORE_LINK=partner_actor_id");
   console.log("PARTNER_MODEL_RESIDUE=0");
+}
+
+function verifyPublicationReadiness() {
+  const failures = [];
+  const contract = fs.readFileSync(path.join(root, "services/dsh/contracts/dsh.openapi.yaml"), "utf8");
+  const generatedTS = fs.readFileSync(path.join(root, "services/dsh/clients/generated/dsh-types.ts"), "utf8");
+  const generatedGo = fs.readFileSync(path.join(root, "services/dsh/backend/internal/contract/dsh_types_generated.go"), "utf8");
+  const service = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storepublication/service.go"), "utf8");
+  const storage = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storage/postgres/store_publication.go"), "utf8");
+  const runtime = fs.readFileSync(path.join(root, "tools/dev/verify-dsh-runtime.mjs"), "utf8");
+
+  for (const [name, text, tokens] of [
+    ["OpenAPI contract", contract, ["StorePublicationReadiness:", "PARTNER_IDENTITY_NOT_ELIGIBLE", "publicationReadiness:"]],
+    ["generated TypeScript contract", generatedTS, ["StorePublicationReadiness", "publicationReadiness"]],
+    ["generated Go contract", generatedGo, ["type StorePublicationReadiness struct", "PublicationReadiness"]],
+    ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
+    ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
+    ["runtime proof", runtime, ["/dsh/partner-bootstrap", "/auth/managed/activation/request", "READINESS_BLOCKED", "IDENTITY_UNAVAILABLE"]],
+  ]) {
+    for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
+  }
+  if (runtime.includes("act_dsh_publication_runtime")) failures.push("runtime proof still uses the retired synthetic positive Partner fixture");
+  if (service.includes("return postgres.ListPublishedStores(ctx, s.db)")) failures.push("public discovery still bypasses live Partner readiness evaluation");
+  if (service.includes("return postgres.SetStorePublication(ctx, s.db")) failures.push("publication write still bypasses the guarded canonical writer");
+
+  try {
+    execFileSync(process.execPath, ["services/dsh/tools/generate-types.mjs", "--check"], { cwd: root, stdio: "inherit" });
+  } catch {
+    failures.push("generated DSH contracts are stale");
+  }
+
+  if (failures.length) {
+    console.error("PUBLICATION_READINESS=FAIL");
+    for (const failure of failures) console.error("  " + failure);
+    process.exit(1);
+  }
+  console.log("PUBLICATION_READINESS=PASS");
 }
 
 function normalizeTokens(value) {
@@ -174,6 +211,7 @@ function verifyRetiredFulfillmentResidue() {
 }
 
 verifyPartnerModel();
+verifyPublicationReadiness();
 verifyRetiredFulfillmentResidue();
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";

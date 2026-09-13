@@ -10,6 +10,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/partnerbootstrap"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
@@ -89,10 +90,15 @@ func toRoleView(view identityclient.ActorRoleView) contract.ActorRoleView {
 	}
 }
 
-func toStoreView(store postgres.StoreRecord) contract.StoreView {
+func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness) contract.StoreView {
 	return contract.StoreView{
 		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, Version: store.Version,
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
 		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
+		PublicationReadiness: toPublicationReadiness(readiness),
 	}
+}
+
+func toPublicationReadiness(readiness storepublication.PublicationReadiness) contract.StorePublicationReadiness {
+	return contract.StorePublicationReadiness{Ready: readiness.Ready, BlockedReason: readiness.BlockedReason}
 }

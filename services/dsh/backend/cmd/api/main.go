@@ -11,6 +11,7 @@ import (
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	serviceruntime "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/runtime"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
 	transporthttp "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/transport/http"
 )
 
@@ -36,18 +37,22 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	partnerBootstrap, err := transporthttp.NewPartnerBootstrap(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	storePublication, err := storepublication.New(identityClient, database)
 	if err != nil {
 		log.Fatal(err)
 	}
-	storePublication, err := transporthttp.NewStorePublication(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	partnerBootstrap, err := transporthttp.NewPartnerBootstrap(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication)
+	if err != nil {
+		log.Fatal(err)
+	}
+	storePublicationServer, err := transporthttp.NewStorePublication(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
 	}
 	register := func(mux *http.ServeMux) {
 		managedAccess.Register(mux)
 		partnerBootstrap.Register(mux)
-		storePublication.Register(mux)
+		storePublicationServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
 		if err := postgres.VerifySchema(ctx, database, records); err != nil {

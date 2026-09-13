@@ -109,6 +109,31 @@ func TestFreshBaselineIntegrity(t *testing.T) {
 			t.Fatalf("unexpected baseline readback: stores=%d idempotency=%d audit=%d history=%d", stores, idempotency, audit, history)
 		}
 
+		guardErr := errors.New("partner publication eligibility is not satisfied")
+		guardHash := postgres.HashStorePublicationRequest(testStoreID, "published", 1)
+		if _, err := postgres.SetStorePublicationWithGuard(ctx, db, testStoreID, "published", 1, "idem_store_guarded", guardHash, "act_operator_dsh_baseline", "corr-guarded", func(context.Context, postgres.StoreRecord) error {
+			return guardErr
+		}); !errors.Is(err, guardErr) {
+			t.Fatalf("expected publication guard error, got %v", err)
+		}
+		unchanged, err := postgres.ReadStore(ctx, db, testStoreID)
+		if err != nil {
+			t.Fatalf("read Store after rejected publication: %v", err)
+		}
+		if unchanged.PublicationState != "unpublished" || unchanged.Version != 1 || unchanged.PublicationChangedAt != nil {
+			t.Fatalf("rejected publication changed Store state: %+v", unchanged)
+		}
+		var guardedIdempotency, guardedAudit int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_publication_idempotency WHERE idempotency_key='idem_store_guarded'").Scan(&guardedIdempotency); err != nil {
+			t.Fatalf("read rejected publication idempotency: %v", err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_publication_audit WHERE idempotency_key='idem_store_guarded'").Scan(&guardedAudit); err != nil {
+			t.Fatalf("read rejected publication audit: %v", err)
+		}
+		if guardedIdempotency != 0 || guardedAudit != 0 {
+			t.Fatalf("rejected publication left durable records: idempotency=%d audit=%d", guardedIdempotency, guardedAudit)
+		}
+
 		publishHash := postgres.HashStorePublicationRequest(testStoreID, "published", 1)
 		published, err := postgres.SetStorePublication(ctx, db, testStoreID, "published", 1, "idem_store_publish", publishHash, "act_operator_dsh_baseline", "corr-publish-baseline")
 		if err != nil {

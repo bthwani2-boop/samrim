@@ -24,13 +24,20 @@ type PublicationResult struct {
 	Replayed bool
 }
 
+// PublicationGuard runs after the canonical Store row has been locked and
+// before any publication state, idempotency, or audit row is written.
+// Returning an error rolls the transaction back without creating a success
+// record. Idempotent replays return before the guard is called.
+type PublicationGuard func(context.Context, StoreRecord) error
+
 type PublicStoreRecord struct {
-	ID          string
-	Name        string
-	Version     int
-	PublishedAt time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID             string
+	PartnerActorID string
+	Name           string
+	Version        int
+	PublishedAt    time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 func HashStorePublicationRequest(storeID, requestedState string, expectedVersion int) string {
@@ -58,6 +65,14 @@ func ReadStore(ctx context.Context, db *sql.DB, storeID string) (StoreRecord, er
 }
 
 func SetStorePublication(ctx context.Context, db *sql.DB, storeID, requestedState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (PublicationResult, error) {
+	return setStorePublication(ctx, db, storeID, requestedState, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, nil)
+}
+
+func SetStorePublicationWithGuard(ctx context.Context, db *sql.DB, storeID, requestedState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string, guard PublicationGuard) (PublicationResult, error) {
+	return setStorePublication(ctx, db, storeID, requestedState, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, guard)
+}
+
+func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string, guard PublicationGuard) (PublicationResult, error) {
 	storeID = strings.TrimSpace(storeID)
 	requestedState = strings.TrimSpace(requestedState)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
@@ -126,6 +141,11 @@ func SetStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 	if store.Version != expectedVersion {
 		return PublicationResult{}, ErrPublicationVersionConflict
 	}
+	if guard != nil {
+		if err := guard(ctx, store); err != nil {
+			return PublicationResult{}, fmt.Errorf("validate store publication readiness: %w", err)
+		}
+	}
 
 	updated, err := scanStore(tx.QueryRowContext(ctx, `UPDATE dsh.stores
 		SET publication_state=$2, publication_changed_at=clock_timestamp(), version=version+1, updated_at=clock_timestamp()
@@ -158,7 +178,7 @@ func ListPublishedStores(ctx context.Context, db *sql.DB) ([]PublicStoreRecord, 
 	if db == nil {
 		return nil, errors.New("DSH database is nil")
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, name, version, publication_changed_at, created_at, updated_at
+	rows, err := db.QueryContext(ctx, `SELECT id, partner_actor_id, name, version, publication_changed_at, created_at, updated_at
 		FROM dsh.stores WHERE publication_state='published' AND publication_changed_at IS NOT NULL ORDER BY name ASC, id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list published stores: %w", err)
@@ -167,7 +187,7 @@ func ListPublishedStores(ctx context.Context, db *sql.DB) ([]PublicStoreRecord, 
 	stores := make([]PublicStoreRecord, 0)
 	for rows.Next() {
 		var store PublicStoreRecord
-		if err := rows.Scan(&store.ID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt); err != nil {
+		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan published store: %w", err)
 		}
 		stores = append(stores, store)
@@ -183,9 +203,9 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string) (Public
 		return PublicStoreRecord{}, errors.New("DSH database is nil")
 	}
 	var store PublicStoreRecord
-	err := db.QueryRowContext(ctx, `SELECT id, name, version, publication_changed_at, created_at, updated_at
+	err := db.QueryRowContext(ctx, `SELECT id, partner_actor_id, name, version, publication_changed_at, created_at, updated_at
 		FROM dsh.stores WHERE id=$1 AND publication_state='published' AND publication_changed_at IS NOT NULL`, strings.TrimSpace(storeID)).Scan(
-		&store.ID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt)
+		&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PublicStoreRecord{}, ErrStoreNotFound
 	}

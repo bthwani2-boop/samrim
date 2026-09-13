@@ -28,6 +28,8 @@ export function StoreReadback() {
       <Text>المتجر الأول</Text>
       <Text>{state.value.firstStore.name}</Text>
       <Text>حالة النشر: {state.value.firstStore.publicationState}</Text>
+      <Text>جاهزية النشر: {state.value.firstStore.publicationReadiness.ready ? "جاهز" : "محجوب"}</Text>
+      {!state.value.firstStore.publicationReadiness.ready && state.value.firstStore.publicationReadiness.blockedReason === "PARTNER_IDENTITY_NOT_ELIGIBLE" ? <Text accessibilityRole="alert">هوية الشريك غير مؤهلة حاليًا للنشر.</Text> : null}
       <Text>الإصدار الكانوني: {state.value.firstStore.version}</Text>
     </View>
   );

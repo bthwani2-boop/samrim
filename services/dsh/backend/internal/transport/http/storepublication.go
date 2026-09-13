@@ -61,12 +61,12 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "storeId is required")
 		return
 	}
-	result, err := s.service.Publish(r.Context(), r.PathValue("storeId"), string(input.State), expectedVersion, idempotency, acting, correlation)
+	result, readiness, err := s.service.Publish(r.Context(), r.PathValue("storeId"), string(input.State), expectedVersion, idempotency, acting, correlation)
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return
 	}
-	writeStorePublication(w, http.StatusOK, result)
+	writeStorePublication(w, http.StatusOK, result, readiness)
 }
 
 func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.Request) {
@@ -79,18 +79,18 @@ func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 		return
 	}
-	store, err := s.service.ReadForOperator(r.Context(), r.PathValue("storeId"), acting)
+	store, readiness, err := s.service.ReadForOperator(r.Context(), r.PathValue("storeId"), acting)
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return
 	}
-	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store})
+	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness)
 }
 
 func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Request) {
 	stores, err := s.service.ListPublished(r.Context())
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "DSH persistence is unavailable")
+		writeStorePublicationError(w, err)
 		return
 	}
 	values := make([]contract.PublicStoreView, 0, len(stores))
@@ -109,7 +109,7 @@ func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "DSH_STORAGE_UNAVAILABLE", "DSH persistence is unavailable")
+		writeStorePublicationError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -134,6 +134,10 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, storepublication.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
+	case errors.Is(err, storepublication.ErrPublicationReadinessBlocked):
+		writeError(w, http.StatusConflict, "READINESS_BLOCKED", "store publication readiness gates are not satisfied")
+	case errors.Is(err, storepublication.ErrPartnerIdentityUnavailable):
+		writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "partner publication eligibility is unavailable")
 	case errors.Is(err, postgres.ErrStoreNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "store was not found")
 	case errors.Is(err, postgres.ErrPublicationIdempotencyConflict):
@@ -152,12 +156,12 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 	}
 }
 
-func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult) {
+func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(contract.StorePublicationResponse{
-		Store:            toStoreView(result.Store),
+		Store:            toStoreView(result.Store, readiness),
 		IdempotentReplay: result.Replayed,
 	})
 }

@@ -76,6 +76,10 @@ export function PartnerBootstrapPanel() {
   async function changePublication() {
     if (!result || !publication) return;
     const state = publication.store.publicationState === "published" ? "hidden" : "published";
+    if (state === "published" && !publication.store.publicationReadiness.ready) {
+      setPublicationError("لا يمكن نشر المتجر قبل اجتياز جاهزية النشر الحالية.");
+      return;
+    }
     setPublicationBusy(true);
     setPublicationError("");
     try {
@@ -128,7 +132,9 @@ export function PartnerBootstrapPanel() {
             <div className="managed-status managed-status-info">
               <strong>حالة النشر الكانونية: {publication.store.publicationState}</strong>
               <p>الإصدار الحالي: <code>{publication.store.version}</code></p>
-              <button type="button" className="button button-primary" disabled={publicationBusy} onClick={() => void changePublication()}>
+              <p>جاهزية النشر: {publication.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</p>
+              {!publication.store.publicationReadiness.ready && publication.store.publicationReadiness.blockedReason === "PARTNER_IDENTITY_NOT_ELIGIBLE" ? <p role="alert">هوية الشريك غير مؤهلة حاليًا للنشر.</p> : null}
+              <button type="button" className="button button-primary" disabled={publicationBusy || (!publication.store.publicationReadiness.ready && publication.store.publicationState !== "published")} onClick={() => void changePublication()}>
                 {publicationBusy ? "جارٍ تحديث النشر…" : publication.store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}
               </button>
               <button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>

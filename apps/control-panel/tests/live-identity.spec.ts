@@ -141,7 +141,7 @@ test("@live first operator MFA persists through reload and logout revokes the li
   const bootstrapResponse = await bootstrapResponsePromise;
   const partnerBootstrapBody = await bootstrapResponse.json() as {
     partnerActorId?: unknown;
-    firstStore?: { id?: unknown; partnerActorId?: unknown; name?: unknown; publicationState?: unknown; version?: unknown };
+    firstStore?: { id?: unknown; partnerActorId?: unknown; name?: unknown; publicationState?: unknown; publicationReadiness?: { ready?: unknown; blockedReason?: unknown }; version?: unknown };
     idempotentReplay?: unknown;
   };
   expect(bootstrapResponse.status(), `Control Panel Partner Bootstrap must create the canonical DSH Store relationship: ${JSON.stringify(partnerBootstrapBody)}`).toBe(201);
@@ -151,6 +151,7 @@ test("@live first operator MFA persists through reload and logout revokes the li
   expect(partnerBootstrapBody.firstStore?.partnerActorId).toBe(managedReadback.body.actorId);
   expect(partnerBootstrapBody.firstStore?.name).toBe(storeName);
   expect(partnerBootstrapBody.firstStore?.publicationState).toBe("unpublished");
+  expect(partnerBootstrapBody.firstStore?.publicationReadiness?.ready).toBe(true);
   expect(partnerBootstrapBody.firstStore?.version).toBe(1);
 
   const storeID = String(partnerBootstrapBody.firstStore?.id);
@@ -158,9 +159,10 @@ test("@live first operator MFA persists through reload and logout revokes the li
     headers: { Accept: "application/json", Authorization: "Bearer " + partnerAccessToken },
     signal: AbortSignal.timeout(5_000),
   });
-  const partnerBeforeBody = await partnerReadbackBefore.json() as { firstStore?: { publicationState?: unknown; version?: unknown } };
+  const partnerBeforeBody = await partnerReadbackBefore.json() as { firstStore?: { publicationState?: unknown; publicationReadiness?: { ready?: unknown }; version?: unknown } };
   expect(partnerReadbackBefore.status).toBe(200);
   expect(partnerBeforeBody.firstStore?.publicationState).toBe("unpublished");
+  expect(partnerBeforeBody.firstStore?.publicationReadiness?.ready).toBe(true);
   expect(partnerBeforeBody.firstStore?.version).toBe(1);
 
   const partnerPublishAttempt = await fetch(dshBaseUrl + `/dsh/stores/${storeID}/publication`, {
@@ -180,9 +182,10 @@ test("@live first operator MFA persists through reload and logout revokes the li
   const publishResponsePromise = page.waitForResponse((response) => response.url().endsWith(`/api/stores/${storeID}/publication`) && response.request().method() === "POST");
   await page.getByRole("button", { name: "نشر المتجر" }).click();
   const publishResponse = await publishResponsePromise;
-  const publishBody = await publishResponse.json() as { store?: { publicationState?: unknown; version?: unknown }; idempotentReplay?: unknown };
+  const publishBody = await publishResponse.json() as { store?: { publicationState?: unknown; publicationReadiness?: { ready?: unknown }; version?: unknown }; idempotentReplay?: unknown };
   expect(publishResponse.status(), `Control Panel Store publication must commit canonical state: ${JSON.stringify(publishBody)}`).toBe(200);
   expect(publishBody.store?.publicationState).toBe("published");
+  expect(publishBody.store?.publicationReadiness?.ready).toBe(true);
   expect(publishBody.store?.version).toBe(2);
   expect(publishBody.idempotentReplay).toBe(false);
   await expect(bootstrapStatus).toContainText("حالة النشر الكانونية: published");
@@ -197,10 +200,54 @@ test("@live first operator MFA persists through reload and logout revokes the li
     headers: { Accept: "application/json", Authorization: "Bearer " + partnerAccessToken },
     signal: AbortSignal.timeout(5_000),
   });
-  const partnerAfterBody = await partnerReadbackAfter.json() as { firstStore?: { publicationState?: unknown; version?: unknown } };
+  const partnerAfterBody = await partnerReadbackAfter.json() as { firstStore?: { publicationState?: unknown; publicationReadiness?: { ready?: unknown }; version?: unknown } };
   expect(partnerReadbackAfter.status).toBe(200);
   expect(partnerAfterBody.firstStore?.publicationState).toBe("published");
+  expect(partnerAfterBody.firstStore?.publicationReadiness?.ready).toBe(true);
   expect(partnerAfterBody.firstStore?.version).toBe(2);
+
+  const disableForGateLoss = await page.evaluate(async (phoneValue) => {
+    const statusResponse = await fetch("/api/access/managed-user/status?" + new URLSearchParams({ phone: phoneValue, role: "partner" }), { cache: "no-store" });
+    const status = await statusResponse.json() as { roleVersion?: number };
+    const response = await fetch("/api/access/account-control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: phoneValue, role: "partner", action: "disable-role", reason: "إثبات حجب النشر عند فقدان الأهلية", expectedVersion: status.roleVersion }),
+    });
+    return { status: response.status, body: await response.json().catch(() => null) };
+  }, managedPhone);
+  expect(disableForGateLoss.status).toBe(204);
+
+  const publicListAfterGateLoss = await fetch(dshBaseUrl + "/dsh/public/stores", { signal: AbortSignal.timeout(5_000) });
+  const publicListAfterGateLossBody = await publicListAfterGateLoss.json() as { stores?: Array<{ id?: unknown }> };
+  expect(publicListAfterGateLoss.status).toBe(200);
+  expect(publicListAfterGateLossBody.stores?.some((store) => store.id === storeID)).toBe(false);
+  const publicDetailAfterGateLoss = await fetch(dshBaseUrl + `/dsh/public/stores/${storeID}`, { signal: AbortSignal.timeout(5_000) });
+  expect(publicDetailAfterGateLoss.status).toBe(404);
+  const privateAfterGateLoss = await page.evaluate(async (id) => {
+    const response = await fetch(`/api/stores/${encodeURIComponent(id)}/publication`, { cache: "no-store" });
+    return { status: response.status, body: await response.json() };
+  }, storeID);
+  expect(privateAfterGateLoss.status).toBe(200);
+  expect(privateAfterGateLoss.body.store.publicationState).toBe("published");
+  expect(privateAfterGateLoss.body.store.publicationReadiness.ready).toBe(false);
+  expect(privateAfterGateLoss.body.store.publicationReadiness.blockedReason).toBe("PARTNER_IDENTITY_NOT_ELIGIBLE");
+
+  const enableAfterGateLoss = await page.evaluate(async (phoneValue) => {
+    const statusResponse = await fetch("/api/access/managed-user/status?" + new URLSearchParams({ phone: phoneValue, role: "partner" }), { cache: "no-store" });
+    const status = await statusResponse.json() as { roleVersion?: number };
+    const response = await fetch("/api/access/account-control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: phoneValue, role: "partner", action: "enable-role", reason: "إثبات عودة أهلية النشر", expectedVersion: status.roleVersion }),
+    });
+    return { status: response.status, body: await response.json().catch(() => null) };
+  }, managedPhone);
+  expect(enableAfterGateLoss.status).toBe(204);
+  const publicListAfterGateRestore = await fetch(dshBaseUrl + "/dsh/public/stores", { signal: AbortSignal.timeout(5_000) });
+  const publicListAfterGateRestoreBody = await publicListAfterGateRestore.json() as { stores?: Array<{ id?: unknown }> };
+  expect(publicListAfterGateRestore.status).toBe(200);
+  expect(publicListAfterGateRestoreBody.stores?.some((store) => store.id === storeID)).toBe(true);
 
   const hideResponsePromise = page.waitForResponse((response) => response.url().endsWith(`/api/stores/${storeID}/publication`) && response.request().method() === "POST");
   await page.getByRole("button", { name: "إخفاء المتجر" }).click();

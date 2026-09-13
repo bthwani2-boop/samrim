@@ -1,6 +1,7 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -12,26 +13,31 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/partnerbootstrap"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
 const CreatePermission = "partner.bootstrap.create"
 
 type PartnerBootstrapServer struct {
-	auth    *auth.ServiceToken
-	service *partnerbootstrap.Service
+	auth        *auth.ServiceToken
+	service     *partnerbootstrap.Service
+	publication *storepublication.Service
 }
 
-func NewPartnerBootstrap(identityClient *identity.Client, accessToken string, db *sql.DB) (*PartnerBootstrapServer, error) {
+func NewPartnerBootstrap(identityClient *identity.Client, accessToken string, db *sql.DB, publication *storepublication.Service) (*PartnerBootstrapServer, error) {
 	authorizer, err := auth.NewServiceToken(accessToken)
 	if err != nil {
 		return nil, err
+	}
+	if publication == nil {
+		return nil, errors.New("partner bootstrap publication readiness is invalid")
 	}
 	service, err := partnerbootstrap.New(identityClient, db)
 	if err != nil {
 		return nil, err
 	}
-	return &PartnerBootstrapServer{auth: authorizer, service: service}, nil
+	return &PartnerBootstrapServer{auth: authorizer, service: service, publication: publication}, nil
 }
 
 func (s *PartnerBootstrapServer) Register(mux *http.ServeMux) {
@@ -74,7 +80,7 @@ func (s *PartnerBootstrapServer) create(w http.ResponseWriter, r *http.Request) 
 	if record.Replayed {
 		status = http.StatusOK
 	}
-	writeBootstrap(w, status, record)
+	s.writeBootstrap(w, r.Context(), status, record)
 }
 
 func (s *PartnerBootstrapServer) readForOperator(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +97,7 @@ func (s *PartnerBootstrapServer) readForOperator(w http.ResponseWriter, r *http.
 		writeStorageError(w, err)
 		return
 	}
-	writeBootstrap(w, http.StatusOK, record)
+	s.writeBootstrap(w, r.Context(), http.StatusOK, record)
 }
 
 func (s *PartnerBootstrapServer) readForPartner(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +115,16 @@ func (s *PartnerBootstrapServer) readForPartner(w http.ResponseWriter, r *http.R
 		}
 		return
 	}
-	writeBootstrap(w, http.StatusOK, record)
+	s.writeBootstrap(w, r.Context(), http.StatusOK, record)
+}
+
+func (s *PartnerBootstrapServer) writeBootstrap(w http.ResponseWriter, ctx context.Context, status int, record postgres.BootstrapRecord) {
+	readiness, err := s.publication.ReadinessForStore(ctx, record.Store)
+	if err != nil {
+		writeStorePublicationError(w, err)
+		return
+	}
+	writeBootstrapResponse(w, status, record, readiness)
 }
 
 func writePartnerIdentityError(w http.ResponseWriter, err error) {
@@ -132,13 +147,13 @@ func requiredMutationHeaders(w http.ResponseWriter, r *http.Request) (string, st
 	return acting, correlation, idempotency, true
 }
 
-func writeBootstrap(w http.ResponseWriter, status int, record postgres.BootstrapRecord) {
+func writeBootstrapResponse(w http.ResponseWriter, status int, record postgres.BootstrapRecord, readiness storepublication.PublicationReadiness) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(contract.PartnerBootstrapResponse{
 		PartnerActorID:   record.PartnerActorID,
-		FirstStore:       toStoreView(record.Store),
+		FirstStore:       toStoreView(record.Store, readiness),
 		IdempotentReplay: record.Replayed,
 	})
 }

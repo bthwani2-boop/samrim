@@ -500,9 +500,20 @@ components:
           minLength: 2
           maxLength: 160
 
+    StorePublicationReadiness:
+      type: object
+      required: [ready]
+      additionalProperties: false
+      properties:
+        ready:
+          type: boolean
+        blockedReason:
+          type: string
+          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE]
+
     StoreView:
       type: object
-      required: [id, partnerActorId, name, version, publicationState, createdAt, updatedAt]
+      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -516,6 +527,8 @@ components:
           minimum: 1
         publicationState:
           $ref: "#/components/schemas/PublicationState"
+        publicationReadiness:
+          $ref: "#/components/schemas/StorePublicationReadiness"
         publicationChangedAt:
           type: string
           format: date-time

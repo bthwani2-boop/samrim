@@ -70,7 +70,7 @@ test("partner bootstrap resolves the actor id from the partner phone", async ({ 
       contentType: "application/json",
       body: JSON.stringify({
         partnerActorId: "act_generated",
-        firstStore: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        firstStore: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: true }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
@@ -87,6 +87,28 @@ test("partner bootstrap resolves the actor id from the partner phone", async ({ 
 
   await expect(page.getByRole("status")).toContainText("تم إنشاء التهيئة الكانونية");
   expect(requestBody).toEqual({ partnerPhone: "96777000100", storeName: "متجر الاختبار" });
+});
+
+test("partner publication exposes a readiness block and reconciles the canonical state", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/partners/bootstrap", async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        partnerActorId: "act_generated",
+        firstStore: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        idempotentReplay: false,
+      }),
+    });
+  });
+  await page.goto("/partners");
+  await page.getByLabel("رقم هاتف الشريك").fill("96777000100");
+  await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
+  await page.getByRole("button", { name: "إنشاء المتجر الأول" }).click();
+  await expect(page.getByRole("status")).toContainText("جاهزية النشر: محجوب");
+  await expect(page.getByRole("status")).toContainText("هوية الشريك غير مؤهلة حاليًا للنشر");
+  await expect(page.getByRole("button", { name: "نشر المتجر" })).toBeDisabled();
 });
 
 test("authenticated workspace keeps navigation meaning across light and dark themes", async ({ page }) => {
