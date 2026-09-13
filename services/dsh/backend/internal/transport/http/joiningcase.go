@@ -44,6 +44,8 @@ func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/joining-cases/self", s.readForPartner)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}", s.readForOperator)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
+	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/correct", s.correctForPartner)
+	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/resubmit", s.resubmitForPartner)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/review", s.review)
 }
 
@@ -133,6 +135,36 @@ func (s *JoiningCaseServer) review(w http.ResponseWriter, r *http.Request) {
 	s.writeResult(w, r, http.StatusOK, result)
 }
 
+func (s *JoiningCaseServer) correctForPartner(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.CorrectJoiningCaseRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.CorrectForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, expected, idempotency, correlation)
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, http.StatusOK, result)
+}
+
+func (s *JoiningCaseServer) resubmitForPartner(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	result, err := s.service.ResubmitForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), expected, idempotency, correlation)
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	s.writeResult(w, r, http.StatusOK, result)
+}
+
 func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request, status int, result postgres.JoiningCaseResult) {
 	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, State: contract.JoiningCaseState(result.Case.State), Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
 	view.PartnerActorID = result.Case.PartnerActorID
@@ -144,12 +176,12 @@ func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request
 			writeStorePublicationError(w, err)
 			return
 		}
-		items, err := postgres.ListCatalogItems(ctx.Context(), s.db, result.Case.Store.ID, false)
+		assortments, err := postgres.ListStoreAssortments(ctx.Context(), s.db, result.Case.Store.ID, false)
 		if err != nil {
 			writeStorageError(w, err)
 			return
 		}
-		storeView := toStoreView(*result.Case.Store, readiness, items)
+		storeView := toStoreView(*result.Case.Store, readiness, assortments)
 		view.Store = &storeView
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -189,6 +221,21 @@ func requiredVersionedCaseHeaders(w http.ResponseWriter, r *http.Request) (strin
 	return acting, correlation, idempotency, expected, true
 }
 
+func requiredPartnerCaseHeaders(w http.ResponseWriter, r *http.Request) (string, string, int, bool) {
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" || r.Header.Get("If-Match") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "client actor authority headers are forbidden")
+		return "", "", 0, false
+	}
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 || err != nil || expected < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Correlation-ID, Idempotency-Key, and X-Expected-Version are required")
+		return "", "", 0, false
+	}
+	return correlation, idempotency, expected, true
+}
+
 func writeJoiningCaseError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrJoiningCaseNotFound):
@@ -211,6 +258,10 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STORE_EXISTS", "partner already has a canonical store")
 	case errors.Is(err, postgres.ErrJoiningCaseInvalidDecision):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "review decision is invalid")
+	case errors.Is(err, postgres.ErrJoiningCasePartnerAccess):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "the partner session does not own this joining case")
+	case errors.Is(err, joiningcase.ErrInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case input is invalid")
 	case errors.Is(err, joiningcase.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):

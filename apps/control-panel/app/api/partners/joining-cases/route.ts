@@ -9,6 +9,8 @@ function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
+
 export async function POST(request: Request) {
   if (!verifySameOrigin(request)) return errorResponse("FORBIDDEN", "cross-site requests are forbidden", 403);
   const identity = await readOperatorSession();
@@ -19,9 +21,11 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   if (!body || Object.keys(body).some((key) => !["contactPhoneE164", "businessName", "firstStoreName"].includes(key)) || Object.keys(body).length !== 3) return errorResponse("INVALID_INPUT", "contactPhoneE164, businessName and firstStoreName are required", 400);
   if (typeof body.contactPhoneE164 !== "string" || typeof body.businessName !== "string" || typeof body.firstStoreName !== "string") return errorResponse("INVALID_INPUT", "joining case facts must be strings", 400);
+  const contactPhoneE164 = body.contactPhoneE164.replace(/\s+/g, "");
+  if (!phoneE164Pattern.test(contactPhoneE164)) return errorResponse("INVALID_INPUT", "contactPhoneE164 must use strict E.164 format", 400);
   try {
     const result = await createJoiningCase(
-      { contactPhoneE164: body.contactPhoneE164.trim(), businessName: body.businessName.trim(), firstStoreName: body.firstStoreName.trim() },
+      { contactPhoneE164, businessName: body.businessName.trim(), firstStoreName: body.firstStoreName.trim() },
       { operatorActorId: identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey },
     );
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });

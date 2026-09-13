@@ -45,7 +45,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	catalogServer, err := transporthttp.NewCatalog(identityClient, database)
+	catalogServer, err := transporthttp.NewCatalog(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -98,19 +98,19 @@ func toRoleView(view identityclient.ActorRoleView) contract.ActorRoleView {
 	}
 }
 
-func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness, catalogItems ...[]postgres.CatalogItemRecord) contract.StoreView {
-	items := []contract.CatalogItem{}
-	if len(catalogItems) > 0 {
-		items = make([]contract.CatalogItem, 0, len(catalogItems[0]))
-		for _, item := range catalogItems[0] {
-			items = append(items, toCatalogItem(item))
+func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness, assortments ...[]postgres.StoreAssortmentRecord) contract.StoreView {
+	values := []contract.StoreAssortment{}
+	if len(assortments) > 0 {
+		values = make([]contract.StoreAssortment, 0, len(assortments[0]))
+		for _, assortment := range assortments[0] {
+			values = append(values, toStoreAssortment(assortment))
 		}
 	}
 	return contract.StoreView{
 		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, Version: store.Version,
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
 		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
-		Items:                items,
+		Assortments:          values,
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
 }

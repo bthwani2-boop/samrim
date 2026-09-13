@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
 import { isJoiningCaseNotFound, readOwnJoiningCase } from "./store-readback-client";
-import { CatalogManagement } from "./catalog-management";
+import { JoiningCaseCorrection } from "./joining-case-correction";
+import { StoreAssortmentManagement } from "../store-assortment/store-assortment";
 
 export function StoreReadback() {
   const [state, setState] = useState<
@@ -29,7 +30,8 @@ export function StoreReadback() {
       <Text>حالة انضمام الشريك</Text>
       <Text>{state.value.case.businessName}</Text>
       <Text>الحالة: {state.value.case.state}</Text>
-      {state.value.case.store ? <><Text>المتجر الأول: {state.value.case.store.name}</Text><Text>حالة النشر: {state.value.case.store.publicationState}</Text><Text>جاهزية النشر: {state.value.case.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</Text><Text>الإصدار الكانوني: {state.value.case.store.version}</Text><CatalogManagement storeId={state.value.case.store.id} /></> : null}
+      <JoiningCaseCorrection value={state.value} onUpdated={(value) => setState({ kind: "ready", value })} />
+      {state.value.case.store ? <><Text>المتجر الأول: {state.value.case.store.name}</Text><Text>حالة النشر: {state.value.case.store.publicationState}</Text><Text>جاهزية النشر: {state.value.case.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</Text><Text>الإصدار الكانوني: {state.value.case.store.version}</Text><StoreAssortmentManagement storeId={state.value.case.store.id} /></> : null}
     </View>
   );
 }

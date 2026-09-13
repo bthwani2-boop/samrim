@@ -23,6 +23,7 @@ var (
 	ErrJoiningCaseExists          = errors.New("an active joining case already exists for this phone")
 	ErrJoiningCaseStoreExists     = errors.New("partner already has a canonical store")
 	ErrJoiningCaseInvalidDecision = errors.New("joining case review decision is invalid")
+	ErrJoiningCasePartnerAccess   = errors.New("partner does not own this joining case")
 )
 
 type JoiningCaseRecord struct {
@@ -52,6 +53,10 @@ func HashJoiningCaseRequest(phone, businessName, firstStoreName string) string {
 
 func HashJoiningCaseSubmit(caseID, actorID string, expectedVersion int) string {
 	return hashFacts(caseID, actorID, strconv.Itoa(expectedVersion))
+}
+
+func HashJoiningCaseCorrection(caseID, actorID, businessName, firstStoreName string, expectedVersion int) string {
+	return hashFacts(caseID, actorID, businessName, firstStoreName, strconv.Itoa(expectedVersion))
 }
 
 func HashJoiningCaseReview(caseID, decision, correctionReason string, expectedVersion int) string {
@@ -175,6 +180,67 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 		return JoiningCaseResult{}, err
 	}
 	if err := auditJoiningCaseTx(ctx, tx, "joining_case_submitted", idempotencyKey, correlationID, actingActorID, caseID, current.Case.State, updated.State, updated.Version, requestHash, actorID, "", ""); err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return JoiningCaseResult{}, err
+	}
+	result, err = ReadJoiningCase(ctx, db, caseID)
+	result.Replayed = false
+	return result, err
+}
+
+func CorrectJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (JoiningCaseResult, error) {
+	if db == nil {
+		return JoiningCaseResult{}, errors.New("DSH database is nil")
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return JoiningCaseResult{}, fmt.Errorf("begin joining case correction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockJoiningCaseKey(ctx, tx, idempotencyKey); err != nil {
+		return JoiningCaseResult{}, err
+	}
+	result, found, err := readJoiningCaseIdempotency(ctx, tx, idempotencyKey, requestHash, caseID, "correct")
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if found {
+		if err := tx.Commit(); err != nil {
+			return JoiningCaseResult{}, err
+		}
+		result.Replayed = true
+		return result, nil
+	}
+	current, err := readJoiningCaseTx(ctx, tx, caseID)
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if current.Case.Version != expectedVersion {
+		return JoiningCaseResult{}, ErrJoiningCaseVersion
+	}
+	if current.Case.State != "needs_correction" {
+		return JoiningCaseResult{}, ErrJoiningCaseState
+	}
+	if current.Case.PartnerActorID == "" || current.Case.PartnerActorID != actorID {
+		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
+	}
+	var updatedID string
+	if err := tx.QueryRowContext(ctx, `UPDATE dsh.joining_cases SET business_name=$2,first_store_name=$3,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND partner_actor_id=$4 AND state='needs_correction' AND version=$5 RETURNING id`, current.Case.ID, businessName, firstStoreName, actorID, expectedVersion).Scan(&updatedID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return JoiningCaseResult{}, ErrJoiningCaseVersion
+		}
+		return JoiningCaseResult{}, fmt.Errorf("correct joining case: %w", err)
+	}
+	updated, err := readJoiningCaseTx(ctx, tx, updatedID)
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if err := recordJoiningCaseMutationTx(ctx, tx, idempotencyKey, requestHash, updated.Case, "correct"); err != nil {
+		return JoiningCaseResult{}, err
+	}
+	if err := auditJoiningCaseTx(ctx, tx, "joining_case_corrected", idempotencyKey, correlationID, actorID, caseID, current.Case.State, updated.Case.State, updated.Case.Version, requestHash, actorID, "", current.Case.CorrectionReason); err != nil {
 		return JoiningCaseResult{}, err
 	}
 	if err := tx.Commit(); err != nil {

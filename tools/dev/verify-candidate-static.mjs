@@ -16,17 +16,25 @@ function verifyPartnerModel() {
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/joining_case.go",
-    "services/dsh/backend/internal/storage/postgres/catalog.go",
+    "services/dsh/backend/internal/storage/postgres/central_product.go",
+    "services/dsh/backend/internal/storage/postgres/store_assortment.go",
     "services/dsh/backend/internal/storage/postgres/store_publication.go",
     "services/dsh/backend/internal/storepublication/service.go",
     "services/dsh/backend/internal/transport/http/joiningcase.go",
-    "services/dsh/backend/internal/transport/http/catalog.go",
+    "services/dsh/backend/internal/transport/http/catalog_product.go",
+    "services/dsh/backend/internal/transport/http/store_assortment.go",
     "services/dsh/backend/internal/transport/http/storepublication.go",
     "apps/control-panel/app/(workspace)/partners/page.tsx",
     "apps/control-panel/src/features/partner-onboarding/joining-case-panel.tsx",
     "apps/control-panel/tests/live-identity.spec.ts",
     "apps/app-partner/src/features/partner-onboarding/store-readback.tsx",
+    "apps/app-partner/src/features/partner-onboarding/joining-case-correction.tsx",
+    "apps/app-partner/src/features/store-assortment/store-assortment.tsx",
     "apps/app-client/src/features/store-discovery/store-discovery.tsx",
+    "apps/control-panel/src/features/central-catalog/central-catalog.tsx",
+    "services/dsh/database/migrations/004_central_product_store_assortment_cutover.sql",
+    "services/dsh/database/migrations/005_joining_case_partner_correction.sql",
+    "services/dsh/tools/import-central-products.mjs",
   ];
   for (const relative of requiredFiles) {
     const absolute = path.join(root, ...relative.split("/"));
@@ -69,8 +77,8 @@ function verifyPartnerModel() {
     .join("\n");
   for (const required of [
     "required: [case, idempotentReplay]",
-    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, items, createdAt, updatedAt]",
-    "required: [id, name, version, items, publishedAt, createdAt, updatedAt]",
+    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]",
+    "required: [id, name, version, assortments, publishedAt, createdAt, updatedAt]",
   ]) {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
   }
@@ -85,7 +93,11 @@ function verifyPartnerModel() {
   const migration = fs.existsSync(migrationPath) ? fs.readFileSync(migrationPath, "utf8") : "";
   const joiningMigrationPath = path.join(root, "services/dsh/database/migrations/003_joining_cases_and_catalog.sql");
   const joiningMigration = fs.existsSync(joiningMigrationPath) ? fs.readFileSync(joiningMigrationPath, "utf8") : "";
-  const dshMigrationGraph = migration + "\n" + joiningMigration;
+  const cutoverMigrationPath = path.join(root, "services/dsh/database/migrations/004_central_product_store_assortment_cutover.sql");
+  const cutoverMigration = fs.existsSync(cutoverMigrationPath) ? fs.readFileSync(cutoverMigrationPath, "utf8") : "";
+  const correctionMigrationPath = path.join(root, "services/dsh/database/migrations/005_joining_case_partner_correction.sql");
+  const correctionMigration = fs.existsSync(correctionMigrationPath) ? fs.readFileSync(correctionMigrationPath, "utf8") : "";
+  const dshMigrationGraph = migration + "\n" + joiningMigration + "\n" + cutoverMigration + "\n" + correctionMigration;
   if (!migration.includes("partner_actor_id text NOT NULL")) failures.push("DSH baseline does not persist Store→partner_actor_id directly");
   for (const required of [
     "stores_id_partner_actor_uq",
@@ -93,6 +105,19 @@ function verifyPartnerModel() {
     "joining_case_audit_case_fk",
   ]) {
     if (!dshMigrationGraph.includes(required)) failures.push(`DSH migration graph missing canonical integrity constraint: ${required}`);
+  }
+  for (const retired of [
+    "services/dsh/backend/internal/storage/postgres/catalog.go",
+    "services/dsh/backend/internal/transport/http/catalog.go",
+    "apps/app-partner/src/features/partner-onboarding/catalog-management.tsx",
+  ]) {
+    if (fs.existsSync(path.join(root, ...retired.split("/")))) failures.push(`retired central Product cutover path remains: ${retired}`);
+  }
+  for (const forbidden of ["/dsh/stores/{storeId}/catalog/items", "CatalogItem", "CreateCatalogItem", "UpdateCatalogItem", "readOwnStoreCatalog", "createCatalogItem", "updateCatalogItem"]) {
+    if (contract.includes(forbidden)) failures.push(`legacy catalog contract residue remains: ${forbidden}`);
+  }
+  for (const required of ["central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit", "legacy catalog evidence is non-empty"]) {
+    if (!cutoverMigration.includes(required)) failures.push(`central Product cutover migration missing invariant: ${required}`);
   }
   const publicationMigrationPath = path.join(root, "services/dsh/database/migrations/002_store_publication.sql");
   if (!fs.existsSync(publicationMigrationPath)) failures.push("DSH Store publication migration is missing");
@@ -142,6 +167,10 @@ function verifyPublicationReadiness() {
   const runtimeEntrypoint = fs.readFileSync(path.join(root, "tools/dev/verify-dsh-runtime.mjs"), "utf8");
   const runtimeCore = fs.readFileSync(path.join(root, "tools/dev/verify-dsh-runtime-core.mjs"), "utf8");
 
+  for (const forbidden of ["CatalogItem", "CreateCatalogItem", "UpdateCatalogItem", "readOwnStoreCatalog", "createCatalogItem", "updateCatalogItem"]) {
+    if (generatedTS.includes(forbidden) || generatedGo.includes(forbidden)) failures.push(`legacy generated catalog contract residue remains: ${forbidden}`);
+  }
+
   for (const [name, text, tokens] of [
     ["OpenAPI contract", contract, ["StorePublicationReadiness:", "PARTNER_IDENTITY_NOT_ELIGIBLE", "publicationReadiness:"]],
     ["generated TypeScript contract", generatedTS, ["StorePublicationReadiness", "publicationReadiness"]],
@@ -149,7 +178,7 @@ function verifyPublicationReadiness() {
     ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
     ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
     ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
-    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/stores/", "/auth/managed/activation/request", "READINESS_BLOCKED", "IDENTITY_UNAVAILABLE"]],
+    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct", "/resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V5=PASS"]],
   ]) {
     for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
   }

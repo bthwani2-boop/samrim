@@ -80,13 +80,31 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await expect(page.getByLabel("معرّف Actor الشريك")).toHaveCount(0);
   await expect(page.getByLabel("رقم هاتف الشريك")).toBeVisible();
 
-  await page.getByLabel("رقم هاتف الشريك").fill("96777000100");
+  await page.getByLabel("رقم هاتف الشريك").fill("+967 77000100");
   await page.getByLabel("اسم النشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
 
   await expect(page.getByRole("status")).toContainText("الحالة: draft");
-  expect(requestBody).toEqual({ contactPhoneE164: "96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار" });
+  expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار" });
+});
+
+test("operator resumes the canonical joining case after a workspace refresh", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.addInitScript(() => window.localStorage.setItem("bthwani.control-panel.joining-case.current", "join_resume"));
+  await page.route("**/api/partners/joining-cases/join_resume", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        case: { id: "join_resume", contactPhoneE164: "+96777000101", businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", state: "submitted", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        idempotentReplay: false,
+      }),
+    });
+  });
+  await page.goto("/partners");
+  await expect(page.getByRole("status")).toContainText("الحالة: submitted");
+  await expect(page.getByRole("status")).toContainText("نشاط مستعاد");
 });
 
 test("partner Store publication exposes the canonical readiness block", async ({ page }) => {
@@ -96,16 +114,16 @@ test("partner Store publication exposes the canonical readiness block", async ({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", partnerActorId: "act_generated", state: "approved", version: 5, store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, items: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", partnerActorId: "act_generated", state: "approved", version: 5, store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, assortments: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
   });
   await page.route("**/api/stores/store_test/publication", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, items: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, assortments: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
   });
   await page.goto("/partners");
-  await page.getByLabel("رقم هاتف الشريك").fill("96777000100");
+  await page.getByLabel("رقم هاتف الشريك").fill("+96777000100");
   await page.getByLabel("اسم النشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();

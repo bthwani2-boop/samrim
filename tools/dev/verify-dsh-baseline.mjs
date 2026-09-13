@@ -10,7 +10,7 @@ const canonicalProject = "samrim-local";
 const composeFile = path.join(root, "infra/local/compose/compose.yaml");
 const goImage = "golang:1.27.1-alpine";
 const testPath = path.join(root, "services/dsh/backend/internal/storage/postgres/migrate_test.go");
-const canonicalFreshTest = "TestFreshJoiningAndCatalogIntegrity";
+const canonicalFreshTest = "TestFreshJoiningAndAssortmentIntegrity";
 
 function fail(message, error) {
   console.error(`DSH_BASELINE=FAIL ${message}`);
@@ -105,7 +105,7 @@ try {
 }
 
 console.log(output);
-if (output.includes("--- SKIP:") || !output.includes(`--- PASS: ${canonicalFreshTest}`)) fail("fresh DSH joining/catalog test was skipped or did not pass");
+if (output.includes("--- SKIP:") || !output.includes(`--- PASS: ${canonicalFreshTest}`)) fail("fresh DSH joining/assortment test was skipped or did not pass");
 console.log(`BASELINE_TEST_NETWORK=${networks[0]}`);
 console.log(`BASELINE_TEST=${canonicalFreshTest}`);
 console.log("BASELINE_TEST_HOST_PORTS=0");

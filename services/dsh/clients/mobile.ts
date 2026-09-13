@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { CatalogItem, CatalogItemListResponse, CatalogItemResponse, CatalogPublicationState, JoiningCaseResponse, PublicStoreView, PublishedStoreListResponse } from "./generated/dsh-types";
+import type { AssortmentPublicationState, CentralProduct, CentralProductListResponse, CorrectJoiningCaseRequest, JoiningCaseResponse, PublicStoreView, PublishedStoreListResponse, StoreAssortment, StoreAssortmentListResponse, StoreAssortmentResponse } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -77,24 +77,49 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     async readOwnJoiningCase(accessToken: string): Promise<JoiningCaseResponse> {
       return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.readOwnJoiningCase.path, dshOperationPaths.readOwnJoiningCase.method);
     },
-    async readOwnStoreCatalog(accessToken: string, storeID: string): Promise<ReadonlyArray<CatalogItem>> {
+    async correctJoiningCase(accessToken: string, caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number): Promise<JoiningCaseResponse> {
+      const normalized = caseID.trim();
+      const businessName = input.businessName.trim();
+      const firstStoreName = input.firstStoreName.trim();
+      if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
+      const path = dshOperationPaths.correctJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctJoiningCase.method, { businessName, firstStoreName }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async resubmitJoiningCase(accessToken: string, caseID: string, expectedVersion: number): Promise<JoiningCaseResponse> {
+      const normalized = caseID.trim();
+      if (!normalized || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
+      const path = dshOperationPaths.resubmitJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.resubmitJoiningCase.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async listCentralProducts(accessToken: string, query = "", barcode = "", limit = 50): Promise<ReadonlyArray<CentralProduct>> {
+	  if (limit < 1 || limit > 50) throw new Error("DSH_PRODUCT_LIMIT_INVALID");
+	  const params = new URLSearchParams();
+	  if (query.trim()) params.set("q", query.trim());
+	  if (barcode.trim()) params.set("barcode", barcode.trim());
+	  params.set("limit", String(limit));
+	  const suffix = params.toString();
+	  const path = `${dshOperationPaths.listCatalogProducts.path}${suffix ? `?${suffix}` : ""}`;
+	  return (await userRequest<CentralProductListResponse>(accessToken, path, dshOperationPaths.listCatalogProducts.method)).products;
+	},
+    async readOwnStoreAssortment(accessToken: string, storeID: string): Promise<ReadonlyArray<StoreAssortment>> {
       const normalized = storeID.trim();
       if (!normalized) throw new Error("DSH_STORE_ID_REQUIRED");
-      const path = dshOperationPaths.readOwnStoreCatalog.path.replace("{storeId}", encodeURIComponent(normalized));
-      return (await userRequest<CatalogItemListResponse>(accessToken, path, dshOperationPaths.readOwnStoreCatalog.method)).items;
+      const path = dshOperationPaths.readOwnStoreAssortment.path.replace("{storeId}", encodeURIComponent(normalized));
+      return (await userRequest<StoreAssortmentListResponse>(accessToken, path, dshOperationPaths.readOwnStoreAssortment.method)).assortments;
     },
-    async createCatalogItem(accessToken: string, storeID: string, name: string): Promise<CatalogItemResponse> {
+    async createStoreAssortment(accessToken: string, storeID: string, productID: string, priceMinor: number): Promise<StoreAssortmentResponse> {
       const normalized = storeID.trim();
-      if (!normalized) throw new Error("DSH_STORE_ID_REQUIRED");
-      const path = dshOperationPaths.createCatalogItem.path.replace("{storeId}", encodeURIComponent(normalized));
-      return userRequest<CatalogItemResponse>(accessToken, path, dshOperationPaths.createCatalogItem.method, { name }, mutationHeaders());
+      const normalizedProduct = productID.trim();
+      if (!normalized || !normalizedProduct || !Number.isSafeInteger(priceMinor) || priceMinor < 1) throw new Error("DSH_ASSORTMENT_INPUT_INVALID");
+      const path = dshOperationPaths.createStoreAssortment.path.replace("{storeId}", encodeURIComponent(normalized));
+      return userRequest<StoreAssortmentResponse>(accessToken, path, dshOperationPaths.createStoreAssortment.method, { productId: normalizedProduct, priceMinor }, mutationHeaders());
     },
-    async updateCatalogItem(accessToken: string, storeID: string, itemID: string, name: string, publicationState: CatalogPublicationState, availability: boolean, expectedVersion: number): Promise<CatalogItemResponse> {
+    async updateStoreAssortment(accessToken: string, storeID: string, productID: string, priceMinor: number, publicationState: AssortmentPublicationState, availability: boolean, expectedVersion: number): Promise<StoreAssortmentResponse> {
       const normalizedStore = storeID.trim();
-      const normalizedItem = itemID.trim();
-      if (!normalizedStore || !normalizedItem || expectedVersion < 1) throw new Error("DSH_CATALOG_INPUT_INVALID");
-      const path = dshOperationPaths.updateCatalogItem.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{itemId}", encodeURIComponent(normalizedItem));
-      return userRequest<CatalogItemResponse>(accessToken, path, dshOperationPaths.updateCatalogItem.method, { name, publicationState, availability }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      const normalizedProduct = productID.trim();
+      if (!normalizedStore || !normalizedProduct || !Number.isSafeInteger(priceMinor) || priceMinor < 1 || expectedVersion < 1) throw new Error("DSH_ASSORTMENT_INPUT_INVALID");
+      const path = dshOperationPaths.updateStoreAssortment.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{productId}", encodeURIComponent(normalizedProduct));
+      return userRequest<StoreAssortmentResponse>(accessToken, path, dshOperationPaths.updateStoreAssortment.method, { priceMinor, publicationState, availability }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async listPublishedStores(): Promise<ReadonlyArray<PublicStoreView>> {
       const result = await publicRequest<PublishedStoreListResponse>(dshOperationPaths.listPublishedStores.path);

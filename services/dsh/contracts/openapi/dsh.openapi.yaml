@@ -27,17 +27,26 @@ paths:
   /dsh/joining-cases/{caseId}/submit:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1submit"
 
+  /dsh/joining-cases/{caseId}/correct:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1correct"
+
+  /dsh/joining-cases/{caseId}/resubmit:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1resubmit"
+
   /dsh/joining-cases/{caseId}/review:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1review"
 
-  /dsh/stores/{storeId}/catalog:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog"
+  /dsh/catalog/products:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products"
 
-  /dsh/stores/{storeId}/catalog/items:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1items"
+  /dsh/catalog/products/{productId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
 
-  /dsh/stores/{storeId}/catalog/items/{itemId}:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1catalog~1items~1{itemId}"
+  /dsh/stores/{storeId}/assortment:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1assortment"
+
+  /dsh/stores/{storeId}/assortment/{productId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1assortment~1{productId}"
 
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
@@ -190,8 +199,7 @@ components:
       properties:
         contactPhoneE164:
           type: string
-          minLength: 1
-          maxLength: 128
+          pattern: '^\+[1-9][0-9]{7,14}$'
         businessName:
           type: string
           minLength: 2
@@ -252,6 +260,20 @@ components:
         idempotentReplay:
           type: boolean
 
+    CorrectJoiningCaseRequest:
+      type: object
+      required: [businessName, firstStoreName]
+      additionalProperties: false
+      properties:
+        businessName:
+          type: string
+          minLength: 2
+          maxLength: 160
+        firstStoreName:
+          type: string
+          minLength: 2
+          maxLength: 160
+
     ReviewJoiningCaseRequest:
       type: object
       required: [decision]
@@ -278,7 +300,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, items, createdAt, updatedAt]
+      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -298,10 +320,10 @@ components:
           type: string
           format: date-time
           nullable: true
-        items:
+        assortments:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogItem"
+            $ref: "#/components/schemas/StoreAssortment"
         createdAt:
           type: string
           format: date-time
@@ -335,24 +357,31 @@ components:
         idempotentReplay:
           type: boolean
 
-    CatalogPublicationState:
+    SellUnit:
       type: string
-      enum: [draft, published, hidden]
+      enum: [piece, kg]
 
-    CatalogItem:
+    CentralProduct:
       type: object
-      required: [itemId, storeId, name, publicationState, availability, version, createdAt, updatedAt]
+      required: [id, canonicalName, sellUnit, active, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
-        itemId:
+        id:
           type: string
-        storeId:
+        canonicalName:
           type: string
-        name:
+        brand:
           type: string
-        publicationState:
-          $ref: "#/components/schemas/CatalogPublicationState"
-        availability:
+          nullable: true
+        barcode:
+          type: string
+          nullable: true
+        canonicalImageUrl:
+          type: string
+          nullable: true
+        sellUnit:
+          $ref: "#/components/schemas/SellUnit"
+        active:
           type: boolean
         version:
           type: integer
@@ -364,53 +393,174 @@ components:
           type: string
           format: date-time
 
-    CreateCatalogItemRequest:
+    CreateCentralProductRequest:
       type: object
-      required: [name]
+      required: [canonicalName, sellUnit]
       additionalProperties: false
       properties:
-        name:
+        canonicalName:
           type: string
           minLength: 1
           maxLength: 160
+        brand:
+          type: string
+          nullable: true
+          maxLength: 160
+        barcode:
+          type: string
+          nullable: true
+          maxLength: 128
+        canonicalImageUrl:
+          type: string
+          nullable: true
+          maxLength: 2048
+        sellUnit:
+          $ref: "#/components/schemas/SellUnit"
 
-    UpdateCatalogItemRequest:
+    UpdateCentralProductRequest:
       type: object
-      required: [name, publicationState, availability]
+      required: [canonicalName, active]
       additionalProperties: false
       properties:
-        name:
+        canonicalName:
           type: string
           minLength: 1
           maxLength: 160
-        publicationState:
-          $ref: "#/components/schemas/CatalogPublicationState"
-        availability:
+        brand:
+          type: string
+          nullable: true
+          maxLength: 160
+        barcode:
+          type: string
+          nullable: true
+          maxLength: 128
+        canonicalImageUrl:
+          type: string
+          nullable: true
+          maxLength: 2048
+        active:
           type: boolean
 
-    CatalogItemResponse:
+    CentralProductResponse:
       type: object
-      required: [item, idempotentReplay]
+      required: [product, idempotentReplay]
       additionalProperties: false
       properties:
-        item:
-          $ref: "#/components/schemas/CatalogItem"
+        product:
+          $ref: "#/components/schemas/CentralProduct"
         idempotentReplay:
           type: boolean
 
-    CatalogItemListResponse:
+    CentralProductListResponse:
       type: object
-      required: [items]
+      required: [products]
       additionalProperties: false
       properties:
-        items:
+        products:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogItem"
+            $ref: "#/components/schemas/CentralProduct"
+
+    AssortmentPublicationState:
+      type: string
+      enum: [draft, published, hidden]
+
+    StoreAssortment:
+      type: object
+      required: [storeId, productId, canonicalName, sellUnit, productActive, productVersion, priceMinor, currency, availability, publicationState, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        productId:
+          type: string
+        canonicalName:
+          type: string
+        brand:
+          type: string
+          nullable: true
+        barcode:
+          type: string
+          nullable: true
+        canonicalImageUrl:
+          type: string
+          nullable: true
+        sellUnit:
+          $ref: "#/components/schemas/SellUnit"
+        productActive:
+          type: boolean
+        productVersion:
+          type: integer
+          minimum: 1
+        priceMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        availability:
+          type: boolean
+        publicationState:
+          $ref: "#/components/schemas/AssortmentPublicationState"
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateStoreAssortmentRequest:
+      type: object
+      required: [productId, priceMinor]
+      additionalProperties: false
+      properties:
+        productId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        priceMinor:
+          type: integer
+          minimum: 1
+
+    UpdateStoreAssortmentRequest:
+      type: object
+      required: [priceMinor, availability, publicationState]
+      additionalProperties: false
+      properties:
+        priceMinor:
+          type: integer
+          minimum: 1
+        availability:
+          type: boolean
+        publicationState:
+          $ref: "#/components/schemas/AssortmentPublicationState"
+
+    StoreAssortmentResponse:
+      type: object
+      required: [assortment, idempotentReplay]
+      additionalProperties: false
+      properties:
+        assortment:
+          $ref: "#/components/schemas/StoreAssortment"
+        idempotentReplay:
+          type: boolean
+
+    StoreAssortmentListResponse:
+      type: object
+      required: [assortments]
+      additionalProperties: false
+      properties:
+        assortments:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreAssortment"
 
     PublicStoreView:
       type: object
-      required: [id, name, version, items, publishedAt, createdAt, updatedAt]
+      required: [id, name, version, assortments, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -420,10 +570,10 @@ components:
         version:
           type: integer
           minimum: 1
-        items:
+        assortments:
           type: array
           items:
-            $ref: "#/components/schemas/CatalogItem"
+            $ref: "#/components/schemas/StoreAssortment"
         publishedAt:
           type: string
           format: date-time

@@ -55,7 +55,7 @@ type PublicStoreRecord struct {
 	PartnerActorID string
 	Name           string
 	Version        int
-	Items          []CatalogItemRecord
+	Assortments    []StoreAssortmentRecord
 	PublishedAt    time.Time
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -201,7 +201,7 @@ func ListPublishedStores(ctx context.Context, db *sql.DB) ([]PublicStoreRecord, 
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id, partner_actor_id, name, version, publication_changed_at, created_at, updated_at
 		FROM dsh.stores WHERE publication_state='published' AND publication_changed_at IS NOT NULL
-		AND EXISTS (SELECT 1 FROM dsh.catalog_items i WHERE i.store_id=dsh.stores.id AND i.publication_state='published' AND i.availability=true)
+		AND EXISTS (SELECT 1 FROM dsh.store_assortments a JOIN dsh.central_products p ON p.id=a.product_id WHERE a.store_id=dsh.stores.id AND a.publication_state='published' AND a.availability=true AND a.price_minor>0 AND p.active=true)
 		ORDER BY name ASC, id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list published stores: %w", err)
@@ -224,14 +224,14 @@ func ListPublishedStores(ctx context.Context, db *sql.DB) ([]PublicStoreRecord, 
 	for _, store := range stores {
 		storeIDs = append(storeIDs, store.ID)
 	}
-	itemsByStore, err := listCatalogItemsForStores(ctx, db, storeIDs, true)
+	assortmentsByStore, err := ListStoreAssortmentsForStores(ctx, db, storeIDs, true)
 	if err != nil {
 		return nil, err
 	}
 	for index := range stores {
-		stores[index].Items = itemsByStore[stores[index].ID]
-		if stores[index].Items == nil {
-			stores[index].Items = []CatalogItemRecord{}
+		stores[index].Assortments = assortmentsByStore[stores[index].ID]
+		if stores[index].Assortments == nil {
+			stores[index].Assortments = []StoreAssortmentRecord{}
 		}
 	}
 	return stores, nil
@@ -244,7 +244,7 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string) (Public
 	var store PublicStoreRecord
 	err := db.QueryRowContext(ctx, `SELECT id, partner_actor_id, name, version, publication_changed_at, created_at, updated_at
 		FROM dsh.stores WHERE id=$1 AND publication_state='published' AND publication_changed_at IS NOT NULL
-		AND EXISTS (SELECT 1 FROM dsh.catalog_items i WHERE i.store_id=dsh.stores.id AND i.publication_state='published' AND i.availability=true)`, strings.TrimSpace(storeID)).Scan(
+		AND EXISTS (SELECT 1 FROM dsh.store_assortments a JOIN dsh.central_products p ON p.id=a.product_id WHERE a.store_id=dsh.stores.id AND a.publication_state='published' AND a.availability=true AND a.price_minor>0 AND p.active=true)`, strings.TrimSpace(storeID)).Scan(
 		&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PublicStoreRecord{}, ErrStoreNotFound
@@ -252,7 +252,7 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string) (Public
 	if err != nil {
 		return PublicStoreRecord{}, fmt.Errorf("read published store: %w", err)
 	}
-	store.Items, err = ListCatalogItems(ctx, db, store.ID, true)
+	store.Assortments, err = ListStoreAssortments(ctx, db, store.ID, true)
 	if err != nil {
 		return PublicStoreRecord{}, err
 	}

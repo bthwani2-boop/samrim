@@ -69,12 +69,12 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 		writeStorePublicationError(w, err)
 		return
 	}
-	items, err := postgres.ListCatalogItems(r.Context(), s.serviceDB(), result.Store.ID, false)
+	assortments, err := postgres.ListStoreAssortments(r.Context(), s.serviceDB(), result.Store.ID, false)
 	if err != nil {
 		writeStorageError(w, err)
 		return
 	}
-	writeStorePublication(w, http.StatusOK, result, readiness, items)
+	writeStorePublication(w, http.StatusOK, result, readiness, assortments)
 }
 
 func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.Request) {
@@ -92,12 +92,12 @@ func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.
 		writeStorePublicationError(w, err)
 		return
 	}
-	items, err := postgres.ListCatalogItems(r.Context(), s.serviceDB(), store.ID, false)
+	assortments, err := postgres.ListStoreAssortments(r.Context(), s.serviceDB(), store.ID, false)
 	if err != nil {
 		writeStorageError(w, err)
 		return
 	}
-	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness, items)
+	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness, assortments)
 }
 
 func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Request) {
@@ -169,24 +169,24 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 	}
 }
 
-func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness, items []postgres.CatalogItemRecord) {
+func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness, assortments []postgres.StoreAssortmentRecord) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(contract.StorePublicationResponse{
-		Store:            toStoreView(result.Store, readiness, items),
+		Store:            toStoreView(result.Store, readiness, assortments),
 		IdempotentReplay: result.Replayed,
 	})
 }
 
 func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreView {
-	items := make([]contract.CatalogItem, 0, len(store.Items))
-	for _, item := range store.Items {
-		items = append(items, toCatalogItem(item))
+	assortments := make([]contract.StoreAssortment, 0, len(store.Assortments))
+	for _, assortment := range store.Assortments {
+		assortments = append(assortments, toStoreAssortment(assortment))
 	}
 	return contract.PublicStoreView{
 		ID: store.ID, Name: store.Name, Version: store.Version, PublishedAt: store.PublishedAt,
-		Items:     items,
-		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
+		Assortments: assortments,
+		CreatedAt:   store.CreatedAt, UpdatedAt: store.UpdatedAt,
 	}
 }
