@@ -4,18 +4,72 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../../..");
-const contractPath = path.join(root, "services/dsh/contracts/dsh.openapi.yaml");
+const contractPath = path.join(root, "services/dsh/contracts/openapi/dsh.openapi.yaml");
+const pathModulePaths = [
+  path.join(root, "services/dsh/contracts/openapi/paths/runtime.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/partner-onboarding.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/store-publication.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/managed-access.yaml"),
+];
 const outputPath = path.join(root, "services/dsh/clients/generated/dsh-types.ts");
 const operationsOutputPath = path.join(root, "services/dsh/clients/generated/dsh-operations.ts");
 const goOutputPath = path.join(root, "services/dsh/backend/internal/contract/dsh_types_generated.go");
 
 const source = fs.readFileSync(contractPath, "utf8");
-const sourceBlobSha = crypto
+const pathModuleSources = pathModulePaths.map((modulePath) => ({
+  path: modulePath,
+  source: fs.readFileSync(modulePath, "utf8"),
+}));
+const sourceGraph = [
+  `entrypoint:${path.relative(root, contractPath).replaceAll(path.sep, "/")}\n${source}`,
+  ...pathModuleSources.map(({ path: modulePath, source: moduleSource }) => `${path.relative(root, modulePath).replaceAll(path.sep, "/")}\n${moduleSource}`),
+].join("\n---\n");
+const sourceGraphSha = crypto
   .createHash("sha1")
-  .update("blob " + Buffer.byteLength(source, "utf8") + "\0" + source)
+  .update(sourceGraph)
   .digest("hex");
 
 const sourceLines = source.split("\n");
+
+function pathEntries(moduleSource) {
+  const entries = [];
+  for (const line of moduleSource.split("\n")) {
+    if (indentOf(line) === 2 && line.trim().startsWith("/") && line.trim().endsWith(":")) {
+      entries.push(line.trim().slice(0, -1));
+    }
+  }
+  return entries;
+}
+
+function validatePathGraph() {
+  const modulePaths = new Map();
+  for (const { path: modulePath, source: moduleSource } of pathModuleSources) {
+    if (!moduleSource.startsWith("paths:\n")) throw new Error("DSH path module must have a paths root: " + modulePath);
+    for (const entry of pathEntries(moduleSource)) {
+      if (modulePaths.has(entry)) throw new Error("duplicate DSH path entry: " + entry);
+      modulePaths.set(entry, modulePath);
+    }
+    for (const match of moduleSource.matchAll(/\$ref: "\.\.\/dsh\.openapi\.yaml#\/components\/(?:schemas|parameters|responses)\/([A-Za-z0-9_]+)"/g)) {
+      if (!source.includes(`    ${match[1]}:`)) throw new Error("DSH path module references missing component: " + match[1]);
+    }
+  }
+
+  const entrypointPaths = [];
+  for (const match of source.matchAll(/^  (\/[^:]+):\n    \$ref: "\.\/paths\/([^#]+)#\/paths\/([^"\n]+)"/gm)) {
+    const pathValue = match[1];
+    const modulePath = path.resolve(path.dirname(contractPath), "paths", match[2]);
+    const pointerPath = match[3].replaceAll("~1", "/").replaceAll("~0", "~");
+    if (!modulePaths.has(pathValue) || modulePaths.get(pathValue) !== modulePath || pointerPath !== pathValue) {
+      throw new Error("DSH path graph entrypoint reference is invalid: " + pathValue);
+    }
+    entrypointPaths.push(pathValue);
+  }
+  if (entrypointPaths.length !== modulePaths.size || new Set(entrypointPaths).size !== entrypointPaths.length) {
+    throw new Error("DSH path graph entrypoint does not cover each path module exactly once");
+  }
+}
+
+validatePathGraph();
 
 function indentOf(line) {
   return line.length - line.trimStart().length;
@@ -23,21 +77,23 @@ function indentOf(line) {
 
 function dshOperations() {
   const operations = [];
-  let currentPath = null;
-  let currentMethod = null;
-  for (const line of sourceLines) {
-    if (indentOf(line) === 2 && line.trim().startsWith("/") && line.trim().endsWith(":")) {
-      currentPath = line.trim().slice(0, -1);
-      currentMethod = null;
-      continue;
-    }
-    const method = line.trim().match(/^(get|post|put|patch|delete):$/);
-    if (indentOf(line) === 4 && method) {
-      currentMethod = method[1].toUpperCase();
-      continue;
-    }
-    if (currentPath && currentMethod && indentOf(line) === 6 && line.trim().startsWith("operationId:")) {
-      operations.push({ operationId: line.trim().slice("operationId:".length).trim(), method: currentMethod, path: currentPath });
+  for (const { source: moduleSource } of pathModuleSources) {
+    let currentPath = null;
+    let currentMethod = null;
+    for (const line of moduleSource.split("\n")) {
+      if (indentOf(line) === 2 && line.trim().startsWith("/") && line.trim().endsWith(":")) {
+        currentPath = line.trim().slice(0, -1);
+        currentMethod = null;
+        continue;
+      }
+      const method = line.trim().match(/^(get|post|put|patch|delete):$/);
+      if (indentOf(line) === 4 && method) {
+        currentMethod = method[1].toUpperCase();
+        continue;
+      }
+      if (currentPath && currentMethod && indentOf(line) === 6 && line.trim().startsWith("operationId:")) {
+        operations.push({ operationId: line.trim().slice("operationId:".length).trim(), method: currentMethod, path: currentPath });
+      }
     }
   }
   if (operations.length === 0) throw new Error("DSH OpenAPI operation closure is empty");
@@ -325,8 +381,8 @@ function generateGoTypes() {
   const schemaNames = extractSchemaNames();
   const header = [
     "// Code generated by services/dsh/tools/generate-types.mjs; DO NOT EDIT.",
-    "// Source: services/dsh/contracts/dsh.openapi.yaml.",
-    "// Source Git blob SHA: " + sourceBlobSha,
+    "// Source: services/dsh/contracts/openapi/dsh.openapi.yaml and referenced path modules.",
+    "// Source Graph SHA: " + sourceGraphSha,
     "",
     "package contract",
     "",
@@ -367,8 +423,8 @@ function generateOperations() {
   const operations = dshOperations();
   const tsHeader = [
     "/**",
-    " * AUTO-GENERATED from services/dsh/contracts/dsh.openapi.yaml.",
-    " * Source Git blob SHA: " + sourceBlobSha,
+    " * AUTO-GENERATED from services/dsh/contracts/openapi/dsh.openapi.yaml and referenced path modules.",
+    " * Source Graph SHA: " + sourceGraphSha,
     " * Generated by services/dsh/tools/generate-types.mjs. DO NOT EDIT.",
     " */",
     "",
@@ -385,8 +441,8 @@ function generateTypes() {
   const schemaNames = extractSchemaNames();
   const chunks = [
     "/**",
-    " * AUTO-GENERATED from services/dsh/contracts/dsh.openapi.yaml.",
-    " * Source Git blob SHA: " + sourceBlobSha,
+    " * AUTO-GENERATED from services/dsh/contracts/openapi/dsh.openapi.yaml and referenced path modules.",
+    " * Source Graph SHA: " + sourceGraphSha,
     " * Generated by services/dsh/tools/generate-types.mjs. DO NOT EDIT.",
     " */",
     "",
@@ -416,12 +472,12 @@ if (process.argv.includes("--check")) {
     console.error("DSH_GENERATED_TYPES=DRIFT");
     process.exit(1);
   }
-  console.log("DSH_GENERATED_TYPES=PASS blob=" + sourceBlobSha);
+  console.log("DSH_GENERATED_TYPES=PASS graph=" + sourceGraphSha);
 } else {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.mkdirSync(path.dirname(goOutputPath), { recursive: true });
   fs.writeFileSync(outputPath, generatedTypes, "utf8");
   fs.writeFileSync(operationsOutputPath, generatedOps, "utf8");
   fs.writeFileSync(goOutputPath, generatedGoTypes, "utf8");
-  console.log("DSH_GENERATED_TYPES=WRITTEN blob=" + sourceBlobSha);
+  console.log("DSH_GENERATED_TYPES=WRITTEN graph=" + sourceGraphSha);
 }

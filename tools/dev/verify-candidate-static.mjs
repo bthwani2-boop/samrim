@@ -7,7 +7,11 @@ const root = path.resolve(import.meta.dirname, "../..");
 function verifyPartnerModel() {
   const failures = [];
   const requiredFiles = [
-    "services/dsh/contracts/dsh.openapi.yaml",
+    "services/dsh/contracts/openapi/dsh.openapi.yaml",
+    "services/dsh/contracts/openapi/paths/runtime.yaml",
+    "services/dsh/contracts/openapi/paths/partner-onboarding.yaml",
+    "services/dsh/contracts/openapi/paths/store-publication.yaml",
+    "services/dsh/contracts/openapi/paths/managed-access.yaml",
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/partner_bootstrap.go",
@@ -56,7 +60,10 @@ function verifyPartnerModel() {
   }
   if (residueMatches > 0) failures.push(`current Partner-model residue count is non-zero: ${residueMatches}`);
 
-  const contract = fs.readFileSync(path.join(root, "services/dsh/contracts/dsh.openapi.yaml"), "utf8");
+  const contract = requiredFiles
+    .filter((relative) => relative.startsWith("services/dsh/contracts/openapi/"))
+    .map((relative) => fs.readFileSync(path.join(root, relative), "utf8"))
+    .join("\n");
   for (const required of [
     "required: [partnerActorId, firstStore, idempotentReplay]",
     "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, createdAt, updatedAt]",
@@ -114,7 +121,13 @@ function verifyPartnerModel() {
 
 function verifyPublicationReadiness() {
   const failures = [];
-  const contract = fs.readFileSync(path.join(root, "services/dsh/contracts/dsh.openapi.yaml"), "utf8");
+  const contract = [
+    "services/dsh/contracts/openapi/dsh.openapi.yaml",
+    "services/dsh/contracts/openapi/paths/runtime.yaml",
+    "services/dsh/contracts/openapi/paths/partner-onboarding.yaml",
+    "services/dsh/contracts/openapi/paths/store-publication.yaml",
+    "services/dsh/contracts/openapi/paths/managed-access.yaml",
+  ].map((relative) => fs.readFileSync(path.join(root, relative), "utf8")).join("\n");
   const generatedTS = fs.readFileSync(path.join(root, "services/dsh/clients/generated/dsh-types.ts"), "utf8");
   const generatedGo = fs.readFileSync(path.join(root, "services/dsh/backend/internal/contract/dsh_types_generated.go"), "utf8");
   const service = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storepublication/service.go"), "utf8");

@@ -640,7 +640,13 @@ for (const required of [
 }
 
 // DSH contract and boundaries governance
-const dshOpenApi = read("services/dsh/contracts/dsh.openapi.yaml");
+const dshOpenApi = [
+  "services/dsh/contracts/openapi/dsh.openapi.yaml",
+  "services/dsh/contracts/openapi/paths/runtime.yaml",
+  "services/dsh/contracts/openapi/paths/partner-onboarding.yaml",
+  "services/dsh/contracts/openapi/paths/store-publication.yaml",
+  "services/dsh/contracts/openapi/paths/managed-access.yaml",
+].map((relative) => read(relative)).join("\n");
 for (const required of [
   "/dsh/managed-roles/provision:",
   "/dsh/managed-roles/status:",
@@ -729,7 +735,7 @@ for (const [name, body] of [
   ["TypeScript operations", dshGeneratedOperations],
   ["Go types", dshGeneratedGo],
 ]) {
-  if (!body.includes("services/dsh/contracts/dsh.openapi.yaml") || !body.includes("DO NOT EDIT")) {
+  if (!body.includes("services/dsh/contracts/openapi/dsh.openapi.yaml") || !body.includes("Source Graph SHA:") || !body.includes("DO NOT EDIT")) {
     failures.push("DSH generated " + name + " is missing canonical provenance");
   }
 }
