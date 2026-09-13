@@ -4,6 +4,7 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env-file="))?.slice("--env-file=".length);
+const preexistingRuntime = process.argv.includes("--preexisting-runtime");
 const envFile = path.resolve(root, requestedEnv || "infra/local/compose/.env");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 
@@ -53,12 +54,14 @@ const checks = [
   ["Identity exact schema", "docker", [...composeArgs, "exec", "-T", "identity", "/schema-verify"], runtimeEnv],
   ["DSH exact schema", "docker", [...composeArgs, "exec", "-T", "dsh", "/schema-verify"], runtimeEnv],
   ["Control Panel browser shell (deterministic single-worker)", pnpm, ["--dir", "apps/control-panel", "exec", "playwright", "test", "--config", "playwright.config.ts", "--workers=1"], runtimeEnv],
-  ["Control Panel live Identity browser", pnpm, ["--dir", "apps/control-panel", "test:e2e:live"], { ...runtimeEnv, PLAYWRIGHT_LIVE_IDENTITY: "1" }],
+  ...(!preexistingRuntime ? [["Control Panel live Identity browser", pnpm, ["--dir", "apps/control-panel", "test:e2e:live"], { ...runtimeEnv, PLAYWRIGHT_LIVE_IDENTITY: "1" }]] : []),
   ["Identity migration v13 to v16", process.execPath, ["tools/dev/verify-migration-v13-to-v16.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH fresh baseline integrity", process.execPath, ["tools/dev/verify-dsh-baseline.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["Identity runtime semantics", process.execPath, ["tools/dev/verify-identity-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH managed-access runtime", process.execPath, ["tools/dev/verify-dsh-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
 ];
+
+if (preexistingRuntime) console.log("CANDIDATE_RUNTIME_LIVE_IDENTITY=SKIPPED reason=pre_existing_runtime_not_fresh");
 
 for (const [name, command, args, env] of checks) {
   console.log(`=== CANONICAL RUNTIME: ${name} ===`);

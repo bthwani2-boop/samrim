@@ -96,7 +96,9 @@ try {
             else { Write-Host 'CANONICAL_RUNTIME_START=SKIPPED reason=pre_existing_runtime' }
             Write-Host "STARTED_BY_THIS_VERIFIER=$([int]$startedByThisVerifier)"
             Run-Step 'Canonical runtime doctor' { pnpm runtime:doctor }
-            Run-Step 'Canonical runtime verification' { node tools/dev/verify-candidate-runtime.mjs "--env-file=$envPath" }
+            $runtimeVerificationArgs = @("--env-file=$envPath")
+            if ($wasRunningBefore) { $runtimeVerificationArgs += '--preexisting-runtime' }
+            Run-Step 'Canonical runtime verification' { node tools/dev/verify-candidate-runtime.mjs @runtimeVerificationArgs }
             Run-Step 'Canonical runtime status' { pnpm runtime:status }
             Write-Host 'LOCAL_CANDIDATE_RUNTIME=PASS'
         }
