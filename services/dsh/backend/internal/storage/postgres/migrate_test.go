@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,18 +18,15 @@ import (
 )
 
 const (
-	testPartnerActorID = "act_partner_dsh_baseline"
-	testOtherActorID   = "act_other_dsh_baseline"
-	testStoreID        = "store_partner_dsh_baseline"
-	testIdempotencyKey = "idem_partner_dsh_baseline"
-	testRequestHash    = "request-hash-dsh-baseline"
+	testPartnerActorID  = "act_partner_dsh_v4"
+	testOtherPartnerID  = "act_other_partner_dsh_v4"
+	testOperatorActorID = "act_operator_dsh_v4"
 )
 
-func TestFreshBaselineIntegrity(t *testing.T) {
+func TestFreshJoiningAndAssortmentIntegrity(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if databaseURL == "" {
-		t.Skip("DSH_DATABASE_URL is required for the fresh baseline proof")
-		return
+		t.Skip("DSH_DATABASE_URL is required for the fresh DSH proof")
 	}
 
 	rootDB, err := sql.Open("postgres", databaseURL)
@@ -36,7 +34,6 @@ func TestFreshBaselineIntegrity(t *testing.T) {
 		t.Fatalf("open postgres: %v", err)
 	}
 	t.Cleanup(func() { _ = rootDB.Close() })
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := rootDB.PingContext(ctx); err != nil {
@@ -44,169 +41,259 @@ func TestFreshBaselineIntegrity(t *testing.T) {
 	}
 
 	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion || records[0].Name != "001_partner_store_baseline.sql" {
-			t.Fatalf("unexpected DSH baseline: records=%d sql=%d name=%s", len(records), len(migrationSQL), records[0].Name)
+		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion || records[2].Name != "003_joining_cases_and_catalog.sql" || records[3].Name != "004_central_product_store_assortment_cutover.sql" || records[4].Name != "005_joining_case_partner_correction.sql" || records[5].Name != "006_joining_case_correct_and_resubmit.sql" {
+			t.Fatalf("unexpected DSH migration graph: records=%d sql=%d third=%s fourth=%s fifth=%s sixth=%s", len(records), len(migrationSQL), records[2].Name, records[3].Name, records[4].Name, records[5].Name)
 		}
 		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
-			t.Fatalf("apply fresh DSH baseline: %v", err)
+			t.Fatalf("apply fresh DSH migrations: %v", err)
 		}
 		if err := postgres.VerifySchema(ctx, db, records); err != nil {
-			t.Fatalf("verify fresh DSH baseline: %v", err)
+			t.Fatalf("verify fresh DSH schema: %v", err)
 		}
 		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
-			t.Fatalf("rerun DSH baseline with matching checksum: %v", err)
+			t.Fatalf("rerun DSH migrations with matching checksums: %v", err)
 		}
 		if err := postgres.VerifySchema(ctx, db, records); err != nil {
-			t.Fatalf("verify rerun DSH baseline: %v", err)
+			t.Fatalf("verify rerun DSH schema: %v", err)
+		}
+		for _, table := range []string{"partner_bootstrap_idempotency", "partner_bootstrap_audit"} {
+			var absent bool
+			if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NULL", "dsh."+table).Scan(&absent); err != nil || !absent {
+				t.Fatalf("legacy DSH table remains after cutover: %s err=%v", table, err)
+			}
 		}
 
-		if _, err := db.ExecContext(ctx, `
-			INSERT INTO dsh.stores(id, partner_actor_id, name)
-			VALUES($1, $2, 'Baseline Store')`, testStoreID, testPartnerActorID); err != nil {
-			t.Fatalf("insert canonical Store: %v", err)
+		created, err := postgres.CreateJoiningCase(ctx, db, "idem-joining-create-v3", postgres.HashJoiningCaseRequest("+96777000001", "Cafe V3", "Cafe Store"), testOperatorActorID, "corr-joining-create-v3", "+96777000001", "Cafe V3", "Cafe Store")
+		if err != nil || created.Case.State != "draft" || created.Case.Version != 1 || created.Replayed {
+			t.Fatalf("create joining case failed: %+v err=%v", created, err)
 		}
-		if _, err := db.ExecContext(ctx, `
-			INSERT INTO dsh.partner_bootstrap_idempotency
-			(idempotency_key, request_hash, partner_actor_id, store_id)
-			VALUES($1, $2, $3, $4)`, testIdempotencyKey, testRequestHash, testPartnerActorID, testStoreID); err != nil {
-			t.Fatalf("insert canonical idempotency record: %v", err)
+		queued, err := postgres.ListJoiningCases(ctx, db, "draft", 50, "")
+		if err != nil || len(queued.Cases) != 1 || queued.Cases[0].ID != created.Case.ID || queued.Cases[0].State != "draft" || queued.NextCursor != "" {
+			t.Fatalf("joining queue read failed: %+v err=%v", queued, err)
 		}
-		if _, err := db.ExecContext(ctx, `
-			INSERT INTO dsh.partner_bootstrap_idempotency
-			(idempotency_key, request_hash, partner_actor_id, store_id)
-			VALUES('idem_invalid_actor', $1, $2, $3)`, testRequestHash, testOtherActorID, testStoreID); err == nil {
-			t.Fatal("database accepted idempotency actor/store mismatch")
+		replay, err := postgres.CreateJoiningCase(ctx, db, "idem-joining-create-v3", postgres.HashJoiningCaseRequest("+96777000001", "Cafe V3", "Cafe Store"), testOperatorActorID, "corr-joining-replay-v3", "+96777000001", "Cafe V3", "Cafe Store")
+		if err != nil || !replay.Replayed || replay.Case.ID != created.Case.ID {
+			t.Fatalf("joining create replay failed: %+v err=%v", replay, err)
 		}
-		if _, err := db.ExecContext(ctx, `
-			INSERT INTO dsh.partner_bootstrap_audit
-			(event_type, idempotency_key, correlation_id, acting_actor_id, partner_actor_id, store_id, request_hash)
-			VALUES('partner_bootstrap_created', $1, 'corr-invalid-actor', 'act_operator_dsh_baseline', $2, $3, $4)`, testIdempotencyKey, testOtherActorID, testStoreID, testRequestHash); err == nil {
-			t.Fatal("database accepted audit actor/idempotency mismatch")
-		}
-		if _, err := db.ExecContext(ctx, `
-			INSERT INTO dsh.partner_bootstrap_audit
-			(event_type, idempotency_key, correlation_id, acting_actor_id, partner_actor_id, store_id, request_hash)
-			VALUES('partner_bootstrap_created', $1, 'corr-valid-baseline', 'act_operator_dsh_baseline', $2, $3, $4)`, testIdempotencyKey, testPartnerActorID, testStoreID, testRequestHash); err != nil {
-			t.Fatalf("insert canonical audit record: %v", err)
+		if _, err := postgres.CreateJoiningCase(ctx, db, "idem-joining-create-v3", postgres.HashJoiningCaseRequest("+96777000001", "Cafe Changed", "Cafe Store"), testOperatorActorID, "corr-joining-conflict-v3", "+96777000001", "Cafe Changed", "Cafe Store"); !errors.Is(err, postgres.ErrJoiningCaseIdempotency) {
+			t.Fatalf("expected joining idempotency conflict, got %v", err)
 		}
 
-		var stores, idempotency, audit, history int
+		submitted, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, 1, "idem-joining-submit-v3", postgres.HashJoiningCaseSubmit(created.Case.ID, testPartnerActorID, 1), testOperatorActorID, "corr-joining-submit-v3")
+		if err != nil || submitted.Case.State != "submitted" || submitted.Case.Version != 2 || submitted.Case.PartnerActorID != testPartnerActorID {
+			t.Fatalf("submit joining case failed: %+v err=%v", submitted, err)
+		}
+		if _, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, 1, "idem-joining-stale-v3", postgres.HashJoiningCaseSubmit(created.Case.ID, testPartnerActorID, 1), testOperatorActorID, "corr-joining-stale-v3"); !errors.Is(err, postgres.ErrJoiningCaseVersion) {
+			t.Fatalf("expected joining version conflict, got %v", err)
+		}
+
+		correction, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "needs_correction", "أكمل عنوان المتجر", 2, "idem-joining-correction-v3", postgres.HashJoiningCaseReview(created.Case.ID, "needs_correction", "أكمل عنوان المتجر", 2), testOperatorActorID, "corr-joining-correction-v3")
+		if err != nil || correction.Case.State != "needs_correction" || correction.Case.Version != 3 || correction.Case.CorrectionReason != "أكمل عنوان المتجر" || correction.Case.Store != nil {
+			t.Fatalf("joining correction failed: %+v err=%v", correction, err)
+		}
+		if _, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, testOtherPartnerID, 3, "idem-joining-rebind-v3", postgres.HashJoiningCaseSubmit(created.Case.ID, testOtherPartnerID, 3), testOperatorActorID, "corr-joining-rebind-v3"); !errors.Is(err, postgres.ErrJoiningCaseState) {
+			t.Fatalf("expected operator resubmission state rejection, got %v", err)
+		}
+		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testOtherPartnerID, "Nope", "Nope Store", 3, "idem-joining-wrong-partner-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testOtherPartnerID, "Nope", "Nope Store", 3), "corr-joining-wrong-partner-v6"); !errors.Is(err, postgres.ErrJoiningCasePartnerAccess) {
+			t.Fatalf("expected wrong partner rejection, got %v", err)
+		}
+		resubmitted, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3, "idem-joining-correct-resubmit-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3), "corr-joining-correct-resubmit-v6")
+		if err != nil || resubmitted.Case.State != "submitted" || resubmitted.Case.Version != 4 || resubmitted.Case.BusinessName != "Cafe Corrected" || resubmitted.Case.FirstStoreName != "Cafe Corrected Store" || resubmitted.Case.CorrectionReason != "" {
+			t.Fatalf("joining atomic correction and resubmission failed: %+v err=%v", resubmitted, err)
+		}
+		resubmitReplay, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3, "idem-joining-correct-resubmit-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3), "corr-joining-correct-resubmit-replay-v6")
+		if err != nil || !resubmitReplay.Replayed || resubmitReplay.Case.Version != 4 {
+			t.Fatalf("joining atomic correction replay failed: %+v err=%v", resubmitReplay, err)
+		}
+		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, "Different", "Different Store", 3, "idem-joining-correct-resubmit-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testPartnerActorID, "Different", "Different Store", 3), "corr-joining-correct-resubmit-conflict-v6"); !errors.Is(err, postgres.ErrJoiningCaseIdempotency) {
+			t.Fatalf("expected atomic correction idempotency conflict, got %v", err)
+		}
+		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, "Different", "Different Store", 4, "idem-joining-correct-resubmit-invalid-state-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testPartnerActorID, "Different", "Different Store", 4), "corr-joining-correct-resubmit-invalid-state-v6"); !errors.Is(err, postgres.ErrJoiningCaseState) {
+			t.Fatalf("expected atomic correction invalid-state rejection, got %v", err)
+		}
+		concurrent, err := postgres.CreateJoiningCase(ctx, db, "idem-joining-concurrent-create-v6", postgres.HashJoiningCaseRequest("+96777000002", "Concurrent Cafe", "Concurrent Store"), testOperatorActorID, "corr-joining-concurrent-create-v6", "+96777000002", "Concurrent Cafe", "Concurrent Store")
+		if err != nil {
+			t.Fatalf("create concurrent joining case: %v", err)
+		}
+		concurrentSubmit, err := postgres.SubmitJoiningCase(ctx, db, concurrent.Case.ID, testOtherPartnerID, 1, "idem-joining-concurrent-submit-v6", postgres.HashJoiningCaseSubmit(concurrent.Case.ID, testOtherPartnerID, 1), testOperatorActorID, "corr-joining-concurrent-submit-v6")
+		if err != nil {
+			t.Fatalf("submit concurrent joining case: %v", err)
+		}
+		concurrentCorrection, err := postgres.ReviewJoiningCase(ctx, db, concurrent.Case.ID, "needs_correction", "أكمل مستند النشاط", 2, "idem-joining-concurrent-review-v6", postgres.HashJoiningCaseReview(concurrent.Case.ID, "needs_correction", "أكمل مستند النشاط", 2), testOperatorActorID, "corr-joining-concurrent-review-v6")
+		if err != nil || concurrentSubmit.Case.State != "submitted" || concurrentCorrection.Case.State != "needs_correction" {
+			t.Fatalf("prepare concurrent joining case failed: %+v %+v err=%v", concurrentSubmit, concurrentCorrection, err)
+		}
+		var wait sync.WaitGroup
+		results := make(chan error, 2)
+		for i, name := range []string{"Concurrent A", "Concurrent B"} {
+			wait.Add(1)
+			go func(index int, business string) {
+				defer wait.Done()
+				_, callErr := postgres.CorrectAndResubmitJoiningCase(ctx, db, concurrent.Case.ID, testOtherPartnerID, business, business+" Store", 3, fmt.Sprintf("idem-joining-concurrent-correct-v6-%d", index), postgres.HashJoiningCaseCorrectAndResubmit(concurrent.Case.ID, testOtherPartnerID, business, business+" Store", 3), fmt.Sprintf("corr-joining-concurrent-correct-v6-%d", index))
+				results <- callErr
+			}(i, name)
+		}
+		wait.Wait()
+		close(results)
+		var concurrentSuccess, concurrentVersionConflict int
+		for callErr := range results {
+			if callErr == nil {
+				concurrentSuccess++
+			} else if errors.Is(callErr, postgres.ErrJoiningCaseVersion) {
+				concurrentVersionConflict++
+			}
+		}
+		if concurrentSuccess != 1 || concurrentVersionConflict != 1 {
+			t.Fatalf("atomic correction concurrency was not serialized: success=%d version_conflict=%d", concurrentSuccess, concurrentVersionConflict)
+		}
+		firstPage, err := postgres.ListJoiningCases(ctx, db, "", 1, "")
+		if err != nil || len(firstPage.Cases) != 1 || firstPage.NextCursor == "" {
+			t.Fatalf("joining queue first page failed: %+v err=%v", firstPage, err)
+		}
+		secondPage, err := postgres.ListJoiningCases(ctx, db, "", 1, firstPage.NextCursor)
+		if err != nil || len(secondPage.Cases) != 1 || secondPage.Cases[0].ID == firstPage.Cases[0].ID || secondPage.NextCursor != "" {
+			t.Fatalf("joining queue keyset page failed: %+v err=%v", secondPage, err)
+		}
+		if _, err := postgres.ListJoiningCases(ctx, db, "", 1, "not-a-valid-cursor"); !errors.Is(err, postgres.ErrJoiningCaseInvalidCursor) {
+			t.Fatalf("expected invalid joining queue cursor rejection, got %v", err)
+		}
+		if _, err := postgres.ListJoiningCases(ctx, db, "", 51, ""); !errors.Is(err, postgres.ErrJoiningCaseInvalidLimit) {
+			t.Fatalf("expected invalid joining queue limit rejection, got %v", err)
+		}
+		if _, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "approved", "", 4, "idem-joining-self-review-v6", postgres.HashJoiningCaseReview(created.Case.ID, "approved", "", 4), testPartnerActorID, "corr-joining-self-review-v6"); !errors.Is(err, postgres.ErrJoiningCaseSelfReview) {
+			t.Fatalf("expected joining self-review rejection, got %v", err)
+		}
+		approved, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "approved", "", 4, "idem-joining-approve-v6", postgres.HashJoiningCaseReview(created.Case.ID, "approved", "", 4), testOperatorActorID, "corr-joining-approve-v6")
+		if err != nil || approved.Case.State != "approved" || approved.Case.Version != 5 || approved.Case.Store == nil || approved.Case.Store.PartnerActorID != testPartnerActorID || approved.Case.Store.Name != "Cafe Corrected Store" {
+			t.Fatalf("joining approval failed: %+v err=%v", approved, err)
+		}
+
+		productInput := postgres.CentralProductInput{CanonicalName: "قهوة عربية", Brand: stringPtr("BThwani"), Barcode: stringPtr("6281000000001"), CanonicalImageURL: stringPtr("https://example.com/coffee.jpg"), SellUnit: "piece"}
+		product, err := postgres.CreateCentralProduct(ctx, db, productInput, "idem-product-create-v4", postgres.HashCentralProductCreateRequest(productInput), testOperatorActorID, "corr-product-create-v4")
+		if err != nil || !product.Product.Active || product.Product.Version != 1 || product.Replayed {
+			t.Fatalf("central Product create failed: %+v err=%v", product, err)
+		}
+		productReplay, err := postgres.CreateCentralProduct(ctx, db, productInput, "idem-product-create-v4", postgres.HashCentralProductCreateRequest(productInput), testOperatorActorID, "corr-product-replay-v4")
+		if err != nil || !productReplay.Replayed || productReplay.Product.ID != product.Product.ID {
+			t.Fatalf("central Product create replay failed: %+v err=%v", productReplay, err)
+		}
+		if _, err := postgres.CreateCentralProduct(ctx, db, postgres.CentralProductInput{CanonicalName: "شاي", SellUnit: "piece"}, "idem-product-create-v4", postgres.HashCentralProductCreateRequest(postgres.CentralProductInput{CanonicalName: "شاي", SellUnit: "piece"}), testOperatorActorID, "corr-product-conflict-v4"); !errors.Is(err, postgres.ErrCentralProductIdempotency) {
+			t.Fatalf("expected central Product idempotency conflict, got %v", err)
+		}
+		changedProductInput := postgres.CentralProductUpdateInput{CanonicalName: "قهوة عربية محمصة", Brand: productInput.Brand, Barcode: productInput.Barcode, CanonicalImageURL: stringPtr("https://example.com/coffee-roasted.jpg"), Active: true}
+		if _, err := postgres.UpdateCentralProduct(ctx, db, product.Product.ID, changedProductInput, 9, "idem-product-stale-v4", postgres.HashCentralProductUpdateRequest(product.Product.ID, changedProductInput, 9), testOperatorActorID, "corr-product-stale-v4"); !errors.Is(err, postgres.ErrCentralProductVersion) {
+			t.Fatalf("expected central Product version conflict, got %v", err)
+		}
+		updatedProduct, err := postgres.UpdateCentralProduct(ctx, db, product.Product.ID, changedProductInput, 1, "idem-product-update-v4", postgres.HashCentralProductUpdateRequest(product.Product.ID, changedProductInput, 1), testOperatorActorID, "corr-product-update-v4")
+		if err != nil || updatedProduct.Product.CanonicalName != "قهوة عربية محمصة" || updatedProduct.Product.Version != 2 {
+			t.Fatalf("central Product update failed: %+v err=%v", updatedProduct, err)
+		}
+
+		assortment, err := postgres.CreateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1250, "idem-assortment-create-v4", postgres.HashStoreAssortmentCreateRequest(approved.Case.Store.ID, product.Product.ID, 1250), testPartnerActorID, "corr-assortment-create-v4")
+		if err != nil || assortment.Assortment.PublicationState != "draft" || assortment.Assortment.Version != 1 || assortment.Replayed {
+			t.Fatalf("Store Assortment create failed: %+v err=%v", assortment, err)
+		}
+		assortmentReplay, err := postgres.CreateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1250, "idem-assortment-create-v4", postgres.HashStoreAssortmentCreateRequest(approved.Case.Store.ID, product.Product.ID, 1250), testPartnerActorID, "corr-assortment-replay-v4")
+		if err != nil || !assortmentReplay.Replayed || assortmentReplay.Assortment.ProductID != product.Product.ID {
+			t.Fatalf("Store Assortment create replay failed: %+v err=%v", assortmentReplay, err)
+		}
+		if _, err := postgres.CreateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1300, "idem-assortment-create-v4", postgres.HashStoreAssortmentCreateRequest(approved.Case.Store.ID, product.Product.ID, 1300), testPartnerActorID, "corr-assortment-conflict-v4"); !errors.Is(err, postgres.ErrStoreAssortmentIdempotency) {
+			t.Fatalf("expected Store Assortment idempotency conflict, got %v", err)
+		}
+		if _, err := postgres.UpdateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 9, "idem-assortment-stale-v4", postgres.HashStoreAssortmentUpdateRequest(approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 9), testPartnerActorID, "corr-assortment-stale-v4"); !errors.Is(err, postgres.ErrStoreAssortmentVersion) {
+			t.Fatalf("expected Store Assortment version conflict, got %v", err)
+		}
+		publishedAssortment, err := postgres.UpdateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 1, "idem-assortment-publish-v4", postgres.HashStoreAssortmentUpdateRequest(approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 1), testPartnerActorID, "corr-assortment-publish-v4")
+		if err != nil || publishedAssortment.Assortment.PublicationState != "published" || publishedAssortment.Assortment.Version != 2 {
+			t.Fatalf("Store Assortment publish failed: %+v err=%v", publishedAssortment, err)
+		}
+		if _, err := postgres.ReadPublishedStore(ctx, db, approved.Case.Store.ID); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("unpublished Store became public before Store publication: %v", err)
+		}
+
+		store, err := postgres.SetStorePublication(ctx, db, approved.Case.Store.ID, "published", 1, "idem-store-publish-v3", postgres.HashStorePublicationRequest(approved.Case.Store.ID, "published", 1), testOperatorActorID, "corr-store-publish-v3")
+		if err != nil || store.Store.PublicationState != "published" || store.Store.Version != 2 {
+			t.Fatalf("Store publication failed: %+v err=%v", store, err)
+		}
+		publicStore, err := postgres.ReadPublishedStore(ctx, db, approved.Case.Store.ID)
+		if err != nil || len(publicStore.Assortments) != 1 || publicStore.Assortments[0].ProductID != product.Product.ID || publicStore.Assortments[0].Product.CanonicalName != "قهوة عربية محمصة" {
+			t.Fatalf("public Store Assortment readback failed: %+v err=%v", publicStore, err)
+		}
+		if _, err := postgres.SetStorePublication(ctx, db, approved.Case.Store.ID, "hidden", 1, "idem-store-stale-v4", postgres.HashStorePublicationRequest(approved.Case.Store.ID, "hidden", 1), testOperatorActorID, "corr-store-stale-v4"); !errors.Is(err, postgres.ErrPublicationVersionConflict) {
+			t.Fatalf("expected Store version conflict, got %v", err)
+		}
+
+		disabledProductInput := postgres.CentralProductUpdateInput{CanonicalName: changedProductInput.CanonicalName, Brand: changedProductInput.Brand, Barcode: changedProductInput.Barcode, CanonicalImageURL: changedProductInput.CanonicalImageURL, Active: false}
+		if _, err := postgres.UpdateCentralProduct(ctx, db, product.Product.ID, disabledProductInput, 2, "idem-product-disable-v4", postgres.HashCentralProductUpdateRequest(product.Product.ID, disabledProductInput, 2), testOperatorActorID, "corr-product-disable-v4"); err != nil {
+			t.Fatalf("disable central Product failed: %v", err)
+		}
+		if _, err := postgres.UpdateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1250, true, "hidden", 2, "idem-assortment-hide-v4", postgres.HashStoreAssortmentUpdateRequest(approved.Case.Store.ID, product.Product.ID, 1250, true, "hidden", 2), testPartnerActorID, "corr-assortment-hide-v4"); err != nil {
+			t.Fatalf("hide Store Assortment failed: %v", err)
+		}
+		if _, err := postgres.UpdateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 3, "idem-assortment-disabled-v4", postgres.HashStoreAssortmentUpdateRequest(approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 3), testPartnerActorID, "corr-assortment-disabled-v4"); !errors.Is(err, postgres.ErrStoreAssortmentProductDisabled) {
+			t.Fatalf("expected disabled central Product publication rejection, got %v", err)
+		}
+		if _, err := postgres.ReadPublishedStore(ctx, db, approved.Case.Store.ID); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("disabled central Product remained public: %v", err)
+		}
+		if _, err := postgres.UpdateCentralProduct(ctx, db, product.Product.ID, changedProductInput, 3, "idem-product-enable-v4", postgres.HashCentralProductUpdateRequest(product.Product.ID, changedProductInput, 3), testOperatorActorID, "corr-product-enable-v4"); err != nil {
+			t.Fatalf("re-enable central Product failed: %v", err)
+		}
+		if _, err := postgres.UpdateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 3, "idem-assortment-republish-v4", postgres.HashStoreAssortmentUpdateRequest(approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 3), testPartnerActorID, "corr-assortment-republish-v4"); err != nil {
+			t.Fatalf("republish Store Assortment failed: %v", err)
+		}
+		unavailable, err := postgres.UpdateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1250, false, "published", 4, "idem-assortment-unavailable-v4", postgres.HashStoreAssortmentUpdateRequest(approved.Case.Store.ID, product.Product.ID, 1250, false, "published", 4), testPartnerActorID, "corr-assortment-unavailable-v4")
+		if err != nil || unavailable.Assortment.Version != 5 {
+			t.Fatalf("Store Assortment availability update failed: %+v err=%v", unavailable, err)
+		}
+		if _, err := postgres.ReadPublishedStore(ctx, db, approved.Case.Store.ID); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("unavailable Store Assortment remained public: %v", err)
+		}
+		if _, err := postgres.UpdateStoreAssortment(ctx, db, approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 5, "idem-assortment-available-v4", postgres.HashStoreAssortmentUpdateRequest(approved.Case.Store.ID, product.Product.ID, 1250, true, "published", 5), testPartnerActorID, "corr-assortment-available-v4"); err != nil {
+			t.Fatalf("restore Store Assortment availability failed: %v", err)
+		}
+		hidden, err := postgres.SetStorePublication(ctx, db, approved.Case.Store.ID, "hidden", 2, "idem-store-hide-v4", postgres.HashStorePublicationRequest(approved.Case.Store.ID, "hidden", 2), testOperatorActorID, "corr-store-hide-v4")
+		if err != nil || hidden.Store.PublicationState != "hidden" || hidden.Store.Version != 3 {
+			t.Fatalf("Store hide failed: %+v err=%v", hidden, err)
+		}
+		if _, err := postgres.ReadPublishedStore(ctx, db, approved.Case.Store.ID); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("hidden Store remained public: %v", err)
+		}
+
+		var stores, cases, joiningAudit, products, productAudit, assortments, assortmentAudit, history int
 		for _, check := range []struct {
 			name  string
 			query string
 			out   *int
 		}{
 			{"stores", "SELECT count(*) FROM dsh.stores", &stores},
-			{"idempotency", "SELECT count(*) FROM dsh.partner_bootstrap_idempotency", &idempotency},
-			{"audit", "SELECT count(*) FROM dsh.partner_bootstrap_audit", &audit},
+			{"joining cases", "SELECT count(*) FROM dsh.joining_cases", &cases},
+			{"joining audit", "SELECT count(*) FROM dsh.joining_case_audit", &joiningAudit},
+			{"central Products", "SELECT count(*) FROM dsh.central_products", &products},
+			{"central Product audit", "SELECT count(*) FROM dsh.central_product_audit", &productAudit},
+			{"Store Assortments", "SELECT count(*) FROM dsh.store_assortments", &assortments},
+			{"Store Assortment audit", "SELECT count(*) FROM dsh.store_assortment_audit", &assortmentAudit},
 			{"migration history", "SELECT count(*) FROM dsh.schema_migrations", &history},
 		} {
 			if err := db.QueryRowContext(ctx, check.query).Scan(check.out); err != nil {
 				t.Fatalf("read %s: %v", check.name, err)
 			}
 		}
-		if stores != 1 || idempotency != 1 || audit != 1 || history != postgres.SchemaVersion {
-			t.Fatalf("unexpected baseline readback: stores=%d idempotency=%d audit=%d history=%d", stores, idempotency, audit, history)
-		}
-
-		guardErr := errors.New("partner publication eligibility is not satisfied")
-		guardHash := postgres.HashStorePublicationRequest(testStoreID, "published", 1)
-		if _, err := postgres.SetStorePublicationWithGuard(ctx, db, testStoreID, "published", 1, "idem_store_guarded", guardHash, "act_operator_dsh_baseline", "corr-guarded", func(context.Context, postgres.StoreRecord) error {
-			return guardErr
-		}); !errors.Is(err, guardErr) {
-			t.Fatalf("expected publication guard error, got %v", err)
-		}
-		unchanged, err := postgres.ReadStore(ctx, db, testStoreID)
-		if err != nil {
-			t.Fatalf("read Store after rejected publication: %v", err)
-		}
-		if unchanged.PublicationState != "unpublished" || unchanged.Version != 1 || unchanged.PublicationChangedAt != nil {
-			t.Fatalf("rejected publication changed Store state: %+v", unchanged)
-		}
-		var guardedIdempotency, guardedAudit int
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_publication_idempotency WHERE idempotency_key='idem_store_guarded'").Scan(&guardedIdempotency); err != nil {
-			t.Fatalf("read rejected publication idempotency: %v", err)
-		}
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_publication_audit WHERE idempotency_key='idem_store_guarded'").Scan(&guardedAudit); err != nil {
-			t.Fatalf("read rejected publication audit: %v", err)
-		}
-		if guardedIdempotency != 0 || guardedAudit != 0 {
-			t.Fatalf("rejected publication left durable records: idempotency=%d audit=%d", guardedIdempotency, guardedAudit)
-		}
-
-		publishHash := postgres.HashStorePublicationRequest(testStoreID, "published", 1)
-		published, err := postgres.SetStorePublication(ctx, db, testStoreID, "published", 1, "idem_store_publish", publishHash, "act_operator_dsh_baseline", "corr-publish-baseline")
-		if err != nil {
-			t.Fatalf("publish canonical Store: %v", err)
-		}
-		if published.Replayed || published.Store.PublicationState != "published" || published.Store.Version != 2 || published.Store.PublicationChangedAt == nil {
-			t.Fatalf("unexpected Store publication result: %+v", published)
-		}
-		visible, err := postgres.ListPublishedStores(ctx, db)
-		if err != nil {
-			t.Fatalf("list published Stores: %v", err)
-		}
-		if len(visible) != 1 || visible[0].ID != testStoreID {
-			t.Fatalf("unexpected published Store list: %+v", visible)
-		}
-		publicStore, err := postgres.ReadPublishedStore(ctx, db, testStoreID)
-		if err != nil {
-			t.Fatalf("read published Store: %v", err)
-		}
-		if publicStore.ID != testStoreID || publicStore.Name != "Baseline Store" || publicStore.Version != 2 {
-			t.Fatalf("unexpected published Store readback: %+v", publicStore)
-		}
-
-		replay, err := postgres.SetStorePublication(ctx, db, testStoreID, "published", 1, "idem_store_publish", publishHash, "act_operator_dsh_baseline", "corr-publish-retry")
-		if err != nil {
-			t.Fatalf("replay Store publication: %v", err)
-		}
-		if !replay.Replayed || replay.Store.Version != 2 || replay.Store.PublicationState != "published" {
-			t.Fatalf("unexpected Store publication replay: %+v", replay)
-		}
-		if _, err := postgres.SetStorePublication(ctx, db, testStoreID, "hidden", 1, "idem_store_publish", postgres.HashStorePublicationRequest(testStoreID, "hidden", 1), "act_operator_dsh_baseline", "corr-publish-conflict"); !errors.Is(err, postgres.ErrPublicationIdempotencyConflict) {
-			t.Fatalf("expected publication idempotency conflict, got %v", err)
-		}
-		if _, err := postgres.SetStorePublication(ctx, db, testStoreID, "hidden", 1, "idem_store_stale", postgres.HashStorePublicationRequest(testStoreID, "hidden", 1), "act_operator_dsh_baseline", "corr-publish-stale"); !errors.Is(err, postgres.ErrPublicationVersionConflict) {
-			t.Fatalf("expected publication version conflict, got %v", err)
-		}
-
-		hidden, err := postgres.SetStorePublication(ctx, db, testStoreID, "hidden", 2, "idem_store_hide", postgres.HashStorePublicationRequest(testStoreID, "hidden", 2), "act_operator_dsh_baseline", "corr-hide-baseline")
-		if err != nil {
-			t.Fatalf("hide canonical Store: %v", err)
-		}
-		if hidden.Replayed || hidden.Store.PublicationState != "hidden" || hidden.Store.Version != 3 {
-			t.Fatalf("unexpected Store hide result: %+v", hidden)
-		}
-		if _, err := postgres.ReadPublishedStore(ctx, db, testStoreID); !errors.Is(err, postgres.ErrStoreNotFound) {
-			t.Fatalf("hidden Store remained publicly readable: %v", err)
-		}
-		visible, err = postgres.ListPublishedStores(ctx, db)
-		if err != nil {
-			t.Fatalf("list Stores after hide: %v", err)
-		}
-		if len(visible) != 0 {
-			t.Fatalf("hidden Store remained in public discovery: %+v", visible)
-		}
-		var publicationIdempotency, publicationAudit int
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_publication_idempotency").Scan(&publicationIdempotency); err != nil {
-			t.Fatalf("read publication idempotency count: %v", err)
-		}
-		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_publication_audit").Scan(&publicationAudit); err != nil {
-			t.Fatalf("read publication audit count: %v", err)
-		}
-		if publicationIdempotency != 2 || publicationAudit != 2 {
-			t.Fatalf("unexpected publication audit readback: idempotency=%d audit=%d", publicationIdempotency, publicationAudit)
+		if stores != 1 || cases != 2 || joiningAudit != 9 || products != 1 || productAudit != 4 || assortments != 1 || assortmentAudit != 6 || history != postgres.SchemaVersion {
+			t.Fatalf("unexpected central Product / Store Assortment readback: stores=%d cases=%d joiningAudit=%d products=%d productAudit=%d assortments=%d assortmentAudit=%d history=%d", stores, cases, joiningAudit, products, productAudit, assortments, assortmentAudit, history)
 		}
 	})
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test func(context.Context, *sql.DB, []postgres.MigrationRecord, []string)) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	databaseName := fmt.Sprintf("dsh_baseline_test_%d", time.Now().UnixNano())
+	databaseName := fmt.Sprintf("dsh_v4_test_%d", time.Now().UnixNano())
 	if _, err := rootDB.ExecContext(ctx, "CREATE DATABASE "+databaseName); err != nil {
 		t.Fatalf("create isolated DSH database: %v", err)
 	}
@@ -217,7 +304,6 @@ func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test fu
 			t.Errorf("drop isolated DSH database: %v", err)
 		}
 	})
-
 	parsedURL, err := url.Parse(databaseURL)
 	if err != nil {
 		t.Fatalf("parse DSH database URL: %v", err)

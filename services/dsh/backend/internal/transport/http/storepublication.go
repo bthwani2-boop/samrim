@@ -19,6 +19,7 @@ import (
 type StorePublicationServer struct {
 	auth    *auth.ServiceToken
 	service *storepublication.Service
+	db      *sql.DB
 }
 
 func NewStorePublication(identityClient *identity.Client, accessToken string, db *sql.DB) (*StorePublicationServer, error) {
@@ -30,8 +31,10 @@ func NewStorePublication(identityClient *identity.Client, accessToken string, db
 	if err != nil {
 		return nil, err
 	}
-	return &StorePublicationServer{auth: authorizer, service: service}, nil
+	return &StorePublicationServer{auth: authorizer, service: service, db: db}, nil
 }
+
+func (s *StorePublicationServer) serviceDB() *sql.DB { return s.db }
 
 func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/stores/{storeId}/publication", s.publish)
@@ -66,7 +69,12 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 		writeStorePublicationError(w, err)
 		return
 	}
-	writeStorePublication(w, http.StatusOK, result, readiness)
+	assortments, err := postgres.ListStoreAssortments(r.Context(), s.serviceDB(), result.Store.ID, false)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	writeStorePublication(w, http.StatusOK, result, readiness, assortments)
 }
 
 func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +92,12 @@ func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.
 		writeStorePublicationError(w, err)
 		return
 	}
-	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness)
+	assortments, err := postgres.ListStoreAssortments(r.Context(), s.serviceDB(), store.ID, false)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness, assortments)
 }
 
 func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Request) {
@@ -156,19 +169,24 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 	}
 }
 
-func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness) {
+func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness, assortments []postgres.StoreAssortmentRecord) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(contract.StorePublicationResponse{
-		Store:            toStoreView(result.Store, readiness),
+		Store:            toStoreView(result.Store, readiness, assortments),
 		IdempotentReplay: result.Replayed,
 	})
 }
 
 func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreView {
+	assortments := make([]contract.StoreAssortment, 0, len(store.Assortments))
+	for _, assortment := range store.Assortments {
+		assortments = append(assortments, toStoreAssortment(assortment))
+	}
 	return contract.PublicStoreView{
 		ID: store.ID, Name: store.Name, Version: store.Version, PublishedAt: store.PublishedAt,
-		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
+		Assortments: assortments,
+		CreatedAt:   store.CreatedAt, UpdatedAt: store.UpdatedAt,
 	}
 }

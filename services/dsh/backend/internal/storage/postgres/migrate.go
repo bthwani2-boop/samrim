@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 2
+const SchemaVersion = 6
 
 type MigrationRecord struct {
 	Version int
@@ -37,16 +37,58 @@ var requiredTables = []struct {
 		indexes:     []string{"stores_partner_actor_idx", "stores_publication_state_idx"},
 	},
 	{
-		name:        "dsh.partner_bootstrap_idempotency",
-		columns:     []string{"idempotency_key", "request_hash", "partner_actor_id", "store_id", "created_at"},
-		constraints: []string{"partner_bootstrap_idempotency_pkey", "partner_bootstrap_idempotency_facts_uq", "partner_bootstrap_idempotency_store_partner_fk"},
-		indexes:     []string{"partner_bootstrap_idempotency_partner_idx"},
+		name:        "dsh.joining_cases",
+		columns:     []string{"id", "contact_phone_e164", "business_name", "first_store_name", "partner_actor_id", "state", "correction_reason", "reviewed_by", "store_id", "version", "created_at", "updated_at"},
+		constraints: []string{"joining_cases_pkey", "joining_cases_phone_length_chk", "joining_cases_business_name_chk", "joining_cases_store_name_chk", "joining_cases_state_chk", "joining_cases_version_positive_chk", "joining_cases_store_fk"},
+		indexes:     []string{"joining_cases_active_phone_uq", "joining_cases_partner_actor_uq", "joining_cases_state_idx"},
 	},
 	{
-		name:        "dsh.partner_bootstrap_audit",
-		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "partner_actor_id", "store_id", "request_hash", "created_at"},
-		constraints: []string{"partner_bootstrap_audit_pkey", "partner_bootstrap_audit_event_type_chk", "partner_bootstrap_audit_event_idempotency_uq", "partner_bootstrap_audit_idempotency_facts_fk"},
-		indexes:     []string{"partner_bootstrap_audit_partner_idx"},
+		name:        "dsh.joining_case_mutation_idempotency",
+		columns:     []string{"idempotency_key", "request_hash", "case_id", "operation", "result_version", "result_state", "result_partner_actor_id", "result_store_id", "result_correction_reason", "created_at"},
+		constraints: []string{"joining_case_mutation_idempotency_pkey", "joining_case_idempotency_facts_uq", "joining_case_idempotency_operation_chk", "joining_case_idempotency_state_chk", "joining_case_idempotency_version_chk", "joining_case_idempotency_case_fk"},
+		indexes:     []string{"joining_case_idempotency_case_idx"},
+	},
+	{
+		name:        "dsh.joining_case_audit",
+		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "case_id", "from_state", "to_state", "result_version", "request_hash", "partner_actor_id", "store_id", "correction_reason", "created_at"},
+		constraints: []string{"joining_case_audit_pkey", "joining_case_audit_event_type_chk", "joining_case_audit_event_idempotency_uq", "joining_case_audit_case_fk", "joining_case_audit_version_chk"},
+		indexes:     []string{"joining_case_audit_case_idx"},
+	},
+	{
+		name:        "dsh.central_products",
+		columns:     []string{"id", "canonical_name", "brand", "barcode", "canonical_image_url", "sell_unit", "active", "version", "created_at", "updated_at"},
+		constraints: []string{"central_products_pkey", "central_products_name_chk", "central_products_sell_unit_chk", "central_products_version_chk"},
+		indexes:     []string{"central_products_barcode_uq", "central_products_active_idx", "central_products_name_prefix_idx"},
+	},
+	{
+		name:        "dsh.central_product_mutation_idempotency",
+		columns:     []string{"idempotency_key", "request_hash", "product_id", "operation", "result_version", "created_at"},
+		constraints: []string{"central_product_mutation_idempotency_pkey", "central_product_idempotency_facts_uq", "central_product_idempotency_operation_chk", "central_product_idempotency_version_chk", "central_product_idempotency_product_fk"},
+		indexes:     []string{"central_product_idempotency_product_idx"},
+	},
+	{
+		name:        "dsh.central_product_audit",
+		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "product_id", "from_version", "result_version", "request_hash", "canonical_name", "brand", "barcode", "canonical_image_url", "sell_unit", "active", "created_at"},
+		constraints: []string{"central_product_audit_pkey", "central_product_audit_event_type_chk", "central_product_audit_event_idempotency_uq", "central_product_audit_product_fk", "central_product_audit_version_chk"},
+		indexes:     []string{"central_product_audit_product_idx"},
+	},
+	{
+		name:        "dsh.store_assortments",
+		columns:     []string{"store_id", "product_id", "price_minor", "currency", "availability", "publication_state", "version", "created_at", "updated_at"},
+		constraints: []string{"store_assortments_pkey", "store_assortments_store_fk", "store_assortments_product_fk", "store_assortments_price_chk", "store_assortments_currency_chk", "store_assortments_state_chk", "store_assortments_version_chk"},
+		indexes:     []string{"store_assortments_store_idx", "store_assortments_public_idx"},
+	},
+	{
+		name:        "dsh.store_assortment_mutation_idempotency",
+		columns:     []string{"idempotency_key", "request_hash", "store_id", "product_id", "operation", "result_version", "created_at"},
+		constraints: []string{"store_assortment_mutation_idempotency_pkey", "store_assortment_idempotency_facts_uq", "store_assortment_idempotency_operation_chk", "store_assortment_idempotency_version_chk", "store_assortment_idempotency_store_fk", "store_assortment_idempotency_product_fk"},
+		indexes:     []string{"store_assortment_idempotency_store_idx"},
+	},
+	{
+		name:        "dsh.store_assortment_audit",
+		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "store_id", "product_id", "from_state", "to_state", "expected_version", "result_version", "request_hash", "price_minor", "currency", "availability", "created_at"},
+		constraints: []string{"store_assortment_audit_pkey", "store_assortment_audit_event_type_chk", "store_assortment_audit_event_idempotency_uq", "store_assortment_audit_store_fk", "store_assortment_audit_product_fk", "store_assortment_audit_price_chk", "store_assortment_audit_currency_chk", "store_assortment_audit_version_chk"},
+		indexes:     []string{"store_assortment_audit_store_idx"},
 	},
 	{
 		name:        "dsh.store_publication_idempotency",
@@ -81,7 +123,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if strings.TrimSpace(directory) == "" {
 		return nil, nil, errors.New("DSH_MIGRATION_DIR is required")
 	}
-	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql"}
+	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {

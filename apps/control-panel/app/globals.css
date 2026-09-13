@@ -125,6 +125,22 @@ button:disabled { cursor: not-allowed; }
 .workspace-page-heading h1 { margin: 0; color: var(--brand-structure); font-size: clamp(30px, 4vw, 46px); font-weight: 850; letter-spacing: -.06em; }
 .workspace-page-context { margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: 13px; line-height: 1.8; }
 .workspace-restricted { min-height: 420px; }
+.central-catalog-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+.central-catalog-list, .central-catalog-editor { display: grid; align-content: start; gap: 16px; }
+.catalog-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.catalog-search input { min-height: 48px; border: 1px solid var(--border-strong); border-radius: 13px; background: var(--surface-base); color: var(--brand-structure); padding: 0 14px; direction: rtl; }
+.central-product-list { display: grid; gap: 8px; }
+.central-product-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 14px; border: 1px solid var(--border-subtle); border-radius: 14px; background: var(--surface-base); color: var(--brand-structure); text-align: right; }
+.central-product-row:hover, .central-product-row.selected { border-color: var(--focus-ring); background: var(--brand-structure-soft); }
+.central-product-row span { display: grid; gap: 5px; min-width: 0; }
+.central-product-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.central-product-row small { color: var(--text-muted); }
+.central-product-row em { flex: 0 0 auto; font-size: 12px; font-style: normal; font-weight: 800; }
+.central-product-row em.active { color: var(--success); }
+.central-product-row em.inactive { color: var(--warning); }
+.central-product-form { display: grid; gap: 4px; }
+.central-active-toggle { display: flex; align-items: center; gap: 9px; margin: 2px 0 12px; color: var(--brand-structure); font-size: 13px; font-weight: 700; }
+.central-active-toggle input { width: 18px; height: 18px; accent-color: var(--action-bg); }
 .password-field input { padding-inline-start: 74px; }
 .password-toggle { inset-inline-start: 10px; left: auto; }
 
@@ -132,5 +148,6 @@ button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
 @media (max-width: 820px) { .control-frame { width: min(100% - 32px, 640px); padding-top: 20px; } .workspace-app-shell .control-frame { width: min(100% - 32px, 640px); } .workspace-layout { grid-template-columns: 1fr; gap: 18px; } .workspace-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 8px; padding: 0 0 18px; border-inline-end: 0; border-bottom: 1px solid var(--border-subtle); } .workspace-nav-label { grid-column: 1 / -1; margin-bottom: 0; } .workspace-nav-label-spaced { margin-top: 0; } .auth-layout { grid-template-columns: 1fr; gap: 34px; min-height: auto; padding: 44px 0 24px; } .auth-context { max-width: none; text-align: center; } .auth-context h1 { font-size: clamp(40px, 11vw, 58px); } .auth-context > p { margin-inline: auto; } .context-list { width: max-content; max-width: 100%; margin: 28px auto 0; text-align: right; } }
 @media (max-width: 700px) { .access-form { grid-template-columns: 1fr; } .access-form .button { width: 100%; } .form-action-placeholder { display: none; } .managed-status-actions { grid-template-columns: 1fr; } .managed-status-actions .text-button { width: 100%; } }
+@media (max-width: 900px) { .central-catalog-grid { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .workspace-header { grid-template-columns: 1fr auto; gap: 12px; } .workspace-actor-context { justify-items: start; text-align: start; } .workspace-header .brand-link { grid-column: 1 / -1; } .workspace-logout { min-width: 122px; } }
 @media (max-width: 480px) { .control-frame { width: min(100% - 24px, 420px); } .workspace-app-shell .control-frame { width: min(100% - 24px, 420px); } .brand-header { padding-bottom: 20px; } .surface-label { font-size: 11px; } .auth-card { padding: 24px 19px; border-radius: 22px; } .auth-context { padding: 8px 4px; } .auth-context > p { font-size: 15px; } .session-summary { grid-template-columns: 1fr; } .workspace-card { padding: 28px 20px; border-radius: 22px; } .access-card { padding: 24px 20px; border-radius: 22px; } .workspace-nav { grid-template-columns: 1fr; } }

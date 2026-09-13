@@ -21,6 +21,23 @@ const fail = (message) => { console.error("IDENTITY_RUNTIME_SEMANTICS=FAIL"); co
 const assert = (condition, message) => { if (!condition) fail(message); };
 const sql = (query) => execFileSync("docker", [...composeArgs, "exec", "-T", "postgres", "psql", "-U", env.SAMRIM_POSTGRES_USER, "-d", env.SAMRIM_POSTGRES_DB, "-Atc", query], { encoding: "utf8" }).trim();
 const sqlLiteral = (value) => String(value).replaceAll("'", "''");
+const generatedPhones = new Set();
+let cleanupAttempted = false;
+const cleanup = () => {
+  if (cleanupAttempted || generatedPhones.size === 0) return;
+  cleanupAttempted = true;
+  try {
+    const phones = [...generatedPhones].map((value) => "'" + sqlLiteral(value) + "'").join(",");
+    const removable = "phone_e164 IN (" + phones + ") AND id <> COALESCE((SELECT initial_operator_actor_id FROM identity_bootstrap_state WHERE id=1), '')";
+    sql("DELETE FROM identity_actors WHERE " + removable);
+    assert(sql("SELECT count(*) FROM identity_actors WHERE " + removable) === "0", "generated Identity actors remain after cleanup");
+    console.log("IDENTITY_RUNTIME_CLEANUP=PASS");
+  } catch (error) {
+    console.error("IDENTITY_RUNTIME_CLEANUP=FAIL " + String(error?.stderr || error?.message || error));
+    process.exitCode = 1;
+  }
+};
+process.on("exit", cleanup);
 const request = async (method, pathname, options = {}) => {
   const response = await fetch(baseUrl + pathname, {
     method,
@@ -56,6 +73,7 @@ for (const pathName of ["/identity/health", "/identity/readiness"]) await expect
 for (const pathName of ["/auth/operator/login/start", "/auth/operator/login/complete", "/auth/managed/recovery/request", "/auth/managed/recover"]) await expect("POST", pathName, 404, { body: {} });
 
 const bootstrapPhone = phone();
+generatedPhones.add(bootstrapPhone);
 const bootstrap = await request("POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: bootstrapPhone, role: "operator" } });
 assert([201, 409].includes(bootstrap.status), "first-operator bootstrap fence returned " + bootstrap.status);
 let operator = sql("SELECT a.id || '|' || a.phone_e164 FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id AND r.role='operator' ORDER BY a.created_at LIMIT 1").split("|");
@@ -63,6 +81,7 @@ assert(operator.length === 2 && operator[0] && operator[1], "operator readback m
 const operatorActorID = operator[0];
 
 const clientPhone = phone();
+generatedPhones.add(clientPhone);
 const clientPassword = password("Client");
 const registration = await issue("/auth/client/registration/request", { phone: clientPhone }, "client_register");
 const clientPair = await expect("POST", "/auth/client/register", 201, { body: { phone: clientPhone, code: registration.code, password: clientPassword, clientInstanceId: "runtime-client-instance-" + crypto.randomUUID() } });
@@ -70,6 +89,30 @@ session(clientPair, "client", "app-client", clientPair.identity.subject);
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
 const loginPair = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: "runtime-client-login-" + crypto.randomUUID() } });
 session(loginPair, "client", "app-client", clientPair.identity.subject);
+
+const refreshClientInstance = "runtime-refresh-instance-" + crypto.randomUUID();
+const refreshFirst = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: refreshClientInstance } });
+const refreshSecond = await expect("POST", "/auth/refresh", 200, { body: { refreshToken: refreshFirst.refreshToken, clientInstanceId: refreshClientInstance } });
+session(refreshSecond, "client", "app-client", clientPair.identity.subject);
+assert(refreshFirst.refreshToken !== refreshSecond.refreshToken && refreshFirst.accessToken !== refreshSecond.accessToken, "refresh did not atomically rotate both tokens");
+await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshSecond.refreshToken, clientInstanceId: "runtime-wrong-instance-" + crypto.randomUUID() } });
+const refreshThird = await expect("POST", "/auth/refresh", 200, { body: { refreshToken: refreshSecond.refreshToken, clientInstanceId: refreshClientInstance } });
+session(refreshThird, "client", "app-client", clientPair.identity.subject);
+await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshSecond.refreshToken, clientInstanceId: refreshClientInstance } });
+const firstRefreshSecret = refreshFirst.refreshToken.split(".")[1];
+const firstRefreshHash = crypto.createHash("sha256").update(firstRefreshSecret).digest("hex");
+const refreshHistoryMatch = sql("SELECT count(*) FROM identity_refresh_token_history WHERE token_hash='" + sqlLiteral(firstRefreshHash) + "'");
+assert(refreshHistoryMatch === "1", "refresh history aging readback failed before update: " + refreshHistoryMatch);
+sql("UPDATE identity_refresh_token_history SET rotated_at=clock_timestamp()-interval '6 seconds' WHERE token_hash='" + sqlLiteral(firstRefreshHash) + "'");
+assert(sql("SELECT count(*) FROM identity_refresh_token_history WHERE token_hash='" + sqlLiteral(firstRefreshHash) + "' AND rotated_at < clock_timestamp()-interval '5 seconds'") === "1", "refresh history aging readback failed during update");
+await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshFirst.refreshToken, clientInstanceId: refreshClientInstance } });
+await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshThird.refreshToken, clientInstanceId: refreshClientInstance } });
+const unknownInstance = "runtime-unknown-family-" + crypto.randomUUID();
+const unknownFamily = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: unknownInstance } });
+const unknownParts = unknownFamily.refreshToken.split(".");
+const unknownRefresh = unknownParts[0] + "." + crypto.randomBytes(48).toString("base64url");
+await expect("POST", "/auth/refresh", 401, { body: { refreshToken: unknownRefresh, clientInstanceId: unknownInstance } });
+await expect("POST", "/auth/refresh", 200, { body: { refreshToken: unknownFamily.refreshToken, clientInstanceId: unknownInstance } });
 
 const recoveryPassword = password("Client-Recovered");
 const recovery = await issue("/auth/client/recovery/request", { phone: clientPhone }, "client_recover");
@@ -82,11 +125,24 @@ const recoveredPair = await expect("POST", "/auth/client/login", 200, { body: { 
 session(recoveredPair, "client", "app-client", clientPair.identity.subject);
 
 const managedPhone = phone();
+generatedPhones.add(managedPhone);
 await expect("POST", "/internal/actor-roles/provision", 201, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: managedPhone, role: "partner" } });
 const managedPassword = password("Partner");
 const managedChallenge = await issue("/auth/managed/activation/request", { phone: managedPhone, role: "partner" }, "managed_activate", "partner");
 const managedPair = await expect("POST", "/auth/managed/activate", 200, { body: { phone: managedPhone, role: "partner", verificationCode: managedChallenge.code, password: managedPassword, clientInstanceId: "runtime-managed-instance-" + crypto.randomUUID() } });
 session(managedPair, "partner", "app-partner", managedPair.identity.subject);
+const repeatedManagedChallenge = await issue("/auth/managed/activation/request", { phone: managedPhone, role: "partner" }, "managed_activate", "partner");
+await expect("POST", "/auth/managed/activate", 401, { body: { phone: managedPhone, role: "partner", verificationCode: repeatedManagedChallenge.code, password: password("Repeated"), clientInstanceId: "runtime-repeat-activation-" + crypto.randomUUID() } });
+assert(sql("SELECT count(*) FROM identity_sessions WHERE actor_id='" + sqlLiteral(managedPair.identity.subject) + "' AND role='partner' AND revoked_at IS NULL") === "1", "repeated managed activation created a second live session");
+const managedRole = await expect("GET", "/internal/actors/" + encodeURIComponent(managedPair.identity.subject) + "/roles/partner", 200, { token: controlToken });
+await expect("POST", "/internal/actors/" + encodeURIComponent(managedPair.identity.subject) + "/roles/partner/disable", 403, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "X-Expected-Version": String(managedRole.roleVersion), "X-Reason": "runtime DSH lifecycle boundary assurance" } });
+await expect("POST", "/internal/actors/" + encodeURIComponent(managedPair.identity.subject) + "/roles/partner/disable", 204, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "X-Expected-Version": String(managedRole.roleVersion), "X-Reason": "runtime disable assurance" } });
+await expect("GET", "/auth/session", 401, { token: managedPair.accessToken });
+await expect("POST", "/internal/actors/" + encodeURIComponent(managedPair.identity.subject) + "/roles/partner/enable", 204, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "X-Expected-Version": String(managedRole.roleVersion + 1), "X-Reason": "runtime restore assurance" } });
+const managedActor = sql("SELECT version FROM identity_actors WHERE id='" + sqlLiteral(managedPair.identity.subject) + "'");
+await expect("POST", "/internal/actors/" + encodeURIComponent(managedPair.identity.subject) + "/security/disable", 204, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "X-Expected-Version": managedActor, "X-Reason": "runtime security disable assurance" } });
+await expect("GET", "/auth/session", 401, { token: managedPair.accessToken });
+await expect("POST", "/internal/actors/" + encodeURIComponent(managedPair.identity.subject) + "/security/enable", 204, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "X-Expected-Version": String(Number(managedActor) + 1), "X-Reason": "runtime security restore assurance" } });
 await expect("POST", "/auth/managed/activation/request", 403, { body: { phone: managedPhone, role: "operator" } });
 
 const authOptions = await expect("POST", "/auth/operator/authentication/options", 201);
@@ -99,6 +155,9 @@ const enrollmentOptions = await expect("POST", "/auth/operator/enrollment/regist
 assert(typeof enrollmentOptions.ceremonyId === "string" && enrollmentOptions.publicKey?.challenge, "operator enrollment ceremony was not created");
 const invalidFinish = await request("POST", "/auth/operator/enrollment/registration/finish", { body: { ceremonyId: enrollmentOptions.ceremonyId, credential: {}, clientInstanceId: "runtime-invalid-passkey-instance-" + crypto.randomUUID() } });
 assert([400, 401].includes(invalidFinish.status), "invalid operator passkey credential was accepted");
+sql("UPDATE identity_webauthn_ceremonies SET expires_at=clock_timestamp()-interval '1 second' WHERE id='" + sqlLiteral(enrollmentOptions.ceremonyId) + "'");
+assert(sql("SELECT count(*) FROM identity_webauthn_ceremonies WHERE id='" + sqlLiteral(enrollmentOptions.ceremonyId) + "' AND expires_at < clock_timestamp()") === "1", "passkey ceremony expiry readback failed");
+await expect("POST", "/auth/operator/enrollment/registration/finish", 401, { body: { ceremonyId: enrollmentOptions.ceremonyId, credential: {}, clientInstanceId: "runtime-expired-passkey-instance-" + crypto.randomUUID() } });
 const recoveryWithoutCredential = await request("POST", "/auth/operator/recovery/request", { body: { phone: operator[1], recoveryCredential: "not-a-real-recovery-credential" } });
 assert(recoveryWithoutCredential.status === 201, "operator recovery leaked whether an invalid recovery credential matched");
 assert(recoveryWithoutCredential.body?.challengeId && sql("SELECT admissible::text FROM identity_challenges WHERE id='" + sqlLiteral(recoveryWithoutCredential.body.challengeId) + "'") === "false", "invalid operator recovery credential became admissible");
@@ -115,8 +174,12 @@ console.log("IDENTITY_CUSTOMER_REGISTRATION_AFTER_PHONE_PROOF=PASS");
 console.log("IDENTITY_CUSTOMER_PASSWORD_LOGIN=PASS");
 console.log("IDENTITY_CUSTOMER_RECOVERY_NO_SESSION=PASS");
 console.log("IDENTITY_MANAGED_ACTIVATION_ONE_TIME=PASS");
+console.log("IDENTITY_REFRESH_ROTATION_REPLAY_FAMILY=PASS");
+console.log("IDENTITY_REFRESH_UNKNOWN_TOKEN_ISOLATION=PASS");
+console.log("IDENTITY_ROLE_SECURITY_DISABLE_REVOCATION=PASS");
 console.log("IDENTITY_OPERATOR_PASSKEY_OPTIONS=PASS");
 console.log("IDENTITY_OPERATOR_PASSWORD_SESSION=0");
 console.log("IDENTITY_OPERATOR_RECOVERY_INVALID_CREDENTIAL=PASS");
 console.log("IDENTITY_REFRESH_INSTANCE_BINDING=PASS");
+console.log("IDENTITY_OPERATOR_PASSKEY_EXPIRED_CEREMONY=PASS");
 console.log("IDENTITY_RAW_CHALLENGE_CODE_LEAK=0");

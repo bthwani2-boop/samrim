@@ -8,8 +8,8 @@ It preserves:
 - phone as a mutable verified identifier rather than the primary identity;
 - explicit actor↔role bindings and single-role sessions;
 - customer phone-verification + client-password registration/login/recovery;
-- one-time managed partner/captain/field activation after governed provisioning;
-- explicit DSH-authorized managed-role re-enrollment;
+- one-time partner/captain/field activation after their domain-owned admission;
+- explicit actor_id-addressed Control Panel authorization for managed-role re-enrollment;
 - user-verified, discoverable Operator WebAuthn/Passkey authentication and governed re-enrollment;
 - credential-derived internal service identity.
 

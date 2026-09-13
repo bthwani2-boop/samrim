@@ -70,6 +70,7 @@ export type IdentityInternalClient = Readonly<{
   issueOperatorEnrollmentToken(request: OperatorEnrollmentTokenIssueRequest, context: AttributedMutationContext): Promise<OperatorEnrollmentToken>;
   provisionActorRole(request: ProvisionActorRoleRequest, context: AttributedMutationContext): Promise<ActorRoleView>;
   searchActorRoles(role: ActorType, query: string, enabled?: boolean): Promise<ActorRoleSearchPage>;
+  authorizeActorRoleReenrollment(actorId: string, role: ActorType, context: AttributedMutationContext): Promise<void>;
   setActorRoleEnabled(actorId: string, role: ActorType, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
   setActorSecurityEnabled(actorId: string, enabled: boolean, reason: string, context: VersionedMutationContext): Promise<void>;
 }>;
@@ -253,6 +254,36 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
     }
   }
 
+  async function requestAttributedNoContent(pathname: string, context: AttributedMutationContext): Promise<void> {
+    validateAttributedMutationContext(context);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(resolveUrl(baseUrl, pathname), {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            Authorization: "Bearer " + token,
+            "X-Correlation-ID": context.correlationId.trim(),
+            "X-Acting-Actor-ID": context.operatorActorId.trim(),
+          },
+          ...(baseUrl.startsWith("/") ? { credentials: "include" as const } : {}),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        throw { kind: "network", message: error instanceof Error ? error.message : "identity network error" } satisfies IdentityClientError;
+      }
+      if (!response.ok) {
+        const parsed = parseErrorPayload(await response.json().catch(() => null));
+        throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies IdentityClientError;
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   return {
     issueOperatorEnrollmentToken: issueToken,
     provisionActorRole: async (body, context) => {
@@ -313,6 +344,8 @@ export function createIdentityInternalClient(rawBaseUrl: string, serviceToken: s
         clearTimeout(timeout);
       }
     },
+    authorizeActorRoleReenrollment: (actorId, role, context) =>
+      requestAttributedNoContent(expandPath(identityOperationPaths.authorizeManagedRoleReenrollment.path, { actorId, role }), context),
     setActorRoleEnabled: (actorId, role, enabled, reason, context) => {
       const op = enabled ? identityOperationPaths.enableActorRole : identityOperationPaths.disableActorRole;
       return requestNoContent(

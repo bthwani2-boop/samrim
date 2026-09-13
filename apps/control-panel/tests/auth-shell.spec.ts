@@ -60,55 +60,118 @@ test("operator direct navigation to access exposes the canonical access capabili
   await expect(page.getByRole("heading", { name: "تهيئة أو إيقاف الحساب" })).toBeVisible();
 });
 
-test("partner bootstrap resolves the actor id from the partner phone", async ({ page }) => {
+test("operator access keeps phone discovery separate from actorId mutation", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let mutationBody: Record<string, unknown> | undefined;
+  await page.route("**/api/access/managed-user/status**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        actorId: "act_partner_canonical",
+        phoneE164: "+96777000102",
+        role: "partner",
+        exists: true,
+        enabled: true,
+        activated: true,
+        securityEnabled: true,
+        state: "active",
+        actorVersion: 7,
+        roleVersion: 3,
+        admittedRoles: [{ actorId: "act_partner_canonical", role: "partner", state: "active", enabled: true, activated: true, securityEnabled: true }],
+      }),
+    });
+  });
+  await page.route("**/api/access/account-control", async (route) => {
+    mutationBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto("/access");
+  await page.getByLabel("رقم الهاتف للبحث").fill("+96777000102");
+  await expect(page.getByText("actorId: act_partner_canonical")).toBeVisible();
+  await expect(page.getByText(/partner · active · act_partner_canonical/)).toBeVisible();
+  await page.getByLabel("سبب التغيير").fill("مراجعة صلاحية الحساب");
+  await page.getByRole("button", { name: "إيقاف الدور" }).click();
+  expect(mutationBody).toMatchObject({ actorId: "act_partner_canonical", role: "partner", action: "disable-role", expectedVersion: 3 });
+});
+
+test("operator creates a DSH-owned joining case from prospective partner facts", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let requestBody: unknown;
-  await page.route("**/api/partners/bootstrap", async (route) => {
+  await page.route("**/api/partners/joining-cases", async (route) => {
     requestBody = route.request().postDataJSON();
     await route.fulfill({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        partnerActorId: "act_generated",
-        firstStore: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: true }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", state: "draft", version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
   });
 
   await page.goto("/partners");
-  await expect(page.getByRole("heading", { name: "تهيئة الشركاء" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "انضمام الشركاء" })).toBeVisible();
   await expect(page.getByLabel("معرّف Actor الشريك")).toHaveCount(0);
   await expect(page.getByLabel("رقم هاتف الشريك")).toBeVisible();
 
-  await page.getByLabel("رقم هاتف الشريك").fill("96777000100");
+  await page.getByLabel("رقم هاتف الشريك").fill("+967 77000100");
+  await page.getByLabel("اسم النشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
-  await page.getByRole("button", { name: "إنشاء المتجر الأول" }).click();
+  await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
 
-  await expect(page.getByRole("status")).toContainText("تم إنشاء التهيئة الكانونية");
-  expect(requestBody).toEqual({ partnerPhone: "96777000100", storeName: "متجر الاختبار" });
+  await expect(page.getByRole("status")).toContainText("الحالة: draft");
+  expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار" });
 });
 
-test("partner publication exposes a readiness block and reconciles the canonical state", async ({ page }) => {
+test("operator resumes a canonical joining case from the DSH queue", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  await page.route("**/api/partners/bootstrap", async (route) => {
+  await page.route("**/api/partners/joining-cases?limit=50", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ cases: [{ id: "join_resume", contactPhoneE164: "+96777000101", businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", state: "submitted", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }),
+    });
+  });
+  await page.route("**/api/partners/joining-cases/join_resume", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        case: { id: "join_resume", contactPhoneE164: "+96777000101", businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", state: "submitted", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        idempotentReplay: false,
+      }),
+    });
+  });
+  await page.goto("/partners");
+  await page.getByRole("button", { name: /submitted · نشاط مستعاد/ }).click();
+  await expect(page.getByRole("status")).toContainText("الحالة: submitted");
+  await expect(page.getByRole("status")).toContainText("نشاط مستعاد");
+});
+
+test("partner Store publication exposes the canonical readiness block", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/partners/joining-cases", async (route) => {
     await route.fulfill({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        partnerActorId: "act_generated",
-        firstStore: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
+        case: { id: "join_test", contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", partnerActorId: "act_generated", state: "approved", version: 5, store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, assortments: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" },
         idempotentReplay: false,
       }),
     });
   });
+  await page.route("**/api/stores/store_test/publication", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, assortments: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
+  });
   await page.goto("/partners");
-  await page.getByLabel("رقم هاتف الشريك").fill("96777000100");
+  await page.getByLabel("رقم هاتف الشريك").fill("+96777000100");
+  await page.getByLabel("اسم النشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
-  await page.getByRole("button", { name: "إنشاء المتجر الأول" }).click();
-  await expect(page.getByRole("status")).toContainText("جاهزية النشر: محجوب");
-  await expect(page.getByRole("status")).toContainText("هوية الشريك غير مؤهلة حاليًا للنشر");
-  await expect(page.getByRole("button", { name: "نشر المتجر" })).toBeDisabled();
+  await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
+  await page.getByRole("button", { name: "إعادة قراءة النشر" }).click();
+  await expect(page.getByRole("status")).toContainText("الجاهزية: محجوب");
+  await expect(page.getByRole("button", { name: "نشر Store" })).toBeDisabled();
 });
 
 test("authenticated workspace keeps navigation meaning across light and dark themes", async ({ page }) => {

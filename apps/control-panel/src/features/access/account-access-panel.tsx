@@ -14,6 +14,16 @@ type ManagedAccountStatus = Readonly<{
   actorId?: string;
   actorVersion?: number;
   roleVersion?: number;
+  state?: string;
+  phoneE164?: string;
+  admittedRoles?: ReadonlyArray<Readonly<{
+    actorId: string;
+    role: ActorType;
+    state: string;
+    enabled: boolean;
+    activated: boolean;
+    securityEnabled: boolean;
+  }>>;
 }>;
 
 export function AccountAccessPanel() {
@@ -87,7 +97,7 @@ export function AccountAccessPanel() {
     return () => window.clearTimeout(timeout);
   }, [phone, role]);
 
-  const managedRole = role === "partner" || role === "captain" || role === "field" || role === "operator";
+  const managedRole = role === "partner" || role === "captain" || role === "field";
 
   async function provision(reenroll = false) {
     setBusy(true);
@@ -98,7 +108,7 @@ export function AccountAccessPanel() {
       const response = await identityFetch("/api/access/managed-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, role, reenroll }),
+        body: JSON.stringify(reenroll ? { actorId: status?.actorId, role, reenroll: true } : { phone, role, reenroll: false }),
       });
       if (!response.ok) {
         setError(await responseMessage(response));
@@ -134,7 +144,7 @@ export function AccountAccessPanel() {
       const response = await identityFetch("/api/access/account-control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, role, action, reason, expectedVersion }),
+        body: JSON.stringify({ actorId: status?.actorId, role, action, reason, expectedVersion }),
       });
       if (!response.ok) {
         const message = await responseMessage(response);
@@ -158,8 +168,8 @@ export function AccountAccessPanel() {
     }
   }
 
-  const canIssueActivation = managedRole && status !== null && !status.activated;
-  const canIssueReenrollment = managedRole && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
+  const canIssueActivation = role === "operator" && status !== null && !status.activated;
+  const canIssueReenrollment = (role === "partner" || role === "captain" || role === "field") && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
   const activationBlocked = status?.exists === true && status.enabled === false;
   const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true);
 
@@ -169,7 +179,7 @@ export function AccountAccessPanel() {
         <span className="step-chip">حماية الوصول</span>
         <p className="eyebrow">إدارة الحسابات والأدوار</p>
         <h2 id="account-access-title">تهيئة أو إيقاف الحساب</h2>
-        <p className="muted">هذه شاشة إدارية مستقلة: اختر الدور ثم ابحث برقم الهاتف. لا تختار الدور في واجهة دخول الشريك أو الكابتن أو الميداني أو الموظف؛ هناك يحدده الرقم تلقائيًا.</p>
+        <p className="muted">هذه شاشة إدارية مستقلة: رقم الهاتف للبحث واكتشاف الممثل canonical فقط. اعرض actorId والأدوار المقبولة، ثم نفّذ أي تغيير بالـactorId؛ لا تُنشئ من هنا أدوار الشريك أو الكابتن أو الميداني.</p>
       </div>
       <div className="access-form">
         <label className="field-label" htmlFor="account-role">
@@ -183,12 +193,12 @@ export function AccountAccessPanel() {
           </select>
         </label>
         <label className="field-label" htmlFor="account-phone">
-          رقم الهاتف
+          رقم الهاتف للبحث
           <input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} />
         </label>
         {canIssueActivation ? (
           <button type="button" className="button button-primary" disabled={busy || !phone.trim() || activationBlocked} onClick={() => void provision()}>
-            {busy ? "جارٍ تجهيز الحساب…" : role === "operator" ? "تهيئة الموظف وإصدار دعوة آمنة" : status.exists ? "إعادة فتح تفعيل الدور" : "تهيئة الدور"}
+            {busy ? "جارٍ تجهيز الحساب…" : "تهيئة الموظف وإصدار دعوة آمنة"}
           </button>
         ) : <span className="form-action-placeholder" aria-hidden="true" />}
       </div>
@@ -197,6 +207,7 @@ export function AccountAccessPanel() {
           {status.exists ? (
             <>
               <strong>{status.enabled ? "الدور مفعّل" : "الدور موقوف"} · {status.securityEnabled ? "الهوية مسموحة" : "الهوية موقوفة بالكامل"}</strong>
+              <p>actorId: <code>{status.actorId}</code> · الحالة: {status.state}</p>
               <p>{status.activated ? "يوجد تسجيل سابق لهذا الدور." : "الدور مهيأ ولم يكتمل تفعيله بعد."}</p>
               {status.activated && managedRole ? (
                 <div className="managed-status managed-status-warning" role="alert">
@@ -217,9 +228,10 @@ export function AccountAccessPanel() {
           ) : (
             <>
               <strong>لا يوجد حساب مهيأ لهذا الدور.</strong>
-              <p>{managedRole ? role === "operator" ? "يمكنك تهيئة الموظف وإصدار دعوة عالية الأمان تُستخدم مرة واحدة." : "يمكنك تهيئة الدور؛ سيكمل صاحبه التفعيل بإثبات رقم الهاتف فقط." : "تسجيل العميل يتم من تطبيق العميل، ولا يُصدر له رمز من هذه الشاشة."}</p>
+              <p>{role === "operator" ? "يمكنك تهيئة الموظف وإصدار دعوة عالية الأمان تُستخدم مرة واحدة." : role === "client" ? "تسجيل العميل يتم من تطبيق العميل، ولا يُصدر له رمز من هذه الشاشة." : "لا يمكن إنشاء هذا الدور من شاشة الحسابات؛ يجب أن يأتي القبول من مسار المجال canonical أولًا."}</p>
             </>
           )}
+          {status.admittedRoles?.length ? <div><strong>الأدوار المقبولة لهذا الممثل</strong><ul>{status.admittedRoles.map((admitted) => <li key={admitted.role}>{admitted.role} · {admitted.state} · <code>{admitted.actorId}</code></li>)}</ul></div> : null}
         </div>
       ) : null}
       {result ? <div className="code-output" role="status"><span className="summary-label">دعوة موظف عالية الأمان</span><code>{result.code}</code><p>تُعرض هذه الدعوة مرة واحدة فقط وتُستخدم لتفعيل موظف لوحة التحكم، وتنتهي في {new Date(result.expiresAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}

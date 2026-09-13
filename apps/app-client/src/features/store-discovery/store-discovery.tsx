@@ -59,7 +59,7 @@ export default function StoreDiscovery() {
     return <View style={styles.state}><Text style={styles.title}>تعذر قراءة تفاصيل المتجر</Text><Pressable accessibilityRole="button" onPress={() => setDetailState("idle")} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>العودة إلى المتاجر</Text></Pressable></View>;
   }
   if (selected) {
-    return <View style={styles.detail}><Pressable accessibilityRole="button" onPress={() => { setSelected(null); setDetailState("idle"); }}><Text style={styles.back}>‹ المتاجر المنشورة</Text></Pressable><Text style={styles.title}>{selected.name}</Text><Text style={styles.muted}>متجر منشور ومتاح للاكتشاف</Text><Text style={styles.meta}>معرّف المتجر: {selected.id}</Text><Text style={styles.meta}>إصدار الحالة: {selected.version}</Text></View>;
+    return <View style={styles.detail}><Pressable accessibilityRole="button" onPress={() => { setSelected(null); setDetailState("idle"); }}><Text style={styles.back}>‹ المتاجر المنشورة</Text></Pressable><Text style={styles.title}>{selected.name}</Text><Text style={styles.muted}>متجر منشور ومتاح للاكتشاف</Text><Text style={styles.meta}>معرّف المتجر: {selected.id}</Text><Text style={styles.meta}>إصدار الحالة: {selected.version}</Text><Text style={styles.sectionTitle}>المنتجات المتاحة</Text>{selected.assortments.length ? selected.assortments.map((assortment) => <View key={assortment.productId} style={styles.item}><Text style={styles.meta}>{assortment.canonicalName}</Text><Text style={styles.meta}>{assortment.priceMinor} {assortment.currency} · {assortment.sellUnit === "kg" ? "بالكيلو" : "بالقطعة"}</Text><Text style={styles.muted}>متاح · إصدار العرض {assortment.version}</Text></View>) : <Text style={styles.muted}>لا توجد منتجات متاحة حاليًا.</Text>}</View>;
   }
 
   return <View style={styles.container}><Text style={styles.eyebrow}>اكتشاف العميل</Text><Text style={styles.title}>المتاجر المنشورة</Text><Text style={styles.muted}>هذه القائمة تأتي من DSH ولا تعرض إلا المتاجر التي اجتازت بوابات النشر الحالية.</Text><FlatList data={state.stores} keyExtractor={(item) => item.id} contentContainerStyle={styles.list} renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${item.name}`} onPress={() => void openStore(item)} style={styles.card}><Text style={styles.cardTitle}>{item.name}</Text><Text style={styles.cardMeta}>متجر منشور · إصدار {item.version}</Text></Pressable>} /></View>;
@@ -78,6 +78,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     cardTitle: { color: theme.structure, fontSize: 17, fontWeight: "800", textAlign: "left" },
     cardMeta: { color: theme.colorMuted, fontSize: 13, textAlign: "left" },
     meta: { color: theme.structure, fontSize: 14, textAlign: "left" },
+    sectionTitle: { color: theme.structure, fontSize: 16, fontWeight: "800", marginTop: 8, textAlign: "left" },
+    item: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 4, padding: 12 },
     back: { color: theme.interactiveText, fontSize: 15, fontWeight: "800", textAlign: "left" },
     button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 14, minHeight: 50, justifyContent: "center", paddingHorizontal: 18 },
     buttonText: { color: theme.surface, fontSize: 15, fontWeight: "800" },

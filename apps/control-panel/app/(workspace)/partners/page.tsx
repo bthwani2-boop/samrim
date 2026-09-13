@@ -1,6 +1,6 @@
 "use client";
 
-import { PartnerBootstrapPanel } from "../../../src/features/partner-onboarding/partner-bootstrap-panel";
+import { JoiningCasePanel } from "../../../src/features/partner-onboarding/joining-case-panel";
 import { useSession } from "../../../src/session/session-provider";
 
 export default function PartnersPage() {
@@ -21,11 +21,11 @@ export default function PartnersPage() {
   return (
     <section className="workspace-page" aria-labelledby="partners-page-title">
       <div className="workspace-page-heading">
-        <p className="eyebrow">DSH · J2.1</p>
-        <h1 id="partners-page-title">تهيئة الشركاء</h1>
-        <p className="lead">أدخل رقم هاتف الشريك واسم متجره الأول؛ يحدد Identity معرّف <code>actor_id</code> الموثوق ويربط DSH المتجر الأول بالشريك مباشرةً.</p>
+        <p className="eyebrow">DSH · J1</p>
+        <h1 id="partners-page-title">انضمام الشركاء</h1>
+        <p className="lead">أنشئ حالة انضمام يملكها DSH، ثم أرسلها للمراجعة حتى يحل Identity actor الشريك ويربط Store القانوني بالحالة المعتمدة.</p>
       </div>
-      <PartnerBootstrapPanel />
+      <JoiningCasePanel />
     </section>
   );
 }

@@ -1,0 +1,125 @@
+paths:
+  /dsh/joining-cases:
+    get:
+      operationId: listJoiningCases
+      summary: List bounded DSH joining-case summaries for a control operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { name: state, in: query, required: false, schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseState" } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 256 } }
+      responses:
+        "200": { description: Bounded canonical joining-case queue., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseListResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: createJoiningCase
+      summary: Create a DSH-owned prospective partner joining case
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateJoiningCaseRequest" }
+      responses:
+        "201": { description: Joining case created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/joining-cases/self:
+    get:
+      operationId: readOwnJoiningCase
+      summary: Read the joining case bound to the authenticated partner
+      security: [{ userBearer: [] }]
+      responses:
+        "200": { description: Partner joining case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/joining-cases/{caseId}:
+    get:
+      operationId: readJoiningCase
+      summary: Read a DSH joining case for a control operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "200": { description: Joining case readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/joining-cases/{caseId}/submit:
+    post:
+      operationId: submitJoiningCase
+      summary: Admit and bind the Identity partner actor to a joining case
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "200": { description: Joining case submitted., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/joining-cases/{caseId}/correct-and-resubmit:
+    post:
+      operationId: correctAndResubmitJoiningCase
+      summary: Atomically correct and resubmit a partner-owned joining case
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "200": { description: Corrected and resubmitted joining case., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/joining-cases/{caseId}/review:
+    post:
+      operationId: reviewJoiningCase
+      summary: Approve or return a submitted joining case for correction
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ReviewJoiningCaseRequest" }
+      responses:
+        "200": { description: Joining case review result., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }

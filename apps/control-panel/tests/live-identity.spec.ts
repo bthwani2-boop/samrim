@@ -1,5 +1,17 @@
+import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "@playwright/test";
+
+type PreparedOperator = {
+  actorId: string;
+  phone: string;
+  token: string;
+  createdByTest: boolean;
+};
+
+let preparedOperatorForCleanup: PreparedOperator | undefined;
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
@@ -36,7 +48,70 @@ async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose
   throw new Error(purpose + " challenge was not delivered to Mailpit");
 }
 
-async function prepareOperator(identityBase: string, controlToken: string, bootstrapToken: string): Promise<{ phone: string; token: string }> {
+function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUser: string; postgresDatabase: string } {
+  const candidates = [
+    path.resolve(process.cwd(), "infra/local/compose/.env"),
+    path.resolve(process.cwd(), "../../infra/local/compose/.env"),
+  ];
+  const envFile = candidates.find((candidate) => existsSync(candidate));
+  if (!envFile) throw new Error("canonical local runtime environment is required for live Identity fixture cleanup");
+  const values = Object.fromEntries(
+    readFileSync(envFile, "utf8")
+      .split(/\r?\n/)
+      .filter((line) => line.trim() && !line.trim().startsWith("#"))
+      .map((line) => {
+        const separator = line.indexOf("=");
+        if (separator < 1) throw new Error("malformed canonical local runtime environment");
+        return [line.slice(0, separator).trim(), line.slice(separator + 1).trim()];
+      }),
+  );
+  const postgresUser = String(values.SAMRIM_POSTGRES_USER || "");
+  const postgresDatabase = String(values.SAMRIM_POSTGRES_DB || "");
+  if (!postgresUser || !postgresDatabase) throw new Error("canonical Postgres credentials are required for live Identity fixture cleanup");
+  return { envFile, repoRoot: path.resolve(path.dirname(envFile), "../../.."), postgresUser, postgresDatabase };
+}
+
+function cleanupPreparedOperator(operator: PreparedOperator): void {
+  const runtime = readCanonicalRuntime();
+  const actorLiteral = operator.actorId.replaceAll("'", "''");
+  const query = operator.createdByTest
+    ? `DELETE FROM identity_actors WHERE id='${actorLiteral}'; SELECT count(*) FROM identity_actors WHERE id='${actorLiteral}';`
+    : `DELETE FROM identity_sessions WHERE actor_id='${actorLiteral}'; SELECT count(*) FROM identity_sessions WHERE actor_id='${actorLiteral}';`;
+  const output = execFileSync(
+    "docker",
+    [
+      "compose",
+      "--project-name",
+      "samrim-local",
+      "--env-file",
+      runtime.envFile,
+      "-f",
+      path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"),
+      "exec",
+      "-T",
+      "postgres",
+      "psql",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      runtime.postgresUser,
+      "-d",
+      runtime.postgresDatabase,
+      "-Atc",
+      query,
+    ],
+    { cwd: runtime.repoRoot, encoding: "utf8" },
+  ).trim();
+  if (output.split(/\r?\n/).at(-1) !== "0") throw new Error("live Identity fixture cleanup left actor data");
+}
+
+test.afterEach(() => {
+  const operator = preparedOperatorForCleanup;
+  preparedOperatorForCleanup = undefined;
+  if (operator) cleanupPreparedOperator(operator);
+});
+
+async function prepareOperator(identityBase: string, controlToken: string, bootstrapToken: string): Promise<PreparedOperator> {
   const search = await fetch(identityBase + "/internal/actor-roles/search?role=operator&limit=10", { headers: { Accept: "application/json", Authorization: "Bearer " + controlToken }, signal: AbortSignal.timeout(5_000) });
   const searchBody = await search.json() as { items?: Array<{ actorId: string; phoneE164: string }> };
   const existing = searchBody.items?.[0];
@@ -45,12 +120,17 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
     const bootstrap = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: phone, role: "operator" });
     expect(bootstrap.response.status, "fresh operator bootstrap must succeed").toBe(201);
     expect(bootstrap.body?.role?.role).toBe("operator");
-    return { phone, token: String(bootstrap.body?.enrollmentToken?.code) };
+    const operator = { actorId: String(bootstrap.body?.actorId), phone, token: String(bootstrap.body?.enrollmentToken?.code), createdByTest: false };
+    preparedOperatorForCleanup = operator;
+    return operator;
   }
 
   const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
   const provision = await jsonRequest(identityBase, "/internal/actor-roles/provision", controlToken, { phoneE164: phone, role: "operator" }, { "X-Acting-Actor-ID": existing.actorId });
+  const operator = { actorId: String(provision.body?.actorId), phone, token: "", createdByTest: provision.response.status === 201 };
+  if (operator.createdByTest && operator.actorId.startsWith("act_")) preparedOperatorForCleanup = operator;
   expect(provision.response.status, "governed operator provisioning must succeed").toBe(201);
+  expect(operator.actorId).toMatch(/^act_/);
   const enrollment = await fetch(identityBase + "/internal/operator-enrollment-tokens", {
     method: "POST",
     headers: { Accept: "application/json", Authorization: "Bearer " + controlToken, "X-Acting-Actor-ID": existing.actorId, "Content-Type": "application/json" },
@@ -59,7 +139,8 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
   });
   expect(enrollment.status, "governed operator enrollment token must be issued").toBe(201);
   const enrollmentBody = await enrollment.json() as { code?: string };
-  return { phone, token: String(enrollmentBody.code) };
+  operator.token = String(enrollmentBody.code);
+  return operator;
 }
 
 test("@live operator passkey registration, authentication and governed recovery survive browser readback", async ({ page }) => {

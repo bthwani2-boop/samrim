@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: |
     Canonical operational contract for DSH (Delivery, Shopping, Hospitality/Operations).
-    Owns operational boundaries, managed-role provisioning delegation to Identity, and role lifecycle orchestration for partner, captain, and field roles.
+    Owns operational boundaries and domain workflows. Identity owns human actor and role lifecycle truth.
 servers:
   - url: http://127.0.0.1:18080
 
@@ -15,14 +15,35 @@ paths:
   /dsh/readiness:
     $ref: "./paths/runtime.yaml#/paths/~1dsh~1readiness"
 
-  /dsh/partner-bootstrap:
-    $ref: "./paths/partner-onboarding.yaml#/paths/~1dsh~1partner-bootstrap"
+  /dsh/joining-cases:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases"
 
-  /dsh/partner-bootstrap/{partnerActorId}:
-    $ref: "./paths/partner-onboarding.yaml#/paths/~1dsh~1partner-bootstrap~1{partnerActorId}"
+  /dsh/joining-cases/self:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1self"
 
-  /dsh/partner-bootstrap/self:
-    $ref: "./paths/partner-onboarding.yaml#/paths/~1dsh~1partner-bootstrap~1self"
+  /dsh/joining-cases/{caseId}:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}"
+
+  /dsh/joining-cases/{caseId}/submit:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1submit"
+
+  /dsh/joining-cases/{caseId}/correct-and-resubmit:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1correct-and-resubmit"
+
+  /dsh/joining-cases/{caseId}/review:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1review"
+
+  /dsh/catalog/products:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products"
+
+  /dsh/catalog/products/{productId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
+
+  /dsh/stores/{storeId}/assortment:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1assortment"
+
+  /dsh/stores/{storeId}/assortment/{productId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1assortment~1{productId}"
 
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
@@ -32,21 +53,6 @@ paths:
 
   /dsh/public/stores/{storeId}:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores~1{storeId}"
-
-  /dsh/managed-roles/provision:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1provision"
-
-  /dsh/managed-roles/status:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1status"
-
-  /dsh/managed-roles/disable:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1disable"
-
-  /dsh/managed-roles/enable:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1enable"
-
-  /dsh/managed-roles/reenrollment:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1reenrollment"
 
 components:
   securitySchemes:
@@ -130,57 +136,146 @@ components:
         status:
           type: string
 
-    ManagedRole:
-      type: string
-      enum: [partner, captain, field]
-
-    ProvisionManagedRoleRequest:
+    CreateJoiningCaseRequest:
       type: object
-      required: [phoneE164, role]
+      required: [contactPhoneE164, businessName, firstStoreName]
       additionalProperties: false
       properties:
-        phoneE164:
+        contactPhoneE164:
           type: string
-        role:
-          $ref: "#/components/schemas/ManagedRole"
-
-    SetManagedRoleStateRequest:
-      type: object
-      required: [phoneE164, role, reason]
-      additionalProperties: false
-      properties:
-        phoneE164:
-          type: string
-        role:
-          $ref: "#/components/schemas/ManagedRole"
-        reason:
-          type: string
-          minLength: 5
-          maxLength: 500
-
-    PhoneReenrollmentRequest:
-      type: object
-      required: [phoneE164, role]
-      additionalProperties: false
-      properties:
-        phoneE164:
-          type: string
-        role:
-          $ref: "#/components/schemas/ManagedRole"
-
-    CreatePartnerBootstrapRequest:
-      type: object
-      required: [partnerActorId, storeName]
-      additionalProperties: false
-      properties:
-        partnerActorId:
-          type: string
-          minLength: 1
-          maxLength: 128
-        storeName:
+          pattern: '^\+[1-9][0-9]{7,14}$'
+        businessName:
           type: string
           minLength: 2
           maxLength: 160
+        firstStoreName:
+          type: string
+          minLength: 2
+          maxLength: 160
+
+    JoiningCaseState:
+      type: string
+      enum: [draft, submitted, needs_correction, approved]
+
+    JoiningCaseView:
+      type: object
+      required: [id, contactPhoneE164, businessName, firstStoreName, state, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        contactPhoneE164:
+          type: string
+        businessName:
+          type: string
+        firstStoreName:
+          type: string
+        partnerActorId:
+          type: string
+          nullable: true
+        state:
+          $ref: "#/components/schemas/JoiningCaseState"
+        correctionReason:
+          type: string
+          nullable: true
+        reviewedBy:
+          type: string
+          nullable: true
+        store:
+          $ref: "#/components/schemas/StoreView"
+          nullable: true
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    JoiningCaseResponse:
+      type: object
+      required: [case, idempotentReplay]
+      additionalProperties: false
+      properties:
+        case:
+          $ref: "#/components/schemas/JoiningCaseView"
+        idempotentReplay:
+          type: boolean
+
+    JoiningCaseSummary:
+      type: object
+      required: [id, contactPhoneE164, businessName, firstStoreName, state, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        contactPhoneE164:
+          type: string
+        businessName:
+          type: string
+        firstStoreName:
+          type: string
+        partnerActorId:
+          type: string
+          nullable: true
+        state:
+          $ref: "#/components/schemas/JoiningCaseState"
+        correctionReason:
+          type: string
+          nullable: true
+        reviewedBy:
+          type: string
+          nullable: true
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    JoiningCaseListResponse:
+      type: object
+      required: [cases]
+      additionalProperties: false
+      properties:
+        cases:
+          type: array
+          items:
+            $ref: "#/components/schemas/JoiningCaseSummary"
+        nextCursor:
+          type: string
+
+    CorrectJoiningCaseRequest:
+      type: object
+      required: [businessName, firstStoreName]
+      additionalProperties: false
+      properties:
+        businessName:
+          type: string
+          minLength: 2
+          maxLength: 160
+        firstStoreName:
+          type: string
+          minLength: 2
+          maxLength: 160
+
+    ReviewJoiningCaseRequest:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [approved, needs_correction]
+        correctionReason:
+          type: string
+          nullable: true
+          maxLength: 500
 
     StorePublicationReadiness:
       type: object
@@ -195,7 +290,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, createdAt, updatedAt]
+      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -215,6 +310,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        assortments:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreAssortment"
         createdAt:
           type: string
           format: date-time
@@ -248,9 +347,210 @@ components:
         idempotentReplay:
           type: boolean
 
+    SellUnit:
+      type: string
+      enum: [piece, kg]
+
+    CentralProduct:
+      type: object
+      required: [id, canonicalName, sellUnit, active, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        canonicalName:
+          type: string
+        brand:
+          type: string
+          nullable: true
+        barcode:
+          type: string
+          nullable: true
+        canonicalImageUrl:
+          type: string
+          nullable: true
+        sellUnit:
+          $ref: "#/components/schemas/SellUnit"
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCentralProductRequest:
+      type: object
+      required: [canonicalName, sellUnit]
+      additionalProperties: false
+      properties:
+        canonicalName:
+          type: string
+          minLength: 1
+          maxLength: 160
+        brand:
+          type: string
+          nullable: true
+          maxLength: 160
+        barcode:
+          type: string
+          nullable: true
+          maxLength: 128
+        canonicalImageUrl:
+          type: string
+          nullable: true
+          maxLength: 2048
+        sellUnit:
+          $ref: "#/components/schemas/SellUnit"
+
+    UpdateCentralProductRequest:
+      type: object
+      required: [canonicalName, active]
+      additionalProperties: false
+      properties:
+        canonicalName:
+          type: string
+          minLength: 1
+          maxLength: 160
+        brand:
+          type: string
+          nullable: true
+          maxLength: 160
+        barcode:
+          type: string
+          nullable: true
+          maxLength: 128
+        canonicalImageUrl:
+          type: string
+          nullable: true
+          maxLength: 2048
+        active:
+          type: boolean
+
+    CentralProductResponse:
+      type: object
+      required: [product, idempotentReplay]
+      additionalProperties: false
+      properties:
+        product:
+          $ref: "#/components/schemas/CentralProduct"
+        idempotentReplay:
+          type: boolean
+
+    CentralProductListResponse:
+      type: object
+      required: [products]
+      additionalProperties: false
+      properties:
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/CentralProduct"
+
+    AssortmentPublicationState:
+      type: string
+      enum: [draft, published, hidden]
+
+    StoreAssortment:
+      type: object
+      required: [storeId, productId, canonicalName, sellUnit, productActive, productVersion, priceMinor, currency, availability, publicationState, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        productId:
+          type: string
+        canonicalName:
+          type: string
+        brand:
+          type: string
+          nullable: true
+        barcode:
+          type: string
+          nullable: true
+        canonicalImageUrl:
+          type: string
+          nullable: true
+        sellUnit:
+          $ref: "#/components/schemas/SellUnit"
+        productActive:
+          type: boolean
+        productVersion:
+          type: integer
+          minimum: 1
+        priceMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        availability:
+          type: boolean
+        publicationState:
+          $ref: "#/components/schemas/AssortmentPublicationState"
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateStoreAssortmentRequest:
+      type: object
+      required: [productId, priceMinor]
+      additionalProperties: false
+      properties:
+        productId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        priceMinor:
+          type: integer
+          minimum: 1
+
+    UpdateStoreAssortmentRequest:
+      type: object
+      required: [priceMinor, availability, publicationState]
+      additionalProperties: false
+      properties:
+        priceMinor:
+          type: integer
+          minimum: 1
+        availability:
+          type: boolean
+        publicationState:
+          $ref: "#/components/schemas/AssortmentPublicationState"
+
+    StoreAssortmentResponse:
+      type: object
+      required: [assortment, idempotentReplay]
+      additionalProperties: false
+      properties:
+        assortment:
+          $ref: "#/components/schemas/StoreAssortment"
+        idempotentReplay:
+          type: boolean
+
+    StoreAssortmentListResponse:
+      type: object
+      required: [assortments]
+      additionalProperties: false
+      properties:
+        assortments:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreAssortment"
+
     PublicStoreView:
       type: object
-      required: [id, name, version, publishedAt, createdAt, updatedAt]
+      required: [id, name, version, assortments, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -260,6 +560,10 @@ components:
         version:
           type: integer
           minimum: 1
+        assortments:
+          type: array
+          items:
+            $ref: "#/components/schemas/StoreAssortment"
         publishedAt:
           type: string
           format: date-time
@@ -279,76 +583,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublicStoreView"
-
-    PartnerBootstrapResponse:
-      type: object
-      required: [partnerActorId, firstStore, idempotentReplay]
-      additionalProperties: false
-      properties:
-        partnerActorId:
-          type: string
-        firstStore:
-          $ref: "#/components/schemas/StoreView"
-        idempotentReplay:
-          type: boolean
-
-    ActorRoleView:
-      type: object
-      required: [actorId, phoneE164, role, enabled, securityEnabled, actorVersion, roleVersion]
-      properties:
-        actorId:
-          type: string
-        phoneE164:
-          type: string
-        role:
-          type: string
-        enabled:
-          type: boolean
-        activatedAt:
-          type: string
-          format: date-time
-          nullable: true
-        securityEnabled:
-          type: boolean
-        actorCreated:
-          type: boolean
-        roleCreated:
-          type: boolean
-        actorVersion:
-          type: integer
-          minimum: 1
-        roleVersion:
-          type: integer
-          minimum: 1
-        credentialVersion:
-          type: integer
-          minimum: 1
-
-    ManagedRoleStatusResponse:
-      type: object
-      required: [exists, enabled, activated, securityEnabled, reenrollable, state, role]
-      properties:
-        actorId:
-          type: string
-        exists:
-          type: boolean
-        enabled:
-          type: boolean
-        activated:
-          type: boolean
-        securityEnabled:
-          type: boolean
-        reenrollable:
-          type: boolean
-        state:
-          type: string
-          enum: [not_provisioned, pending_activation, active, role_disabled, identity_disabled]
-        role:
-          $ref: "#/components/schemas/ManagedRole"
-        actorVersion:
-          type: integer
-        roleVersion:
-          type: integer
 
     ErrorResponse:
       type: object

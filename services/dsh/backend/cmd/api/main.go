@@ -24,10 +24,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	managedAccess, err := transporthttp.NewManagedAccess(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"))
-	if err != nil {
-		log.Fatal(err)
-	}
 	database, err := postgres.Open(os.Getenv("DSH_DATABASE_URL"))
 	if err != nil {
 		log.Fatal(err)
@@ -41,7 +37,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	partnerBootstrap, err := transporthttp.NewPartnerBootstrap(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication)
+	joiningCaseServer, err := transporthttp.NewJoiningCase(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication)
+	if err != nil {
+		log.Fatal(err)
+	}
+	catalogServer, err := transporthttp.NewCatalog(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -50,15 +50,15 @@ func main() {
 		log.Fatal(err)
 	}
 	register := func(mux *http.ServeMux) {
-		managedAccess.Register(mux)
-		partnerBootstrap.Register(mux)
+		joiningCaseServer.Register(mux)
+		catalogServer.Register(mux)
 		storePublicationServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
 		if err := postgres.VerifySchema(ctx, database, records); err != nil {
 			return err
 		}
-		return managedAccess.Ready(ctx)
+		return nil
 	}
 	if err := serviceruntime.RunWithRoutesAndReadiness("dsh", "/dsh", "18080", register, readiness); err != nil {
 		log.Fatal(err)

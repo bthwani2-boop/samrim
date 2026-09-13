@@ -1,0 +1,119 @@
+paths:
+  /dsh/catalog/products:
+    get:
+      operationId: listCatalogProducts
+      summary: Bounded central Product lookup for an operator or authenticated Partner
+      security:
+        - serviceBearer: []
+        - userBearer: []
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - { name: barcode, in: query, required: false, schema: { type: string, maxLength: 128 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 50 } }
+      responses:
+        "200": { description: Bounded central Product lookup., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CentralProductListResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: createCentralProduct
+      summary: Create a central Product as an active operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCentralProductRequest" }
+      responses:
+        "201": { description: Central Product created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CentralProductResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CentralProductResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/catalog/products/{productId}:
+    post:
+      operationId: updateCentralProduct
+      summary: Apply a versioned central Product mutation as an active operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCentralProductRequest" }
+      responses:
+        "200": { description: Central Product mutation result., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CentralProductResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/stores/{storeId}/assortment:
+    get:
+      operationId: readOwnStoreAssortment
+      summary: Read all Store Assortments for the authenticated Partner Store
+      security: [{ userBearer: [] }]
+      parameters: [{ $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }]
+      responses:
+        "200": { description: Store Assortment readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAssortmentListResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+    post:
+      operationId: createStoreAssortment
+      summary: Select an active central Product for an owned Store
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateStoreAssortmentRequest" }
+      responses:
+        "201": { description: Store Assortment created in draft., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAssortmentResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAssortmentResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/stores/{storeId}/assortment/{productId}:
+    post:
+      operationId: updateStoreAssortment
+      summary: Apply a versioned Store Assortment price, availability, or publication mutation
+      security: [{ userBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/StoreId" }
+        - { name: productId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateStoreAssortmentRequest" }
+      responses:
+        "200": { description: Store Assortment mutation result., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/StoreAssortmentResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
