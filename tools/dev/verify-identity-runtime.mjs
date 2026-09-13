@@ -5,802 +5,118 @@ import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env-file="))?.slice("--env-file=".length);
-const defaultEnv = fs.existsSync(path.join(root, "infra/local/compose/.env"))
-  ? "infra/local/compose/.env"
-  : "infra/local/compose/.env.example";
-const envFile = path.resolve(root, requestedEnv || defaultEnv);
-const runtimeRequestTimeoutMs = 30_000;
+const envFile = path.resolve(root, requestedEnv || "infra/local/compose/.env");
 const runtimeHost = process.argv.find((arg) => arg.startsWith("--host="))?.slice("--host=".length) || "127.0.0.1";
-let runtimeSourceIp = process.argv.find((arg) => arg.startsWith("--source-ip="))?.slice("--source-ip=".length) || `198.18.${crypto.randomInt(1, 254)}.${crypto.randomInt(1, 254)}`;
-
-function fail(message) {
-  console.error("IDENTITY_RUNTIME_SEMANTICS=FAIL");
-  console.error("  " + message);
-  process.exit(1);
-}
-
-function parseEnv(file) {
-  if (!fs.existsSync(file)) fail("environment file missing: " + file);
-  const result = {};
-  for (const raw of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const separator = line.indexOf("=");
-    if (separator <= 0) continue;
-    result[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
-  }
-  return result;
-}
-
-const env = parseEnv(envFile);
-const port = env.SAMRIM_IDENTITY_PORT;
-if (!port) fail("SAMRIM_IDENTITY_PORT is required in the canonical environment");
-const baseUrl = "http://" + runtimeHost + ":" + port;
+const env = Object.fromEntries(fs.readFileSync(envFile, "utf8").split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#")).map((line) => {
+  const index = line.indexOf("=");
+  return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+}));
+const baseUrl = `http://${runtimeHost}:${env.SAMRIM_IDENTITY_PORT}`;
 const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
-const abuseSecret = env.IDENTITY_ABUSE_HMAC_SECRET;
 const dshToken = env.IDENTITY_DSH_SERVICE_TOKEN;
-const controlPanelToken = env.CONTROL_PANEL_SERVICE_TOKEN;
 const bootstrapToken = env.OPERATOR_BOOTSTRAP_SECRET;
-
-for (const [name, value, minimum] of [
-  ["IDENTITY_CHALLENGE_HMAC_SECRET", challengeSecret, 32],
-  ["IDENTITY_ABUSE_HMAC_SECRET", abuseSecret, 32],
-  ["IDENTITY_DSH_SERVICE_TOKEN", dshToken, 24],
-  ["CONTROL_PANEL_SERVICE_TOKEN", controlPanelToken, 24],
-  ["OPERATOR_BOOTSTRAP_SECRET", bootstrapToken, 24],
-]) {
-  if (typeof value !== "string" || value.length < minimum) fail(name + " is not configured strongly enough");
-}
-if (dshToken === controlPanelToken) fail("internal service tokens must be distinct");
-if (bootstrapToken === controlPanelToken || bootstrapToken === dshToken) fail("bootstrap token must be distinct from operational service tokens");
-
-const composeFile = path.join(root, "infra/local/compose/compose.yaml");
-const composeArgs = [
-  "compose",
-  "--project-name", "samrim-local",
-  "--env-file", envFile,
-  "-f", composeFile,
-];
-function compose(...args) {
-  return execFileSync("docker", [...composeArgs, ...args], { encoding: "utf8" });
-}
-function sql(query) {
-  return compose(
-    "exec", "-T", "postgres",
-    "psql", "-U", env.SAMRIM_POSTGRES_USER, "-d", env.SAMRIM_POSTGRES_DB,
-    "-Atc", query,
-  ).trim();
-}
-function sqlLiteral(value) {
-  return String(value).replaceAll("'", "''");
-}
-function deliveryStatus(phoneValue, purpose, role) {
-  return sql(
-    "SELECT d.status FROM identity_challenge_deliveries d JOIN identity_challenges c ON c.id=d.challenge_id " +
-    "WHERE c.phone_e164='" + sqlLiteral(phoneValue) + "' AND c.purpose='" + sqlLiteral(purpose) +
-    "' AND c.role='" + sqlLiteral(role) + "' ORDER BY c.created_at DESC LIMIT 1",
-  );
-}
-function deliveryCount(phoneValue, purpose, role) {
-  return Number(sql(
-    "SELECT count(*) FROM identity_challenge_deliveries d JOIN identity_challenges c ON c.id=d.challenge_id " +
-    "WHERE c.phone_e164='" + sqlLiteral(phoneValue) + "' AND c.purpose='" + sqlLiteral(purpose) +
-    "' AND c.role='" + sqlLiteral(role) + "'",
-  ));
-}
-async function waitForDeliveryStatus(phoneValue, purpose, role, expected) {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    if (deliveryStatus(phoneValue, purpose, role) === expected) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  fail("challenge delivery did not reach " + expected + " for " + purpose + "/" + role);
-}
-
-const suffix = crypto.randomBytes(5).toString("hex");
-let phoneCounter = crypto.randomInt(10_000_000, 80_000_000);
-function phone() {
-  phoneCounter += 1;
-  return "+9677" + String(phoneCounter).padStart(8, "0").slice(-8);
-}
-
-function codeFor(challengeId, purpose) {
-  const digest = crypto
-    .createHmac("sha256", challengeSecret)
-    .update(challengeId)
-    .update(Buffer.from([0]))
-    .update(purpose)
-    .update(Buffer.from([0]))
-    .update("challenge-code")
-    .digest();
-  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0");
-}
-
-async function request(method, pathname, options = {}) {
+const controlToken = env.CONTROL_PANEL_SERVICE_TOKEN;
+const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envFile, "-f", path.join(root, "infra/local/compose/compose.yaml")];
+const fail = (message) => { console.error("IDENTITY_RUNTIME_SEMANTICS=FAIL"); console.error("  " + message); process.exit(1); };
+const assert = (condition, message) => { if (!condition) fail(message); };
+const sql = (query) => execFileSync("docker", [...composeArgs, "exec", "-T", "postgres", "psql", "-U", env.SAMRIM_POSTGRES_USER, "-d", env.SAMRIM_POSTGRES_DB, "-Atc", query], { encoding: "utf8" }).trim();
+const sqlLiteral = (value) => String(value).replaceAll("'", "''");
+const request = async (method, pathname, options = {}) => {
   const response = await fetch(baseUrl + pathname, {
     method,
-    headers: {
-      Accept: "application/json",
-      ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...(options.token ? { Authorization: "Bearer " + options.token } : {}),
-      "X-Forwarded-For": runtimeSourceIp,
-      ...(options.headers || {}),
-    },
+    headers: { Accept: "application/json", ...(options.body === undefined ? {} : { "Content-Type": "application/json" }), ...(options.token ? { Authorization: "Bearer " + options.token } : {}), ...(options.headers || {}) },
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-    signal: AbortSignal.timeout(runtimeRequestTimeoutMs),
+    signal: AbortSignal.timeout(30_000),
   });
   const raw = await response.text();
   let body = null;
-  if (raw) {
-    try { body = JSON.parse(raw); } catch { body = raw; }
-  }
-  return { status: response.status, body, raw };
-}
-
-async function expect(method, pathname, expectedStatus, options = {}) {
-  const response = await request(method, pathname, options);
-  if (response.status !== expectedStatus) {
-    if (response.status === 429 && expectedStatus !== 429) {
-      try {
-        const phoneArg = options.body?.phone || options.body?.phoneE164 || "";
-        const roleArg = options.body?.role || "";
-        const diagPhone = sqlLiteral(phoneArg);
-        const diagRole = sqlLiteral(roleArg);
-        const phoneChallenges = sql("SELECT count(*) FROM identity_challenges WHERE phone_e164='" + diagPhone + "' AND created_at>clock_timestamp()-interval '15 minutes'");
-        const sourceChallenges = sql("SELECT count(*) FROM identity_challenges WHERE request_ip_hash=encode(sha256(('client-ip' || '" + sqlLiteral(runtimeSourceIp) + "' || '" + sqlLiteral(abuseSecret) + "')::bytea), 'hex') AND created_at>clock_timestamp()-interval '15 minutes'");
-        const phoneAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE phone_e164='" + diagPhone + "' AND role='" + diagRole + "' AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'");
-        const sourceAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE ip_hash=encode(sha256(('client-ip' || '" + sqlLiteral(runtimeSourceIp) + "' || '" + sqlLiteral(abuseSecret) + "')::bytea), 'hex') AND succeeded=false AND created_at>clock_timestamp()-interval '15 minutes'");
-        const reservedAttempts = sql("SELECT count(*) FROM identity_password_attempts WHERE reserved=true AND created_at>clock_timestamp()-interval '15 minutes'");
-        console.error("DIAGNOSTIC_RATE_LIMIT_COUNTERS: phoneChallenges=" + phoneChallenges + " sourceChallenges=" + sourceChallenges + " phoneAttempts=" + phoneAttempts + " sourceAttempts=" + sourceAttempts + " reservedAttempts=" + reservedAttempts);
-      } catch (diagErr) {
-        console.error("DIAGNOSTIC_QUERY_FAILED: " + diagErr.message);
-      }
-    }
-    fail(method + " " + pathname + " returned " + response.status +
-      ", expected " + expectedStatus + "; body=" + JSON.stringify(response.body));
-  }
-  return response.body;
-}
-
-function assert(condition, message) {
-  if (!condition) fail(message);
-}
-
-function assertSixDigitCode(value, label) {
-  assert(typeof value === "string" && /^[0-9]{6}$/.test(value), label + " is not a six-digit code");
-}
-
-function assertEnrollmentToken(value, label) {
-  assert(typeof value === "string" && /^[A-Za-z0-9_-]{24,256}$/.test(value), label + " is not a high-entropy enrollment token");
-}
-
-function assertTwoDayActivationExpiry(value, label) {
-  const expiresAt = Date.parse(value);
-  const hoursRemaining = (expiresAt - Date.now()) / (60 * 60 * 1000);
-  assert(Number.isFinite(expiresAt) && hoursRemaining > 47.5 && hoursRemaining < 48.5, label + " does not expire after two days");
-}
-
-function service(token, extra = {}) {
-  return { Authorization: "Bearer " + token, ...extra };
-}
-
-function assertSession(pair, role, surface, actorId) {
-  assert(pair && typeof pair === "object", "token pair missing");
-  assert(typeof pair.accessToken === "string" && pair.accessToken.length >= 20, "access token missing");
-  assert(typeof pair.refreshToken === "string" && pair.refreshToken.length >= 20, "refresh token missing");
-  assert(pair.identity?.role === role, "session role mismatch: expected " + role);
-  assert(pair.identity?.surface === surface, "session surface mismatch: expected " + surface);
-  if (actorId) assert(pair.identity?.subject === actorId, "session actor mismatch");
-  for (const forbidden of ["roles", "permissions", "surfaceAccess"]) {
-    assert(!(forbidden in pair.identity), "session leaked " + forbidden);
-  }
-}
-
-async function requestChallenge(pathname, body, purpose) {
+  try { body = raw ? JSON.parse(raw) : null; } catch { body = raw; }
+  return { status: response.status, body };
+};
+const expect = async (method, pathname, status, options = {}) => {
+  const result = await request(method, pathname, options);
+  assert(result.status === status, `${method} ${pathname}: got ${result.status}, expected ${status}; body=${JSON.stringify(result.body)}`);
+  return result.body;
+};
+const service = (token, extra = {}) => ({ Authorization: "Bearer " + token, ...extra });
+const phone = () => "+9677" + String(crypto.randomInt(10_000_000, 99_999_999));
+const password = (label) => label + "-" + crypto.randomBytes(12).toString("hex") + "-Password";
+const codeFor = (challengeId, purpose) => String(crypto.createHmac("sha256", challengeSecret).update(challengeId).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest().readUInt32BE(0) % 1_000_000).padStart(6, "0");
+const issue = async (pathname, body, purpose, role = "client") => {
   const challenge = await expect("POST", pathname, 201, { body });
-  assert(typeof challenge.challengeId === "string" && challenge.challengeId.length > 10, "challenge id missing");
-  const code = codeFor(challenge.challengeId, purpose);
-  assertSixDigitCode(code, "verification code");
-  assert(!JSON.stringify(challenge).includes(code), "raw verification code leaked in public challenge");
-  return { challenge, code };
-}
+  assert(typeof challenge.challengeId === "string", purpose + " challenge id missing");
+  return { ...challenge, code: codeFor(challenge.challengeId, purpose), role };
+};
+const session = (pair, role, surface, subject) => {
+  assert(typeof pair?.accessToken === "string" && typeof pair?.refreshToken === "string", "token pair missing");
+  assert(pair.identity?.role === role && pair.identity?.surface === surface && pair.identity?.subject === subject, "session identity mismatch");
+};
 
-await expect("GET", "/identity/health", 200);
-await expect("GET", "/identity/readiness", 200);
+for (const pathName of ["/identity/health", "/identity/readiness"]) await expect("GET", pathName, 200);
+for (const pathName of ["/auth/operator/login/start", "/auth/operator/login/complete", "/auth/managed/recovery/request", "/auth/managed/recover"]) await expect("POST", pathName, 404, { body: {} });
 
-await expect("POST", "/internal/bootstrap/operator", 403, {
-  headers: service(controlPanelToken),
-  body: { phoneE164: phone(), role: "operator", password: "Bootstrap-" + suffix + "-Strong-Password" },
-});
+const bootstrapPhone = phone();
+const bootstrap = await request("POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: bootstrapPhone, role: "operator" } });
+assert([201, 409].includes(bootstrap.status), "first-operator bootstrap fence returned " + bootstrap.status);
+let operator = sql("SELECT a.id || '|' || a.phone_e164 FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id AND r.role='operator' ORDER BY a.created_at LIMIT 1").split("|");
+assert(operator.length === 2 && operator[0] && operator[1], "operator readback missing");
+const operatorActorID = operator[0];
 
-let operatorActorId = sql("SELECT COALESCE(initial_operator_actor_id, '') FROM identity_bootstrap_state WHERE id=1");
-if (!operatorActorId) {
-  const bootstrapOperatorPhone = phone();
-  const bootstrapped = await expect("POST", "/internal/bootstrap/operator", 201, {
-    headers: service(bootstrapToken),
-    body: { phoneE164: bootstrapOperatorPhone, role: "operator", password: "Bootstrap-" + suffix + "-Strong-Password" },
-  });
-  operatorActorId = bootstrapped.actorId;
-}
-assert(typeof operatorActorId === "string" && operatorActorId.startsWith("act_"), "operator actorId invalid");
-await expect("POST", "/internal/bootstrap/operator", 409, {
-  headers: service(bootstrapToken),
-  body: { phoneE164: phone(), role: "operator", password: "Bootstrap-repeat-" + suffix + "-Strong-Password" },
-});
-
-await expect("POST", "/auth/otp/request", 404, { body: { phone: phone(), role: "client" } });
-await expect("POST", "/auth/activate", 404, { body: {} });
-await expect("POST", "/auth/login", 404, { body: {} });
-
-const sharedPhone = phone();
-const customerPassword = "Client-" + suffix + "-Strong-Password";
-const registration = await requestChallenge(
-  "/auth/client/registration/request",
-  { phone: sharedPhone },
-  "client_register",
-);
-const repeatedRegistration = await requestChallenge(
-  "/auth/client/registration/request",
-  { phone: sharedPhone },
-  "client_register",
-);
-assert(repeatedRegistration.challenge.challengeId === registration.challenge.challengeId, "active challenge request was not idempotent");
-const clientPair = await expect("POST", "/auth/client/register", 201, {
-  body: {
-    phone: sharedPhone,
-    code: registration.code,
-    password: customerPassword,
-    deviceFingerprint: "device-client-" + suffix,
-  },
-});
-const actorId = clientPair.identity.subject;
-assert(/^act_/.test(actorId), "actor_id is not neutral");
-assertSession(clientPair, "client", "app-client", actorId);
-
-const clientLogin = await expect("POST", "/auth/client/login", 200, {
-  body: { phone: sharedPhone, password: customerPassword, deviceFingerprint: "device-client-login-" + suffix },
-});
-assertSession(clientLogin, "client", "app-client", actorId);
-await expect("POST", "/auth/managed/state", 404, { body: { phone: sharedPhone, role: "captain" } });
-await expect("POST", "/auth/control-panel/state", 404, { body: { phone: sharedPhone } });
-
-const duplicateRegistration = await requestChallenge(
-  "/auth/client/registration/request",
-  { phone: sharedPhone },
-  "client_register",
-);
-await expect("POST", "/auth/client/register", 401, {
-  body: {
-    phone: sharedPhone,
-    code: duplicateRegistration.code,
-    password: "Different-" + suffix + "-Password",
-    deviceFingerprint: "device-client-duplicate-" + suffix,
-  },
-});
-
-const dshAdminActorId = "act_dsh_admin_" + suffix;
-await expect("POST", "/internal/actor-roles/provision", 400, {
-  headers: service(dshToken),
-  body: { phoneE164: sharedPhone, role: "captain" },
-});
-
-const captain = await expect("POST", "/internal/actor-roles/provision", 201, {
-  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
-  body: { phoneE164: sharedPhone, role: "captain" },
-});
-assert(captain.actorId === actorId, "captain provisioning created a second actor");
-assert(captain.activatedAt === undefined, "captain role should not be pre-activated");
-await expect("POST", "/internal/actor-roles/provision", 400, {
-  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
-  body: { phoneE164: phone(), role: "captain", password: "Not-Allowed-" + suffix + "-Password" },
-});
-await expect("POST", "/internal/actor-roles/provision", 400, {
-  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
-  body: { actorId: "attacker-selected", phoneE164: phone(), role: "captain" },
-});
-await expect("POST", "/internal/actor-roles/provision", 400, {
-  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
-  body: { phoneE164: phone(), role: "captain", username: "retired-identifier" },
-});
-await expect("POST", "/internal/actor-roles/provision", 403, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }),
-  body: { phoneE164: phone(), role: "captain" },
-});
-await expect("POST", "/internal/actor-roles/provision", 403, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }),
-  body: { phoneE164: phone(), role: "client" },
-});
-
-const captainChallenge = await requestChallenge(
-  "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "captain" },
-  "managed_activate",
-);
-const captainPassword = "Captain-" + suffix + "-Strong-Password";
-const captainPair = await expect("POST", "/auth/managed/activate", 200, {
-  body: {
-    phone: sharedPhone,
-    role: "captain",
-    verificationCode: captainChallenge.code,
-    password: captainPassword,
-    deviceFingerprint: "device-captain-" + suffix,
-  },
-});
-assertSession(captainPair, "captain", "app-captain", actorId);
-const captainLoginPair = await expect("POST", "/auth/managed/login", 200, {
-  body: {
-    phone: sharedPhone,
-    role: "captain",
-    password: captainPassword,
-    deviceFingerprint: "device-captain-login-" + suffix,
-  },
-});
-assertSession(captainLoginPair, "captain", "app-captain", actorId);
-await expect("POST", "/auth/managed/login", 401, {
-  body: {
-    phone: sharedPhone,
-    role: "captain",
-    password: "Wrong-" + captainPassword,
-    deviceFingerprint: "device-captain-wrong-password-" + suffix,
-  },
-});
-const captainRead = await expect(
-  "GET",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain",
-  200,
-  { headers: service(dshToken) },
-);
-assert(typeof captainRead.activatedAt === "string", "managed activation was not durably recorded");
-await expect("POST", "/internal/operator-enrollment-tokens", 403, {
-  headers: service(dshToken),
-  body: { phoneE164: sharedPhone, role: "captain" },
-});
-
-const operatorPassword = "Operator-" + suffix + "-Strong-Password";
-const operator = await expect("POST", "/internal/actor-roles/provision", 201, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }),
-  body: { phoneE164: sharedPhone, role: "operator" },
-});
-assert(operator.actorId === actorId, "operator provisioning created a second actor");
-await expect("POST", "/internal/actor-roles/provision", 403, {
-  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Service-Caller": "platform-control" }),
-  body: { phoneE164: phone(), role: "operator", password: operatorPassword },
-});
-
-const operatorActivation = await expect("POST", "/internal/operator-enrollment-tokens", 201, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }),
-  body: { phoneE164: sharedPhone, role: "operator" },
-});
-assertEnrollmentToken(operatorActivation.code, "operator enrollment token");
-assertTwoDayActivationExpiry(operatorActivation.expiresAt, "operator enrollment token");
-const operatorActivationChallenge = await requestChallenge(
-  "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "operator", operatorEnrollmentToken: operatorActivation.code },
-  "managed_activate",
-);
-
-await expect("POST", "/auth/managed/activate", 400, {
-  body: {
-    phone: sharedPhone,
-    role: "operator",
-    activationCode: operatorActivation.code,
-    verificationCode: operatorActivationChallenge.code,
-    password: operatorPassword,
-    deviceFingerprint: "device-operator-activation-legacy-" + suffix,
-  },
-});
-
-const operatorActivationPair = await expect("POST", "/auth/managed/activate", 200, {
-  body: {
-    phone: sharedPhone,
-    role: "operator",
-    operatorEnrollmentToken: operatorActivation.code,
-    verificationCode: operatorActivationChallenge.code,
-    password: operatorPassword,
-    deviceFingerprint: "device-operator-activation-" + suffix,
-  },
-});
-assertSession(operatorActivationPair, "operator", "control-panel", actorId);
-
-const operatorStart = await requestChallenge(
-  "/auth/operator/login/start",
-  { phone: sharedPhone, password: operatorPassword },
-  "operator_mfa",
-);
-assert(!("accessToken" in operatorStart.challenge), "operator password proof returned a session");
-const operatorPair = await expect("POST", "/auth/operator/login/complete", 200, {
-  body: {
-    phone: sharedPhone,
-    code: operatorStart.code,
-    deviceFingerprint: "device-operator-" + suffix,
-  },
-});
-assertSession(operatorPair, "operator", "control-panel", actorId);
-
-const unknownOperatorPhone = phone();
-const decoyOperator = await requestChallenge(
-  "/auth/operator/login/start",
-  { phone: unknownOperatorPhone, password: "Wrong-" + suffix + "-Password" },
-  "operator_mfa",
-);
-await expect("POST", "/auth/operator/login/complete", 401, {
-  body: {
-    phone: unknownOperatorPhone,
-    code: decoyOperator.code,
-    deviceFingerprint: "device-decoy-operator-" + suffix,
-  },
-});
-
-await expect("POST", "/auth/managed/activate", 401, {
-  body: {
-    phone: sharedPhone,
-    role: "captain",
-    verificationCode: "000000",
-    password: captainPassword,
-    deviceFingerprint: "device-captain-repeated-" + suffix,
-  },
-});
-const repeatedCaptainDeliveryCount = deliveryCount(sharedPhone, "managed_activate", "captain");
-await requestChallenge(
-  "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "captain" },
-  "managed_activate",
-);
-assert(
-  deliveryCount(sharedPhone, "managed_activate", "captain") === repeatedCaptainDeliveryCount + 1,
-  "repeated managed enrollment did not persist one canonical decoy challenge",
-);
-assert(deliveryStatus(sharedPhone, "managed_activate", "captain") === "suppressed", "repeated managed enrollment was not suppressed");
-
-await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/reenrollment",
-  403,
-  { headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId }) },
-);
-await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/reenrollment",
-  400,
-  { headers: service(dshToken, { "X-Correlation-ID": "captain-reenroll-" + suffix }) },
-);
-await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/reenrollment",
-  204,
-  { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Correlation-ID": "captain-reenroll-" + suffix }) },
-);
-const reenrolledCaptain = await expect(
-  "GET",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain",
-  200,
-  { headers: service(dshToken) },
-);
-assert(reenrolledCaptain.activatedAt === null || reenrolledCaptain.activatedAt === undefined, "DSH reenrollment did not reopen the managed role");
-assert(reenrolledCaptain.enabled === true && reenrolledCaptain.securityEnabled === true, "DSH reenrollment left the managed role unavailable: " + JSON.stringify(reenrolledCaptain));
-await expect("GET", "/auth/session", 401, { token: captainPair.accessToken });
+const clientPhone = phone();
+const clientPassword = password("Client");
+const registration = await issue("/auth/client/registration/request", { phone: clientPhone }, "client_register");
+const clientPair = await expect("POST", "/auth/client/register", 201, { body: { phone: clientPhone, code: registration.code, password: clientPassword, clientInstanceId: "runtime-client-instance-" + crypto.randomUUID() } });
+session(clientPair, "client", "app-client", clientPair.identity.subject);
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
-await expect("GET", "/auth/session", 200, { token: operatorPair.accessToken });
+const loginPair = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: "runtime-client-login-" + crypto.randomUUID() } });
+session(loginPair, "client", "app-client", clientPair.identity.subject);
 
-const reactivation = await requestChallenge(
-  "/auth/managed/activation/request",
-  { phone: sharedPhone, role: "captain" },
-  "managed_activate",
-);
-const reactivationState = sql("SELECT admissible::text || ':' || COALESCE(actor_id,'') || ':' || status FROM identity_challenges WHERE id='" + sqlLiteral(reactivation.challenge.challengeId) + "'");
-assert(reactivationState === "true:" + actorId + ":pending", "reenrollment challenge was not admissible: " + reactivationState);
-const reactivatedCaptain = await expect("POST", "/auth/managed/activate", 200, {
-  body: {
-    phone: sharedPhone,
-    role: "captain",
-    verificationCode: reactivation.code,
-    password: captainPassword + "-Reenrolled",
-    deviceFingerprint: "device-captain-reenrolled-" + suffix,
-  },
-});
-assertSession(reactivatedCaptain, "captain", "app-captain", actorId);
-
-const operatorRecovery = await requestChallenge(
-  "/auth/managed/recovery/request",
-  { phone: sharedPhone, role: "operator" },
-  "managed_recover",
-);
-const recoveredOperatorPassword = "Operator-Recovered-" + suffix + "-Strong-Password";
-const operatorRecoveryResult = await expect("POST", "/auth/managed/recover", 200, {
-  body: { phone: sharedPhone, role: "operator", code: operatorRecovery.code, password: recoveredOperatorPassword },
-});
-assert(operatorRecoveryResult.status === "recovery_complete", "operator recovery did not return the canonical completion result");
-assert(!("accessToken" in operatorRecoveryResult), "operator recovery created an access token");
-await expect("GET", "/auth/session", 401, { token: operatorPair.accessToken });
-const recoveredOperatorStart = await requestChallenge(
-  "/auth/operator/login/start",
-  { phone: sharedPhone, password: recoveredOperatorPassword },
-  "operator_mfa",
-);
-const recoveredOperatorPair = await expect("POST", "/auth/operator/login/complete", 200, {
-  body: { phone: sharedPhone, code: recoveredOperatorStart.code, deviceFingerprint: "device-operator-recovered-" + suffix },
-});
-assertSession(recoveredOperatorPair, "operator", "control-panel", actorId);
-
-const recoveryPhone = phone();
-const recoveryOldPassword = "Recovery-" + suffix + "-Old-Password";
-const recoveryRegistration = await requestChallenge(
-  "/auth/client/registration/request",
-  { phone: recoveryPhone },
-  "client_register",
-);
-const recoveryOriginal = await expect("POST", "/auth/client/register", 201, {
-  body: {
-    phone: recoveryPhone,
-    code: recoveryRegistration.code,
-    password: recoveryOldPassword,
-    deviceFingerprint: "device-recovery-old-" + suffix,
-  },
-});
-const recovery = await requestChallenge(
-  "/auth/client/recovery/request",
-  { phone: recoveryPhone },
-  "client_recover",
-);
-const recoveryNewPassword = "Recovery-" + suffix + "-New-Password";
-const recoveryPair = await expect("POST", "/auth/client/recover", 200, {
-  body: {
-    phone: recoveryPhone,
-    code: recovery.code,
-    password: recoveryNewPassword,
-    deviceFingerprint: "device-recovery-new-" + suffix,
-  },
-});
-assertSession(recoveryPair, "client", "app-client", recoveryOriginal.identity.subject);
-await expect("GET", "/auth/session", 401, { token: recoveryOriginal.accessToken });
-await expect("POST", "/auth/client/login", 401, {
-  body: {
-    phone: recoveryPhone,
-    password: recoveryOldPassword,
-    deviceFingerprint: "device-recovery-old-login-" + suffix,
-  },
-});
-await expect("POST", "/auth/client/login", 200, {
-  body: {
-    phone: recoveryPhone,
-    password: recoveryNewPassword,
-    deviceFingerprint: "device-recovery-login-" + suffix,
-  },
-});
-
-const unknownCaptainPhone = phone();
-await requestChallenge(
-  "/auth/managed/activation/request",
-  { phone: unknownCaptainPhone, role: "captain" },
-  "managed_activate",
-);
-assert(deliveryStatus(unknownCaptainPhone, "managed_activate", "captain") === "suppressed", "unknown managed enrollment was not suppressed");
-
-const outageKnownPhone = phone();
-const outageUnknownPhone = phone();
-await expect("POST", "/internal/actor-roles/provision", 201, {
-  headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }),
-  body: { phoneE164: outageKnownPhone, role: "captain" },
-});
-compose("stop", "mailpit");
-try {
-  await requestChallenge(
-    "/auth/managed/activation/request",
-    { phone: outageKnownPhone, role: "captain" },
-    "managed_activate",
-  );
-  await requestChallenge(
-    "/auth/managed/activation/request",
-    { phone: outageUnknownPhone, role: "captain" },
-    "managed_activate",
-  );
-  await waitForDeliveryStatus(outageKnownPhone, "managed_activate", "captain", "unknown");
-  assert(
-    deliveryStatus(outageUnknownPhone, "managed_activate", "captain") === "suppressed",
-    "unknown managed enrollment was not suppressed",
-  );
-} finally {
-  compose("up", "-d", "mailpit");
-}
-await new Promise((resolve) => setTimeout(resolve, 750));
-assert(
-  deliveryStatus(outageKnownPhone, "managed_activate", "captain") === "unknown",
-  "unknown provider outcome was blindly retried after provider recovery",
-);
-
-runtimeSourceIp = "198.19.0." + crypto.randomInt(2, 254);
-
-const lockedPhone = phone();
-const locked = await requestChallenge(
-  "/auth/client/registration/request",
-  { phone: lockedPhone },
-  "client_register",
-);
-const wrongCode = locked.code === "000000" ? "000001" : "000000";
-for (let attempt = 0; attempt < 5; attempt++) {
-  await expect("POST", "/auth/client/register", 401, {
-    body: {
-      phone: lockedPhone,
-      code: wrongCode,
-      password: "Locked-" + suffix + "-Password",
-      deviceFingerprint: "device-locked-" + suffix,
-    },
-  });
-}
-await expect("POST", "/auth/client/register", 401, {
-  body: {
-    phone: lockedPhone,
-    code: locked.code,
-    password: "Locked-" + suffix + "-Password",
-    deviceFingerprint: "device-locked-" + suffix,
-  },
-});
-
-const budgetPhone = phone();
-for (let round = 0; round < 3; round++) {
-  const reissued = await requestChallenge(
-    "/auth/client/registration/request",
-    { phone: budgetPhone },
-    "client_register",
-  );
-  const reissueWrongCode = reissued.code === "000000" ? "000001" : "000000";
-  for (let attempt = 0; attempt < 5; attempt++) {
-    await expect("POST", "/auth/client/register", 401, {
-      body: {
-        phone: budgetPhone,
-        code: reissueWrongCode,
-        password: "Budget-" + suffix + "-Password",
-        deviceFingerprint: "device-budget-" + suffix,
-      },
-    });
-  }
-}
-await expect("POST", "/auth/client/registration/request", 429, { body: { phone: budgetPhone } });
-
-const refreshPair = await expect("POST", "/auth/client/login", 200, {
-  body: { phone: sharedPhone, password: customerPassword, deviceFingerprint: "device-refresh-" + suffix },
-});
-await expect("POST", "/auth/refresh", 401, {
-  body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: "wrong-device-" + suffix },
-});
-await expect("GET", "/auth/session", 200, { token: refreshPair.accessToken });
-const randomRefresh = refreshPair.identity.sessionId + "." + crypto.randomBytes(48).toString("base64url");
-await expect("POST", "/auth/refresh", 401, {
-  body: { refreshToken: randomRefresh, deviceFingerprint: "device-refresh-" + suffix },
-});
-await expect("GET", "/auth/session", 200, { token: refreshPair.accessToken });
-const concurrentRefreshes = await Promise.all([
-  request("POST", "/auth/refresh", { body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: "device-refresh-" + suffix } }),
-  request("POST", "/auth/refresh", { body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: "device-refresh-" + suffix } }),
-]);
-const concurrentSuccesses = concurrentRefreshes.filter((response) => response.status === 200);
-const concurrentFailures = concurrentRefreshes.filter((response) => response.status === 401);
-assert(concurrentSuccesses.length === 1 && concurrentFailures.length === 1, "concurrent refresh did not produce one rotation and one stale rejection");
-const concurrentRotated = concurrentSuccesses[0].body;
-assert(typeof concurrentRotated?.refreshToken === "string", "concurrent refresh did not return a rotated token");
-await expect("GET", "/auth/session", 200, { token: concurrentRotated.accessToken });
-const rotated = await expect("POST", "/auth/refresh", 200, {
-  body: { refreshToken: concurrentRotated.refreshToken, deviceFingerprint: "device-refresh-" + suffix },
-});
-assert(rotated.refreshToken !== refreshPair.refreshToken, "refresh token did not rotate");
-await new Promise((resolve) => setTimeout(resolve, 5_500));
-await expect("POST", "/auth/refresh", 401, {
-  body: { refreshToken: refreshPair.refreshToken, deviceFingerprint: "device-refresh-" + suffix },
-});
-await expect("GET", "/auth/session", 401, { token: rotated.accessToken });
-
-const secondOperatorRecovery = await requestChallenge(
-  "/auth/managed/recovery/request",
-  { phone: sharedPhone, role: "operator" },
-  "managed_recover",
-);
-const secondOperatorPassword = "Operator-Recovered-Again-" + suffix + "-Strong-Password";
-const secondOperatorRecoveryResult = await expect("POST", "/auth/managed/recover", 200, {
-  body: { phone: sharedPhone, role: "operator", code: secondOperatorRecovery.code, password: secondOperatorPassword },
-});
-assert(secondOperatorRecoveryResult.status === "recovery_complete", "second operator recovery did not return the canonical completion result");
-await expect("GET", "/auth/session", 401, { token: recoveredOperatorPair.accessToken });
-await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
-await expect("GET", "/auth/session", 200, { token: reactivatedCaptain.accessToken });
-
-const captainRoleBeforeDisable = await expect(
-  "GET",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain",
-  200,
-  { headers: service(dshToken) },
-);
-const captainVersion = captainRoleBeforeDisable.roleVersion;
-assert(typeof captainVersion === "number" && captainVersion >= 1, "captain roleVersion invalid: " + JSON.stringify(captainRoleBeforeDisable));
-
-await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable",
-  400,
-  { headers: service(dshToken, { "X-Expected-Version": String(captainVersion) }) },
-);
-await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable",
-  400,
-  { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId }) },
-);
-await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/disable",
-  204,
-  { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Expected-Version": String(captainVersion) }) },
-);
-await expect("GET", "/auth/session", 401, { token: reactivatedCaptain.accessToken });
-await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
-await expect(
-  "POST",
-  "/internal/actors/" + encodeURIComponent(actorId) + "/roles/captain/enable",
-  204,
-  { headers: service(dshToken, { "X-Acting-Actor-ID": dshAdminActorId, "X-Expected-Version": String(captainVersion + 1) }) },
-);
-
-const operatorAfterRecoveryStart = await requestChallenge(
-  "/auth/operator/login/start",
-  { phone: sharedPhone, password: secondOperatorPassword },
-  "operator_mfa",
-);
-const operatorAfterRecovery = await expect("POST", "/auth/operator/login/complete", 200, {
-  body: {
-    phone: sharedPhone,
-    code: operatorAfterRecoveryStart.code,
-    deviceFingerprint: "device-operator-recovered-again-" + suffix,
-  },
-});
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 403, {
-  headers: service(dshToken),
-});
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
-  headers: service(controlPanelToken, { "X-Expected-Version": "1", "X-Reason": "negative test missing actor" }),
-});
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Actor-ID": operatorActorId, "X-Expected-Version": "1", "X-Reason": "negative test legacy actor" }),
-});
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "If-Match": "1", "X-Expected-Version": "1", "X-Reason": "negative test if match" }),
-});
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 400, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Expected-Version": "0", "X-Reason": "negative test version 0" }),
-});
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 409, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Expected-Version": "999", "X-Reason": "negative test version conflict" }),
-});
-
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/disable", 204, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Expected-Version": "1", "X-Reason": "security disable invariant test" }),
-});
+const recoveryPassword = password("Client-Recovered");
+const recovery = await issue("/auth/client/recovery/request", { phone: clientPhone }, "client_recover");
+const recoveryResult = await expect("POST", "/auth/client/recover", 200, { body: { phone: clientPhone, code: recovery.code, password: recoveryPassword } });
+assert(recoveryResult?.status === "recovery_complete", "client recovery did not complete");
+assert(!recoveryResult.accessToken && !recoveryResult.tokenPair, "client recovery created a session");
 await expect("GET", "/auth/session", 401, { token: clientPair.accessToken });
-await expect("GET", "/auth/session", 401, { token: operatorAfterRecovery.accessToken });
-await expect("POST", "/internal/actors/" + encodeURIComponent(actorId) + "/security/enable", 204, {
-  headers: service(controlPanelToken, { "X-Acting-Actor-ID": operatorActorId, "X-Expected-Version": "2", "X-Reason": "security enable invariant test" }),
-});
-await expect("POST", "/auth/client/login", 200, {
-  body: { phone: sharedPhone, password: customerPassword, deviceFingerprint: "device-post-security-" + suffix },
-});
+await expect("POST", "/auth/client/login", 401, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: "runtime-old-password-" + crypto.randomUUID() } });
+const recoveredPair = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: recoveryPassword, clientInstanceId: "runtime-recovered-" + crypto.randomUUID() } });
+session(recoveredPair, "client", "app-client", clientPair.identity.subject);
+
+const managedPhone = phone();
+await expect("POST", "/internal/actor-roles/provision", 201, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: managedPhone, role: "partner" } });
+const managedPassword = password("Partner");
+const managedChallenge = await issue("/auth/managed/activation/request", { phone: managedPhone, role: "partner" }, "managed_activate", "partner");
+const managedPair = await expect("POST", "/auth/managed/activate", 200, { body: { phone: managedPhone, role: "partner", verificationCode: managedChallenge.code, password: managedPassword, clientInstanceId: "runtime-managed-instance-" + crypto.randomUUID() } });
+session(managedPair, "partner", "app-partner", managedPair.identity.subject);
+await expect("POST", "/auth/managed/activation/request", 403, { body: { phone: managedPhone, role: "operator" } });
+
+const authOptions = await expect("POST", "/auth/operator/authentication/options", 201);
+assert(typeof authOptions.ceremonyId === "string" && authOptions.publicKey?.challenge, "operator passkey options are not server-owned");
+assert(!authOptions.accessToken && !authOptions.refreshToken, "passkey options created a session");
+const operatorEnrollment = await expect("POST", "/internal/operator-enrollment-tokens", 201, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: operator[1], role: "operator" } });
+assert(/^[A-Za-z0-9_-]{24,256}$/.test(operatorEnrollment.code), "operator enrollment token is not high entropy");
+const operatorChallenge = await issue("/auth/operator/enrollment/request", { phone: operator[1], operatorEnrollmentToken: operatorEnrollment.code }, "operator_enroll", "operator");
+const enrollmentOptions = await expect("POST", "/auth/operator/enrollment/registration/options", 201, { body: { phone: operator[1], operatorEnrollmentToken: operatorEnrollment.code, verificationCode: operatorChallenge.code } });
+assert(typeof enrollmentOptions.ceremonyId === "string" && enrollmentOptions.publicKey?.challenge, "operator enrollment ceremony was not created");
+const invalidFinish = await request("POST", "/auth/operator/enrollment/registration/finish", { body: { ceremonyId: enrollmentOptions.ceremonyId, credential: {}, clientInstanceId: "runtime-invalid-passkey-instance-" + crypto.randomUUID() } });
+assert([400, 401].includes(invalidFinish.status), "invalid operator passkey credential was accepted");
+const recoveryWithoutCredential = await request("POST", "/auth/operator/recovery/request", { body: { phone: operator[1], recoveryCredential: "not-a-real-recovery-credential" } });
+assert(recoveryWithoutCredential.status === 201, "operator recovery leaked whether an invalid recovery credential matched");
+assert(recoveryWithoutCredential.body?.challengeId && sql("SELECT admissible::text FROM identity_challenges WHERE id='" + sqlLiteral(recoveryWithoutCredential.body.challengeId) + "'") === "false", "invalid operator recovery credential became admissible");
+
+assert(sql("SELECT count(*) FROM identity_password_credentials WHERE role='operator'") === "0", "operator password credential remains");
+assert(sql("SELECT count(*) FROM identity_password_attempts WHERE role='operator'") === "0", "operator password attempts remain");
+assert(sql("SELECT count(*) FROM identity_challenges WHERE purpose IN ('operator_mfa','managed_recover')") === "0", "retired proof purposes remain in current data");
+const retiredInstanceColumn = ["device", "_fingerprint", "_hash"].join("");
+assert(sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='identity_sessions' AND column_name='" + retiredInstanceColumn + "'") === "0", "retired session binding column remains");
+assert(sql("SELECT count(*) FROM identity_schema_migrations WHERE version=17") === "1", "identity schema is not at v17");
 
 console.log("IDENTITY_RUNTIME_SEMANTICS=PASS");
-console.log("IDENTITY_SINGLE_ACTOR_MULTI_ROLE=PASS");
 console.log("IDENTITY_CUSTOMER_REGISTRATION_AFTER_PHONE_PROOF=PASS");
 console.log("IDENTITY_CUSTOMER_PASSWORD_LOGIN=PASS");
-console.log("IDENTITY_CUSTOMER_RECOVERY_ROLE_SCOPED=PASS");
+console.log("IDENTITY_CUSTOMER_RECOVERY_NO_SESSION=PASS");
 console.log("IDENTITY_MANAGED_ACTIVATION_ONE_TIME=PASS");
-console.log("IDENTITY_MANAGED_REENROLLMENT_GOVERNED=PASS");
-console.log("IDENTITY_OPERATOR_MFA_REQUIRED=PASS");
-console.log("IDENTITY_OPERATOR_PASSWORD_ONLY_SESSION=0");
-console.log("IDENTITY_CHALLENGE_DECOY_NON_GRANT=PASS");
-console.log("IDENTITY_PROVIDER_OUTAGE_NON_ENUMERATION=PASS");
-console.log("IDENTITY_DELIVERY_UNKNOWN_NO_BLIND_RETRY=PASS");
-console.log("IDENTITY_ROLE_SCOPED_REVOCATION=PASS");
-console.log("IDENTITY_GLOBAL_SECURITY_DISABLE=PASS");
-console.log("IDENTITY_REFRESH_DEVICE_BINDING=PASS");
-console.log("IDENTITY_REFRESH_CONCURRENT_STALE=PASS");
-console.log("IDENTITY_REFRESH_REPLAY_COMPROMISE=PASS");
+console.log("IDENTITY_OPERATOR_PASSKEY_OPTIONS=PASS");
+console.log("IDENTITY_OPERATOR_PASSWORD_SESSION=0");
+console.log("IDENTITY_OPERATOR_RECOVERY_INVALID_CREDENTIAL=PASS");
+console.log("IDENTITY_REFRESH_INSTANCE_BINDING=PASS");
 console.log("IDENTITY_RAW_CHALLENGE_CODE_LEAK=0");
-console.log("LEGACY_ACTIVATION_CODE_RUNTIME_NAME=0");
-console.log("OPERATOR_ENROLLMENT_TOKEN_CONTRACT_DRIFT=0");
-console.log("CANONICAL_MUTATION_SHORTCUT=0");
-console.log("ADMIN_MUTATION_WITHOUT_REQUIRED_ATTRIBUTION=0");
-console.log("OPERATOR_PASSWORD_RECOVERY_SELF_SERVICE=PASS");

@@ -4,16 +4,33 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../../..");
-const contractPath = path.join(root, "services/identity/contracts/identity.openapi.yaml");
+const contractPath = path.join(root, "services/identity/contracts/openapi/identity.openapi.yaml");
+const pathModulePaths = [
+  path.join(root, "services/identity/contracts/openapi/paths/runtime.yaml"),
+  path.join(root, "services/identity/contracts/openapi/paths/client-auth.yaml"),
+  path.join(root, "services/identity/contracts/openapi/paths/managed-enrollment-auth.yaml"),
+  path.join(root, "services/identity/contracts/openapi/paths/operator-passkey-access.yaml"),
+  path.join(root, "services/identity/contracts/openapi/paths/session.yaml"),
+  path.join(root, "services/identity/contracts/openapi/paths/internal-actor-administration.yaml"),
+];
 const outputPath = path.join(root, "services/identity/clients/generated/identity-types.ts");
 const operationsOutputPath = path.join(root, "services/identity/clients/generated/identity-operations.ts");
 const goOutputPath = path.join(root, "services/identity/clients/go/identity_types_generated.go");
 const goOperationsOutputPath = path.join(root, "services/identity/clients/go/identity_operations_generated.go");
 const source = fs.readFileSync(contractPath, "utf8");
+const pathModuleSources = pathModulePaths.map((modulePath) => ({
+  path: modulePath,
+  source: fs.readFileSync(modulePath, "utf8"),
+}));
 const sourceBlobSha = crypto
   .createHash("sha1")
   .update("blob " + Buffer.byteLength(source, "utf8") + "\0" + source)
-  .digest("hex");
+    .digest("hex");
+const sourceGraph = [
+  `entrypoint:${path.relative(root, contractPath).replaceAll(path.sep, "/")}\n${source}`,
+  ...pathModuleSources.map(({ path: modulePath, source: moduleSource }) => `${path.relative(root, modulePath).replaceAll(path.sep, "/")}\n${moduleSource}`),
+].join("\n---\n");
+const sourceGraphSha = crypto.createHash("sha1").update(sourceGraph).digest("hex");
 
 const schemaNames = [
   "StatusResponse",
@@ -23,16 +40,23 @@ const schemaNames = [
   "ControlPanelRole",
   "PhoneRequest",
   "ManagedChallengeRequest",
-  "ManagedRecoveryChallengeRequest",
+  "OperatorEnrollmentRequest",
   "OperatorEnrollmentTokenIssueRequest",
   "OperatorEnrollmentToken",
   "ClientCredentialProofRequest",
+  "ClientRecoveryProofRequest",
   "PasswordLoginRequest",
   "ManagedPasswordLoginRequest",
   "ManagedActivationRequest",
-  "ManagedRecoveryRequest",
-  "OperatorLoginStartRequest",
-  "OperatorLoginCompleteRequest",
+  "OperatorPasskeyRegistrationOptionsRequest",
+  "WebAuthnJSON",
+  "PasskeyOptions",
+  "OperatorPasskeyRegistrationFinishRequest",
+  "OperatorPasskeyAuthenticationFinishRequest",
+  "OperatorRecoveryRequest",
+  "OperatorPasskeyRecoveryRegistrationOptionsRequest",
+  "OperatorPasskeyRecoveryFinishRequest",
+  "OperatorPasskeyRegistrationResponse",
   "Challenge",
   "RefreshRequest",
   "ActorIdentity",
@@ -45,6 +69,43 @@ const schemaNames = [
 ]
 
 const sourceLines = source.split("\n");
+
+function pathEntries(moduleSource) {
+  const entries = [];
+  for (const line of moduleSource.split("\n")) {
+    if (indentOf(line) === 2 && line.trim().startsWith("/") && line.trim().endsWith(":")) {
+      entries.push(line.trim().slice(0, -1));
+    }
+  }
+  return entries;
+}
+
+function validatePathGraph() {
+  const modulePaths = new Map();
+  for (const { path: modulePath, source: moduleSource } of pathModuleSources) {
+    if (!moduleSource.startsWith("paths:\n")) throw new Error("Identity path module must have a paths root: " + modulePath);
+    for (const entry of pathEntries(moduleSource)) {
+      if (modulePaths.has(entry)) throw new Error("duplicate Identity path entry: " + entry);
+      modulePaths.set(entry, modulePath);
+    }
+  }
+
+  const entrypointPaths = [];
+  for (const match of source.matchAll(/^  (\/[^:]+):\n    \$ref: "\.\/paths\/([^#]+)#\/paths\/([^"\n]+)"/gm)) {
+    const pathValue = match[1];
+    const modulePath = path.resolve(path.dirname(contractPath), "paths", match[2]);
+    const pointerPath = match[3].replaceAll("~1", "/").replaceAll("~0", "~");
+    if (!modulePaths.has(pathValue) || modulePaths.get(pathValue) !== modulePath || pointerPath !== pathValue) {
+      throw new Error("Identity path graph entrypoint reference is invalid: " + pathValue);
+    }
+    entrypointPaths.push(pathValue);
+  }
+  if (entrypointPaths.length !== modulePaths.size || new Set(entrypointPaths).size !== entrypointPaths.length) {
+    throw new Error("Identity path graph entrypoint does not cover each path module exactly once");
+  }
+}
+
+validatePathGraph();
 const schemaNameSet = new Set(schemaNames);
 const referencedSchemas = new Set();
 
@@ -136,6 +197,7 @@ function propertyType(lines, context) {
       if (additionalIndex < 0) throw new Error(context + " has unsupported object shape");
       const valueLines = lines.slice(additionalIndex + 1);
       const valueType = valueAfter(valueLines, "type:", 12);
+      if (valueType === null && valueLines.some((line) => line.trim() === "true")) return "Readonly<Record<string, unknown>>";
       if (valueType === "string") return "Readonly<Record<string, string>>";
       if (valueType === "boolean") return "Readonly<Record<string, boolean>>";
       if (valueType === "integer" || valueType === "number") return "Readonly<Record<string, number>>";
@@ -188,7 +250,10 @@ function renderSchema(name) {
   const lines = findSchemaLines(name);
   const type = valueAfter(lines, "type:", 6);
 
-  if (type === "object") return renderObject(name, lines);
+  if (type === "object") {
+    if (valueAfter(lines, "additionalProperties:", 6) === "true") return "export type " + name + " = Readonly<Record<string, unknown>>;";
+    return renderObject(name, lines);
+  }
   if (type === "string") {
     const constant = valueAfter(lines, "const:", 6);
     if (constant !== null) return "export type " + name + " = " + literal(constant) + ";";
@@ -230,6 +295,7 @@ function goPropertyType(lines, optional, context) {
   }
   if (type === "integer" || type === "number") return "int";
   if (type === "boolean") return "bool";
+  if (type === "object") return "map[string]any";
   if (type === "array") {
     const itemsIndex = lines.findIndex((line) => line === "          items:");
     if (itemsIndex < 0) throw new Error(context + " array is missing items");
@@ -245,6 +311,7 @@ function goPropertyType(lines, optional, context) {
 }
 
 function renderGoObject(name, lines) {
+  if (valueAfter(lines, "additionalProperties:", 6) === "true") return "type " + name + " map[string]any";
   const requiredValue = valueAfter(lines, "required:", 6);
   const required = new Set();
   if (requiredValue) {
@@ -288,8 +355,8 @@ function generateGoTypes() {
   }
   const header = [
     "// Code generated by services/identity/tools/generate-types.mjs; DO NOT EDIT.",
-    "// Source: services/identity/contracts/identity.openapi.yaml.",
-    "// Source Git blob SHA: " + sourceBlobSha,
+    "// Source: services/identity/contracts/openapi/identity.openapi.yaml plus declared path modules.",
+    "// Source Git graph SHA: " + sourceGraphSha,
     "",
     "package identityclient",
     "",
@@ -312,21 +379,23 @@ function formatGoTypes(sourceText) {
 
 function identityOperations() {
   const operations = [];
-  let currentPath = null;
-  let currentMethod = null;
-  for (const line of sourceLines) {
-    if (indentOf(line) === 2 && line.trim().startsWith("/") && line.trim().endsWith(":")) {
-      currentPath = line.trim().slice(0, -1);
-      currentMethod = null;
-      continue;
-    }
-    const method = line.trim().match(/^(get|post|put|patch|delete):$/);
-    if (indentOf(line) === 4 && method) {
-      currentMethod = method[1].toUpperCase();
-      continue;
-    }
-    if (currentPath && currentMethod && indentOf(line) === 6 && line.trim().startsWith("operationId:")) {
-      operations.push({ operationId: line.trim().slice("operationId:".length).trim(), method: currentMethod, path: currentPath });
+  for (const { source: moduleSource } of pathModuleSources) {
+    let currentPath = null;
+    let currentMethod = null;
+    for (const line of moduleSource.split("\n")) {
+      if (indentOf(line) === 2 && line.trim().startsWith("/") && line.trim().endsWith(":")) {
+        currentPath = line.trim().slice(0, -1);
+        currentMethod = null;
+        continue;
+      }
+      const method = line.trim().match(/^(get|post|put|patch|delete):$/);
+      if (indentOf(line) === 4 && method) {
+        currentMethod = method[1].toUpperCase();
+        continue;
+      }
+      if (currentPath && currentMethod && indentOf(line) === 6 && line.trim().startsWith("operationId:")) {
+        operations.push({ operationId: line.trim().slice("operationId:".length).trim(), method: currentMethod, path: currentPath });
+      }
     }
   }
   if (operations.length === 0) throw new Error("OpenAPI operation closure is empty");
@@ -346,8 +415,8 @@ function generateOperations() {
   const operations = identityOperations();
   const tsHeader = [
     "/**",
-    " * AUTO-GENERATED from services/identity/contracts/identity.openapi.yaml.",
-    " * Source Git blob SHA: " + sourceBlobSha,
+    " * AUTO-GENERATED from services/identity/contracts/openapi/identity.openapi.yaml plus declared path modules.",
+    " * Source Git graph SHA: " + sourceGraphSha,
     " * Generated by services/identity/tools/generate-types.mjs. DO NOT EDIT.",
     " */",
     "",
@@ -360,8 +429,8 @@ function generateOperations() {
 
   const goHeader = [
     "// Code generated by services/identity/tools/generate-types.mjs; DO NOT EDIT.",
-    "// Source: services/identity/contracts/identity.openapi.yaml.",
-    "// Source Git blob SHA: " + sourceBlobSha,
+    "// Source: services/identity/contracts/openapi/identity.openapi.yaml plus declared path modules.",
+    "// Source Git graph SHA: " + sourceGraphSha,
     "",
     "package identityclient",
     "",
@@ -389,8 +458,8 @@ export function generateIdentityTypes() {
 
   const header = [
     "/**",
-    " * AUTO-GENERATED from services/identity/contracts/identity.openapi.yaml.",
-    " * Source Git blob SHA: " + sourceBlobSha,
+    " * AUTO-GENERATED from services/identity/contracts/openapi/identity.openapi.yaml plus declared path modules.",
+    " * Source Git graph SHA: " + sourceGraphSha,
     " * Generated by services/identity/tools/generate-types.mjs. DO NOT EDIT.",
     " */",
     "",

@@ -159,7 +159,7 @@ export function AccountAccessPanel() {
   }
 
   const canIssueActivation = managedRole && status !== null && !status.activated;
-  const canIssueReenrollment = managedRole && role !== "operator" && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
+  const canIssueReenrollment = managedRole && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
   const activationBlocked = status?.exists === true && status.enabled === false;
   const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true);
 
@@ -201,7 +201,7 @@ export function AccountAccessPanel() {
               {status.activated && managedRole ? (
                 <div className="managed-status managed-status-warning" role="alert">
                   <strong>تم تفعيل هذا الدور من قبل.</strong>
-                  <p>{canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات السابقة." : role === "operator" ? "حساب موظف لوحة التحكم مفعل. يستعيد الموظف كلمة مروره بنفسه عبر مسار استرداد الحساب." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
+                  <p>{canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
                   {canIssueReenrollment ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ إصدار دعوة إعادة التسجيل…" : "إصدار دعوة إعادة تسجيل الدور"}</button> : null}
                 </div>
               ) : null}

@@ -24,6 +24,10 @@ var identityRuntimePrivileges = []tablePrivilegeRequirement{
 	{table: "identity_security_audit", privileges: []string{"SELECT", "INSERT"}},
 	{table: "identity_schema_migrations", privileges: []string{"SELECT"}},
 	{table: "identity_bootstrap_state", privileges: []string{"SELECT", "INSERT"}},
+	{table: "identity_webauthn_users", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
+	{table: "identity_webauthn_credentials", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
+	{table: "identity_webauthn_ceremonies", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
+	{table: "identity_operator_recovery_credentials", privileges: []string{"SELECT", "INSERT", "UPDATE"}},
 }
 
 var identityMaintenancePrivileges = []tablePrivilegeRequirement{
@@ -34,6 +38,8 @@ var identityMaintenancePrivileges = []tablePrivilegeRequirement{
 	{table: "identity_refresh_token_history", privileges: []string{"SELECT", "DELETE"}},
 	{table: "identity_sessions", privileges: []string{"SELECT", "DELETE"}},
 	{table: "identity_security_audit", privileges: []string{"SELECT", "DELETE"}},
+	{table: "identity_webauthn_ceremonies", privileges: []string{"SELECT", "DELETE"}},
+	{table: "identity_operator_recovery_credentials", privileges: []string{"SELECT", "DELETE"}},
 }
 
 func VerifyRuntimePrivileges(ctx context.Context, db *sql.DB) error {

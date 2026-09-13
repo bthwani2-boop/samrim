@@ -100,12 +100,12 @@ func (s *Service) RegisterClient(ctx context.Context, input domain.ClientCredent
 		if err != nil {
 			return domain.TokenPair{}, err
 		}
-		return s.sessions.CreateTx(ctx, tx, a.ID, "client", input.DeviceFingerprint)
+		return s.sessions.CreateTx(ctx, tx, a.ID, "client", input.ClientInstanceId)
 	})
 }
 
 func (s *Service) LoginClient(ctx context.Context, input domain.PasswordLoginRequest, ipHash string) (domain.TokenPair, error) {
-	return s.loginPassword(ctx, input.Phone, input.Password, "client", input.DeviceFingerprint, ipHash)
+	return s.loginPassword(ctx, input.Phone, input.Password, "client", input.ClientInstanceId, ipHash)
 }
 
 func (s *Service) LoginManaged(ctx context.Context, input domain.ManagedPasswordLoginRequest, ipHash string) (domain.TokenPair, error) {
@@ -113,7 +113,7 @@ func (s *Service) LoginManaged(ctx context.Context, input domain.ManagedPassword
 	if !domain.IsManagedRole(role) {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
-	return s.loginPassword(ctx, input.Phone, input.Password, role, input.DeviceFingerprint, ipHash)
+	return s.loginPassword(ctx, input.Phone, input.Password, role, input.ClientInstanceId, ipHash)
 }
 
 func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, rawDevice, ipHash string) (domain.TokenPair, error) {
@@ -121,7 +121,7 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
-	device, err := identitysecurity.NormalizeDeviceFingerprint(rawDevice)
+	device, err := identitysecurity.NormalizeClientInstanceId(rawDevice)
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
@@ -183,6 +183,18 @@ WHERE c.actor_id=$1 AND c.role=$2 FOR UPDATE OF c,r,a`, a.ID, role).Scan(&curren
 		s.releaseReservation(ctx, reservationID)
 		return domain.TokenPair{}, err
 	}
+	if identitysecurity.NeedsPasswordRehash(currentHash) {
+		upgradedHash, hashErr := identitysecurity.HashPassword(password)
+		if hashErr != nil {
+			return domain.TokenPair{}, hashErr
+		}
+		if _, hashErr = tx.ExecContext(ctx, "UPDATE identity_password_credentials SET password_hash=$1,version=version+1,updated_at=clock_timestamp() WHERE actor_id=$2 AND role=$3", upgradedHash, a.ID, role); hashErr != nil {
+			return domain.TokenPair{}, hashErr
+		}
+		if err := auditTx(ctx, tx, "credential.password_rehashed", a.ID, a.ID, "success", "", map[string]any{"role": role, "blocklistVersion": identitysecurity.PasswordBlocklistVersion()}); err != nil {
+			return domain.TokenPair{}, err
+		}
+	}
 	pair, err := s.sessions.CreateTx(ctx, tx, a.ID, role, device)
 	if err != nil {
 		s.releaseReservation(ctx, reservationID)
@@ -213,53 +225,12 @@ func (s *Service) RequestClientRecovery(ctx context.Context, input domain.PhoneR
 	return s.issue(ctx, phone, "client", domain.ChallengeClientRecover, actorID, admissible, 0, ipHash)
 }
 
-func (s *Service) RecoverClient(ctx context.Context, input domain.ClientCredentialProofRequest) (domain.TokenPair, error) {
-	return s.consume(ctx, input.Phone, "client", domain.ChallengeClientRecover, input.Code, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
+func (s *Service) RecoverClient(ctx context.Context, input domain.ClientRecoveryProofRequest) (domain.RecoveryResult, error) {
+	_, err := s.consume(ctx, input.Phone, "client", domain.ChallengeClientRecover, input.Code, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
 		if actorID == "" {
 			return domain.TokenPair{}, domain.ErrInvalidChallenge
 		}
 		if err := s.actors.ResetClientPasswordTx(ctx, tx, actorID, input.Password); err != nil {
-			return domain.TokenPair{}, err
-		}
-		return s.sessions.CreateTx(ctx, tx, actorID, "client", input.DeviceFingerprint)
-	})
-}
-
-func (s *Service) RequestManagedRecovery(ctx context.Context, input domain.ManagedRecoveryChallengeRequest, ipHash string) (domain.Challenge, error) {
-	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.IsManagedActivationRole(role) {
-		return domain.Challenge{}, domain.ErrForbidden
-	}
-	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
-	if err != nil {
-		return domain.Challenge{}, domain.ErrInvalidInput
-	}
-	a, roleView, lookupErr := s.actors.ManagedActivationCandidate(ctx, phone, role)
-	admissible := false
-	actorID := ""
-	if lookupErr == nil && roleView.ActivatedAt != nil {
-		if _, _, _, credentialErr := s.actors.PasswordCredential(ctx, phone, role); credentialErr == nil {
-			admissible = true
-			actorID = a.ID
-		} else if !errors.Is(credentialErr, domain.ErrNotFound) {
-			return domain.Challenge{}, credentialErr
-		}
-	} else if lookupErr != nil && !errors.Is(lookupErr, domain.ErrNotFound) && !errors.Is(lookupErr, domain.ErrActorBlocked) {
-		return domain.Challenge{}, lookupErr
-	}
-	return s.issue(ctx, phone, role, domain.ChallengeManagedRecover, actorID, admissible, 0, ipHash)
-}
-
-func (s *Service) RecoverManaged(ctx context.Context, input domain.ManagedRecoveryRequest) (domain.RecoveryResult, error) {
-	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.IsManagedActivationRole(role) {
-		return domain.RecoveryResult{}, domain.ErrInvalidInput
-	}
-	_, err := s.consume(ctx, input.Phone, role, domain.ChallengeManagedRecover, input.Code, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
-		if actorID == "" {
-			return domain.TokenPair{}, domain.ErrInvalidChallenge
-		}
-		if err := s.actors.ResetManagedPasswordTx(ctx, tx, actorID, role, input.Password); err != nil {
 			return domain.TokenPair{}, err
 		}
 		return domain.TokenPair{Identity: domain.ActorIdentity{Subject: actorID}}, nil
@@ -272,17 +243,12 @@ func (s *Service) RecoverManaged(ctx context.Context, input domain.ManagedRecove
 
 func (s *Service) RequestManagedActivation(ctx context.Context, input domain.ManagedChallengeRequest, ipHash string) (domain.Challenge, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.IsManagedActivationRole(role) {
+	if !domain.IsManagedRole(role) {
 		return domain.Challenge{}, domain.ErrForbidden
 	}
 	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
 	if err != nil {
 		return domain.Challenge{}, domain.ErrInvalidInput
-	}
-	if domain.RequiresEnrollmentToken(role) {
-		if err := s.validateEnrollmentToken(ctx, phone, role, input.OperatorEnrollmentToken); err != nil {
-			return domain.Challenge{}, err
-		}
 	}
 	a, r, lookupErr := s.actors.ManagedActivationCandidate(ctx, phone, role)
 	admissible := lookupErr == nil && r.ActivatedAt == nil
@@ -297,17 +263,12 @@ func (s *Service) RequestManagedActivation(ctx context.Context, input domain.Man
 
 func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActivationRequest) (domain.TokenPair, error) {
 	role := strings.ToLower(strings.TrimSpace(input.Role))
-	if !domain.IsManagedActivationRole(role) {
+	if !domain.IsManagedRole(role) {
 		return domain.TokenPair{}, domain.ErrInvalidActivation
 	}
 	return s.consume(ctx, input.Phone, role, domain.ChallengeManagedActivate, input.VerificationCode, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
 		if actorID == "" {
 			return domain.TokenPair{}, domain.ErrInvalidActivation
-		}
-		if domain.RequiresEnrollmentToken(role) {
-			if _, err := s.consumeOperatorEnrollmentTokenTx(ctx, tx, input.Phone, role, input.OperatorEnrollmentToken, actorID); err != nil {
-				return domain.TokenPair{}, err
-			}
 		}
 		if err := s.actors.MarkManagedActivatedTx(ctx, tx, actorID, role); err != nil {
 			return domain.TokenPair{}, err
@@ -315,8 +276,110 @@ func (s *Service) ActivateManaged(ctx context.Context, input domain.ManagedActiv
 		if err := s.actors.SetManagedPasswordTx(ctx, tx, actorID, role, input.Password); err != nil {
 			return domain.TokenPair{}, err
 		}
-		return s.sessions.CreateTx(ctx, tx, actorID, role, input.DeviceFingerprint)
+		return s.sessions.CreateTx(ctx, tx, actorID, role, input.ClientInstanceId)
 	})
+}
+
+func (s *Service) RequestOperatorEnrollment(ctx context.Context, input domain.OperatorEnrollmentRequest, ipHash string) (domain.Challenge, error) {
+	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
+	if err != nil {
+		return domain.Challenge{}, domain.ErrInvalidInput
+	}
+	if err := s.validateEnrollmentToken(ctx, phone, "operator", input.OperatorEnrollmentToken); err != nil {
+		return domain.Challenge{}, err
+	}
+	var actorID string
+	var enabled, securityEnabled bool
+	err = s.db.QueryRowContext(ctx, `SELECT a.id,r.enabled,a.security_enabled
+FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id AND r.role='operator'
+WHERE a.phone_e164=$1`, phone).Scan(&actorID, &enabled, &securityEnabled)
+	admissible := err == nil && enabled && securityEnabled
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return domain.Challenge{}, err
+	}
+	if !admissible {
+		actorID = ""
+	}
+	return s.issue(ctx, phone, "operator", domain.ChallengeOperatorEnroll, actorID, admissible, 0, ipHash)
+}
+
+func (s *Service) RequestOperatorRecovery(ctx context.Context, input domain.OperatorRecoveryRequest, ipHash string) (domain.Challenge, error) {
+	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
+	if err != nil {
+		return domain.Challenge{}, domain.ErrInvalidInput
+	}
+	recoveryCredential, err := identitysecurity.NormalizeRecoveryCredential(input.RecoveryCredential)
+	if err != nil {
+		return domain.Challenge{}, domain.ErrInvalidInput
+	}
+	var actorID string
+	var enabled, securityEnabled, credentialValid bool
+	err = s.db.QueryRowContext(ctx, `SELECT a.id,r.enabled,a.security_enabled,EXISTS(
+SELECT 1 FROM identity_operator_recovery_credentials c
+WHERE c.actor_id=a.id AND c.credential_hash=$2 AND c.used_at IS NULL AND c.revoked_at IS NULL)
+FROM identity_actors a JOIN identity_actor_roles r ON r.actor_id=a.id AND r.role='operator'
+WHERE a.phone_e164=$1`, phone, identitysecurity.SHA256Hex(recoveryCredential)).Scan(&actorID, &enabled, &securityEnabled, &credentialValid)
+	admissible := err == nil && enabled && securityEnabled && credentialValid
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return domain.Challenge{}, err
+	}
+	if !admissible {
+		actorID = ""
+	}
+	return s.issue(ctx, phone, "operator", domain.ChallengeOperatorRecover, actorID, admissible, 0, ipHash)
+}
+
+func (s *Service) ConsumeOperatorRecoveryPhoneProof(ctx context.Context, input domain.OperatorPasskeyRecoveryRegistrationOptionsRequest) (string, error) {
+	recoveryCredential, err := identitysecurity.NormalizeRecoveryCredential(input.RecoveryCredential)
+	if err != nil {
+		return "", domain.ErrInvalidChallenge
+	}
+	var actorID string
+	_, err = s.consume(ctx, input.Phone, "operator", domain.ChallengeOperatorRecover, input.VerificationCode, func(tx *sql.Tx, challengeActorID string) (domain.TokenPair, error) {
+		if challengeActorID == "" {
+			return domain.TokenPair{}, domain.ErrInvalidChallenge
+		}
+		var credentialID string
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM identity_operator_recovery_credentials WHERE actor_id=$1 AND credential_hash=$2 AND used_at IS NULL AND revoked_at IS NULL FOR UPDATE`, challengeActorID, identitysecurity.SHA256Hex(recoveryCredential)).Scan(&credentialID); errors.Is(err, sql.ErrNoRows) {
+			return domain.TokenPair{}, domain.ErrInvalidChallenge
+		} else if err != nil {
+			return domain.TokenPair{}, err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_recovery_credentials SET used_at=clock_timestamp(),revoked_at=clock_timestamp() WHERE id=$1", credentialID); err != nil {
+			return domain.TokenPair{}, err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role='operator' AND revoked_at IS NULL", challengeActorID); err != nil {
+			return domain.TokenPair{}, err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_webauthn_credentials SET revoked_at=COALESCE(revoked_at,clock_timestamp()) WHERE actor_id=$1 AND revoked_at IS NULL", challengeActorID); err != nil {
+			return domain.TokenPair{}, err
+		}
+		actorID = challengeActorID
+		return domain.TokenPair{Identity: domain.ActorIdentity{Subject: challengeActorID}}, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return actorID, nil
+}
+
+func (s *Service) ConsumeOperatorEnrollmentPhoneProof(ctx context.Context, input domain.OperatorPasskeyRegistrationOptionsRequest) (string, error) {
+	var actorID string
+	_, err := s.consume(ctx, input.Phone, "operator", domain.ChallengeOperatorEnroll, input.VerificationCode, func(tx *sql.Tx, challengeActorID string) (domain.TokenPair, error) {
+		if challengeActorID == "" {
+			return domain.TokenPair{}, domain.ErrInvalidChallenge
+		}
+		resolved, tokenErr := s.consumeOperatorEnrollmentTokenTx(ctx, tx, input.Phone, "operator", input.OperatorEnrollmentToken, challengeActorID)
+		if tokenErr != nil || resolved != challengeActorID {
+			return domain.TokenPair{}, domain.ErrInvalidChallenge
+		}
+		actorID = challengeActorID
+		return domain.TokenPair{Identity: domain.ActorIdentity{Subject: challengeActorID}}, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return actorID, nil
 }
 
 func (s *Service) IssueOperatorEnrollmentToken(ctx context.Context, input domain.OperatorEnrollmentTokenIssueRequest, caller, actingActorID string) (domain.OperatorEnrollmentToken, error) {
@@ -352,7 +415,18 @@ WHERE a.phone_e164=$1 AND r.role=$2 FOR UPDATE OF a,r`, phone, role).Scan(&actor
 		return domain.OperatorEnrollmentToken{}, domain.ErrForbidden
 	}
 	if activated.Valid {
-		return domain.OperatorEnrollmentToken{}, domain.ErrConflict
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET revoked_at=COALESCE(revoked_at,clock_timestamp()),version=version+1 WHERE actor_id=$1 AND role='operator' AND revoked_at IS NULL", actorID); err != nil {
+			return domain.OperatorEnrollmentToken{}, err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_webauthn_credentials SET revoked_at=COALESCE(revoked_at,clock_timestamp()) WHERE actor_id=$1 AND rp_id IS NOT NULL AND revoked_at IS NULL", actorID); err != nil {
+			return domain.OperatorEnrollmentToken{}, err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_recovery_credentials SET revoked_at=COALESCE(revoked_at,clock_timestamp()) WHERE actor_id=$1 AND revoked_at IS NULL", actorID); err != nil {
+			return domain.OperatorEnrollmentToken{}, err
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_actor_roles SET activated_at=NULL,version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND role='operator'", actorID); err != nil {
+			return domain.OperatorEnrollmentToken{}, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE identity_operator_enrollment_tokens SET status='revoked',updated_at=clock_timestamp() WHERE actor_id=$1 AND role=$2 AND status='pending'", actorID, role); err != nil {
 		return domain.OperatorEnrollmentToken{}, err
@@ -465,56 +539,6 @@ func (s *Service) consumeOperatorEnrollmentTokenTx(ctx context.Context, tx *sql.
 	return actorID, nil
 }
 
-func (s *Service) StartOperatorLogin(ctx context.Context, input domain.OperatorLoginStartRequest, ipHash string) (domain.Challenge, error) {
-	role := "operator"
-	phone, err := identitysecurity.NormalizePhoneE164(input.Phone)
-	if err != nil {
-		return domain.Challenge{}, domain.ErrInvalidInput
-	}
-	limited, backoff, reservationID, err := s.passwordAdmission(ctx, phone, role, ipHash)
-	if err != nil {
-		return domain.Challenge{}, err
-	}
-	if limited {
-		return domain.Challenge{}, domain.ErrRateLimited
-	}
-	if err := waitPasswordBackoff(ctx, backoff); err != nil {
-		return domain.Challenge{}, err
-	}
-	a, hash, credentialVersion, lookupErr := s.actors.PasswordCredential(ctx, phone, role)
-	valid := lookupErr == nil && identitysecurity.VerifyPassword(hash, input.Password)
-	if errors.Is(lookupErr, domain.ErrNotFound) {
-		_ = identitysecurity.VerifyPassword(dummyPasswordHash, input.Password)
-	} else if lookupErr != nil {
-		s.releaseReservation(ctx, reservationID)
-		return domain.Challenge{}, lookupErr
-	}
-	if !valid {
-		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash, reservationID)
-		if recordErr != nil {
-			return domain.Challenge{}, recordErr
-		}
-		if limited {
-			return domain.Challenge{}, domain.ErrRateLimited
-		}
-		return s.issue(ctx, phone, role, domain.ChallengeOperatorMFA, "", false, 0, ipHash)
-	}
-	if err := s.recordPasswordSuccess(ctx, phone, role, ipHash, reservationID); err != nil {
-		return domain.Challenge{}, err
-	}
-	return s.issue(ctx, phone, role, domain.ChallengeOperatorMFA, a.ID, true, credentialVersion, ipHash)
-}
-
-func (s *Service) CompleteOperatorLogin(ctx context.Context, input domain.OperatorLoginCompleteRequest) (domain.TokenPair, error) {
-	role := "operator"
-	return s.consume(ctx, input.Phone, role, domain.ChallengeOperatorMFA, input.Code, func(tx *sql.Tx, actorID string) (domain.TokenPair, error) {
-		if actorID == "" {
-			return domain.TokenPair{}, domain.ErrUnauthenticated
-		}
-		return s.sessions.CreateTx(ctx, tx, actorID, role, input.DeviceFingerprint)
-	})
-}
-
 func (s *Service) issue(ctx context.Context, phone, role, purpose, actorID string, admissible bool, expectedCredentialVersion int, ipHash string) (domain.Challenge, error) {
 	ipHash = strings.TrimSpace(ipHash)
 	if len(ipHash) != 64 {
@@ -554,22 +578,6 @@ WHERE phone_e164=$1 AND role=$2 AND purpose=$3 AND status='pending'
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return domain.Challenge{}, err
-	}
-	if purpose == domain.ChallengeOperatorMFA && admissible {
-		var currentVersion int
-		var enabled, securityEnabled bool
-		err := tx.QueryRowContext(ctx, `SELECT c.version,r.enabled,a.security_enabled
-FROM identity_password_credentials c
-JOIN identity_actor_roles r ON r.actor_id=c.actor_id AND r.role=c.role
-JOIN identity_actors a ON a.id=c.actor_id
-WHERE c.actor_id=$1 AND c.role=$3 AND a.phone_e164=$2
-		FOR UPDATE OF c,r,a`, actorID, phone, role).Scan(&currentVersion, &enabled, &securityEnabled)
-		if errors.Is(err, sql.ErrNoRows) || !enabled || !securityEnabled || currentVersion != expectedCredentialVersion {
-			admissible = false
-			actorID = ""
-		} else if err != nil {
-			return domain.Challenge{}, err
-		}
 	}
 	var phoneRecent, sourceRecent int
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM identity_challenges WHERE phone_e164=$1 AND purpose=$2 AND created_at>clock_timestamp()-interval '15 minutes'", phone, purpose).Scan(&phoneRecent); err != nil {
@@ -652,8 +660,7 @@ func (s *Service) consume(ctx context.Context, rawPhone, role, purpose, rawCode 
 	var attempts int
 	var expires time.Time
 	var admissible bool
-	var credentialVersion sql.NullInt64
-	err = tx.QueryRowContext(ctx, "SELECT id,actor_id,code_hash,attempts,expires_at,admissible,credential_version FROM identity_challenges WHERE purpose=$1 AND role=$2 AND phone_e164=$3 AND status='pending' ORDER BY created_at DESC LIMIT 1 FOR UPDATE", purpose, role, phone).Scan(&challengeID, &actorID, &codeHash, &attempts, &expires, &admissible, &credentialVersion)
+	err = tx.QueryRowContext(ctx, "SELECT id,actor_id,code_hash,attempts,expires_at,admissible FROM identity_challenges WHERE purpose=$1 AND role=$2 AND phone_e164=$3 AND status='pending' ORDER BY created_at DESC LIMIT 1 FOR UPDATE", purpose, role, phone).Scan(&challengeID, &actorID, &codeHash, &attempts, &expires, &admissible)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidChallenge
 	}
@@ -696,24 +703,6 @@ func (s *Service) consume(ctx context.Context, rawPhone, role, purpose, rawCode 
 	resolvedActorID := ""
 	if actorID.Valid {
 		resolvedActorID = actorID.String
-	}
-	if purpose == domain.ChallengeOperatorMFA {
-		var currentVersion int
-		err := tx.QueryRowContext(ctx, `SELECT c.version
-FROM identity_password_credentials c
-JOIN identity_actor_roles r ON r.actor_id=c.actor_id AND r.role=c.role
-JOIN identity_actors a ON a.id=c.actor_id
-WHERE c.actor_id=$1 AND c.role=$2 AND a.phone_e164=$3 AND r.enabled=true AND a.security_enabled=true
-FOR UPDATE OF c,r,a`, resolvedActorID, role, phone).Scan(&currentVersion)
-		if err != nil || !credentialVersion.Valid || int(credentialVersion.Int64) != currentVersion {
-			if _, updateErr := tx.ExecContext(ctx, "UPDATE identity_challenges SET status='revoked',updated_at=clock_timestamp() WHERE id=$1", challengeID); updateErr != nil {
-				return domain.TokenPair{}, updateErr
-			}
-			if commitErr := tx.Commit(); commitErr != nil {
-				return domain.TokenPair{}, commitErr
-			}
-			return domain.TokenPair{}, domain.ErrInvalidChallenge
-		}
 	}
 	pair, err := action(tx, resolvedActorID)
 	if err != nil {

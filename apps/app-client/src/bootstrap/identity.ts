@@ -37,7 +37,7 @@ export async function registerClient(phone: string, code: string, password: stri
     phone,
     code,
     password,
-    deviceFingerprint: await runtime.deviceFingerprint(),
+    clientInstanceId: await runtime.clientInstanceId(),
   });
   return runtime.identitySession().adopt(pair);
 }
@@ -46,7 +46,7 @@ export async function loginClient(phone: string, password: string): Promise<Iden
   const pair = await runtime.identityClient().loginClient({
     phone,
     password,
-    deviceFingerprint: await runtime.deviceFingerprint(),
+    clientInstanceId: await runtime.clientInstanceId(),
   });
   return runtime.identitySession().adopt(pair);
 }
@@ -56,11 +56,10 @@ export function requestClientRecovery(phone: string) {
 }
 
 export async function recoverClient(phone: string, code: string, password: string): Promise<IdentitySessionState> {
-  const pair = await runtime.identityClient().recoverClient({
+  await runtime.identityClient().recoverClient({
     phone,
     code,
     password,
-    deviceFingerprint: await runtime.deviceFingerprint(),
   });
-  return runtime.identitySession().adopt(pair);
+  return runtime.identitySession().clearLocalSession();
 }

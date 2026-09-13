@@ -1,0 +1,119 @@
+paths:
+  /auth/operator/enrollment/request:
+    post:
+      tags: [operator-enrollment]
+      operationId: requestOperatorEnrollment
+      description: Issues a phone proof challenge for a governed, one-time operator passkey enrollment authorization.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorEnrollmentRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/operator/enrollment/registration/options:
+    post:
+      tags: [operator-enrollment]
+      operationId: beginOperatorPasskeyRegistration
+      description: Consumes fresh phone proof and returns server-owned WebAuthn registration options.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPasskeyRegistrationOptionsRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/PasskeyOptions" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/operator/enrollment/registration/finish:
+    post:
+      tags: [operator-enrollment]
+      operationId: finishOperatorPasskeyRegistration
+      description: Verifies and stores a passkey, activates the operator, consumes the enrollment authorization, and creates the first operator session.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPasskeyRegistrationFinishRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/OperatorPasskeyRegistrationResponse" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/operator/authentication/options:
+    post:
+      tags: [operator-authentication]
+      operationId: beginOperatorPasskeyAuthentication
+      description: Begins discoverable, user-verifying operator passkey authentication without phone or password enumeration.
+      responses:
+        "201": { $ref: "#/components/responses/PasskeyOptions" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/operator/authentication/finish:
+    post:
+      tags: [operator-authentication]
+      operationId: finishOperatorPasskeyAuthentication
+      description: Verifies a user-verifying operator passkey assertion and creates an operator session.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPasskeyAuthenticationFinishRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/operator/recovery/request:
+    post:
+      tags: [operator-recovery]
+      operationId: requestOperatorRecovery
+      description: Issues a phone proof challenge only when the supplied break-glass recovery credential is valid; phone control alone never grants operator access.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorRecoveryRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/operator/recovery/registration/options:
+    post:
+      tags: [operator-recovery]
+      operationId: beginOperatorRecoveryPasskeyRegistration
+      description: Consumes fresh phone proof and the one-use recovery credential, revokes prior operator access, and returns server-owned WebAuthn registration options.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPasskeyRecoveryRegistrationOptionsRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/PasskeyOptions" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/operator/recovery/registration/finish:
+    post:
+      tags: [operator-recovery]
+      operationId: finishOperatorRecoveryPasskeyRegistration
+      description: Verifies a replacement user-verified passkey, creates an operator session, and returns a replacement recovery credential once.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorPasskeyRecoveryFinishRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/OperatorPasskeyRegistrationResponse" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /internal/bootstrap/operator:
+    post:
+      tags: [internal-actor-roles]
+      operationId: bootstrapFirstOperator
+      security: [{ internalServiceToken: [] }]
+      description: Irreversible one-time first-operator bootstrap. It creates the initial operator actor-role and bounded enrollment authorization, never a password or session, and never a second human role.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BootstrapOperatorRequest" } } }
+      responses:
+        "201": { description: First operator created., content: { application/json: { schema: { $ref: "#/components/schemas/BootstrapOperatorResponse" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }

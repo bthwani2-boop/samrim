@@ -19,13 +19,13 @@ function canonicalControlOrigin(): string {
 
   if (
     parsed.protocol !== "http:" ||
-    parsed.hostname !== "127.0.0.1" ||
+    !["127.0.0.1", "localhost"].includes(parsed.hostname) ||
     parsed.port === "" ||
     parsed.pathname !== "/" ||
     parsed.search ||
     parsed.hash
   ) {
-    throw new Error(`Control Panel Playwright base URL must be an explicit HTTP IPv4-loopback origin, received: ${raw}`);
+    throw new Error(`Control Panel Playwright base URL must be an explicit HTTP loopback origin, received: ${raw}`);
   }
 
   return parsed.origin;

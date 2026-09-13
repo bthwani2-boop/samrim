@@ -4,15 +4,13 @@ import {
   currentIdentityState,
   loginManagedIdentity,
   logoutIdentity,
-  recoverManagedIdentity,
   requestManagedActivation,
-  requestManagedRecovery,
   restoreIdentitySession,
   role,
   surface,
 } from "../../bootstrap/identity";
 
-const identity = { role, surface, restoreIdentitySession, currentIdentityState, logoutIdentity, requestManagedActivation, activateManagedIdentity, loginManagedIdentity, requestManagedRecovery, recoverManagedIdentity };
+const identity = { role, surface, restoreIdentitySession, currentIdentityState, logoutIdentity, requestManagedActivation, activateManagedIdentity, loginManagedIdentity };
 
 export default function IdentityGate() {
   return (

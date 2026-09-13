@@ -18,7 +18,7 @@ import (
 
 var (
 	phonePattern            = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
-	devicePattern           = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
+	clientInstancePattern   = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
 	verificationCodePattern = regexp.MustCompile("^[0-9]{6}$")
 	enrollmentTokenPattern  = regexp.MustCompile("^[A-Za-z0-9_-]{24,256}$")
 	ErrInvalidValue         = errors.New("invalid identity value")
@@ -49,12 +49,12 @@ func NormalizePhoneE164(raw string) (string, error) {
 	return phone, nil
 }
 
-func NormalizeDeviceFingerprint(raw string) (string, error) {
-	fingerprint := strings.TrimSpace(raw)
-	if !devicePattern.MatchString(fingerprint) {
+func NormalizeClientInstanceId(raw string) (string, error) {
+	instanceID := strings.TrimSpace(raw)
+	if !clientInstancePattern.MatchString(instanceID) {
 		return "", ErrInvalidValue
 	}
-	return fingerprint, nil
+	return instanceID, nil
 }
 
 func NormalizeVerificationCode(raw string) (string, error) {
@@ -73,6 +73,10 @@ func NormalizeEnrollmentToken(raw string) (string, error) {
 	return token, nil
 }
 
+func NormalizeRecoveryCredential(raw string) (string, error) {
+	return NormalizeEnrollmentToken(raw)
+}
+
 func RandomToken(byteCount int) (string, error) {
 	if byteCount < 16 {
 		return "", fmt.Errorf("token entropy too small")
@@ -85,6 +89,10 @@ func RandomToken(byteCount int) (string, error) {
 }
 
 func RandomEnrollmentToken() (string, error) {
+	return RandomToken(24)
+}
+
+func RandomRecoveryCredential() (string, error) {
 	return RandomToken(24)
 }
 
@@ -180,6 +188,30 @@ func VerifyPassword(encoded, password string) bool {
 	}
 	actual := argon2.IDKey([]byte(password), salt, iterations, memory, threads, uint32(len(expected)))
 	return hmac.Equal(actual, expected)
+}
+
+// NeedsPasswordRehash reports whether a credential is not using the current
+// repository-owned Argon2id parameters. Invalid encodings fail closed and are
+// treated as requiring replacement, while VerifyPassword remains the acceptor.
+func NeedsPasswordRehash(encoded string) bool {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" {
+		return true
+	}
+	var version int
+	if _, err := fmt.Sscanf(parts[2], "v=%d", &version); err != nil {
+		return true
+	}
+	var memory, iterations uint32
+	var threads uint8
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &threads); err != nil {
+		return true
+	}
+	key, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil || len(key) < 16 || len(key) > 64 {
+		return true
+	}
+	return version != argon2.Version || memory != argonMemory || iterations != argonTime || threads != argonThreads || uint32(len(key)) != argonKeyLen
 }
 
 func MaskPhone(phone string) string {

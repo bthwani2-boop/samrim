@@ -1,0 +1,32 @@
+paths:
+  /auth/refresh:
+    post:
+      tags: [session]
+      operationId: refreshSession
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RefreshRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/logout:
+    post:
+      tags: [session]
+      operationId: logoutSession
+      security: [{ accessToken: [] }]
+      responses:
+        "204": { description: Current session revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/session:
+    get:
+      tags: [session]
+      operationId: readCurrentSession
+      security: [{ accessToken: [] }]
+      responses:
+        "200":
+          description: Current single-role session identity.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ActorIdentity" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }

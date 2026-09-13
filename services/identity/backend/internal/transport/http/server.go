@@ -13,6 +13,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/actor"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/challenge"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/passkey"
 	identitysecurity "github.com/bthwani2-boop/samrim/services/identity/backend/internal/security"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 )
@@ -29,11 +30,12 @@ type Server struct {
 	actors     *actor.Service
 	challenges *challenge.Service
 	sessions   *session.Service
+	passkeys   *passkey.Service
 	config     Config
 }
 
-func New(actors *actor.Service, challenges *challenge.Service, sessions *session.Service, config Config) http.Handler {
-	s := &Server{actors: actors, challenges: challenges, sessions: sessions, config: config}
+func New(actors *actor.Service, challenges *challenge.Service, sessions *session.Service, passkeys *passkey.Service, config Config) http.Handler {
+	s := &Server{actors: actors, challenges: challenges, sessions: sessions, passkeys: passkeys, config: config}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /identity/health", s.health)
 	mux.HandleFunc("GET /identity/readiness", s.readiness)
@@ -45,11 +47,15 @@ func New(actors *actor.Service, challenges *challenge.Service, sessions *session
 	mux.HandleFunc("POST /auth/managed/activation/request", s.requestManagedActivation)
 	mux.HandleFunc("POST /auth/managed/activate", s.activateManaged)
 	mux.HandleFunc("POST /auth/managed/login", s.loginManaged)
-	mux.HandleFunc("POST /auth/managed/recovery/request", s.requestManagedRecovery)
-	mux.HandleFunc("POST /auth/managed/recover", s.recoverManaged)
 	mux.HandleFunc("POST /internal/operator-enrollment-tokens", s.internal(s.issueOperatorEnrollmentToken))
-	mux.HandleFunc("POST /auth/operator/login/start", s.startOperatorLogin)
-	mux.HandleFunc("POST /auth/operator/login/complete", s.completeOperatorLogin)
+	mux.HandleFunc("POST /auth/operator/enrollment/request", s.requestOperatorEnrollment)
+	mux.HandleFunc("POST /auth/operator/enrollment/registration/options", s.beginOperatorPasskeyRegistration)
+	mux.HandleFunc("POST /auth/operator/enrollment/registration/finish", s.finishOperatorPasskeyRegistration)
+	mux.HandleFunc("POST /auth/operator/authentication/options", s.beginOperatorPasskeyAuthentication)
+	mux.HandleFunc("POST /auth/operator/authentication/finish", s.finishOperatorPasskeyAuthentication)
+	mux.HandleFunc("POST /auth/operator/recovery/request", s.requestOperatorRecovery)
+	mux.HandleFunc("POST /auth/operator/recovery/registration/options", s.beginOperatorRecoveryPasskeyRegistration)
+	mux.HandleFunc("POST /auth/operator/recovery/registration/finish", s.finishOperatorRecoveryPasskeyRegistration)
 	mux.HandleFunc("POST /auth/refresh", s.refresh)
 	mux.HandleFunc("POST /auth/logout", s.logout)
 	mux.HandleFunc("GET /auth/session", s.currentSession)
@@ -128,7 +134,7 @@ func (s *Server) requestClientRecovery(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, result)
 }
 func (s *Server) recoverClient(w http.ResponseWriter, r *http.Request) {
-	var input domain.ClientCredentialProofRequest
+	var input domain.ClientRecoveryProofRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
@@ -175,24 +181,92 @@ func (s *Server) loginManaged(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, result)
 }
-func (s *Server) requestManagedRecovery(w http.ResponseWriter, r *http.Request) {
-	var input domain.ManagedRecoveryChallengeRequest
+func (s *Server) requestOperatorEnrollment(w http.ResponseWriter, r *http.Request) {
+	var input domain.OperatorEnrollmentRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.RequestManagedRecovery(r.Context(), input, s.ipHash(r))
+	result, err := s.challenges.RequestOperatorEnrollment(r.Context(), input, s.ipHash(r))
 	if err != nil {
 		writeDomainError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, result)
 }
-func (s *Server) recoverManaged(w http.ResponseWriter, r *http.Request) {
-	var input domain.ManagedRecoveryRequest
+func (s *Server) beginOperatorPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
+	var input domain.OperatorPasskeyRegistrationOptionsRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.challenges.RecoverManaged(r.Context(), input)
+	result, err := s.passkeys.BeginRegistration(r.Context(), input)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+func (s *Server) finishOperatorPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
+	var input domain.OperatorPasskeyRegistrationFinishRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.passkeys.FinishRegistration(r.Context(), input)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+func (s *Server) requestOperatorRecovery(w http.ResponseWriter, r *http.Request) {
+	var input domain.OperatorRecoveryRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.challenges.RequestOperatorRecovery(r.Context(), input, s.ipHash(r))
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+func (s *Server) beginOperatorRecoveryPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
+	var input domain.OperatorPasskeyRecoveryRegistrationOptionsRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.passkeys.BeginRecoveryRegistration(r.Context(), input)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+func (s *Server) finishOperatorRecoveryPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
+	var input domain.OperatorPasskeyRecoveryFinishRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.passkeys.FinishRecoveryRegistration(r.Context(), input)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+func (s *Server) beginOperatorPasskeyAuthentication(w http.ResponseWriter, r *http.Request) {
+	result, err := s.passkeys.BeginAuthentication(r.Context())
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+func (s *Server) finishOperatorPasskeyAuthentication(w http.ResponseWriter, r *http.Request) {
+	var input domain.OperatorPasskeyAuthenticationFinishRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.passkeys.FinishAuthentication(r.Context(), input)
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -220,31 +294,6 @@ func (s *Server) issueOperatorEnrollmentToken(w http.ResponseWriter, r *http.Req
 	}
 	writeJSON(w, http.StatusCreated, result)
 }
-func (s *Server) startOperatorLogin(w http.ResponseWriter, r *http.Request) {
-	var input domain.OperatorLoginStartRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, err := s.challenges.StartOperatorLogin(r.Context(), input, s.ipHash(r))
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, result)
-}
-func (s *Server) completeOperatorLogin(w http.ResponseWriter, r *http.Request) {
-	var input domain.OperatorLoginCompleteRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, err := s.challenges.CompleteOperatorLogin(r.Context(), input)
-	if err != nil {
-		writeDomainError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
 func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	var input domain.RefreshRequest
 	if !decodeJSON(w, r, &input) {
@@ -336,11 +385,11 @@ func (s *Server) bootstrapFirstOperator(w http.ResponseWriter, r *http.Request, 
 		writeDomainError(w, domain.ErrForbidden)
 		return
 	}
-	var input domain.ProvisionActorRoleInput
+	var input domain.BootstrapOperatorRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	view, err := s.actors.ProvisionFirstOperatorBootstrap(r.Context(), caller, input)
+	view, err := s.actors.ProvisionFirstOperatorBootstrap(r.Context(), caller, domain.ProvisionActorRoleInput{PhoneE164: input.PhoneE164, Role: input.Role})
 	if err != nil {
 		writeDomainError(w, err)
 		return
@@ -349,7 +398,12 @@ func (s *Server) bootstrapFirstOperator(w http.ResponseWriter, r *http.Request, 
 	if view.ActorCreated || view.RoleCreated {
 		status = http.StatusCreated
 	}
-	writeJSON(w, status, view)
+	token, err := s.challenges.IssueOperatorEnrollmentToken(r.Context(), domain.OperatorEnrollmentTokenIssueRequest{PhoneE164: input.PhoneE164, Role: "operator"}, caller, view.ActorID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, status, domain.BootstrapOperatorResponse{Role: view, EnrollmentToken: token})
 }
 func (s *Server) searchRoles(w http.ResponseWriter, r *http.Request, caller string) {
 	limit := 25

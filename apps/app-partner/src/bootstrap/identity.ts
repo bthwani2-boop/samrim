@@ -29,5 +29,3 @@ export const logoutIdentity = runtime.logoutIdentity;
 export const requestManagedActivation = runtime.requestManagedActivation;
 export const activateManagedIdentity = runtime.activateManagedIdentity;
 export const loginManagedIdentity = runtime.loginManagedIdentity;
-export const requestManagedRecovery = runtime.requestManagedRecovery;
-export const recoverManagedIdentity = runtime.recoverManagedIdentity;

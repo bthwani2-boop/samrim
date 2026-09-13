@@ -53,16 +53,6 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		return domain.ActorRoleView{}, domain.ErrInvalidInput
 	}
 
-	passwordHash := ""
-	if bootstrapOnly {
-		passwordHash, err = identitysecurity.HashPassword(input.Password)
-		if err != nil {
-			return domain.ActorRoleView{}, domain.ErrInvalidInput
-		}
-	} else if input.Password != "" {
-		return domain.ActorRoleView{}, domain.ErrInvalidInput
-	}
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.ActorRoleView{}, err
@@ -119,11 +109,7 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 	err = tx.QueryRowContext(ctx, "SELECT enabled,activated_at,version FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE", a.ID, role).Scan(&enabled, &activatedAt, &roleVersion)
 	roleCreated := false
 	if errors.Is(err, sql.ErrNoRows) {
-		activatedAtValue := "NULL"
-		if bootstrapOnly {
-			activatedAtValue = "clock_timestamp()"
-		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,$2,true,"+activatedAtValue+",1)", a.ID, role); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO identity_actor_roles(actor_id,role,enabled,activated_at,version) VALUES($1,$2,true,NULL,1)", a.ID, role); err != nil {
 			return domain.ActorRoleView{}, err
 		}
 		if bootstrapOnly {
@@ -153,12 +139,6 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		if err := tx.QueryRowContext(ctx, "SELECT enabled,activated_at,version FROM identity_actor_roles WHERE actor_id=$1 AND role=$2", a.ID, role).Scan(&enabled, &activatedAt, &roleVersion); err != nil {
 			return domain.ActorRoleView{}, err
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO identity_password_credentials(actor_id,role,password_hash,version) VALUES($1,$2,$3,1)", a.ID, role, passwordHash); err != nil {
-			return domain.ActorRoleView{}, err
-		}
-		if err := auditTx(ctx, tx, "credential.password_created", a.ID, caller, "success", "", map[string]any{"role": role}); err != nil {
-			return domain.ActorRoleView{}, err
-		}
 	}
 	if err := tx.Commit(); err != nil {
 		return domain.ActorRoleView{}, err
@@ -169,9 +149,6 @@ func (s *Service) provisionTrusted(ctx context.Context, caller string, input dom
 		activated = &value
 	}
 	credVersion := 0
-	if bootstrapOnly {
-		credVersion = 1
-	}
 	return domain.ActorRoleView{ActorID: a.ID, PhoneE164: a.PhoneE164, Role: role, Enabled: enabled, ActivatedAt: activated, SecurityEnabled: a.SecurityEnabled, ActorVersion: a.Version, RoleVersion: roleVersion, CredentialVersion: credVersion, ActorCreated: actorCreated, RoleCreated: roleCreated}, nil
 }
 

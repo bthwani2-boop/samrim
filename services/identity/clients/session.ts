@@ -85,7 +85,7 @@ function parseStoredTokens(raw: string | null): StoredTokens | null {
 export class IdentitySessionManager {
   private readonly client: IdentityClient;
   private readonly storage: IdentitySessionStorage;
-  private readonly deviceFingerprint: () => Promise<string>;
+  private readonly clientInstanceId: () => Promise<string>;
   private readonly role: ActorType;
   private readonly surface: IdentitySurface;
   private readonly key: string;
@@ -96,14 +96,14 @@ export class IdentitySessionManager {
   constructor(
     client: IdentityClient,
     storage: IdentitySessionStorage,
-    deviceFingerprint: () => Promise<string>,
+    clientInstanceId: () => Promise<string>,
     role: ActorType,
     surface: IdentitySurface,
     storageNamespace: string,
   ) {
     this.client = client;
     this.storage = storage;
-    this.deviceFingerprint = deviceFingerprint;
+    this.clientInstanceId = clientInstanceId;
     this.role = role;
     this.surface = surface;
     if (identityRoleSurface(role) !== surface) throw new Error("IDENTITY_ROLE_SURFACE_MISMATCH");
@@ -177,11 +177,11 @@ export class IdentitySessionManager {
         } catch (error) {
           if (isIdentityUnauthenticated(error)) {
             try {
-              const fingerprint = (await this.deviceFingerprint()).trim();
-              if (fingerprint.length < 8) throw new Error("IDENTITY_DEVICE_FINGERPRINT_UNAVAILABLE");
+              const clientInstanceId = (await this.clientInstanceId()).trim();
+              if (clientInstanceId.length < 8) throw new Error("IDENTITY_CLIENT_INSTANCE_ID_UNAVAILABLE");
               const pair = await this.client.refresh({
                 refreshToken: stored.refreshToken,
-                deviceFingerprint: fingerprint,
+                clientInstanceId,
               });
               if (!identityAuthorizesSurface(pair.identity, this.role, this.surface)) {
                 throw new Error("IDENTITY_SESSION_SURFACE_MISMATCH");
@@ -202,6 +202,12 @@ export class IdentitySessionManager {
     if (remoteError) throw remoteError;
   }
 
+  async clearLocalSession(): Promise<IdentitySessionState> {
+    await this.clearLocal();
+    this.stateValue = { kind: "signed_out" };
+    return this.stateValue;
+  }
+
   private async refreshStored(stored: StoredTokens): Promise<IdentitySessionState> {
     if (this.refreshInFlight) return this.refreshInFlight;
     this.refreshInFlight = this.performRefresh(stored);
@@ -214,9 +220,9 @@ export class IdentitySessionManager {
 
   private async performRefresh(stored: StoredTokens): Promise<IdentitySessionState> {
     try {
-      const fingerprint = (await this.deviceFingerprint()).trim();
-      if (fingerprint.length < 8) throw new Error("IDENTITY_DEVICE_FINGERPRINT_UNAVAILABLE");
-      return this.adopt(await this.client.refresh({ refreshToken: stored.refreshToken, deviceFingerprint: fingerprint }));
+      const clientInstanceId = (await this.clientInstanceId()).trim();
+      if (clientInstanceId.length < 8) throw new Error("IDENTITY_CLIENT_INSTANCE_ID_UNAVAILABLE");
+      return this.adopt(await this.client.refresh({ refreshToken: stored.refreshToken, clientInstanceId }));
     } catch (error) {
       if (isIdentityServiceUnavailable(error)) {
         this.stateValue = { kind: "service_unavailable", reason: error.message };

@@ -10,14 +10,16 @@ Required adversarial coverage includes:
 - no customer recurring activation-login path;
 - governed partner/captain/field role provisioning before activation;
 - one-time managed activation plus explicit DSH-authorized re-enrollment;
-- password-only operator session creation = zero;
-- required operator second-factor challenge before session creation;
+- Operator password login/session creation and SMS normal-login fallback = zero;
+- user-verified, discoverable Operator WebAuthn registration/authentication;
+- wrong RP/origin/credential/signature, UV=false, expired/replayed ceremony, disabled role/security and revoked credential rejection;
+- governed Operator enrollment plus one-use recovery credential, phone proof, authenticator/session revocation and credential rotation;
 - credential-derived internal service principal;
 - role-scoped disable/revocation and Platform-Control-only global security disable/re-enable;
 - operator/client credential separation on the same actor;
 - password-reset revocation without cross-role revocation;
 - challenge/password abuse controls;
-- device-bound refresh rotation/replay behavior;
+- `clientInstanceId`-bound refresh rotation/replay behavior;
 - zero legacy universal-OTP, username, context/caller-header or actor-global role/credential residue.
 
 A green suite using a different actor for every role or proving only one authentication class is insufficient closure evidence.

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -52,7 +53,6 @@ type ActorSearchPage struct {
 type ProvisionActorRoleInput struct {
 	PhoneE164 string `json:"phoneE164"`
 	Role      string `json:"role"`
-	Password  string `json:"password,omitempty"`
 }
 
 type PhoneRequest struct {
@@ -60,34 +60,34 @@ type PhoneRequest struct {
 }
 
 type ManagedChallengeRequest struct {
-	Phone                   string `json:"phone"`
-	Role                    string `json:"role"`
-	OperatorEnrollmentToken string `json:"operatorEnrollmentToken,omitempty"`
-}
-
-type ManagedRecoveryChallengeRequest struct {
 	Phone string `json:"phone"`
 	Role  string `json:"role"`
 }
 
 type ClientCredentialProofRequest struct {
-	Phone             string `json:"phone"`
-	Code              string `json:"code"`
-	Password          string `json:"password"`
-	DeviceFingerprint string `json:"deviceFingerprint"`
+	Phone            string `json:"phone"`
+	Code             string `json:"code"`
+	Password         string `json:"password"`
+	ClientInstanceId string `json:"clientInstanceId"`
+}
+
+type ClientRecoveryProofRequest struct {
+	Phone    string `json:"phone"`
+	Code     string `json:"code"`
+	Password string `json:"password"`
 }
 
 type PasswordLoginRequest struct {
-	Phone             string `json:"phone"`
-	Password          string `json:"password"`
-	DeviceFingerprint string `json:"deviceFingerprint"`
+	Phone            string `json:"phone"`
+	Password         string `json:"password"`
+	ClientInstanceId string `json:"clientInstanceId"`
 }
 
 type ManagedPasswordLoginRequest struct {
-	Phone             string `json:"phone"`
-	Password          string `json:"password"`
-	Role              string `json:"role"`
-	DeviceFingerprint string `json:"deviceFingerprint"`
+	Phone            string `json:"phone"`
+	Password         string `json:"password"`
+	Role             string `json:"role"`
+	ClientInstanceId string `json:"clientInstanceId"`
 }
 
 type ManagedActivationRequest struct {
@@ -96,14 +96,57 @@ type ManagedActivationRequest struct {
 	OperatorEnrollmentToken string `json:"operatorEnrollmentToken,omitempty"`
 	VerificationCode        string `json:"verificationCode"`
 	Password                string `json:"password"`
-	DeviceFingerprint       string `json:"deviceFingerprint"`
+	ClientInstanceId        string `json:"clientInstanceId"`
 }
 
-type ManagedRecoveryRequest struct {
-	Phone    string `json:"phone"`
-	Role     string `json:"role"`
-	Code     string `json:"code"`
-	Password string `json:"password"`
+type OperatorEnrollmentRequest struct {
+	Phone                   string `json:"phone"`
+	OperatorEnrollmentToken string `json:"operatorEnrollmentToken"`
+}
+
+type OperatorPasskeyRegistrationOptionsRequest struct {
+	Phone                   string `json:"phone"`
+	OperatorEnrollmentToken string `json:"operatorEnrollmentToken"`
+	VerificationCode        string `json:"verificationCode"`
+}
+
+type PasskeyOptions struct {
+	CeremonyID string          `json:"ceremonyId"`
+	PublicKey  json.RawMessage `json:"publicKey"`
+}
+
+type OperatorPasskeyRegistrationFinishRequest struct {
+	CeremonyID       string          `json:"ceremonyId"`
+	Credential       json.RawMessage `json:"credential"`
+	ClientInstanceId string          `json:"clientInstanceId"`
+}
+
+type OperatorPasskeyAuthenticationFinishRequest struct {
+	CeremonyID       string          `json:"ceremonyId"`
+	Credential       json.RawMessage `json:"credential"`
+	ClientInstanceId string          `json:"clientInstanceId"`
+}
+
+type OperatorRecoveryRequest struct {
+	Phone              string `json:"phone"`
+	RecoveryCredential string `json:"recoveryCredential"`
+}
+
+type OperatorPasskeyRecoveryRegistrationOptionsRequest struct {
+	Phone              string `json:"phone"`
+	RecoveryCredential string `json:"recoveryCredential"`
+	VerificationCode   string `json:"verificationCode"`
+}
+
+type OperatorPasskeyRecoveryFinishRequest struct {
+	CeremonyID       string          `json:"ceremonyId"`
+	Credential       json.RawMessage `json:"credential"`
+	ClientInstanceId string          `json:"clientInstanceId"`
+}
+
+type OperatorPasskeyRegistrationResponse struct {
+	TokenPair          TokenPair `json:"tokenPair"`
+	RecoveryCredential string    `json:"recoveryCredential"`
 }
 
 type OperatorEnrollmentTokenIssueRequest struct {
@@ -118,17 +161,6 @@ type OperatorEnrollmentToken struct {
 	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
-type OperatorLoginStartRequest struct {
-	Phone    string `json:"phone"`
-	Password string `json:"password"`
-}
-
-type OperatorLoginCompleteRequest struct {
-	Phone             string `json:"phone"`
-	Code              string `json:"code"`
-	DeviceFingerprint string `json:"deviceFingerprint"`
-}
-
 type Challenge struct {
 	ChallengeID string    `json:"challengeId"`
 	MaskedPhone string    `json:"maskedPhone"`
@@ -136,8 +168,8 @@ type Challenge struct {
 }
 
 type RefreshRequest struct {
-	RefreshToken      string `json:"refreshToken"`
-	DeviceFingerprint string `json:"deviceFingerprint"`
+	RefreshToken     string `json:"refreshToken"`
+	ClientInstanceId string `json:"clientInstanceId"`
 }
 
 type ActorIdentity struct {
@@ -159,6 +191,16 @@ type RecoveryResult struct {
 	Status string `json:"status"`
 }
 
+type BootstrapOperatorRequest struct {
+	PhoneE164 string `json:"phoneE164"`
+	Role      string `json:"role"`
+}
+
+type BootstrapOperatorResponse struct {
+	Role            ActorRoleView           `json:"role"`
+	EnrollmentToken OperatorEnrollmentToken `json:"enrollmentToken"`
+}
+
 type SessionInfo struct {
 	SessionID     string     `json:"sessionId"`
 	Role          string     `json:"role"`
@@ -174,8 +216,8 @@ const (
 	ChallengeClientRegister  = "client_register"
 	ChallengeClientRecover   = "client_recover"
 	ChallengeManagedActivate = "managed_activate"
-	ChallengeManagedRecover  = "managed_recover"
-	ChallengeOperatorMFA     = "operator_mfa"
+	ChallengeOperatorEnroll  = "operator_enroll"
+	ChallengeOperatorRecover = "operator_recover"
 )
 
 var (
@@ -251,11 +293,11 @@ func CanSetRoleEnabled(caller, role string) bool {
 func CanIssueOperatorEnrollmentTokenForRole(caller, role string) bool {
 	caller = strings.ToLower(strings.TrimSpace(caller))
 	role = strings.ToLower(strings.TrimSpace(role))
-	return caller == "control-panel" && role == "operator"
+	return (caller == "control-panel" || caller == "operator-bootstrap") && role == "operator"
 }
 
 func RequiresEnrollmentToken(role string) bool {
-	return strings.EqualFold(strings.TrimSpace(role), "operator")
+	return false
 }
 
 func IsManagedRole(role string) bool {
@@ -269,7 +311,7 @@ func IsManagedRole(role string) bool {
 
 func IsManagedActivationRole(role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
-	return IsManagedRole(role) || role == "operator"
+	return IsManagedRole(role)
 }
 
 func IsControlPanelRole(role string) bool {

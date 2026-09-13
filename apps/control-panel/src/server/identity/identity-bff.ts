@@ -10,12 +10,14 @@ import {
   type ActorIdentity,
   type ActorRoleView,
   type Challenge,
+  type PasskeyOptions,
+  type WebAuthnJSON,
+  type OperatorPasskeyRegistrationResponse,
   type IdentityClientError,
   type OperatorEnrollmentToken,
   type AttributedMutationContext,
   type VersionedMutationContext,
   type ControlPanelRole,
-  type RecoveryResult,
   type TokenPair,
   validateServiceUrl,
 } from "@bthwani/identity";
@@ -46,7 +48,7 @@ function cookieOptions() {
   return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, path: "/" };
 }
 
-async function operatorDeviceFingerprint(): Promise<string> {
+async function operatorClientInstanceId(): Promise<string> {
   const store = await cookies();
   const existing = store.get(deviceCookie)?.value?.trim();
   if (existing && existing.length >= 8) return existing;
@@ -55,12 +57,12 @@ async function operatorDeviceFingerprint(): Promise<string> {
   return created;
 }
 
-async function writeTokens(pair: TokenPair, deviceFingerprint: string): Promise<void> {
+async function writeTokens(pair: TokenPair, clientInstanceId: string): Promise<void> {
   if (!isControlPanelIdentity(pair.identity)) throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
   const store = await cookies();
   store.set(accessCookie, pair.accessToken, { ...cookieOptions(), expires: new Date(pair.accessExpiresAt) });
   store.set(refreshCookie, pair.refreshToken, { ...cookieOptions(), maxAge: 7 * 24 * 60 * 60 });
-  store.set(deviceCookie, deviceFingerprint, { ...cookieOptions(), maxAge: 365 * 24 * 60 * 60 });
+  store.set(deviceCookie, clientInstanceId, { ...cookieOptions(), maxAge: 365 * 24 * 60 * 60 });
 }
 
 function isControlPanelRole(role: ActorType): role is ControlPanelRole {
@@ -76,37 +78,47 @@ async function clearOperatorCookies(): Promise<void> {
   for (const key of [accessCookie, refreshCookie, deviceCookie]) store.set(key, "", { ...cookieOptions(), maxAge: 0 });
 }
 
-export async function startOperatorLogin(phone: string, password: string): Promise<Challenge> {
-  await operatorDeviceFingerprint();
-  return identityClient().startOperatorLogin({ phone, password });
+export async function beginOperatorPasskeyAuthentication(): Promise<PasskeyOptions> {
+  return identityClient().beginOperatorPasskeyAuthentication();
 }
 
-export async function completeOperatorLogin(phone: string, code: string): Promise<ActorIdentity> {
-  const deviceFingerprint = await operatorDeviceFingerprint();
-  const pair = await identityClient().completeOperatorLogin({ phone, code, deviceFingerprint });
-  await writeTokens(pair, deviceFingerprint);
+export async function finishOperatorPasskeyAuthentication(ceremonyId: string, credential: WebAuthnJSON): Promise<ActorIdentity> {
+  const clientInstanceId = await operatorClientInstanceId();
+  const pair = await identityClient().finishOperatorPasskeyAuthentication({ ceremonyId, credential, clientInstanceId });
+  await writeTokens(pair, clientInstanceId);
   return pair.identity;
 }
 
-export async function requestOperatorActivation(phone: string, operatorEnrollmentToken: string): Promise<Challenge> {
-  await operatorDeviceFingerprint();
-  return identityClient().requestManagedActivation({ phone, role: "operator", operatorEnrollmentToken });
+export async function requestOperatorEnrollment(phone: string, operatorEnrollmentToken: string): Promise<Challenge> {
+  await operatorClientInstanceId();
+  return identityClient().requestOperatorEnrollment({ phone, operatorEnrollmentToken });
 }
 
-export async function completeOperatorActivation(phone: string, operatorEnrollmentToken: string, verificationCode: string, password: string): Promise<ActorIdentity> {
-  const deviceFingerprint = await operatorDeviceFingerprint();
-  const pair = await identityClient().activateManaged({ phone, role: "operator", operatorEnrollmentToken, verificationCode, password, deviceFingerprint });
-  await writeTokens(pair, deviceFingerprint);
-  return pair.identity;
+export async function beginOperatorPasskeyRegistration(phone: string, operatorEnrollmentToken: string, verificationCode: string): Promise<PasskeyOptions> {
+  return identityClient().beginOperatorPasskeyRegistration({ phone, operatorEnrollmentToken, verificationCode });
 }
 
-export async function requestOperatorRecovery(phone: string): Promise<Challenge> {
-  await operatorDeviceFingerprint();
-  return identityClient().requestManagedRecovery({ phone, role: "operator" });
+export async function finishOperatorPasskeyRegistration(ceremonyId: string, credential: WebAuthnJSON): Promise<OperatorPasskeyRegistrationResponse> {
+  const clientInstanceId = await operatorClientInstanceId();
+  const result = await identityClient().finishOperatorPasskeyRegistration({ ceremonyId, credential, clientInstanceId });
+  await writeTokens(result.tokenPair, clientInstanceId);
+  return result;
 }
 
-export async function completeOperatorRecovery(phone: string, code: string, password: string): Promise<RecoveryResult> {
-  return identityClient().recoverManaged({ phone, role: "operator", code, password });
+export async function requestOperatorRecovery(phone: string, recoveryCredential: string): Promise<Challenge> {
+  await operatorClientInstanceId();
+  return identityClient().requestOperatorRecovery({ phone, recoveryCredential });
+}
+
+export async function beginOperatorRecoveryPasskeyRegistration(phone: string, recoveryCredential: string, verificationCode: string): Promise<PasskeyOptions> {
+  return identityClient().beginOperatorRecoveryPasskeyRegistration({ phone, recoveryCredential, verificationCode });
+}
+
+export async function finishOperatorRecoveryPasskeyRegistration(ceremonyId: string, credential: WebAuthnJSON): Promise<OperatorPasskeyRegistrationResponse> {
+  const clientInstanceId = await operatorClientInstanceId();
+  const result = await identityClient().finishOperatorRecoveryPasskeyRegistration({ ceremonyId, credential, clientInstanceId });
+  await writeTokens(result.tokenPair, clientInstanceId);
+  return result;
 }
 
 export async function issueOperatorEnrollmentToken(phone: string, context: AttributedMutationContext): Promise<OperatorEnrollmentToken> {
@@ -153,17 +165,17 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const store = await cookies();
   const accessToken = store.get(accessCookie)?.value;
   const refreshToken = store.get(refreshCookie)?.value;
-  const deviceFingerprint = store.get(deviceCookie)?.value;
+  const clientInstanceId = store.get(deviceCookie)?.value;
   if (!accessToken && !refreshToken) return null;
-  const refreshKey = `${refreshToken ?? ""}:${deviceFingerprint ?? ""}`;
+  const refreshKey = `${refreshToken ?? ""}:${clientInstanceId ?? ""}`;
   const activeRefresh = refreshInFlight.get(refreshKey);
   if (activeRefresh) return activeRefresh;
-  const result = readOperatorSessionOnce(store, accessToken, refreshToken, deviceFingerprint);
+  const result = readOperatorSessionOnce(store, accessToken, refreshToken, clientInstanceId);
   refreshInFlight.set(refreshKey, result);
   try { return await result; } finally { refreshInFlight.delete(refreshKey); }
 }
 
-async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>>, accessToken?: string, refreshToken?: string, deviceFingerprint?: string): Promise<ActorIdentity | null> {
+async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>>, accessToken?: string, refreshToken?: string, clientInstanceId?: string): Promise<ActorIdentity | null> {
   if (accessToken) {
     try {
       const identity = await identityClient().session(accessToken);
@@ -178,14 +190,14 @@ async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>
     }
   }
 
-  if (!refreshToken || !deviceFingerprint) {
+  if (!refreshToken || !clientInstanceId) {
     await clearOperatorCookies();
     return null;
   }
 
   try {
-    const pair = await identityClient().refresh({ refreshToken, deviceFingerprint });
-    await writeTokens(pair, deviceFingerprint);
+    const pair = await identityClient().refresh({ refreshToken, clientInstanceId });
+    await writeTokens(pair, clientInstanceId);
     return pair.identity;
   } catch (error) {
     if (isIdentityClientError(error)) {
@@ -216,14 +228,14 @@ export async function logoutOperator(): Promise<void> {
   const store = await cookies();
   const accessToken = store.get(accessCookie)?.value;
   const refreshToken = store.get(refreshCookie)?.value;
-  const deviceFingerprint = store.get(deviceCookie)?.value;
+  const clientInstanceId = store.get(deviceCookie)?.value;
   let remoteError: unknown = null;
   let tokenToRevoke = accessToken;
 
   try {
-    if (!tokenToRevoke && refreshToken && deviceFingerprint) {
+    if (!tokenToRevoke && refreshToken && clientInstanceId) {
       try {
-        const pair = await identityClient().refresh({ refreshToken, deviceFingerprint });
+        const pair = await identityClient().refresh({ refreshToken, clientInstanceId });
         if (!isControlPanelIdentity(pair.identity)) throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
         tokenToRevoke = pair.accessToken;
       } catch (error) {

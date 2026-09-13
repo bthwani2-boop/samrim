@@ -197,7 +197,6 @@ if (!actingOperatorID) {
     body: {
       phoneE164: "+9677" + String(Math.floor(10_000_000 + Math.random() * 90_000_000)),
       role: "operator",
-      password: "First-Operator-" + suffix + "-Strong-Password-1!",
     },
   });
   if (firstOperator.status !== 201 || firstOperator.body?.role !== "operator" || !firstOperator.body?.actorId) {
@@ -241,7 +240,7 @@ const activation = await request(identityBase, "POST", "/auth/managed/activate",
     role: "partner",
     verificationCode: hmacChallengeCode(activationRequest.body.challengeId, "managed_activate"),
     password: "Partner-" + suffix + "-Strong-Password-1!",
-    deviceFingerprint: "dsh-runtime-partner-" + suffix,
+    clientInstanceId: "dsh-runtime-partner-" + suffix,
   },
 });
 if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "partner") fail("canonical Partner activation failed", JSON.stringify(activation));

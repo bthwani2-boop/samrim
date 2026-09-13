@@ -2,16 +2,22 @@ import type {
   ActorIdentity,
   Challenge,
   ClientCredentialProofRequest,
+  ClientRecoveryProofRequest,
   OperatorEnrollmentToken,
   OperatorEnrollmentTokenIssueRequest,
   ManagedActivationRequest,
-  ManagedRecoveryChallengeRequest,
-  ManagedRecoveryRequest,
   RecoveryResult,
   ManagedPasswordLoginRequest,
   ManagedChallengeRequest,
-  OperatorLoginCompleteRequest,
-  OperatorLoginStartRequest,
+  OperatorEnrollmentRequest,
+  OperatorPasskeyRegistrationOptionsRequest,
+  OperatorPasskeyRegistrationFinishRequest,
+  OperatorPasskeyAuthenticationFinishRequest,
+  OperatorRecoveryRequest,
+  OperatorPasskeyRecoveryRegistrationOptionsRequest,
+  OperatorPasskeyRecoveryFinishRequest,
+  OperatorPasskeyRegistrationResponse,
+  PasskeyOptions,
   PasswordLoginRequest,
   PhoneRequest,
   ProvisionActorRoleRequest,
@@ -35,13 +41,17 @@ export type IdentityClient = Readonly<{
   loginClient(request: PasswordLoginRequest): Promise<TokenPair>;
   loginManaged(request: ManagedPasswordLoginRequest): Promise<TokenPair>;
   requestClientRecovery(request: PhoneRequest): Promise<Challenge>;
-  recoverClient(request: ClientCredentialProofRequest): Promise<TokenPair>;
+  recoverClient(request: ClientRecoveryProofRequest): Promise<RecoveryResult>;
   requestManagedActivation(request: ManagedChallengeRequest): Promise<Challenge>;
   activateManaged(request: ManagedActivationRequest): Promise<TokenPair>;
-  requestManagedRecovery(request: ManagedRecoveryChallengeRequest): Promise<Challenge>;
-  recoverManaged(request: ManagedRecoveryRequest): Promise<RecoveryResult>;
-  startOperatorLogin(request: OperatorLoginStartRequest): Promise<Challenge>;
-  completeOperatorLogin(request: OperatorLoginCompleteRequest): Promise<TokenPair>;
+  requestOperatorEnrollment(request: OperatorEnrollmentRequest): Promise<Challenge>;
+  beginOperatorPasskeyRegistration(request: OperatorPasskeyRegistrationOptionsRequest): Promise<PasskeyOptions>;
+  finishOperatorPasskeyRegistration(request: OperatorPasskeyRegistrationFinishRequest): Promise<OperatorPasskeyRegistrationResponse>;
+  beginOperatorPasskeyAuthentication(): Promise<PasskeyOptions>;
+  finishOperatorPasskeyAuthentication(request: OperatorPasskeyAuthenticationFinishRequest): Promise<TokenPair>;
+  requestOperatorRecovery(request: OperatorRecoveryRequest): Promise<Challenge>;
+  beginOperatorRecoveryPasskeyRegistration(request: OperatorPasskeyRecoveryRegistrationOptionsRequest): Promise<PasskeyOptions>;
+  finishOperatorRecoveryPasskeyRegistration(request: OperatorPasskeyRecoveryFinishRequest): Promise<OperatorPasskeyRegistrationResponse>;
   refresh(request: RefreshRequest): Promise<TokenPair>;
   session(accessToken: string): Promise<ActorIdentity>;
   logout(accessToken: string): Promise<void>;
@@ -138,10 +148,14 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     recoverClient: (body) => request(identityOperationPaths.recoverClient.path, { method: identityOperationPaths.recoverClient.method, body }),
     requestManagedActivation: (body) => request(identityOperationPaths.requestManagedActivation.path, { method: identityOperationPaths.requestManagedActivation.method, body }),
     activateManaged: (body) => request(identityOperationPaths.activateManagedRole.path, { method: identityOperationPaths.activateManagedRole.method, body }),
-    requestManagedRecovery: (body) => request(identityOperationPaths.requestManagedRecoveryVerification.path, { method: identityOperationPaths.requestManagedRecoveryVerification.method, body }),
-    recoverManaged: (body) => request(identityOperationPaths.recoverManagedRole.path, { method: identityOperationPaths.recoverManagedRole.method, body }),
-    startOperatorLogin: (body) => request(identityOperationPaths.startOperatorLogin.path, { method: identityOperationPaths.startOperatorLogin.method, body }),
-    completeOperatorLogin: (body) => request(identityOperationPaths.completeOperatorLogin.path, { method: identityOperationPaths.completeOperatorLogin.method, body }),
+    requestOperatorEnrollment: (body) => request(identityOperationPaths.requestOperatorEnrollment.path, { method: identityOperationPaths.requestOperatorEnrollment.method, body }),
+    beginOperatorPasskeyRegistration: (body) => request(identityOperationPaths.beginOperatorPasskeyRegistration.path, { method: identityOperationPaths.beginOperatorPasskeyRegistration.method, body }),
+    finishOperatorPasskeyRegistration: (body) => request(identityOperationPaths.finishOperatorPasskeyRegistration.path, { method: identityOperationPaths.finishOperatorPasskeyRegistration.method, body }),
+    beginOperatorPasskeyAuthentication: () => request(identityOperationPaths.beginOperatorPasskeyAuthentication.path, { method: identityOperationPaths.beginOperatorPasskeyAuthentication.method }),
+    finishOperatorPasskeyAuthentication: (body) => request(identityOperationPaths.finishOperatorPasskeyAuthentication.path, { method: identityOperationPaths.finishOperatorPasskeyAuthentication.method, body }),
+    requestOperatorRecovery: (body) => request(identityOperationPaths.requestOperatorRecovery.path, { method: identityOperationPaths.requestOperatorRecovery.method, body }),
+    beginOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.method, body }),
+    finishOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.method, body }),
     refresh: (body) => request(identityOperationPaths.refreshSession.path, { method: identityOperationPaths.refreshSession.method, body }),
     session: (accessToken) => request(identityOperationPaths.readCurrentSession.path, { method: identityOperationPaths.readCurrentSession.method, token: accessToken }),
     logout: (accessToken) => request(identityOperationPaths.logoutSession.path, { method: identityOperationPaths.logoutSession.method, token: accessToken }),

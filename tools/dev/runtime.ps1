@@ -251,7 +251,7 @@ function Rebuild-Service {
     $target = Require-AllowedService
     $envMap = Ensure-Environment; Ensure-Docker; Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
     Invoke-Compose -Arguments @('config','--quiet') -Quiet
-    Invoke-Compose -Arguments @('up','-d','--build','--no-deps','--wait','--wait-timeout','300',$target)
+    Invoke-Compose -Arguments @('up','-d','--build','--force-recreate','--no-deps','--wait','--wait-timeout','300',$target)
     Wait-RunningService -Service $target -Healthy
     Write-Host "RUNTIME_SERVICE_REBUILD=PASS service=$target"
 }

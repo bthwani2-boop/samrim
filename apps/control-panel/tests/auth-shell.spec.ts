@@ -28,7 +28,7 @@ test("signed-out access to a protected workspace route returns to the identity s
   await stubSession(page, 401);
   await page.goto("/workspace");
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole("heading", { name: "ابدأ برقم الهاتف" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
 });
 
 test("authenticated operator discovers access and partner responsibilities through workspace navigation", async ({ page }) => {
@@ -127,23 +127,16 @@ test("authenticated workspace keeps navigation meaning across light and dark the
   await expect(page.getByRole("link", { name: "الحسابات والأدوار" })).toBeVisible();
 });
 
-test("phone-first operator sign-in exposes no human-role selector and reaches the second step", async ({ page }) => {
+test("operator access exposes passkey-first sign-in and no human-role selector", async ({ page }) => {
   await stubSession(page, 401);
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "ابدأ برقم الهاتف" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await expect(page.getByLabel("الدور")).toHaveCount(0);
   await expect(page.getByText("مالك المنصة", { exact: true })).toHaveCount(0);
-  await page.getByLabel("رقم الهاتف").fill("96777000100");
-  await page.getByRole("button", { name: "متابعة" }).click();
-
-  await expect(page.getByRole("heading", { name: "تسجيل دخول لوحة التحكم" })).toBeVisible();
-  await expect(page.getByText("الدور: مشغل لوحة التحكم", { exact: true })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: /^كلمة المرور/ })).toBeVisible();
-  const password = page.locator("#operator-password");
-  await expect(page.getByRole("button", { name: "إظهار كلمة المرور" })).toBeVisible();
-  await page.getByRole("button", { name: "إظهار كلمة المرور" }).click();
-  await expect(password).toHaveAttribute("type", "text");
+  await expect(page.getByRole("button", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "تفعيل حساب موظف" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "استرداد الوصول" })).toBeVisible();
 });
 
 test("identity service failure is exposed as an alert with a recovery action", async ({ page }) => {
@@ -153,29 +146,21 @@ test("identity service failure is exposed as an alert with a recovery action", a
   await expect(page.getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
 });
 
-test("recovery success is a status and returns to the canonical login journey", async ({ page }) => {
+test("operator recovery distinguishes recovery credential from phone proof", async ({ page }) => {
   await stubSession(page, 401);
-  await page.route("**/api/auth/recovery/start", async (route) => {
+  await page.route("**/api/auth/operator/recovery/request", async (route) => {
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ challenge: { id: "challenge" } }) });
-  });
-  await page.route("**/api/auth/recovery/complete", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "recovery_complete" }) });
   });
   await page.goto("/");
 
+  await page.getByRole("button", { name: "استرداد الوصول" }).click();
+  await expect(page.getByRole("heading", { name: "اطلب إعادة التسجيل" })).toBeVisible();
   await page.getByLabel("رقم الهاتف").fill("96777000100");
-  await page.getByRole("button", { name: "متابعة" }).click();
-  await expect(page.getByRole("button", { name: "نسيت كلمة المرور؟" })).toBeVisible();
-  await page.getByRole("button", { name: "نسيت كلمة المرور؟" }).click();
-  await page.getByRole("button", { name: "إرسال رمز الاسترداد" }).click();
-  await page.getByLabel("رمز تحقق الهاتف").fill("123456");
-  await page.getByLabel("كلمة المرور الجديدة").fill("A-valid-password-123");
-  await page.getByLabel("تأكيد كلمة المرور").fill("A-valid-password-123");
-  await page.getByRole("button", { name: "تغيير كلمة المرور" }).click();
-
-  await expect(page.getByRole("status")).toContainText("تم تغيير كلمة المرور");
+  await page.getByLabel("اعتماد الاسترداد").fill("A".repeat(24));
+  await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
+  await expect(page.getByLabel("رمز إثبات الهاتف")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("اعتماد الاسترداد");
   await expect(page.locator("p.identity-error")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "ابدأ برقم الهاتف" })).toBeVisible();
 });
 
 test("remote logout failure keeps local sign-out and remains observable", async ({ page }) => {
@@ -189,7 +174,7 @@ test("remote logout failure keeps local sign-out and remains observable", async 
 
   await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
-  await expect(page.getByRole("heading", { name: "ابدأ برقم الهاتف" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("تعذر تأكيد إبطال الجلسة");
   await expect(page.locator("p.identity-error")).toHaveCount(0);
 });
@@ -223,7 +208,7 @@ test("production security headers and cross-origin mutation guard are active", a
   expect(new Set(renderedNonces)).toEqual(new Set([nonce]));
 
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("heading", { name: /ابدأ برقم الهاتف|تعذر الوصول إلى الهوية/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /الدخول بمفتاح المرور|تعذر الوصول إلى الهوية/ })).toBeVisible();
   expect(cspMessages).toEqual([]);
 
   const crossOriginResponse = await page.request.post("/api/auth/logout", {
@@ -241,10 +226,9 @@ test("rendered light and dark themes preserve RTL and keyboard focus", async ({ 
   await page.goto("/");
   const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await page.getByLabel("رقم الهاتف").fill("96777000100");
-  const continueButton = page.getByRole("button", { name: "متابعة" });
-  await continueButton.focus();
-  await expect(continueButton).toBeFocused();
+  const passkeyButton = page.getByRole("button", { name: "الدخول بمفتاح المرور" });
+  await passkeyButton.focus();
+  await expect(passkeyButton).toBeFocused();
 
   await page.emulateMedia({ colorScheme: "dark" });
   await page.reload();

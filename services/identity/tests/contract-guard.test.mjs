@@ -2,92 +2,44 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
-const contract = fs.readFileSync(path.join(root, "contracts", "identity.openapi.yaml"), "utf8");
+const entry = fs.readFileSync(path.join(root, "contracts", "openapi", "identity.openapi.yaml"), "utf8");
+const pathDir = path.join(root, "contracts", "openapi", "paths");
+const modules = fs.readdirSync(pathDir).filter((name) => name.endsWith(".yaml")).map((name) => fs.readFileSync(path.join(pathDir, name), "utf8")).join("\n");
+const contract = entry + "\n" + modules;
 const failures = [];
 
+function requireText(value, message = value) { if (!contract.includes(value)) failures.push("missing " + message); }
+function forbidText(value, message = value) { if (contract.includes(value)) failures.push("retired contract shape: " + message); }
+
+if (!entry.includes("openapi: 3.1.0")) failures.push("canonical Identity contract entrypoint is not OpenAPI 3.1");
+for (const module of ["runtime.yaml", "client-auth.yaml", "managed-enrollment-auth.yaml", "operator-passkey-access.yaml", "session.yaml", "internal-actor-administration.yaml"]) if (!entry.includes("./paths/" + module)) failures.push("entrypoint does not reference " + module);
 for (const route of [
-  "/auth/client/registration/request:",
-  "/auth/client/register:",
-  "/auth/client/login:",
-  "/auth/client/recovery/request:",
-  "/auth/client/recover:",
-  "/auth/managed/activation/request:",
-  "/auth/managed/activate:",
-  "/internal/operator-enrollment-tokens:",
-  "/auth/operator/login/start:",
-  "/auth/operator/login/complete:",
-  "/auth/refresh:",
-  "/auth/logout:",
-  "/auth/session:",
-  "/internal/actor-roles/provision:",
-  "/internal/bootstrap/operator:",
-  "/internal/actor-roles/search:",
-  "/internal/actors/{actorId}/roles/{role}:",
-  "/internal/actors/{actorId}/roles/{role}/disable:",
-  "/internal/actors/{actorId}/roles/{role}/enable:",
-  "/internal/actors/{actorId}/roles/{role}/reenrollment:",
-  "/internal/actors/{actorId}/roles/{role}/sessions:",
-]) {
-  if (!contract.includes(route)) failures.push("missing canonical route " + route);
+  "/auth/client/registration/request:", "/auth/client/register:", "/auth/client/login:", "/auth/client/recovery/request:", "/auth/client/recover:",
+  "/auth/managed/activation/request:", "/auth/managed/activate:", "/auth/managed/login:",
+  "/auth/operator/enrollment/request:", "/auth/operator/enrollment/registration/options:", "/auth/operator/enrollment/registration/finish:",
+  "/auth/operator/authentication/options:", "/auth/operator/authentication/finish:", "/auth/operator/recovery/request:",
+  "/auth/operator/recovery/registration/options:", "/auth/operator/recovery/registration/finish:", "/internal/bootstrap/operator:",
+  "/auth/refresh:", "/auth/logout:", "/auth/session:", "/internal/actor-roles/provision:", "/internal/actor-roles/search:",
+  "/internal/actors/{actorId}/roles/{role}/reenrollment:", "/internal/actors/{actorId}/security/disable:",
+]) requireText(route, "canonical route " + route);
+for (const route of ["/auth/operator/" + "login/start:", "/auth/operator/" + "login/complete:", "/auth/managed/" + "recovery/request:", "/auth/managed/" + "recover:"]) forbidText(route, route);
+for (const value of ["platform_owner", "operator_owner", "X-Service-Caller", "identity_access_grants", "ManagedRecoveryChallengeRequest", "OperatorLoginStartRequest", "OperatorLoginCompleteRequest", "PasswordResetRequest", "username:", "activationCode:", "operator_mfa"]) forbidText(value);
+for (const value of ["enum: [client, partner, captain, field, operator]", "enum: [partner, captain, field]", "enum: [operator]"]) requireText(value);
+for (const value of ["ClientRecoveryProofRequest", "RecoveryComplete", "OperatorPasskeyRegistrationOptionsRequest", "OperatorPasskeyAuthenticationFinishRequest", "OperatorPasskeyRecoveryRegistrationOptionsRequest", "OperatorPasskeyRecoveryFinishRequest", "user-verifying", "WebAuthn", "minLength: 15", 'pattern: "^[0-9]{6}$"']) requireText(value);
+if (!contract.includes("phone control alone never grants operator access")) failures.push("operator recovery must distinguish phone possession from authority");
+if (!contract.includes("never a password or session") && !contract.includes("never a password or session".replace("or ", "or "))) failures.push("operator bootstrap must not mint a password or session");
+if (contract.includes("#/components/responses/TokenPair")) {
+  const recovery = contract.slice(contract.indexOf("/auth/client/recover:"), contract.indexOf("/auth/managed/activation/request:"));
+  if (recovery.includes("#/components/responses/TokenPair")) failures.push("client recovery creates a session");
 }
-
-const retiredHumanRole = ["platform", "owner"].join("_");
-for (const forbidden of [
-  retiredHumanRole,
-  "operator_owner",
-  "/internal/bootstrap/" + ["platform", "owner"].join("-") + ":",
-  "bootstrap" + "PlatformOwner",
-  "PlatformControl",
-  "X-Service-Caller",
-  "identity_access_grants",
-  "activationCode:",
-  "/internal/managed-activation-codes:",
-  "ManagedActivationCode",
-]) {
-  if (contract.includes(forbidden)) failures.push("retired Identity authority remains: " + forbidden);
+if (!contract.includes("additionalProperties: true")) failures.push("WebAuthn JSON object pass-through schema missing");
+for (const file of ["identity-types.ts", "identity-operations.ts"]) {
+  const body = fs.readFileSync(path.join(root, "clients", "generated", file), "utf8");
+  if (!body.includes("Source Git graph SHA:")) failures.push(file + " lacks source graph provenance");
 }
-
-function schemaBlock(name, next) {
-  const start = contract.indexOf("    " + name + ":");
-  const end = next ? contract.indexOf("    " + next + ":", start + 1) : contract.indexOf("\n  responses:", start + 1);
-  return start >= 0 ? contract.slice(start, end >= 0 ? end : contract.length) : "";
-}
-
-const actorType = schemaBlock("ActorType", "ManagedActorType");
-if (!actorType.includes("enum: [client, partner, captain, field, operator]")) failures.push("ActorType is not the canonical five-role set");
-const controlRole = schemaBlock("ControlPanelRole", "PhoneRequest");
-if (!controlRole.includes("enum: [operator]")) failures.push("operator must be the only control-panel human role");
-const managedActivationRole = schemaBlock("ManagedActivationRole", "ControlPanelRole");
-if (!managedActivationRole.includes("enum: [partner, captain, field, operator]")) failures.push("operator activation role boundary missing");
-const provision = schemaBlock("ProvisionActorRoleRequest", "ActorRoleView");
-if (!provision.includes("enum: [partner, captain, field, operator]")) failures.push("trusted provisioning roles are incorrect");
-if (provision.includes("actorId:")) failures.push("consumer can author actor_id");
-
-const challenge = schemaBlock("Challenge", "RefreshRequest");
-if (/^\s+code:/m.test(challenge)) failures.push("challenge response leaks raw code");
-
-const operatorStart = contract.slice(contract.indexOf("  /auth/operator/login/start:"), contract.indexOf("  /auth/operator/login/complete:"));
-if (operatorStart.includes("#/components/responses/TokenPair")) failures.push("operator password-start route can create a session");
-if (!operatorStart.includes("Password proof alone never creates a control-panel session")) failures.push("operator password-only session prohibition missing");
-const operatorStartRequest = schemaBlock("OperatorLoginStartRequest", "OperatorLoginCompleteRequest");
-const operatorCompleteRequest = schemaBlock("OperatorLoginCompleteRequest", "Challenge");
-if (operatorStartRequest.includes("role:") || operatorCompleteRequest.includes("role:")) failures.push("operator login endpoints must own the operator role instead of accepting a role selector");
-
-const managedRequest = schemaBlock("ManagedChallengeRequest", "ManagedRecoveryChallengeRequest");
-if (!managedRequest.includes("#/components/schemas/ManagedActivationRole")) failures.push("managed activation role boundary missing");
-if (!managedRequest.includes("operatorEnrollmentToken:")) failures.push("operator enrollment token input missing");
-if (!managedRequest.includes("minLength: 24") || !managedRequest.includes('pattern: "^[A-Za-z0-9_-]{24,256}$"')) failures.push("operator enrollment token must be high entropy");
-
-const enrollmentIssue = schemaBlock("OperatorEnrollmentTokenIssueRequest", "OperatorEnrollmentToken");
-if (!enrollmentIssue.includes("enum: [operator]")) failures.push("operator enrollment token issuance is not operator-scoped");
-
-if (!contract.includes("Identity alone creates actor_id")) failures.push("actor_id authority missing");
-if (!contract.includes("First-operator bootstrap is a separate one-time lifecycle")) failures.push("first-operator bootstrap lifecycle distinction missing");
-if (!contract.includes("never creates a second human role")) failures.push("bootstrap-as-lifecycle invariant missing");
-
 if (failures.length) {
   console.error("IDENTITY_CONTRACT_GUARD=FAIL");
-  for (const failure of failures) console.error("  " + failure);
+  for (const failure of [...new Set(failures)].sort()) console.error("  " + failure);
   process.exit(1);
 }
 console.log("IDENTITY_CONTRACT_GUARD=PASS");

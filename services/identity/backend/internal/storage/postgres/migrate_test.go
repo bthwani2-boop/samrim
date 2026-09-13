@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV16Upgrade(t *testing.T) {
+func TestMigrationV13ToV17Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -341,28 +341,27 @@ func TestMigrationV13ToV16Upgrade(t *testing.T) {
 	}
 
 	// Apply migration 016 and prove the operator-only cutover is coherent.
-	var v16Name string
-	var v16Content []byte
+	var previousMigrationName string
+	var previousMigrationContent []byte
 	for _, file := range files {
 		if strings.HasPrefix(file.Name(), "016_") {
-			v16Name = file.Name()
-			v16Content, err = os.ReadFile(filepath.Join(migDir, v16Name))
+			previousMigrationName = file.Name()
+			previousMigrationContent, err = os.ReadFile(filepath.Join(migDir, previousMigrationName))
 			if err != nil {
 				t.Fatalf("read 016: %v", err)
 			}
 			break
 		}
 	}
-	if v16Name == "" {
+	if previousMigrationName == "" {
 		t.Fatal("migration 016 not found")
 	}
-	hash16 := sha256.Sum256(v16Content)
-	shaHex16 := hex.EncodeToString(hash16[:])
-	if err := postgres.Migrate(ctx, testDB, 16, v16Name, shaHex16, string(v16Content)); err != nil {
+	previousMigrationHash := sha256.Sum256(previousMigrationContent)
+	if err := postgres.Migrate(ctx, testDB, 16, previousMigrationName, hex.EncodeToString(previousMigrationHash[:]), string(previousMigrationContent)); err != nil {
 		t.Fatalf("apply migration 016 on v15 database: %v", err)
 	}
-	if v16, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || v16 != 16 {
-		t.Fatalf("expected schema version 16, got %d (err: %v)", v16, err)
+	if previousVersion, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || previousVersion != 16 {
+		t.Fatalf("expected schema version 16, got %d (err: %v)", previousVersion, err)
 	}
 
 	var bootstrapOperator string
@@ -423,10 +422,65 @@ func TestMigrationV13ToV16Upgrade(t *testing.T) {
 		t.Fatalf("credential count mismatch: got %d want 1", credCount)
 	}
 
+	// Apply migration 017 and prove the passkey/instance-binding cutover is
+	// forward-only: operator password artifacts and retired proof purposes are
+	// removed, while the new WebAuthn persistence boundary is present.
+	var v17Name string
+	var v17Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "017_") {
+			v17Name = file.Name()
+			v17Content, err = os.ReadFile(filepath.Join(migDir, v17Name))
+			if err != nil {
+				t.Fatalf("read 017: %v", err)
+			}
+			break
+		}
+	}
+	if v17Name == "" {
+		t.Fatal("migration 017 not found")
+	}
+	hash17 := sha256.Sum256(v17Content)
+	shaHex17 := hex.EncodeToString(hash17[:])
+	if err := postgres.Migrate(ctx, testDB, 17, v17Name, shaHex17, string(v17Content)); err != nil {
+		t.Fatalf("apply migration 017 on previous database: %v", err)
+	}
+	if v17, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || v17 != 17 {
+		t.Fatalf("expected schema version 17, got %d (err: %v)", v17, err)
+	}
+
+	var operatorCredentialCount, operatorAttemptCount, retiredChallengeCount int
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_password_credentials WHERE role='operator'").Scan(&operatorCredentialCount); err != nil {
+		t.Fatalf("query operator credentials after v17: %v", err)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_password_attempts WHERE role='operator'").Scan(&operatorAttemptCount); err != nil {
+		t.Fatalf("query operator password attempts after v17: %v", err)
+	}
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM identity_challenges WHERE purpose IN ('operator_mfa','managed_recover') OR (role='operator' AND purpose='managed_activate')").Scan(&retiredChallengeCount); err != nil {
+		t.Fatalf("query retired proof artifacts after v17: %v", err)
+	}
+	if operatorCredentialCount != 0 || operatorAttemptCount != 0 || retiredChallengeCount != 0 {
+		t.Fatalf("retired operator auth artifacts remain after v17: credentials=%d attempts=%d challenges=%d", operatorCredentialCount, operatorAttemptCount, retiredChallengeCount)
+	}
+	for _, table := range []string{"identity_webauthn_users", "identity_webauthn_credentials", "identity_webauthn_ceremonies", "identity_operator_recovery_credentials"} {
+		var exists bool
+		if err := testDB.QueryRowContext(ctx, "SELECT to_regclass('public."+table+"') IS NOT NULL").Scan(&exists); err != nil || !exists {
+			t.Fatalf("new passkey table missing after v17: %s (err: %v)", table, err)
+		}
+	}
+	var instanceColumnCount int
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM information_schema.columns WHERE table_name='identity_sessions' AND column_name='client_instance_id_hash'").Scan(&instanceColumnCount); err != nil || instanceColumnCount != 1 {
+		t.Fatalf("client_instance_id_hash column missing after v17: %v", err)
+	}
+	var oldInstanceColumnCount int
+	if err := testDB.QueryRowContext(ctx, "SELECT count(*) FROM information_schema.columns WHERE table_name='identity_sessions' AND column_name='device_fingerprint_hash'").Scan(&oldInstanceColumnCount); err != nil || oldInstanceColumnCount != 0 {
+		t.Fatalf("retired session binding column remains after v17: %d (err: %v)", oldInstanceColumnCount, err)
+	}
+
 	// Verify full postgres.Ready passes on this upgraded database.
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	t.Log("Migration v13 -> v16 upgrade, data preservation and operator-only cutover test PASSED successfully!")
+	t.Log("Migration v13 -> v17 upgrade, data preservation and passkey cutover test PASSED successfully!")
 }

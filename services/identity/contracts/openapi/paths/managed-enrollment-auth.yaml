@@ -1,0 +1,61 @@
+paths:
+  /auth/managed/activation/request:
+    post:
+      tags: [managed-auth]
+      operationId: requestManagedActivation
+      description: Partner, captain, and field activation requires admitted role plus phone proof.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedChallengeRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/managed/activate:
+    post:
+      tags: [managed-auth]
+      operationId: activateManagedRole
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedActivationRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/managed/login:
+    post:
+      tags: [managed-auth]
+      operationId: loginManagedRole
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ManagedPasswordLoginRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+
+  /internal/operator-enrollment-tokens:
+    post:
+      tags: [internal-actor-roles]
+      operationId: issueOperatorEnrollmentToken
+      security: [{ internalServiceToken: [] }]
+      description: Issues a single-use enrollment token for an already admitted, enabled operator role. The token is returned once, stored only as a digest, and never creates or grants a role.
+      parameters:
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OperatorEnrollmentTokenIssueRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/OperatorEnrollmentTokenIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }

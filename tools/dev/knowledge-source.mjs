@@ -123,7 +123,17 @@ export function ensureKnowledgeRoot({ materialize = true } = {}) {
     const fetched = runGit(["rev-parse", "FETCH_HEAD"], temp);
     if (fetched !== pin.commit) fail("fetched commit mismatch: expected=" + pin.commit + " observed=" + fetched);
     runGit(["checkout", "--quiet", "--detach", fetched], temp);
-    fs.renameSync(temp, root);
+    try {
+      fs.renameSync(temp, root);
+    } catch (error) {
+      // Windows can reject an otherwise valid directory rename when a
+      // scanner briefly holds a checkout entry. Keep the exact-SHA cache
+      // contract by copying only into the still-absent destination, then
+      // remove the bounded temporary checkout.
+      if (error?.code !== "EPERM" || fs.existsSync(root)) throw error;
+      fs.cpSync(temp, root, { recursive: true, errorOnExist: true, force: false });
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
   } catch (error) {
     fs.rmSync(temp, { recursive: true, force: true });
     throw error;

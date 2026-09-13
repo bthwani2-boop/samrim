@@ -63,7 +63,7 @@ func TestManagedRoleBoundary(t *testing.T) {
 }
 
 func TestManagedActivationRoleBoundary(t *testing.T) {
-	for _, role := range []string{"partner", "captain", "field", "operator"} {
+	for _, role := range []string{"partner", "captain", "field"} {
 		if !IsManagedActivationRole(role) {
 			t.Fatalf("expected managed activation role %s", role)
 		}

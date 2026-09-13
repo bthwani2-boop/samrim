@@ -1,6 +1,6 @@
 # Identity Contracts
 
-`identity.openapi.yaml` is the sole current Identity wire-contract authority.
+`openapi/identity.openapi.yaml` is the sole current Identity wire-contract authority. Its declared path modules are the only authored contract sources; generated clients are derived outputs.
 
 It preserves:
 
@@ -10,9 +10,9 @@ It preserves:
 - customer phone-verification + client-password registration/login/recovery;
 - one-time managed partner/captain/field activation after governed provisioning;
 - explicit DSH-authorized managed-role re-enrollment;
-- operator password proof plus a required second-factor challenge before session creation;
+- user-verified, discoverable Operator WebAuthn/Passkey authentication and governed re-enrollment;
 - credential-derived internal service identity.
 
-Forbidden residue includes universal OTP login, repeated managed activation as ordinary login, password-only operator sessions, username as a mandatory Identity convention, caller/context trust headers, consumer-authored actor IDs, generic grant/tenant/context objects and actor-global role arrays/permissions.
+Forbidden residue includes universal OTP login, repeated managed activation as ordinary login, Operator password/SMS normal-login fallback, username as a mandatory Identity convention, caller/context trust headers, consumer-authored actor IDs, generic grant/tenant/context objects and actor-global role arrays/permissions.
 
 Generated client lineage is deterministic from this contract.

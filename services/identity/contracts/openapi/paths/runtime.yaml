@@ -1,0 +1,19 @@
+paths:
+  /identity/health:
+    get:
+      operationId: identityHealth
+      responses:
+        "200":
+          description: Process health.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StatusResponse" } } }
+
+  /identity/readiness:
+    get:
+      operationId: identityReadiness
+      responses:
+        "200":
+          description: Canonical schema is ready.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StatusResponse" } } }
+        "503":
+          description: Canonical schema is not ready.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StatusResponse" } } }
