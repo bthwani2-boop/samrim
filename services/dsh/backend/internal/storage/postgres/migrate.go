@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 type MigrationRecord struct {
 	Version int
@@ -32,9 +32,9 @@ var requiredTables = []struct {
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},
 	{
 		name:        "dsh.stores",
-		columns:     []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at"},
-		constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk"},
-		indexes:     []string{"stores_partner_actor_idx"},
+		columns:     []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at"},
+		constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk"},
+		indexes:     []string{"stores_partner_actor_idx", "stores_publication_state_idx"},
 	},
 	{
 		name:        "dsh.partner_bootstrap_idempotency",
@@ -47,6 +47,18 @@ var requiredTables = []struct {
 		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "partner_actor_id", "store_id", "request_hash", "created_at"},
 		constraints: []string{"partner_bootstrap_audit_pkey", "partner_bootstrap_audit_event_type_chk", "partner_bootstrap_audit_event_idempotency_uq", "partner_bootstrap_audit_idempotency_facts_fk"},
 		indexes:     []string{"partner_bootstrap_audit_partner_idx"},
+	},
+	{
+		name:        "dsh.store_publication_idempotency",
+		columns:     []string{"idempotency_key", "request_hash", "store_id", "requested_state", "expected_version", "result_version", "result_state", "result_publication_changed_at", "result_updated_at", "created_at"},
+		constraints: []string{"store_publication_idempotency_pkey", "store_publication_idempotency_facts_uq", "store_publication_idempotency_state_chk", "store_publication_idempotency_store_fk"},
+		indexes:     []string{"store_publication_idempotency_store_idx"},
+	},
+	{
+		name:        "dsh.store_publication_audit",
+		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "store_id", "from_state", "to_state", "expected_version", "result_version", "request_hash", "requested_state", "created_at"},
+		constraints: []string{"store_publication_audit_pkey", "store_publication_audit_event_type_chk", "store_publication_audit_event_idempotency_uq", "store_publication_audit_idempotency_fk"},
+		indexes:     []string{"store_publication_audit_store_idx"},
 	},
 }
 
@@ -69,7 +81,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if strings.TrimSpace(directory) == "" {
 		return nil, nil, errors.New("DSH_MIGRATION_DIR is required")
 	}
-	names := []string{"001_partner_store_baseline.sql"}
+	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {

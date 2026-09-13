@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 
-import { isPartnerBootstrapNotFound, readOwnPartnerBootstrap } from "./store-readback";
+import { isPartnerBootstrapNotFound, readOwnPartnerBootstrap } from "./store-readback-client";
 
 export function StoreReadback() {
   const [state, setState] = useState<
@@ -27,7 +27,8 @@ export function StoreReadback() {
     <View>
       <Text>المتجر الأول</Text>
       <Text>{state.value.firstStore.name}</Text>
-      <Text>الحالة: مقروءة من DSH</Text>
+      <Text>حالة النشر: {state.value.firstStore.publicationState}</Text>
+      <Text>الإصدار الكانوني: {state.value.firstStore.version}</Text>
     </View>
   );
 }

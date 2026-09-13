@@ -220,6 +220,30 @@ for (const service of serviceNames) {
       assert(materialLaneFiles.length > 0, service + " has an empty admitted lane: " + lane);
     }
   }
+
+  const flatOpenApiEntrypoint = base + `contracts/${service}.openapi.yaml`;
+  const modularOpenApiEntrypoint = base + `contracts/openapi/${service}.openapi.yaml`;
+  const hasFlatOpenApi = trackedSet.has(flatOpenApiEntrypoint);
+  const hasModularOpenApi = trackedSet.has(modularOpenApiEntrypoint);
+  const modularOpenApiFiles = tracked.filter((item) => item.startsWith(base + "contracts/openapi/"));
+  const bundledOpenApi = base + `contracts/generated/${service}.openapi.bundle.yaml`;
+
+  assert(
+    !(hasFlatOpenApi && hasModularOpenApi),
+    service + " must have at most one authored OpenAPI entrypoint: flat or modular",
+  );
+  if (modularOpenApiFiles.length > 0) {
+    assert(
+      hasModularOpenApi,
+      service + " modular OpenAPI tree requires canonical entrypoint: " + modularOpenApiEntrypoint,
+    );
+  }
+  if (trackedSet.has(bundledOpenApi)) {
+    assert(
+      Number(hasFlatOpenApi) + Number(hasModularOpenApi) === 1,
+      service + " tracked OpenAPI bundle requires exactly one authored canonical OpenAPI entrypoint",
+    );
+  }
 }
 
 const dshMigrationFiles = tracked.filter((item) => /^services\/dsh\/.*\.sql$/i.test(item));
@@ -315,6 +339,7 @@ console.log("DISCOVERED_SERVICES=" + serviceNames.join(","));
 console.log("DISCOVERED_PACKAGES=" + packageNames.join(","));
 console.log("DIRECT_DEPLOYABLE_HOST_ROOTS=PASS");
 console.log("ROUTER_ROOT_ATOMICITY=PASS");
+console.log("SERVICE_OPENAPI_SOURCE_ATOMICITY=PASS");
 console.log("SERVICE_TO_APP_DEPENDENCIES=0");
 console.log("SERVICE_FRONTEND_TREES=0");
 console.log("ROOT_CONTRACT_PLACEMENT=PASS");

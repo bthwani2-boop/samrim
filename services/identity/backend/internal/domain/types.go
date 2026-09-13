@@ -227,7 +227,7 @@ func CanReadRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch caller {
 	case "dsh":
-		return IsManagedRole(role)
+		return IsManagedRole(role) || role == "operator"
 	case "control-panel":
 		return role == "client" || role == "operator"
 	default:

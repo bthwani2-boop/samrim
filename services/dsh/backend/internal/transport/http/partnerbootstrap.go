@@ -137,11 +137,8 @@ func writeBootstrap(w http.ResponseWriter, status int, record postgres.Bootstrap
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(contract.PartnerBootstrapResponse{
-		PartnerActorID: record.PartnerActorID,
-		FirstStore: contract.StoreView{
-			ID: record.Store.ID, PartnerActorID: record.Store.PartnerActorID, Name: record.Store.Name,
-			Version: record.Store.Version, CreatedAt: record.Store.CreatedAt, UpdatedAt: record.Store.UpdatedAt,
-		},
+		PartnerActorID:   record.PartnerActorID,
+		FirstStore:       toStoreView(record.Store),
 		IdempotentReplay: record.Replayed,
 	})
 }

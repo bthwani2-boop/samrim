@@ -88,3 +88,11 @@ func toRoleView(view identityclient.ActorRoleView) contract.ActorRoleView {
 		ActorCreated: view.ActorCreated, RoleCreated: view.RoleCreated,
 	}
 }
+
+func toStoreView(store postgres.StoreRecord) contract.StoreView {
+	return contract.StoreView{
+		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, Version: store.Version,
+		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
+		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
+	}
+}

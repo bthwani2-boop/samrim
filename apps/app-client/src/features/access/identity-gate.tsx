@@ -25,6 +25,7 @@ import {
   restoreIdentitySession,
 } from "../../bootstrap/identity";
 import { identityPresentation, type IdentityCopy } from "./identity-presentation";
+import StoreDiscovery from "../store-discovery/store-discovery";
 
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
@@ -215,6 +216,7 @@ export default function IdentityGate() {
       <View style={styles.container}>
         <Text style={styles.title}>{copy.brand}</Text>
         <Text style={styles.status}>{copy.authenticatedStatus}</Text>
+        <StoreDiscovery />
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <Pressable
           accessibilityRole="button"

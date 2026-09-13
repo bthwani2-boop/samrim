@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -104,8 +105,73 @@ func TestFreshBaselineIntegrity(t *testing.T) {
 				t.Fatalf("read %s: %v", check.name, err)
 			}
 		}
-		if stores != 1 || idempotency != 1 || audit != 1 || history != 1 {
+		if stores != 1 || idempotency != 1 || audit != 1 || history != postgres.SchemaVersion {
 			t.Fatalf("unexpected baseline readback: stores=%d idempotency=%d audit=%d history=%d", stores, idempotency, audit, history)
+		}
+
+		publishHash := postgres.HashStorePublicationRequest(testStoreID, "published", 1)
+		published, err := postgres.SetStorePublication(ctx, db, testStoreID, "published", 1, "idem_store_publish", publishHash, "act_operator_dsh_baseline", "corr-publish-baseline")
+		if err != nil {
+			t.Fatalf("publish canonical Store: %v", err)
+		}
+		if published.Replayed || published.Store.PublicationState != "published" || published.Store.Version != 2 || published.Store.PublicationChangedAt == nil {
+			t.Fatalf("unexpected Store publication result: %+v", published)
+		}
+		visible, err := postgres.ListPublishedStores(ctx, db)
+		if err != nil {
+			t.Fatalf("list published Stores: %v", err)
+		}
+		if len(visible) != 1 || visible[0].ID != testStoreID {
+			t.Fatalf("unexpected published Store list: %+v", visible)
+		}
+		publicStore, err := postgres.ReadPublishedStore(ctx, db, testStoreID)
+		if err != nil {
+			t.Fatalf("read published Store: %v", err)
+		}
+		if publicStore.ID != testStoreID || publicStore.Name != "Baseline Store" || publicStore.Version != 2 {
+			t.Fatalf("unexpected published Store readback: %+v", publicStore)
+		}
+
+		replay, err := postgres.SetStorePublication(ctx, db, testStoreID, "published", 1, "idem_store_publish", publishHash, "act_operator_dsh_baseline", "corr-publish-retry")
+		if err != nil {
+			t.Fatalf("replay Store publication: %v", err)
+		}
+		if !replay.Replayed || replay.Store.Version != 2 || replay.Store.PublicationState != "published" {
+			t.Fatalf("unexpected Store publication replay: %+v", replay)
+		}
+		if _, err := postgres.SetStorePublication(ctx, db, testStoreID, "hidden", 1, "idem_store_publish", postgres.HashStorePublicationRequest(testStoreID, "hidden", 1), "act_operator_dsh_baseline", "corr-publish-conflict"); !errors.Is(err, postgres.ErrPublicationIdempotencyConflict) {
+			t.Fatalf("expected publication idempotency conflict, got %v", err)
+		}
+		if _, err := postgres.SetStorePublication(ctx, db, testStoreID, "hidden", 1, "idem_store_stale", postgres.HashStorePublicationRequest(testStoreID, "hidden", 1), "act_operator_dsh_baseline", "corr-publish-stale"); !errors.Is(err, postgres.ErrPublicationVersionConflict) {
+			t.Fatalf("expected publication version conflict, got %v", err)
+		}
+
+		hidden, err := postgres.SetStorePublication(ctx, db, testStoreID, "hidden", 2, "idem_store_hide", postgres.HashStorePublicationRequest(testStoreID, "hidden", 2), "act_operator_dsh_baseline", "corr-hide-baseline")
+		if err != nil {
+			t.Fatalf("hide canonical Store: %v", err)
+		}
+		if hidden.Replayed || hidden.Store.PublicationState != "hidden" || hidden.Store.Version != 3 {
+			t.Fatalf("unexpected Store hide result: %+v", hidden)
+		}
+		if _, err := postgres.ReadPublishedStore(ctx, db, testStoreID); !errors.Is(err, postgres.ErrStoreNotFound) {
+			t.Fatalf("hidden Store remained publicly readable: %v", err)
+		}
+		visible, err = postgres.ListPublishedStores(ctx, db)
+		if err != nil {
+			t.Fatalf("list Stores after hide: %v", err)
+		}
+		if len(visible) != 0 {
+			t.Fatalf("hidden Store remained in public discovery: %+v", visible)
+		}
+		var publicationIdempotency, publicationAudit int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_publication_idempotency").Scan(&publicationIdempotency); err != nil {
+			t.Fatalf("read publication idempotency count: %v", err)
+		}
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM dsh.store_publication_audit").Scan(&publicationAudit); err != nil {
+			t.Fatalf("read publication audit count: %v", err)
+		}
+		if publicationIdempotency != 2 || publicationAudit != 2 {
+			t.Fatalf("unexpected publication audit readback: idempotency=%d audit=%d", publicationIdempotency, publicationAudit)
 		}
 	})
 }
@@ -140,7 +206,7 @@ func withFreshDatabase(t *testing.T, rootDB *sql.DB, databaseURL string, test fu
 	if err := testDB.PingContext(ctx); err != nil {
 		t.Fatalf("isolated DSH database is not reachable: %v", err)
 	}
-	migrationDirectory := filepath.Join("..", "..", "..", "database", "migrations")
+	migrationDirectory := filepath.Join("..", "..", "..", "..", "database", "migrations")
 	records, migrationSQL, err := postgres.LoadMigrations(migrationDirectory)
 	if err != nil {
 		t.Fatalf("load DSH canonical migrations from %s: %v", migrationDirectory, err)

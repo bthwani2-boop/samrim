@@ -39,10 +39,10 @@ func TestTrustedCallerProvisionBoundary(t *testing.T) {
 }
 
 func TestTrustedCallerOperationBoundaries(t *testing.T) {
-	if !CanReadRole("control-panel", "client") || !CanReadRole("dsh", "partner") {
+	if !CanReadRole("control-panel", "client") || !CanReadRole("dsh", "partner") || !CanReadRole("dsh", "operator") {
 		t.Fatal("expected role reads inside caller boundaries")
 	}
-	for _, pair := range [][2]string{{"dsh", "operator"}, {"browser", "operator"}} {
+	for _, pair := range [][2]string{{"browser", "operator"}} {
 		if CanReadRole(pair[0], pair[1]) {
 			t.Fatalf("unexpected role read: %s for %s", pair[0], pair[1])
 		}

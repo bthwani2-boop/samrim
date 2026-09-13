@@ -40,9 +40,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	storePublication, err := transporthttp.NewStorePublication(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	register := func(mux *http.ServeMux) {
 		managedAccess.Register(mux)
 		partnerBootstrap.Register(mux)
+		storePublication.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
 		if err := postgres.VerifySchema(ctx, database, records); err != nil {

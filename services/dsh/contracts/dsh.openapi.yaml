@@ -130,6 +130,99 @@ paths:
         "502":
           $ref: "#/components/responses/DependencyUnavailable"
 
+  /dsh/stores/{storeId}/publication:
+    get:
+      operationId: readStorePublication
+      summary: Read canonical Store publication state for a control operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/ActingActorIdRequired"
+        - $ref: "#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: Canonical Store publication readback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorePublicationResponse"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/DependencyUnavailable"
+    post:
+      operationId: setStorePublication
+      summary: Apply an idempotent, versioned Store publication transition
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationIdRequired"
+        - $ref: "#/components/parameters/ActingActorIdRequired"
+        - $ref: "#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "#/components/parameters/ExpectedVersionRequired"
+        - $ref: "#/components/parameters/StoreId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StorePublicationRequest"
+      responses:
+        "200":
+          description: Canonical Store publication result, including idempotent replay state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorePublicationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "502":
+          $ref: "#/components/responses/DependencyUnavailable"
+
+  /dsh/public/stores:
+    get:
+      operationId: listPublishedStores
+      summary: List only client-visible published Stores
+      responses:
+        "200":
+          description: Published Store discovery result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishedStoreListResponse"
+        "502":
+          $ref: "#/components/responses/DependencyUnavailable"
+
+  /dsh/public/stores/{storeId}:
+    get:
+      operationId: readPublishedStore
+      summary: Read one client-visible published Store
+      parameters:
+        - $ref: "#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: Published Store detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicStoreView"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          $ref: "#/components/responses/DependencyUnavailable"
+
   /dsh/managed-roles/provision:
     post:
       operationId: provisionManagedRole
@@ -336,6 +429,14 @@ components:
       schema:
         type: integer
         minimum: 1
+    StoreId:
+      name: storeId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
 
   schemas:
     StatusResponse:
@@ -401,7 +502,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, version, createdAt, updatedAt]
+      required: [id, partnerActorId, name, version, publicationState, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -413,12 +514,76 @@ components:
         version:
           type: integer
           minimum: 1
+        publicationState:
+          $ref: "#/components/schemas/PublicationState"
+        publicationChangedAt:
+          type: string
+          format: date-time
+          nullable: true
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
+
+    PublicationState:
+      type: string
+      enum: [unpublished, published, hidden]
+
+    PublicationAction:
+      type: string
+      enum: [published, hidden]
+
+    StorePublicationRequest:
+      type: object
+      required: [state]
+      additionalProperties: false
+      properties:
+        state:
+          $ref: "#/components/schemas/PublicationAction"
+
+    StorePublicationResponse:
+      type: object
+      required: [store, idempotentReplay]
+      additionalProperties: false
+      properties:
+        store:
+          $ref: "#/components/schemas/StoreView"
+        idempotentReplay:
+          type: boolean
+
+    PublicStoreView:
+      type: object
+      required: [id, name, version, publishedAt, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        publishedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PublishedStoreListResponse:
+      type: object
+      required: [stores]
+      additionalProperties: false
+      properties:
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicStoreView"
 
     PartnerBootstrapResponse:
       type: object

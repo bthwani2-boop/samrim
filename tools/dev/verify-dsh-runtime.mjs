@@ -83,14 +83,23 @@ for (const endpoint of ["/dsh/health", "/dsh/readiness"]) {
   if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body));
 }
 
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "1", "DSH baseline migration history is not exact");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "2", "DSH migration history is not exact");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=1", "001_partner_store_baseline.sql", "DSH baseline migration name is not canonical");
+expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=2", "002_store_publication.sql", "DSH Store publication migration name is not canonical");
 for (const [table, constraint] of [
   ["dsh.schema_migrations", "schema_migrations_pkey"],
   ["dsh.stores", "stores_pkey"],
   ["dsh.stores", "stores_id_partner_actor_uq"],
   ["dsh.stores", "stores_name_length_chk"],
   ["dsh.stores", "stores_version_positive_chk"],
+  ["dsh.stores", "stores_publication_state_chk"],
+  ["dsh.store_publication_idempotency", "store_publication_idempotency_pkey"],
+  ["dsh.store_publication_idempotency", "store_publication_idempotency_facts_uq"],
+  ["dsh.store_publication_idempotency", "store_publication_idempotency_store_fk"],
+  ["dsh.store_publication_audit", "store_publication_audit_pkey"],
+  ["dsh.store_publication_audit", "store_publication_audit_event_type_chk"],
+  ["dsh.store_publication_audit", "store_publication_audit_event_idempotency_uq"],
+  ["dsh.store_publication_audit", "store_publication_audit_idempotency_fk"],
   ["dsh.partner_bootstrap_idempotency", "partner_bootstrap_idempotency_pkey"],
   ["dsh.partner_bootstrap_idempotency", "partner_bootstrap_idempotency_facts_uq"],
   ["dsh.partner_bootstrap_idempotency", "partner_bootstrap_idempotency_store_partner_fk"],
@@ -107,8 +116,11 @@ for (const [table, constraint] of [
 }
 for (const [table, index] of [
   ["stores", "stores_partner_actor_idx"],
+  ["stores", "stores_publication_state_idx"],
   ["partner_bootstrap_idempotency", "partner_bootstrap_idempotency_partner_idx"],
   ["partner_bootstrap_audit", "partner_bootstrap_audit_partner_idx"],
+  ["store_publication_idempotency", "store_publication_idempotency_store_idx"],
+  ["store_publication_audit", "store_publication_audit_store_idx"],
 ]) {
   expectSQL(
     `SELECT count(*) FROM pg_indexes WHERE schemaname='dsh' AND tablename='${table}' AND indexname='${index}'`,
@@ -155,6 +167,70 @@ if (provisioned.status !== 201 || provisioned.body?.role !== "captain" || !provi
 
 const status = await request(dshBase, "GET", `/dsh/managed-roles/status?phoneE164=${encodeURIComponent(phone)}&role=captain`, { token: dshToken });
 if (status.status !== 200 || status.body?.actorId !== provisioned.body.actorId) fail("DSH managed role readback failed", JSON.stringify(status));
+
+const runtimeStoreID = "store_dsh_publication_runtime";
+const runtimePartnerID = "act_dsh_publication_runtime";
+sql(`DELETE FROM dsh.store_publication_audit WHERE store_id='${runtimeStoreID}'`);
+sql(`DELETE FROM dsh.store_publication_idempotency WHERE store_id='${runtimeStoreID}'`);
+sql(`DELETE FROM dsh.stores WHERE id='${runtimeStoreID}'`);
+sql(`INSERT INTO dsh.stores(id, partner_actor_id, name) VALUES('${runtimeStoreID}', '${runtimePartnerID}', 'Runtime Publication Store')`);
+
+const publicBefore = await request(dshBase, "GET", "/dsh/public/stores");
+if (publicBefore.status !== 200 || publicBefore.body?.stores?.some((store) => store.id === runtimeStoreID)) fail("unpublished Store leaked into public discovery", JSON.stringify(publicBefore.body));
+const missingServiceAuth = await request(dshBase, "POST", `/dsh/stores/${runtimeStoreID}/publication`, {
+  headers: { "X-Acting-Actor-ID": actingOperatorID, "X-Correlation-ID": "dsh-publication-auth" , "X-Expected-Version": "1", "Idempotency-Key": "dsh-pub-auth-1" },
+  body: { state: "published" },
+});
+if (missingServiceAuth.status !== 401) fail("Store publication did not require service authentication", String(missingServiceAuth.status));
+
+const publicationHeaders = {
+  "X-Acting-Actor-ID": actingOperatorID,
+  "X-Correlation-ID": "dsh-publication-" + Date.now(),
+  "X-Expected-Version": "1",
+  "Idempotency-Key": "dsh-publication-runtime-1",
+};
+const published = await request(dshBase, "POST", `/dsh/stores/${runtimeStoreID}/publication`, {
+  token: dshToken,
+  headers: publicationHeaders,
+  body: { state: "published" },
+});
+if (published.status !== 200 || published.body?.store?.publicationState !== "published" || published.body?.store?.version !== 2 || published.body?.idempotentReplay !== false) fail("canonical Store publication failed", JSON.stringify(published));
+const replayed = await request(dshBase, "POST", `/dsh/stores/${runtimeStoreID}/publication`, {
+  token: dshToken,
+  headers: publicationHeaders,
+  body: { state: "published" },
+});
+if (replayed.status !== 200 || replayed.body?.idempotentReplay !== true || replayed.body?.store?.version !== 2) fail("identical Store publication retry did not replay", JSON.stringify(replayed));
+const divergentRetry = await request(dshBase, "POST", `/dsh/stores/${runtimeStoreID}/publication`, {
+  token: dshToken,
+  headers: { ...publicationHeaders, "X-Correlation-ID": "dsh-publication-conflict", "X-Expected-Version": "1" },
+  body: { state: "hidden" },
+});
+if (divergentRetry.status !== 409 || divergentRetry.body?.error?.code !== "IDEMPOTENCY_CONFLICT") fail("divergent publication retry was accepted", JSON.stringify(divergentRetry));
+const staleTransition = await request(dshBase, "POST", `/dsh/stores/${runtimeStoreID}/publication`, {
+  token: dshToken,
+  headers: { ...publicationHeaders, "X-Correlation-ID": "dsh-publication-stale", "X-Expected-Version": "1", "Idempotency-Key": "dsh-publication-runtime-stale" },
+  body: { state: "hidden" },
+});
+if (staleTransition.status !== 409 || staleTransition.body?.error?.code !== "VERSION_CONFLICT") fail("stale publication transition was accepted", JSON.stringify(staleTransition));
+const publicAfterPublish = await request(dshBase, "GET", "/dsh/public/stores");
+if (publicAfterPublish.status !== 200 || !publicAfterPublish.body?.stores?.some((store) => store.id === runtimeStoreID) || publicAfterPublish.body.stores.find((store) => store.id === runtimeStoreID)?.partnerActorId) fail("published Store discovery readback was incomplete or leaked private scope", JSON.stringify(publicAfterPublish.body));
+const publicDetail = await request(dshBase, "GET", `/dsh/public/stores/${runtimeStoreID}`);
+if (publicDetail.status !== 200 || publicDetail.body?.id !== runtimeStoreID || publicDetail.body?.partnerActorId) fail("published Store detail readback failed", JSON.stringify(publicDetail.body));
+const privateRead = await request(dshBase, "GET", `/dsh/stores/${runtimeStoreID}/publication`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (privateRead.status !== 200 || privateRead.body?.store?.publicationState !== "published") fail("operator Store publication readback failed", JSON.stringify(privateRead.body));
+const hidden = await request(dshBase, "POST", `/dsh/stores/${runtimeStoreID}/publication`, {
+  token: dshToken,
+  headers: { ...publicationHeaders, "X-Correlation-ID": "dsh-publication-hide", "X-Expected-Version": "2", "Idempotency-Key": "dsh-publication-runtime-hide" },
+  body: { state: "hidden" },
+});
+if (hidden.status !== 200 || hidden.body?.store?.publicationState !== "hidden" || hidden.body?.store?.version !== 3) fail("canonical Store hide failed", JSON.stringify(hidden));
+const publicAfterHide = await request(dshBase, "GET", `/dsh/public/stores/${runtimeStoreID}`);
+if (publicAfterHide.status !== 404) fail("hidden Store remained publicly readable", JSON.stringify(publicAfterHide.body));
+sql(`DELETE FROM dsh.store_publication_audit WHERE store_id='${runtimeStoreID}'`);
+sql(`DELETE FROM dsh.store_publication_idempotency WHERE store_id='${runtimeStoreID}'`);
+sql(`DELETE FROM dsh.stores WHERE id='${runtimeStoreID}'`);
+console.log("DSH_STORE_PUBLICATION=PASS");
 
 console.log("DSH_RUNTIME=PASS");
 console.log(`ACTING_OPERATOR_ID=${actingOperatorID}`);

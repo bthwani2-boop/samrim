@@ -1,6 +1,6 @@
 "use client";
 
-import type { PartnerBootstrapResponse } from "@bthwani/dsh";
+import type { PartnerBootstrapResponse, StorePublicationResponse } from "@bthwani/dsh";
 import { useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 
@@ -9,8 +9,11 @@ export function PartnerBootstrapPanel() {
   const [storeName, setStoreName] = useState("");
   const [idempotencyKey, setIdempotencyKey] = useState("");
   const [result, setResult] = useState<PartnerBootstrapResponse | null>(null);
+  const [publication, setPublication] = useState<StorePublicationResponse | null>(null);
   const [busy, setBusy] = useState(false);
+  const [publicationBusy, setPublicationBusy] = useState(false);
   const [error, setError] = useState("");
+  const [publicationError, setPublicationError] = useState("");
 
   async function submit() {
     const phone = partnerPhone.trim();
@@ -33,7 +36,10 @@ export function PartnerBootstrapPanel() {
         setError(await partnerErrorMessage(response));
         return;
       }
-      setResult(await response.json() as PartnerBootstrapResponse);
+      const next = await response.json() as PartnerBootstrapResponse;
+      setResult(next);
+      setPublication({ store: next.firstStore, idempotentReplay: next.idempotentReplay });
+      setPublicationError("");
     } catch {
       setError("تعذر الوصول إلى مسار تهيئة الشريك.");
     } finally {
@@ -43,8 +49,53 @@ export function PartnerBootstrapPanel() {
 
   function resetRequest() {
     setResult(null);
+    setPublication(null);
     setError("");
+    setPublicationError("");
     setIdempotencyKey("");
+  }
+
+  async function readPublication() {
+    if (!result) return;
+    setPublicationBusy(true);
+    setPublicationError("");
+    try {
+      const response = await fetch(`/api/stores/${encodeURIComponent(result.firstStore.id)}/publication`, { cache: "no-store" });
+      if (!response.ok) {
+        setPublicationError(await partnerErrorMessage(response));
+        return;
+      }
+      setPublication(await response.json() as StorePublicationResponse);
+    } catch {
+      setPublicationError("تعذر إعادة قراءة حالة النشر الكانونية.");
+    } finally {
+      setPublicationBusy(false);
+    }
+  }
+
+  async function changePublication() {
+    if (!result || !publication) return;
+    const state = publication.store.publicationState === "published" ? "hidden" : "published";
+    setPublicationBusy(true);
+    setPublicationError("");
+    try {
+      const response = await fetch(`/api/stores/${encodeURIComponent(result.firstStore.id)}/publication`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ state, expectedVersion: publication.store.version }),
+      });
+      if (!response.ok) {
+        const message = await partnerErrorMessage(response);
+        await readPublication();
+        setPublicationError(message);
+        return;
+      }
+      setPublication(await response.json() as StorePublicationResponse);
+    } catch {
+      setPublicationError("تعذر تنفيذ تغيير النشر. أعد قراءة الحالة قبل المحاولة مرة أخرى.");
+    } finally {
+      setPublicationBusy(false);
+    }
   }
 
   return (
@@ -73,9 +124,22 @@ export function PartnerBootstrapPanel() {
           <strong>{result.idempotentReplay ? "تمت إعادة قراءة النتيجة الكانونية" : "تم إنشاء التهيئة الكانونية"}</strong>
           <p>Partner actor: <code>{result.partnerActorId}</code></p>
           <p>Store: <code>{result.firstStore.id}</code> · {result.firstStore.name}</p>
+          {publication ? (
+            <div className="managed-status managed-status-info">
+              <strong>حالة النشر الكانونية: {publication.store.publicationState}</strong>
+              <p>الإصدار الحالي: <code>{publication.store.version}</code></p>
+              <button type="button" className="button button-primary" disabled={publicationBusy} onClick={() => void changePublication()}>
+                {publicationBusy ? "جارٍ تحديث النشر…" : publication.store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}
+              </button>
+              <button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>
+                إعادة قراءة الحالة
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
+      {publicationError ? <p className="identity-error" role="alert">{publicationError}</p> : null}
     </section>
   );
 }

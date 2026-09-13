@@ -11,11 +11,15 @@ function verifyPartnerModel() {
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/partner_bootstrap.go",
+    "services/dsh/backend/internal/storage/postgres/store_publication.go",
+    "services/dsh/backend/internal/storepublication/service.go",
     "services/dsh/backend/internal/transport/http/partnerbootstrap.go",
+    "services/dsh/backend/internal/transport/http/storepublication.go",
     "apps/control-panel/app/(workspace)/partners/page.tsx",
     "apps/control-panel/src/features/partner-onboarding/partner-bootstrap-panel.tsx",
     "apps/control-panel/tests/live-identity.spec.ts",
     "apps/app-partner/src/features/partner-onboarding/store-readback.tsx",
+    "apps/app-client/src/features/store-discovery/store-discovery.tsx",
   ];
   for (const relative of requiredFiles) {
     const absolute = path.join(root, ...relative.split("/"));
@@ -55,7 +59,8 @@ function verifyPartnerModel() {
   const contract = fs.readFileSync(path.join(root, "services/dsh/contracts/dsh.openapi.yaml"), "utf8");
   for (const required of [
     "required: [partnerActorId, firstStore, idempotentReplay]",
-    "required: [id, partnerActorId, name, version, createdAt, updatedAt]",
+    "required: [id, partnerActorId, name, version, publicationState, createdAt, updatedAt]",
+    "required: [id, name, version, publishedAt, createdAt, updatedAt]",
   ]) {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
   }
@@ -76,6 +81,22 @@ function verifyPartnerModel() {
   ]) {
     if (!migration.includes(required)) failures.push(`DSH baseline missing canonical integrity constraint: ${required}`);
   }
+  const publicationMigrationPath = path.join(root, "services/dsh/database/migrations/002_store_publication.sql");
+  if (!fs.existsSync(publicationMigrationPath)) failures.push("DSH Store publication migration is missing");
+  const publicationMigration = fs.existsSync(publicationMigrationPath) ? fs.readFileSync(publicationMigrationPath, "utf8") : "";
+  for (const required of [
+    "publication_state text NOT NULL DEFAULT 'unpublished'",
+    "store_publication_idempotency",
+    "store_publication_audit",
+    "store_publication_audit_event_idempotency_uq",
+  ]) {
+    if (!publicationMigration.includes(required)) failures.push(`DSH Store publication migration missing canonical invariant: ${required}`);
+  }
+  const publicViewStart = contract.indexOf("    PublicStoreView:");
+  const publicViewEnd = contract.indexOf("    PublishedStoreListResponse:", publicViewStart);
+  const publicView = publicViewStart >= 0 && publicViewEnd > publicViewStart ? contract.slice(publicViewStart, publicViewEnd) : "";
+  if (publicView.includes("partnerActorId")) failures.push("PublicStoreView leaks private partnerActorId scope");
+  if (!contract.includes("/dsh/public/stores:") || !contract.includes("/dsh/stores/{storeId}/publication:")) failures.push("DSH publication and public discovery paths are missing");
 
   if (failures.length) {
     console.error("PARTNER_MODEL=FAIL");

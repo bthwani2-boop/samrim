@@ -30,6 +30,7 @@ const fileEnv = readEnv(envFile);
 const runtimeEnv = { ...process.env, ...fileEnv };
 const controlOrigin = required(fileEnv, "CONTROL_PANEL_PUBLIC_ORIGIN");
 const identityBase = required(fileEnv, "IDENTITY_API_BASE_URL");
+const dshBase = required(fileEnv, "DSH_API_BASE_URL");
 const mailpitPort = required(fileEnv, "SAMRIM_MAILPIT_WEB_PORT");
 const bootstrapToken = required(fileEnv, "OPERATOR_BOOTSTRAP_SECRET");
 const composeArgs = [
@@ -43,6 +44,7 @@ const composeArgs = [
 ];
 runtimeEnv.PLAYWRIGHT_BASE_URL = controlOrigin;
 runtimeEnv.PLAYWRIGHT_IDENTITY_API_BASE_URL = identityBase;
+runtimeEnv.PLAYWRIGHT_DSH_API_BASE_URL = dshBase;
 runtimeEnv.PLAYWRIGHT_MAILPIT_BASE_URL = `http://127.0.0.1:${mailpitPort}`;
 runtimeEnv.PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN = bootstrapToken;
 delete runtimeEnv.PLAYWRIGHT_LIVE_IDENTITY;
@@ -50,7 +52,7 @@ delete runtimeEnv.PLAYWRIGHT_LIVE_IDENTITY;
 const checks = [
   ["Identity exact schema", "docker", [...composeArgs, "exec", "-T", "identity", "/schema-verify"], runtimeEnv],
   ["DSH exact schema", "docker", [...composeArgs, "exec", "-T", "dsh", "/schema-verify"], runtimeEnv],
-  ["Control Panel browser shell", pnpm, ["--dir", "apps/control-panel", "test:e2e"], runtimeEnv],
+  ["Control Panel browser shell (deterministic single-worker)", pnpm, ["--dir", "apps/control-panel", "exec", "playwright", "test", "--config", "playwright.config.ts", "--workers=1"], runtimeEnv],
   ["Control Panel live Identity browser", pnpm, ["--dir", "apps/control-panel", "test:e2e:live"], { ...runtimeEnv, PLAYWRIGHT_LIVE_IDENTITY: "1" }],
   ["Identity migration v13 to v16", process.execPath, ["tools/dev/verify-migration-v13-to-v16.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH fresh baseline integrity", process.execPath, ["tools/dev/verify-dsh-baseline.mjs", `--env-file=${envFile}`], runtimeEnv],

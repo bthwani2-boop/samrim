@@ -1,5 +1,5 @@
 import { validateServiceUrl, type ManagedActivationRole } from "@bthwani/identity";
-import { type ActorRoleView, type CreatePartnerBootstrapRequest, type ManagedRole, type ManagedRoleStatusResponse, type PartnerBootstrapResponse, dshOperationPaths } from "@bthwani/dsh";
+import { type ActorRoleView, type CreatePartnerBootstrapRequest, type ManagedRole, type ManagedRoleStatusResponse, type PartnerBootstrapResponse, type PublicationAction, type StorePublicationRequest, type StorePublicationResponse, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -16,6 +16,12 @@ export type DshVersionedMutationContext = DshAttributedMutationContext & Readonl
 }>;
 export type PartnerBootstrapMutationContext = DshAttributedMutationContext & Readonly<{
   idempotencyKey: string;
+}>;
+export type StorePublicationMutationContext = DshVersionedMutationContext & Readonly<{
+  idempotencyKey: string;
+}>;
+export type DshOperatorReadContext = Readonly<{
+  operatorActorId: string;
 }>;
 
 const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field"]);
@@ -114,6 +120,85 @@ export async function createPartnerBootstrap(
       throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
     }
     return { status: response.status, payload: await response.json() as PartnerBootstrapResponse };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function readStorePublication(
+  storeId: string,
+  context: DshOperatorReadContext,
+): Promise<StorePublicationResponse> {
+  if (!storeId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_PUBLICATION_READ_INPUT_INVALID");
+  const baseUrl = dshBaseUrl();
+  const token = dshToken();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    let response: Response;
+    try {
+      const path = dshOperationPaths.readStorePublication.path.replace("{storeId}", encodeURIComponent(storeId.trim()));
+      response = await fetch(`${baseUrl}${path}`, {
+        method: dshOperationPaths.readStorePublication.method,
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Acting-Actor-ID": context.operatorActorId.trim(),
+        },
+        signal: controller.signal,
+      });
+    } catch (error) {
+      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
+    }
+    if (!response.ok) {
+      const parsed = parseErrorPayload(await response.json().catch(() => null));
+      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
+    }
+    return await response.json() as StorePublicationResponse;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function setStorePublication(
+  storeId: string,
+  state: PublicationAction,
+  context: StorePublicationMutationContext,
+): Promise<Readonly<{ status: number; payload: StorePublicationResponse }>> {
+  if (!storeId.trim() || !["published", "hidden"].includes(state)) throw new Error("DSH_PUBLICATION_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_PUBLICATION_IDEMPOTENCY_INVALID");
+  const input: StorePublicationRequest = { state };
+  const baseUrl = dshBaseUrl();
+  const token = dshToken();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    let response: Response;
+    try {
+      const path = dshOperationPaths.setStorePublication.path.replace("{storeId}", encodeURIComponent(storeId.trim()));
+      response = await fetch(`${baseUrl}${path}`, {
+        method: dshOperationPaths.setStorePublication.method,
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Acting-Actor-ID": context.operatorActorId.trim(),
+          "X-Correlation-ID": context.correlationId.trim(),
+          "X-Expected-Version": String(context.expectedVersion),
+          "Idempotency-Key": context.idempotencyKey.trim(),
+        },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
+    }
+    if (!response.ok) {
+      const parsed = parseErrorPayload(await response.json().catch(() => null));
+      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
+    }
+    return { status: response.status, payload: await response.json() as StorePublicationResponse };
   } finally {
     clearTimeout(timeout);
   }

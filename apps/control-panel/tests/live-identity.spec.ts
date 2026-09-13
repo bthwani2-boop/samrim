@@ -30,6 +30,7 @@ test("@live first operator MFA persists through reload and logout revokes the li
   test.setTimeout(45_000);
 
   const identityBaseUrl = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
+  const dshBaseUrl = requiredEnv("PLAYWRIGHT_DSH_API_BASE_URL").replace(/\/+$/, "");
   const mailpitBaseUrl = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
   const bootstrapToken = requiredEnv("PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN");
   const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
@@ -58,7 +59,7 @@ test("@live first operator MFA persists through reload and logout revokes the li
   await page.getByLabel(/^كلمة المرور/).fill(password);
   await page.getByRole("button", { name: "متابعة إلى التحقق الثاني" }).click();
 
-  await expect(page.getByRole("heading", { name: "تحقق من الجهاز الثاني" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "تحقق من الجهاز الثاني" })).toBeVisible({ timeout: 15_000 });
   const code = await waitForMailpitCode(mailpitBaseUrl, phone, "operator_mfa");
   await page.getByLabel("رمز تحقق الهاتف").fill(code);
   await page.getByRole("button", { name: "إكمال تسجيل الدخول" }).click();
@@ -126,6 +127,7 @@ test("@live first operator MFA persists through reload and logout revokes the li
   expect(activationBody.accessToken).toEqual(expect.any(String));
   expect(activationBody.identity?.role).toBe("partner");
   expect(activationBody.identity?.surface).toBe("app-partner");
+  const partnerAccessToken = String(activationBody.accessToken);
 
   await page.getByRole("link", { name: "تهيئة الشركاء" }).click();
   await expect(page).toHaveURL(/\/partners$/);
@@ -139,7 +141,7 @@ test("@live first operator MFA persists through reload and logout revokes the li
   const bootstrapResponse = await bootstrapResponsePromise;
   const partnerBootstrapBody = await bootstrapResponse.json() as {
     partnerActorId?: unknown;
-    firstStore?: { id?: unknown; partnerActorId?: unknown; name?: unknown };
+    firstStore?: { id?: unknown; partnerActorId?: unknown; name?: unknown; publicationState?: unknown; version?: unknown };
     idempotentReplay?: unknown;
   };
   expect(bootstrapResponse.status(), `Control Panel Partner Bootstrap must create the canonical DSH Store relationship: ${JSON.stringify(partnerBootstrapBody)}`).toBe(201);
@@ -148,12 +150,67 @@ test("@live first operator MFA persists through reload and logout revokes the li
   expect(partnerBootstrapBody.firstStore?.id).toEqual(expect.any(String));
   expect(partnerBootstrapBody.firstStore?.partnerActorId).toBe(managedReadback.body.actorId);
   expect(partnerBootstrapBody.firstStore?.name).toBe(storeName);
+  expect(partnerBootstrapBody.firstStore?.publicationState).toBe("unpublished");
+  expect(partnerBootstrapBody.firstStore?.version).toBe(1);
+
+  const storeID = String(partnerBootstrapBody.firstStore?.id);
+  const partnerReadbackBefore = await fetch(dshBaseUrl + "/dsh/partner-bootstrap/self", {
+    headers: { Accept: "application/json", Authorization: "Bearer " + partnerAccessToken },
+    signal: AbortSignal.timeout(5_000),
+  });
+  const partnerBeforeBody = await partnerReadbackBefore.json() as { firstStore?: { publicationState?: unknown; version?: unknown } };
+  expect(partnerReadbackBefore.status).toBe(200);
+  expect(partnerBeforeBody.firstStore?.publicationState).toBe("unpublished");
+  expect(partnerBeforeBody.firstStore?.version).toBe(1);
+
+  const partnerPublishAttempt = await fetch(dshBaseUrl + `/dsh/stores/${storeID}/publication`, {
+    method: "POST",
+    headers: { Accept: "application/json", Authorization: "Bearer " + partnerAccessToken, "X-Acting-Actor-ID": String(managedReadback.body.actorId), "X-Correlation-ID": "partner-self-publish", "X-Expected-Version": "1", "Idempotency-Key": "partner-self-publish-1", "Content-Type": "application/json" },
+    body: JSON.stringify({ state: "published" }),
+    signal: AbortSignal.timeout(5_000),
+  });
+  expect(partnerPublishAttempt.status, "Partner user access must not reach operator publication boundary").toBe(401);
 
   const bootstrapStatus = page.locator('section[aria-labelledby="partner-bootstrap-title"] div[role="status"]');
   await expect(bootstrapStatus).toContainText("تم إنشاء التهيئة الكانونية");
   await expect(bootstrapStatus).toContainText(storeName);
   await expect(bootstrapStatus).toContainText(managedReadback.body.actorId);
   await expect(page.locator("p.identity-error")).toHaveCount(0);
+
+  const publishResponsePromise = page.waitForResponse((response) => response.url().endsWith(`/api/stores/${storeID}/publication`) && response.request().method() === "POST");
+  await page.getByRole("button", { name: "نشر المتجر" }).click();
+  const publishResponse = await publishResponsePromise;
+  const publishBody = await publishResponse.json() as { store?: { publicationState?: unknown; version?: unknown }; idempotentReplay?: unknown };
+  expect(publishResponse.status(), `Control Panel Store publication must commit canonical state: ${JSON.stringify(publishBody)}`).toBe(200);
+  expect(publishBody.store?.publicationState).toBe("published");
+  expect(publishBody.store?.version).toBe(2);
+  expect(publishBody.idempotentReplay).toBe(false);
+  await expect(bootstrapStatus).toContainText("حالة النشر الكانونية: published");
+
+  const publicListAfterPublish = await fetch(dshBaseUrl + "/dsh/public/stores", { signal: AbortSignal.timeout(5_000) });
+  const publicListBody = await publicListAfterPublish.json() as { stores?: Array<{ id?: unknown; partnerActorId?: unknown }> };
+  expect(publicListAfterPublish.status).toBe(200);
+  const publicStore = publicListBody.stores?.find((store) => store.id === storeID);
+  expect(publicStore).toBeDefined();
+  expect(publicStore?.partnerActorId).toBeUndefined();
+  const partnerReadbackAfter = await fetch(dshBaseUrl + "/dsh/partner-bootstrap/self", {
+    headers: { Accept: "application/json", Authorization: "Bearer " + partnerAccessToken },
+    signal: AbortSignal.timeout(5_000),
+  });
+  const partnerAfterBody = await partnerReadbackAfter.json() as { firstStore?: { publicationState?: unknown; version?: unknown } };
+  expect(partnerReadbackAfter.status).toBe(200);
+  expect(partnerAfterBody.firstStore?.publicationState).toBe("published");
+  expect(partnerAfterBody.firstStore?.version).toBe(2);
+
+  const hideResponsePromise = page.waitForResponse((response) => response.url().endsWith(`/api/stores/${storeID}/publication`) && response.request().method() === "POST");
+  await page.getByRole("button", { name: "إخفاء المتجر" }).click();
+  const hideResponse = await hideResponsePromise;
+  const hideBody = await hideResponse.json() as { store?: { publicationState?: unknown; version?: unknown } };
+  expect(hideResponse.status()).toBe(200);
+  expect(hideBody.store?.publicationState).toBe("hidden");
+  expect(hideBody.store?.version).toBe(3);
+  const publicDetailAfterHide = await fetch(dshBaseUrl + `/dsh/public/stores/${storeID}`, { signal: AbortSignal.timeout(5_000) });
+  expect(publicDetailAfterHide.status).toBe(404);
 
   await page.goto("/access");
   await expect(page).toHaveURL(/\/access$/);
