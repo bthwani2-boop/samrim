@@ -54,7 +54,9 @@
     "theme:verify": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/verify-theme-authority.mjs",
     "candidate:local:verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1",
     "knowledge:sync": "node tools/dev/knowledge-source.mjs",
-    "mobile:prepare": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/prepare-local-development.ps1"
+    "mobile:prepare": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/prepare-local-development.ps1",
+    "biome:doctor": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/biome-doctor.ps1",
+    "biome:reset": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/biome-reset.ps1"
   },
   "pnpm": {
     "overrides": {
