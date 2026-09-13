@@ -1,12 +1,13 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
 const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : path.resolve(root, "infra/local/compose/.env");
-const corePath = path.join(root, "tools/dev/verify-dsh-runtime-core.mjs");
+const corePath = fileURLToPath(new URL("./verify-dsh-runtime-core.mjs", import.meta.url));
 
 function fail(message, detail = "") {
   console.error(`DSH_RUNTIME_FIXTURE=FAIL ${message}${detail ? ` detail=${detail}` : ""}`);
