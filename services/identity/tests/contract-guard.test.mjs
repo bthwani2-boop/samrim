@@ -27,7 +27,7 @@ for (const value of ["platform_owner", "operator_owner", "X-Service-Caller", "id
 for (const value of ["enum: [client, partner, captain, field, operator]", "enum: [partner, captain, field]", "enum: [operator]"]) requireText(value);
 for (const value of ["ClientRecoveryProofRequest", "RecoveryComplete", "OperatorPasskeyRegistrationOptionsRequest", "OperatorPasskeyAuthenticationFinishRequest", "OperatorPasskeyRecoveryRegistrationOptionsRequest", "OperatorPasskeyRecoveryFinishRequest", "user-verifying", "WebAuthn", "minLength: 15", 'pattern: "^[0-9]{6}$"']) requireText(value);
 if (!contract.includes("phone control alone never grants operator access")) failures.push("operator recovery must distinguish phone possession from authority");
-if (!contract.includes("never a password or session") && !contract.includes("never a password or session".replace("or ", "or "))) failures.push("operator bootstrap must not mint a password or session");
+if (!contract.includes("never a password or session")) failures.push("operator bootstrap must not mint a password or session");
 if (contract.includes("#/components/responses/TokenPair")) {
   const recovery = contract.slice(contract.indexOf("/auth/client/recover:"), contract.indexOf("/auth/managed/activation/request:"));
   if (recovery.includes("#/components/responses/TokenPair")) failures.push("client recovery creates a session");
