@@ -77,19 +77,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     async readOwnJoiningCase(accessToken: string): Promise<JoiningCaseResponse> {
       return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.readOwnJoiningCase.path, dshOperationPaths.readOwnJoiningCase.method);
     },
-    async correctJoiningCase(accessToken: string, caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number): Promise<JoiningCaseResponse> {
+    async correctAndResubmitJoiningCase(accessToken: string, caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();
       const businessName = input.businessName.trim();
       const firstStoreName = input.firstStoreName.trim();
       if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
-      const path = dshOperationPaths.correctJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctJoiningCase.method, { businessName, firstStoreName }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
-    },
-    async resubmitJoiningCase(accessToken: string, caseID: string, expectedVersion: number): Promise<JoiningCaseResponse> {
-      const normalized = caseID.trim();
-      if (!normalized || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
-      const path = dshOperationPaths.resubmitJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.resubmitJoiningCase.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      const path = dshOperationPaths.correctAndResubmitJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, { businessName, firstStoreName }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async listCentralProducts(accessToken: string, query = "", barcode = "", limit = 50): Promise<ReadonlyArray<CentralProduct>> {
 	  if (limit < 1 || limit > 50) throw new Error("DSH_PRODUCT_LIMIT_INVALID");

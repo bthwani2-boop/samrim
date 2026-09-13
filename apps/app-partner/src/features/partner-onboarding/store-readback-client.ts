@@ -22,12 +22,8 @@ export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
   return dshClient().readOwnJoiningCase(accessToken());
 }
 
-export async function correctOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, expectedVersion: number): Promise<JoiningCaseResponse> {
-  return dshClient().correctJoiningCase(accessToken(), caseID, { businessName, firstStoreName }, expectedVersion);
-}
-
-export async function resubmitOwnJoiningCase(caseID: string, expectedVersion: number): Promise<JoiningCaseResponse> {
-  return dshClient().resubmitJoiningCase(accessToken(), caseID, expectedVersion);
+export async function correctAndResubmitOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, expectedVersion: number): Promise<JoiningCaseResponse> {
+  return dshClient().correctAndResubmitJoiningCase(accessToken(), caseID, { businessName, firstStoreName }, expectedVersion);
 }
 
 export function isJoiningCaseNotFound(error: unknown): boolean {

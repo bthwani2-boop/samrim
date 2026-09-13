@@ -60,7 +60,7 @@ const checks = [
   ["Identity migration upgrade", process.execPath, ["tools/dev/verify-identity-migrations.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH fresh baseline integrity", process.execPath, ["tools/dev/verify-dsh-baseline.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["Identity runtime semantics", process.execPath, ["tools/dev/verify-identity-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
-  ["DSH managed-access runtime", process.execPath, ["tools/dev/verify-dsh-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
+  ["DSH domain and publication runtime", process.execPath, ["tools/dev/verify-dsh-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
 ];
 
 if (preexistingRuntime) console.log("CANDIDATE_RUNTIME_LIVE_IDENTITY=SKIPPED reason=pre_existing_runtime_not_fresh");

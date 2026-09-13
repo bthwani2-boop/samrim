@@ -10,7 +10,6 @@ const pathModulePaths = [
   path.join(root, "services/dsh/contracts/openapi/paths/joining-cases.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/catalog.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/store-publication.yaml"),
-  path.join(root, "services/dsh/contracts/openapi/paths/managed-access.yaml"),
 ];
 const outputPath = path.join(root, "services/dsh/clients/generated/dsh-types.ts");
 const operationsOutputPath = path.join(root, "services/dsh/clients/generated/dsh-operations.ts");

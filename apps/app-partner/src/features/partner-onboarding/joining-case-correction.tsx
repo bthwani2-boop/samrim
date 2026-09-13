@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import type { JoiningCaseResponse } from "@bthwani/dsh";
-import { correctOwnJoiningCase, resubmitOwnJoiningCase } from "./store-readback-client";
+import { correctAndResubmitOwnJoiningCase } from "./store-readback-client";
 
 export function JoiningCaseCorrection({ value, onUpdated }: { value: JoiningCaseResponse; onUpdated: (next: JoiningCaseResponse) => void }) {
   const current = value.case;
@@ -28,8 +28,7 @@ export function JoiningCaseCorrection({ value, onUpdated }: { value: JoiningCase
     setBusy(true);
     setError("");
     try {
-      const corrected = await correctOwnJoiningCase(current.id, nextBusinessName, nextStoreName, current.version);
-      const resubmitted = await resubmitOwnJoiningCase(current.id, corrected.case.version);
+      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, current.version);
       onUpdated(resubmitted);
     } catch (nextError) {
       if (nextError && typeof nextError === "object" && "status" in nextError && (nextError as { status?: unknown }).status === 409) {

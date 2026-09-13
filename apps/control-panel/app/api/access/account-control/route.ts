@@ -3,11 +3,9 @@ import { NextResponse } from "next/server";
 
 import type { ActorType } from "@bthwani/identity";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, setIdentityRoleEnabled, setIdentitySecurityEnabled } from "../../../../src/server/identity/identity-bff";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus, setManagedRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
 const roles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
-const roleNames = new Set<ActorType>(["partner", "captain", "field"]);
 
 function jsonError(code: string, message: string, status: number) {
   return NextResponse.json({ error: { code, message } }, { status, headers: { "Cache-Control": "no-store" } });
@@ -19,16 +17,16 @@ export async function POST(request: Request) {
   if (!identity) return jsonError("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return jsonError("FORBIDDEN", "operator access is required", 403);
 
-  const body = (await request.json().catch(() => null)) as { phone?: unknown; role?: unknown; action?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
-  const phone = typeof body?.phone === "string" ? body.phone.trim() : "";
+  const body = (await request.json().catch(() => null)) as { actorId?: unknown; role?: unknown; action?: unknown; reason?: unknown; expectedVersion?: unknown } | null;
+  const actorId = typeof body?.actorId === "string" ? body.actorId.trim() : "";
   const roleValue = typeof body?.role === "string" ? body.role.trim().toLowerCase() : "";
   const role = roleValue as ActorType;
   const action = typeof body?.action === "string" ? body.action.trim().toLowerCase() : "";
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
   const rawExpectedVersion = body?.expectedVersion;
 
-  if (!phone || !roles.has(role) || !["disable-role", "enable-role", "disable-identity", "enable-identity"].includes(action) || reason.length < 5 || reason.length > 500) {
-    return jsonError("INVALID_INPUT", "phone, role, action, and a reason of 5 to 500 characters are required", 400);
+  if (!actorId || !roles.has(role) || !["disable-role", "enable-role", "disable-identity", "enable-identity"].includes(action) || reason.length < 5 || reason.length > 500) {
+    return jsonError("INVALID_INPUT", "actorId, role, action, and a reason of 5 to 500 characters are required", 400);
   }
   if (rawExpectedVersion === undefined || rawExpectedVersion === null) return jsonError("PRECONDITION_REQUIRED", "expectedVersion is required for concurrency safety", 428);
   const expectedVersion = typeof rawExpectedVersion === "number" ? rawExpectedVersion : typeof rawExpectedVersion === "string" && /^[1-9]\d*$/.test(rawExpectedVersion.trim()) ? Number(rawExpectedVersion.trim()) : NaN;
@@ -38,16 +36,12 @@ export async function POST(request: Request) {
     const mutationOptions = { operatorActorId: identity.subject, correlationId: randomUUID(), expectedVersion };
     if (action === "disable-role" || action === "enable-role") {
       const enabled = action === "enable-role";
-      if (roleNames.has(role)) await setManagedRoleEnabled(phone, role as "partner" | "captain" | "field", enabled, reason, mutationOptions);
-      else await setIdentityRoleEnabled(phone, role, enabled, reason, mutationOptions);
+      await setIdentityRoleEnabled(actorId, role, enabled, reason, mutationOptions);
     } else {
-      let targetActorId: string | undefined;
-      if (roleNames.has(role)) targetActorId = (await lookupManagedRoleStatus(phone, role as "partner" | "captain" | "field")).actorId;
-      await setIdentitySecurityEnabled(phone, role, action === "enable-identity", reason, targetActorId, mutationOptions);
+      await setIdentitySecurityEnabled(actorId, action === "enable-identity", reason, mutationOptions);
     }
     return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (isDshClientError(error)) return jsonError(dshErrorPayload(error).code, dshErrorPayload(error).message, dshHttpStatus(error));
     return jsonError(identityErrorPayload(error).code, identityErrorPayload(error).message, identityHttpStatus(error));
   }
 }

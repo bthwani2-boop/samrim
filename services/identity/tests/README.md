@@ -8,8 +8,8 @@ Required adversarial coverage includes:
 - customer actor creation only after phone proof;
 - customer normal phone+password authentication and role-scoped recovery;
 - no customer recurring activation-login path;
-- governed partner/captain/field role provisioning before activation;
-- one-time managed activation plus explicit DSH-authorized re-enrollment;
+- current partner role admission only after domain-owned DSH eligibility, with no generic Captain/Field admission endpoint;
+- one-time managed activation plus explicit Control Panel actor_id-addressed re-enrollment authorization;
 - Operator password login/session creation and SMS normal-login fallback = zero;
 - user-verified, discoverable Operator WebAuthn registration/authentication;
 - wrong RP/origin/credential/signature, UV=false, expired/replayed ceremony, disabled role/security and revoked credential rejection;

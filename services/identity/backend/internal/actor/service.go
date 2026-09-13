@@ -535,7 +535,7 @@ func (s *Service) AuthorizeReenrollmentWithContext(ctx context.Context, caller, 
 	actorID = strings.TrimSpace(actorID)
 	role = strings.ToLower(strings.TrimSpace(role))
 	operatorActorID = strings.TrimSpace(operatorActorID)
-	if actorID == "" || caller != "dsh" || !domain.IsManagedRole(role) {
+	if actorID == "" || !domain.CanAuthorizeReenrollment(caller, role) {
 		return domain.ErrForbidden
 	}
 	if operatorActorID == "" {

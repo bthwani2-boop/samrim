@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,8 +41,8 @@ func TestFreshJoiningAndAssortmentIntegrity(t *testing.T) {
 	}
 
 	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion || records[2].Name != "003_joining_cases_and_catalog.sql" || records[3].Name != "004_central_product_store_assortment_cutover.sql" || records[4].Name != "005_joining_case_partner_correction.sql" {
-			t.Fatalf("unexpected DSH migration graph: records=%d sql=%d third=%s fourth=%s fifth=%s", len(records), len(migrationSQL), records[2].Name, records[3].Name, records[4].Name)
+		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion || records[2].Name != "003_joining_cases_and_catalog.sql" || records[3].Name != "004_central_product_store_assortment_cutover.sql" || records[4].Name != "005_joining_case_partner_correction.sql" || records[5].Name != "006_joining_case_correct_and_resubmit.sql" {
+			t.Fatalf("unexpected DSH migration graph: records=%d sql=%d third=%s fourth=%s fifth=%s sixth=%s", len(records), len(migrationSQL), records[2].Name, records[3].Name, records[4].Name, records[5].Name)
 		}
 		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
 			t.Fatalf("apply fresh DSH migrations: %v", err)
@@ -66,6 +67,10 @@ func TestFreshJoiningAndAssortmentIntegrity(t *testing.T) {
 		if err != nil || created.Case.State != "draft" || created.Case.Version != 1 || created.Replayed {
 			t.Fatalf("create joining case failed: %+v err=%v", created, err)
 		}
+		queued, err := postgres.ListJoiningCases(ctx, db, "draft", 50, "")
+		if err != nil || len(queued.Cases) != 1 || queued.Cases[0].ID != created.Case.ID || queued.Cases[0].State != "draft" || queued.NextCursor != "" {
+			t.Fatalf("joining queue read failed: %+v err=%v", queued, err)
+		}
 		replay, err := postgres.CreateJoiningCase(ctx, db, "idem-joining-create-v3", postgres.HashJoiningCaseRequest("+96777000001", "Cafe V3", "Cafe Store"), testOperatorActorID, "corr-joining-replay-v3", "+96777000001", "Cafe V3", "Cafe Store")
 		if err != nil || !replay.Replayed || replay.Case.ID != created.Case.ID {
 			t.Fatalf("joining create replay failed: %+v err=%v", replay, err)
@@ -86,22 +91,80 @@ func TestFreshJoiningAndAssortmentIntegrity(t *testing.T) {
 		if err != nil || correction.Case.State != "needs_correction" || correction.Case.Version != 3 || correction.Case.CorrectionReason != "أكمل عنوان المتجر" || correction.Case.Store != nil {
 			t.Fatalf("joining correction failed: %+v err=%v", correction, err)
 		}
-		if _, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, testOtherPartnerID, 3, "idem-joining-rebind-v3", postgres.HashJoiningCaseSubmit(created.Case.ID, testOtherPartnerID, 3), testOperatorActorID, "corr-joining-rebind-v3"); !errors.Is(err, postgres.ErrJoiningCaseRebind) {
-			t.Fatalf("expected joining actor rebind rejection, got %v", err)
+		if _, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, testOtherPartnerID, 3, "idem-joining-rebind-v3", postgres.HashJoiningCaseSubmit(created.Case.ID, testOtherPartnerID, 3), testOperatorActorID, "corr-joining-rebind-v3"); !errors.Is(err, postgres.ErrJoiningCaseState) {
+			t.Fatalf("expected operator resubmission state rejection, got %v", err)
 		}
-		corrected, err := postgres.CorrectJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3, "idem-joining-correct-v5", postgres.HashJoiningCaseCorrection(created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3), "corr-joining-correct-v5")
-		if err != nil || corrected.Case.State != "needs_correction" || corrected.Case.Version != 4 || corrected.Case.BusinessName != "Cafe Corrected" || corrected.Case.FirstStoreName != "Cafe Corrected Store" {
-			t.Fatalf("joining partner correction failed: %+v err=%v", corrected, err)
+		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testOtherPartnerID, "Nope", "Nope Store", 3, "idem-joining-wrong-partner-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testOtherPartnerID, "Nope", "Nope Store", 3), "corr-joining-wrong-partner-v6"); !errors.Is(err, postgres.ErrJoiningCasePartnerAccess) {
+			t.Fatalf("expected wrong partner rejection, got %v", err)
 		}
-		resubmitted, err := postgres.SubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, 4, "idem-joining-resubmit-v5", postgres.HashJoiningCaseSubmit(created.Case.ID, testPartnerActorID, 4), testPartnerActorID, "corr-joining-resubmit-v5")
-		if err != nil || resubmitted.Case.State != "submitted" || resubmitted.Case.Version != 5 {
-			t.Fatalf("joining resubmission failed: %+v err=%v", resubmitted, err)
+		resubmitted, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3, "idem-joining-correct-resubmit-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3), "corr-joining-correct-resubmit-v6")
+		if err != nil || resubmitted.Case.State != "submitted" || resubmitted.Case.Version != 4 || resubmitted.Case.BusinessName != "Cafe Corrected" || resubmitted.Case.FirstStoreName != "Cafe Corrected Store" || resubmitted.Case.CorrectionReason != "" {
+			t.Fatalf("joining atomic correction and resubmission failed: %+v err=%v", resubmitted, err)
 		}
-		if _, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "approved", "", 5, "idem-joining-self-review-v5", postgres.HashJoiningCaseReview(created.Case.ID, "approved", "", 5), testPartnerActorID, "corr-joining-self-review-v5"); !errors.Is(err, postgres.ErrJoiningCaseSelfReview) {
+		resubmitReplay, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3, "idem-joining-correct-resubmit-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testPartnerActorID, "Cafe Corrected", "Cafe Corrected Store", 3), "corr-joining-correct-resubmit-replay-v6")
+		if err != nil || !resubmitReplay.Replayed || resubmitReplay.Case.Version != 4 {
+			t.Fatalf("joining atomic correction replay failed: %+v err=%v", resubmitReplay, err)
+		}
+		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, "Different", "Different Store", 3, "idem-joining-correct-resubmit-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testPartnerActorID, "Different", "Different Store", 3), "corr-joining-correct-resubmit-conflict-v6"); !errors.Is(err, postgres.ErrJoiningCaseIdempotency) {
+			t.Fatalf("expected atomic correction idempotency conflict, got %v", err)
+		}
+		if _, err := postgres.CorrectAndResubmitJoiningCase(ctx, db, created.Case.ID, testPartnerActorID, "Different", "Different Store", 4, "idem-joining-correct-resubmit-invalid-state-v6", postgres.HashJoiningCaseCorrectAndResubmit(created.Case.ID, testPartnerActorID, "Different", "Different Store", 4), "corr-joining-correct-resubmit-invalid-state-v6"); !errors.Is(err, postgres.ErrJoiningCaseState) {
+			t.Fatalf("expected atomic correction invalid-state rejection, got %v", err)
+		}
+		concurrent, err := postgres.CreateJoiningCase(ctx, db, "idem-joining-concurrent-create-v6", postgres.HashJoiningCaseRequest("+96777000002", "Concurrent Cafe", "Concurrent Store"), testOperatorActorID, "corr-joining-concurrent-create-v6", "+96777000002", "Concurrent Cafe", "Concurrent Store")
+		if err != nil {
+			t.Fatalf("create concurrent joining case: %v", err)
+		}
+		concurrentSubmit, err := postgres.SubmitJoiningCase(ctx, db, concurrent.Case.ID, testOtherPartnerID, 1, "idem-joining-concurrent-submit-v6", postgres.HashJoiningCaseSubmit(concurrent.Case.ID, testOtherPartnerID, 1), testOperatorActorID, "corr-joining-concurrent-submit-v6")
+		if err != nil {
+			t.Fatalf("submit concurrent joining case: %v", err)
+		}
+		concurrentCorrection, err := postgres.ReviewJoiningCase(ctx, db, concurrent.Case.ID, "needs_correction", "أكمل مستند النشاط", 2, "idem-joining-concurrent-review-v6", postgres.HashJoiningCaseReview(concurrent.Case.ID, "needs_correction", "أكمل مستند النشاط", 2), testOperatorActorID, "corr-joining-concurrent-review-v6")
+		if err != nil || concurrentSubmit.Case.State != "submitted" || concurrentCorrection.Case.State != "needs_correction" {
+			t.Fatalf("prepare concurrent joining case failed: %+v %+v err=%v", concurrentSubmit, concurrentCorrection, err)
+		}
+		var wait sync.WaitGroup
+		results := make(chan error, 2)
+		for i, name := range []string{"Concurrent A", "Concurrent B"} {
+			wait.Add(1)
+			go func(index int, business string) {
+				defer wait.Done()
+				_, callErr := postgres.CorrectAndResubmitJoiningCase(ctx, db, concurrent.Case.ID, testOtherPartnerID, business, business+" Store", 3, fmt.Sprintf("idem-joining-concurrent-correct-v6-%d", index), postgres.HashJoiningCaseCorrectAndResubmit(concurrent.Case.ID, testOtherPartnerID, business, business+" Store", 3), fmt.Sprintf("corr-joining-concurrent-correct-v6-%d", index))
+				results <- callErr
+			}(i, name)
+		}
+		wait.Wait()
+		close(results)
+		var concurrentSuccess, concurrentVersionConflict int
+		for callErr := range results {
+			if callErr == nil {
+				concurrentSuccess++
+			} else if errors.Is(callErr, postgres.ErrJoiningCaseVersion) {
+				concurrentVersionConflict++
+			}
+		}
+		if concurrentSuccess != 1 || concurrentVersionConflict != 1 {
+			t.Fatalf("atomic correction concurrency was not serialized: success=%d version_conflict=%d", concurrentSuccess, concurrentVersionConflict)
+		}
+		firstPage, err := postgres.ListJoiningCases(ctx, db, "", 1, "")
+		if err != nil || len(firstPage.Cases) != 1 || firstPage.NextCursor == "" {
+			t.Fatalf("joining queue first page failed: %+v err=%v", firstPage, err)
+		}
+		secondPage, err := postgres.ListJoiningCases(ctx, db, "", 1, firstPage.NextCursor)
+		if err != nil || len(secondPage.Cases) != 1 || secondPage.Cases[0].ID == firstPage.Cases[0].ID || secondPage.NextCursor != "" {
+			t.Fatalf("joining queue keyset page failed: %+v err=%v", secondPage, err)
+		}
+		if _, err := postgres.ListJoiningCases(ctx, db, "", 1, "not-a-valid-cursor"); !errors.Is(err, postgres.ErrJoiningCaseInvalidCursor) {
+			t.Fatalf("expected invalid joining queue cursor rejection, got %v", err)
+		}
+		if _, err := postgres.ListJoiningCases(ctx, db, "", 51, ""); !errors.Is(err, postgres.ErrJoiningCaseInvalidLimit) {
+			t.Fatalf("expected invalid joining queue limit rejection, got %v", err)
+		}
+		if _, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "approved", "", 4, "idem-joining-self-review-v6", postgres.HashJoiningCaseReview(created.Case.ID, "approved", "", 4), testPartnerActorID, "corr-joining-self-review-v6"); !errors.Is(err, postgres.ErrJoiningCaseSelfReview) {
 			t.Fatalf("expected joining self-review rejection, got %v", err)
 		}
-		approved, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "approved", "", 5, "idem-joining-approve-v5", postgres.HashJoiningCaseReview(created.Case.ID, "approved", "", 5), testOperatorActorID, "corr-joining-approve-v5")
-		if err != nil || approved.Case.State != "approved" || approved.Case.Version != 6 || approved.Case.Store == nil || approved.Case.Store.PartnerActorID != testPartnerActorID || approved.Case.Store.Name != "Cafe Corrected Store" {
+		approved, err := postgres.ReviewJoiningCase(ctx, db, created.Case.ID, "approved", "", 4, "idem-joining-approve-v6", postgres.HashJoiningCaseReview(created.Case.ID, "approved", "", 4), testOperatorActorID, "corr-joining-approve-v6")
+		if err != nil || approved.Case.State != "approved" || approved.Case.Version != 5 || approved.Case.Store == nil || approved.Case.Store.PartnerActorID != testPartnerActorID || approved.Case.Store.Name != "Cafe Corrected Store" {
 			t.Fatalf("joining approval failed: %+v err=%v", approved, err)
 		}
 
@@ -216,7 +279,7 @@ func TestFreshJoiningAndAssortmentIntegrity(t *testing.T) {
 				t.Fatalf("read %s: %v", check.name, err)
 			}
 		}
-		if stores != 1 || cases != 1 || joiningAudit != 6 || products != 1 || productAudit != 4 || assortments != 1 || assortmentAudit != 6 || history != postgres.SchemaVersion {
+		if stores != 1 || cases != 2 || joiningAudit != 9 || products != 1 || productAudit != 4 || assortments != 1 || assortmentAudit != 6 || history != postgres.SchemaVersion {
 			t.Fatalf("unexpected central Product / Store Assortment readback: stores=%d cases=%d joiningAudit=%d products=%d productAudit=%d assortments=%d assortmentAudit=%d history=%d", stores, cases, joiningAudit, products, productAudit, assortments, assortmentAudit, history)
 		}
 	})

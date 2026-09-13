@@ -41,12 +41,46 @@ func NewJoiningCase(identityClient *identityintegration.Client, accessToken stri
 
 func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/joining-cases", s.create)
+	mux.HandleFunc("GET /dsh/joining-cases", s.listForOperator)
 	mux.HandleFunc("GET /dsh/joining-cases/self", s.readForPartner)
 	mux.HandleFunc("GET /dsh/joining-cases/{caseId}", s.readForOperator)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/submit", s.submit)
-	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/correct", s.correctForPartner)
-	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/resubmit", s.resubmitForPartner)
+	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitForPartner)
 	mux.HandleFunc("POST /dsh/joining-cases/{caseId}/review", s.review)
+}
+
+func (s *JoiningCaseServer) listForOperator(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	limit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			writeJoiningCaseError(w, postgres.ErrJoiningCaseInvalidLimit)
+			return
+		}
+		limit = parsed
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actingActorID == "" || len(actingActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	result, err := s.service.ListForOperator(r.Context(), r.URL.Query().Get("state"), limit, r.URL.Query().Get("cursor"), actingActorID)
+	if err != nil {
+		writeJoiningCaseError(w, err)
+		return
+	}
+	items := make([]contract.JoiningCaseSummary, 0, len(result.Cases))
+	for _, item := range result.Cases {
+		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, PartnerActorID: item.PartnerActorID, State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, ReviewedBy: item.ReviewedBy, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(contract.JoiningCaseListResponse{Cases: items, NextCursor: result.NextCursor})
 }
 
 func (s *JoiningCaseServer) create(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +169,7 @@ func (s *JoiningCaseServer) review(w http.ResponseWriter, r *http.Request) {
 	s.writeResult(w, r, http.StatusOK, result)
 }
 
-func (s *JoiningCaseServer) correctForPartner(w http.ResponseWriter, r *http.Request) {
+func (s *JoiningCaseServer) correctAndResubmitForPartner(w http.ResponseWriter, r *http.Request) {
 	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
 	if !ok {
 		return
@@ -144,20 +178,7 @@ func (s *JoiningCaseServer) correctForPartner(w http.ResponseWriter, r *http.Req
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CorrectForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, expected, idempotency, correlation)
-	if err != nil {
-		writeJoiningCaseError(w, err)
-		return
-	}
-	s.writeResult(w, r, http.StatusOK, result)
-}
-
-func (s *JoiningCaseServer) resubmitForPartner(w http.ResponseWriter, r *http.Request) {
-	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
-	if !ok {
-		return
-	}
-	result, err := s.service.ResubmitForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), expected, idempotency, correlation)
+	result, err := s.service.CorrectAndResubmitForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, expected, idempotency, correlation)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -260,6 +281,8 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "review decision is invalid")
 	case errors.Is(err, postgres.ErrJoiningCasePartnerAccess):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the partner session does not own this joining case")
+	case errors.Is(err, postgres.ErrJoiningCaseInvalidLimit), errors.Is(err, postgres.ErrJoiningCaseInvalidCursor), errors.Is(err, postgres.ErrJoiningCaseInvalidState):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case queue parameters are invalid")
 	case errors.Is(err, joiningcase.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "joining case input is invalid")
 	case errors.Is(err, joiningcase.ErrOperatorNotActive):

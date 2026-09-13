@@ -60,6 +60,41 @@ test("operator direct navigation to access exposes the canonical access capabili
   await expect(page.getByRole("heading", { name: "تهيئة أو إيقاف الحساب" })).toBeVisible();
 });
 
+test("operator access keeps phone discovery separate from actorId mutation", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let mutationBody: Record<string, unknown> | undefined;
+  await page.route("**/api/access/managed-user/status**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        actorId: "act_partner_canonical",
+        phoneE164: "+96777000102",
+        role: "partner",
+        exists: true,
+        enabled: true,
+        activated: true,
+        securityEnabled: true,
+        state: "active",
+        actorVersion: 7,
+        roleVersion: 3,
+        admittedRoles: [{ actorId: "act_partner_canonical", role: "partner", state: "active", enabled: true, activated: true, securityEnabled: true }],
+      }),
+    });
+  });
+  await page.route("**/api/access/account-control", async (route) => {
+    mutationBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto("/access");
+  await page.getByLabel("رقم الهاتف للبحث").fill("+96777000102");
+  await expect(page.getByText("actorId: act_partner_canonical")).toBeVisible();
+  await expect(page.getByText(/partner · active · act_partner_canonical/)).toBeVisible();
+  await page.getByLabel("سبب التغيير").fill("مراجعة صلاحية الحساب");
+  await page.getByRole("button", { name: "إيقاف الدور" }).click();
+  expect(mutationBody).toMatchObject({ actorId: "act_partner_canonical", role: "partner", action: "disable-role", expectedVersion: 3 });
+});
+
 test("operator creates a DSH-owned joining case from prospective partner facts", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let requestBody: unknown;
@@ -89,9 +124,15 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار" });
 });
 
-test("operator resumes the canonical joining case after a workspace refresh", async ({ page }) => {
+test("operator resumes a canonical joining case from the DSH queue", async ({ page }) => {
   await stubAuthenticatedSession(page);
-  await page.addInitScript(() => window.localStorage.setItem("bthwani.control-panel.joining-case.current", "join_resume"));
+  await page.route("**/api/partners/joining-cases?limit=50", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ cases: [{ id: "join_resume", contactPhoneE164: "+96777000101", businessName: "نشاط مستعاد", firstStoreName: "متجر مستعاد", state: "submitted", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }),
+    });
+  });
   await page.route("**/api/partners/joining-cases/join_resume", async (route) => {
     await route.fulfill({
       status: 200,
@@ -103,6 +144,7 @@ test("operator resumes the canonical joining case after a workspace refresh", as
     });
   });
   await page.goto("/partners");
+  await page.getByRole("button", { name: /submitted · نشاط مستعاد/ }).click();
   await expect(page.getByRole("status")).toContainText("الحالة: submitted");
   await expect(page.getByRole("status")).toContainText("نشاط مستعاد");
 });

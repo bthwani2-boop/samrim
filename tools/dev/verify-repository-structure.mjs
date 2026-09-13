@@ -283,8 +283,8 @@ assert(
   "DSH Identity integration must have one canonical adapter under internal/integrations/identity/",
 );
 assert(
-  tracked.includes("services/dsh/backend/internal/transport/http/managedaccess.go") &&
-  tracked.includes("services/dsh/backend/internal/transport/http/joiningcase.go"),
+  tracked.includes("services/dsh/backend/internal/transport/http/joiningcase.go") &&
+    !tracked.includes("services/dsh/backend/internal/transport/http/managedaccess.go"),
   "DSH HTTP route adaptation must be owned by internal/transport/http/",
 );
 assert(

@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -24,6 +26,9 @@ var (
 	ErrJoiningCaseStoreExists     = errors.New("partner already has a canonical store")
 	ErrJoiningCaseInvalidDecision = errors.New("joining case review decision is invalid")
 	ErrJoiningCasePartnerAccess   = errors.New("partner does not own this joining case")
+	ErrJoiningCaseInvalidState    = errors.New("joining case queue state is invalid")
+	ErrJoiningCaseInvalidCursor   = errors.New("joining case queue cursor is invalid")
+	ErrJoiningCaseInvalidLimit    = errors.New("joining case queue limit is invalid")
 )
 
 type JoiningCaseRecord struct {
@@ -47,6 +52,11 @@ type JoiningCaseResult struct {
 	Replayed bool
 }
 
+type JoiningCaseListResult struct {
+	Cases      []JoiningCaseRecord
+	NextCursor string
+}
+
 func HashJoiningCaseRequest(phone, businessName, firstStoreName string) string {
 	return hashFacts(phone, businessName, firstStoreName)
 }
@@ -55,8 +65,8 @@ func HashJoiningCaseSubmit(caseID, actorID string, expectedVersion int) string {
 	return hashFacts(caseID, actorID, strconv.Itoa(expectedVersion))
 }
 
-func HashJoiningCaseCorrection(caseID, actorID, businessName, firstStoreName string, expectedVersion int) string {
-	return hashFacts(caseID, actorID, businessName, firstStoreName, strconv.Itoa(expectedVersion))
+func HashJoiningCaseCorrectAndResubmit(caseID, actorID, businessName, firstStoreName string, expectedVersion int) string {
+	return hashFacts("correct-and-resubmit", caseID, actorID, businessName, firstStoreName, strconv.Itoa(expectedVersion))
 }
 
 func HashJoiningCaseReview(caseID, decision, correctionReason string, expectedVersion int) string {
@@ -157,7 +167,7 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 	if current.Case.Version != expectedVersion {
 		return JoiningCaseResult{}, ErrJoiningCaseVersion
 	}
-	if current.Case.State != "draft" && current.Case.State != "needs_correction" {
+	if current.Case.State != "draft" {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
 	if current.Case.PartnerActorID != "" && current.Case.PartnerActorID != actorID {
@@ -190,19 +200,19 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 	return result, err
 }
 
-func CorrectJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (JoiningCaseResult, error) {
+func CorrectAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (JoiningCaseResult, error) {
 	if db == nil {
 		return JoiningCaseResult{}, errors.New("DSH database is nil")
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return JoiningCaseResult{}, fmt.Errorf("begin joining case correction: %w", err)
+		return JoiningCaseResult{}, fmt.Errorf("begin joining case correction and resubmission: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	if err := lockJoiningCaseKey(ctx, tx, idempotencyKey); err != nil {
 		return JoiningCaseResult{}, err
 	}
-	result, found, err := readJoiningCaseIdempotency(ctx, tx, idempotencyKey, requestHash, caseID, "correct")
+	result, found, err := readJoiningCaseIdempotency(ctx, tx, idempotencyKey, requestHash, caseID, "correct_and_resubmit")
 	if err != nil {
 		return JoiningCaseResult{}, err
 	}
@@ -227,7 +237,7 @@ func CorrectJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, busine
 		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
 	}
 	var updatedID string
-	if err := tx.QueryRowContext(ctx, `UPDATE dsh.joining_cases SET business_name=$2,first_store_name=$3,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND partner_actor_id=$4 AND state='needs_correction' AND version=$5 RETURNING id`, current.Case.ID, businessName, firstStoreName, actorID, expectedVersion).Scan(&updatedID); err != nil {
+	if err := tx.QueryRowContext(ctx, `UPDATE dsh.joining_cases SET business_name=$2,first_store_name=$3,state='submitted',correction_reason=NULL,reviewed_by=NULL,store_id=NULL,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND partner_actor_id=$4 AND state='needs_correction' AND version=$5 RETURNING id`, current.Case.ID, businessName, firstStoreName, actorID, expectedVersion).Scan(&updatedID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return JoiningCaseResult{}, ErrJoiningCaseVersion
 		}
@@ -237,10 +247,10 @@ func CorrectJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, busine
 	if err != nil {
 		return JoiningCaseResult{}, err
 	}
-	if err := recordJoiningCaseMutationTx(ctx, tx, idempotencyKey, requestHash, updated.Case, "correct"); err != nil {
+	if err := recordJoiningCaseMutationTx(ctx, tx, idempotencyKey, requestHash, updated.Case, "correct_and_resubmit"); err != nil {
 		return JoiningCaseResult{}, err
 	}
-	if err := auditJoiningCaseTx(ctx, tx, "joining_case_corrected", idempotencyKey, correlationID, actorID, caseID, current.Case.State, updated.Case.State, updated.Case.Version, requestHash, actorID, "", current.Case.CorrectionReason); err != nil {
+	if err := auditJoiningCaseTx(ctx, tx, "joining_case_corrected_and_resubmitted", idempotencyKey, correlationID, actorID, caseID, current.Case.State, updated.Case.State, updated.Case.Version, requestHash, actorID, "", current.Case.CorrectionReason); err != nil {
 		return JoiningCaseResult{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -249,6 +259,86 @@ func CorrectJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, busine
 	result, err = ReadJoiningCase(ctx, db, caseID)
 	result.Replayed = false
 	return result, err
+}
+
+type joiningCaseCursor struct {
+	CreatedAt time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
+}
+
+func ListJoiningCases(ctx context.Context, db *sql.DB, state string, limit int, cursor string) (JoiningCaseListResult, error) {
+	if db == nil {
+		return JoiningCaseListResult{}, errors.New("DSH database is nil")
+	}
+	if limit < 1 || limit > 50 {
+		return JoiningCaseListResult{}, ErrJoiningCaseInvalidLimit
+	}
+	state = strings.TrimSpace(strings.ToLower(state))
+	if state != "" && state != "draft" && state != "submitted" && state != "needs_correction" && state != "approved" {
+		return JoiningCaseListResult{}, ErrJoiningCaseInvalidState
+	}
+	var decoded *joiningCaseCursor
+	if strings.TrimSpace(cursor) != "" {
+		value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(cursor))
+		if err != nil {
+			return JoiningCaseListResult{}, ErrJoiningCaseInvalidCursor
+		}
+		var parsed joiningCaseCursor
+		if json.Unmarshal(value, &parsed) != nil || parsed.ID == "" || parsed.CreatedAt.IsZero() {
+			return JoiningCaseListResult{}, ErrJoiningCaseInvalidCursor
+		}
+		decoded = &parsed
+	}
+
+	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at FROM dsh.joining_cases c WHERE 1=1`
+	args := make([]any, 0, 4)
+	if state != "" {
+		args = append(args, state)
+		query += fmt.Sprintf(" AND c.state=$%d", len(args))
+	}
+	if decoded != nil {
+		args = append(args, decoded.CreatedAt, decoded.ID)
+		query += fmt.Sprintf(" AND (c.created_at,c.id)>($%d,$%d)", len(args)-1, len(args))
+	}
+	args = append(args, limit+1)
+	query += fmt.Sprintf(" ORDER BY c.created_at ASC,c.id ASC LIMIT $%d", len(args))
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return JoiningCaseListResult{}, fmt.Errorf("list joining cases: %w", err)
+	}
+	defer rows.Close()
+	items := make([]JoiningCaseRecord, 0, limit)
+	for rows.Next() {
+		var record JoiningCaseRecord
+		var actorID, correctionReason, reviewedBy sql.NullString
+		if err := rows.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &record.State, &correctionReason, &reviewedBy, &record.Version, &record.CreatedAt, &record.UpdatedAt); err != nil {
+			return JoiningCaseListResult{}, fmt.Errorf("scan joining case queue: %w", err)
+		}
+		if actorID.Valid {
+			record.PartnerActorID = actorID.String
+		}
+		if correctionReason.Valid {
+			record.CorrectionReason = correctionReason.String
+		}
+		if reviewedBy.Valid {
+			record.ReviewedBy = reviewedBy.String
+		}
+		items = append(items, record)
+	}
+	if err := rows.Err(); err != nil {
+		return JoiningCaseListResult{}, fmt.Errorf("read joining case queue: %w", err)
+	}
+	result := JoiningCaseListResult{Cases: items}
+	if len(items) > limit {
+		last := items[limit-1]
+		result.Cases = items[:limit]
+		encoded, err := json.Marshal(joiningCaseCursor{CreatedAt: last.CreatedAt, ID: last.ID})
+		if err != nil {
+			return JoiningCaseListResult{}, err
+		}
+		result.NextCursor = base64.RawURLEncoding.EncodeToString(encoded)
+	}
+	return result, nil
 }
 
 func ReviewJoiningCase(ctx context.Context, db *sql.DB, caseID, decision, correctionReason string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (JoiningCaseResult, error) {

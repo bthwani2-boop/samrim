@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: |
     Canonical operational contract for DSH (Delivery, Shopping, Hospitality/Operations).
-    Owns operational boundaries, managed-role provisioning delegation to Identity, and role lifecycle orchestration for partner, captain, and field roles.
+    Owns operational boundaries and domain workflows. Identity owns human actor and role lifecycle truth.
 servers:
   - url: http://127.0.0.1:18080
 
@@ -27,11 +27,8 @@ paths:
   /dsh/joining-cases/{caseId}/submit:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1submit"
 
-  /dsh/joining-cases/{caseId}/correct:
-    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1correct"
-
-  /dsh/joining-cases/{caseId}/resubmit:
-    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1resubmit"
+  /dsh/joining-cases/{caseId}/correct-and-resubmit:
+    $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1correct-and-resubmit"
 
   /dsh/joining-cases/{caseId}/review:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1review"
@@ -56,21 +53,6 @@ paths:
 
   /dsh/public/stores/{storeId}:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores~1{storeId}"
-
-  /dsh/managed-roles/provision:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1provision"
-
-  /dsh/managed-roles/status:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1status"
-
-  /dsh/managed-roles/disable:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1disable"
-
-  /dsh/managed-roles/enable:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1enable"
-
-  /dsh/managed-roles/reenrollment:
-    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1reenrollment"
 
 components:
   securitySchemes:
@@ -154,44 +136,6 @@ components:
         status:
           type: string
 
-    ManagedRole:
-      type: string
-      enum: [partner, captain, field]
-
-    ProvisionManagedRoleRequest:
-      type: object
-      required: [phoneE164, role]
-      additionalProperties: false
-      properties:
-        phoneE164:
-          type: string
-        role:
-          $ref: "#/components/schemas/ManagedRole"
-
-    SetManagedRoleStateRequest:
-      type: object
-      required: [phoneE164, role, reason]
-      additionalProperties: false
-      properties:
-        phoneE164:
-          type: string
-        role:
-          $ref: "#/components/schemas/ManagedRole"
-        reason:
-          type: string
-          minLength: 5
-          maxLength: 500
-
-    PhoneReenrollmentRequest:
-      type: object
-      required: [phoneE164, role]
-      additionalProperties: false
-      properties:
-        phoneE164:
-          type: string
-        role:
-          $ref: "#/components/schemas/ManagedRole"
-
     CreateJoiningCaseRequest:
       type: object
       required: [contactPhoneE164, businessName, firstStoreName]
@@ -259,6 +203,52 @@ components:
           $ref: "#/components/schemas/JoiningCaseView"
         idempotentReplay:
           type: boolean
+
+    JoiningCaseSummary:
+      type: object
+      required: [id, contactPhoneE164, businessName, firstStoreName, state, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        contactPhoneE164:
+          type: string
+        businessName:
+          type: string
+        firstStoreName:
+          type: string
+        partnerActorId:
+          type: string
+          nullable: true
+        state:
+          $ref: "#/components/schemas/JoiningCaseState"
+        correctionReason:
+          type: string
+          nullable: true
+        reviewedBy:
+          type: string
+          nullable: true
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    JoiningCaseListResponse:
+      type: object
+      required: [cases]
+      additionalProperties: false
+      properties:
+        cases:
+          type: array
+          items:
+            $ref: "#/components/schemas/JoiningCaseSummary"
+        nextCursor:
+          type: string
 
     CorrectJoiningCaseRequest:
       type: object
@@ -593,64 +583,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublicStoreView"
-
-    ActorRoleView:
-      type: object
-      required: [actorId, phoneE164, role, enabled, securityEnabled, actorVersion, roleVersion]
-      properties:
-        actorId:
-          type: string
-        phoneE164:
-          type: string
-        role:
-          type: string
-        enabled:
-          type: boolean
-        activatedAt:
-          type: string
-          format: date-time
-          nullable: true
-        securityEnabled:
-          type: boolean
-        actorCreated:
-          type: boolean
-        roleCreated:
-          type: boolean
-        actorVersion:
-          type: integer
-          minimum: 1
-        roleVersion:
-          type: integer
-          minimum: 1
-        credentialVersion:
-          type: integer
-          minimum: 1
-
-    ManagedRoleStatusResponse:
-      type: object
-      required: [exists, enabled, activated, securityEnabled, reenrollable, state, role]
-      properties:
-        actorId:
-          type: string
-        exists:
-          type: boolean
-        enabled:
-          type: boolean
-        activated:
-          type: boolean
-        securityEnabled:
-          type: boolean
-        reenrollable:
-          type: boolean
-        state:
-          type: string
-          enum: [not_provisioned, pending_activation, active, role_disabled, identity_disabled]
-        role:
-          $ref: "#/components/schemas/ManagedRole"
-        actorVersion:
-          type: integer
-        roleVersion:
-          type: integer
 
     ErrorResponse:
       type: object

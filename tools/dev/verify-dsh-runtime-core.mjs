@@ -35,6 +35,7 @@ const env = readEnv(envPath);
 const dshBase = required(env, "DSH_API_BASE_URL").replace(/\/+$/, "");
 const identityBase = required(env, "IDENTITY_API_BASE_URL").replace(/\/+$/, "");
 const dshToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
+const identityDshToken = required(env, "IDENTITY_DSH_SERVICE_TOKEN");
 const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
 const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
 if (dshToken.length < 24 || bootstrapToken.length < 24 || challengeSecret.length < 32) fail("canonical internal secrets are too weak");
@@ -147,6 +148,8 @@ async function createApprovedPartner(operatorID, phone, name, exerciseCorrection
   if (created.status !== 201 || created.body?.case?.state !== "draft") fail("joining case creation failed", JSON.stringify(created));
   const caseID = String(created.body.case.id);
   caseIDs.add(caseID);
+  const queue = await request(dshBase, "GET", "/dsh/joining-cases?state=draft&limit=50", { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  if (queue.status !== 200 || !Array.isArray(queue.body?.cases) || !queue.body.cases.some((item) => item.id === caseID && item.state === "draft")) fail("canonical joining-case queue did not expose the created case", JSON.stringify(queue));
   const submitted = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/submit`, { token: dshToken, headers: serviceHeaders(operatorID, `joining-submit-${crypto.randomUUID()}`, crypto.randomUUID(), 1) });
   if (submitted.status !== 200 || submitted.body?.case?.state !== "submitted" || !submitted.body?.case?.partnerActorId) fail("joining case submission failed", JSON.stringify(submitted));
   const actorID = String(submitted.body.case.partnerActorId);
@@ -161,12 +164,17 @@ async function createApprovedPartner(operatorID, phone, name, exerciseCorrection
     if (correctionRead.status !== 200 || correctionRead.body?.case?.state !== "needs_correction" || correctionRead.body?.case?.correctionReason !== "صحح اسم النشاط واسم المتجر") fail("partner correction reason readback failed", JSON.stringify(correctionRead));
     const correctedBusiness = `${name} corrected business`;
     const correctedStore = `${name} corrected store`;
-    const corrected = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/correct`, { token: accessToken, headers: partnerHeaders(`joining-correct-${suffix}`, 3), body: { businessName: correctedBusiness, firstStoreName: correctedStore } });
-    if (corrected.status !== 200 || corrected.body?.case?.state !== "needs_correction" || corrected.body?.case?.version !== 4 || corrected.body?.case?.businessName !== correctedBusiness || corrected.body?.case?.firstStoreName !== correctedStore) fail("partner joining correction failed", JSON.stringify(corrected));
-    const resubmitted = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/resubmit`, { token: accessToken, headers: partnerHeaders(`joining-resubmit-${suffix}`, 4) });
-    if (resubmitted.status !== 200 || resubmitted.body?.case?.state !== "submitted" || resubmitted.body?.case?.version !== 5) fail("partner joining resubmission failed", JSON.stringify(resubmitted));
-    const approvedAfterCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(operatorID, `joining-approve-${crypto.randomUUID()}`, crypto.randomUUID(), 5), body: { decision: "approved" } });
-    if (approvedAfterCorrection.status !== 200 || approvedAfterCorrection.body?.case?.state !== "approved" || approvedAfterCorrection.body?.case?.version !== 6 || approvedAfterCorrection.body?.case?.store?.name !== correctedStore) fail("corrected joining approval failed", JSON.stringify(approvedAfterCorrection));
+    const operatorResubmit = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/submit`, { token: dshToken, headers: serviceHeaders(operatorID, `joining-operator-resubmit-${suffix}`, crypto.randomUUID(), 3) });
+    if (operatorResubmit.status !== 409 || operatorResubmit.body?.error?.code !== "STATE_CONFLICT") fail("operator could resubmit a needs_correction case", JSON.stringify(operatorResubmit));
+    const oldCorrect = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/correct`, { token: accessToken, headers: partnerHeaders(`joining-old-correct-${suffix}`, 3), body: { businessName: correctedBusiness, firstStoreName: correctedStore } });
+    const oldResubmit = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/resubmit`, { token: accessToken, headers: partnerHeaders(`joining-old-resubmit-${suffix}`, 3) });
+    if (oldCorrect.status !== 404 || oldResubmit.status !== 404) fail("retired split correction endpoints remain reachable", JSON.stringify({ oldCorrect, oldResubmit }));
+    const corrected = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/correct-and-resubmit`, { token: accessToken, headers: partnerHeaders(`joining-correct-resubmit-${suffix}`, 3), body: { businessName: correctedBusiness, firstStoreName: correctedStore } });
+    if (corrected.status !== 200 || corrected.body?.case?.state !== "submitted" || corrected.body?.case?.version !== 4 || corrected.body?.case?.businessName !== correctedBusiness || corrected.body?.case?.firstStoreName !== correctedStore || corrected.body?.case?.correctionReason) fail("partner atomic correction and resubmission failed", JSON.stringify(corrected));
+    const correctedReplay = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/correct-and-resubmit`, { token: accessToken, headers: partnerHeaders(`joining-correct-resubmit-${suffix}`, 3), body: { businessName: correctedBusiness, firstStoreName: correctedStore } });
+    if (correctedReplay.status !== 200 || correctedReplay.body?.idempotentReplay !== true || correctedReplay.body?.case?.version !== 4) fail("partner atomic correction replay failed", JSON.stringify(correctedReplay));
+    const approvedAfterCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/review`, { token: dshToken, headers: serviceHeaders(operatorID, `joining-approve-${crypto.randomUUID()}`, crypto.randomUUID(), 4), body: { decision: "approved" } });
+    if (approvedAfterCorrection.status !== 200 || approvedAfterCorrection.body?.case?.state !== "approved" || approvedAfterCorrection.body?.case?.version !== 5 || approvedAfterCorrection.body?.case?.store?.name !== correctedStore) fail("corrected joining approval failed", JSON.stringify(approvedAfterCorrection));
     const storeID = String(approvedAfterCorrection.body.case.store.id);
     storeIDs.add(storeID);
     return { accessToken, actorID, caseID, storeID };
@@ -182,9 +190,13 @@ for (const endpoint of ["/dsh/health", "/dsh/readiness"]) {
   const response = await request(dshBase, "GET", endpoint);
   if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body));
 }
+for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) {
+  const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken });
+  if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response }));
+}
 
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "5", "DSH migration history is not exact");
-for (const [version, name] of [[1, "001_partner_store_baseline.sql"], [2, "002_store_publication.sql"], [3, "003_joining_cases_and_catalog.sql"], [4, "004_central_product_store_assortment_cutover.sql"], [5, "005_joining_case_partner_correction.sql"]]) expectSQL(`SELECT name FROM dsh.schema_migrations WHERE version=${version}`, name, `DSH migration ${version} is not canonical`);
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "6", "DSH migration history is not exact");
+for (const [version, name] of [[1, "001_partner_store_baseline.sql"], [2, "002_store_publication.sql"], [3, "003_joining_cases_and_catalog.sql"], [4, "004_central_product_store_assortment_cutover.sql"], [5, "005_joining_case_partner_correction.sql"], [6, "006_joining_case_correct_and_resubmit.sql"]]) expectSQL(`SELECT name FROM dsh.schema_migrations WHERE version=${version}`, name, `DSH migration ${version} is not canonical`);
 for (const table of ["catalog_items", "catalog_item_mutation_idempotency", "catalog_item_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NULL`, "t", `legacy relation remains: ${table}`);
 for (const [table, constraint] of [
   ["dsh.central_products", "central_products_pkey"], ["dsh.central_products", "central_products_name_chk"], ["dsh.central_products", "central_products_sell_unit_chk"], ["dsh.central_products", "central_products_version_chk"],
@@ -199,7 +211,7 @@ for (const [table, index] of [
   ["central_products", "central_products_barcode_uq"], ["central_products", "central_products_active_idx"], ["central_products", "central_products_name_prefix_idx"], ["central_product_mutation_idempotency", "central_product_idempotency_product_idx"], ["central_product_audit", "central_product_audit_product_idx"],
   ["store_assortments", "store_assortments_store_idx"], ["store_assortments", "store_assortments_public_idx"], ["store_assortment_mutation_idempotency", "store_assortment_idempotency_store_idx"], ["store_assortment_audit", "store_assortment_audit_store_idx"],
 ]) expectSQL(`SELECT count(*) FROM pg_indexes WHERE schemaname='dsh' AND tablename='${table}' AND indexname='${index}'`, "1", `DSH index is missing: ${index}`);
-console.log("DSH_SCHEMA_V5=PASS");
+console.log("DSH_SCHEMA_V6=PASS");
 
 let actingOperatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
 if (!actingOperatorID) {
@@ -208,6 +220,11 @@ if (!actingOperatorID) {
   actingOperatorID = String(bootstrapped.body.actorId);
 }
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
+
+for (const role of ["captain", "field"]) {
+  const response = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: identityDshToken, headers: { "X-Acting-Actor-ID": actingOperatorID, "X-Correlation-ID": crypto.randomUUID() }, body: { phoneE164: "+9677" + crypto.randomInt(10_000_000, 99_999_999), role } });
+  if (response.status !== 403) fail("DSH can still admit a non-partner managed role", JSON.stringify({ role, response }));
+}
 
 const firstPhone = "+96772" + crypto.randomInt(1_000_000, 9_999_999);
 const first = await createApprovedPartner(actingOperatorID, firstPhone, "Central Product Runtime A", true);

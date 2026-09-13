@@ -12,7 +12,6 @@ function verifyPartnerModel() {
     "services/dsh/contracts/openapi/paths/joining-cases.yaml",
     "services/dsh/contracts/openapi/paths/catalog.yaml",
     "services/dsh/contracts/openapi/paths/store-publication.yaml",
-    "services/dsh/contracts/openapi/paths/managed-access.yaml",
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/joining_case.go",
@@ -34,6 +33,7 @@ function verifyPartnerModel() {
     "apps/control-panel/src/features/central-catalog/central-catalog.tsx",
     "services/dsh/database/migrations/004_central_product_store_assortment_cutover.sql",
     "services/dsh/database/migrations/005_joining_case_partner_correction.sql",
+    "services/dsh/database/migrations/006_joining_case_correct_and_resubmit.sql",
     "services/dsh/tools/import-central-products.mjs",
   ];
   for (const relative of requiredFiles) {
@@ -158,7 +158,6 @@ function verifyPublicationReadiness() {
     "services/dsh/contracts/openapi/paths/joining-cases.yaml",
     "services/dsh/contracts/openapi/paths/catalog.yaml",
     "services/dsh/contracts/openapi/paths/store-publication.yaml",
-    "services/dsh/contracts/openapi/paths/managed-access.yaml",
   ].map((relative) => fs.readFileSync(path.join(root, relative), "utf8")).join("\n");
   const generatedTS = fs.readFileSync(path.join(root, "services/dsh/clients/generated/dsh-types.ts"), "utf8");
   const generatedGo = fs.readFileSync(path.join(root, "services/dsh/backend/internal/contract/dsh_types_generated.go"), "utf8");
@@ -178,7 +177,7 @@ function verifyPublicationReadiness() {
     ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
     ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
     ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
-    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct", "/resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V5=PASS"]],
+    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V6=PASS"]],
   ]) {
     for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
   }

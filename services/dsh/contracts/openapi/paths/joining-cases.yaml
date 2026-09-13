@@ -1,5 +1,20 @@
 paths:
   /dsh/joining-cases:
+    get:
+      operationId: listJoiningCases
+      summary: List bounded DSH joining-case summaries for a control operator
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { name: state, in: query, required: false, schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseState" } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 25 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 256 } }
+      responses:
+        "200": { description: Bounded canonical joining-case queue., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseListResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
     post:
       operationId: createJoiningCase
       summary: Create a DSH-owned prospective partner joining case
@@ -66,33 +81,10 @@ paths:
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
-  /dsh/joining-cases/{caseId}/correct:
+  /dsh/joining-cases/{caseId}/correct-and-resubmit:
     post:
-      operationId: correctJoiningCase
-      summary: Correct partner-owned joining case facts returned by an operator
-      security: [{ userBearer: [] }]
-      parameters:
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
-        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
-        - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CorrectJoiningCaseRequest" }
-      responses:
-        "200": { description: Corrected joining case., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
-        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
-        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
-        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
-        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
-        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
-
-  /dsh/joining-cases/{caseId}/resubmit:
-    post:
-      operationId: resubmitJoiningCase
-      summary: Resubmit a corrected partner-owned joining case for operator review
+      operationId: correctAndResubmitJoiningCase
+      summary: Atomically correct and resubmit a partner-owned joining case
       security: [{ userBearer: [] }]
       parameters:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
@@ -100,7 +92,7 @@ paths:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
         - { name: caseId, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
       responses:
-        "200": { description: Resubmitted joining case., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "200": { description: Corrected and resubmitted joining case., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }

@@ -83,21 +83,6 @@ func writeStorageError(w http.ResponseWriter, err error) {
 	}
 }
 
-func writeRoleStatus(w http.ResponseWriter, status contract.ManagedRoleStatusResponse) {
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(status)
-}
-
-func toRoleView(view identityclient.ActorRoleView) contract.ActorRoleView {
-	return contract.ActorRoleView{
-		ActorID: view.ActorID, PhoneE164: view.PhoneE164, Role: view.Role, Enabled: view.Enabled,
-		ActivatedAt: view.ActivatedAt, SecurityEnabled: view.SecurityEnabled,
-		ActorVersion: view.ActorVersion, RoleVersion: view.RoleVersion, CredentialVersion: view.CredentialVersion,
-		ActorCreated: view.ActorCreated, RoleCreated: view.RoleCreated,
-	}
-}
-
 func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness, assortments ...[]postgres.StoreAssortmentRecord) contract.StoreView {
 	values := []contract.StoreAssortment{}
 	if len(assortments) > 0 {

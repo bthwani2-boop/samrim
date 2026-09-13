@@ -105,9 +105,12 @@ has("infra/local/compose/compose.yaml", ["IDENTITY_WEBAUTHN_RP_ID", "IDENTITY_WE
 has("infra/local/compose/.env.example", ["IDENTITY_WEBAUTHN_RP_ID=", "IDENTITY_WEBAUTHN_ALLOWED_ORIGINS="]);
 has("services/identity/backend/Dockerfile", ["COPY services/identity/database/migrations /app/migrations", "IDENTITY_MIGRATION_DIR=/app/migrations"]);
 
-const dshClient = has("services/dsh/backend/internal/integrations/identity/client.go", ["ProvisionPartner", "ProvisionCaptain", "ProvisionField", "AuthorizePartnerReenrollment", "AuthorizeCaptainReenrollment", "AuthorizeFieldReenrollment"]);
+const dshClient = has("services/dsh/backend/internal/integrations/identity/client.go", ["ProvisionPartner", "ReadActorRole", "ReadSession"]);
+for (const value of ["ProvisionCaptain", "ProvisionField", "SetRoleEnabledByPhone", "AuthorizeReenrollmentByPhone", "LookupRoleByPhone", "AuthorizePartnerReenrollment", "AuthorizeCaptainReenrollment", "AuthorizeFieldReenrollment"]) if (dshClient.includes(value)) failures.push("DSH Identity boundary retains " + value);
 for (const value of ["ProvisionOperator", "Username", "X-Service-Caller"]) if (dshClient.includes(value)) failures.push("DSH Identity boundary retains " + value);
-has("apps/control-panel/src/server/dsh/dsh-bff.ts", ["dshOperationPaths.provisionManagedRole", "dshOperationPaths.reenrollManagedRoleByPhone", "Idempotency-Key", "X-Acting-Actor-ID", "X-Expected-Version"]);
+const dshBff = has("apps/control-panel/src/server/dsh/dsh-bff.ts", ["listJoiningCases", "dshOperationPaths.listJoiningCases", "Idempotency-Key", "X-Acting-Actor-ID"]);
+for (const value of ["provisionManagedRole", "getManagedRoleStatus", "reenrollManagedRoleByPhone", "enableManagedRole", "disableManagedRole"]) if (dshBff.includes(value)) failures.push("Control Panel DSH BFF retains retired managed-access operation " + value);
+has("apps/control-panel/src/server/identity/identity-bff.ts", ["lookupIdentityRoles", "authorizeIdentityRoleReenrollment", "setIdentityRoleEnabled", "setIdentitySecurityEnabled"]);
 for (const file of ["services/dsh/clients/generated/dsh-types.ts", "services/dsh/clients/generated/dsh-operations.ts", "services/dsh/backend/internal/contract/dsh_types_generated.go"]) has(file, ["Source Graph SHA:", "DO NOT EDIT"]);
 
 const currentResidueTokens = [retiredRole, retiredRole.replaceAll("_", "-"), "IDENTITY_" + "PLATFORM_" + "CONTROL_SERVICE_TOKEN", "DSH_" + "PLATFORM_" + "CONTROL_SERVICE_TOKEN", oldDeviceName, oldDeviceColumn];

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
-import { createJoiningCase, dshErrorPayload, dshHttpStatus, isDshClientError } from "../../../../src/server/dsh/dsh-bff";
+import { createJoiningCase, dshErrorPayload, dshHttpStatus, isDshClientError, listJoiningCases } from "../../../../src/server/dsh/dsh-bff";
 import { readOperatorSession } from "../../../../src/server/identity/identity-bff";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -31,6 +31,23 @@ export async function POST(request: Request) {
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "joining case creation failed", 500);
+    const payload = dshErrorPayload(error);
+    return errorResponse(payload.code, payload.message, dshHttpStatus(error));
+  }
+}
+
+export async function GET(request: Request) {
+  const identity = await readOperatorSession();
+  if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
+  if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
+  const params = new URL(request.url).searchParams;
+  const rawLimit = params.get("limit") ?? "25";
+  const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) return errorResponse("INVALID_INPUT", "limit must be between 1 and 50", 400);
+  try {
+    return NextResponse.json(await listJoiningCases(params.get("state") ?? "", limit, params.get("cursor") ?? "", { operatorActorId: identity.subject }), { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "joining case queue read failed", 500);
     const payload = dshErrorPayload(error);
     return errorResponse(payload.code, payload.message, dshHttpStatus(error));
   }

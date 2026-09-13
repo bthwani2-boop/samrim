@@ -1,10 +1,9 @@
 "use client";
 
-import type { JoiningCaseResponse, StorePublicationResponse } from "@bthwani/dsh";
+import type { JoiningCaseListResponse, JoiningCaseResponse, StorePublicationResponse } from "@bthwani/dsh";
 import { useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 
-const joiningCaseStorageKey = "bthwani.control-panel.joining-case.current";
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
 
 export function JoiningCasePanel() {
@@ -17,31 +16,31 @@ export function JoiningCasePanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [publicationBusy, setPublicationBusy] = useState(false);
+  const [queue, setQueue] = useState<JoiningCaseListResponse["cases"]>([]);
+  const [queueBusy, setQueueBusy] = useState(false);
+  const [queueError, setQueueError] = useState("");
 
-  useEffect(() => {
-    const caseId = window.localStorage.getItem(joiningCaseStorageKey)?.trim();
-    if (!caseId) return;
-    let active = true;
-    setBusy(true);
-    void fetch(`/api/partners/joining-cases/${encodeURIComponent(caseId)}`, { cache: "no-store" }).then(async (response) => {
-      if (!active) return;
+  async function loadQueue() {
+    setQueueBusy(true);
+    setQueueError("");
+    try {
+      const response = await fetch("/api/partners/joining-cases?limit=50", { cache: "no-store" });
       if (!response.ok) {
-        if (response.status === 404) window.localStorage.removeItem(joiningCaseStorageKey);
-        setError(await partnerErrorMessage(response));
+        setQueueError(await partnerErrorMessage(response));
         return;
       }
-      setResult(await response.json() as JoiningCaseResponse);
-    }).catch(() => {
-      if (active) setError("تعذر استعادة حالة الانضمام المحفوظة من DSH.");
-    }).finally(() => {
-      if (active) setBusy(false);
-    });
-    return () => { active = false; };
-  }, []);
+      setQueue((await response.json() as JoiningCaseListResponse).cases);
+    } catch {
+      setQueueError("تعذر قراءة طابور حالات الانضمام من DSH.");
+    } finally {
+      setQueueBusy(false);
+    }
+  }
+
+  useEffect(() => { void loadQueue(); }, []);
 
   function rememberResult(next: JoiningCaseResponse) {
     setResult(next);
-    window.localStorage.setItem(joiningCaseStorageKey, next.case.id);
   }
 
   function clearResult() {
@@ -49,7 +48,25 @@ export function JoiningCasePanel() {
     setPublication(null);
     setCorrectionReason("");
     setError("");
-    window.localStorage.removeItem(joiningCaseStorageKey);
+  }
+
+  async function openCase(caseId: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/partners/joining-cases/${encodeURIComponent(caseId)}`, { cache: "no-store" });
+      if (!response.ok) {
+        setError(await partnerErrorMessage(response));
+        await loadQueue();
+        return;
+      }
+      setResult(await response.json() as JoiningCaseResponse);
+      setPublication(null);
+    } catch {
+      setError("تعذر فتح حالة الانضمام من DSH.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function createCase() {
@@ -72,6 +89,7 @@ export function JoiningCasePanel() {
       }
       rememberResult(await response.json() as JoiningCaseResponse);
       setPublication(null);
+      void loadQueue();
     } catch {
       setError("تعذر الوصول إلى مسار joining في DSH.");
     } finally {
@@ -94,6 +112,7 @@ export function JoiningCasePanel() {
         return;
       }
       rememberResult(await response.json() as JoiningCaseResponse);
+      void loadQueue();
     } catch {
       setError("تعذر إرسال joining case. أعد قراءة الحالة قبل التكرار.");
     } finally {
@@ -120,6 +139,7 @@ export function JoiningCasePanel() {
         return;
       }
       rememberResult(await response.json() as JoiningCaseResponse);
+      void loadQueue();
     } catch {
       setError("تعذر تسجيل قرار المراجعة. أعد قراءة الحالة قبل التكرار.");
     } finally {
@@ -185,19 +205,29 @@ export function JoiningCasePanel() {
         <p className="muted">ينشئ DSH حالة انضمام prospective، ثم يطلب هوية الشريك من Identity عند الإرسال، ولا ينشئ سجل actor محليًا.</p>
       </div>
       {!current ? (
+        <>
+        <div className="managed-status managed-status-info" role="status">
+          <strong>طابور حالات الانضمام الكانوني</strong>
+          <p>يمكن لأي متصفح جديد اكتشاف الحالات من DSH؛ لا يعتمد الاستئناف على localStorage.</p>
+          {queueBusy ? <p>جارٍ تحميل الطابور…</p> : null}
+          {queueError ? <p role="alert">{queueError} <button type="button" className="button button-secondary" onClick={() => void loadQueue()}>إعادة المحاولة</button></p> : null}
+          {!queueBusy && !queueError && queue.length === 0 ? <p>لا توجد حالات انضمام حاليًا.</p> : null}
+          {queue.length ? <ul>{queue.map((item) => <li key={item.id}><button type="button" className="button button-secondary" disabled={busy} onClick={() => void openCase(item.id)}>{item.state} · {item.businessName} · <code>{item.id}</code></button></li>)}</ul> : null}
+        </div>
         <div className="access-form">
           <label className="field-label" htmlFor="joining-phone">رقم هاتف الشريك (E.164)<input id="joining-phone" autoComplete="tel" disabled={busy} inputMode="tel" value={phone} onChange={(event) => { setPhone(event.target.value); clearResult(); }} placeholder="مثال: +96777000100" /></label>
           <label className="field-label" htmlFor="joining-business">اسم النشاط<input id="joining-business" disabled={busy} value={businessName} onChange={(event) => { setBusinessName(event.target.value); clearResult(); }} /></label>
           <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy} value={storeName} onChange={(event) => { setStoreName(event.target.value); clearResult(); }} /></label>
           <button type="button" className="button button-primary" disabled={busy} onClick={() => void createCase()}>{busy ? "جارٍ إنشاء الحالة…" : "إنشاء حالة انضمام"}</button>
         </div>
+        </>
       ) : (
         <div className="managed-status managed-status-info" role="status">
           <strong>الحالة: {current.state}</strong>
           <p>Case: <code>{current.id}</code> · الإصدار <code>{current.version}</code></p>
           <p>{current.businessName} · {current.firstStoreName}</p>
           {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
-          {current.state === "draft" || current.state === "needs_correction" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
+          {current.state === "draft" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
           {current.state === "submitted" ? (
             <>
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>

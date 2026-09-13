@@ -1,5 +1,5 @@
-import { validateServiceUrl, type ManagedActivationRole } from "@bthwani/identity";
-import { type ActorRoleView, type CentralProductListResponse, type CentralProductResponse, type CreateCentralProductRequest, type CreateJoiningCaseRequest, type JoiningCaseResponse, type ManagedRole, type ManagedRoleStatusResponse, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCentralProductRequest, dshOperationPaths } from "@bthwani/dsh";
+import { validateServiceUrl } from "@bthwani/identity";
+import { type CentralProductListResponse, type CentralProductResponse, type CreateCentralProductRequest, type CreateJoiningCaseRequest, type JoiningCaseListResponse, type JoiningCaseResponse, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCentralProductRequest, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -8,8 +8,7 @@ type DshClientError =
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
 
-export type ManagedRoleStatus = ManagedRoleStatusResponse;
-export type DshAttributedMutationContext = Readonly<{
+type DshAttributedMutationContext = Readonly<{
   operatorActorId: string;
   correlationId: string;
 }>;
@@ -26,8 +25,6 @@ export type DshOperatorReadContext = Readonly<{
   operatorActorId: string;
 }>;
 export type CentralProductMutationContext = JoiningCaseMutationContext;
-
-const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field"]);
 
 function dshBaseUrl(): string {
   const explicit = process.env.DSH_API_BASE_URL?.trim();
@@ -124,6 +121,15 @@ export async function readJoiningCase(caseId: string, context: DshOperatorReadCo
   if (!caseId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_JOINING_CASE_READ_INPUT_INVALID");
   const path = dshOperationPaths.readJoiningCase.path.replace("{caseId}", encodeURIComponent(caseId.trim()));
   return (await requestDshJson<JoiningCaseResponse>(dshOperationPaths.readJoiningCase.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function listJoiningCases(state: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<JoiningCaseListResponse> {
+  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_JOINING_CASE_QUEUE_INPUT_INVALID");
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (state.trim()) params.set("state", state.trim());
+  if (cursor.trim()) params.set("cursor", cursor.trim());
+  const path = `${dshOperationPaths.listJoiningCases.path}?${params.toString()}`;
+  return (await requestDshJson<JoiningCaseListResponse>(dshOperationPaths.listJoiningCases.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
 export async function listCentralProducts(query: string, context: DshOperatorReadContext): Promise<CentralProductListResponse> {
@@ -239,156 +245,6 @@ export async function setStorePublication(
       throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
     }
     return { status: response.status, payload: await response.json() as StorePublicationResponse };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-export async function provisionManagedRole(
-  phone: string,
-  role: ManagedActivationRole,
-  context: DshAttributedMutationContext,
-): Promise<ActorRoleView> {
-  if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
-  validateAttributedMutationContext(context);
-  const baseUrl = dshBaseUrl();
-  const token = dshToken();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
-  try {
-    let response: Response;
-    try {
-      const headers: Record<string, string> = {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      };
-      headers["X-Acting-Actor-ID"] = context.operatorActorId.trim();
-      headers["X-Correlation-ID"] = context.correlationId.trim();
-      response = await fetch(`${baseUrl}${dshOperationPaths.provisionManagedRole.path}`, {
-        method: dshOperationPaths.provisionManagedRole.method,
-        headers,
-        body: JSON.stringify({ phoneE164: phone, role }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
-    }
-    if (!response.ok) {
-      const parsed = parseErrorPayload(await response.json().catch(() => null));
-      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
-    }
-    return (await response.json()) as ActorRoleView;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-export async function lookupManagedRoleStatus(phone: string, role: "partner" | "captain" | "field"): Promise<ManagedRoleStatus> {
-  if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
-  const baseUrl = dshBaseUrl();
-  const token = dshToken();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
-  try {
-    let response: Response;
-    try {
-      const params = new URLSearchParams({ phoneE164: phone, role });
-      response = await fetch(`${baseUrl}${dshOperationPaths.getManagedRoleStatus.path}?${params.toString()}`, {
-        method: dshOperationPaths.getManagedRoleStatus.method,
-        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
-    }
-    if (!response.ok) {
-      const parsed = parseErrorPayload(await response.json().catch(() => null));
-      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
-    }
-    return (await response.json()) as ManagedRoleStatus;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-export async function authorizeManagedReenrollment(
-  phone: string,
-  role: "partner" | "captain" | "field",
-  context: DshAttributedMutationContext,
-): Promise<void> {
-  if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
-  validateAttributedMutationContext(context);
-  const baseUrl = dshBaseUrl();
-  const token = dshToken();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
-  try {
-    let response: Response;
-    try {
-      const headers: Record<string, string> = {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        "X-Correlation-ID": context.correlationId.trim(),
-      };
-      headers["X-Acting-Actor-ID"] = context.operatorActorId.trim();
-      response = await fetch(`${baseUrl}${dshOperationPaths.reenrollManagedRoleByPhone.path}`, {
-        method: dshOperationPaths.reenrollManagedRoleByPhone.method,
-        headers,
-        body: JSON.stringify({ phoneE164: phone, role }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
-    }
-    if (!response.ok) {
-      const parsed = parseErrorPayload(await response.json().catch(() => null));
-      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-export async function setManagedRoleEnabled(
-  phone: string,
-  role: "partner" | "captain" | "field",
-  enabled: boolean,
-  reason: string,
-  context: DshVersionedMutationContext,
-): Promise<void> {
-  if (!managedRoles.has(role)) throw new Error("DSH_ROLE_NOT_SUPPORTED");
-  validateVersionedMutationContext(context);
-  const baseUrl = dshBaseUrl();
-  const token = dshToken();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
-  try {
-    let response: Response;
-    try {
-      const headers: Record<string, string> = {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        "X-Correlation-ID": context.correlationId.trim(),
-      };
-      headers["X-Acting-Actor-ID"] = context.operatorActorId.trim();
-      headers["X-Expected-Version"] = String(context.expectedVersion);
-      const operation = enabled ? dshOperationPaths.enableManagedRole : dshOperationPaths.disableManagedRole;
-      response = await fetch(`${baseUrl}${operation.path}`, {
-        method: operation.method,
-        headers,
-        body: JSON.stringify({ phoneE164: phone, role, reason }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshClientError;
-    }
-    if (!response.ok) {
-      const parsed = parseErrorPayload(await response.json().catch(() => null));
-      throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
-    }
   } finally {
     clearTimeout(timeout);
   }

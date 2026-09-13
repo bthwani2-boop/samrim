@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 
 import type { ActorType } from "@bthwani/identity";
-import { identityErrorPayload, identityHttpStatus, lookupIdentityRole, readOperatorSession } from "../../../../../src/server/identity/identity-bff";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus } from "../../../../../src/server/dsh/dsh-bff";
+import { identityErrorPayload, identityHttpStatus, lookupIdentityRoles, readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 
-const managedRoles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
+const roles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
 
 export async function GET(request: Request) {
   const identity = await readOperatorSession();
@@ -14,27 +13,41 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const phone = (params.get("phone") ?? "").trim();
   const role = (params.get("role") ?? "").trim().toLowerCase();
-  if (!phone || !managedRoles.has(role as ActorType)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "phone and managed role are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (!phone || !roles.has(role as ActorType)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "phone and role are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
 
   try {
-    if (role === "partner" || role === "captain" || role === "field") {
-      return NextResponse.json(await lookupManagedRoleStatus(phone, role as "partner" | "captain" | "field"), { headers: { "Cache-Control": "no-store" } });
-    }
-    const record = await lookupIdentityRole(phone, role as ActorType);
+    const records = await lookupIdentityRoles(phone);
+    const record = records.find((candidate) => candidate.role === role);
+    const toStatus = (candidate: typeof record) => candidate ? {
+      actorId: candidate.actorId,
+      phoneE164: candidate.phoneE164,
+      role: candidate.role,
+      exists: true,
+      enabled: candidate.enabled,
+      activated: Boolean(candidate.activatedAt),
+      securityEnabled: candidate.securityEnabled,
+      reenrollable: Boolean(candidate.enabled && candidate.activatedAt && candidate.role !== "client"),
+      state: !candidate.securityEnabled ? "identity_disabled" : !candidate.enabled ? "role_disabled" : !candidate.activatedAt ? "pending_activation" : "active",
+      actorVersion: candidate.actorVersion,
+      roleVersion: candidate.roleVersion,
+      credentialVersion: candidate.credentialVersion,
+    } : null;
     return NextResponse.json({
-      actorId: record?.actorId,
+      actorId: record?.actorId ?? records[0]?.actorId,
+      phoneE164: record?.phoneE164 ?? records[0]?.phoneE164 ?? phone,
       exists: Boolean(record),
       enabled: record?.enabled ?? false,
       activated: Boolean(record?.activatedAt),
       securityEnabled: record?.securityEnabled ?? false,
-      reenrollable: Boolean(record?.enabled && record?.activatedAt),
+      reenrollable: Boolean(record?.enabled && record?.activatedAt && record.role !== "client"),
+      state: toStatus(record)?.state ?? "not_admitted",
       role,
       actorVersion: record?.actorVersion,
       roleVersion: record?.roleVersion,
       credentialVersion: record?.credentialVersion,
+      admittedRoles: records.map(toStatus),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (isDshClientError(error)) return NextResponse.json({ error: dshErrorPayload(error) }, { status: dshHttpStatus(error), headers: { "Cache-Control": "no-store" } });
     return NextResponse.json({ error: identityErrorPayload(error) }, { status: identityHttpStatus(error), headers: { "Cache-Control": "no-store" } });
   }
 }

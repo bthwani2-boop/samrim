@@ -252,7 +252,7 @@ func CanProvisionRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch strings.ToLower(strings.TrimSpace(caller)) {
 	case "dsh":
-		return IsManagedRole(role)
+		return role == "partner"
 	case "control-panel":
 		return role == "operator"
 	default:
@@ -269,9 +269,9 @@ func CanReadRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch caller {
 	case "dsh":
-		return IsManagedRole(role) || role == "operator"
+		return role == "partner" || role == "operator"
 	case "control-panel":
-		return role == "client" || role == "operator"
+		return role == "client" || IsManagedRole(role) || role == "operator"
 	default:
 		return false
 	}
@@ -282,12 +282,16 @@ func CanSetRoleEnabled(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch caller {
 	case "dsh":
-		return IsManagedRole(role)
+		return false
 	case "control-panel":
-		return role == "client" || role == "operator"
+		return role == "client" || IsManagedRole(role) || role == "operator"
 	default:
 		return false
 	}
+}
+
+func CanAuthorizeReenrollment(caller, role string) bool {
+	return strings.EqualFold(strings.TrimSpace(caller), "control-panel") && IsManagedRole(role)
 }
 
 func CanIssueOperatorEnrollmentTokenForRole(caller, role string) bool {
