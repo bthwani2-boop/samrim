@@ -9,10 +9,8 @@ const read = (p) => fs.readFileSync(path.join(root, p), "utf8");
 const readKnowledge = (p) => fs.readFileSync(path.join(knowledgeRoot, p), "utf8");
 
 const packageJson = JSON.parse(read("package.json"));
-const workflowGuide = readKnowledge("docs/development/workflow.md");
-const runtimeGuide = readKnowledge("docs/development/runtime.md");
-const compose = read("infra/local/compose/compose.yaml");
-const envExample = read("infra/local/compose/.env.example");
+const developmentGuide = readKnowledge("docs/DEVELOPMENT.md");
+const operationsGuide = readKnowledge("docs/OPERATIONS.md");
 
 const nodeVersion = read(".nvmrc").trim();
 const nodeVersionFile = read(".node-version").trim();
@@ -27,7 +25,7 @@ if (!goVersion) failures.push("go.work missing Go version");
 function findGoMods(dir) {
   const results = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === ".git") continue;
+    if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === ".git" || entry.name === ".cache") continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       results.push(...findGoMods(full));
@@ -44,40 +42,34 @@ for (const mod of allGoMods) {
   if (version !== goVersion) failures.push(mod + " Go version differs from go.work");
 }
 
-if (!workflowGuide.includes("Use repository-declared versions and scripts")) {
-  failures.push("developer workflow must route toolchain/version truth to executable repository declarations");
-}
-if (!workflowGuide.includes("CURRENT_COMMAND_TRUTH_SOURCE: package.json / pnpm-workspace.yaml / repository scripts")) {
-  failures.push("developer workflow must identify repository manifests/scripts as command truth");
-}
-if (!runtimeGuide.includes("CURRENT_RUNTIME_TRUTH_SOURCE: live repository scripts/configuration")) {
-  failures.push("runtime guide must identify live repository scripts/configuration as runtime truth");
-}
-if (!runtimeGuide.includes("Resolve them from the consuming repository's exact pinned `package.json`, runtime scripts and executable configuration")) {
-  failures.push("runtime guide must route runtime command truth to the exact consuming repository");
-}
-if (/runtime:integration:|runtime:daily:/i.test(runtimeGuide + "\n" + workflowGuide)) {
-  failures.push("development guides must not freeze retired parallel runtime command families");
+function requireMetadata(body, key, expected, owner) {
+  const match = body.match(new RegExp(`^${key}:\\s*(\\S+)\\s*$`, "m"));
+  if (!match || match[1] !== expected) failures.push(`${owner} must declare ${key}: ${expected}`);
 }
 
-for (const key of new Set([...runtimeGuide.matchAll(/\bIDENTITY_[A-Z0-9_]+\b/g)].map((m) => m[0]))) {
-  if (!compose.includes(key)) failures.push("documented Identity config key missing from compose: " + key);
-  if (!envExample.includes(key + "=")) failures.push("documented Identity config key missing from .env.example: " + key);
+requireMetadata(developmentGuide, "DOCUMENT_CLASS", "NONAUTHORITATIVE_DEVELOPMENT_GUIDE", "docs/DEVELOPMENT.md");
+requireMetadata(developmentGuide, "CURRENT_IMPLEMENTATION_AUTHORITY", "NONE", "docs/DEVELOPMENT.md");
+requireMetadata(operationsGuide, "DOCUMENT_CLASS", "NONAUTHORITATIVE_OPERATIONS_GUIDE", "docs/OPERATIONS.md");
+requireMetadata(operationsGuide, "CURRENT_IMPLEMENTATION_AUTHORITY", "NONE", "docs/OPERATIONS.md");
+
+if (!/current repository commands, paths, versions and runtime shape are sourced from the consuming repository/i.test(developmentGuide)) {
+  failures.push("development guide must route mutable command/path/version/runtime truth to the consuming repository");
+}
+if (!/operational actions are source-derived from the exact implementation candidate/i.test(operationsGuide)) {
+  failures.push("operations guide must route operational truth to the exact implementation candidate");
+}
+if (!/does not freeze commands, ports, container names, credentials or provider settings/i.test(operationsGuide)) {
+  failures.push("operations guide must explicitly reject frozen mutable runtime configuration");
 }
 
-for (const file of (function collect(dir) {
-  const out = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const absolute = path.join(dir, entry.name);
-    if (entry.isDirectory()) out.push(...collect(absolute));
-    else if (entry.isFile() && entry.name.endsWith(".md")) out.push(absolute);
-  }
-  return out;
-})(path.join(knowledgeRoot, "docs/development"))) {
-  const body = fs.readFileSync(file, "utf8");
-  if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(body)) {
-    failures.push(path.relative(knowledgeRoot, file).split(path.sep).join("/") + " hard-codes a local port");
-  }
+const guides = [
+  ["docs/DEVELOPMENT.md", developmentGuide],
+  ["docs/OPERATIONS.md", operationsGuide],
+];
+for (const [name, body] of guides) {
+  if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(body)) failures.push(name + " hard-codes a local port");
+  if (/\b(?:node|pnpm|go)\s+v?\d+\.\d+(?:\.\d+)?\b/i.test(body)) failures.push(name + " freezes a mutable toolchain version");
+  if (/\b(?:runtime:integration|runtime:daily):/i.test(body)) failures.push(name + " freezes a retired parallel runtime command family");
 }
 
 if (/docker compose/i.test(read("tools/dev/bootstrap.ps1"))) failures.push("bootstrap must remain independent of runtime composition");
@@ -88,6 +80,7 @@ if (failures.length) {
   process.exit(1);
 }
 console.log("DOC_CONFIG_PARITY=PASS");
+console.log("DOC_MUTABLE_CONFIGURATION_AUTHORITY=CONSUMING_REPOSITORY");
 console.log("NODE=" + nodeVersion);
 console.log("PNPM=" + pnpmVersion);
 console.log("GO=" + goVersion);
