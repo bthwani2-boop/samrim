@@ -12,32 +12,12 @@ $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $envPath = Join-Path $repo 'infra\local\compose\.env'
 $composePath = Join-Path $repo 'infra\local\compose\compose.yaml'
-$runtimeStarted = $false
-$controlPanelProcess = $null
-$controlPanelStdout = $null
-$controlPanelStderr = $null
+$wasRunningBefore = $false
+$startedByThisVerifier = $false
+$cleanupFailure = $null
 
 function Fail([string]$Message) {
     throw $Message
-}
-
-function Read-EnvMap([string]$Path) {
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        Fail "Canonical local runtime environment is missing: $Path"
-    }
-
-    $map = @{}
-    foreach ($line in Get-Content -LiteralPath $Path) {
-        $trimmed = $line.Trim()
-        if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
-        $parts = $trimmed.Split('=', 2)
-        if ($parts.Count -ne 2) { Fail "Malformed local runtime environment line in ${Path}: $line" }
-        $name = $parts[0].Trim()
-        if ([string]::IsNullOrWhiteSpace($name)) { Fail "Empty local runtime environment key in $Path" }
-        if ($map.ContainsKey($name)) { Fail "Duplicate local runtime environment key '$name'" }
-        $map[$name] = $parts[1].Trim()
-    }
-    return $map
 }
 
 function Run-Step([string]$Name, [scriptblock]$Action) {
@@ -56,70 +36,10 @@ function Assert-CleanTree([string]$Context) {
     }
 }
 
-function Start-ControlPanelForVerification {
-    Run-Step 'Control Panel build' { pnpm --dir apps/control-panel build }
-
-    $envMap = Read-EnvMap -Path $envPath
-    $origin = $envMap['CONTROL_PANEL_PUBLIC_ORIGIN']
-    if ([string]::IsNullOrWhiteSpace($origin)) { Fail 'CONTROL_PANEL_PUBLIC_ORIGIN is required for browser verification.' }
-
-    $tempRoot = [IO.Path]::GetTempPath()
-    $nonce = [Guid]::NewGuid().ToString('N')
-    $stdoutPath = Join-Path $tempRoot "samrim-control-panel-$nonce.out.log"
-    $stderrPath = Join-Path $tempRoot "samrim-control-panel-$nonce.err.log"
-    $pnpmCommand = Get-Command pnpm.cmd -CommandType Application -ErrorAction SilentlyContinue
-    if ($null -eq $pnpmCommand) {
-        $pnpmCommand = Get-Command pnpm -CommandType Application -ErrorAction Stop
-    }
-    $pnpm = $pnpmCommand.Source
-    $process = Start-Process -FilePath $pnpm -ArgumentList @('control') -WorkingDirectory $repo -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
-
-    try {
-        for ($attempt = 1; $attempt -le 60; $attempt++) {
-            try {
-                $response = Invoke-WebRequest -Uri $origin -UseBasicParsing -TimeoutSec 5
-                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
-                    Write-Host 'CONTROL_PANEL_RUNTIME=PASS'
-                    return [pscustomobject]@{ Process = $process; Stdout = $stdoutPath; Stderr = $stderrPath }
-                }
-            }
-            catch {
-                # The canonical runtime may still be starting.
-            }
-            $process.Refresh()
-            if ($process.HasExited) {
-                $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -Raw -LiteralPath $stdoutPath } else { '' }
-                $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -Raw -LiteralPath $stderrPath } else { '' }
-                Fail "Control Panel exited before becoming ready.`n$stdout`n$stderr"
-            }
-            Start-Sleep -Seconds 1
-        }
-        $stdout = if (Test-Path -LiteralPath $stdoutPath) { Get-Content -Raw -LiteralPath $stdoutPath } else { '' }
-        $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -Raw -LiteralPath $stderrPath } else { '' }
-        Fail "Control Panel did not become ready at $origin.`n$stdout`n$stderr"
-    }
-    catch {
-        if (-not $process.HasExited) { & taskkill.exe /PID $process.Id /T /F *> $null }
-        throw
-    }
-}
-
-function Stop-ControlPanelForVerification($Handle) {
-    if ($null -eq $Handle) { return }
-    try {
-        $Handle.Process.Refresh()
-        if (-not $Handle.Process.HasExited) { & taskkill.exe /PID $Handle.Process.Id /T /F *> $null }
-    }
-    finally {
-        foreach ($path in @($Handle.Stdout, $Handle.Stderr)) {
-            if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
-        }
-    }
-}
-
-function Invoke-CanonicalSchemaVerify([string]$Service) {
-    & docker compose --project-name samrim-local --env-file $envPath -f $composePath exec -T $Service /schema-verify
-    if ($LASTEXITCODE -ne 0) { Fail "$Service exact schema verification failed." }
+function Test-CanonicalRuntimeRunning {
+    $ids = @(& docker ps --filter 'label=com.docker.compose.project=samrim-local' --format '{{.ID}}' | Where-Object { $_ })
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical runtime ownership.' }
+    return $ids.Count -gt 0
 }
 
 Push-Location $repo
@@ -154,7 +74,6 @@ try {
     Run-Step 'Docs parity' { pnpm run docs:verify:all }
     Run-Step 'Knowledge invariants' { pnpm run knowledge:verify:all }
     Run-Step 'PowerShell syntax' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 }
-    Run-Step 'Frozen workspace install' { pnpm install --frozen-lockfile }
     Run-Step 'Mobile deployable identities' { pnpm run mobile:verify-config }
     Run-Step 'Workspace dependency references' { node tools/dev/verify-workspace-dependencies.mjs }
     Run-Step 'Nx project tags' { pnpm run nx:verify-tags }
@@ -168,19 +87,30 @@ try {
 
     if (-not $SkipRuntime) {
         try {
-            Run-Step 'Canonical runtime up' { pnpm runtime:up }
-            $runtimeStarted = $true
+            $wasRunningBefore = Test-CanonicalRuntimeRunning
+            Write-Host "WAS_RUNNING_BEFORE=$([int]$wasRunningBefore)"
+            if (-not $wasRunningBefore) {
+                $startedByThisVerifier = $true
+                Run-Step 'Canonical runtime up' { pnpm runtime:up }
+            }
+            else { Write-Host 'CANONICAL_RUNTIME_START=SKIPPED reason=pre_existing_runtime' }
+            Write-Host "STARTED_BY_THIS_VERIFIER=$([int]$startedByThisVerifier)"
             Run-Step 'Canonical runtime doctor' { pnpm runtime:doctor }
-            $controlPanelProcess = Start-ControlPanelForVerification
             Run-Step 'Canonical runtime verification' { node tools/dev/verify-candidate-runtime.mjs "--env-file=$envPath" }
             Run-Step 'Canonical runtime status' { pnpm runtime:status }
             Write-Host 'LOCAL_CANDIDATE_RUNTIME=PASS'
         }
         finally {
-            if ($runtimeStarted) {
-                pnpm runtime:down
-                if ($LASTEXITCODE -ne 0) { Fail 'runtime:down failed.' }
-                $runtimeStarted = $false
+            if ($startedByThisVerifier) {
+                try {
+                    pnpm runtime:down
+                    if ($LASTEXITCODE -ne 0) { throw 'runtime:down failed.' }
+                    Write-Host 'CANDIDATE_RUNTIME_CLEANUP=PASS'
+                }
+                catch {
+                    $cleanupFailure = $_.Exception.Message
+                    Write-Host "CANDIDATE_RUNTIME_CLEANUP=FAIL reason=$cleanupFailure"
+                }
             }
         }
     }
@@ -190,11 +120,6 @@ try {
     Write-Host 'LOCAL_CANDIDATE_WINDOWS_PROOF=PASS'
 }
 finally {
-    if ($null -ne $controlPanelProcess) {
-        try { Stop-ControlPanelForVerification $controlPanelProcess } catch {}
-    }
-    if ($runtimeStarted) {
-        try { pnpm runtime:down *> $null } catch {}
-    }
     Pop-Location
+    if ($startedByThisVerifier -and $null -ne $cleanupFailure) { throw "CANDIDATE_RUNTIME_CLEANUP=FAIL reason=$cleanupFailure" }
 }

@@ -15,6 +15,6 @@ Before claiming an existing Development Build remains compatible after a cutover
 
 ## Local development preparation
 
-`pnpm mobile:prepare` validates the canonical external mobile secret bindings and proves whether an existing Android EAS development build matches the current native fingerprint for each mobile app. It does not create a new EAS build.
+`pnpm mobile:prepare` performs local mobile preparation only: it validates the external Firebase, credential, Sentry and environment bindings and materializes ignored local binding maps. It does not require EAS authentication, remote build inventory, or a connected phone.
 
-Use `pnpm mobile:prepare -- -InstallMatchingBuilds` only when an Android device is connected and the matching existing development builds should be downloaded from EAS and installed on that device. Secret values remain external and are never copied into tracked source.
+Use `pnpm mobile:prepare -- -Mode Eas` for authenticated EAS fingerprint/build compatibility discovery. Use `pnpm mobile:prepare -- -Mode InstallMatchingBuilds` only when downloading and installing matching existing development builds is the explicit device operation. Secret values remain external and are never copied into tracked source.

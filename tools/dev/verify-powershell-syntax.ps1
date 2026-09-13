@@ -13,9 +13,10 @@ $failures = @()
 if (-not $Path -or $Path.Count -eq 0) {
     Push-Location $repo
     try {
-        $Path = @(
-            & git ls-files -- "*.ps1"
-        )
+            $Path = @(
+                & git ls-files -- "*.ps1" "*.psm1" |
+                    Where-Object { Test-Path (Join-Path $repo $_) }
+            )
         if ($LASTEXITCODE -ne 0) {
             throw "Unable to enumerate tracked PowerShell files."
         }
