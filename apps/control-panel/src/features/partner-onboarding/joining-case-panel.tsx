@@ -1,7 +1,7 @@
 "use client";
 
 import type { JoiningCaseListResponse, JoiningCaseResponse, StorePublicationResponse } from "@bthwani/dsh";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
@@ -20,7 +20,7 @@ export function JoiningCasePanel() {
   const [queueBusy, setQueueBusy] = useState(false);
   const [queueError, setQueueError] = useState("");
 
-  async function loadQueue() {
+  const loadQueue = useCallback(async () => {
     setQueueBusy(true);
     setQueueError("");
     try {
@@ -35,9 +35,9 @@ export function JoiningCasePanel() {
     } finally {
       setQueueBusy(false);
     }
-  }
+  }, []);
 
-  useEffect(() => { void loadQueue(); }, []);
+  useEffect(() => { void loadQueue(); }, [loadQueue]);
 
   function rememberResult(next: JoiningCaseResponse) {
     setResult(next);
