@@ -21,8 +21,8 @@ const refreshRaceGrace = 5 * time.Second
 
 func New(db *sql.DB) *Service { return &Service{db: db, now: time.Now} }
 
-func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, deviceFingerprint string) (domain.TokenPair, error) {
-	device, err := identitysecurity.NormalizeDeviceFingerprint(deviceFingerprint)
+func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, clientInstanceId string) (domain.TokenPair, error) {
+	device, err := identitysecurity.NormalizeClientInstanceId(clientInstanceId)
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
@@ -53,7 +53,7 @@ func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actorID, role, devic
 	absoluteExpiry := now.Add(sessionAbsoluteLifetime(role))
 	accessExpiry := calculateAccessExpiry(now, absoluteExpiry)
 	refreshExpiry := calculateRefreshExpiry(now, absoluteExpiry)
-	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_sessions(id,actor_id,role,access_token_hash,refresh_token_hash,device_fingerprint_hash,access_expires_at,refresh_expires_at,absolute_expires_at,last_used_at,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)", sessionID, actorID, role, identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(refreshRandom), identitysecurity.SHA256Hex(device), accessExpiry, refreshExpiry, absoluteExpiry, now); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_sessions(id,actor_id,role,access_token_hash,refresh_token_hash,client_instance_id_hash,access_expires_at,refresh_expires_at,absolute_expires_at,last_used_at,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)", sessionID, actorID, role, identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(refreshRandom), identitysecurity.SHA256Hex(device), accessExpiry, refreshExpiry, absoluteExpiry, now); err != nil {
 		return domain.TokenPair{}, err
 	}
 	return domain.TokenPair{AccessToken: access, RefreshToken: sessionID + "." + refreshRandom, AccessExpiry: accessExpiry, Identity: identityOf(actorID, sessionID, role, accessExpiry)}, nil
@@ -86,7 +86,7 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
-	device, err := identitysecurity.NormalizeDeviceFingerprint(input.DeviceFingerprint)
+	device, err := identitysecurity.NormalizeClientInstanceId(input.ClientInstanceId)
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
@@ -111,7 +111,7 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	}
 	var currentHash, deviceHash string
 	var refreshExpiry, absoluteExpiry, lastUsedAt time.Time
-	err = tx.QueryRowContext(ctx, "SELECT refresh_token_hash,device_fingerprint_hash,refresh_expires_at,absolute_expires_at,last_used_at FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentHash, &deviceHash, &refreshExpiry, &absoluteExpiry, &lastUsedAt)
+	err = tx.QueryRowContext(ctx, "SELECT refresh_token_hash,client_instance_id_hash,refresh_expires_at,absolute_expires_at,last_used_at FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentHash, &deviceHash, &refreshExpiry, &absoluteExpiry, &lastUsedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}

@@ -37,7 +37,7 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
     return validateServiceUrl(explicit, "IDENTITY_BASE_URL");
   }
 
-  async function deviceFingerprint(): Promise<string> {
+  async function clientInstanceId(): Promise<string> {
     const existing = (await config.secureStorage.getItem(deviceKey))?.trim();
     if (existing && existing.length >= 8) return existing;
     const created = config.cryptoRandomUUID();
@@ -54,7 +54,7 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
     sessionValue ??= new IdentitySessionManager(
       identityClient(),
       config.secureStorage,
-      deviceFingerprint,
+      clientInstanceId,
       config.role,
       config.surface,
       config.namespace
@@ -65,7 +65,7 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
   return {
     identityClient,
     identitySession,
-    deviceFingerprint,
+    clientInstanceId,
     readAccessToken: (): string | null => identitySession().getAccessToken(),
     restoreIdentitySession: (): Promise<IdentitySessionState> => identitySession().restore(),
     currentIdentityState: (): IdentitySessionState => identitySession().state,
@@ -85,7 +85,7 @@ export function createManagedMobileIdentityBinding(config: ManagedMobileIdentity
         role: config.role,
         verificationCode,
         password,
-        deviceFingerprint: await runtime.deviceFingerprint(),
+        clientInstanceId: await runtime.clientInstanceId(),
       });
       return runtime.identitySession().adopt(pair);
     },
@@ -94,14 +94,9 @@ export function createManagedMobileIdentityBinding(config: ManagedMobileIdentity
         phone,
         role: config.role,
         password,
-        deviceFingerprint: await runtime.deviceFingerprint(),
+        clientInstanceId: await runtime.clientInstanceId(),
       });
       return runtime.identitySession().adopt(pair);
-    },
-    requestManagedRecovery: (phone: string) => runtime.identityClient().requestManagedRecovery({ phone, role: config.role }),
-    recoverManagedIdentity: async (phone: string, code: string, password: string): Promise<IdentitySessionState> => {
-      await runtime.identityClient().recoverManaged({ phone, role: config.role, code, password });
-      return { kind: "signed_out" };
     },
   };
 }

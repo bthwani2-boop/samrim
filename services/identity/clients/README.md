@@ -3,9 +3,9 @@
 Canonical Identity-owned client bindings live here.
 
 Rules:
-- DTO lineage originates from `contracts/identity.openapi.yaml`;
+- DTO lineage originates from `contracts/openapi/identity.openapi.yaml` and its declared modules;
 - customer registration/login/recovery and managed activation are distinct typed operations;
-- operator password-start and second-factor completion are distinct typed operations;
+- Operator Passkey options/finish, governed enrollment and break-glass re-enrollment are distinct typed operations;
 - app sessions consume one role only;
 - mobile SecureStore/keychain and control-panel HttpOnly cookies remain host adapters;
 - internal service identity comes from its configured bearer credential, not `X-Service-Caller`;

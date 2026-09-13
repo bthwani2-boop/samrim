@@ -1,0 +1,414 @@
+openapi: 3.1.0
+info:
+  title: BThwani DSH API
+  version: 1.0.0
+  description: |
+    Canonical operational contract for DSH (Delivery, Shopping, Hospitality/Operations).
+    Owns operational boundaries, managed-role provisioning delegation to Identity, and role lifecycle orchestration for partner, captain, and field roles.
+servers:
+  - url: http://127.0.0.1:18080
+
+paths:
+  /dsh/health:
+    $ref: "./paths/runtime.yaml#/paths/~1dsh~1health"
+
+  /dsh/readiness:
+    $ref: "./paths/runtime.yaml#/paths/~1dsh~1readiness"
+
+  /dsh/partner-bootstrap:
+    $ref: "./paths/partner-onboarding.yaml#/paths/~1dsh~1partner-bootstrap"
+
+  /dsh/partner-bootstrap/{partnerActorId}:
+    $ref: "./paths/partner-onboarding.yaml#/paths/~1dsh~1partner-bootstrap~1{partnerActorId}"
+
+  /dsh/partner-bootstrap/self:
+    $ref: "./paths/partner-onboarding.yaml#/paths/~1dsh~1partner-bootstrap~1self"
+
+  /dsh/stores/{storeId}/publication:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
+
+  /dsh/public/stores:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores"
+
+  /dsh/public/stores/{storeId}:
+    $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores~1{storeId}"
+
+  /dsh/managed-roles/provision:
+    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1provision"
+
+  /dsh/managed-roles/status:
+    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1status"
+
+  /dsh/managed-roles/disable:
+    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1disable"
+
+  /dsh/managed-roles/enable:
+    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1enable"
+
+  /dsh/managed-roles/reenrollment:
+    $ref: "./paths/managed-access.yaml#/paths/~1dsh~1managed-roles~1reenrollment"
+
+components:
+  securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+    userBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+
+  parameters:
+    CorrelationId:
+      name: X-Correlation-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    ActingActorId:
+      name: X-Acting-Actor-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    ActingActorIdRequired:
+      name: X-Acting-Actor-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        maxLength: 128
+    CorrelationIdRequired:
+      name: X-Correlation-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    IdempotencyKeyRequired:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    ExpectedVersion:
+      name: X-Expected-Version
+      in: header
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+    ExpectedVersionRequired:
+      name: X-Expected-Version
+      in: header
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    StoreId:
+      name: storeId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+  schemas:
+    StatusResponse:
+      type: object
+      required: [service, status]
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+
+    ManagedRole:
+      type: string
+      enum: [partner, captain, field]
+
+    ProvisionManagedRoleRequest:
+      type: object
+      required: [phoneE164, role]
+      additionalProperties: false
+      properties:
+        phoneE164:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedRole"
+
+    SetManagedRoleStateRequest:
+      type: object
+      required: [phoneE164, role, reason]
+      additionalProperties: false
+      properties:
+        phoneE164:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedRole"
+        reason:
+          type: string
+          minLength: 5
+          maxLength: 500
+
+    PhoneReenrollmentRequest:
+      type: object
+      required: [phoneE164, role]
+      additionalProperties: false
+      properties:
+        phoneE164:
+          type: string
+        role:
+          $ref: "#/components/schemas/ManagedRole"
+
+    CreatePartnerBootstrapRequest:
+      type: object
+      required: [partnerActorId, storeName]
+      additionalProperties: false
+      properties:
+        partnerActorId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeName:
+          type: string
+          minLength: 2
+          maxLength: 160
+
+    StorePublicationReadiness:
+      type: object
+      required: [ready]
+      additionalProperties: false
+      properties:
+        ready:
+          type: boolean
+        blockedReason:
+          type: string
+          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE]
+
+    StoreView:
+      type: object
+      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        partnerActorId:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        publicationState:
+          $ref: "#/components/schemas/PublicationState"
+        publicationReadiness:
+          $ref: "#/components/schemas/StorePublicationReadiness"
+        publicationChangedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PublicationState:
+      type: string
+      enum: [unpublished, published, hidden]
+
+    PublicationAction:
+      type: string
+      enum: [published, hidden]
+
+    StorePublicationRequest:
+      type: object
+      required: [state]
+      additionalProperties: false
+      properties:
+        state:
+          $ref: "#/components/schemas/PublicationAction"
+
+    StorePublicationResponse:
+      type: object
+      required: [store, idempotentReplay]
+      additionalProperties: false
+      properties:
+        store:
+          $ref: "#/components/schemas/StoreView"
+        idempotentReplay:
+          type: boolean
+
+    PublicStoreView:
+      type: object
+      required: [id, name, version, publishedAt, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        publishedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PublishedStoreListResponse:
+      type: object
+      required: [stores]
+      additionalProperties: false
+      properties:
+        stores:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublicStoreView"
+
+    PartnerBootstrapResponse:
+      type: object
+      required: [partnerActorId, firstStore, idempotentReplay]
+      additionalProperties: false
+      properties:
+        partnerActorId:
+          type: string
+        firstStore:
+          $ref: "#/components/schemas/StoreView"
+        idempotentReplay:
+          type: boolean
+
+    ActorRoleView:
+      type: object
+      required: [actorId, phoneE164, role, enabled, securityEnabled, actorVersion, roleVersion]
+      properties:
+        actorId:
+          type: string
+        phoneE164:
+          type: string
+        role:
+          type: string
+        enabled:
+          type: boolean
+        activatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        securityEnabled:
+          type: boolean
+        actorCreated:
+          type: boolean
+        roleCreated:
+          type: boolean
+        actorVersion:
+          type: integer
+          minimum: 1
+        roleVersion:
+          type: integer
+          minimum: 1
+        credentialVersion:
+          type: integer
+          minimum: 1
+
+    ManagedRoleStatusResponse:
+      type: object
+      required: [exists, enabled, activated, securityEnabled, reenrollable, state, role]
+      properties:
+        actorId:
+          type: string
+        exists:
+          type: boolean
+        enabled:
+          type: boolean
+        activated:
+          type: boolean
+        securityEnabled:
+          type: boolean
+        reenrollable:
+          type: boolean
+        state:
+          type: string
+          enum: [not_provisioned, pending_activation, active, role_disabled, identity_disabled]
+        role:
+          $ref: "#/components/schemas/ManagedRole"
+        actorVersion:
+          type: integer
+        roleVersion:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+  responses:
+    InvalidInput:
+      description: Invalid input or request body.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Unauthenticated:
+      description: Service authentication token is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    IdentityUnavailable:
+      description: Upstream identity dependency error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Forbidden:
+      description: The authenticated actor is not permitted to perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    Conflict:
+      description: The request conflicts with canonical state or idempotency.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: The requested canonical record was not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    DependencyUnavailable:
+      description: A required DSH or Identity dependency is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"

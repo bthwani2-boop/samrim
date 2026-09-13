@@ -1,0 +1,191 @@
+paths:
+  /internal/actor-roles/provision:
+    post:
+      tags: [internal-actor-roles]
+      operationId: provisionActorRole
+      security: [{ internalServiceToken: [] }]
+      description: Identity alone creates actor_id. DSH may provision partner/captain/field; the control-panel service may provision a later operator. First-operator bootstrap is a separate one-time lifecycle.
+      parameters:
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProvisionActorRoleRequest" } } }
+      responses:
+        "200": { description: Existing exact actor-role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
+        "201": { description: Canonical actor and/or role created., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/actor-roles/search:
+    get:
+      tags: [internal-actor-roles]
+      operationId: searchActorRoles
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { name: role, in: query, required: true, schema: { $ref: "#/components/schemas/ActorType" } }
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: enabled, in: query, schema: { type: boolean } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Role-scoped actor readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleSearchPage" } } } }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /internal/actors/{actorId}/roles/{role}:
+    get:
+      tags: [internal-actor-roles]
+      operationId: readActorRole
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }]
+      responses:
+        "200": { description: Exact actor-role readback., content: { application/json: { schema: { $ref: "#/components/schemas/ActorRoleView" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /internal/actors/{actorId}/roles/{role}/disable:
+    post:
+      tags: [internal-actor-roles]
+      operationId: disableActorRole
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "#/components/parameters/ExpectedVersion" }
+        - { $ref: "#/components/parameters/MutationReason" }
+      responses:
+        "204": { description: Exact role disabled and its sessions/challenges revoked. }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/actors/{actorId}/roles/{role}/enable:
+    post:
+      tags: [internal-actor-roles]
+      operationId: enableActorRole
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
+        - { $ref: "#/components/parameters/ExpectedVersion" }
+        - { $ref: "#/components/parameters/MutationReason" }
+      responses:
+        "204": { description: Existing role enabled; no session or activation eligibility is silently recreated. }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/actors/{actorId}/roles/{role}/reenrollment:
+    post:
+      tags: [internal-actor-roles]
+      operationId: authorizeManagedRoleReenrollment
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ActingActorId" }
+      responses:
+        "204": { description: Managed role is eligible for a fresh one-time activation. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/actors/{actorId}/security/disable:
+    post:
+      tags: [internal-security]
+      operationId: disableActorSecurity
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/ControlPanelExpectedVersion" }
+        - { $ref: "#/components/parameters/MutationReason" }
+      responses:
+        "204": { description: Identity-wide authentication disabled and active sessions/challenges revoked. }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/actors/{actorId}/security/enable:
+    post:
+      tags: [internal-security]
+      operationId: enableActorSecurity
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+        - { $ref: "#/components/parameters/ControlPanelExpectedVersion" }
+        - { $ref: "#/components/parameters/MutationReason" }
+      responses:
+        "204": { description: Identity-wide authentication eligibility restored; no session is resurrected. }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /internal/actors/{actorId}/roles/{role}/sessions:
+    get:
+      tags: [internal-sessions]
+      operationId: listActorRoleSessions
+      security: [{ internalServiceToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ActorId" }, { $ref: "#/components/parameters/Role" }]
+      responses:
+        "200":
+          description: Active sessions for the exact actor-role.
+          content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/SessionInfo" } } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [internal-sessions]
+      operationId: revokeActorRoleSessions
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+      responses:
+        "204": { description: Active sessions for the exact actor-role revoked. }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /internal/actors/{actorId}/roles/{role}/sessions/{sessionId}:
+    delete:
+      tags: [internal-sessions]
+      operationId: revokeActorRoleSession
+      security: [{ internalServiceToken: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/ActorId" }
+        - { $ref: "#/components/parameters/Role" }
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/CorrelationId" }
+        - { $ref: "#/components/parameters/ControlPanelActingActorId" }
+      responses:
+        "204": { description: Exact session revoked. }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }

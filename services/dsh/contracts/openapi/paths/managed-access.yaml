@@ -1,0 +1,143 @@
+paths:
+  /dsh/managed-roles/provision:
+    post:
+      operationId: provisionManagedRole
+      summary: Provision a managed operational role (partner, captain, field)
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/ProvisionManagedRoleRequest"
+      responses:
+        "200":
+          description: Managed role already existed or was updated.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/ActorRoleView"
+        "201":
+          description: Managed role was newly created.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/ActorRoleView"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/IdentityUnavailable"
+
+  /dsh/managed-roles/status:
+    get:
+      operationId: getManagedRoleStatus
+      summary: Query the current status of a managed role by phone and role
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: phoneE164
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: role
+          in: query
+          required: true
+          schema:
+            $ref: "../dsh.openapi.yaml#/components/schemas/ManagedRole"
+      responses:
+        "200":
+          description: Managed role status.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/ManagedRoleStatusResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/IdentityUnavailable"
+
+  /dsh/managed-roles/disable:
+    post:
+      operationId: disableManagedRole
+      summary: Disable a managed role by phone and role
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/SetManagedRoleStateRequest"
+      responses:
+        "204":
+          description: Managed role was disabled.
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/IdentityUnavailable"
+
+  /dsh/managed-roles/enable:
+    post:
+      operationId: enableManagedRole
+      summary: Enable a managed role by phone and role
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/SetManagedRoleStateRequest"
+      responses:
+        "204":
+          description: Managed role was enabled.
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/IdentityUnavailable"
+
+  /dsh/managed-roles/reenrollment:
+    post:
+      operationId: reenrollManagedRoleByPhone
+      summary: Authorize reenrollment for a managed role by phone
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/PhoneReenrollmentRequest"
+      responses:
+        "204":
+          description: Reenrollment was authorized.
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/IdentityUnavailable"

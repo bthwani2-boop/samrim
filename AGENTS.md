@@ -10,6 +10,12 @@ CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 MATERIAL = capable of changing behavior, meaning, ownership, authority, safety, durable data, contracts, runtime/configuration, user experience, external/deployable identity, evidence validity or operational outcome.
 
 THIS FILE IS HARD OPERATING LAW, NOT OPTIONAL GUIDANCE OR A CHECKLIST. Apply every materially applicable invariant to the whole outcome.
+Repository placement is governed operationally by `REPOSITORY-STRUCTURE.md`: before creating, moving, splitting, extracting or materially extending code/config/tests/contracts, resolve the destination against that contract and the exact current owner path; its templates never authorize future scope.
+Any structural deviation or cutover must be evidence-justified and completed as one canonical change, updating `REPOSITORY-STRUCTURE.md` and structural verifiers in the same change when their rule must change; never create a parallel/shadow topology.
+
+STRUCTURAL MATURITY LAW
+
+NO NEED→NO SCAFFOLD; COHESIVE→EXTEND; NONCOHESIVE→CUT OVER; FUTURE→NO SCAFFOLD. `PREMATURE_STRUCTURE`/`LATE_STRUCTURE`=defect; `TIMELY_STRUCTURE`=canonical. Re-evaluate scope, distant, assurance, paths, modular cost, exceeded scope. Verify: authority, no parallel, entrypoint, nonempty.
 
 ## 0. BThwani orientation and authority
 

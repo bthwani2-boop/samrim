@@ -10,7 +10,7 @@ CURRENT_COMMAND_AUTHORITY: LIVE_PACKAGE_SCRIPTS_AND_TOOL_SOURCE
 
 tools/ contains genuinely cross-repository automation, inspection, generation and evidence helpers. It is not a Product, architecture, ownership, readiness or closure authority.
 
-Durable rules are owned by the exact pinned `governance/policies/tooling-and-assurance.md` resolved through `knowledge.sources.json` from `bthwani2-boop/governance-and-docs`. The manifest also records donor and external-reference provenance; those entries remain evidence routes rather than execution/Product/adoption authority.
+Durable assurance/verification rules are owned by the exact pinned `governance/policy/QUALITY.md`, while durable system/repository boundaries are owned by `governance/system/SYSTEM.md`; both are resolved through `knowledge.sources.json` from `bthwani2-boop/governance-and-docs`. External/reference knowledge remains in pinned Governance/Docs and is queried there rather than duplicated in this repository.
 
 ## Placement rule
 
@@ -33,7 +33,7 @@ Exact scripts/commands are discovered from package.json, workflow files and the 
 
 A generated registry/map/catalog must identify its canonical inputs and be reproducible. Do not edit a derived artifact as a second source of truth.
 
-Use source-derived knowledge queries where appropriate. They materialize only the exact pinned external Governance/Docs commit into ignored local cache:
+Use source-derived knowledge queries where appropriate. They materialize only the exact pinned Governance/Docs commit into ignored local cache:
 
 ~~~text
 pnpm knowledge:query -- list capabilities
@@ -42,6 +42,9 @@ pnpm knowledge:query -- list journeys
 pnpm knowledge:query -- journey <J_ID>
 pnpm knowledge:query -- list owners
 pnpm knowledge:query -- owner <keyword-or-path>
+pnpm knowledge:query -- list references
+pnpm knowledge:query -- reference <keyword-or-class-or-path>
+pnpm knowledge:query -- list quality-dimensions
 
 pnpm docs:verify:all
 pnpm knowledge:verify:all

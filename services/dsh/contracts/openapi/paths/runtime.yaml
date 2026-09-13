@@ -1,0 +1,30 @@
+paths:
+  /dsh/health:
+    get:
+      operationId: dshHealth
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/StatusResponse"
+
+  /dsh/readiness:
+    get:
+      operationId: dshReadiness
+      summary: Readiness check
+      responses:
+        "200":
+          description: Service and downstream dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/StatusResponse"
+        "503":
+          description: Downstream dependencies are not ready.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/StatusResponse"

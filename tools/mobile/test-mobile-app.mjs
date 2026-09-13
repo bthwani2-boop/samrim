@@ -66,11 +66,11 @@ for (const forbidden of forbiddenDependencyRegressions) {
   assert.ok(!allDeps[forbidden], `${app}: contains unused dependency: ${forbidden}`);
 }
 
-const identityPath = path.join(appDir, "src", "identity.ts");
-assert.ok(fs.existsSync(identityPath), `${app}: missing src/identity.ts`);
+  const identityPath = path.join(appDir, "src", "bootstrap", "identity.ts");
+  assert.ok(fs.existsSync(identityPath), `${app}: missing src/bootstrap/identity.ts`);
 const identityContent = fs.readFileSync(identityPath, "utf8");
-assert.ok(identityContent.includes(`const role = "${role}"`), `${app}: wrong role in src/identity.ts`);
-assert.ok(identityContent.includes(`const surface = "${surface}"`), `${app}: wrong surface in src/identity.ts`);
+assert.ok(identityContent.includes(`const role = "${role}"`), `${app}: wrong role in src/bootstrap/identity.ts`);
+assert.ok(identityContent.includes(`const surface = "${surface}"`), `${app}: wrong surface in src/bootstrap/identity.ts`);
 
 const entryPath = path.join(appDir, "app", "index.tsx");
 assert.ok(fs.existsSync(entryPath), `${app}: missing app/index.tsx`);

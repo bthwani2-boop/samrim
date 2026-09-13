@@ -2,8 +2,9 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { IdentitySurface, LoadingState, UnavailableState } from "./components/public-shell";
-import { useSession } from "./components/session-provider";
+import { LoadingState, UnavailableState } from "../src/shell/public-shell";
+import { IdentitySurface } from "../src/features/access/identity-surface";
+import { useSession } from "../src/session/session-provider";
 
 export default function Home() {
   const router = useRouter();

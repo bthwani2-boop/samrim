@@ -22,97 +22,103 @@ function parseEnv(text, label) {
   return map;
 }
 
+function functionBody(source, name) {
+  const start = source.indexOf(`function ${name}`);
+  if (start < 0) return "";
+  const next = source.indexOf("\nfunction ", start + 1);
+  return source.slice(start, next < 0 ? source.length : next);
+}
+
 const packageJson = JSON.parse(read("package.json"));
 const scripts = packageJson.scripts ?? {};
-const runtimeOwner = "tools/dev/runtime.ps1";
-const deviceOwner = "tools/dev/scrcpy.ps1";
-const appOpener = "tools/dev/open-mobile-apps.ps1";
-const pwshPrefix = `pwsh -NoProfile -ExecutionPolicy Bypass -File ${runtimeOwner} -Action `;
-const openerCommand = `pwsh -NoProfile -ExecutionPolicy Bypass -File ${appOpener}`;
-
-const expectedRuntimeScripts = new Map([
-  ["runtime:up", `${pwshPrefix}Up && ${openerCommand}`],
-  ["runtime:down", `${pwshPrefix}Down`],
-  ["runtime:restart", `${pwshPrefix}Restart`],
-  ["runtime:status", `${pwshPrefix}Status`],
-  ["runtime:logs", `${pwshPrefix}Logs`],
-  ["runtime:doctor", `${pwshPrefix}Doctor`],
-  ["runtime:reset", `${pwshPrefix}Reset`],
-  ["runtime:purge", `${pwshPrefix}Purge`],
-]);
-for (const [name, expected] of expectedRuntimeScripts) assert(scripts[name] === expected, `${name} must match the canonical runtime command`);
-assert(scripts["runtime:mobile-lan"] === undefined, "retired runtime:mobile-lan command must not survive");
-assert(scripts.mobile === undefined, "daily mobile launch must be folded into runtime:up, not exposed as a third command");
-assert(scripts["runtime:verify-ownership"] === "node tools/dev/verify-local-runtime-ownership.mjs", "runtime ownership verifier command drifted");
-for (const [name, action] of [["control","Control"],["client","Client"],["partner","Partner"],["captain","Captain"],["field","Field"]]) assert(scripts[name] === `${pwshPrefix}${action}`, `${name} must route directly to ${runtimeOwner}`);
-assert(scripts.scr === `pwsh -NoProfile -ExecutionPolicy Bypass -File ${deviceOwner}`, `scr must route directly to ${deviceOwner}`);
-assert(exists(runtimeOwner), `canonical runtime owner is missing: ${runtimeOwner}`);
-assert(exists(deviceOwner), `canonical device owner is missing: ${deviceOwner}`);
-assert(exists(appOpener), `canonical post-runtime mobile opener is missing: ${appOpener}`);
-
+const runtimePath = "tools/dev/runtime.ps1";
+const devicePath = "tools/dev/device-policy.psm1";
+const scrcpyPath = "tools/dev/scrcpy.ps1";
+const appOpenerPath = "tools/dev/open-mobile-apps.ps1";
+const runtime = read(runtimePath);
+const device = read(devicePath);
+const scrcpy = read(scrcpyPath);
+const opener = read(appOpenerPath);
 const compose = read("infra/local/compose/compose.yaml");
-const envMap = parseEnv(read("infra/local/compose/.env.example"), ".env.example");
+const env = parseEnv(read("infra/local/compose/.env.example"), ".env.example");
+
+assert(exists(runtimePath), `missing runtime owner: ${runtimePath}`);
+assert(exists(devicePath), `missing device policy owner: ${devicePath}`);
+assert(exists(scrcpyPath), `missing mirror consumer: ${scrcpyPath}`);
+assert(exists(appOpenerPath), `missing app opener: ${appOpenerPath}`);
+assert(scripts["runtime:up"]?.includes(`${runtimePath} -Action Up`), "runtime:up must route to Docker runtime startup");
+assert(!scripts["runtime:up"]?.includes(appOpenerPath), "runtime:up must not open Android applications");
+assert(scripts.client?.includes(appOpenerPath) && scripts.partner?.includes(appOpenerPath) && scripts.captain?.includes(appOpenerPath) && scripts.field?.includes(appOpenerPath), "each app command must route to the app opener");
+assert(scripts.scr?.includes(scrcpyPath), "scr must route to the display-only scrcpy consumer");
+assert(scripts["runtime:mobile-lan"] === undefined, "retired Mobile LAN runtime command must not survive");
+for (const [name, action] of [["runtime:down", "Down"], ["runtime:restart", "Restart"], ["runtime:status", "Status"], ["runtime:logs", "Logs"], ["runtime:doctor", "Doctor"], ["runtime:reset", "Reset"], ["runtime:purge", "Purge"], ["runtime:rebuild", "Rebuild"], ["runtime:restart-service", "RestartService"], ["runtime:logs-service", "LogsService"]]) {
+  assert(scripts[name]?.includes(`${runtimePath} -Action ${action}`), `${name} must route to the canonical runtime owner`);
+}
+
 assert(/^name:\s*samrim-local\s*$/m.test(compose), "Compose project must be samrim-local");
-assert(!compose.includes("profiles:"), "canonical Compose must not expose alternate profiles");
-assert(!compose.includes("SAMRIM_HOTSPOT_IP"), "Compose must not project a hotspot IP");
-assert((compose.match(/EXPO_PACKAGER_PROXY_URL:\s*"http:\/\/127\.0\.0\.1:/g) ?? []).length === 4, "all four Metro services must advertise device loopback");
-assert((compose.match(/EXPO_PUBLIC_IDENTITY_API_URL:\s*"http:\/\/127\.0\.0\.1:/g) ?? []).length === 4, "all four Metro services must advertise Identity through device loopback");
-assert((compose.match(/EXPO_PUBLIC_DSH_API_URL:\s*"http:\/\/127\.0\.0\.1:/g) ?? []).length === 4, "all four Metro services must advertise DSH through device loopback");
-for (const service of ["postgres","mailpit","identity-migrate","identity","dsh-migrate","dsh","js-deps","control","metro-client","metro-partner","metro-captain","metro-field"]) assert(new RegExp(`^  ${service}:\\s*$`, "m").test(compose), `canonical Compose missing service: ${service}`);
-for (const key of ["SAMRIM_MAILPIT_WEB_PORT","SAMRIM_IDENTITY_PORT","SAMRIM_DSH_PORT","SAMRIM_CONTROL_PORT","SAMRIM_APP_CLIENT_METRO_PORT","SAMRIM_APP_PARTNER_METRO_PORT","SAMRIM_APP_CAPTAIN_METRO_PORT","SAMRIM_APP_FIELD_METRO_PORT"]) { const value = Number(envMap.get(key)); assert(Number.isInteger(value) && value >= 1 && value <= 65535, `invalid canonical runtime port ${key}`); }
-assert(envMap.get("EXPO_PUBLIC_IDENTITY_API_URL") === envMap.get("IDENTITY_API_BASE_URL"), "mobile Identity URL must project canonical localhost Identity URL");
-assert(envMap.get("EXPO_PUBLIC_DSH_API_URL") === envMap.get("DSH_API_BASE_URL"), "mobile DSH URL must project canonical localhost DSH URL");
+assert(!compose.includes("profiles:"), "canonical Compose must not expose alternate runtime profiles");
+assert(!compose.includes("SAMRIM_HOTSPOT_IP"), "Compose must not depend on a hotspot address");
+for (const service of ["postgres", "mailpit", "identity-migrate", "identity", "dsh-migrate", "dsh", "js-deps", "control", "metro-client", "metro-partner", "metro-captain", "metro-field"]) {
+  assert(new RegExp(`^  ${service}:\\s*$`, "m").test(compose), `canonical Compose missing service: ${service}`);
+}
+const portKeys = ["SAMRIM_MAILPIT_WEB_PORT", "SAMRIM_IDENTITY_PORT", "SAMRIM_DSH_PORT", "SAMRIM_CONTROL_PORT", "SAMRIM_APP_CLIENT_METRO_PORT", "SAMRIM_APP_PARTNER_METRO_PORT", "SAMRIM_APP_CAPTAIN_METRO_PORT", "SAMRIM_APP_FIELD_METRO_PORT"];
+const portValues = portKeys.map((key) => Number(env.get(key)));
+assert(portValues.every((value) => Number.isInteger(value) && value >= 1 && value <= 65535), "all canonical runtime ports must be valid");
+assert(new Set(portValues).size === portValues.length, "canonical runtime ports must be unique");
 
-const runtime = read(runtimeOwner);
-const device = read(deviceOwner);
-const opener = read(appOpener);
-for (const marker of ["$CanonicalProject = 'samrim-local'","function Ensure-Environment","function Start-CanonicalRuntime","function Assert-CanonicalRuntime","function Assert-AdbReverseReady","DOCKER_OWNS=postgres,mailpit,identity,dsh,control,metro-client,metro-partner,metro-captain,metro-field","ANDROID_DEVICE_OWNER=pnpm_scr","ANDROID_DATA_PATH=ADB_REVERSE","MOBILE_TRANSPORT=ADB_REVERSE","CONTROL_PANEL_OWNER=DOCKER"]) assert(runtime.includes(marker), `canonical runtime owner missing invariant: ${marker}`);
-for (const forbidden of ["MobileLan","MOBILE_LAN","SAMRIM_HOTSPOT_IP","BThwani Samrim Mobile LAN","Get-NetFirewall","portproxy","ADB_REVERSE_DEPENDENCY=0","MOBILE_TRANSPORT=WIFI_LAN","runtime:mobile-lan"]) { assert(!runtime.includes(forbidden), `retired runtime residue survived: ${forbidden}`); assert(!device.includes(forbidden), `retired device residue survived: ${forbidden}`); assert(!opener.includes(forbidden), `retired app opener residue survived: ${forbidden}`); }
-assert(!/['"]exec['"]\s*,\s*['"]expo['"]\s*,\s*['"]start['"]/.test(runtime), "runtime owner must not launch Metro natively");
-assert(!/next\s+dev/.test(runtime), "runtime owner must not launch Next.js natively");
-for (const marker of ["DEVICE_OWNER=WINDOWS","DEVICE_POLICY=USB_PRIMARY_WIFI_HOT_FALLBACK","ANDROID_DATA_PATH=ADB_REVERSE","ADB_USB_PRIMARY=PASS","ADB_WIFI_FALLBACK=PASS","CABLE_FAILOVER=ARMED","ADB_FAILOVER=PASS from=USB to=WIFI","Ensure-AdbReverse"]) assert(device.includes(marker), `canonical device owner missing invariant: ${marker}`);
-assert(device.includes("adb -s $UsbSerial tcpip 5555"), "USB bootstrap must prepare Wi-Fi fallback explicitly");
-assert(device.includes("scrcpy -s $Serial"), "scrcpy must target the selected transport explicitly");
+assert(runtime.includes("$CanonicalProject = 'samrim-local'"), "runtime must use the canonical Docker project");
+assert(runtime.includes("function Start-CanonicalRuntime"), "runtime must own Docker startup");
+assert(runtime.includes("function Assert-CanonicalRuntime"), "runtime must own Docker readback");
+assert(!/\badb\b/i.test(runtime), "runtime lifecycle must not contain device policy");
+assert(!/\b(?:next\s+dev|expo\s+start|go\s+run)\b/i.test(runtime), "runtime must not launch native server or Metro shadows");
+assert(!functionBody(runtime, "Stop-CanonicalRuntime").includes("Ensure-Environment"), "runtime down must not reconcile environment");
+assert(!functionBody(runtime, "Show-RuntimeLogs").includes("Ensure-Environment"), "runtime logs must be read-only");
+assert(!functionBody(runtime, "Show-RuntimeStatus").includes("Ensure-Environment"), "runtime status must be read-only");
+assert(!functionBody(runtime, "Invoke-RuntimeDoctor").includes("Ensure-Environment"), "runtime doctor must be read-only");
+assert(!functionBody(runtime, "Reset-CanonicalRuntime").includes("Ensure-Environment"), "runtime reset must not reconcile environment");
+assert(!functionBody(runtime, "Purge-CanonicalRuntime").includes("Ensure-Environment"), "runtime purge must not reconcile environment");
 
-for (const marker of [
-  "expo-development-client/?url=",
-  "com.bthwani.client.next",
-  "com.bthwani.partner.next",
-  "com.bthwani.captain.next",
-  "com.bthwani.field.next",
-  "bthwani-client-next",
-  "bthwani-partner-next",
-  "bthwani-captain-next",
-  "bthwani-field-next",
-  "SAMRIM_APP_CLIENT_METRO_PORT",
-  "SAMRIM_APP_PARTNER_METRO_PORT",
-  "SAMRIM_APP_CAPTAIN_METRO_PORT",
-  "SAMRIM_APP_FIELD_METRO_PORT",
-  "MOBILE_ALL=PASS",
-]) assert(opener.includes(marker), `post-runtime mobile opener missing invariant: ${marker}`);
-assert(opener.includes("reverse --list"), "post-runtime mobile opener must prove adb reverse readiness");
-assert(!opener.includes("reverse \"tcp:"), "post-runtime mobile opener must not own adb reverse creation");
-assert(opener.includes("Where-Object { $_.Kind -eq 'USB' }"), "post-runtime mobile opener must prefer USB when both transports are present");
-assert(opener.includes("^Status:\\s+ok\\s*$"), "post-runtime mobile opener must require Android Activity Manager Status: ok");
-assert(opener.includes("^Activity:\\s+"), "post-runtime mobile opener must prove the resolved activity belongs to the expected package");
-assert(!opener.includes("Activity not started"), "Android brought-to-front warnings must not be treated as launch failures");
-assert(opener.includes("launch=$launchState"), "post-runtime mobile opener must report the COLD/WARM/HOT launch state");
+for (const marker of ["Get-AdbCensus", "Get-CanonicalAdbDevice", "Ensure-CanonicalAdbReverse", "Prepare-CanonicalAdbDevice", "Find-DeviceByIdentity"]) assert(device.includes(marker), `device policy owner missing capability: ${marker}`);
+assert(device.includes("BTHWANI_ADB_SERIAL"), "device policy must support an explicit serial override");
+assert(device.includes("Group-Object"), "device policy must group transports by physical identity");
+assert(device.includes("tcpip 5555"), "device policy must own bounded Wi-Fi fallback bootstrap");
+assert(device.includes("reverse --list"), "device policy must own reverse readback");
+assert(scrcpy.includes("device-policy.psm1"), "scrcpy must consume the canonical device policy");
+assert(scrcpy.includes("SCRCPY_ROLE=MIRROR_ONLY"), "scrcpy must remain a display-only consumer");
+assert(!/\badb\s+[^\r\n]*\breverse\b/i.test(scrcpy), "scrcpy must not own reverse preparation");
+assert(!/\badb\s+[^\r\n]*\breverse\b/i.test(opener), "app opener must not own reverse preparation");
+assert(opener.includes("device-policy.psm1"), "app opener must consume the canonical device policy");
+assert(opener.includes("Read-AppConfig"), "app opener must read app-owned mobile configuration");
+assert(!/com\.bthwani\.|bthwani-(?:client|partner|captain|field)-next|projectId/i.test(opener + scrcpy + runtime + device), "tooling must not mirror deployable mobile identities");
 
-const startRuntimeStart = runtime.indexOf("function Start-CanonicalRuntime");
-const startRuntimeEnd = runtime.indexOf("function Ensure-CanonicalRuntime");
-assert(startRuntimeStart >= 0 && startRuntimeEnd > startRuntimeStart && !runtime.slice(startRuntimeStart, startRuntimeEnd).includes("adb "), "Docker runtime startup must remain independent from Android device transport");
-assert(scripts["runtime:up"].startsWith(`${pwshPrefix}Up && `), "runtime:up must open mobile apps only after successful Docker runtime startup");
+const appConfigValues = [];
+for (const entry of fs.readdirSync(path.join(repoRoot, "apps"), { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const configPath = path.join(repoRoot, "apps", entry.name, "mobile.config.json");
+  if (!fs.existsSync(configPath)) continue;
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  for (const field of ["scheme", "androidPackage", "iosBundleIdentifier", "slug", "projectId"]) appConfigValues.push([field, config[field]]);
+}
+for (const [field, value] of appConfigValues) {
+  assert(!opener.includes(value), `app opener must derive ${field} from mobile.config.json`);
+  assert(!scrcpy.includes(value), `scrcpy must not mirror ${field}`);
+  assert(!runtime.includes(value), `runtime must not mirror ${field}`);
+}
+
+for (const file of [runtimePath, devicePath, scrcpyPath, appOpenerPath, "infra/local/compose/compose.yaml"]) {
+  const body = read(file);
+  assert(!/MobileLan|MOBILE_LAN|SAMRIM_HOTSPOT_IP|portproxy|Get-NetFirewall|WIFI_LAN|runtime:mobile-lan/i.test(body), `retired Mobile LAN residue remains in ${file}`);
+}
 
 if (failures.length > 0) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
-  for (const failure of failures) console.error(`  ${failure}`);
+  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
   process.exit(1);
 }
 console.log("LOCAL_RUNTIME_OWNERSHIP=PASS");
-console.log("LOCAL_RUNTIME_OWNER=tools/dev/runtime.ps1");
-console.log("ANDROID_DEVICE_OWNER=tools/dev/scrcpy.ps1");
-console.log("ANDROID_POST_RUNTIME_OPENER=tools/dev/open-mobile-apps.ps1");
+console.log("DOCKER_RUNTIME_OWNER=tools/dev/runtime.ps1");
+console.log("DEVICE_POLICY_OWNER=tools/dev/device-policy.psm1");
+console.log("ANDROID_MIRROR_CONSUMER=tools/dev/scrcpy.ps1");
+console.log("ANDROID_APP_OPENER=tools/dev/open-mobile-apps.ps1");
 console.log("ANDROID_DATA_PATH=ADB_REVERSE");
-console.log("ANDROID_USB_PRIMARY_WIFI_FALLBACK=PASS");
-console.log("DAILY_COMMANDS=pnpm-scr,pnpm-runtime:up");
 console.log("MOBILE_LAN_RUNTIME_RESIDUE=0");

@@ -6,6 +6,8 @@ const appsRoot = path.join(repoRoot, "apps");
 const envExamplePath = path.join(repoRoot, "infra/local/compose/.env.example");
 const rootPackagePath = path.join(repoRoot, "package.json");
 const runtimePath = path.join(repoRoot, "tools/dev/runtime.ps1");
+const appOpenerPath = path.join(repoRoot, "tools/dev/open-mobile-apps.ps1");
+const devicePolicyPath = path.join(repoRoot, "tools/dev/device-policy.psm1");
 const requiredStringFields = [
   "name",
   "slug",
@@ -52,7 +54,7 @@ if (apps.length === 0) {
   console.error("No mobile hosts discovered from apps/*/mobile.config.json");
   process.exit(1);
 }
-if (!fs.existsSync(runtimePath)) {
+if (!fs.existsSync(runtimePath) || !fs.existsSync(appOpenerPath) || !fs.existsSync(devicePolicyPath)) {
   console.error("Canonical runtime owner is missing: tools/dev/runtime.ps1");
   process.exit(1);
 }
@@ -70,12 +72,6 @@ const seenPorts = new Map();
 const servicePorts = new Set([
   requirePort(env, "SAMRIM_IDENTITY_PORT"),
   requirePort(env, "SAMRIM_DSH_PORT"),
-]);
-const actionByApp = new Map([
-  ["app-client", "Client"],
-  ["app-partner", "Partner"],
-  ["app-captain", "Captain"],
-  ["app-field", "Field"],
 ]);
 let failed = false;
 
@@ -106,10 +102,9 @@ for (const app of apps) {
   }
 
   const rootCommandName = app.replace(/^app-/, "");
-  const action = actionByApp.get(app);
-  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action ${action}`;
-  if (!action || rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
-    console.error(`${app}: root command must route directly to the canonical runtime owner`);
+  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/open-mobile-apps.ps1 -App ${app}`;
+  if (rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
+    console.error(`${app}: root command must route to the canonical app opener`);
     failed = true;
   }
 
@@ -175,8 +170,29 @@ for (const app of apps) {
   }
 }
 
+const toolingText = [runtimePath, appOpenerPath, devicePolicyPath]
+  .map((file) => fs.readFileSync(file, "utf8"))
+  .join("\n");
+for (const entry of fs.readdirSync(appsRoot, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const configPath = path.join(appsRoot, entry.name, "mobile.config.json");
+  if (!fs.existsSync(configPath)) continue;
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  for (const field of ["scheme", "androidPackage", "iosBundleIdentifier", "slug", "projectId"]) {
+    if (typeof config[field] === "string" && toolingText.includes(config[field])) {
+      console.error(`deployable identity mirror detected in tooling: ${field}=${config[field]}`);
+      failed = true;
+    }
+  }
+}
+if (!toolingText.includes("device-policy.psm1")) {
+  console.error("mobile tooling must consume the canonical device policy owner");
+  failed = true;
+}
 if (failed) process.exit(1);
 console.log("MOBILE_RUNTIME_OWNER=tools/dev/runtime.ps1");
+console.log("MOBILE_APP_OPENER=tools/dev/open-mobile-apps.ps1");
+console.log("MOBILE_DEVICE_POLICY=tools/dev/device-policy.psm1");
 console.log("MOBILE_RUNTIME_ENTRYPOINTS=1_PER_APP");
 console.log("MOBILE_SHADOW_START_SCRIPTS=0");
 console.log("MOBILE_SHADOW_NX_RUNTIME_TARGETS=0");

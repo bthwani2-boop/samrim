@@ -1,6 +1,6 @@
 "use client";
 
-import { useSession } from "../../components/session-provider";
+import { useSession } from "../../../src/session/session-provider";
 
 export default function WorkspacePage() {
   const { state } = useSession();

@@ -1,7 +1,7 @@
 "use client";
 
-import { PartnerBootstrapPanel } from "../../components/partner-bootstrap-panel";
-import { useSession } from "../../components/session-provider";
+import { PartnerBootstrapPanel } from "../../../src/features/partner-onboarding/partner-bootstrap-panel";
+import { useSession } from "../../../src/session/session-provider";
 
 export default function PartnersPage() {
   const { state } = useSession();

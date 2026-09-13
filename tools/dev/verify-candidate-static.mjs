@@ -7,15 +7,23 @@ const root = path.resolve(import.meta.dirname, "../..");
 function verifyPartnerModel() {
   const failures = [];
   const requiredFiles = [
-    "services/dsh/contracts/dsh.openapi.yaml",
+    "services/dsh/contracts/openapi/dsh.openapi.yaml",
+    "services/dsh/contracts/openapi/paths/runtime.yaml",
+    "services/dsh/contracts/openapi/paths/partner-onboarding.yaml",
+    "services/dsh/contracts/openapi/paths/store-publication.yaml",
+    "services/dsh/contracts/openapi/paths/managed-access.yaml",
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/partner_bootstrap.go",
-    "services/dsh/backend/internal/partnerbootstrap/server.go",
+    "services/dsh/backend/internal/storage/postgres/store_publication.go",
+    "services/dsh/backend/internal/storepublication/service.go",
+    "services/dsh/backend/internal/transport/http/partnerbootstrap.go",
+    "services/dsh/backend/internal/transport/http/storepublication.go",
     "apps/control-panel/app/(workspace)/partners/page.tsx",
-    "apps/control-panel/app/components/partner-bootstrap-panel.tsx",
+    "apps/control-panel/src/features/partner-onboarding/partner-bootstrap-panel.tsx",
     "apps/control-panel/tests/live-identity.spec.ts",
-    "apps/app-partner/src/partner-product-gate.tsx",
+    "apps/app-partner/src/features/partner-onboarding/store-readback.tsx",
+    "apps/app-client/src/features/store-discovery/store-discovery.tsx",
   ];
   for (const relative of requiredFiles) {
     const absolute = path.join(root, ...relative.split("/"));
@@ -52,15 +60,26 @@ function verifyPartnerModel() {
   }
   if (residueMatches > 0) failures.push(`current Partner-model residue count is non-zero: ${residueMatches}`);
 
-  const contract = fs.readFileSync(path.join(root, "services/dsh/contracts/dsh.openapi.yaml"), "utf8");
+  const contract = requiredFiles
+    .filter((relative) => relative.startsWith("services/dsh/contracts/openapi/"))
+    .map((relative) => fs.readFileSync(path.join(root, relative), "utf8"))
+    .join("\n");
   for (const required of [
     "required: [partnerActorId, firstStore, idempotentReplay]",
-    "required: [id, partnerActorId, name, version, createdAt, updatedAt]",
+    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, createdAt, updatedAt]",
+    "required: [id, name, version, publishedAt, createdAt, updatedAt]",
   ]) {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
   }
 
-  const migration = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storage/postgres/001_partner_store_baseline.sql"), "utf8");
+  const migrationPath = path.join(root, "services/dsh/database/migrations/001_partner_store_baseline.sql");
+  if (fs.existsSync(path.join(root, "services/dsh/backend/internal/storage/postgres/001_partner_store_baseline.sql"))) {
+    failures.push("DSH baseline migration remains in the legacy storage path");
+  }
+  if (!fs.existsSync(migrationPath)) {
+    failures.push("DSH canonical migration is missing: services/dsh/database/migrations/001_partner_store_baseline.sql");
+  }
+  const migration = fs.existsSync(migrationPath) ? fs.readFileSync(migrationPath, "utf8") : "";
   if (!migration.includes("partner_actor_id text NOT NULL")) failures.push("DSH baseline does not persist Store→partner_actor_id directly");
   for (const required of [
     "stores_id_partner_actor_uq",
@@ -69,6 +88,22 @@ function verifyPartnerModel() {
   ]) {
     if (!migration.includes(required)) failures.push(`DSH baseline missing canonical integrity constraint: ${required}`);
   }
+  const publicationMigrationPath = path.join(root, "services/dsh/database/migrations/002_store_publication.sql");
+  if (!fs.existsSync(publicationMigrationPath)) failures.push("DSH Store publication migration is missing");
+  const publicationMigration = fs.existsSync(publicationMigrationPath) ? fs.readFileSync(publicationMigrationPath, "utf8") : "";
+  for (const required of [
+    "publication_state text NOT NULL DEFAULT 'unpublished'",
+    "store_publication_idempotency",
+    "store_publication_audit",
+    "store_publication_audit_event_idempotency_uq",
+  ]) {
+    if (!publicationMigration.includes(required)) failures.push(`DSH Store publication migration missing canonical invariant: ${required}`);
+  }
+  const publicViewStart = contract.indexOf("    PublicStoreView:");
+  const publicViewEnd = contract.indexOf("    PublishedStoreListResponse:", publicViewStart);
+  const publicView = publicViewStart >= 0 && publicViewEnd > publicViewStart ? contract.slice(publicViewStart, publicViewEnd) : "";
+  if (publicView.includes("partnerActorId")) failures.push("PublicStoreView leaks private partnerActorId scope");
+  if (!contract.includes("/dsh/public/stores:") || !contract.includes("/dsh/stores/{storeId}/publication:")) failures.push("DSH publication and public discovery paths are missing");
 
   if (failures.length) {
     console.error("PARTNER_MODEL=FAIL");
@@ -82,6 +117,51 @@ function verifyPartnerModel() {
   console.log("PARTNER_SURFACE=app-partner");
   console.log("STORE_LINK=partner_actor_id");
   console.log("PARTNER_MODEL_RESIDUE=0");
+}
+
+function verifyPublicationReadiness() {
+  const failures = [];
+  const contract = [
+    "services/dsh/contracts/openapi/dsh.openapi.yaml",
+    "services/dsh/contracts/openapi/paths/runtime.yaml",
+    "services/dsh/contracts/openapi/paths/partner-onboarding.yaml",
+    "services/dsh/contracts/openapi/paths/store-publication.yaml",
+    "services/dsh/contracts/openapi/paths/managed-access.yaml",
+  ].map((relative) => fs.readFileSync(path.join(root, relative), "utf8")).join("\n");
+  const generatedTS = fs.readFileSync(path.join(root, "services/dsh/clients/generated/dsh-types.ts"), "utf8");
+  const generatedGo = fs.readFileSync(path.join(root, "services/dsh/backend/internal/contract/dsh_types_generated.go"), "utf8");
+  const service = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storepublication/service.go"), "utf8");
+  const storage = fs.readFileSync(path.join(root, "services/dsh/backend/internal/storage/postgres/store_publication.go"), "utf8");
+  const runtimeEntrypoint = fs.readFileSync(path.join(root, "tools/dev/verify-dsh-runtime.mjs"), "utf8");
+  const runtimeCore = fs.readFileSync(path.join(root, "tools/dev/verify-dsh-runtime-core.mjs"), "utf8");
+
+  for (const [name, text, tokens] of [
+    ["OpenAPI contract", contract, ["StorePublicationReadiness:", "PARTNER_IDENTITY_NOT_ELIGIBLE", "publicationReadiness:"]],
+    ["generated TypeScript contract", generatedTS, ["StorePublicationReadiness", "publicationReadiness"]],
+    ["generated Go contract", generatedGo, ["type StorePublicationReadiness struct", "PublicationReadiness"]],
+    ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
+    ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
+    ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
+    ["runtime core proof", runtimeCore, ["/dsh/partner-bootstrap", "/auth/managed/activation/request", "READINESS_BLOCKED", "IDENTITY_UNAVAILABLE"]],
+  ]) {
+    for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
+  }
+  if (runtimeCore.includes("act_dsh_publication_runtime")) failures.push("runtime core proof still uses the retired synthetic positive Partner fixture");
+  if (service.includes("return postgres.ListPublishedStores(ctx, s.db)")) failures.push("public discovery still bypasses live Partner readiness evaluation");
+  if (service.includes("return postgres.SetStorePublication(ctx, s.db")) failures.push("publication write still bypasses the guarded canonical writer");
+
+  try {
+    execFileSync(process.execPath, ["services/dsh/tools/generate-types.mjs", "--check"], { cwd: root, stdio: "inherit" });
+  } catch {
+    failures.push("generated DSH contracts are stale");
+  }
+
+  if (failures.length) {
+    console.error("PUBLICATION_READINESS=FAIL");
+    for (const failure of failures) console.error("  " + failure);
+    process.exit(1);
+  }
+  console.log("PUBLICATION_READINESS=PASS");
 }
 
 function normalizeTokens(value) {
@@ -146,6 +226,7 @@ function verifyRetiredFulfillmentResidue() {
 }
 
 verifyPartnerModel();
+verifyPublicationReadiness();
 verifyRetiredFulfillmentResidue();
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";

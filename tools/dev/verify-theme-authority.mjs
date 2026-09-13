@@ -192,9 +192,9 @@ for (const app of mobileApps) {
 }
 
 // 7. Check app-client identity-gate and ManagedIdentityFlow for local color authorities
-const clientGate = read("apps/app-client/src/identity-gate.tsx");
+const clientGate = read("apps/app-client/src/features/access/identity-gate.tsx");
 if (clientGate.includes("colorRoles.") || clientGate.includes("statusScale.")) {
-  failures.push("apps/app-client/src/identity-gate.tsx retains obsolete static colorRoles or statusScale");
+  failures.push("apps/app-client/src/features/access/identity-gate.tsx retains obsolete static colorRoles or statusScale");
 }
 
 const managedFlow = read("services/identity/clients/presentation/ManagedIdentityFlow.tsx");

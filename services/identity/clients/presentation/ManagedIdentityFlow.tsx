@@ -16,8 +16,6 @@ export interface ManagedIdentityBinding {
   requestManagedActivation: (phone: string) => Promise<unknown>;
   activateManagedIdentity: (phone: string, verificationCode: string, password: string) => Promise<IdentitySessionState>;
   loginManagedIdentity: (phone: string, password: string) => Promise<IdentitySessionState>;
-  requestManagedRecovery: (phone: string) => Promise<unknown>;
-  recoverManagedIdentity: (phone: string, code: string, password: string) => Promise<IdentitySessionState>;
 }
 
 export interface ManagedIdentityFlowProps {
@@ -54,7 +52,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
-  const [step, setStep] = useState<"phone" | "password" | "activation" | "recovery">("phone");
+  const [step, setStep] = useState<"phone" | "password" | "activation">("phone");
   const [phone, setPhone] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [password, setPassword] = useState("");
@@ -91,7 +89,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
     setNotice("");
   }
 
-  function chooseIntent(next: "password" | "activation" | "recovery") {
+  function chooseIntent(next: "password" | "activation") {
     setStep(next);
     setVerificationCode("");
     setPassword("");
@@ -111,21 +109,6 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
       setNotice("إذا كانت البيانات صالحة، سيصلك رمز تحقق الهاتف عبر القناة المهيأة.");
     } catch (cause) {
       setError(identityErrorMessage(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function requestRecoveryVerification() {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await binding.requestManagedRecovery(phone);
-      setChallengeRequested(true);
-      setNotice("إذا كانت البيانات صالحة، سيصلك رمز استرداد كلمة المرور عبر القناة المهيأة.");
-    } catch (cause) {
-      setError(identityErrorMessage(cause, "recovery"));
     } finally {
       setBusy(false);
     }
@@ -151,25 +134,6 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
       setState(await binding.activateManagedIdentity(phone, verificationCode, password));
     } catch (cause) {
       setError(identityErrorMessage(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function recoverPassword() {
-    setBusy(true);
-    setError("");
-    try {
-      await binding.recoverManagedIdentity(phone, verificationCode, password);
-      setState({ kind: "signed_out" });
-      setStep("password");
-      setVerificationCode("");
-      setPassword("");
-      setPasswordConfirmation("");
-      setChallengeRequested(false);
-      setNotice("تم تغيير كلمة المرور. سجّل الدخول الآن باستخدام الكلمة الجديدة.");
-    } catch (cause) {
-      setError(identityErrorMessage(cause, "recovery"));
     } finally {
       setBusy(false);
     }
@@ -324,16 +288,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
         >
           <Text style={styles.secondaryButtonText}>التفعيل لأول مرة</Text>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="استرداد كلمة المرور"
-          accessibilityState={{ busy, disabled: busy || !phoneReady }}
-          disabled={busy || !phoneReady}
-          onPress={() => chooseIntent("recovery")}
-          style={styles.linkButton}
-        >
-          <Text style={styles.linkText}>استرداد كلمة المرور</Text>
-        </Pressable>
+        <Text style={styles.helper}>فقدت الوصول؟ اطلب إعادة التفعيل من مسؤول المنصة عبر المسار المحكوم.</Text>
       </>
     ) : step === "password" ? (
       <>
@@ -366,20 +321,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
         >
           <Text style={styles.primaryButtonText}>{busy ? "جارٍ تسجيل الدخول…" : "تسجيل الدخول"}</Text>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="نسيت كلمة المرور؟ استرداد عبر الهاتف"
-          accessibilityState={{ busy, disabled: busy }}
-          disabled={busy}
-          onPress={() => {
-            setStep("recovery");
-            setChallengeRequested(false);
-            setError("");
-          }}
-          style={styles.linkButton}
-        >
-          <Text style={styles.linkText}>نسيت كلمة المرور؟ استرداد عبر الهاتف</Text>
-        </Pressable>
+        <Text style={styles.helper}>فقدت الوصول؟ اطلب إعادة تفعيل محكومة من مسؤول المنصة.</Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="تغيير رقم الهاتف"
@@ -389,83 +331,6 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           style={styles.linkButton}
         >
           <Text style={styles.mutedLink}>تغيير رقم الهاتف</Text>
-        </Pressable>
-      </>
-    ) : step === "recovery" ? (
-      <>
-        <Text style={styles.eyebrow}>استرداد الحساب</Text>
-        <Text style={styles.title}>تغيير كلمة المرور</Text>
-        <Text style={styles.description}>سيتم تغيير كلمة مرور دور {roleLabel} فقط وإلغاء جلساته القديمة.</Text>
-        <Text style={styles.summaryPhone}>{phone}</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={challengeRequested ? "إعادة إرسال الرمز" : "إرسال رمز التحقق"}
-          accessibilityState={{ busy, disabled: busy || !phoneReady }}
-          disabled={busy || !phoneReady}
-          onPress={requestRecoveryVerification}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>{busy ? "جارٍ إرسال الرمز…" : challengeRequested ? "إعادة إرسال الرمز" : "إرسال رمز التحقق"}</Text>
-        </Pressable>
-        {challengeRequested ? (
-          <>
-            <Text style={styles.fieldLabel}>رمز تحقق الهاتف</Text>
-            <TextInput
-              accessibilityLabel="رمز تحقق الهاتف"
-              keyboardType="number-pad"
-              maxLength={6}
-              onChangeText={(value: string) => setVerificationCode(value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="رمز من ٦ أرقام"
-              placeholderTextColor={theme.colorMuted}
-              style={styles.input}
-              textAlign="right"
-              value={verificationCode}
-            />
-            <Text style={styles.fieldLabel}>كلمة المرور الجديدة</Text>
-            <TextInput
-              accessibilityLabel="كلمة المرور الجديدة"
-              autoComplete="new-password"
-              onChangeText={setPassword}
-              placeholder="١٥ حرفاً على الأقل"
-              placeholderTextColor={theme.colorMuted}
-              secureTextEntry
-              style={styles.input}
-              textAlign="right"
-              value={password}
-            />
-            <Text style={styles.fieldLabel}>تأكيد كلمة المرور</Text>
-            <TextInput
-              accessibilityLabel="تأكيد كلمة المرور"
-              autoComplete="new-password"
-              onChangeText={setPasswordConfirmation}
-              placeholder="أعد إدخال كلمة المرور"
-              placeholderTextColor={theme.colorMuted}
-              secureTextEntry
-              style={styles.input}
-              textAlign="right"
-              value={passwordConfirmation}
-            />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="تغيير كلمة المرور"
-              accessibilityState={{ busy, disabled: busy || !verificationReady || !passwordReady }}
-              disabled={busy || !verificationReady || !passwordReady}
-              onPress={recoverPassword}
-              style={styles.primaryButton}
-            >
-              <Text style={styles.primaryButtonText}>{busy ? "جارٍ التغيير…" : "تغيير كلمة المرور"}</Text>
-            </Pressable>
-          </>
-        ) : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="العودة إلى كلمة المرور"
-          accessibilityState={{ busy, disabled: busy }}
-          disabled={busy}
-          onPress={() => setStep("password")}
-          style={styles.linkButton}
-        >
-          <Text style={styles.mutedLink}>العودة إلى كلمة المرور</Text>
         </Pressable>
       </>
     ) : (

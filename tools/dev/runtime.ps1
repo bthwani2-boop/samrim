@@ -2,9 +2,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Purge','Control','Client','Partner','Captain','Field')]
+    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Purge','Control','Rebuild','RestartService','LogsService')]
     [string]$Action,
-    [string]$DeviceSerial = $env:BTHWANI_ADB_SERIAL
+    [string]$Service = ''
 )
 
 Set-StrictMode -Version Latest
@@ -17,6 +17,7 @@ $ComposePath = Join-Path $ComposeDir 'compose.yaml'
 $EnvPath = Join-Path $ComposeDir '.env'
 $EnvExamplePath = Join-Path $ComposeDir '.env.example'
 $CanonicalProject = 'samrim-local'
+$AllowedServices = @('identity','dsh','control','metro-client','metro-partner','metro-captain','metro-field')
 
 function Fail([string]$Message) { throw $Message }
 
@@ -97,7 +98,12 @@ function Ensure-Docker {
     if ($LASTEXITCODE -ne 0) { Fail 'Docker daemon is not available.' }
 }
 
-function Get-ComposeBaseArgs { return @('compose','--ansi','never','--progress','plain','--project-name',$CanonicalProject,'--env-file',$EnvPath,'-f',$ComposePath) }
+function Get-ComposeBaseArgs {
+    $base = @('compose','--ansi','never','--progress','plain','--project-name',$CanonicalProject)
+    if (Test-Path -LiteralPath $EnvPath -PathType Leaf) { $base += @('--env-file',$EnvPath) }
+    $base += @('-f',$ComposePath)
+    return $base
+}
 
 function Invoke-Compose([string[]]$Arguments, [switch]$Quiet) {
     $base = Get-ComposeBaseArgs
@@ -127,6 +133,16 @@ function Assert-RunningService([string]$Service, [switch]$Healthy) {
         $health = (& docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' $id).Trim()
         if ($LASTEXITCODE -ne 0 -or $health -ne 'healthy') { Fail "SERVICE_HEALTH=FAIL service=$Service health=$health" }
     }
+}
+
+function Wait-RunningService([string]$Service, [switch]$Healthy, [int]$TimeoutSeconds = 60) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastError = 'not observed'
+    while ([DateTime]::UtcNow -lt $deadline) {
+        try { Assert-RunningService -Service $Service -Healthy:$Healthy; return } catch { $lastError = $_.Exception.Message }
+        Start-Sleep -Milliseconds 500
+    }
+    Fail "SERVICE_READY=FAIL service=$Service timeout_seconds=$TimeoutSeconds last=$lastError"
 }
 
 function Assert-NoParallelRuntimeResidue {
@@ -163,7 +179,7 @@ function Start-CanonicalRuntime {
     Invoke-Compose -Arguments @('config','--quiet') -Quiet
     Invoke-Compose -Arguments @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')
     Assert-CanonicalRuntime -EnvMap $envMap
-    Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS'; Write-Host 'DOCKER_RUNTIME=PASS'; Write-Host 'BROWSER_RUNTIME=PASS'; Write-Host 'DOCKER_OWNS=postgres,mailpit,identity,dsh,control,metro-client,metro-partner,metro-captain,metro-field'; Write-Host 'ANDROID_DEVICE_OWNER=pnpm_scr'; Write-Host 'ANDROID_DATA_PATH=ADB_REVERSE'
+    Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS'; Write-Host 'DOCKER_RUNTIME=PASS'; Write-Host 'BROWSER_RUNTIME=PASS'; Write-Host 'DOCKER_OWNS=postgres,mailpit,identity,dsh,control,metro-client,metro-partner,metro-captain,metro-field'; Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'
     return $envMap
 }
 
@@ -173,72 +189,50 @@ function Ensure-CanonicalRuntime {
     return Start-CanonicalRuntime
 }
 
-function Stop-CanonicalRuntime { $null = Ensure-Environment; Ensure-Docker; Invoke-Compose -Arguments @('down','--remove-orphans'); Write-Host 'CANONICAL_RUNTIME_STOP=PASS data_volume=preserved' }
+function Stop-CanonicalRuntime { Ensure-Docker; Invoke-Compose -Arguments @('down','--remove-orphans'); Write-Host 'CANONICAL_RUNTIME_STOP=PASS data_volume=preserved' }
+
+function Write-DockerProjectStatus {
+    $rows = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --format '{{.Names}}|{{.State}}|{{.Label "com.docker.compose.service"}}')
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical Docker project.' }
+    Write-Host "DOCKER_PROJECT=$CanonicalProject"
+    if ($rows.Count -eq 0) { Write-Host 'DOCKER_CONTAINERS=0'; return }
+    Write-Host "DOCKER_CONTAINERS=$($rows.Count)"
+    $rows | ForEach-Object { Write-Host "DOCKER_CONTAINER=$_" }
+}
 
 function Show-RuntimeStatus {
-    $envMap = $null
-    try { $envMap = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)" }
+    Write-Host 'RUNTIME_STATUS=READ_ONLY'
+    try { $null = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)" }
     Ensure-Docker
-    if ($null -ne $envMap) { $base = Get-ComposeBaseArgs; & docker @base ps -a; if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical runtime.' }; Show-AdbReverseStatus -EnvMap $envMap }
+    Write-DockerProjectStatus
 }
 
-function Show-RuntimeLogs { $null = Ensure-Environment; Ensure-Docker; $base = Get-ComposeBaseArgs; & docker @base logs --tail 200 -f; if ($LASTEXITCODE -ne 0) { Fail 'Docker Compose logs failed.' } }
-
-function Get-ExpectedAdbReversePorts([hashtable]$EnvMap) { return @(Require-TcpPort -Map $EnvMap -Name 'SAMRIM_IDENTITY_PORT'; Require-TcpPort -Map $EnvMap -Name 'SAMRIM_DSH_PORT'; Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_CLIENT_METRO_PORT'; Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_PARTNER_METRO_PORT'; Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'; Require-TcpPort -Map $EnvMap -Name 'SAMRIM_APP_FIELD_METRO_PORT') | Sort-Object -Unique }
-
-function Get-ReadyAdbRecords {
-    if (-not (Get-Command adb -ErrorAction SilentlyContinue)) { return @() }
-    $records = @()
-    foreach ($row in @(& adb devices -l 2>&1)) {
-        if ($row -notmatch '^(\S+)\s+device(?:\s+.*)?$') { continue }
-        $serial = $Matches[1]; if ($serial -match '^emulator-') { continue }
-        $identity = ((& adb -s $serial shell getprop ro.serialno 2>$null | Out-String).Trim()); if ([string]::IsNullOrWhiteSpace($identity)) { $identity = ((& adb -s $serial shell getprop ro.boot.serialno 2>$null | Out-String).Trim()) }
-        $kind = if ($serial -match ':\d+$') { 'WIFI' } else { 'USB' }
-        $records += [pscustomobject]@{Serial=$serial;Identity=$identity;Kind=$kind}
-    }
-    return @($records)
-}
-
-function Select-CanonicalAdbRecord {
-    $records = @(Get-ReadyAdbRecords); if ($records.Count -eq 0) { return $null }
-    if (-not [string]::IsNullOrWhiteSpace($DeviceSerial)) { $selected = @($records | Where-Object { $_.Serial -eq $DeviceSerial }); if ($selected.Count -ne 1) { Fail "ADB target mismatch: $DeviceSerial" }; return $selected[0] }
-    $groups = @($records | Group-Object Identity); if ($groups.Count -ne 1) { Fail "ADB_DEVICE=AMBIGUOUS physical_devices=$($groups.Count)" }
-    $usb = @($groups[0].Group | Where-Object { $_.Kind -eq 'USB' }); if ($usb.Count -eq 1) { return $usb[0] }
-    return @($groups[0].Group | Sort-Object Serial)[0]
-}
-
-function Assert-AdbReverseReady([hashtable]$EnvMap) {
-    $record = Select-CanonicalAdbRecord; if ($null -eq $record) { Fail 'ADB_DEVICE=NOT_READY run=pnpm-scr' }
-    $rows = @(& adb -s $record.Serial reverse --list 2>&1); if ($LASTEXITCODE -ne 0) { Fail "ADB_REVERSE=NOT_READY serial=$($record.Serial)" }
-    foreach ($port in @(Get-ExpectedAdbReversePorts -EnvMap $EnvMap)) { if (@($rows | Where-Object { $_ -match "(^|\s)tcp:$port\s+tcp:$port($|\s)" }).Count -ne 1) { Fail "ADB_REVERSE=NOT_READY port=$port run=pnpm-scr" } }
-    Write-Host "ADB_REVERSE=PASS serial=$($record.Serial)"
-}
-
-function Show-AdbReverseStatus([hashtable]$EnvMap) {
-    $records = @(Get-ReadyAdbRecords); if ($records.Count -eq 0) { Write-Host 'ADB_STATE=NOT_READY reason=no_device run=pnpm-scr'; return }
-    foreach ($record in $records) { Write-Host "ADB_TRANSPORT=PASS serial=$($record.Serial) kind=$($record.Kind) identity=$($record.Identity)" }
-    try { Assert-AdbReverseReady -EnvMap $EnvMap } catch { Write-Host "ADB_REVERSE=NOT_READY reason=$($_.Exception.Message)" }
+function Show-RuntimeLogs {
+    Ensure-Docker
+    $base = Get-ComposeBaseArgs
+    & docker @base logs --tail 200 -f
+    if ($LASTEXITCODE -ne 0) { Fail 'Docker Compose logs failed.' }
 }
 
 function Invoke-RuntimeDoctor {
     $failures = @(); $envMap = $null
     try { $envMap = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)"; $failures += 'local environment' }
-    try { Ensure-Docker; Write-Host 'DOCKER_DAEMON=PASS' } catch { Write-Host "DOCKER_DAEMON=NOT_READY reason=$($_.Exception.Message)"; $failures += 'docker' }
-    if ($null -ne $envMap -and $failures.Count -eq 0) { try { Assert-CanonicalRuntime -EnvMap $envMap; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS' } catch { Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"; $failures += 'runtime' }; Show-AdbReverseStatus -EnvMap $envMap }
-    Write-Host 'ANDROID_DEVICE_OWNER=pnpm_scr'; Write-Host 'ANDROID_DATA_PATH=ADB_REVERSE'; Write-Host 'ADMIN_REQUIRED=0'; Write-Host 'DESTRUCTIVE=0'
+    try { Ensure-Docker; Write-Host 'DOCKER_DAEMON=PASS'; Write-DockerProjectStatus } catch { Write-Host "DOCKER_DAEMON=NOT_READY reason=$($_.Exception.Message)"; $failures += 'docker' }
+    if ($null -ne $envMap -and $failures.Count -eq 0) { try { Assert-CanonicalRuntime -EnvMap $envMap; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS' } catch { Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"; $failures += 'runtime' } }
+    Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'; Write-Host 'ADMIN_REQUIRED=0'; Write-Host 'DESTRUCTIVE=0'
     if ($failures.Count -eq 0) { Write-Host 'RUNTIME_DOCTOR=PASS'; return }
     Write-Host "RUNTIME_DOCTOR=NOT_READY failures=$($failures.Count)"; exit 1
 }
 
 function Reset-CanonicalRuntime {
-    $envMap = Ensure-Environment; Ensure-Docker; Write-Host 'RUNTIME_RESET=DESTRUCTIVE_LOCAL_DATA scope=postgres_application_state dependency_volumes=preserved secrets=preserved'; Invoke-Compose -Arguments @('down','--remove-orphans')
+    Ensure-Docker; Write-Host 'RUNTIME_RESET=DESTRUCTIVE_LOCAL_DATA scope=postgres_application_state dependency_volumes=preserved secrets=preserved'; Invoke-Compose -Arguments @('down','--remove-orphans')
     $postgresVolumes = @(& docker volume ls --filter "label=com.docker.compose.project=$CanonicalProject" --format '{{.Name}}' | Where-Object { $_ -match 'samrim-postgres-data$' })
     foreach ($volume in $postgresVolumes) { & docker volume rm -f $volume *> $null; if ($LASTEXITCODE -ne 0) { Fail "RUNTIME_RESET=FAIL volume=$volume" } }
     Assert-NoNativeBackendProcesses; Write-Host 'RUNTIME_RESET=PASS final_state=DOWN secrets=preserved'
 }
 
 function Purge-CanonicalRuntime {
-    $null = Ensure-Environment; Ensure-Docker; Write-Host 'RUNTIME_PURGE=DESTRUCTIVE_LOCAL_DATA scope=samrim Docker containers/networks/volumes; local .env secrets are preserved'
+    Ensure-Docker; Write-Host 'RUNTIME_PURGE=DESTRUCTIVE_LOCAL_DATA scope=samrim Docker containers/networks/volumes; local .env secrets are preserved'
     try { Invoke-Compose -Arguments @('down','--volumes','--remove-orphans') } catch { Write-Host "Canonical compose teardown was not complete: $($_.Exception.Message)" }
     Assert-NoNativeBackendProcesses; Write-Host 'RUNTIME_PURGE=PASS final_state=DOWN secrets=preserved'
 }
@@ -247,11 +241,35 @@ function Start-ControlPanel {
     $envMap = Ensure-CanonicalRuntime; $controlPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_CONTROL_PORT'; Assert-RunningService -Service 'control' -Healthy; Assert-CanonicalPublishedPort -Port $controlPort -ExpectedService 'control'; Write-Host 'CONTROL_PANEL_OWNER=DOCKER'; Write-Host "CONTROL_PANEL_READY=PASS url=http://127.0.0.1:$controlPort"; Write-Host 'CONTROL_PANEL_OPEN=MANUAL'
 }
 
-function Start-Mobile([ValidateSet('app-client','app-partner','app-captain','app-field')][string]$App) {
-    $envMap = Ensure-CanonicalRuntime
-    $contract = switch ($App) { 'app-client' {@{Service='metro-client';PortKey='SAMRIM_APP_CLIENT_METRO_PORT'}} 'app-partner' {@{Service='metro-partner';PortKey='SAMRIM_APP_PARTNER_METRO_PORT'}} 'app-captain' {@{Service='metro-captain';PortKey='SAMRIM_APP_CAPTAIN_METRO_PORT'}} 'app-field' {@{Service='metro-field';PortKey='SAMRIM_APP_FIELD_METRO_PORT'}} }
-    $metroPort = Require-TcpPort -Map $envMap -Name $contract.PortKey; Assert-RunningService -Service $contract.Service -Healthy; Assert-CanonicalPublishedPort -Port $metroPort -ExpectedService $contract.Service; Assert-AdbReverseReady -EnvMap $envMap
-    Write-Host "RUNTIME_OWNER=tools/dev/runtime.ps1 component=$App"; Write-Host "MOBILE_OWNER=DOCKER service=$($contract.Service)"; Write-Host 'MOBILE_TRANSPORT=ADB_REVERSE'; Write-Host "METRO_DEVICE_URL=http://127.0.0.1:$metroPort"; Write-Host "IDENTITY_DEVICE_URL=http://127.0.0.1:$(Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT')"; Write-Host "DSH_DEVICE_URL=http://127.0.0.1:$(Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT')"; Write-Host 'MOBILE_DEV_CLIENT_OPEN=MANUAL'
+function Require-AllowedService {
+    if ([string]::IsNullOrWhiteSpace($Service)) { Fail "SERVICE_REQUIRED allowed=$($AllowedServices -join ',')" }
+    if ($Service -notin $AllowedServices) { Fail "SERVICE_NOT_ALLOWED service=$Service allowed=$($AllowedServices -join ',')" }
+    return $Service
+}
+
+function Rebuild-Service {
+    $target = Require-AllowedService
+    $envMap = Ensure-Environment; Ensure-Docker; Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
+    Invoke-Compose -Arguments @('config','--quiet') -Quiet
+    Invoke-Compose -Arguments @('up','-d','--build','--force-recreate','--no-deps','--wait','--wait-timeout','300',$target)
+    Wait-RunningService -Service $target -Healthy
+    Write-Host "RUNTIME_SERVICE_REBUILD=PASS service=$target"
+}
+
+function Restart-Service {
+    $target = Require-AllowedService
+    $null = Read-CanonicalEnvironment; Ensure-Docker
+    Invoke-Compose -Arguments @('restart',$target)
+    Wait-RunningService -Service $target -Healthy
+    Write-Host "RUNTIME_SERVICE_RESTART=PASS service=$target"
+}
+
+function Show-ServiceLogs {
+    $target = Require-AllowedService
+    Ensure-Docker
+    $base = Get-ComposeBaseArgs
+    & docker @base logs --tail 200 -f $target
+    if ($LASTEXITCODE -ne 0) { Fail "Docker Compose logs failed service=$target" }
 }
 
 Push-Location $RepoRoot
@@ -266,9 +284,8 @@ try {
         'Reset' {Reset-CanonicalRuntime}
         'Purge' {Purge-CanonicalRuntime}
         'Control' {Start-ControlPanel}
-        'Client' {Start-Mobile -App 'app-client'}
-        'Partner' {Start-Mobile -App 'app-partner'}
-        'Captain' {Start-Mobile -App 'app-captain'}
-        'Field' {Start-Mobile -App 'app-field'}
+        'Rebuild' {Rebuild-Service}
+        'RestartService' {Restart-Service}
+        'LogsService' {Show-ServiceLogs}
     }
 } finally { Pop-Location }

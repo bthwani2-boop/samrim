@@ -23,11 +23,11 @@ func TestNormalizePhoneE164(t *testing.T) {
 }
 
 func TestIdentityInputNormalization(t *testing.T) {
-	if _, err := NormalizeDeviceFingerprint("short"); err == nil {
-		t.Fatal("short device fingerprint accepted")
+	if _, err := NormalizeClientInstanceId("short"); err == nil {
+		t.Fatal("short client instance id accepted")
 	}
-	if value, err := NormalizeDeviceFingerprint("device-12345678"); err != nil || value != "device-12345678" {
-		t.Fatalf("valid fingerprint rejected: %q %v", value, err)
+	if value, err := NormalizeClientInstanceId("device-12345678"); err != nil || value != "device-12345678" {
+		t.Fatalf("valid client instance id rejected: %q %v", value, err)
 	}
 	if value, err := NormalizeVerificationCode("123456"); err != nil || value != "123456" {
 		t.Fatalf("valid verification code rejected: %q %v", value, err)
@@ -114,5 +114,11 @@ func TestArgon2idPasswordHashing(t *testing.T) {
 	}
 	if VerifyPassword(hash, password+"-wrong") {
 		t.Fatal("invalid password accepted")
+	}
+	if NeedsPasswordRehash(hash) {
+		t.Fatal("current Argon2id parameters incorrectly marked for rehash")
+	}
+	if !NeedsPasswordRehash(strings.Replace(hash, "m=65536", "m=32768", 1)) {
+		t.Fatal("legacy Argon2id parameters were not marked for rehash")
 	}
 }

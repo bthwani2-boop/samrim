@@ -19,12 +19,14 @@ var (
 )
 
 type StoreRecord struct {
-	ID             string
-	PartnerActorID string
-	Name           string
-	Version        int
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                   string
+	PartnerActorID       string
+	Name                 string
+	Version              int
+	PublicationState     string
+	PublicationChangedAt *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type BootstrapRecord struct {
@@ -93,8 +95,8 @@ func CreatePartnerBootstrap(ctx context.Context, db *sql.DB, idempotencyKey, req
 	}
 	var store StoreRecord
 	if err := tx.QueryRowContext(ctx, `INSERT INTO dsh.stores(id, partner_actor_id, name)
-		VALUES($1,$2,$3) RETURNING id, partner_actor_id, name, version, created_at, updated_at`, storeID, partnerActorID, storeName).
-		Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.CreatedAt, &store.UpdatedAt); err != nil {
+		VALUES($1,$2,$3) RETURNING id, partner_actor_id, name, version, publication_state, publication_changed_at, created_at, updated_at`, storeID, partnerActorID, storeName).
+		Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublicationState, &store.PublicationChangedAt, &store.CreatedAt, &store.UpdatedAt); err != nil {
 		return BootstrapRecord{}, fmt.Errorf("create first store: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.partner_bootstrap_idempotency
@@ -123,10 +125,10 @@ func ReadPartnerBootstrap(ctx context.Context, db *sql.DB, partnerActorID string
 		return BootstrapRecord{}, errors.New("DSH database is nil")
 	}
 	var record BootstrapRecord
-	err := db.QueryRowContext(ctx, `SELECT partner_actor_id, id, name, version, created_at, updated_at
+	err := db.QueryRowContext(ctx, `SELECT partner_actor_id, id, name, version, publication_state, publication_changed_at, created_at, updated_at
 		FROM dsh.stores WHERE partner_actor_id=$1 ORDER BY created_at ASC LIMIT 1`, partnerActorID).Scan(
 		&record.PartnerActorID, &record.Store.ID, &record.Store.Name, &record.Store.Version,
-		&record.Store.CreatedAt, &record.Store.UpdatedAt)
+		&record.Store.PublicationState, &record.Store.PublicationChangedAt, &record.Store.CreatedAt, &record.Store.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return BootstrapRecord{}, ErrBootstrapNotFound
 	}

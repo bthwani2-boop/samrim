@@ -15,11 +15,15 @@ identity_refresh_token_history
 identity_password_attempts
 identity_security_audit
 identity_operator_enrollment_tokens
+identity_webauthn_users
+identity_webauthn_credentials
+identity_webauthn_ceremonies
+identity_operator_recovery_credentials
 ```
 
-`identity_actors` owns the permanent `actor_id`, current verified phone identifier and minimal Identity-wide `security_enabled` state. Passwords are not actor columns: client and operator password credentials are role-scoped in `identity_password_credentials`. Managed-role and operator one-time enrollment are represented by `identity_actor_roles.activated_at`.
+`identity_actors` owns the permanent `actor_id`, current verified phone identifier and minimal Identity-wide `security_enabled` state. Passwords are not actor columns: client, partner, captain and field password credentials are role-scoped in `identity_password_credentials`; Operator authentication is WebAuthn-only. Managed-role and operator one-time enrollment are represented by `identity_actor_roles.activated_at`.
 
-`identity_challenges` is purpose-bound. Current purposes distinguish client registration, client recovery, managed activation and operator MFA. A challenge cannot silently become a business-role grant, recurring login credential or recovery authority for another role.
+`identity_challenges` is purpose-bound. Current purposes distinguish client registration, client recovery, managed activation and governed Operator enrollment/recovery phone proof. A challenge cannot silently become a business-role grant, recurring login credential or recovery authority for another role.
 
 `identity_operator_enrollment_tokens` stores the one-time control-surface token for a pre-provisioned operator role. Only its digest is persisted; the plaintext is returned once to the authorized issuing surface. It is separate from `identity_challenges`, which carries the phone verification proof.
 
@@ -36,3 +40,5 @@ migration plan.
 Migration 002 adds `identity_challenge_deliveries` as durable provider-execution provenance with `suppressed | pending | sending | sent | unknown | expired` states. It is a forward migration; migration 001 remains immutable. Ordered migration application rejects missing, duplicate or non-contiguous versions.
 
 Migration 015 is the forward-only six-digit challenge cutover. It revokes all pending challenges, suppresses pending deliveries and marks in-flight deliveries as unknown before the six-digit runtime contract is allowed to issue new proofs. This prevents a legacy four-digit `code_hash` from being paired with a newly generated six-digit delivery code.
+
+Migration 017 is the forward-only Operator Passkey and `clientInstanceId` cutover. It preserves migrations 001–016, removes current Operator password/MFA artifacts and deprecated challenge rows, renames the session binding column, and adds WebAuthn ceremony/credential plus one-use recovery-credential digest state. Raw recovery credentials and biometric material are never stored.

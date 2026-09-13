@@ -2,19 +2,23 @@
 [CmdletBinding()]
 param(
     [string] $SecretsRoot = $(if ($env:BTHWANI_SECRETS_ROOT) { $env:BTHWANI_SECRETS_ROOT } else { "C:\BTHWANI-Secrets\samrim" }),
-    [switch] $InstallMatchingBuilds
+    [ValidateSet("Local", "Eas", "InstallMatchingBuilds")]
+    [string] $Mode = "Local"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$ExpectedApps = [ordered]@{
-    "app-client"  = "com.bthwani.client.next"
-    "app-partner" = "com.bthwani.partner.next"
-    "app-captain" = "com.bthwani.captain.next"
-    "app-field"   = "com.bthwani.field.next"
+$ExpectedApps = [ordered]@{}
+foreach ($AppDirectory in Get-ChildItem -LiteralPath (Join-Path $RepoRoot "apps") -Directory | Sort-Object Name) {
+    $ConfigPath = Join-Path $AppDirectory.FullName "mobile.config.json"
+    if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) { continue }
+    $Config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+    if ([string]::IsNullOrWhiteSpace([string]$Config.androidPackage)) { Fail "Missing androidPackage in $ConfigPath" }
+    $ExpectedApps[$AppDirectory.Name] = [string]$Config.androidPackage
 }
+if ($ExpectedApps.Count -eq 0) { Fail "No mobile app identities were discovered under $RepoRoot\apps" }
 $EasCliVersion = "22.2.0"
 
 function Fail([string] $Message) {
@@ -92,26 +96,8 @@ function Invoke-EasJson([string] $WorkingDirectory, [string[]] $Arguments) {
     }
 }
 
-function Resolve-AdbSerial {
-    if (-not (Get-Command adb -ErrorAction SilentlyContinue)) {
-        return ""
-    }
-
-    $Serials = @(
-        & adb devices |
-            Where-Object { $_ -match "\tdevice$" } |
-            ForEach-Object { ($_ -split "\t", 2)[0].Trim() } |
-            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-    )
-
-    if ($Serials.Count -eq 0) {
-        return ""
-    }
-    if ($Serials.Count -gt 1) {
-        Fail ("Multiple ADB devices are attached. Set BTHWANI_ADB_SERIAL before mobile preparation. Devices: " + ($Serials -join ", "))
-    }
-    return $Serials[0]
-}
+$StatusBefore = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
+if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect repository state before mobile preparation." }
 
 Write-Host "Repository: $RepoRoot"
 Write-Host "Secrets root: $SecretsRoot"
@@ -205,91 +191,44 @@ Write-Host "SENTRY_VAULT=PRESENT_INACTIVE"
 Write-Host "MOBILE_ENV_IMPORT=SELECTIVE"
 Write-Host "MOBILE_PROVIDER_POLICY=NO_STALE_MINIO_TRANSPORT_OR_SENTRY_IMPORT"
 
-$AdbSerial = Resolve-AdbSerial
-if ([string]::IsNullOrWhiteSpace($AdbSerial)) {
-    Write-Host "ADB_DEVICE=NOT_CONNECTED"
+$MatchedBuilds = [ordered]@{}
+if ($Mode -eq "Local") {
+    Write-Host "EAS_COMPATIBILITY=SKIPPED mode=Local"
+    Write-Host "DEVICE_INSTALLATION=SKIPPED mode=Local"
 }
 else {
-    Write-Host "ADB_DEVICE=PASS serial=$AdbSerial"
+    if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) { Fail "pnpm is required for EAS remote build discovery." }
+    $WhoAmI = (& pnpm dlx ("eas-cli@" + $EasCliVersion) whoami 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "EAS_AUTH=REQUIRED"
+        Write-Host "Run: pnpm dlx eas-cli@$EasCliVersion login"
+        exit 2
+    }
+    Write-Host "EAS_AUTH=PASS"
+
     foreach ($Entry in $ExpectedApps.GetEnumerator()) {
         $App = [string] $Entry.Key
-        $PackageName = [string] $Entry.Value
-        & adb -s $AdbSerial shell pm path $PackageName *> $null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "DEVICE_PACKAGE=PRESENT app=$App package=$PackageName"
-        }
-        else {
-            Write-Host "DEVICE_PACKAGE=MISSING app=$App package=$PackageName"
-        }
-    }
-}
-
-if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-    Fail "pnpm is required for EAS remote build discovery."
-}
-
-$WhoAmI = (& pnpm dlx ("eas-cli@" + $EasCliVersion) whoami 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "EAS_AUTH=REQUIRED"
-    Write-Host "Run: pnpm dlx eas-cli@$EasCliVersion login"
-    exit 2
-}
-Write-Host "EAS_AUTH=PASS"
-
-$MatchedBuilds = [ordered]@{}
-foreach ($Entry in $ExpectedApps.GetEnumerator()) {
-    $App = [string] $Entry.Key
-    $AppRoot = Join-Path $RepoRoot ("apps\" + $App)
-
-    $Fingerprint = Invoke-EasJson -WorkingDirectory $AppRoot -Arguments @(
-        "fingerprint:generate",
-        "--platform", "android",
-        "--build-profile", "development",
-        "--json",
-        "--non-interactive"
-    )
-    $Hash = [string] $Fingerprint.hash
-    if ([string]::IsNullOrWhiteSpace($Hash)) {
-        Fail "Unable to resolve Android fingerprint for $App"
+        $AppRoot = Join-Path $RepoRoot ("apps\" + $App)
+        $Fingerprint = Invoke-EasJson -WorkingDirectory $AppRoot -Arguments @("fingerprint:generate", "--platform", "android", "--build-profile", "development", "--json", "--non-interactive")
+        $Hash = [string] $Fingerprint.hash
+        if ([string]::IsNullOrWhiteSpace($Hash)) { Fail "Unable to resolve Android fingerprint for $App" }
+        $Builds = @(Invoke-EasJson -WorkingDirectory $AppRoot -Arguments @("build:list", "--platform", "android", "--build-profile", "development", "--status", "finished", "--distribution", "internal", "--fingerprint-hash", $Hash, "--limit", "10", "--json", "--non-interactive"))
+        if ($Builds.Count -eq 0) { Write-Host "EAS_COMPATIBLE_BUILD=MISS app=$App"; continue }
+        $Build = $Builds | Sort-Object { [DateTimeOffset]::Parse([string] $_.createdAt) } -Descending | Select-Object -First 1
+        $MatchedBuilds[$App] = $Build
+        Write-Host "EAS_COMPATIBLE_BUILD=PASS app=$App buildId=$($Build.id) fingerprint=$Hash"
     }
 
-    $Builds = @(
-        Invoke-EasJson -WorkingDirectory $AppRoot -Arguments @(
-            "build:list",
-            "--platform", "android",
-            "--build-profile", "development",
-            "--status", "finished",
-            "--distribution", "internal",
-            "--fingerprint-hash", $Hash,
-            "--limit", "10",
-            "--json",
-            "--non-interactive"
-        )
-    )
-
-    if ($Builds.Count -eq 0) {
-        Write-Host "EAS_COMPATIBLE_BUILD=MISS app=$App"
-        continue
+    if ($MatchedBuilds.Count -ne $ExpectedApps.Count) {
+        Write-Host "EAS_REUSE_READY=NO matched=$($MatchedBuilds.Count)/$($ExpectedApps.Count)"
+        exit 3
     }
-
-    $Build = $Builds |
-        Sort-Object { [DateTimeOffset]::Parse([string] $_.createdAt) } -Descending |
-        Select-Object -First 1
-
-    $MatchedBuilds[$App] = $Build
-    Write-Host "EAS_COMPATIBLE_BUILD=PASS app=$App buildId=$($Build.id) fingerprint=$Hash"
+    Write-Host "EAS_REUSE_READY=PASS matched=$($ExpectedApps.Count)/$($ExpectedApps.Count)"
 }
 
-if ($MatchedBuilds.Count -ne $ExpectedApps.Count) {
-    Write-Host "EAS_REUSE_READY=NO matched=$($MatchedBuilds.Count)/$($ExpectedApps.Count)"
-    exit 3
-}
-Write-Host "EAS_REUSE_READY=PASS matched=4/4"
-
-if ($InstallMatchingBuilds) {
-    if ([string]::IsNullOrWhiteSpace($AdbSerial)) {
-        Fail "InstallMatchingBuilds requires exactly one connected ADB device."
-    }
+if ($Mode -eq "InstallMatchingBuilds") {
+    Import-Module -Name (Join-Path $PSScriptRoot "..\dev\device-policy.psm1") -Force -WarningAction SilentlyContinue
+    $AdbSerial = [string](Get-CanonicalAdbDevice).Serial
 
     $DownloadRoot = Join-Path ([IO.Path]::GetTempPath()) ("bthwani-eas-" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $DownloadRoot -Force | Out-Null
@@ -335,12 +274,10 @@ if ($InstallMatchingBuilds) {
     Write-Host "EAS_MATCHING_BUILDS_INSTALLED=PASS"
 }
 
-$Status = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
-if ($LASTEXITCODE -ne 0) {
-    Fail "Unable to inspect repository state after mobile preparation."
-}
-if ($Status.Count -gt 0) {
-    Fail ("Mobile preparation mutated tracked or unignored repository state:" + [Environment]::NewLine + ($Status -join [Environment]::NewLine))
+$StatusAfter = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
+if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect repository state after mobile preparation." }
+if (($StatusAfter -join [Environment]::NewLine) -ne ($StatusBefore -join [Environment]::NewLine)) {
+    Fail ("Mobile preparation mutated tracked or unignored repository state:" + [Environment]::NewLine + "before=" + ($StatusBefore -join [Environment]::NewLine) + [Environment]::NewLine + "after=" + ($StatusAfter -join [Environment]::NewLine))
 }
 
 Write-Host "MOBILE_LOCAL_DEVELOPMENT_PREP=PASS"

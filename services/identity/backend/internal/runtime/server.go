@@ -22,6 +22,7 @@ import (
 	challengedelivery "github.com/bthwani2-boop/samrim/services/identity/backend/internal/integrations/challenge"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/lifecycle"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/opsafety"
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/passkey"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/storage/postgres"
 	identityhttp "github.com/bthwani2-boop/samrim/services/identity/backend/internal/transport/http"
@@ -44,14 +45,16 @@ type config struct {
 	allowedOrigins         map[string]bool
 	delivery               challengedelivery.Sender
 	providerBudget         challenge.ProviderBudgetConfig
+	webauthnRPID           string
+	webauthnOrigins        []string
 }
 
 func Run(_, _, defaultPort string) error {
-	cfg, err := loadConfig(defaultPort)
-	if err != nil {
+	if _, err := opsafety.RequireOrdinaryCLIEnvironment(os.Getenv("BTHWANI_ENV"), "identity service runtime"); err != nil {
 		return err
 	}
-	if _, err := opsafety.RequireOrdinaryCLIEnvironment(cfg.runtimeEnvironment, "identity service runtime"); err != nil {
+	cfg, err := loadConfig(defaultPort)
+	if err != nil {
 		return err
 	}
 	db, err := sql.Open("postgres", cfg.databaseURL)
@@ -94,6 +97,10 @@ func Run(_, _, defaultPort string) error {
 	actors := actor.New(db)
 	sessions := session.New(db)
 	challenges := challenge.New(db, actors, sessions, cfg.challengeSecret, cfg.delivery, cfg.providerBudget)
+	passkeys, err := passkey.New(db, sessions, challenges, passkey.Config{RPID: cfg.webauthnRPID, Origins: cfg.webauthnOrigins, RPName: "بثواني"})
+	if err != nil {
+		return err
+	}
 	cleaner := lifecycle.New(maintenanceDB, cfg.retention)
 	readiness := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -103,7 +110,7 @@ func Run(_, _, defaultPort string) error {
 		}
 		return postgres.VerifyMigrationHistory(ctx, db, migrationRecords)
 	}
-	handler := identityhttp.New(actors, challenges, sessions, identityhttp.Config{InternalServiceTokens: cfg.internalTokens, AllowedOrigins: cfg.allowedOrigins, AbuseIPSecret: cfg.abuseIPSecret, TrustedProxies: cfg.trustedProxies, Readiness: readiness})
+	handler := identityhttp.New(actors, challenges, sessions, passkeys, identityhttp.Config{InternalServiceTokens: cfg.internalTokens, AllowedOrigins: cfg.allowedOrigins, AbuseIPSecret: cfg.abuseIPSecret, TrustedProxies: cfg.trustedProxies, Readiness: readiness})
 	server := &http.Server{Addr: net.JoinHostPort(cfg.listenHost, cfg.port), Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -293,7 +300,39 @@ func loadConfig(defaultPort string) (config, error) {
 	} else if runtimeEnvironment == "staging" || runtimeEnvironment == "production" {
 		return config{}, errors.New("IDENTITY_PROVIDER_BUDGET_PER_HOUR is required outside local environments")
 	}
-	return config{port: port, listenHost: listenHost, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget}, nil
+	webauthnRPID := strings.TrimSpace(os.Getenv("IDENTITY_WEBAUTHN_RP_ID"))
+	if webauthnRPID == "" {
+		if runtimeEnvironment == "staging" || runtimeEnvironment == "production" {
+			return config{}, errors.New("IDENTITY_WEBAUTHN_RP_ID is required outside local environments")
+		}
+		webauthnRPID = "localhost"
+	}
+	webauthnOriginsConfig := strings.TrimSpace(os.Getenv("IDENTITY_WEBAUTHN_ALLOWED_ORIGINS"))
+	if webauthnOriginsConfig == "" {
+		if runtimeEnvironment == "staging" || runtimeEnvironment == "production" {
+			return config{}, errors.New("IDENTITY_WEBAUTHN_ALLOWED_ORIGINS is required outside local environments")
+		}
+		webauthnOriginsConfig = "http://localhost:13000"
+	}
+	webauthnOrigins := make([]string, 0)
+	for _, origin := range strings.Split(webauthnOriginsConfig, ",") {
+		origin = strings.TrimSpace(origin)
+		if origin == "" {
+			continue
+		}
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Path != "" || strings.Contains(origin, "#") || strings.Contains(origin, "?") {
+			return config{}, fmt.Errorf("IDENTITY_WEBAUTHN_ALLOWED_ORIGINS contains invalid origin %q", origin)
+		}
+		if runtimeEnvironment == "production" && parsed.Scheme != "https" {
+			return config{}, errors.New("IDENTITY_WEBAUTHN_ALLOWED_ORIGINS must use HTTPS in production")
+		}
+		webauthnOrigins = append(webauthnOrigins, origin)
+	}
+	if len(webauthnOrigins) == 0 {
+		return config{}, errors.New("IDENTITY_WEBAUTHN_ALLOWED_ORIGINS is empty")
+	}
+	return config{port: port, listenHost: listenHost, runtimeEnvironment: runtimeEnvironment, databaseURL: databaseURL, maintenanceDatabaseURL: maintenanceDatabaseURL, autoMigrate: autoMigrate, migrationDir: migrationDir, retention: retention, challengeSecret: secret, abuseIPSecret: abuseSecret, trustedProxies: trustedProxies, internalTokens: tokens, allowedOrigins: origins, delivery: delivery, providerBudget: budget, webauthnRPID: webauthnRPID, webauthnOrigins: webauthnOrigins}, nil
 }
 
 func databaseURLUser(raw string) (string, error) {

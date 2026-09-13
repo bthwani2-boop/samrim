@@ -4,7 +4,6 @@ import { ensureKnowledgeRoot } from "./knowledge-source.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const knowledgeRoot = ensureKnowledgeRoot({ materialize: true });
-const docsRoot = path.join(knowledgeRoot, "docs");
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
 );
@@ -96,7 +95,15 @@ function resolveRepositoryPath(candidate) {
 
 const failures = [];
 const documentationFiles = [
-  ...collectMarkdownFiles(docsRoot),
+  ...collectMarkdownFiles(repoRoot).filter((file) => {
+    const relative = path.relative(repoRoot, file).replaceAll("\\", "/");
+    return !relative.startsWith(".git/") &&
+      relative !== "REPOSITORY-STRUCTURE.md" &&
+      !relative.startsWith(".cache/") &&
+      !relative.startsWith("node_modules/") &&
+      !relative.startsWith(".nx/") &&
+      !relative.startsWith(".tmp/");
+  }),
   path.join(repoRoot, "README.md"),
   path.join(repoRoot, "CONTRIBUTING.md"),
   path.join(repoRoot, "AGENTS.md"),
@@ -157,12 +164,12 @@ for (const file of documentationFiles) {
 }
 
 if (failures.length > 0) {
-  console.error("DOC_COMMAND_PARITY=FAIL");
+  console.error("DOC_REPOSITORY_COMMAND_PARITY=FAIL");
   for (const failure of [...new Set(failures)].sort()) {
     console.error("  " + failure);
   }
   process.exit(1);
 }
 
-console.log("DOC_COMMAND_PARITY=PASS");
-console.log("DOC_NONAUTHORITATIVE_COMMAND_DRIFT_COUNT=0");
+console.log("DOC_REPOSITORY_COMMAND_PARITY=PASS");
+console.log("DOC_REPOSITORY_COMMAND_DRIFT_COUNT=0");

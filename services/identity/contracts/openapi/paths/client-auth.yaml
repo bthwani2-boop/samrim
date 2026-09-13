@@ -1,0 +1,64 @@
+paths:
+  /auth/client/registration/request:
+    post:
+      tags: [client-auth]
+      operationId: requestClientRegistrationVerification
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PhoneRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/client/register:
+    post:
+      tags: [client-auth]
+      operationId: registerClient
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ClientCredentialProofRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /auth/client/login:
+    post:
+      tags: [client-auth]
+      operationId: loginClient
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PasswordLoginRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/client/recovery/request:
+    post:
+      tags: [client-auth]
+      operationId: requestClientRecoveryVerification
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PhoneRequest" } } }
+      responses:
+        "201": { $ref: "#/components/responses/ChallengeIssued" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /auth/client/recover:
+    post:
+      tags: [client-auth]
+      operationId: recoverClient
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ClientRecoveryProofRequest" } } }
+      responses:
+        "200": { $ref: "#/components/responses/RecoveryComplete" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }

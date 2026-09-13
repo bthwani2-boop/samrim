@@ -7,12 +7,12 @@ const forbiddenError = {
   },
 };
 
-test("control-panel mutations accept only the configured IPv4-loopback origin", async ({ page }) => {
+test("control-panel mutations accept only the configured loopback origin", async ({ page }) => {
   const navigation = await page.goto("/");
   expect(navigation).not.toBeNull();
 
   const canonical = new URL(page.url());
-  expect(canonical.hostname).toBe("127.0.0.1");
+  expect(canonical.hostname).toBe("localhost");
 
   const sameOrigin = await page.request.post("/api/auth/logout", {
     headers: {
@@ -22,12 +22,12 @@ test("control-panel mutations accept only the configured IPv4-loopback origin", 
   });
   expect(sameOrigin.status()).not.toBe(403);
 
-  const localhostAlias = new URL(canonical.origin);
-  localhostAlias.hostname = "localhost";
+  const ipv4Alias = new URL(canonical.origin);
+  ipv4Alias.hostname = "127.0.0.1";
 
   const aliasResponse = await page.request.post("/api/auth/logout", {
     headers: {
-      Origin: localhostAlias.origin,
+      Origin: ipv4Alias.origin,
       "Sec-Fetch-Site": "same-origin",
     },
   });

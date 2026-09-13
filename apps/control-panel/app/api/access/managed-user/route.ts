@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 
-import type { ManagedActivationRole } from "@bthwani/identity";
-import { identityErrorPayload, identityHttpStatus, issueOperatorEnrollmentToken, provisionOperator, readOperatorSession } from "../../../../lib/identity-bff";
-import { authorizeManagedReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus, provisionManagedRole } from "../../../../lib/dsh-bff";
-import { verifySameOrigin } from "../../../../lib/csrf";
+import { identityErrorPayload, identityHttpStatus, issueOperatorEnrollmentToken, provisionOperator, readOperatorSession } from "../../../../src/server/identity/identity-bff";
+import { authorizeManagedReenrollment, dshErrorPayload, dshHttpStatus, isDshClientError, lookupManagedRoleStatus, provisionManagedRole } from "../../../../src/server/dsh/dsh-bff";
+import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
-const managedRoles = new Set<ManagedActivationRole>(["partner", "captain", "field", "operator"]);
+const managedRoles = new Set<string>(["partner", "captain", "field", "operator"]);
 
 export async function POST(request: Request) {
   if (!verifySameOrigin(request)) return NextResponse.json({ error: { code: "FORBIDDEN", message: "cross-site requests are forbidden" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
@@ -19,17 +18,18 @@ export async function POST(request: Request) {
   const role = typeof body?.role === "string" ? body.role.trim().toLowerCase() : "";
   if (body?.recover !== undefined || (body?.reenroll !== undefined && typeof body.reenroll !== "boolean")) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "recover is retired; use boolean reenroll" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   const reenroll = body?.reenroll === true;
-  if (!phone || !managedRoles.has(role as ManagedActivationRole)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "phone and managed role are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (!phone || !managedRoles.has(role)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "phone and managed role are required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
 
   try {
     const mutationOptions = { operatorActorId: identity.subject, correlationId: randomUUID() };
     if (reenroll) {
-      if (role === "operator") return NextResponse.json({ error: { code: "REENROLLMENT_UNSUPPORTED", message: "operator password recovery is self-service" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
-      const existing = await lookupManagedRoleStatus(phone, role as "partner" | "captain" | "field");
-      if (!existing.exists || !existing.activated) return NextResponse.json({ error: { code: "CONFLICT", message: "the managed role is not currently activated" } }, { status: 409, headers: { "Cache-Control": "no-store" } });
-      await authorizeManagedReenrollment(phone, role as "partner" | "captain" | "field", mutationOptions);
+      if (role !== "operator") {
+        const existing = await lookupManagedRoleStatus(phone, role as "partner" | "captain" | "field");
+        if (!existing.exists || !existing.activated) return NextResponse.json({ error: { code: "CONFLICT", message: "the managed role is not currently activated" } }, { status: 409, headers: { "Cache-Control": "no-store" } });
+        await authorizeManagedReenrollment(phone, role as "partner" | "captain" | "field", mutationOptions);
+      }
     }
-    if (role === "operator") await provisionOperator(phone, mutationOptions);
+    if (role === "operator" && !reenroll) await provisionOperator(phone, mutationOptions);
     else await provisionManagedRole(phone, role as "partner" | "captain" | "field", mutationOptions);
     if (role === "operator") return NextResponse.json(await issueOperatorEnrollmentToken(phone, mutationOptions), { status: 201, headers: { "Cache-Control": "no-store" } });
     return NextResponse.json({ status: reenroll ? "role_reenrollment_authorized" : "role_provisioned", role }, { status: 200, headers: { "Cache-Control": "no-store" } });

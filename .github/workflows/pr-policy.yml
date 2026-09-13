@@ -21,6 +21,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Set up Node for pinned Governance evidence
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+
+      - name: Materialize exact pinned Governance
+        shell: bash
+        run: node tools/dev/knowledge-source.mjs
+
       - name: Validate promotion pull request evidence
         shell: bash
         env:
@@ -78,13 +93,15 @@ jobs:
             exit 0
           fi
 
-          (( ${#body} >= 240 )) || { echo "::error::PR body is too short for canonical promotion evidence"; exit 1; }
+          (( ${#body} >= 500 )) || { echo "::error::PR body is too short for canonical promotion evidence"; exit 1; }
 
           required_headings=(
             '## Summary'
             '## Exact candidate and authorized objective'
             '## Affected cone and ownership'
             '## Diagnosis and decision'
+            '## Governance impact'
+            '## Material quality census'
             '## Migration / Cutover'
             '## Deployable identity / runtime'
             '## Dependencies / external references'
@@ -102,3 +119,7 @@ jobs:
           done
 
           echo "PR_POLICY_HUMAN_AGENT_EVIDENCE=PASS"
+
+      - name: Verify pinned-Governance material quality census
+        shell: bash
+        run: node tools/dev/verify-pr-evidence.mjs

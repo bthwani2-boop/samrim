@@ -176,6 +176,7 @@ for (const manifest of tracked.filter((file) => path.posix.basename(file) === "p
 const rootAgentLawOwner = "AGENTS.md";
 const rootAgentRoutingAdapters = new Set(["CLAUDE.md", "GEMINI.md"]);
 const githubAgentRoutingAdapter = ".github/copilot-instructions.md";
+const repositoryStructureContract = "REPOSITORY-STRUCTURE.md";
 
 const rootFiles = new Set([
   ".dockerignore",
@@ -188,6 +189,7 @@ const rootFiles = new Set([
   ".nvmrc",
   "CONTRIBUTING.md",
   "README.md",
+  "REPOSITORY-STRUCTURE.md",
   "SECURITY.md",
   "knowledge.sources.json",
   "go.work",
@@ -199,6 +201,24 @@ const rootFiles = new Set([
   "pnpm-workspace.yaml",
   "tsconfig.base.json",
 ]);
+
+if (!trackedSet.has(repositoryStructureContract)) {
+  failures.push("Mandatory repository placement contract missing: " + repositoryStructureContract);
+} else {
+  const structureContract = fs.readFileSync(path.join(repoRoot, repositoryStructureContract), "utf8");
+  if (!structureContract.includes("ARTIFACT_CLASS: REPOSITORY_LOCAL_PLACEMENT_CONTRACT")) {
+    failures.push(repositoryStructureContract + " missing canonical placement-contract artifact marker");
+  }
+}
+
+if (!trackedSet.has(rootAgentLawOwner)) {
+  failures.push("Canonical agent-law owner missing: " + rootAgentLawOwner);
+} else {
+  const agentLaw = fs.readFileSync(path.join(repoRoot, rootAgentLawOwner), "utf8");
+  if (!agentLaw.includes("`REPOSITORY-STRUCTURE.md`")) {
+    failures.push(rootAgentLawOwner + " must route repository placement to " + repositoryStructureContract);
+  }
+}
 
 const codeownersPath = path.join(repoRoot, ".github", "CODEOWNERS");
 if (fs.existsSync(codeownersPath)) {
@@ -353,5 +373,6 @@ console.log("GENERATED_BUILD_OUTPUT_TRACKED=0");
 console.log("PACKAGE_SCRIPT_LOCAL_PATHS_CHECKED=" + packageScriptPathCount);
 console.log("PACKAGE_SCRIPT_LOCAL_PATHS=PASS");
 console.log("CANONICAL_TEXT_EOL_POLICY=PASS");
+console.log("REPOSITORY_PLACEMENT_CONTRACT=PASS");
 console.log("STRUCTURAL_HYGIENE=PASS");
 console.log("CLASSIFICATION_COUNTS=" + JSON.stringify(counts));
