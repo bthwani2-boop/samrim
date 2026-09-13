@@ -41,6 +41,30 @@ If this file conflicts with proven current reality or a defensible owner/boundar
 9. **Move is not cutover.** Structural rehome includes imports/consumers/build/runtime/tests/tooling/verification, deletion of the losing path and exact-candidate proof.
 10. **Deployable identity is preserved during path cleanup.** Expo/EAS project IDs, bundle/package IDs, schemes, update identity and equivalent external identities do not change merely because repository layout changes.
 
+### 1.1 Structural maturity and decomposition trigger
+
+Repository topology is both **demand-created** and **demand-maintained**. A material extension must be evaluated against the resulting cohesion and whole-system complexity, not only against whether it can be placed in the current file or directory. File size, line count, and endpoint count are signals only; they are not architecture authority.
+
+~~~text
+NO NEED YET
+→ DO NOT PRE-SCAFFOLD
+
+REAL RESPONSIBILITY + CURRENT OWNER REMAINS COHESIVE
+→ EXTEND
+
+REAL RESPONSIBILITY + CURRENT OWNER NO LONGER COHESIVE
+→ STRUCTURAL CUTOVER IS PART OF THE CURRENT CHANGE
+
+FUTURE NEED
+→ DO NOT SCAFFOLD
+~~~
+
+Do not pre-scaffold future modules, and do not keep deepening a losing monolith merely because it still compiles or validates. When the modular form is simpler for a real current responsibility, the cutover is a prerequisite of the current change. `PREMATURE_STRUCTURE` and `LATE_STRUCTURE` are defects; `TIMELY_STRUCTURE` is canonical.
+
+Re-evaluation is mandatory before materially extending an existing owner when an independent semantic capability is added, unrelated capability groups share a source without semantic cohesion, a change spans distant unrelated sections, generation/validation/testing/review becomes materially broader than the changed capability, paths/schemas/configuration/handlers accumulate without cohesive grouping, the current simple form costs more than a modular form, or the owner has already exceeded cohesive scope.
+
+The structural verifier may enforce only observable invariants: one authored contract authority, no parallel State A/State B, a canonical entrypoint whenever a modular tree exists, and no empty tracked structural residue when it can be checked reliably. It must not encode arbitrary size or endpoint thresholds.
+
 ## 2. Placement decision procedure
 
 Before creating or moving any material artifact, resolve this sequence:

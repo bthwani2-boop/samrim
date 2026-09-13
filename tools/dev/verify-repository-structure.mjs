@@ -238,6 +238,16 @@ for (const service of serviceNames) {
       service + " modular OpenAPI tree requires canonical entrypoint: " + modularOpenApiEntrypoint,
     );
   }
+  for (const lane of ["paths", "schemas", "components"]) {
+    const lanePrefix = base + "contracts/openapi/" + lane + "/";
+    const laneFiles = modularOpenApiFiles.filter((item) => item.startsWith(lanePrefix));
+    if (laneFiles.length > 0) {
+      assert(
+        laneFiles.some((item) => !item.endsWith("/README.md")),
+        service + " OpenAPI lane is empty structural residue: " + lanePrefix,
+      );
+    }
+  }
   if (trackedSet.has(bundledOpenApi)) {
     assert(
       Number(hasFlatOpenApi) + Number(hasModularOpenApi) === 1,
