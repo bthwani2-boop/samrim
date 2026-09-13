@@ -15,27 +15,7 @@ Any structural deviation or cutover must be evidence-justified and completed as 
 
 STRUCTURAL MATURITY LAW
 
-A structure that was correct at an earlier scale does not earn permanent validity. Before materially extending an existing owner, evaluate the resulting state, not only whether the new responsibility can physically fit there.
-
-~~~text
-NO NEED YET
-→ DO NOT PRE-SCAFFOLD
-
-REAL RESPONSIBILITY + CURRENT OWNER REMAINS COHESIVE
-→ EXTEND
-
-REAL RESPONSIBILITY + CURRENT OWNER NO LONGER COHESIVE
-→ STRUCTURAL CUTOVER IS PART OF THE CURRENT CHANGE
-
-FUTURE NEED
-→ DO NOT SCAFFOLD
-~~~
-
-`DO NOT PRE-SCAFFOLD` does not mean keep growing a monolith after its split is justified. Currently valid placement is not permanently valid placement, and proven structural need is not future cleanup. `PREMATURE_STRUCTURE`, `LATE_STRUCTURE`, and `TIMELY_STRUCTURE` are respectively defect, defect, and canonical.
-
-Re-evaluate before material extension when a new independent semantic capability enters a multi-responsibility artifact; unrelated capability groups share a source only because they use the same service or format; a change requires navigation across distant unrelated sections; generation, validation, testing, or review expands materially beyond the capability changed; paths, schemas, configuration, or handlers accumulate without cohesive grouping; the current simple form costs more than a modular form; or an owner already exceeded cohesive scope and a new change would deepen it.
-
-Only machine-checkable structural invariants belong in repository verifiers: one authored contract authority, no parallel structural states, a canonical entrypoint for any modular tree, and no reliably detectable empty tracked structural residue.
+NO NEED→NO SCAFFOLD; COHESIVE→EXTEND; NONCOHESIVE→CUT OVER; FUTURE→NO SCAFFOLD. `PREMATURE_STRUCTURE`/`LATE_STRUCTURE`=defect; `TIMELY_STRUCTURE`=canonical. Re-evaluate scope, distant, assurance, paths, modular cost, exceeded scope. Verify: authority, no parallel, entrypoint, nonempty.
 
 ## 0. BThwani orientation and authority
 
