@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
+    [ValidateSet('app-client','app-partner','app-captain','app-field')]
     [string]$App
 )
 
@@ -11,6 +12,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $EnvPath = Join-Path $RepoRoot 'infra\local\compose\.env'
+$RuntimePath = Join-Path $PSScriptRoot 'runtime.ps1'
 $DevicePolicyPath = Join-Path $PSScriptRoot 'device-policy.psm1'
 
 function Fail([string]$Message) { throw $Message }
@@ -38,18 +40,7 @@ function Require-TcpPort([hashtable]$Map, [string]$Name) {
     return $port
 }
 
-function Get-RunningContainerId([string]$Service) {
-    $ids = @(& docker ps -a --filter 'label=com.docker.compose.project=samrim-local' --filter "label=com.docker.compose.service=$Service" --format '{{.ID}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    if ($LASTEXITCODE -ne 0 -or $ids.Count -ne 1) { Fail "RUNTIME_NOT_READY reason=service_container_missing service=$Service" }
-    $status = (& docker inspect --format '{{.State.Status}}' $ids[0]).Trim()
-    if ($LASTEXITCODE -ne 0 -or $status -ne 'running') { Fail "RUNTIME_NOT_READY reason=service_not_running service=$Service status=$status" }
-    $health = (& docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' $ids[0]).Trim()
-    if ($LASTEXITCODE -ne 0 -or $health -ne 'healthy') { Fail "RUNTIME_NOT_READY reason=service_not_healthy service=$Service health=$health" }
-    return $ids[0]
-}
-
 function Read-AppConfig([string]$AppName) {
-    if ($AppName -notmatch '^app-[A-Za-z0-9-]+$') { Fail "APP_NOT_INSTALLED app=$AppName" }
     $configPath = Join-Path $RepoRoot ("apps\$AppName\mobile.config.json")
     if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { Fail "APP_NOT_INSTALLED app=$AppName" }
     try { $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json } catch { Fail "APP_NOT_INSTALLED app=$AppName reason=invalid_mobile_config" }
@@ -83,18 +74,18 @@ function Open-DevelopmentClient([string]$Serial, [string]$AppName, $Config, [int
     Write-Host "MOBILE_OPEN=PASS app=$AppName launch=$launchState"
 }
 
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fail 'RUNTIME_NOT_READY reason=docker_unavailable' }
-& docker version *> $null
-if ($LASTEXITCODE -ne 0) { Fail 'RUNTIME_NOT_READY reason=docker_daemon_unavailable' }
+$surface = $App.Substring(4)
+& pwsh -NoProfile -ExecutionPolicy Bypass -File $RuntimePath -Action Surface -Surface $surface
+if ($LASTEXITCODE -ne 0) { Fail "RUNTIME_NOT_READY reason=surface_start_failed app=$App" }
+
 $envMap = Read-EnvMap -Path $EnvPath
 $config = Read-AppConfig -AppName $App
-$service = 'metro-' + $App.Substring(4)
-$null = Get-RunningContainerId -Service $service
-$null = Get-RunningContainerId -Service 'identity'
-$null = Get-RunningContainerId -Service 'dsh'
 $metroPort = Require-TcpPort -Map $envMap -Name ("SAMRIM_{0}_METRO_PORT" -f $App.Replace('-', '_').ToUpperInvariant())
+$identityPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_IDENTITY_PORT'
+$dshPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_DSH_PORT'
+$reversePorts = @($identityPort, $dshPort, $metroPort)
 
 Import-Module -Name $DevicePolicyPath -Force -WarningAction SilentlyContinue
-$device = Prepare-CanonicalAdbDevice -EnvPath $EnvPath
+$device = Prepare-CanonicalAdbDevice -EnvPath $EnvPath -Ports $reversePorts
 Write-Host "MOBILE_OPEN=START app=$App serial=$($device.Serial) metro=http://127.0.0.1:$metroPort"
 Open-DevelopmentClient -Serial ([string]$device.Serial) -AppName $App -Config $config -MetroPort $metroPort

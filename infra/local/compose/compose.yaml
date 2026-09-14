@@ -222,12 +222,11 @@ services:
         condition: service_healthy
     environment:
       <<: *js-env
-      NODE_ENV: "production"
       CONTROL_PANEL_PUBLIC_ORIGIN: "${CONTROL_PANEL_PUBLIC_ORIGIN}"
       IDENTITY_API_BASE_URL: "http://identity:8082"
       DSH_API_BASE_URL: "http://dsh:8080"
       CONTROL_PANEL_SERVICE_TOKEN: "${CONTROL_PANEL_SERVICE_TOKEN}"
-    command: ["sh", "-c", "pnpm --dir apps/control-panel build && pnpm --dir apps/control-panel exec next start -H 0.0.0.0 -p 13000"]
+    command: ["pnpm", "--dir", "apps/control-panel", "exec", "next", "dev", "-H", "0.0.0.0", "-p", "13000"]
     ports:
       - "127.0.0.1:${SAMRIM_CONTROL_PORT:-13000}:13000"
     healthcheck:

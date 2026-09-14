@@ -12,8 +12,10 @@ $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $envPath = Join-Path $repo 'infra\local\compose\.env'
 $composePath = Join-Path $repo 'infra\local\compose\compose.yaml'
-$wasRunningBefore = $false
-$startedByThisVerifier = $false
+$runtimePath = Join-Path $repo 'tools\dev\runtime.ps1'
+$optionalServices = @('control','metro-client','metro-partner','metro-captain','metro-field')
+$runtimeSnapshot = $null
+$runtimeChangedByVerifier = $false
 $cleanupFailure = $null
 
 function Fail([string]$Message) {
@@ -36,10 +38,43 @@ function Assert-CleanTree([string]$Context) {
     }
 }
 
-function Test-CanonicalRuntimeRunning {
-    $ids = @(& docker ps --filter 'label=com.docker.compose.project=samrim-local' --format '{{.ID}}' | Where-Object { $_ })
+function Get-RunningCanonicalServices {
+    $services = @(& docker ps --filter 'label=com.docker.compose.project=samrim-local' --format '{{.Label "com.docker.compose.service"}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
     if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical runtime ownership.' }
-    return $ids.Count -gt 0
+    return $services
+}
+
+function Get-RuntimeSnapshot {
+    $running = @(Get-RunningCanonicalServices)
+    if ($running.Count -eq 0) { return [pscustomobject]@{ Mode='none'; Target=''; Running=$running } }
+    $optionals = @($running | Where-Object { $_ -in $optionalServices })
+    if ($optionals.Count -eq $optionalServices.Count) { return [pscustomobject]@{ Mode='full'; Target=''; Running=$running } }
+    if ($optionals.Count -eq 1) { return [pscustomobject]@{ Mode='target'; Target=[string]$optionals[0]; Running=$running } }
+    Fail "NONCANONICAL_PREEXISTING_RUNTIME optionals=$($optionals -join ',') running=$($running -join ',')"
+}
+
+function Restore-RuntimeSnapshot($Snapshot) {
+    switch ([string]$Snapshot.Mode) {
+        'none' {
+            pnpm runtime:down
+            if ($LASTEXITCODE -ne 0) { Fail 'runtime:down failed while restoring pre-verification state.' }
+            Write-Host 'CANDIDATE_RUNTIME_RESTORE=PASS mode=none'
+        }
+        'target' {
+            $target = [string]$Snapshot.Target
+            if ($target -eq 'control') {
+                & pwsh -NoProfile -ExecutionPolicy Bypass -File $runtimePath -Action Control
+            }
+            elseif ($target -match '^metro-(client|partner|captain|field)$') {
+                & pwsh -NoProfile -ExecutionPolicy Bypass -File $runtimePath -Action Surface -Surface $Matches[1]
+            }
+            else { Fail "Unsupported runtime target snapshot: $target" }
+            if ($LASTEXITCODE -ne 0) { Fail "Failed to restore runtime target: $target" }
+            Write-Host "CANDIDATE_RUNTIME_RESTORE=PASS mode=target target=$target"
+        }
+        'full' { Write-Host 'CANDIDATE_RUNTIME_RESTORE=SKIPPED mode=full' }
+        default { Fail "Unknown runtime snapshot mode: $($Snapshot.Mode)" }
+    }
 }
 
 Push-Location $repo
@@ -91,31 +126,29 @@ try {
 
     if (-not $SkipRuntime) {
         try {
-            $wasRunningBefore = Test-CanonicalRuntimeRunning
-            Write-Host "WAS_RUNNING_BEFORE=$([int]$wasRunningBefore)"
-            if (-not $wasRunningBefore) {
-                $startedByThisVerifier = $true
-                Run-Step 'Canonical runtime up' { pnpm runtime:up }
+            $runtimeSnapshot = Get-RuntimeSnapshot
+            Write-Host "PREEXISTING_RUNTIME_MODE=$($runtimeSnapshot.Mode)"
+            if ($runtimeSnapshot.Mode -eq 'target') { Write-Host "PREEXISTING_RUNTIME_TARGET=$($runtimeSnapshot.Target)" }
+
+            if ($runtimeSnapshot.Mode -ne 'full') {
+                $runtimeChangedByVerifier = $true
+                Run-Step 'Canonical full runtime up' { pnpm runtime:up }
             }
-            else { Write-Host 'CANONICAL_RUNTIME_START=SKIPPED reason=pre_existing_runtime' }
-            Write-Host "STARTED_BY_THIS_VERIFIER=$([int]$startedByThisVerifier)"
+            else { Write-Host 'CANONICAL_RUNTIME_START=SKIPPED reason=pre_existing_full_runtime' }
+
             Run-Step 'Canonical runtime doctor' { pnpm runtime:doctor }
             $runtimeVerificationArgs = @("--env-file=$envPath")
-            if ($wasRunningBefore) { $runtimeVerificationArgs += '--preexisting-runtime' }
+            if ($runtimeSnapshot.Mode -ne 'none') { $runtimeVerificationArgs += '--preexisting-runtime' }
             Run-Step 'Canonical runtime verification' { node tools/dev/verify-candidate-runtime.mjs @runtimeVerificationArgs }
             Run-Step 'Canonical runtime status' { pnpm runtime:status }
             Write-Host 'LOCAL_CANDIDATE_RUNTIME=PASS'
         }
         finally {
-            if ($startedByThisVerifier) {
-                try {
-                    pnpm runtime:down
-                    if ($LASTEXITCODE -ne 0) { throw 'runtime:down failed.' }
-                    Write-Host 'CANDIDATE_RUNTIME_CLEANUP=PASS'
-                }
+            if ($runtimeChangedByVerifier -and $null -ne $runtimeSnapshot) {
+                try { Restore-RuntimeSnapshot -Snapshot $runtimeSnapshot }
                 catch {
                     $cleanupFailure = $_.Exception.Message
-                    Write-Host "CANDIDATE_RUNTIME_CLEANUP=FAIL reason=$cleanupFailure"
+                    Write-Host "CANDIDATE_RUNTIME_RESTORE=FAIL reason=$cleanupFailure"
                 }
             }
         }
@@ -127,5 +160,5 @@ try {
 }
 finally {
     Pop-Location
-    if ($startedByThisVerifier -and $null -ne $cleanupFailure) { throw "CANDIDATE_RUNTIME_CLEANUP=FAIL reason=$cleanupFailure" }
+    if ($runtimeChangedByVerifier -and $null -ne $cleanupFailure) { throw "CANDIDATE_RUNTIME_RESTORE=FAIL reason=$cleanupFailure" }
 }
