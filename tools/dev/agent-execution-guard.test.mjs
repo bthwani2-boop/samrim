@@ -3,15 +3,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import "./verify-repository-structure.test.mjs";
 import {
   evaluate,
+  fingerprint,
   pathAllowedByScopes,
   readOnlyShell,
   repoRoot,
   statePath,
 } from "./agent-execution-guard.mjs";
 
-const fingerprint = Object.freeze({
+const baseline = Object.freeze({
   repository: "bthwani2-boop/samrim",
   branch: "feature",
   head: "a".repeat(40),
@@ -28,7 +30,7 @@ function state(extra = {}) {
     mutationReady: false,
     proofReady: false,
     closureReady: false,
-    bootstrapFingerprint: fingerprint,
+    bootstrapFingerprint: baseline,
     readyFingerprint: null,
     candidateFingerprint: null,
     readyHead: null,
@@ -39,6 +41,14 @@ function state(extra = {}) {
     ...extra,
   };
 }
+
+test("fingerprint binds exact repository and governance inputs", () => {
+  const current = fingerprint();
+  assert.equal(current.repository, "bthwani2-boop/samrim");
+  for (const field of ["head", "agentsBlob", "knowledgeBlob", "governanceSha"]) {
+    assert.match(current[field], /^[0-9a-f]{40}$/);
+  }
+});
 
 test("scope matching rejects sibling prefix and repository escape", () => {
   assert.equal(pathAllowedByScopes(path.join(repoRoot, "tools/dev/a.mjs"), ["tools/dev"]), true);
@@ -73,62 +83,62 @@ test("read-only shell fast path rejects composition", () => {
 });
 
 test("read discovery remains available before bootstrap", () => {
-  assert.equal(evaluate({ name: "Read", input: { file_path: "AGENTS.md" }, state: null, current: fingerprint, session: null }).decision, "allow");
+  assert.equal(evaluate({ name: "Read", input: { file_path: "AGENTS.md" }, state: null, current: baseline, session: null }).decision, "allow");
 });
 
 test("direct guard lifecycle is internal and available without pnpm aliases", () => {
-  assert.equal(evaluate({ name: "Bash", input: { command: "node tools/dev/agent-execution-guard.mjs bootstrap" }, state: null, current: fingerprint, session: null }).decision, "allow");
-  assert.equal(evaluate({ name: "Bash", input: { command: "node tools/dev/agent-execution-guard.mjs status" }, state: null, current: fingerprint, session: null }).decision, "allow");
-  assert.equal(evaluate({ name: "Bash", input: { command: "node tools/dev/agent-execution-guard.mjs ready --scope tools/dev" }, state: state(), current: fingerprint, session: "session-a" }).decision, "allow");
-  assert.equal(evaluate({ name: "Bash", input: { command: "node tools/dev/agent-execution-guard.mjs verify" }, state: state(), current: fingerprint, session: "session-b" }).decision, "deny");
+  assert.equal(evaluate({ name: "Bash", input: { command: "node tools/dev/agent-execution-guard.mjs bootstrap" }, state: null, current: baseline, session: null }).decision, "allow");
+  assert.equal(evaluate({ name: "Bash", input: { command: "node tools/dev/agent-execution-guard.mjs status" }, state: null, current: baseline, session: null }).decision, "allow");
+  assert.equal(evaluate({ name: "Bash", input: { command: "node tools/dev/agent-execution-guard.mjs ready --scope tools/dev" }, state: state(), current: baseline, session: "session-a" }).decision, "allow");
+  assert.equal(evaluate({ name: "Bash", input: { command: "node tools/dev/agent-execution-guard.mjs verify" }, state: state(), current: baseline, session: "session-b" }).decision, "deny");
 });
 
 test("identified owner makes missing or foreign session fail closed", () => {
-  const ready = state({ mutationReady: true, readyHead: fingerprint.head, readyFingerprint: fingerprint });
-  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "tools/dev/x.mjs") }, state: ready, current: fingerprint, session: null }).decision, "deny");
-  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "tools/dev/x.mjs") }, state: ready, current: fingerprint, session: "session-b" }).decision, "deny");
+  const ready = state({ mutationReady: true, readyHead: baseline.head, readyFingerprint: baseline });
+  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "tools/dev/x.mjs") }, state: ready, current: baseline, session: null }).decision, "deny");
+  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "tools/dev/x.mjs") }, state: ready, current: baseline, session: "session-b" }).decision, "deny");
 });
 
 test("guard state is machine-owned", () => {
-  const ready = state({ mutationReady: true, readyHead: fingerprint.head, readyFingerprint: fingerprint });
-  assert.equal(evaluate({ name: "Write", input: { file_path: statePath }, state: ready, current: fingerprint, session: "session-a" }).decision, "deny");
+  const ready = state({ mutationReady: true, readyHead: baseline.head, readyFingerprint: baseline });
+  assert.equal(evaluate({ name: "Write", input: { file_path: statePath }, state: ready, current: baseline, session: "session-a" }).decision, "deny");
 });
 
 test("ready mutation is constrained to exact baseline and declared scope", () => {
-  const ready = state({ mutationReady: true, readyHead: fingerprint.head, readyFingerprint: fingerprint });
-  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "tools/dev/x.mjs") }, state: ready, current: fingerprint, session: "session-a" }).decision, "allow");
-  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "apps/x.ts") }, state: ready, current: fingerprint, session: "session-a" }).decision, "deny");
-  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "tools/dev/x.mjs") }, state: ready, current: { ...fingerprint, head: "f".repeat(40) }, session: "session-a" }).decision, "deny");
+  const ready = state({ mutationReady: true, readyHead: baseline.head, readyFingerprint: baseline });
+  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "tools/dev/x.mjs") }, state: ready, current: baseline, session: "session-a" }).decision, "allow");
+  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "apps/x.ts") }, state: ready, current: baseline, session: "session-a" }).decision, "deny");
+  assert.equal(evaluate({ name: "Edit", input: { file_path: path.join(repoRoot, "tools/dev/x.mjs") }, state: ready, current: { ...baseline, head: "f".repeat(40) }, session: "session-a" }).decision, "deny");
 });
 
 test("raw promotion is denied and safe push requires exact closure", () => {
-  const ready = state({ mutationReady: true, readyHead: fingerprint.head, readyFingerprint: fingerprint });
-  assert.equal(evaluate({ name: "Bash", input: { command: "git push origin HEAD" }, state: ready, current: fingerprint, session: "session-a" }).decision, "deny");
-  assert.equal(evaluate({ name: "Bash", input: { command: "pnpm safe:push" }, state: ready, current: fingerprint, session: "session-a" }).decision, "deny");
+  const ready = state({ mutationReady: true, readyHead: baseline.head, readyFingerprint: baseline });
+  assert.equal(evaluate({ name: "Bash", input: { command: "git push origin HEAD" }, state: ready, current: baseline, session: "session-a" }).decision, "deny");
+  assert.equal(evaluate({ name: "Bash", input: { command: "pnpm safe:push" }, state: ready, current: baseline, session: "session-a" }).decision, "deny");
   const closed = state({
     mutationReady: true,
     proofReady: true,
     closureReady: true,
-    readyHead: fingerprint.head,
-    readyFingerprint: fingerprint,
-    candidateFingerprint: fingerprint,
-    proofHead: fingerprint.head,
-    closedHead: fingerprint.head,
+    readyHead: baseline.head,
+    readyFingerprint: baseline,
+    candidateFingerprint: baseline,
+    proofHead: baseline.head,
+    closedHead: baseline.head,
   });
-  assert.equal(evaluate({ name: "Bash", input: { command: "git push origin HEAD" }, state: closed, current: fingerprint, session: "session-a" }).decision, "deny");
-  assert.equal(evaluate({ name: "Bash", input: { command: "pnpm safe:push" }, state: closed, current: fingerprint, session: "session-a" }).decision, "allow");
+  assert.equal(evaluate({ name: "Bash", input: { command: "git push origin HEAD" }, state: closed, current: baseline, session: "session-a" }).decision, "deny");
+  assert.equal(evaluate({ name: "Bash", input: { command: "pnpm safe:push" }, state: closed, current: baseline, session: "session-a" }).decision, "allow");
 });
 
 test("free-form shell is denied while repository-owned mutators remain explicit", () => {
-  const ready = state({ mutationReady: true, readyHead: fingerprint.head, readyFingerprint: fingerprint });
-  assert.equal(evaluate({ name: "Bash", input: { command: "node arbitrary-mutator.mjs" }, state: ready, current: fingerprint, session: "session-a" }).decision, "deny");
-  assert.equal(evaluate({ name: "Bash", input: { command: "pnpm theme:generate" }, state: ready, current: fingerprint, session: "session-a" }).decision, "allow");
-  assert.equal(evaluate({ name: "Bash", input: { command: "pnpm theme:generate && touch x" }, state: ready, current: fingerprint, session: "session-a" }).decision, "deny");
+  const ready = state({ mutationReady: true, readyHead: baseline.head, readyFingerprint: baseline });
+  assert.equal(evaluate({ name: "Bash", input: { command: "node arbitrary-mutator.mjs" }, state: ready, current: baseline, session: "session-a" }).decision, "deny");
+  assert.equal(evaluate({ name: "Bash", input: { command: "pnpm theme:generate" }, state: ready, current: baseline, session: "session-a" }).decision, "allow");
+  assert.equal(evaluate({ name: "Bash", input: { command: "pnpm theme:generate && touch x" }, state: ready, current: baseline, session: "session-a" }).decision, "deny");
 });
 
 test("remote repository mutation, opaque commit and unknown tools fail closed", () => {
-  const ready = state({ mutationReady: true, readyHead: fingerprint.head, readyFingerprint: fingerprint });
-  assert.equal(evaluate({ name: "GitHub.update_file", input: { path: "tools/dev/x.mjs" }, state: ready, current: fingerprint, session: "session-a" }).decision, "deny");
-  assert.equal(evaluate({ name: "create_commit", input: {}, state: ready, current: fingerprint, session: "session-a" }).decision, "deny");
-  assert.equal(evaluate({ name: "mystery_capability", input: {}, state: ready, current: fingerprint, session: "session-a" }).decision, "deny");
+  const ready = state({ mutationReady: true, readyHead: baseline.head, readyFingerprint: baseline });
+  assert.equal(evaluate({ name: "GitHub.update_file", input: { path: "tools/dev/x.mjs" }, state: ready, current: baseline, session: "session-a" }).decision, "deny");
+  assert.equal(evaluate({ name: "create_commit", input: {}, state: ready, current: baseline, session: "session-a" }).decision, "deny");
+  assert.equal(evaluate({ name: "mystery_capability", input: {}, state: ready, current: baseline, session: "session-a" }).decision, "deny");
 });
