@@ -204,6 +204,7 @@ try {
   if (publicationAttempt.status !== 403 || publicationAttempt.body?.error?.code !== "FORBIDDEN") throw new Error(`unactivated local operator bypassed the publication authority gate: ${JSON.stringify(publicationAttempt)}`);
   storeReadback = sql(`SELECT version || '|' || delivery_origin_version FROM dsh.stores WHERE id='${sqlLiteral(partnerStoreID)}'`);
   if (storeReadback !== "1|3") throw new Error(`blocked publication changed Store or origin version: ${storeReadback}`);
+  console.log("LOCATION_CORE_PUBLICATION_J1_STORAGE_PROOF=PASS");
 
   const wrongRoleAddress = await request(dshBase, "GET", `/dsh/addresses/${encodeURIComponent(addressID)}`, { token: partnerFixture.pair.accessToken });
   if (wrongRoleAddress.status !== 403) throw new Error(`wrong-role address read returned ${wrongRoleAddress.status}`);
