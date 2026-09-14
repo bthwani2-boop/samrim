@@ -267,6 +267,10 @@ for (const file of tracked) {
 
   const segments = file.split("/");
   const top = segments[0];
+  if (top === ".claude" || top === ".gemini") {
+    classify(file, "agent-host-configuration");
+    continue;
+  }
   if (top === ".github") {
     classify(file, file === githubAgentRoutingAdapter ? "agent-routing-adapter" : "repository-platform");
     continue;
