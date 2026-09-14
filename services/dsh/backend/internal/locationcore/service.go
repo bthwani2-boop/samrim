@@ -13,7 +13,6 @@ import (
 var (
 	ErrClientSessionForbidden  = errors.New("an active app-client session is required")
 	ErrPartnerSessionForbidden = errors.New("an active app-partner session is required")
-	ErrStoreOwnershipForbidden = errors.New("partner store ownership is required")
 	ErrLocationInputInvalid    = errors.New("location input is invalid")
 )
 

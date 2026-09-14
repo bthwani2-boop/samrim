@@ -284,6 +284,11 @@ function verifyLocationCore() {
     ["app-client Location Core", clientUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم تحديد الموقع", "nextCursor", "عرض المزيد"]],
     ["app-partner Location Core", partnerUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم حفظ موقع أصل المتجر", "originVersion"]],
   ]) for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing Location Core invariant: ${token}`);
+  const retiredLocationOwnershipError = ["Err", "Store", "Ownership", "Forbidden"].join("");
+  const retiredStoreOriginOwnershipError = ["Err", "Store", "Origin", "Ownership"].join("");
+  if (service.includes(retiredLocationOwnershipError)) failures.push("Location Core service retains a dead Store ownership error authority");
+  if (storage.includes(retiredStoreOriginOwnershipError)) failures.push("Location Core storage retains a dead Store-origin ownership error authority");
+  if (transport.includes("locationcore." + retiredLocationOwnershipError) || transport.includes("postgres." + retiredStoreOriginOwnershipError)) failures.push("Location Core transport retains an obsolete ownership 403 mapping");
   const storeViewStart = contract.indexOf("    StoreView:");
   const storeViewEnd = contract.indexOf("    PublicationState:", storeViewStart);
   const storeView = storeViewStart >= 0 && storeViewEnd > storeViewStart ? contract.slice(storeViewStart, storeViewEnd) : "";

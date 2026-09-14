@@ -56,7 +56,6 @@ var (
 	ErrDeliveryAddressInvalidLimit  = errors.New("delivery address limit is invalid")
 	ErrDeliveryAddressInvalidCursor = errors.New("delivery address cursor is invalid")
 	ErrStoreOriginNotFound          = errors.New("store was not found")
-	ErrStoreOriginOwnership         = errors.New("store delivery origin ownership is invalid")
 	ErrStoreOriginIdempotency       = errors.New("store delivery origin idempotency key was already used with different facts")
 	ErrStoreOriginVersion           = errors.New("store delivery origin version is stale")
 )

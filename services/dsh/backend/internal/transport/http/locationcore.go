@@ -197,7 +197,7 @@ func writeLocationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "location facts are invalid")
 	case errors.Is(err, postgres.ErrDeliveryAddressNotFound), errors.Is(err, postgres.ErrStoreOriginNotFound), errors.Is(err, postgres.ErrStoreNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "location record was not found")
-	case errors.Is(err, locationcore.ErrClientSessionForbidden), errors.Is(err, locationcore.ErrPartnerSessionForbidden), errors.Is(err, locationcore.ErrStoreOwnershipForbidden), errors.Is(err, postgres.ErrStoreOriginOwnership):
+	case errors.Is(err, locationcore.ErrClientSessionForbidden), errors.Is(err, locationcore.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session cannot access this location record")
 	case errors.Is(err, postgres.ErrDeliveryAddressIdempotency), errors.Is(err, postgres.ErrStoreOriginIdempotency):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different location facts")
