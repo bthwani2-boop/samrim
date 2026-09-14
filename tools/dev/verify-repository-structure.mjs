@@ -80,7 +80,15 @@ assert(!set.has("services/dsh/backend/internal/managedaccess/server.go") && !set
 
 const appSet = new Set(apps);
 for (const item of tracked.filter((p) => p.startsWith("services/"))) { const seg = item.split("/"); if (seg.some((s, i) => i > 1 && appSet.has(s))) failures.push(`Service contains app-shaped ownership container: ${item}`); if (/^services\/[^/]+\/frontend\//.test(item)) failures.push(`Service contains frontend tree: ${item}`); }
-for (const item of tracked.filter((p) => p.startsWith("services/") && /\.(go|ts|tsx|js|jsx|mjs|cjs|json|yaml|yml)$/.test(p))) { const text = fs.readFileSync(path.join(root, item), "utf8"); if (/github\.com\/bthwani2-boop\/samrim\/apps\//.test(text) || /(?:\.\.\/)+apps\//.test(text)) failures.push(`SERVICE_TO_APP_DEPENDENCY: ${item}`); }
+const githubAppPrefixes = [
+  "github.com/bthwani2-boop/samrim/apps/",
+  "https://github.com/bthwani2-boop/samrim/apps/",
+  "http://github.com/bthwani2-boop/samrim/apps/",
+];
+const hasGithubAppReference = (text) => text
+  .split(/[\s"'`()[\]{}<>]+/)
+  .some((token) => githubAppPrefixes.some((prefix) => token.startsWith(prefix)));
+for (const item of tracked.filter((p) => p.startsWith("services/") && /\.(go|ts|tsx|js|jsx|mjs|cjs|json|yaml|yml)$/.test(p))) { const text = fs.readFileSync(path.join(root, item), "utf8"); if (hasGithubAppReference(text) || /(?:\.\.\/)+apps\//.test(text)) failures.push(`SERVICE_TO_APP_DEPENDENCY: ${item}`); }
 for (const item of tracked.filter((p) => p.startsWith("contracts/"))) { if (item === "contracts/README.md") continue; const rel = item.slice("contracts/".length); if (!["protocol/", "generated/", "catalog/"].some((prefix) => rel.startsWith(prefix))) failures.push(`Root contract requires protocol/generated/catalog placement: ${item}`); }
 const packages = children("packages");
 for (const name of packages) { const p = project("packages", name, "type:package"); if (!p) continue; const base = `packages/${name}/`; assert(p.projectType === "library", `${base} projectType must be library`); assert(set.has(base + "package.json"), `${base}package.json missing`); for (const f of ["backend/", "database/", "migrations/", "cmd/"]) assert(!tracked.some((x) => x.startsWith(base + f)), `Reusable package contains service/storage lane: ${base}${f}`); }

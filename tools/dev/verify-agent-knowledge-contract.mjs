@@ -3,7 +3,15 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../.."), failures = [];
-const read = (file) => { const p = path.join(root, file); if (!fs.existsSync(p) || !fs.statSync(p).isFile()) { failures.push(`missing repository artifact: ${file}`); return ""; } return fs.readFileSync(p, "utf8").replaceAll("\r\n", "\n"); };
+const read = (file) => {
+  const p = path.join(root, file);
+  try {
+    return fs.readFileSync(p, "utf8").replaceAll("\r\n", "\n");
+  } catch {
+    failures.push(`missing repository artifact: ${file}`);
+    return "";
+  }
+};
 const json = (file) => { try { return JSON.parse(read(file)); } catch (e) { failures.push(`${file} invalid JSON: ${e.message}`); return null; } };
 const requireTokens = (file, tokens, id) => { const body = read(file); for (const t of tokens) if (!body.includes(t)) failures.push(`${id} missing invariant in ${file}: ${t}`); return body; };
 const forbid = (file, tokens, id) => { const body = read(file).toLowerCase(); for (const t of tokens) if (body.includes(t.toLowerCase())) failures.push(`${id} forbidden token in ${file}: ${t}`); };
