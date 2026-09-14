@@ -1,8 +1,13 @@
 ---
 name: Samrim product design context
-description: Canonical visual and interaction context for the Arabic RTL BThwani commerce surfaces.
+description: Current visual and interaction context for the Arabic RTL BThwani commerce surfaces.
 version: 1.0
 ---
+
+ARTIFACT_CLASS: REPOSITORY_LOCAL_DESIGN_CONTEXT
+PRODUCT_SEMANTIC_AUTHORITY: NONE
+DURABLE_KNOWLEDGE_AUTHORITY: NONE
+RUNTIME_DESIGN_TOKEN_AUTHORITY: packages/design-system
 
 # Samrim design context
 
@@ -12,7 +17,7 @@ Samrim should feel like a calm, trustworthy operations layer for BThwani commerc
 
 ## Current design authority
 
-The runtime Design System in `packages/design-system` is the source of truth for tokens. This document records the current product context; it does not replace or duplicate runtime token definitions. The Location Core uses those tokens through `resolveTheme` and adds no new color, spacing, typography, or icon system.
+The runtime Design System in `packages/design-system` is the source of truth for tokens. This document is repository-local design context for current multi-surface implementation and verification; it owns no durable Product/System/Policy truth. The Location Core uses those tokens through `resolveTheme` and adds no new color, spacing, typography, or icon system.
 
 ## Foundations
 
