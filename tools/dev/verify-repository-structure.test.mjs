@@ -36,8 +36,13 @@ test("service-to-app URL detection accepts only repository tokens", () => {
 
 test("repository verifiers retain safe single-read behavior and pass", () => {
   const knowledge = fs.readFileSync(knowledgePath, "utf8");
-  assert.match(knowledge, /fs\.readFileSync\(p, "utf8"\)/);
-  assert.doesNotMatch(knowledge, /fs\.existsSync\(p\).*fs\.statSync\(p\).*fs\.readFileSync\(p, "utf8"\)/s);
+  const start = knowledge.indexOf("const read = (file) => {");
+  const end = knowledge.indexOf("\nconst json =", start);
+  assert.notEqual(start, -1, "knowledge verifier read helper must remain source-visible");
+  assert.notEqual(end, -1, "knowledge verifier read helper boundary must remain source-visible");
+  const readHelper = knowledge.slice(start, end);
+  assert.equal((readHelper.match(/fs\.readFileSync\(/g) ?? []).length, 1, "read helper must read each requested artifact once");
+  assert.doesNotMatch(readHelper, /fs\.(?:existsSync|statSync)\(/, "read helper must not preflight a file before reading it");
   execFileSync(process.execPath, [structurePath], { cwd: root, stdio: "pipe" });
   execFileSync(process.execPath, [knowledgePath], { cwd: root, stdio: "pipe" });
 });
