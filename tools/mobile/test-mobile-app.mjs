@@ -28,7 +28,7 @@ const surface = app;
 const configPath = path.join(appDir, "mobile.config.json");
 assert.ok(fs.existsSync(configPath), `${app}: missing mobile.config.json`);
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-assert.deepEqual(config.nativeCapabilities, [
+const expectedCapabilities = [
   "router",
   "updates",
   "constants",
@@ -36,7 +36,9 @@ assert.deepEqual(config.nativeCapabilities, [
   "splashScreen",
   "secureStore",
   "localization",
-], `${app}: nativeCapabilities drifted`);
+];
+if (app === "app-client" || app === "app-partner") expectedCapabilities.push("location");
+assert.deepEqual(config.nativeCapabilities, expectedCapabilities, `${app}: nativeCapabilities drifted`);
 
 // 2. Targeted dependency regression verification.
 // This is intentionally not a complete unused-package census; dependency
@@ -54,7 +56,6 @@ const forbiddenDependencyRegressions = [
   "expo-file-system",
   "expo-haptics",
   "expo-image",
-  "expo-location",
   "expo-notifications",
   "expo-sharing",
   "expo-video",
@@ -64,6 +65,11 @@ const forbiddenDependencyRegressions = [
 
 for (const forbidden of forbiddenDependencyRegressions) {
   assert.ok(!allDeps[forbidden], `${app}: contains unused dependency: ${forbidden}`);
+}
+if (app === "app-client" || app === "app-partner") {
+  assert.equal(allDeps["expo-location"], "~57.0.17", `${app}: location core requires the Expo 57 location module`);
+} else {
+  assert.ok(!allDeps["expo-location"], `${app}: location dependency must remain scoped to Location Core hosts`);
 }
 
   const identityPath = path.join(appDir, "src", "bootstrap", "identity.ts");
@@ -91,6 +97,15 @@ assert.deepEqual(localizationPlugin, [
     allowDynamicLocaleChangesAndroid: false,
   },
 ], `${app}: native localization config must be Arabic-only and statically RTL`);
+const locationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-location");
+if (app === "app-client" || app === "app-partner") {
+  assert.deepEqual(locationPlugin, [
+    "expo-location",
+    { locationWhenInUsePermission: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر." },
+  ], `${app}: Location Core must use foreground-only location permission`);
+} else {
+  assert.equal(locationPlugin, undefined, `${app}: location plugin must remain scoped to Location Core hosts`);
+}
 console.log(`MOBILE_AR_RTL_NATIVE_CONFIG=PASS app=${app} locale=ar forcesRTL=true`);
 
 // Remote EAS environments may retain provider variables after a native dependency

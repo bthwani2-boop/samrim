@@ -7,9 +7,9 @@ import path from "node:path";
 const root = path.resolve(import.meta.dirname, "..");
 const sourcePath = path.join(root, "backend/internal/security/password_blocklist_source.txt");
 const outputPath = path.join(root, "backend/internal/security/password_blocklist_generated.go");
-const sourceVersion = "identity-passwords-v2";
+const sourceVersion = "identity-passwords-v3";
 
-const values = [...new Set(fs.readFileSync(sourcePath, "utf8").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")).map((line) => line.normalize("NFC").toLowerCase()))].sort();
+const values = [...new Set(fs.readFileSync(sourcePath, "utf8").split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")).map((line) => line.toLowerCase()))].sort();
 if (values.length === 0) throw new Error("password blocklist source is empty");
 const canonical = values.join("\n") + "\n";
 const checksum = crypto.createHash("sha256").update(canonical).digest("hex");

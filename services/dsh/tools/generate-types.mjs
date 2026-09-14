@@ -10,6 +10,7 @@ const pathModulePaths = [
   path.join(root, "services/dsh/contracts/openapi/paths/joining-cases.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/catalog.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/store-publication.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/location-core.yaml"),
 ];
 const outputPath = path.join(root, "services/dsh/clients/generated/dsh-types.ts");
 const operationsOutputPath = path.join(root, "services/dsh/clients/generated/dsh-operations.ts");
@@ -321,7 +322,8 @@ function goPropertyType(lines, optional, context) {
     if (format === "date-time") return optional ? "*time.Time" : "time.Time";
     return "string";
   }
-  if (type === "integer" || type === "number") return "int";
+  if (type === "integer") return "int";
+  if (type === "number") return "float64";
   if (type === "boolean") return "bool";
   if (type === "object") return "map[string]any";
   if (type === "array") {
@@ -332,7 +334,8 @@ function goPropertyType(lines, optional, context) {
     if (itemRef) return "[]" + refType(itemRef);
     const itemType = valueAfter(itemLines, "type:", 12);
     if (itemType === "string") return "[]string";
-    if (itemType === "integer" || itemType === "number") return "[]int";
+    if (itemType === "integer") return "[]int";
+    if (itemType === "number") return "[]float64";
     if (itemType === "boolean") return "[]bool";
   }
   throw new Error(context + " has unsupported Go property type " + JSON.stringify(type));

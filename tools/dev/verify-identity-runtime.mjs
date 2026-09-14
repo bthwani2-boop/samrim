@@ -57,7 +57,7 @@ const expect = async (method, pathname, status, options = {}) => {
 };
 const service = (token, extra = {}) => ({ Authorization: "Bearer " + token, ...extra });
 const phone = () => "+9677" + String(crypto.randomInt(10_000_000, 99_999_999));
-const password = (label) => label + "-" + crypto.randomBytes(12).toString("hex") + "-Password";
+const password = (label) => label.slice(0, 4).padEnd(4, "x") + crypto.randomBytes(2).toString("hex");
 const codeFor = (challengeId, purpose) => String(crypto.createHmac("sha256", challengeSecret).update(challengeId).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest().readUInt32BE(0) % 1_000_000).padStart(6, "0");
 const issue = async (pathname, body, purpose, role = "client") => {
   const challenge = await expect("POST", pathname, 201, { body });
@@ -87,8 +87,21 @@ const registration = await issue("/auth/client/registration/request", { phone: c
 const clientPair = await expect("POST", "/auth/client/register", 201, { body: { phone: clientPhone, code: registration.code, password: clientPassword, clientInstanceId: "runtime-client-instance-" + crypto.randomUUID() } });
 session(clientPair, "client", "app-client", clientPair.identity.subject);
 await expect("GET", "/auth/session", 200, { token: clientPair.accessToken });
-const loginPair = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: "runtime-client-login-" + crypto.randomUUID() } });
+const loginClientInstance = "runtime-client-login-" + crypto.randomUUID();
+const loginPair = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: loginClientInstance } });
 session(loginPair, "client", "app-client", clientPair.identity.subject);
+await expect("POST", "/auth/client/login", 401, { body: { phone: clientPhone, password: "1234567", clientInstanceId: "runtime-short-password-" + crypto.randomUUID() } });
+await expect("POST", "/auth/client/login", 401, { body: { phone: clientPhone, password: "123456789", clientInstanceId: "runtime-long-password-" + crypto.randomUUID() } });
+await expect("POST", "/auth/client/login", 401, { body: { phone: clientPhone, password: "12345678", clientInstanceId: "runtime-blocked-password-" + crypto.randomUUID() } });
+
+const loginAccessHash = crypto.createHash("sha256").update(loginPair.accessToken).digest("hex");
+const loginLifetime = sql("SELECT round(extract(epoch FROM (absolute_expires_at-created_at)))::bigint || '|' || round(extract(epoch FROM (refresh_expires_at-created_at)))::bigint FROM identity_sessions WHERE access_token_hash='" + sqlLiteral(loginAccessHash) + "'").split("|").map(Number);
+assert(loginLifetime[0] >= 364 * 86400 && loginLifetime[0] <= 366 * 86400, "mobile absolute session lifetime is not 365 days: " + loginLifetime[0]);
+assert(loginLifetime[1] >= 29 * 86400 && loginLifetime[1] <= 31 * 86400, "mobile refresh session lifetime is not 30 days: " + loginLifetime[1]);
+sql("UPDATE identity_sessions SET last_used_at=clock_timestamp()-interval '3 days' WHERE access_token_hash='" + sqlLiteral(loginAccessHash) + "'");
+await expect("GET", "/auth/session", 200, { token: loginPair.accessToken });
+sql("UPDATE identity_sessions SET last_used_at=clock_timestamp()-interval '3 days' WHERE access_token_hash='" + sqlLiteral(loginAccessHash) + "'");
+await expect("POST", "/auth/refresh", 200, { body: { refreshToken: loginPair.refreshToken, clientInstanceId: loginClientInstance } });
 
 const refreshClientInstance = "runtime-refresh-instance-" + crypto.randomUUID();
 const refreshFirst = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: refreshClientInstance } });
@@ -167,7 +180,7 @@ assert(sql("SELECT count(*) FROM identity_password_attempts WHERE role='operator
 assert(sql("SELECT count(*) FROM identity_challenges WHERE purpose IN ('operator_mfa','managed_recover')") === "0", "retired proof purposes remain in current data");
 const retiredInstanceColumn = ["device", "_fingerprint", "_hash"].join("");
 assert(sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='identity_sessions' AND column_name='" + retiredInstanceColumn + "'") === "0", "retired session binding column remains");
-assert(sql("SELECT count(*) FROM identity_schema_migrations WHERE version=17") === "1", "identity schema is not at v17");
+assert(sql("SELECT count(*) FROM identity_schema_migrations WHERE version=18") === "1", "identity schema is not at v18");
 
 console.log("IDENTITY_RUNTIME_SEMANTICS=PASS");
 console.log("IDENTITY_CUSTOMER_REGISTRATION_AFTER_PHONE_PROOF=PASS");
@@ -183,3 +196,5 @@ console.log("IDENTITY_OPERATOR_RECOVERY_INVALID_CREDENTIAL=PASS");
 console.log("IDENTITY_REFRESH_INSTANCE_BINDING=PASS");
 console.log("IDENTITY_OPERATOR_PASSKEY_EXPIRED_CEREMONY=PASS");
 console.log("IDENTITY_RAW_CHALLENGE_CODE_LEAK=0");
+console.log("IDENTITY_PASSWORD_EXACT_EIGHT=PASS");
+console.log("IDENTITY_MOBILE_SESSION_CONTINUITY=PASS");

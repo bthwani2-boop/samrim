@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import { resolveTheme } from "@bthwani/design-system";
 import type { AssortmentPublicationState, CentralProduct, StoreAssortment } from "@bthwani/dsh";
 import { createDshMobileClient } from "@bthwani/dsh";
-import { readIdentityAccessToken } from "../../bootstrap/identity";
+import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 type AssortmentState = { kind: "loading" } | { kind: "ready"; assortments: ReadonlyArray<StoreAssortment> } | { kind: "error" };
 
@@ -48,8 +48,7 @@ export function StoreAssortmentManagement({ storeId }: { storeId: string }) {
     setState({ kind: "loading" });
     setError("");
     try {
-      const token = readIdentityAccessToken();
-      if (!token) throw new Error("DSH_PARTNER_SESSION_UNAVAILABLE");
+      const token = await getUsableIdentityAccessToken();
       const assortments = await dshClient().readOwnStoreAssortment(token, storeId);
       setState({ kind: "ready", assortments });
     } catch (nextError) {
@@ -64,8 +63,7 @@ export function StoreAssortmentManagement({ storeId }: { storeId: string }) {
   async function searchProducts() {
     setError("");
     try {
-      const token = readIdentityAccessToken();
-      if (!token) throw new Error("DSH_PARTNER_SESSION_UNAVAILABLE");
+      const token = await getUsableIdentityAccessToken();
       setProducts(await dshClient().listCentralProducts(token, query));
     } catch (nextError) {
       reportError(nextError);
@@ -79,8 +77,7 @@ export function StoreAssortmentManagement({ storeId }: { storeId: string }) {
     setBusy(true);
     setError("");
     try {
-      const token = readIdentityAccessToken();
-      if (!token) throw new Error("DSH_PARTNER_SESSION_UNAVAILABLE");
+      const token = await getUsableIdentityAccessToken();
       await dshClient().createStoreAssortment(token, storeId, selectedProduct.id, parsedPrice);
       setSelectedProduct(null);
       setPriceMinor("");
@@ -98,8 +95,7 @@ export function StoreAssortmentManagement({ storeId }: { storeId: string }) {
     setBusy(true);
     setError("");
     try {
-      const token = readIdentityAccessToken();
-      if (!token) throw new Error("DSH_PARTNER_SESSION_UNAVAILABLE");
+      const token = await getUsableIdentityAccessToken();
       await dshClient().updateStoreAssortment(token, storeId, assortment.productId, assortment.priceMinor, publicationState, availability, assortment.version);
       await load();
     } catch (nextError) {

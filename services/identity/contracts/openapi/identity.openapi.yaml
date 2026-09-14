@@ -188,8 +188,8 @@ components:
           pattern: "^[0-9]{6}$"
         password:
           type: string
-          minLength: 15
-          maxLength: 128
+          minLength: 8
+          maxLength: 8
         clientInstanceId:
           type: string
           minLength: 8
@@ -207,8 +207,8 @@ components:
           pattern: "^[0-9]{6}$"
         password:
           type: string
-          minLength: 15
-          maxLength: 128
+          minLength: 8
+          maxLength: 8
 
     PasswordLoginRequest:
       type: object
@@ -219,8 +219,8 @@ components:
           type: string
         password:
           type: string
-          minLength: 15
-          maxLength: 128
+          minLength: 8
+          maxLength: 8
         clientInstanceId:
           type: string
           minLength: 8
@@ -235,8 +235,8 @@ components:
           type: string
         password:
           type: string
-          minLength: 15
-          maxLength: 128
+          minLength: 8
+          maxLength: 8
         role:
           $ref: "#/components/schemas/ManagedActorType"
         clientInstanceId:
@@ -260,8 +260,8 @@ components:
           pattern: "^[0-9]{6}$"
         password:
           type: string
-          minLength: 15
-          maxLength: 128
+          minLength: 8
+          maxLength: 8
         clientInstanceId:
           type: string
           minLength: 8

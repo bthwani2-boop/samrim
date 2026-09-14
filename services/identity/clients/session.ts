@@ -22,6 +22,9 @@ export type IdentitySessionState =
   | Readonly<{ kind: "refresh_conflict" }>;
 
 type StoredTokens = Readonly<{ accessToken: string; refreshToken: string }>;
+export type IdentitySessionListener = (state: IdentitySessionState) => void;
+
+const accessTokenSafetySkewMs = 60_000;
 
 const roleSurface: Readonly<Record<ActorType, IdentitySurface>> = Object.freeze({
   client: "app-client",
@@ -92,6 +95,7 @@ export class IdentitySessionManager {
   private stateValue: IdentitySessionState = { kind: "signed_out" };
   private tokens: StoredTokens | null = null;
   private refreshInFlight: Promise<IdentitySessionState> | null = null;
+  private readonly listeners = new Set<IdentitySessionListener>();
 
   constructor(
     client: IdentityClient,
@@ -114,17 +118,43 @@ export class IdentitySessionManager {
     return this.stateValue;
   }
 
-  getAccessToken(): string | null {
-    return this.tokens?.accessToken ?? null;
+  subscribe(listener: IdentitySessionListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  async getUsableAccessToken(): Promise<string> {
+    const currentState = this.stateValue;
+    const currentToken = this.tokens?.accessToken;
+    if (currentState.kind !== "authenticated" || !currentToken) {
+      throw new Error("IDENTITY_ACCESS_TOKEN_UNAVAILABLE");
+    }
+
+    const expiresAt = Date.parse(currentState.identity.expiresAt);
+    if (Number.isFinite(expiresAt) && expiresAt > Date.now() + accessTokenSafetySkewMs) {
+      return currentToken;
+    }
+
+    const refreshed = await this.refresh();
+    if (refreshed.kind !== "authenticated") {
+      throw new Error(`IDENTITY_ACCESS_TOKEN_${refreshed.kind.toUpperCase()}`);
+    }
+    const refreshedToken = this.tokens?.accessToken;
+    const refreshedExpiry = Date.parse(refreshed.identity.expiresAt);
+    if (!refreshedToken || !Number.isFinite(refreshedExpiry) || refreshedExpiry <= Date.now() + accessTokenSafetySkewMs) {
+      await this.clearLocalSession();
+      throw new Error("IDENTITY_ACCESS_TOKEN_UNUSABLE");
+    }
+    return refreshedToken;
   }
 
   async restore(): Promise<IdentitySessionState> {
-    this.stateValue = { kind: "restoring" };
+    this.transition({ kind: "restoring" });
     const stored = parseStoredTokens(await this.storage.getItem(this.key));
     if (!stored) {
       await this.storage.removeItem(this.key);
       this.tokens = null;
-      this.stateValue = { kind: "signed_out" };
+      this.transition({ kind: "signed_out" });
       return this.stateValue;
     }
 
@@ -132,15 +162,15 @@ export class IdentitySessionManager {
       const identity = await this.client.session(stored.accessToken);
       if (!identityAuthorizesSurface(identity, this.role, this.surface)) {
         await this.clearLocal();
-        this.stateValue = { kind: "signed_out" };
+        this.transition({ kind: "signed_out" });
         return this.stateValue;
       }
       this.tokens = stored;
-      this.stateValue = { kind: "authenticated", identity };
+      this.transition({ kind: "authenticated", identity });
       return this.stateValue;
     } catch (error) {
       if (isIdentityServiceUnavailable(error)) {
-        this.stateValue = { kind: "service_unavailable", reason: error.message };
+        this.transition({ kind: "service_unavailable", reason: error.message });
         return this.stateValue;
       }
       return this.refreshStored(stored);
@@ -154,14 +184,14 @@ export class IdentitySessionManager {
     const tokens = { accessToken: pair.accessToken, refreshToken: pair.refreshToken };
     await this.storage.setItem(this.key, JSON.stringify(tokens));
     this.tokens = tokens;
-    this.stateValue = { kind: "authenticated", identity: pair.identity };
+    this.transition({ kind: "authenticated", identity: pair.identity });
     return this.stateValue;
   }
 
   async refresh(): Promise<IdentitySessionState> {
     const stored = this.tokens ?? parseStoredTokens(await this.storage.getItem(this.key));
     if (!stored) {
-      this.stateValue = { kind: "signed_out" };
+      this.transition({ kind: "signed_out" });
       return this.stateValue;
     }
     return this.refreshStored(stored);
@@ -197,14 +227,14 @@ export class IdentitySessionManager {
       }
     } finally {
       await this.clearLocal();
-      this.stateValue = { kind: "signed_out" };
+      this.transition({ kind: "signed_out" });
     }
     if (remoteError) throw remoteError;
   }
 
   async clearLocalSession(): Promise<IdentitySessionState> {
     await this.clearLocal();
-    this.stateValue = { kind: "signed_out" };
+    this.transition({ kind: "signed_out" });
     return this.stateValue;
   }
 
@@ -225,7 +255,7 @@ export class IdentitySessionManager {
       return this.adopt(await this.client.refresh({ refreshToken: stored.refreshToken, clientInstanceId }));
     } catch (error) {
       if (isIdentityServiceUnavailable(error)) {
-        this.stateValue = { kind: "service_unavailable", reason: error.message };
+        this.transition({ kind: "service_unavailable", reason: error.message });
         return this.stateValue;
       }
       if (isRefreshStaleError(error)) {
@@ -235,21 +265,21 @@ export class IdentitySessionManager {
             const identity = await this.client.session(reRead.accessToken);
             if (identityAuthorizesSurface(identity, this.role, this.surface)) {
               this.tokens = reRead;
-              this.stateValue = { kind: "authenticated", identity };
+              this.transition({ kind: "authenticated", identity });
               return this.stateValue;
             }
           } catch (sessionError) {
             if (isIdentityServiceUnavailable(sessionError)) {
-              this.stateValue = { kind: "service_unavailable", reason: sessionError.message };
+              this.transition({ kind: "service_unavailable", reason: sessionError.message });
               return this.stateValue;
             }
           }
         }
-        this.stateValue = { kind: "refresh_conflict" };
+        this.transition({ kind: "refresh_conflict" });
         return this.stateValue;
       }
       await this.clearLocal();
-      this.stateValue = { kind: "signed_out" };
+      this.transition({ kind: "signed_out" });
       return this.stateValue;
     }
   }
@@ -257,5 +287,16 @@ export class IdentitySessionManager {
   private async clearLocal(): Promise<void> {
     this.tokens = null;
     await this.storage.removeItem(this.key);
+  }
+
+  private transition(next: IdentitySessionState): void {
+    this.stateValue = next;
+    for (const listener of this.listeners) {
+      try {
+        listener(next);
+      } catch {
+        // A presentation listener cannot interrupt the canonical session transition.
+      }
+    }
   }
 }

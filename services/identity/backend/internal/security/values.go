@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
-	"golang.org/x/text/unicode/norm"
 )
 
 var (
@@ -117,7 +116,6 @@ func ConstantTimeHexEqual(a, b string) bool {
 }
 
 func HashPassword(password string) (string, error) {
-	password = NormalizePassword(password)
 	if !PasswordAllowed(password) {
 		return "", ErrInvalidValue
 	}
@@ -137,17 +135,12 @@ func HashPassword(password string) (string, error) {
 	), nil
 }
 
-func NormalizePassword(password string) string {
-	return norm.NFC.String(password)
-}
-
 func PasswordAllowed(password string) bool {
-	password = NormalizePassword(password)
 	if !utf8.ValidString(password) {
 		return false
 	}
 	length := utf8.RuneCountInString(password)
-	if length < 15 || length > 128 || strings.TrimSpace(password) == "" {
+	if length != 8 || strings.TrimSpace(password) == "" {
 		return false
 	}
 	return !isCommonPassword(password)
@@ -161,7 +154,6 @@ func VerifyPassword(encoded, password string) bool {
 	if encoded == "" || password == "" {
 		return false
 	}
-	password = NormalizePassword(password)
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false

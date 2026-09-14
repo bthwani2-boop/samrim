@@ -83,7 +83,10 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 		_, _ = s.recordPasswordFailure(ctx, phone, role, ipHash, reservationID)
 		return domain.TokenPair{}, lookupErr
 	}
-	if !identitysecurity.VerifyPassword(hash, password) {
+	// Always perform the cryptographic comparison before applying the current
+	// admission policy. This preserves the existing anti-enumeration work while
+	// preventing a legacy valid-but-too-long credential from creating a session.
+	if !passwordAcceptedForLogin(hash, password) {
 		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash, reservationID)
 		if recordErr != nil {
 			return domain.TokenPair{}, recordErr
@@ -135,6 +138,10 @@ WHERE c.actor_id=$1 AND c.role=$2 FOR UPDATE OF c,r,a`, a.ID, role).Scan(&curren
 		return domain.TokenPair{}, err
 	}
 	return pair, nil
+}
+
+func passwordAcceptedForLogin(hash, password string) bool {
+	return identitysecurity.VerifyPassword(hash, password) && identitysecurity.PasswordAllowed(password)
 }
 
 func (s *Service) recordPasswordFailure(ctx context.Context, phone, role, ipHash string, reservationID int64) (bool, error) {

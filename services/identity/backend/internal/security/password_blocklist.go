@@ -1,6 +1,6 @@
 package security
 
-const passwordBlocklistVersion = "identity-passwords-v2"
+const passwordBlocklistVersion = "identity-passwords-v3"
 
 func PasswordBlocklistVersion() string {
 	return passwordBlocklistVersion

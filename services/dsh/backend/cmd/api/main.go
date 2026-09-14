@@ -49,10 +49,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	locationCoreServer, err := transporthttp.NewLocationCore(identityClient, database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	register := func(mux *http.ServeMux) {
 		joiningCaseServer.Register(mux)
 		catalogServer.Register(mux)
 		storePublicationServer.Register(mux)
+		locationCoreServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
 		if err := postgres.VerifySchema(ctx, database, records); err != nil {

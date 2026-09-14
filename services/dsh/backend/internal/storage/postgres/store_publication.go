@@ -85,6 +85,25 @@ func ReadStore(ctx context.Context, db *sql.DB, storeID string) (StoreRecord, er
 	return store, nil
 }
 
+func ReadStoreOwnedByPartner(ctx context.Context, db *sql.DB, storeID, partnerActorID string) (StoreRecord, error) {
+	if db == nil {
+		return StoreRecord{}, errors.New("DSH database is nil")
+	}
+	storeID = strings.TrimSpace(storeID)
+	partnerActorID = strings.TrimSpace(partnerActorID)
+	if storeID == "" || partnerActorID == "" {
+		return StoreRecord{}, ErrStoreNotFound
+	}
+	store, err := scanStore(db.QueryRowContext(ctx, storeSelect+" WHERE id=$1 AND partner_actor_id=$2", storeID, partnerActorID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoreRecord{}, ErrStoreNotFound
+	}
+	if err != nil {
+		return StoreRecord{}, fmt.Errorf("read owned canonical store: %w", err)
+	}
+	return store, nil
+}
+
 func SetStorePublication(ctx context.Context, db *sql.DB, storeID, requestedState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (PublicationResult, error) {
 	return setStorePublication(ctx, db, storeID, requestedState, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, nil)
 }

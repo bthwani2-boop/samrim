@@ -1,6 +1,6 @@
 import * as Crypto from "expo-crypto";
 import { createDshMobileClient, type JoiningCaseResponse } from "@bthwani/dsh";
-import { readIdentityAccessToken } from "../../bootstrap/identity";
+import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function dshBaseUrl(): string {
   const explicit = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -12,18 +12,14 @@ function dshClient() {
   return createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
-function accessToken(): string {
-  const token = readIdentityAccessToken();
-  if (!token) throw new Error("DSH_PARTNER_SESSION_UNAVAILABLE");
-  return token;
-}
+const accessToken = getUsableIdentityAccessToken;
 
 export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
-  return dshClient().readOwnJoiningCase(accessToken());
+  return accessToken().then((token) => dshClient().readOwnJoiningCase(token));
 }
 
 export async function correctAndResubmitOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, expectedVersion: number): Promise<JoiningCaseResponse> {
-  return dshClient().correctAndResubmitJoiningCase(accessToken(), caseID, { businessName, firstStoreName }, expectedVersion);
+  return accessToken().then((token) => dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName }, expectedVersion));
 }
 
 export function isJoiningCaseNotFound(error: unknown): boolean {

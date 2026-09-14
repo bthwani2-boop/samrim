@@ -9,7 +9,7 @@ const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) 
 const canonicalProject = "samrim-local";
 const goImage = "golang:1.27.1-alpine";
 const migrationTestPath = path.join(root, "services/identity/backend/internal/storage/postgres/migrate_test.go");
-const canonicalMigrationTest = "TestMigrationV13ToV17Upgrade";
+const canonicalMigrationTest = "TestMigrationV13ToV18Upgrade";
 
 function fail(message, error) {
   console.error(`IDENTITY_MIGRATION_PROOF=FAIL ${message}`);

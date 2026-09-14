@@ -24,7 +24,8 @@ const runtime = createManagedMobileIdentityBinding({
 
 export const restoreIdentitySession = runtime.restoreIdentitySession;
 export const currentIdentityState = runtime.currentIdentityState;
-export const readIdentityAccessToken = runtime.readAccessToken;
+export const getUsableIdentityAccessToken = runtime.getUsableAccessToken;
+export const subscribeIdentitySession = runtime.subscribeIdentityState;
 export const logoutIdentity = runtime.logoutIdentity;
 export const requestManagedActivation = runtime.requestManagedActivation;
 export const activateManagedIdentity = runtime.activateManagedIdentity;

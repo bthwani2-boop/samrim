@@ -16,6 +16,7 @@ import { resolveTextAlign, resolveTheme, resolveRowDirection } from "@bthwani/de
 import { identityErrorMessage, isIdentityClientError, validatePasswordInputShape, type IdentitySessionState } from "@bthwani/identity";
 import {
   currentIdentityState,
+  subscribeIdentitySession,
   loginClient,
   logoutIdentity,
   recoverClient,
@@ -26,6 +27,7 @@ import {
 } from "../../bootstrap/identity";
 import { identityPresentation, type IdentityCopy } from "./identity-presentation";
 import StoreDiscovery from "../store-discovery/store-discovery";
+import LocationCore from "../location-core/location-core";
 
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
@@ -97,6 +99,12 @@ export default function IdentityGate() {
   useEffect(() => {
     void restore();
   }, [restore]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeIdentitySession(setState);
+    setState(currentIdentityState());
+    return unsubscribe;
+  }, []);
 
   function selectMode(next: AuthMode) {
     setMode(next);
@@ -213,22 +221,23 @@ export default function IdentityGate() {
 
   if (state.kind === "authenticated") {
     return (
-      <View style={styles.container}>
-        <Text style={styles.title}>{copy.brand}</Text>
-        <Text style={styles.status}>{copy.authenticatedStatus}</Text>
-        <StoreDiscovery />
-        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={copy.logout}
-          accessibilityState={{ busy, disabled: busy }}
-          disabled={busy}
-          onPress={logout}
-          style={styles.primaryButton}
-        >
-          <Text style={styles.primaryButtonText}>{busy ? copy.busyAction : copy.logout}</Text>
-        </Pressable>
-      </View>
+      <ScrollView contentContainerStyle={styles.authenticatedScrollContent} keyboardShouldPersistTaps="handled" nestedScrollEnabled style={styles.container}>
+          <Text style={styles.title}>{copy.brand}</Text>
+          <Text style={styles.status}>{copy.authenticatedStatus}</Text>
+          <StoreDiscovery />
+          <LocationCore />
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={copy.logout}
+            accessibilityState={{ busy, disabled: busy }}
+            disabled={busy}
+            onPress={logout}
+            style={styles.primaryButton}
+          >
+            <Text style={styles.primaryButtonText}>{busy ? copy.busyAction : copy.logout}</Text>
+          </Pressable>
+      </ScrollView>
     );
   }
 
@@ -467,6 +476,7 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
 
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background, direction: activeDirection },
+    authenticatedScrollContent: { alignItems: "stretch", flexGrow: 1, gap: 16, paddingBottom: 160, paddingHorizontal: 20, paddingTop: 32, width: "100%" },
     scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32 },
     authShell: { width: "100%", maxWidth: 480, alignSelf: "center" },
     brandBlock: { alignItems: "center", marginBottom: 24 },

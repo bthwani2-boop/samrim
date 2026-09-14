@@ -25,7 +25,7 @@ for (const route of [
 for (const route of ["/auth/operator/" + "login/start:", "/auth/operator/" + "login/complete:", "/auth/managed/" + "recovery/request:", "/auth/managed/" + "recover:"]) forbidText(route, route);
 for (const value of ["platform_owner", "operator_owner", "X-Service-Caller", "identity_access_grants", "ManagedRecoveryChallengeRequest", "OperatorLoginStartRequest", "OperatorLoginCompleteRequest", "PasswordResetRequest", "username:", "activationCode:", "operator_mfa"]) forbidText(value);
 for (const value of ["enum: [client, partner, captain, field, operator]", "enum: [partner, captain, field]", "enum: [operator]"]) requireText(value);
-for (const value of ["ClientRecoveryProofRequest", "RecoveryComplete", "OperatorPasskeyRegistrationOptionsRequest", "OperatorPasskeyAuthenticationFinishRequest", "OperatorPasskeyRecoveryRegistrationOptionsRequest", "OperatorPasskeyRecoveryFinishRequest", "user-verifying", "WebAuthn", "minLength: 15", 'pattern: "^[0-9]{6}$"']) requireText(value);
+for (const value of ["ClientRecoveryProofRequest", "RecoveryComplete", "OperatorPasskeyRegistrationOptionsRequest", "OperatorPasskeyAuthenticationFinishRequest", "OperatorPasskeyRecoveryRegistrationOptionsRequest", "OperatorPasskeyRecoveryFinishRequest", "user-verifying", "WebAuthn", "minLength: 8", "maxLength: 8", 'pattern: "^[0-9]{6}$"']) requireText(value);
 if (!contract.includes("phone control alone never grants operator access")) failures.push("operator recovery must distinguish phone possession from authority");
 if (!contract.includes("never a password or session")) failures.push("operator bootstrap must not mint a password or session");
 if (contract.includes("#/components/responses/TokenPair")) {

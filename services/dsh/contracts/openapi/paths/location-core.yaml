@@ -1,0 +1,189 @@
+paths:
+  /dsh/addresses:
+    get:
+      operationId: listOwnDeliveryAddresses
+      summary: List the authenticated client's owned delivery addresses
+      security:
+        - userBearer: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "200":
+          description: Bounded deterministic address list owned by the authenticated client.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/DeliveryAddressListResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+    post:
+      operationId: createOwnDeliveryAddress
+      summary: Create an owned delivery address from the authenticated client session
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CreateDeliveryAddressRequest"
+      responses:
+        "201":
+          description: Canonical owned delivery address.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/DeliveryAddressResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/addresses/{addressId}:
+    get:
+      operationId: readOwnDeliveryAddress
+      summary: Read one owned delivery address
+      security:
+        - userBearer: []
+      parameters:
+        - name: addressId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Owned delivery address readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/DeliveryAddressResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+    post:
+      operationId: updateOwnDeliveryAddress
+      summary: Update an owned delivery address with an expected version
+      security:
+        - userBearer: []
+      parameters:
+        - name: addressId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/UpdateDeliveryAddressRequest"
+      responses:
+        "200":
+          description: Canonical updated delivery address or idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/DeliveryAddressResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/stores/{storeId}/delivery-origin:
+    get:
+      operationId: readStoreDeliveryOrigin
+      summary: Read the authenticated partner's Store delivery origin
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      responses:
+        "200":
+          description: Store delivery-origin readback; origin is null until captured.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/StoreDeliveryOriginResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+    post:
+      operationId: setStoreDeliveryOrigin
+      summary: Capture or update the authenticated partner's Store delivery origin
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/OriginVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/SetStoreDeliveryOriginRequest"
+      responses:
+        "200":
+          description: Canonical Store delivery-origin result or idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/StoreDeliveryOriginResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"

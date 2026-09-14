@@ -19,6 +19,8 @@ type Service struct {
 
 const refreshRaceGrace = 5 * time.Second
 
+const minimumAccessLifetime = time.Second
+
 func New(db *sql.DB) *Service { return &Service{db: db, now: time.Now} }
 
 func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, clientInstanceId string) (domain.TokenPair, error) {
@@ -51,8 +53,10 @@ func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actorID, role, devic
 	}
 	now := s.now().UTC()
 	absoluteExpiry := now.Add(sessionAbsoluteLifetime(role))
-	accessExpiry := calculateAccessExpiry(now, absoluteExpiry)
-	refreshExpiry := calculateRefreshExpiry(now, absoluteExpiry)
+	accessExpiry, refreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry)
+	if !ok {
+		return domain.TokenPair{}, domain.ErrInvalidInput
+	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_sessions(id,actor_id,role,access_token_hash,refresh_token_hash,client_instance_id_hash,access_expires_at,refresh_expires_at,absolute_expires_at,last_used_at,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)", sessionID, actorID, role, identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(refreshRandom), identitysecurity.SHA256Hex(device), accessExpiry, refreshExpiry, absoluteExpiry, now); err != nil {
 		return domain.TokenPair{}, err
 	}
@@ -68,7 +72,7 @@ func (s *Service) ResolveAccessToken(ctx context.Context, accessToken string) (d
 	var expires time.Time
 	err := s.db.QueryRowContext(ctx, `SELECT s.actor_id,s.id,s.role,s.access_expires_at FROM identity_sessions s
 JOIN identity_actor_roles r ON r.actor_id=s.actor_id AND r.role=s.role JOIN identity_actors a ON a.id=s.actor_id
-	WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp() AND s.last_used_at>clock_timestamp()-CASE WHEN s.role='operator' THEN INTERVAL '1 hour' ELSE INTERVAL '24 hours' END AND r.enabled=true AND a.security_enabled=true`, identitysecurity.SHA256Hex(accessToken)).Scan(&actorID, &sessionID, &role, &expires)
+	WHERE s.access_token_hash=$1 AND s.revoked_at IS NULL AND s.access_expires_at>clock_timestamp() AND s.absolute_expires_at>clock_timestamp() AND r.enabled=true AND a.security_enabled=true`, identitysecurity.SHA256Hex(accessToken)).Scan(&actorID, &sessionID, &role, &expires)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.ActorIdentity{}, domain.ErrUnauthenticated
 	}
@@ -110,8 +114,8 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	var currentHash, deviceHash string
-	var refreshExpiry, absoluteExpiry, lastUsedAt time.Time
-	err = tx.QueryRowContext(ctx, "SELECT refresh_token_hash,client_instance_id_hash,refresh_expires_at,absolute_expires_at,last_used_at FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentHash, &deviceHash, &refreshExpiry, &absoluteExpiry, &lastUsedAt)
+	var refreshExpiry, absoluteExpiry time.Time
+	err = tx.QueryRowContext(ctx, "SELECT refresh_token_hash,client_instance_id_hash,refresh_expires_at,absolute_expires_at FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentHash, &deviceHash, &refreshExpiry, &absoluteExpiry)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
@@ -119,7 +123,7 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, err
 	}
 	now := s.now().UTC()
-	if !refreshExpiry.After(now) || !absoluteExpiry.After(now) || now.Sub(lastUsedAt) > sessionIdleLifetime(role) || !identitysecurity.ConstantTimeHexEqual(deviceHash, identitysecurity.SHA256Hex(device)) {
+	if !refreshExpiry.After(now) || !absoluteExpiry.After(now) || !identitysecurity.ConstantTimeHexEqual(deviceHash, identitysecurity.SHA256Hex(device)) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if !identitysecurity.ConstantTimeHexEqual(currentHash, presentedHash) {
@@ -160,9 +164,8 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, err
 	}
 	now = s.now().UTC()
-	accessExpiry := calculateAccessExpiry(now, absoluteExpiry)
-	nextRefreshExpiry := calculateRefreshExpiry(now, absoluteExpiry)
-	if !nextRefreshExpiry.After(now) {
+	accessExpiry, nextRefreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry)
+	if !ok {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_refresh_token_history(session_id,token_hash) VALUES($1,$2) ON CONFLICT DO NOTHING", sessionID, currentHash); err != nil {
@@ -282,29 +285,34 @@ func sessionAbsoluteLifetime(role string) time.Duration {
 	if role == "operator" {
 		return 24 * time.Hour
 	}
-	return 30 * 24 * time.Hour
+	return 365 * 24 * time.Hour
 }
-func sessionIdleLifetime(role string) time.Duration {
+func calculateRefreshExpiry(role string, now, absolute time.Time) time.Time {
+	candidate := now.Add(30 * 24 * time.Hour)
 	if role == "operator" {
-		return time.Hour
+		candidate = now.Add(time.Hour)
 	}
-	return 24 * time.Hour
-}
-func calculateRefreshExpiry(now, absolute time.Time) time.Time {
-	candidate := now.Add(7 * 24 * time.Hour)
 	limit := absolute.Add(-time.Second)
 	if candidate.After(limit) {
 		return limit
 	}
 	return candidate
 }
-func calculateAccessExpiry(now, absolute time.Time) time.Time {
+
+func calculateSessionExpiries(role string, now, absolute time.Time) (access, refresh time.Time, ok bool) {
+	refresh = calculateRefreshExpiry(role, now, absolute)
+	if !refresh.After(now.Add(minimumAccessLifetime)) || !absolute.After(refresh) {
+		return time.Time{}, time.Time{}, false
+	}
 	candidate := now.Add(15 * time.Minute)
-	limit := absolute.Add(-time.Second)
+	limit := refresh.Add(-time.Second)
 	if candidate.After(limit) {
-		return limit
+		candidate = limit
 	}
-	return candidate
+	if !candidate.After(now) || !refresh.After(candidate) {
+		return time.Time{}, time.Time{}, false
+	}
+	return candidate, refresh, true
 }
 
 func withinRefreshRaceGrace(now, rotatedAt time.Time) bool {

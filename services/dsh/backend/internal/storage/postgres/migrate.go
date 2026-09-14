@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 6
+const SchemaVersion = 8
 
 type MigrationRecord struct {
 	Version int
@@ -32,8 +32,8 @@ var requiredTables = []struct {
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},
 	{
 		name:        "dsh.stores",
-		columns:     []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at"},
-		constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk"},
+		columns:     []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at", "delivery_origin_latitude", "delivery_origin_longitude", "delivery_origin_version", "delivery_origin_updated_at"},
+		constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk", "stores_delivery_origin_pair_chk", "stores_delivery_origin_latitude_chk", "stores_delivery_origin_longitude_chk", "stores_delivery_origin_version_chk", "stores_delivery_origin_updated_at_chk"},
 		indexes:     []string{"stores_partner_actor_idx", "stores_publication_state_idx"},
 	},
 	{
@@ -102,6 +102,36 @@ var requiredTables = []struct {
 		constraints: []string{"store_publication_audit_pkey", "store_publication_audit_event_type_chk", "store_publication_audit_event_idempotency_uq", "store_publication_audit_idempotency_fk"},
 		indexes:     []string{"store_publication_audit_store_idx"},
 	},
+	{
+		name:        "dsh.delivery_addresses",
+		columns:     []string{"id", "client_actor_id", "address_text", "latitude", "longitude", "version", "created_at", "updated_at"},
+		constraints: []string{"delivery_addresses_pkey", "delivery_addresses_text_chk", "delivery_addresses_latitude_chk", "delivery_addresses_longitude_chk", "delivery_addresses_version_chk"},
+		indexes:     []string{"delivery_addresses_client_idx"},
+	},
+	{
+		name:        "dsh.delivery_address_mutation_idempotency",
+		columns:     []string{"idempotency_key", "request_hash", "address_id", "client_actor_id", "operation", "expected_version", "created_at"},
+		constraints: []string{"delivery_address_mutation_idempotency_pkey", "delivery_address_idempotency_facts_uq", "delivery_address_idempotency_operation_chk", "delivery_address_idempotency_expected_version_chk", "delivery_address_idempotency_address_fk"},
+		indexes:     []string{"delivery_address_idempotency_client_idx"},
+	},
+	{
+		name:        "dsh.delivery_address_audit",
+		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "client_actor_id", "address_id", "expected_version", "result_version", "request_hash", "created_at"},
+		constraints: []string{"delivery_address_audit_pkey", "delivery_address_audit_event_type_chk", "delivery_address_audit_event_idempotency_uq", "delivery_address_audit_address_fk", "delivery_address_audit_expected_version_chk", "delivery_address_audit_result_version_chk"},
+		indexes:     []string{"delivery_address_audit_client_idx"},
+	},
+	{
+		name:        "dsh.store_origin_mutation_idempotency",
+		columns:     []string{"idempotency_key", "request_hash", "store_id", "partner_actor_id", "expected_version", "created_at"},
+		constraints: []string{"store_origin_mutation_idempotency_pkey", "store_origin_idempotency_facts_uq", "store_origin_idempotency_expected_version_chk", "store_origin_idempotency_store_partner_fk"},
+		indexes:     []string{"store_origin_idempotency_partner_idx"},
+	},
+	{
+		name:        "dsh.store_origin_audit",
+		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "partner_actor_id", "store_id", "expected_version", "result_version", "request_hash", "created_at"},
+		constraints: []string{"store_origin_audit_pkey", "store_origin_audit_event_type_chk", "store_origin_audit_event_idempotency_uq", "store_origin_audit_store_partner_fk", "store_origin_audit_expected_version_chk", "store_origin_audit_result_version_chk"},
+		indexes:     []string{"store_origin_audit_partner_idx"},
+	},
 }
 
 func Open(databaseURL string) (*sql.DB, error) {
@@ -123,7 +153,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if strings.TrimSpace(directory) == "" {
 		return nil, nil, errors.New("DSH_MIGRATION_DIR is required")
 	}
-	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql"}
+	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql", "007_location_core.sql", "008_location_core_corrective_boundaries.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {

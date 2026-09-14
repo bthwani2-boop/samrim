@@ -26,6 +26,8 @@ const runtime = createMobileIdentityRuntime({
 
 export const restoreIdentitySession = runtime.restoreIdentitySession;
 export const currentIdentityState = runtime.currentIdentityState;
+export const getUsableIdentityAccessToken = runtime.getUsableAccessToken;
+export const subscribeIdentitySession = runtime.subscribeIdentityState;
 export const logoutIdentity = runtime.logoutIdentity;
 
 export function requestClientRegistration(phone: string) {
