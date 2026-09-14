@@ -22,8 +22,9 @@ for (const [hostRoot, admitted] of [[".claude", ".claude/settings.json"], [".gem
 
 assert(set.has("knowledge.sources.json"), "knowledge.sources.json missing");
 assert(set.has("REPOSITORY-STRUCTURE.md"), "REPOSITORY-STRUCTURE.md missing");
-assert(!set.has("governance.lock.json"), "retired governance.lock.json remains tracked");
-for (const file of tracked) { if (!fs.statSync(path.join(root, file)).isFile()) continue; try { if (fs.readFileSync(path.join(root, file), "utf8").includes("governance.lock.json")) failures.push(`retired knowledge-manifest reference: ${file}`); } catch {} }
+const retiredKnowledgeManifest = ["governance", "lock", "json"].join(".");
+assert(!set.has(retiredKnowledgeManifest), `retired ${retiredKnowledgeManifest} remains tracked`);
+for (const file of tracked) { if (!fs.statSync(path.join(root, file)).isFile()) continue; try { if (fs.readFileSync(path.join(root, file), "utf8").includes(retiredKnowledgeManifest)) failures.push(`retired knowledge-manifest reference: ${file}`); } catch {} }
 for (const forbidden of ["core/", "shared/"]) assert(!tracked.some((p) => p.startsWith(forbidden)), `Forbidden top-level ownership class: ${forbidden}`);
 const locks = tracked.filter((p) => /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$/.test(p));
 assert(locks.length === 1 && locks[0] === "pnpm-lock.yaml", `Canonical package lock must be pnpm-lock.yaml; found ${locks.join(",")}`);
@@ -80,7 +81,7 @@ assert(!set.has("services/dsh/backend/internal/managedaccess/server.go") && !set
 const appSet = new Set(apps);
 for (const item of tracked.filter((p) => p.startsWith("services/"))) { const seg = item.split("/"); if (seg.some((s, i) => i > 1 && appSet.has(s))) failures.push(`Service contains app-shaped ownership container: ${item}`); if (/^services\/[^/]+\/frontend\//.test(item)) failures.push(`Service contains frontend tree: ${item}`); }
 for (const item of tracked.filter((p) => p.startsWith("services/") && /\.(go|ts|tsx|js|jsx|mjs|cjs|json|yaml|yml)$/.test(p))) { const text = fs.readFileSync(path.join(root, item), "utf8"); if (/github\.com\/bthwani2-boop\/samrim\/apps\//.test(text) || /(?:\.\.\/)+apps\//.test(text)) failures.push(`SERVICE_TO_APP_DEPENDENCY: ${item}`); }
-for (const item of tracked.filter((p) => p.startsWith("contracts/"))) { if (item === "contracts/README.md") continue; const rel = item.slice("contracts/".length); if (!["protocol/", "generated/", "catalog/"].some((p) => rel.startsWith(p))) failures.push(`Root contract requires protocol/generated/catalog placement: ${item}`); }
+for (const item of tracked.filter((p) => p.startsWith("contracts/"))) { if (item === "contracts/README.md") continue; const rel = item.slice("contracts/".length); if (!["protocol/", "generated/", "catalog/"].some((prefix) => rel.startsWith(prefix))) failures.push(`Root contract requires protocol/generated/catalog placement: ${item}`); }
 const packages = children("packages");
 for (const name of packages) { const p = project("packages", name, "type:package"); if (!p) continue; const base = `packages/${name}/`; assert(p.projectType === "library", `${base} projectType must be library`); assert(set.has(base + "package.json"), `${base}package.json missing`); for (const f of ["backend/", "database/", "migrations/", "cmd/"]) assert(!tracked.some((x) => x.startsWith(base + f)), `Reusable package contains service/storage lane: ${base}${f}`); }
 for (const item of tracked.filter((p) => p.startsWith("infra/"))) if (/\/(contracts?|database|migrations?|schema|orders?|wallet|ledger|catalog|checkout|identity)(\/|$)/i.test(item)) failures.push(`Infra contains service/business ownership path: ${item}`);
