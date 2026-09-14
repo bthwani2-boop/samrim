@@ -74,19 +74,20 @@ func TestRandomEnrollmentTokenIsHighEntropy(t *testing.T) {
 }
 
 func TestPasswordPolicyNormalizesUnicodeAndRejectsWeakValues(t *testing.T) {
-	if PasswordAllowed("123456789012345") {
-		t.Fatal("common password accepted")
-	}
-	if PasswordAllowed("Samrim2026Password") {
-		t.Fatal("project-specific password accepted")
-	}
-	if PasswordBlocklistVersion() == "" || len(passwordBlocklistGenerated) < 50 {
+	if PasswordBlocklistVersion() != "identity-passwords-v3" || len(passwordBlocklistGenerated) != 15 {
 		t.Fatal("versioned local password blocklist is missing or too small")
 	}
-	if PasswordAllowed("short") {
-		t.Fatal("short password accepted")
+	for _, password := range []string{"12345678", "password", "qwertyui"} {
+		if PasswordAllowed(password) {
+			t.Fatalf("blocklisted password accepted: %q", password)
+		}
 	}
-	if _, err := HashPassword("Cafe\u0301-Long-Password"); err != nil || !VerifyPassword(mustHashPassword(t, "Café-Long-Password"), "Cafe\u0301-Long-Password") {
+	for _, password := range []string{"1234567", "123456789", "River123", "你好世界1234"} {
+		if PasswordAllowed(password) != (password == "River123" || password == "你好世界1234") {
+			t.Fatalf("unexpected exact-eight password decision: %q", password)
+		}
+	}
+	if _, err := HashPassword("Cafe\u0301-123"); err != nil || !VerifyPassword(mustHashPassword(t, "Café-123"), "Cafe\u0301-123") {
 		t.Fatal("NFC password normalization failed")
 	}
 }
@@ -101,7 +102,7 @@ func mustHashPassword(t *testing.T, password string) string {
 }
 
 func TestArgon2idPasswordHashing(t *testing.T) {
-	password := "River-Cedar-Lantern-Quartz"
+	password := "River123"
 	hash, err := HashPassword(password)
 	if err != nil {
 		t.Fatal(err)

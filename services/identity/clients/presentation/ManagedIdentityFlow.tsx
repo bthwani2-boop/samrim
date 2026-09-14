@@ -12,6 +12,7 @@ export interface ManagedIdentityBinding {
   surface?: string;
   restoreIdentitySession: () => Promise<IdentitySessionState>;
   currentIdentityState: () => IdentitySessionState;
+  subscribe: (listener: (state: IdentitySessionState) => void) => () => void;
   logoutIdentity: () => Promise<void>;
   requestManagedActivation: (phone: string) => Promise<unknown>;
   activateManagedIdentity: (phone: string, verificationCode: string, password: string) => Promise<IdentitySessionState>;
@@ -78,6 +79,12 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   useEffect(() => {
     void restoreSession();
   }, [restoreSession]);
+
+  useEffect(() => {
+    const unsubscribe = binding.subscribe(setState);
+    setState(binding.currentIdentityState());
+    return unsubscribe;
+  }, [binding]);
 
   function resetToPhone() {
     setStep("phone");

@@ -16,6 +16,7 @@ import { resolveTextAlign, resolveTheme, resolveRowDirection } from "@bthwani/de
 import { identityErrorMessage, isIdentityClientError, validatePasswordInputShape, type IdentitySessionState } from "@bthwani/identity";
 import {
   currentIdentityState,
+  subscribeIdentitySession,
   loginClient,
   logoutIdentity,
   recoverClient,
@@ -98,6 +99,12 @@ export default function IdentityGate() {
   useEffect(() => {
     void restore();
   }, [restore]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeIdentitySession(setState);
+    setState(currentIdentityState());
+    return unsubscribe;
+  }, []);
 
   function selectMode(next: AuthMode) {
     setMode(next);

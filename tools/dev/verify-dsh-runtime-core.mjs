@@ -166,7 +166,7 @@ async function createApprovedPartner(operatorID, phone, name, exerciseCorrection
   if (submitted.status !== 200 || submitted.body?.case?.state !== "submitted" || !submitted.body?.case?.partnerActorId) fail("joining case submission failed", JSON.stringify(submitted));
   const actorID = String(submitted.body.case.partnerActorId);
   actorIDs.add(actorID);
-  const accessToken = await activatePartner(phone, `${name}-${suffix}-Strong-Password-1!`);
+  const accessToken = await activatePartner(phone, name.slice(0, 4).padEnd(4, "x") + suffix.slice(0, 4));
   if (exerciseCorrection) {
     const partnerRead = await request(dshBase, "GET", "/dsh/joining-cases/self", { token: accessToken });
     if (partnerRead.status !== 200 || partnerRead.body?.case?.state !== "submitted") fail("partner joining readback failed", JSON.stringify(partnerRead));

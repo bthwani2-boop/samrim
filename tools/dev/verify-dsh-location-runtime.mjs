@@ -80,7 +80,7 @@ function userHeaders(key, expectedVersion) {
 }
 
 async function createClientSession() {
-  const password = `Location-Client-${crypto.randomBytes(12).toString("hex")}-Password`;
+  const password = `Loca${crypto.randomBytes(2).toString("hex")}`;
   const challenge = await issueChallenge("/auth/client/registration/request", { phone: clientPhone }, "client_register");
   const pair = await expect(identityBase, "POST", "/auth/client/register", 201, { body: { phone: clientPhone, code: challenge.code, password, clientInstanceId: `location-client-${suffix}` } });
   if (pair.identity?.role !== "client" || pair.identity?.surface !== "app-client") throw new Error("client fixture session identity is not app-client");
@@ -94,7 +94,7 @@ async function createPartnerSession(operatorID) {
   const actorID = String(provisioned.body.actorId);
   actorIDs.add(actorID);
   const challenge = await issueChallenge("/auth/managed/activation/request", { phone: partnerPhone, role: "partner" }, "managed_activate");
-  const pair = await expect(identityBase, "POST", "/auth/managed/activate", 200, { body: { phone: partnerPhone, role: "partner", verificationCode: challenge.code, password: `Location-Partner-${crypto.randomBytes(12).toString("hex")}-Password`, clientInstanceId: `location-partner-${suffix}` } });
+  const pair = await expect(identityBase, "POST", "/auth/managed/activate", 200, { body: { phone: partnerPhone, role: "partner", verificationCode: challenge.code, password: `Part${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: `location-partner-${suffix}` } });
   if (pair.identity?.subject !== actorID || pair.identity?.role !== "partner" || pair.identity?.surface !== "app-partner") throw new Error("partner fixture session identity is not app-partner");
   return pair;
 }

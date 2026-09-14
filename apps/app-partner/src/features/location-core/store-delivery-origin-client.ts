@@ -1,7 +1,7 @@
 import * as Crypto from "expo-crypto";
 
 import { createDshMobileClient, type StoreDeliveryOriginResponse } from "@bthwani/dsh";
-import { readIdentityAccessToken } from "../../bootstrap/identity";
+import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function client() {
   const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -9,18 +9,14 @@ function client() {
   return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
-function token(): string {
-  const value = readIdentityAccessToken();
-  if (!value) throw new Error("DSH_PARTNER_SESSION_UNAVAILABLE");
-  return value;
-}
+const token = getUsableIdentityAccessToken;
 
 export function readStoreDeliveryOrigin(storeID: string): Promise<StoreDeliveryOriginResponse> {
-  return client().readStoreDeliveryOrigin(token(), storeID);
+  return token().then((value) => client().readStoreDeliveryOrigin(value, storeID));
 }
 
 export function setStoreDeliveryOrigin(storeID: string, latitude: number, longitude: number, expectedVersion: number): Promise<StoreDeliveryOriginResponse> {
-  return client().setStoreDeliveryOrigin(token(), storeID, { latitude, longitude }, expectedVersion);
+  return token().then((value) => client().setStoreDeliveryOrigin(value, storeID, { latitude, longitude }, expectedVersion));
 }
 
 export function isOriginHttpError(error: unknown, status: number): boolean {

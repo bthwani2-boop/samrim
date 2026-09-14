@@ -7,7 +7,7 @@ import {
   type DeliveryAddressResponse,
   type UpdateDeliveryAddressRequest,
 } from "@bthwani/dsh";
-import { readIdentityAccessToken } from "../../bootstrap/identity";
+import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function client() {
   const baseUrl = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -15,22 +15,18 @@ function client() {
   return createDshMobileClient(baseUrl, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
-function token(): string {
-  const value = readIdentityAccessToken();
-  if (!value) throw new Error("DSH_CLIENT_SESSION_UNAVAILABLE");
-  return value;
-}
+const token = getUsableIdentityAccessToken;
 
 export function listOwnDeliveryAddresses(): Promise<ReadonlyArray<DeliveryAddress>> {
-  return client().listOwnDeliveryAddresses(token());
+  return token().then((value) => client().listOwnDeliveryAddresses(value));
 }
 
 export function createOwnDeliveryAddress(input: CreateDeliveryAddressRequest): Promise<DeliveryAddressResponse> {
-  return client().createOwnDeliveryAddress(token(), input);
+  return token().then((value) => client().createOwnDeliveryAddress(value, input));
 }
 
 export function updateOwnDeliveryAddress(addressID: string, input: UpdateDeliveryAddressRequest, expectedVersion: number): Promise<DeliveryAddressResponse> {
-  return client().updateOwnDeliveryAddress(token(), addressID, input, expectedVersion);
+  return token().then((value) => client().updateOwnDeliveryAddress(value, addressID, input, expectedVersion));
 }
 
 export function isLocationHttpError(error: unknown, status: number): boolean {

@@ -44,6 +44,11 @@ for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
   const pkg = JSON.parse(read("apps/" + app + "/package.json"));
   if (pkg.dependencies?.["@bthwani/identity"] !== "workspace:*") failures.push(app + " does not consume canonical Identity package");
 }
+for (const file of ["apps/app-client/src/features/location-core/delivery-address-client.ts", "apps/app-partner/src/features/location-core/store-delivery-origin-client.ts", "apps/app-partner/src/features/partner-onboarding/store-readback-client.ts", "apps/app-partner/src/features/store-assortment/store-assortment.tsx"]) {
+  const consumer = read(file);
+  for (const value of ["readIdentityAccessToken", "getAccessToken("]) if (consumer.includes(value)) failures.push(file + " retains raw Identity token access " + value);
+  if (!consumer.includes("getUsableIdentityAccessToken")) failures.push(file + " does not use the canonical usable Identity token accessor");
+}
 const clientBinding = has("apps/app-client/src/bootstrap/identity.ts", ["requestClientRegistration", "registerClient", "loginClient", "requestClientRecovery", "recoverClient", "createMobileIdentityRuntime"]);
 for (const value of ["requestOtp(", "actorType"]) if (clientBinding.includes(value)) failures.push("app-client retains obsolete auth authority " + value);
 const clientPage = read("apps/app-client/app/index.tsx") + read("apps/app-client/src/features/access/identity-gate.tsx");
@@ -67,7 +72,7 @@ const contractFiles = ["services/identity/contracts/openapi/identity.openapi.yam
 const contract = contractFiles.map((file) => read(file)).join("\n");
 for (const route of ["/auth/client/registration/request:", "/auth/client/login:", "/auth/client/recovery/request:", "/auth/managed/activation/request:", "/auth/operator/enrollment/request:", "/auth/operator/enrollment/registration/options:", "/auth/operator/enrollment/registration/finish:", "/auth/operator/authentication/options:", "/auth/operator/authentication/finish:", "/auth/operator/recovery/request:", "/auth/operator/recovery/registration/options:", "/auth/operator/recovery/registration/finish:", "/internal/bootstrap/operator:", "/internal/actors/{actorId}/roles/{role}/reenrollment:"]) if (!contract.includes(route)) failures.push("Identity contract missing " + route);
 for (const value of [oldOperatorLogin + "/start:", oldOperatorLogin + "/complete:", oldManagedRecovery + "/request:", oldManagedRecovery + "/recover:", "operator_mfa", "ManagedRecoveryChallengeRequest", "platform_owner", "operator_owner", "X-Service-Caller", "identity_access_grants", "PasswordResetRequest", "username:", oldDeviceName]) if (contract.includes(value)) failures.push("Identity contract retains retired shape " + value);
-for (const value of ["enum: [client, partner, captain, field, operator]", "enum: [partner, captain, field]", "enum: [operator]", "minLength: 15", "pattern: \"^[0-9]{6}$\"", "user-verifying", "WebAuthn"]) if (!contract.includes(value)) failures.push("Identity contract missing invariant " + value);
+for (const value of ["enum: [client, partner, captain, field, operator]", "enum: [partner, captain, field]", "enum: [operator]", "minLength: 8", "maxLength: 8", "pattern: \"^[0-9]{6}$\"", "user-verifying", "WebAuthn"]) if (!contract.includes(value)) failures.push("Identity contract missing invariant " + value);
 
 const generatedTypes = read("services/identity/clients/generated/identity-types.ts");
 const generatedOps = read("services/identity/clients/generated/identity-operations.ts");
@@ -88,10 +93,13 @@ for (const value of ["StartOperatorLogin", "CompleteOperatorLogin", "RequestMana
 has("services/identity/backend/internal/passkey/service.go", ["webauthn.New", "UserVerification", "VerificationRequired", "BeginRegistration", "FinishRegistration", "FinishPasskeyLogin", "identity_webauthn_ceremonies", "identity_webauthn_credentials", "identity_operator_recovery_credentials", "storeRecoveryCredentialTx"]);
 const session = has("services/identity/backend/internal/session/service.go", ["CreateTx", "identity_refresh_token_history", "client_instance_id_hash", "identityOf(actorID"]);
 if (session.includes(oldDeviceName) || session.includes("surfaceAccess")) failures.push("Identity session service retains old binding/host semantics");
+const mobileSession = has("services/identity/clients/session.ts", ["getUsableAccessToken", "subscribe", "accessTokenSafetySkewMs", "refreshInFlight", "IDENTITY_ACCESS_TOKEN_UNUSABLE"]);
+for (const value of ["getAccessToken()", "readAccessToken", "readIdentityAccessToken"]) if (mobileSession.includes(value)) failures.push("Identity mobile client retains raw access-token accessor " + value);
 
 const migration = has("services/identity/database/migrations/017_operator_passkeys_and_instance_binding.sql", ["RENAME COLUMN " + oldDeviceColumn + " TO client_instance_id_hash", "identity_webauthn_users", "identity_webauthn_credentials", "identity_webauthn_ceremonies", "identity_operator_recovery_credentials", "operator_recovery_registration", "operator_authentication", "DELETE FROM identity_challenges", "DROP CONSTRAINT identity_password_attempt_role_check"]);
 for (const value of ["INSERT INTO identity_schema_migrations", oldDeviceName]) if (migration.includes(value)) failures.push("v17 migration retains retired shape " + value);
-const readiness = has("services/identity/backend/internal/storage/postgres/migrate.go", ["const SchemaVersion = 17", "CurrentSchemaVersion", "identity_webauthn_users", "identity_webauthn_credentials", "identity_webauthn_ceremonies", "identity_operator_recovery_credentials", "client_instance_id_hash"]);
+has("services/identity/database/migrations/018_mobile_session_lifetime_cutover.sql", ["365 days", "30 days", "role IN ('client', 'partner', 'captain', 'field')", "revoked_at IS NULL"]);
+const readiness = has("services/identity/backend/internal/storage/postgres/migrate.go", ["const SchemaVersion = 18", "CurrentSchemaVersion", "identity_webauthn_users", "identity_webauthn_credentials", "identity_webauthn_ceremonies", "identity_operator_recovery_credentials", "client_instance_id_hash"]);
 for (const value of [oldDeviceColumn, "identity_managed_activation_codes"]) if (readiness.includes(value)) failures.push("Identity readiness retains " + value);
 const schema = has("services/identity/backend/internal/storage/postgres/schema.go", ["identity_challenge_purpose_check", "operator_recovery", "identity_webauthn_ceremony_kind_check", "identity_operator_recovery_credentials_pkey", "identity_password_attempt_role_check"]); void schema;
 has("services/identity/backend/internal/storage/postgres/privileges.go", ["VerifyRuntimePrivileges", "VerifyMaintenancePrivileges", "identity_webauthn_credentials", "identity_webauthn_ceremonies", "identity_operator_recovery_credentials"]);

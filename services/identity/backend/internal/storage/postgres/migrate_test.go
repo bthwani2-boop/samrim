@@ -17,7 +17,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func TestMigrationV13ToV17Upgrade(t *testing.T) {
+func TestMigrationV13ToV18Upgrade(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("IDENTITY_DATABASE_URL"))
 	if databaseURL == "" {
 		t.Skip("IDENTITY_DATABASE_URL is required for the migration upgrade proof")
@@ -477,10 +477,71 @@ func TestMigrationV13ToV17Upgrade(t *testing.T) {
 		t.Fatalf("retired session binding column remains after v17: %d (err: %v)", oldInstanceColumnCount, err)
 	}
 
+	// Seed one active mobile session and one operator session at the v17
+	// boundary. The forward lifetime cutover must update only the mobile row;
+	// access expiry and operator lifetime semantics remain untouched.
+	if _, err := testDB.ExecContext(ctx, `
+		INSERT INTO identity_sessions(id, actor_id, role, access_token_hash, refresh_token_hash, client_instance_id_hash, access_expires_at, refresh_expires_at, absolute_expires_at, last_used_at, version)
+		VALUES
+		('session_mobile_v17', $1, 'partner', repeat('1', 64), repeat('2', 64), repeat('3', 64), clock_timestamp() + interval '15 minutes', clock_timestamp() + interval '7 days', clock_timestamp() + interval '30 days', clock_timestamp(), 1),
+		('session_operator_v17', $2, 'operator', repeat('4', 64), repeat('5', 64), repeat('6', 64), clock_timestamp() + interval '15 minutes', clock_timestamp() + interval '1 hour', clock_timestamp() + interval '24 hours', clock_timestamp(), 1)`, partnerActorID, ownerActorID); err != nil {
+		t.Fatalf("insert v17 session fixtures: %v", err)
+	}
+
+	var operatorRefreshBefore, operatorAbsoluteBefore time.Time
+	if err := testDB.QueryRowContext(ctx, "SELECT refresh_expires_at,absolute_expires_at FROM identity_sessions WHERE id='session_operator_v17'").Scan(&operatorRefreshBefore, &operatorAbsoluteBefore); err != nil {
+		t.Fatalf("read operator v17 session fixture: %v", err)
+	}
+
+	// Apply migration 018 and prove the mobile lifetime cutover is precise.
+	var v18Name string
+	var v18Content []byte
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), "018_") {
+			v18Name = file.Name()
+			v18Content, err = os.ReadFile(filepath.Join(migDir, v18Name))
+			if err != nil {
+				t.Fatalf("read 018: %v", err)
+			}
+			break
+		}
+	}
+	if v18Name == "" {
+		t.Fatal("migration 018 not found")
+	}
+	hash18 := sha256.Sum256(v18Content)
+	if err := postgres.Migrate(ctx, testDB, 18, v18Name, hex.EncodeToString(hash18[:]), string(v18Content)); err != nil {
+		t.Fatalf("apply migration 018 on v17 database: %v", err)
+	}
+	if v18, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || v18 != 18 {
+		t.Fatalf("expected schema version 18, got %d (err: %v)", v18, err)
+	}
+
+	var mobileAccess, mobileRefresh, mobileAbsolute, mobileCreated time.Time
+	if err := testDB.QueryRowContext(ctx, "SELECT access_expires_at,refresh_expires_at,absolute_expires_at,created_at FROM identity_sessions WHERE id='session_mobile_v17'").Scan(&mobileAccess, &mobileRefresh, &mobileAbsolute, &mobileCreated); err != nil {
+		t.Fatalf("read mobile session after v18: %v", err)
+	}
+	if mobileAbsolute.Before(mobileCreated.Add(364*24*time.Hour)) || mobileAbsolute.After(mobileCreated.Add(366*24*time.Hour)) {
+		t.Fatalf("mobile absolute lifetime was not cut over to 365 days: created=%s absolute=%s", mobileCreated, mobileAbsolute)
+	}
+	if mobileRefresh.Before(time.Now().Add(29*24*time.Hour)) || mobileRefresh.After(time.Now().Add(31*24*time.Hour)) {
+		t.Fatalf("mobile refresh lifetime was not cut over to 30 days: refresh=%s", mobileRefresh)
+	}
+	if mobileAccess.Before(time.Now().Add(14*time.Minute)) || mobileAccess.After(time.Now().Add(16*time.Minute)) {
+		t.Fatalf("mobile access expiry was unexpectedly extended: access=%s", mobileAccess)
+	}
+	var operatorRefreshAfter, operatorAbsoluteAfter time.Time
+	if err := testDB.QueryRowContext(ctx, "SELECT refresh_expires_at,absolute_expires_at FROM identity_sessions WHERE id='session_operator_v17'").Scan(&operatorRefreshAfter, &operatorAbsoluteAfter); err != nil {
+		t.Fatalf("read operator session after v18: %v", err)
+	}
+	if !operatorRefreshAfter.Equal(operatorRefreshBefore) || !operatorAbsoluteAfter.Equal(operatorAbsoluteBefore) {
+		t.Fatalf("operator session changed during mobile cutover: before=%s/%s after=%s/%s", operatorRefreshBefore, operatorAbsoluteBefore, operatorRefreshAfter, operatorAbsoluteAfter)
+	}
+
 	// Verify full postgres.Ready passes on this upgraded database.
 	if err := postgres.Ready(ctx, testDB); err != nil {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
-	t.Log("Migration v13 -> v17 upgrade, data preservation and passkey cutover test PASSED successfully!")
+	t.Log("Migration v13 -> v18 upgrade, data preservation, passkey cutover and mobile lifetime cutover test PASSED successfully!")
 }
