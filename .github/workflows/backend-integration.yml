@@ -20,11 +20,24 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Checkout exact candidate
+      - name: Checkout push head / PR merge-ref integration candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
           fetch-depth: 2
+
+      - name: Attribute integration proof target
+        shell: bash
+        run: |
+          set -euo pipefail
+          observed="$(git rev-parse HEAD)"
+          [[ "${observed}" == "${GITHUB_SHA}" ]] || { echo "::error::Integration proof target mismatch: observed=${observed} expected=${GITHUB_SHA}"; exit 1; }
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            echo "PROOF_TARGET=PR_MERGE_REF"
+          else
+            echo "PROOF_TARGET=PUSH_HEAD"
+          fi
+          echo "PROOF_SHA=${observed}"
 
       - name: Set up Node for backend semantic proof
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e

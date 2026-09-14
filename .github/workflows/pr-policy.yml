@@ -21,11 +21,30 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Checkout exact candidate
+      - name: Checkout exact push/PR-head candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 2
+
+      - name: Attribute policy proof target
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          observed="$(git rev-parse HEAD)"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            expected="${PR_HEAD_SHA}"
+            target="PR_HEAD"
+          else
+            expected="${GITHUB_SHA}"
+            target="MAIN_PUSH_HEAD"
+          fi
+          [[ "${observed}" == "${expected}" ]] || { echo "::error::Policy proof target mismatch: observed=${observed} expected=${expected}"; exit 1; }
+          echo "PROOF_TARGET=${target}"
+          echo "PROOF_SHA=${observed}"
 
       - name: Set up Node for pinned Governance evidence
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e

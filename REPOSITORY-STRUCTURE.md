@@ -93,6 +93,8 @@ samrim/
 ├── infra/                environment/deployment composition
 ├── tools/                cross-repository automation/inspection/development tooling
 ├── .github/              repository-platform policy and CI integration
+├── .claude/              Claude Code project-host configuration only
+├── .gemini/              Gemini CLI project-host configuration only
 └── contracts/            OPTIONAL; cross-service protocol/catalog material only after explicit need
 ~~~
 
@@ -110,6 +112,17 @@ backend/
 Durable Governance and human Docs live in the separately pinned `governance-and-docs` repository; do not recreate competing `governance/` or `docs/` authorities inside Samrim.
 
 Root files are limited to repository-wide substrate, policy adapters and manifests such as `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `knowledge.sources.json`, workspace/toolchain manifests, lockfiles and repository configuration. A new root file requires repository-wide responsibility; local responsibility stays with its owner.
+
+### 3.1 Agent host configuration roots
+
+`.claude/` and `.gemini/` are admitted only because the active development hosts require repository-local project configuration for deterministic routing/enforcement. They are **host configuration**, not Product, architecture, implementation, Governance, verification-result or agent-law owners.
+
+~~~text
+.claude/settings.json    Claude Code project hook/config wiring only
+.gemini/settings.json    Gemini CLI project context/hook/config wiring only
+~~~
+
+No additional tracked file may appear under either root without a proven current host requirement and a same-change update to this placement contract and structural verifier. Host configuration must route to the root `AGENTS.md` and repository-owned tooling; it must not duplicate semantic law. Codex uses the root `AGENTS.md` and its native sandbox/approval boundary and therefore has no repository `.codex/` scaffold unless a future official, current requirement proves one necessary.
 
 ## 4. Deployable application hosts: `apps/`
 
@@ -705,6 +718,8 @@ samrim/
 ├── REPOSITORY-STRUCTURE.md
 ├── knowledge.sources.json
 ├── <repository-wide manifests/config>
+├── .claude/               host configuration only; settings.json
+├── .gemini/               host configuration only; settings.json
 │
 ├── apps/
 │   ├── app-client/       ┐
