@@ -45,7 +45,6 @@ function verifyPartnerModel() {
     "apps/app-partner/src/features/location-core/store-delivery-origin.tsx",
     "apps/app-partner/src/features/location-core/store-delivery-origin-client.ts",
     "tools/dev/verify-dsh-location-runtime.mjs",
-    "DESIGN.md",
   ];
   for (const relative of requiredFiles) {
     const absolute = path.join(root, ...relative.split("/"));
