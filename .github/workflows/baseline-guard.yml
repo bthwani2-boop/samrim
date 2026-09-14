@@ -20,11 +20,30 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Checkout exact candidate
+      - name: Checkout exact push/PR-head candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 2
+
+      - name: Attribute exact proof target
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          observed="$(git rev-parse HEAD)"
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            expected="${PR_HEAD_SHA}"
+            target="PR_HEAD"
+          else
+            expected="${GITHUB_SHA}"
+            target="PUSH_HEAD"
+          fi
+          [[ "${observed}" == "${expected}" ]] || { echo "::error::Proof target mismatch: observed=${observed} expected=${expected}"; exit 1; }
+          echo "PROOF_TARGET=${target}"
+          echo "PROOF_SHA=${observed}"
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -163,6 +182,10 @@ jobs:
       - name: Verify adversarial agent knowledge contract
         shell: bash
         run: node tools/dev/verify-agent-knowledge-contract.mjs
+
+      - name: Verify Agent Execution Guard adversarial behavior
+        shell: bash
+        run: node --test tools/dev/agent-execution-guard.test.mjs
 
       - name: Verify Identity vertical boundaries
         shell: bash
@@ -303,11 +326,29 @@ jobs:
         shell: pwsh
         run: git config --global core.autocrlf true
 
-      - name: Checkout exact candidate
+      - name: Checkout exact push/PR-head candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           fetch-depth: 2
+
+      - name: Attribute Windows proof target
+        shell: pwsh
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $observed = (git rev-parse HEAD).Trim()
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            $expected = $env:PR_HEAD_SHA
+            $target = 'PR_HEAD'
+          } else {
+            $expected = $env:GITHUB_SHA
+            $target = 'PUSH_HEAD'
+          }
+          if ($observed -ne $expected) { throw "Proof target mismatch: observed=$observed expected=$expected" }
+          Write-Host "PROOF_TARGET=$target"
+          Write-Host "PROOF_SHA=$observed"
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
