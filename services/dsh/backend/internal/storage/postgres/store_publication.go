@@ -14,14 +14,16 @@ import (
 )
 
 type StoreRecord struct {
-	ID                   string
-	PartnerActorID       string
-	Name                 string
-	Version              int
-	PublicationState     string
-	PublicationChangedAt *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                      string
+	PartnerActorID          string
+	Name                    string
+	Version                 int
+	PublicationState        string
+	PublicationChangedAt    *time.Time
+	DeliveryOriginLatitude  *float64
+	DeliveryOriginLongitude *float64
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 func newID(prefix string) (string, error) {
@@ -171,7 +173,7 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 	updated, err := scanStore(tx.QueryRowContext(ctx, `UPDATE dsh.stores
 		SET publication_state=$2, publication_changed_at=clock_timestamp(), version=version+1, updated_at=clock_timestamp()
 		WHERE id=$1 AND version=$3
-		RETURNING id, partner_actor_id, name, version, publication_state, publication_changed_at, created_at, updated_at`, storeID, requestedState, expectedVersion))
+		RETURNING id, partner_actor_id, name, version, publication_state, publication_changed_at, delivery_origin_latitude, delivery_origin_longitude, created_at, updated_at`, storeID, requestedState, expectedVersion))
 	if err != nil {
 		return PublicationResult{}, fmt.Errorf("update canonical store publication: %w", err)
 	}
@@ -259,7 +261,7 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string) (Public
 	return store, nil
 }
 
-const storeSelect = `SELECT id, partner_actor_id, name, version, publication_state, publication_changed_at, created_at, updated_at FROM dsh.stores`
+const storeSelect = `SELECT id, partner_actor_id, name, version, publication_state, publication_changed_at, delivery_origin_latitude, delivery_origin_longitude, created_at, updated_at FROM dsh.stores`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -268,11 +270,18 @@ type rowScanner interface {
 func scanStore(row rowScanner) (StoreRecord, error) {
 	var store StoreRecord
 	var publicationChangedAt sql.NullTime
-	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublicationState, &publicationChangedAt, &store.CreatedAt, &store.UpdatedAt); err != nil {
+	var deliveryOriginLatitude, deliveryOriginLongitude sql.NullFloat64
+	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublicationState, &publicationChangedAt, &deliveryOriginLatitude, &deliveryOriginLongitude, &store.CreatedAt, &store.UpdatedAt); err != nil {
 		return StoreRecord{}, err
 	}
 	if publicationChangedAt.Valid {
 		store.PublicationChangedAt = &publicationChangedAt.Time
+	}
+	if deliveryOriginLatitude.Valid {
+		store.DeliveryOriginLatitude = &deliveryOriginLatitude.Float64
+	}
+	if deliveryOriginLongitude.Valid {
+		store.DeliveryOriginLongitude = &deliveryOriginLongitude.Float64
 	}
 	return store, nil
 }

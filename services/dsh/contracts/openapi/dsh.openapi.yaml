@@ -54,6 +54,15 @@ paths:
   /dsh/public/stores/{storeId}:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores~1{storeId}"
 
+  /dsh/addresses:
+    $ref: "./paths/location-core.yaml#/paths/~1dsh~1addresses"
+
+  /dsh/addresses/{addressId}:
+    $ref: "./paths/location-core.yaml#/paths/~1dsh~1addresses~1{addressId}"
+
+  /dsh/stores/{storeId}/delivery-origin:
+    $ref: "./paths/location-core.yaml#/paths/~1dsh~1stores~1{storeId}~1delivery-origin"
+
 components:
   securitySchemes:
     serviceBearer:
@@ -290,7 +299,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]
+      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, deliveryOrigin, assortments, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -309,6 +318,9 @@ components:
         publicationChangedAt:
           type: string
           format: date-time
+          nullable: true
+        deliveryOrigin:
+          $ref: "#/components/schemas/DeliveryOrigin"
           nullable: true
         assortments:
           type: array
@@ -344,6 +356,135 @@ components:
       properties:
         store:
           $ref: "#/components/schemas/StoreView"
+        idempotentReplay:
+          type: boolean
+
+    DeliveryOrigin:
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    DeliveryAddress:
+      type: object
+      required: [id, addressText, latitude, longitude, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        addressText:
+          type: string
+          minLength: 3
+          maxLength: 500
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateDeliveryAddressRequest:
+      type: object
+      required: [addressText, latitude, longitude]
+      additionalProperties: false
+      properties:
+        addressText:
+          type: string
+          minLength: 3
+          maxLength: 500
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    UpdateDeliveryAddressRequest:
+      type: object
+      required: [addressText, latitude, longitude]
+      additionalProperties: false
+      properties:
+        addressText:
+          type: string
+          minLength: 3
+          maxLength: 500
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    DeliveryAddressResponse:
+      type: object
+      required: [address, idempotentReplay]
+      additionalProperties: false
+      properties:
+        address:
+          $ref: "#/components/schemas/DeliveryAddress"
+        idempotentReplay:
+          type: boolean
+
+    DeliveryAddressListResponse:
+      type: object
+      required: [addresses]
+      additionalProperties: false
+      properties:
+        addresses:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeliveryAddress"
+
+    SetStoreDeliveryOriginRequest:
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    StoreDeliveryOriginResponse:
+      type: object
+      required: [storeId, storeVersion, origin, idempotentReplay]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        storeVersion:
+          type: integer
+          minimum: 1
+        origin:
+          $ref: "#/components/schemas/DeliveryOrigin"
+          nullable: true
         idempotentReplay:
           type: boolean
 

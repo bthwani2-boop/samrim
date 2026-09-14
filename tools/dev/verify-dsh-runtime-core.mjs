@@ -121,6 +121,18 @@ async function request(base, method, pathname, options = {}) {
   return { status: response.status, body };
 }
 
+async function waitForIdentityReady(timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus = 0;
+  while (Date.now() < deadline) {
+    const health = await request(identityBase, "GET", "/identity/health", { timeoutMs: 1_000, allowNetworkError: true });
+    lastStatus = health.status;
+    if (health.status === 200) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  fail("Identity did not become ready after restart", `last_status=${lastStatus}`);
+}
+
 function serviceHeaders(operatorID, key, correlation = crypto.randomUUID(), expectedVersion) {
   return { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": correlation, "Idempotency-Key": key, ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) };
 }
@@ -195,8 +207,8 @@ for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/stat
   if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response }));
 }
 
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "6", "DSH migration history is not exact");
-for (const [version, name] of [[1, "001_partner_store_baseline.sql"], [2, "002_store_publication.sql"], [3, "003_joining_cases_and_catalog.sql"], [4, "004_central_product_store_assortment_cutover.sql"], [5, "005_joining_case_partner_correction.sql"], [6, "006_joining_case_correct_and_resubmit.sql"]]) expectSQL(`SELECT name FROM dsh.schema_migrations WHERE version=${version}`, name, `DSH migration ${version} is not canonical`);
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "7", "DSH migration history is not exact");
+for (const [version, name] of [[1, "001_partner_store_baseline.sql"], [2, "002_store_publication.sql"], [3, "003_joining_cases_and_catalog.sql"], [4, "004_central_product_store_assortment_cutover.sql"], [5, "005_joining_case_partner_correction.sql"], [6, "006_joining_case_correct_and_resubmit.sql"], [7, "007_location_core.sql"]]) expectSQL(`SELECT name FROM dsh.schema_migrations WHERE version=${version}`, name, `DSH migration ${version} is not canonical`);
 for (const table of ["catalog_items", "catalog_item_mutation_idempotency", "catalog_item_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NULL`, "t", `legacy relation remains: ${table}`);
 for (const [table, constraint] of [
   ["dsh.central_products", "central_products_pkey"], ["dsh.central_products", "central_products_name_chk"], ["dsh.central_products", "central_products_sell_unit_chk"], ["dsh.central_products", "central_products_version_chk"],
@@ -211,7 +223,7 @@ for (const [table, index] of [
   ["central_products", "central_products_barcode_uq"], ["central_products", "central_products_active_idx"], ["central_products", "central_products_name_prefix_idx"], ["central_product_mutation_idempotency", "central_product_idempotency_product_idx"], ["central_product_audit", "central_product_audit_product_idx"],
   ["store_assortments", "store_assortments_store_idx"], ["store_assortments", "store_assortments_public_idx"], ["store_assortment_mutation_idempotency", "store_assortment_idempotency_store_idx"], ["store_assortment_audit", "store_assortment_audit_store_idx"],
 ]) expectSQL(`SELECT count(*) FROM pg_indexes WHERE schemaname='dsh' AND tablename='${table}' AND indexname='${index}'`, "1", `DSH index is missing: ${index}`);
-console.log("DSH_SCHEMA_V6=PASS");
+console.log("DSH_SCHEMA_V7=PASS");
 
 let actingOperatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
 if (!actingOperatorID) {
@@ -313,6 +325,7 @@ try {
   try { compose("up", "-d", "identity"); } catch (error) { outageFailure ||= `Identity restart failed: ${String(error?.message || error)}`; }
 }
 if (outageFailure) fail(outageFailure);
+await waitForIdentityReady();
 const recoveredList = await request(dshBase, "GET", "/dsh/public/stores");
 if (recoveredList.status !== 200 || !recoveredList.body.stores.some((store) => store.id === second.storeID)) fail("public visibility did not recover after Identity restart", JSON.stringify(recoveredList.body));
 const hiddenSecond = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-second-hide-${suffix}`, `store-second-hide-${suffix}`, 2), body: { state: "hidden" } });

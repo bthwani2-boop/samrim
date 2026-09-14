@@ -12,17 +12,21 @@ function verifyPartnerModel() {
     "services/dsh/contracts/openapi/paths/joining-cases.yaml",
     "services/dsh/contracts/openapi/paths/catalog.yaml",
     "services/dsh/contracts/openapi/paths/store-publication.yaml",
+    "services/dsh/contracts/openapi/paths/location-core.yaml",
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/joining_case.go",
     "services/dsh/backend/internal/storage/postgres/central_product.go",
     "services/dsh/backend/internal/storage/postgres/store_assortment.go",
     "services/dsh/backend/internal/storage/postgres/store_publication.go",
+    "services/dsh/backend/internal/storage/postgres/location_core.go",
+    "services/dsh/backend/internal/locationcore/service.go",
     "services/dsh/backend/internal/storepublication/service.go",
     "services/dsh/backend/internal/transport/http/joiningcase.go",
     "services/dsh/backend/internal/transport/http/catalog_product.go",
     "services/dsh/backend/internal/transport/http/store_assortment.go",
     "services/dsh/backend/internal/transport/http/storepublication.go",
+    "services/dsh/backend/internal/transport/http/locationcore.go",
     "apps/control-panel/app/(workspace)/partners/page.tsx",
     "apps/control-panel/src/features/partner-onboarding/joining-case-panel.tsx",
     "apps/control-panel/tests/live-identity.spec.ts",
@@ -34,7 +38,14 @@ function verifyPartnerModel() {
     "services/dsh/database/migrations/004_central_product_store_assortment_cutover.sql",
     "services/dsh/database/migrations/005_joining_case_partner_correction.sql",
     "services/dsh/database/migrations/006_joining_case_correct_and_resubmit.sql",
+    "services/dsh/database/migrations/007_location_core.sql",
     "services/dsh/tools/import-central-products.mjs",
+    "apps/app-client/src/features/location-core/location-core.tsx",
+    "apps/app-client/src/features/location-core/delivery-address-client.ts",
+    "apps/app-partner/src/features/location-core/store-delivery-origin.tsx",
+    "apps/app-partner/src/features/location-core/store-delivery-origin-client.ts",
+    "tools/dev/verify-dsh-location-runtime.mjs",
+    "DESIGN.md",
   ];
   for (const relative of requiredFiles) {
     const absolute = path.join(root, ...relative.split("/"));
@@ -77,7 +88,7 @@ function verifyPartnerModel() {
     .join("\n");
   for (const required of [
     "required: [case, idempotentReplay]",
-    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]",
+    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, deliveryOrigin, assortments, createdAt, updatedAt]",
     "required: [id, name, version, assortments, publishedAt, createdAt, updatedAt]",
   ]) {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
@@ -97,7 +108,11 @@ function verifyPartnerModel() {
   const cutoverMigration = fs.existsSync(cutoverMigrationPath) ? fs.readFileSync(cutoverMigrationPath, "utf8") : "";
   const correctionMigrationPath = path.join(root, "services/dsh/database/migrations/005_joining_case_partner_correction.sql");
   const correctionMigration = fs.existsSync(correctionMigrationPath) ? fs.readFileSync(correctionMigrationPath, "utf8") : "";
-  const dshMigrationGraph = migration + "\n" + joiningMigration + "\n" + cutoverMigration + "\n" + correctionMigration;
+  const resubmitMigrationPath = path.join(root, "services/dsh/database/migrations/006_joining_case_correct_and_resubmit.sql");
+  const resubmitMigration = fs.existsSync(resubmitMigrationPath) ? fs.readFileSync(resubmitMigrationPath, "utf8") : "";
+  const locationMigrationPath = path.join(root, "services/dsh/database/migrations/007_location_core.sql");
+  const locationMigration = fs.existsSync(locationMigrationPath) ? fs.readFileSync(locationMigrationPath, "utf8") : "";
+  const dshMigrationGraph = migration + "\n" + joiningMigration + "\n" + cutoverMigration + "\n" + correctionMigration + "\n" + resubmitMigration + "\n" + locationMigration;
   if (!migration.includes("partner_actor_id text NOT NULL")) failures.push("DSH baseline does not persist Store→partner_actor_id directly");
   for (const required of [
     "stores_id_partner_actor_uq",
@@ -177,7 +192,7 @@ function verifyPublicationReadiness() {
     ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
     ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
     ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
-    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V6=PASS"]],
+    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V7=PASS"]],
   ]) {
     for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
   }
@@ -206,6 +221,62 @@ function normalizeTokens(value) {
     .replace(/[^a-z0-9]+/g, " ")
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function verifyLocationCore() {
+  const failures = [];
+  const read = (relative) => fs.readFileSync(path.join(root, ...relative.split("/")), "utf8");
+  const contract = read("services/dsh/contracts/openapi/dsh.openapi.yaml") + "\n" + read("services/dsh/contracts/openapi/paths/location-core.yaml");
+  const migration = read("services/dsh/database/migrations/007_location_core.sql");
+  const storage = read("services/dsh/backend/internal/storage/postgres/location_core.go");
+  const service = read("services/dsh/backend/internal/locationcore/service.go");
+  const transport = read("services/dsh/backend/internal/transport/http/locationcore.go");
+  const mobileClient = read("services/dsh/clients/mobile.ts");
+  const runtimeLocation = read("tools/dev/verify-dsh-location-runtime.mjs");
+  for (const required of [
+    "DeliveryOrigin:",
+    "DeliveryAddress:",
+    "CreateDeliveryAddressRequest:",
+    "UpdateDeliveryAddressRequest:",
+    "DeliveryAddressListResponse:",
+    "/dsh/addresses:",
+    "/dsh/addresses/{addressId}:",
+    "/dsh/stores/{storeId}/delivery-origin:",
+    "deliveryOrigin:",
+  ]) if (!contract.includes(required)) failures.push(`Location Core contract missing: ${required}`);
+  for (const required of [
+    "dsh.delivery_addresses",
+    "dsh.delivery_address_mutation_idempotency",
+    "dsh.delivery_address_audit",
+    "dsh.store_origin_mutation_idempotency",
+    "dsh.store_origin_audit",
+    "stores_delivery_origin_pair_chk",
+    "delivery_addresses_latitude_chk",
+    "delivery_addresses_longitude_chk",
+  ]) if (!migration.includes(required)) failures.push(`Location Core migration missing: ${required}`);
+  for (const [name, text, tokens] of [
+    ["Location Core storage", storage, ["CreateDeliveryAddress", "UpdateDeliveryAddress", "SetStoreDeliveryOrigin", "pg_advisory_xact_lock", "ErrDeliveryAddressVersion", "ErrStoreOriginVersion"]],
+    ["Location Core service", service, ["identity.Role != \"client\"", "identity.Surface != \"app-client\"", "identity.Role != \"partner\"", "identity.Surface != \"app-partner\""]],
+    ["Location Core transport", transport, ["X-Actor-ID", "X-Acting-Actor-ID", "X-Expected-Version", "Idempotency-Key"]],
+    ["mobile DSH client", mobileClient, ["listOwnDeliveryAddresses", "createOwnDeliveryAddress", "readStoreDeliveryOrigin", "setStoreDeliveryOrigin"]],
+    ["Location Core runtime proof", runtimeLocation, ["DSH_SCHEMA_V7=PASS", "LOCATION_CORE_RUNTIME=PASS"]],
+  ]) for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing Location Core invariant: ${token}`);
+  for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
+    const config = JSON.parse(read(`apps/${app}/mobile.config.json`));
+    const pkg = JSON.parse(read(`apps/${app}/package.json`));
+    const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+    if (config.nativeCapabilities.includes("maps")) failures.push(`${app}: maps capability must remain unadmitted in Location Core`);
+    if (deps["react-native-maps"]) failures.push(`${app}: react-native-maps must not be added without proven provider provisioning`);
+  }
+  if (transport.includes("serviceability") || storage.includes("serviceability") || mobileClient.includes("serviceability")) failures.push("Location Core admits deferred serviceability semantics");
+  if (failures.length) {
+    console.error("LOCATION_CORE_STATIC=FAIL");
+    for (const failure of failures) console.error("  " + failure);
+    process.exit(1);
+  }
+  console.log("LOCATION_CORE_STATIC=PASS");
+  console.log("LOCATION_CORE_MAPS=NOT_ADMITTED");
+  console.log("LOCATION_CORE_SERVICEABILITY_POLICY=DEFERRED");
 }
 
 function hasSequence(tokens, words) {
@@ -262,6 +333,7 @@ function verifyRetiredFulfillmentResidue() {
 
 verifyPartnerModel();
 verifyPublicationReadiness();
+verifyLocationCore();
 verifyRetiredFulfillmentResidue();
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";

@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { AssortmentPublicationState, CentralProduct, CentralProductListResponse, CorrectJoiningCaseRequest, JoiningCaseResponse, PublicStoreView, PublishedStoreListResponse, StoreAssortment, StoreAssortmentListResponse, StoreAssortmentResponse } from "./generated/dsh-types";
+import type { AssortmentPublicationState, CentralProduct, CentralProductListResponse, CorrectJoiningCaseRequest, CreateDeliveryAddressRequest, DeliveryAddress, DeliveryAddressListResponse, DeliveryAddressResponse, JoiningCaseResponse, PublicStoreView, PublishedStoreListResponse, SetStoreDeliveryOriginRequest, StoreAssortment, StoreAssortmentListResponse, StoreAssortmentResponse, StoreDeliveryOriginResponse, UpdateDeliveryAddressRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -73,6 +73,12 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     return { "X-Correlation-ID": randomUUID(), "Idempotency-Key": randomUUID() };
   }
 
+  function assertCoordinates(latitude: number, longitude: number): void {
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      throw new Error("DSH_LOCATION_COORDINATES_INVALID");
+    }
+  }
+
   return {
     async readOwnJoiningCase(accessToken: string): Promise<JoiningCaseResponse> {
       return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.readOwnJoiningCase.path, dshOperationPaths.readOwnJoiningCase.method);
@@ -114,6 +120,44 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || !normalizedProduct || !Number.isSafeInteger(priceMinor) || priceMinor < 1 || expectedVersion < 1) throw new Error("DSH_ASSORTMENT_INPUT_INVALID");
       const path = dshOperationPaths.updateStoreAssortment.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{productId}", encodeURIComponent(normalizedProduct));
       return userRequest<StoreAssortmentResponse>(accessToken, path, dshOperationPaths.updateStoreAssortment.method, { priceMinor, publicationState, availability }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async listOwnDeliveryAddresses(accessToken: string, limit = 50): Promise<ReadonlyArray<DeliveryAddress>> {
+      if (limit < 1 || limit > 50) throw new Error("DSH_ADDRESS_LIMIT_INVALID");
+      const params = new URLSearchParams({ limit: String(limit) });
+      return (await userRequest<DeliveryAddressListResponse>(accessToken, `${dshOperationPaths.listOwnDeliveryAddresses.path}?${params.toString()}`, dshOperationPaths.listOwnDeliveryAddresses.method)).addresses;
+    },
+    async readOwnDeliveryAddress(accessToken: string, addressID: string): Promise<DeliveryAddressResponse> {
+      const normalized = addressID.trim();
+      if (!normalized) throw new Error("DSH_ADDRESS_ID_REQUIRED");
+      const path = dshOperationPaths.readOwnDeliveryAddress.path.replace("{addressId}", encodeURIComponent(normalized));
+      return userRequest<DeliveryAddressResponse>(accessToken, path, dshOperationPaths.readOwnDeliveryAddress.method);
+    },
+    async createOwnDeliveryAddress(accessToken: string, input: CreateDeliveryAddressRequest): Promise<DeliveryAddressResponse> {
+      const addressText = input.addressText.trim();
+      assertCoordinates(input.latitude, input.longitude);
+      if (addressText.length < 3 || addressText.length > 500) throw new Error("DSH_ADDRESS_INPUT_INVALID");
+      return userRequest<DeliveryAddressResponse>(accessToken, dshOperationPaths.createOwnDeliveryAddress.path, dshOperationPaths.createOwnDeliveryAddress.method, { addressText, latitude: input.latitude, longitude: input.longitude }, mutationHeaders());
+    },
+    async updateOwnDeliveryAddress(accessToken: string, addressID: string, input: UpdateDeliveryAddressRequest, expectedVersion: number): Promise<DeliveryAddressResponse> {
+      const normalized = addressID.trim();
+      const addressText = input.addressText.trim();
+      assertCoordinates(input.latitude, input.longitude);
+      if (!normalized || addressText.length < 3 || addressText.length > 500 || expectedVersion < 1) throw new Error("DSH_ADDRESS_INPUT_INVALID");
+      const path = dshOperationPaths.updateOwnDeliveryAddress.path.replace("{addressId}", encodeURIComponent(normalized));
+      return userRequest<DeliveryAddressResponse>(accessToken, path, dshOperationPaths.updateOwnDeliveryAddress.method, { addressText, latitude: input.latitude, longitude: input.longitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async readStoreDeliveryOrigin(accessToken: string, storeID: string): Promise<StoreDeliveryOriginResponse> {
+      const normalized = storeID.trim();
+      if (!normalized) throw new Error("DSH_STORE_ID_REQUIRED");
+      const path = dshOperationPaths.readStoreDeliveryOrigin.path.replace("{storeId}", encodeURIComponent(normalized));
+      return userRequest<StoreDeliveryOriginResponse>(accessToken, path, dshOperationPaths.readStoreDeliveryOrigin.method);
+    },
+    async setStoreDeliveryOrigin(accessToken: string, storeID: string, input: SetStoreDeliveryOriginRequest, expectedVersion: number): Promise<StoreDeliveryOriginResponse> {
+      const normalized = storeID.trim();
+      assertCoordinates(input.latitude, input.longitude);
+      if (!normalized || expectedVersion < 1) throw new Error("DSH_LOCATION_INPUT_INVALID");
+      const path = dshOperationPaths.setStoreDeliveryOrigin.path.replace("{storeId}", encodeURIComponent(normalized));
+      return userRequest<StoreDeliveryOriginResponse>(accessToken, path, dshOperationPaths.setStoreDeliveryOrigin.method, { latitude: input.latitude, longitude: input.longitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async listPublishedStores(): Promise<ReadonlyArray<PublicStoreView>> {
       const result = await publicRequest<PublishedStoreListResponse>(dshOperationPaths.listPublishedStores.path);

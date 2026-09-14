@@ -6,6 +6,7 @@
         "tools/dev/js-deps.mjs",
         "tools/dev/verify-candidate-runtime.mjs",
         "tools/dev/verify-dsh-runtime.mjs",
+        "tools/dev/verify-dsh-location-runtime.mjs",
         "tools/dev/verify-identity-runtime.mjs",
         "tools/dev/verify-migration-v13-to-v17.mjs",
         "tools/mobile/export-mobile-smoke.mjs",

@@ -41,8 +41,8 @@ func TestFreshJoiningAndAssortmentIntegrity(t *testing.T) {
 	}
 
 	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion || records[2].Name != "003_joining_cases_and_catalog.sql" || records[3].Name != "004_central_product_store_assortment_cutover.sql" || records[4].Name != "005_joining_case_partner_correction.sql" || records[5].Name != "006_joining_case_correct_and_resubmit.sql" {
-			t.Fatalf("unexpected DSH migration graph: records=%d sql=%d third=%s fourth=%s fifth=%s sixth=%s", len(records), len(migrationSQL), records[2].Name, records[3].Name, records[4].Name, records[5].Name)
+		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion || records[2].Name != "003_joining_cases_and_catalog.sql" || records[3].Name != "004_central_product_store_assortment_cutover.sql" || records[4].Name != "005_joining_case_partner_correction.sql" || records[5].Name != "006_joining_case_correct_and_resubmit.sql" || records[6].Name != "007_location_core.sql" {
+			t.Fatalf("unexpected DSH migration graph: records=%d sql=%d third=%s fourth=%s fifth=%s sixth=%s seventh=%s", len(records), len(migrationSQL), records[2].Name, records[3].Name, records[4].Name, records[5].Name, records[6].Name)
 		}
 		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
 			t.Fatalf("apply fresh DSH migrations: %v", err)
