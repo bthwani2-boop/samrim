@@ -8,9 +8,9 @@ CURRENT_COMMAND_AUTHORITY: LIVE_PACKAGE_SCRIPTS_AND_TOOL_SOURCE
 
 ## Purpose
 
-tools/ contains genuinely cross-repository automation, inspection, generation and evidence helpers. It is not a Product, architecture, ownership, readiness or closure authority.
+`tools/` contains genuinely cross-repository automation, inspection, generation and evidence helpers. It is not a Product, architecture, ownership, readiness or closure authority.
 
-Durable assurance/verification rules are owned by the exact pinned `governance/policy/QUALITY.md`, while durable system/repository boundaries are owned by `governance/system/SYSTEM.md`; both are resolved through `knowledge.sources.json` from `bthwani2-boop/governance-and-docs`. External/reference knowledge remains in pinned Governance/Docs and is queried there rather than duplicated in this repository.
+Durable assurance/verification rules are owned by the exact pinned `governance/policy/QUALITY.md`, while durable system/repository boundaries are owned by pinned Governance/Docs resolved through `knowledge.sources.json`.
 
 ## Placement rule
 
@@ -20,35 +20,37 @@ APP-SPECIFIC TOOL     → owning app when its lifecycle controls it
 CROSS-REPOSITORY TOOL → tools/
 ~~~
 
-Do not move service/app-specific behavior into tools/ merely for convenience.
+Do not move service/app-specific behavior into `tools/` merely for convenience.
 
-## Current major areas
+## Public command boundary
 
-- tools/dev/ — repository development/verification/derivation helpers;
-- tools/mobile/ — cross-app mobile development helpers only;
+Root `package.json` is the human/developer command surface, not an index of every repository executable.
 
-Exact scripts/commands are discovered from package.json, workflow files and the live tool sources. This README does not freeze an inventory.
+`pnpm verify` is the canonical human local-candidate verification entrypoint. Agent guard lifecycle, knowledge verification, docs verification, repository verification and candidate evidence producers remain internal implementations and are invoked directly by their owning hooks, CI or verifier.
+
+Pinned Governance/Docs materializes automatically when an internal consumer needs it. For explicit source inspection use:
+
+~~~text
+node tools/dev/knowledge-source.mjs
+~~~
+
+For source-derived knowledge exploration, invoke the implementation directly when needed:
+
+~~~text
+node tools/dev/query-knowledge.mjs list capabilities
+node tools/dev/query-knowledge.mjs capability <CAPABILITY_ID>
+node tools/dev/query-knowledge.mjs list journeys
+node tools/dev/query-knowledge.mjs journey <J_ID>
+node tools/dev/query-knowledge.mjs list owners
+node tools/dev/query-knowledge.mjs owner <keyword-or-path>
+node tools/dev/query-knowledge.mjs list references
+node tools/dev/query-knowledge.mjs reference <keyword-or-class-or-path>
+node tools/dev/query-knowledge.mjs list quality-dimensions
+~~~
 
 ## Generated and derived outputs
 
 A generated registry/map/catalog must identify its canonical inputs and be reproducible. Do not edit a derived artifact as a second source of truth.
-
-Use source-derived knowledge queries where appropriate. They materialize only the exact pinned Governance/Docs commit into ignored local cache:
-
-~~~text
-pnpm knowledge:query -- list capabilities
-pnpm knowledge:query -- capability <CAPABILITY_ID>
-pnpm knowledge:query -- list journeys
-pnpm knowledge:query -- journey <J_ID>
-pnpm knowledge:query -- list owners
-pnpm knowledge:query -- owner <keyword-or-path>
-pnpm knowledge:query -- list references
-pnpm knowledge:query -- reference <keyword-or-class-or-path>
-pnpm knowledge:query -- list quality-dimensions
-
-pnpm docs:verify:all
-pnpm knowledge:verify:all
-~~~
 
 ## Adding a tool
 
@@ -59,7 +61,7 @@ Before adding a material tool/guard/registry/manifest:
 3. check whether compiler/schema/database/test/runtime/generator already provides the invariant;
 4. keep Product/business rules at canonical APIs/owners;
 5. define deterministic inputs/outputs and failure behavior;
-6. expose a discoverable canonical invocation path when cross-repository;
+6. expose a public command only when a recurring human workflow needs one;
 7. add CI only when the evidence is materially required;
 8. define deletion/update ownership.
 

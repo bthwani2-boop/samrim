@@ -270,11 +270,11 @@ jobs:
 
       - name: Verify canonical static candidate
         shell: bash
-        run: pnpm run candidate:verify:static
+        run: node tools/dev/verify-candidate-static.mjs
 
       - name: Verify Nx project tags
         shell: bash
-        run: pnpm run nx:verify-tags
+        run: node tools/dev/verify-nx-project-tags.mjs
 
       - name: Discover Nx projects
         shell: bash

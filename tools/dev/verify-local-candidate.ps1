@@ -71,12 +71,16 @@ try {
     Run-Step 'Structural hygiene' { node tools/dev/verify-structural-hygiene.mjs }
     Run-Step 'Runtime ownership' { node tools/dev/verify-local-runtime-ownership.mjs }
     Run-Step 'Theme authority' { pnpm run theme:verify }
-    Run-Step 'Docs parity' { pnpm run docs:verify:all }
-    Run-Step 'Knowledge invariants' { pnpm run knowledge:verify:all }
+    Run-Step 'Docs command parity' { node tools/dev/verify-doc-command-parity.mjs }
+    Run-Step 'Docs configuration parity' { node tools/dev/verify-doc-config-parity.mjs }
+    Run-Step 'Knowledge invariants' { node tools/dev/verify-knowledge-system.mjs }
+    Run-Step 'Knowledge references' { node tools/dev/verify-knowledge-references.mjs }
+    Run-Step 'Agent knowledge contract' { node tools/dev/verify-agent-knowledge-contract.mjs }
+    Run-Step 'Agent guard behavior' { node --test tools/dev/agent-execution-guard.test.mjs }
     Run-Step 'PowerShell syntax' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 }
     Run-Step 'Mobile deployable identities' { pnpm run mobile:verify-config }
     Run-Step 'Workspace dependency references' { node tools/dev/verify-workspace-dependencies.mjs }
-    Run-Step 'Nx project tags' { pnpm run nx:verify-tags }
+    Run-Step 'Nx project tags' { node tools/dev/verify-nx-project-tags.mjs }
     Run-Step 'Developer bootstrap' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/bootstrap.ps1 }
     Assert-CleanTree 'developer bootstrap'
     Run-Step 'Canonical static verification' { node tools/dev/verify-candidate-static.mjs }

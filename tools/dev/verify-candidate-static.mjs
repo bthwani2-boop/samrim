@@ -381,7 +381,7 @@ verifyRetiredFulfillmentResidue();
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const checks = [
-  ["repository liveness", ["run", "repository:verify-liveness"]],
+  ["repository liveness", ["exec", "knip", "--no-progress", "--reporter", "compact", "--no-config-hints"]],
   ["workspace verification", ["run", "workspace:verify"]],
 ];
 
