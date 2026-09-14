@@ -207,8 +207,8 @@ for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/stat
   if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response }));
 }
 
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "7", "DSH migration history is not exact");
-for (const [version, name] of [[1, "001_partner_store_baseline.sql"], [2, "002_store_publication.sql"], [3, "003_joining_cases_and_catalog.sql"], [4, "004_central_product_store_assortment_cutover.sql"], [5, "005_joining_case_partner_correction.sql"], [6, "006_joining_case_correct_and_resubmit.sql"], [7, "007_location_core.sql"]]) expectSQL(`SELECT name FROM dsh.schema_migrations WHERE version=${version}`, name, `DSH migration ${version} is not canonical`);
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "8", "DSH migration history is not exact");
+for (const [version, name] of [[1, "001_partner_store_baseline.sql"], [2, "002_store_publication.sql"], [3, "003_joining_cases_and_catalog.sql"], [4, "004_central_product_store_assortment_cutover.sql"], [5, "005_joining_case_partner_correction.sql"], [6, "006_joining_case_correct_and_resubmit.sql"], [7, "007_location_core.sql"], [8, "008_location_core_corrective_boundaries.sql"]]) expectSQL(`SELECT name FROM dsh.schema_migrations WHERE version=${version}`, name, `DSH migration ${version} is not canonical`);
 for (const table of ["catalog_items", "catalog_item_mutation_idempotency", "catalog_item_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NULL`, "t", `legacy relation remains: ${table}`);
 for (const [table, constraint] of [
   ["dsh.central_products", "central_products_pkey"], ["dsh.central_products", "central_products_name_chk"], ["dsh.central_products", "central_products_sell_unit_chk"], ["dsh.central_products", "central_products_version_chk"],
@@ -223,7 +223,7 @@ for (const [table, index] of [
   ["central_products", "central_products_barcode_uq"], ["central_products", "central_products_active_idx"], ["central_products", "central_products_name_prefix_idx"], ["central_product_mutation_idempotency", "central_product_idempotency_product_idx"], ["central_product_audit", "central_product_audit_product_idx"],
   ["store_assortments", "store_assortments_store_idx"], ["store_assortments", "store_assortments_public_idx"], ["store_assortment_mutation_idempotency", "store_assortment_idempotency_store_idx"], ["store_assortment_audit", "store_assortment_audit_store_idx"],
 ]) expectSQL(`SELECT count(*) FROM pg_indexes WHERE schemaname='dsh' AND tablename='${table}' AND indexname='${index}'`, "1", `DSH index is missing: ${index}`);
-console.log("DSH_SCHEMA_V7=PASS");
+console.log("DSH_SCHEMA_V8=PASS");
 
 let actingOperatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
 if (!actingOperatorID) {

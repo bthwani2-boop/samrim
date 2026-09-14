@@ -8,7 +8,7 @@ import { isOriginHttpError, readStoreDeliveryOrigin, setStoreDeliveryOrigin } fr
 type Coordinates = Readonly<{ latitude: number; longitude: number }>;
 type OriginState =
   | { kind: "loading" }
-  | { kind: "ready"; storeVersion: number; origin: Coordinates | null }
+  | { kind: "ready"; originVersion: number; origin: Coordinates | null }
   | { kind: "error" };
 
 function errorText(error: unknown): string {
@@ -36,7 +36,7 @@ export function StoreDeliveryOrigin({ storeId }: { storeId: string }) {
     try {
       const result = await readStoreDeliveryOrigin(storeId);
       const origin = result.origin ? { latitude: result.origin.latitude, longitude: result.origin.longitude } : null;
-      setState({ kind: "ready", storeVersion: result.storeVersion, origin });
+      setState({ kind: "ready", originVersion: result.originVersion, origin });
       setCoordinates(origin);
     } catch (cause) {
       setState({ kind: "error" });
@@ -82,8 +82,8 @@ export function StoreDeliveryOrigin({ storeId }: { storeId: string }) {
     setError("");
     setNotice("");
     try {
-      const result = await setStoreDeliveryOrigin(storeId, coordinates.latitude, coordinates.longitude, state.storeVersion);
-      setState({ kind: "ready", storeVersion: result.storeVersion, origin: result.origin ? { latitude: result.origin.latitude, longitude: result.origin.longitude } : null });
+      const result = await setStoreDeliveryOrigin(storeId, coordinates.latitude, coordinates.longitude, state.originVersion);
+      setState({ kind: "ready", originVersion: result.originVersion, origin: result.origin ? { latitude: result.origin.latitude, longitude: result.origin.longitude } : null });
       setCoordinates(result.origin ? { latitude: result.origin.latitude, longitude: result.origin.longitude } : null);
       setNotice("تم حفظ موقع أصل المتجر وقراءته من DSH.");
     } catch (cause) {
@@ -101,7 +101,7 @@ export function StoreDeliveryOrigin({ storeId }: { storeId: string }) {
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة موقع الأصل…</Text></View> : null}
       {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" selectable style={styles.error}>{error}</Text><Pressable accessibilityRole="button" accessibilityLabel="إعادة قراءة موقع الأصل" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}
       {state.kind === "ready" ? <>
-        <View style={styles.coordinateBox}><Text style={styles.coordinateLabel}>القراءة الكانونية · إصدار المتجر {state.storeVersion}</Text><Text selectable style={styles.coordinateValue}>{state.origin ? `${state.origin.latitude.toFixed(6)}، ${state.origin.longitude.toFixed(6)}` : "لم يُحفظ موقع أصل بعد"}</Text></View>
+        <View style={styles.coordinateBox}><Text style={styles.coordinateLabel}>حالة موقع الأصل</Text><Text selectable style={styles.coordinateValue}>{state.origin ? "تم حفظ موقع أصل المتجر" : "لم يُحفظ موقع أصل بعد"}</Text></View>
         <Pressable accessibilityRole="button" accessibilityLabel="التقاط موقع أصل المتجر" accessibilityState={{ busy: locationBusy, disabled: busy || locationBusy }} disabled={busy || locationBusy} onPress={() => void captureLocation()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{locationBusy ? "جارٍ التقاط الموقع…" : "التقاط موقع الأصل"}</Text></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="حفظ موقع أصل المتجر" accessibilityState={{ busy, disabled: busy || !coordinates }} disabled={busy || !coordinates} onPress={() => void save()} style={[styles.primaryButton, (busy || !coordinates) && styles.disabledButton]}><Text style={styles.primaryButtonText}>{busy ? "جارٍ الحفظ…" : "حفظ موقع الأصل"}</Text></Pressable>
         {notice ? <Text accessibilityLiveRegion="polite" selectable style={styles.notice}>{notice}</Text> : null}

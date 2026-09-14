@@ -8,7 +8,7 @@ import { createOwnDeliveryAddress, isLocationHttpError, listOwnDeliveryAddresses
 
 type AddressState =
   | { kind: "loading" }
-  | { kind: "ready"; addresses: ReadonlyArray<DeliveryAddress> }
+  | { kind: "ready"; addresses: ReadonlyArray<DeliveryAddress>; nextCursor: string }
   | { kind: "error" };
 
 type Coordinates = Readonly<{ latitude: number; longitude: number }>;
@@ -32,6 +32,7 @@ export default function LocationCore() {
   const [formOpen, setFormOpen] = useState(true);
   const firstSuccessfulLoad = useRef(true);
   const [busy, setBusy] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [locationBusy, setLocationBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -40,10 +41,10 @@ export default function LocationCore() {
     setState({ kind: "loading" });
     setError("");
     try {
-      const addresses = await listOwnDeliveryAddresses();
-      setState({ kind: "ready", addresses });
+      const result = await listOwnDeliveryAddresses();
+      setState({ kind: "ready", addresses: result.addresses, nextCursor: result.nextCursor });
       if (firstSuccessfulLoad.current) {
-        setFormOpen(addresses.length === 0);
+        setFormOpen(result.addresses.length === 0);
         firstSuccessfulLoad.current = false;
       }
     } catch (cause) {
@@ -51,6 +52,20 @@ export default function LocationCore() {
       setError(errorText(cause));
     }
   }, []);
+
+  async function loadMore() {
+    if (loadingMore || state.kind !== "ready" || !state.nextCursor) return;
+    setLoadingMore(true);
+    setError("");
+    try {
+      const result = await listOwnDeliveryAddresses(state.nextCursor);
+      setState((current) => current.kind === "ready" ? { kind: "ready", addresses: [...current.addresses, ...result.addresses], nextCursor: result.nextCursor } : current);
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -154,8 +169,8 @@ export default function LocationCore() {
           <Text style={styles.secondaryButtonText}>{locationBusy ? "جارٍ التقاط الموقع…" : "التقاط الموقع الحالي"}</Text>
         </Pressable>
         <View style={styles.coordinateBox}>
-          <Text style={styles.coordinateLabel}>الموقع الملتقط</Text>
-          <Text selectable style={styles.coordinateValue}>{coordinates ? `${coordinates.latitude.toFixed(6)}، ${coordinates.longitude.toFixed(6)}` : "لم يُلتقط موقع بعد"}</Text>
+          <Text style={styles.coordinateLabel}>حالة الموقع</Text>
+          <Text selectable style={styles.coordinateValue}>{coordinates ? "تم تحديد الموقع" : "لم يُحدد الموقع بعد"}</Text>
         </View>
         <View style={styles.actionRow}>
           <Pressable accessibilityRole="button" accessibilityLabel={editing ? "حفظ تغييرات العنوان" : "حفظ العنوان"} accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void save()} style={[styles.primaryButton, busy && styles.disabledButton]}>
@@ -171,7 +186,7 @@ export default function LocationCore() {
         {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة العناوين…</Text></View> : null}
         {state.kind === "error" ? <View style={styles.state}><Text selectable style={styles.muted}>{error || "تعذر قراءة العناوين."}</Text><Pressable accessibilityRole="button" accessibilityLabel="إعادة قراءة العناوين" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}
         {state.kind === "ready" && state.addresses.length === 0 ? <View style={styles.state}><Text style={styles.muted}>لا توجد عناوين محفوظة بعد.</Text><Text style={styles.muted}>أضف عنوانًا ليصبح جاهزًا للاستخدام لاحقًا.</Text></View> : null}
-        {state.kind === "ready" && state.addresses.length > 0 ? <ScrollView contentInsetAdjustmentBehavior="automatic" nestedScrollEnabled style={styles.addressScroll}><View style={styles.addressList}>{state.addresses.map((address) => <View key={address.id} style={styles.addressItem}><Text selectable style={styles.addressText}>{address.addressText}</Text><Text selectable style={styles.addressMeta}>الموقع: {address.latitude.toFixed(6)}، {address.longitude.toFixed(6)} · الإصدار {address.version}</Text><Pressable accessibilityRole="button" accessibilityLabel={`تعديل العنوان ${address.addressText}`} disabled={busy} onPress={() => beginEdit(address)} style={styles.editButton}><Text style={styles.editButtonText}>تعديل العنوان</Text></Pressable></View>)}</View></ScrollView> : null}
+        {state.kind === "ready" && state.addresses.length > 0 ? <ScrollView contentInsetAdjustmentBehavior="automatic" nestedScrollEnabled style={styles.addressScroll}><View style={styles.addressList}>{state.addresses.map((address) => <View key={address.id} style={styles.addressItem}><Text selectable style={styles.addressText}>{address.addressText}</Text><Text selectable style={styles.addressMeta}>الموقع: تم تحديد الموقع · الإصدار {address.version}</Text><Pressable accessibilityRole="button" accessibilityLabel={`تعديل العنوان ${address.addressText}`} disabled={busy} onPress={() => beginEdit(address)} style={styles.editButton}><Text style={styles.editButtonText}>تعديل العنوان</Text></Pressable></View>)}</View>{state.nextCursor ? <Pressable accessibilityRole="button" accessibilityLabel="عرض المزيد من العناوين" accessibilityState={{ busy: loadingMore }} disabled={loadingMore} onPress={() => void loadMore()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{loadingMore ? "جارٍ تحميل المزيد…" : "عرض المزيد"}</Text></Pressable> : null}</ScrollView> : null}
       </View>
     </View>
   );

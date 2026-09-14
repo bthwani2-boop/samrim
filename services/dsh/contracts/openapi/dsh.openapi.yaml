@@ -126,6 +126,13 @@ components:
       schema:
         type: integer
         minimum: 1
+    OriginVersionRequired:
+      name: X-Expected-Version
+      in: header
+      required: true
+      schema:
+        type: integer
+        minimum: 0
     StoreId:
       name: storeId
       in: path
@@ -299,7 +306,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, deliveryOrigin, assortments, createdAt, updatedAt]
+      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -318,9 +325,6 @@ components:
         publicationChangedAt:
           type: string
           format: date-time
-          nullable: true
-        deliveryOrigin:
-          $ref: "#/components/schemas/DeliveryOrigin"
           nullable: true
         assortments:
           type: array
@@ -450,13 +454,16 @@ components:
 
     DeliveryAddressListResponse:
       type: object
-      required: [addresses]
+      required: [addresses, nextCursor]
       additionalProperties: false
       properties:
         addresses:
           type: array
           items:
             $ref: "#/components/schemas/DeliveryAddress"
+        nextCursor:
+          type: string
+          maxLength: 512
 
     SetStoreDeliveryOriginRequest:
       type: object
@@ -474,14 +481,14 @@ components:
 
     StoreDeliveryOriginResponse:
       type: object
-      required: [storeId, storeVersion, origin, idempotentReplay]
+      required: [storeId, originVersion, origin, idempotentReplay]
       additionalProperties: false
       properties:
         storeId:
           type: string
-        storeVersion:
+        originVersion:
           type: integer
-          minimum: 1
+          minimum: 0
         origin:
           $ref: "#/components/schemas/DeliveryOrigin"
           nullable: true

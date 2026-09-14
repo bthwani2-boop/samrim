@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { AssortmentPublicationState, CentralProduct, CentralProductListResponse, CorrectJoiningCaseRequest, CreateDeliveryAddressRequest, DeliveryAddress, DeliveryAddressListResponse, DeliveryAddressResponse, JoiningCaseResponse, PublicStoreView, PublishedStoreListResponse, SetStoreDeliveryOriginRequest, StoreAssortment, StoreAssortmentListResponse, StoreAssortmentResponse, StoreDeliveryOriginResponse, UpdateDeliveryAddressRequest } from "./generated/dsh-types";
+import type { AssortmentPublicationState, CentralProduct, CentralProductListResponse, CorrectJoiningCaseRequest, CreateDeliveryAddressRequest, DeliveryAddressListResponse, DeliveryAddressResponse, JoiningCaseResponse, PublicStoreView, PublishedStoreListResponse, SetStoreDeliveryOriginRequest, StoreAssortment, StoreAssortmentListResponse, StoreAssortmentResponse, StoreDeliveryOriginResponse, UpdateDeliveryAddressRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -121,10 +121,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.updateStoreAssortment.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{productId}", encodeURIComponent(normalizedProduct));
       return userRequest<StoreAssortmentResponse>(accessToken, path, dshOperationPaths.updateStoreAssortment.method, { priceMinor, publicationState, availability }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
-    async listOwnDeliveryAddresses(accessToken: string, limit = 50): Promise<ReadonlyArray<DeliveryAddress>> {
+    async listOwnDeliveryAddresses(accessToken: string, limit = 50, cursor = ""): Promise<DeliveryAddressListResponse> {
       if (limit < 1 || limit > 50) throw new Error("DSH_ADDRESS_LIMIT_INVALID");
       const params = new URLSearchParams({ limit: String(limit) });
-      return (await userRequest<DeliveryAddressListResponse>(accessToken, `${dshOperationPaths.listOwnDeliveryAddresses.path}?${params.toString()}`, dshOperationPaths.listOwnDeliveryAddresses.method)).addresses;
+      if (cursor.trim()) params.set("cursor", cursor.trim());
+      return userRequest<DeliveryAddressListResponse>(accessToken, `${dshOperationPaths.listOwnDeliveryAddresses.path}?${params.toString()}`, dshOperationPaths.listOwnDeliveryAddresses.method);
     },
     async readOwnDeliveryAddress(accessToken: string, addressID: string): Promise<DeliveryAddressResponse> {
       const normalized = addressID.trim();
@@ -155,7 +156,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     async setStoreDeliveryOrigin(accessToken: string, storeID: string, input: SetStoreDeliveryOriginRequest, expectedVersion: number): Promise<StoreDeliveryOriginResponse> {
       const normalized = storeID.trim();
       assertCoordinates(input.latitude, input.longitude);
-      if (!normalized || expectedVersion < 1) throw new Error("DSH_LOCATION_INPUT_INVALID");
+      if (!normalized || expectedVersion < 0) throw new Error("DSH_LOCATION_INPUT_INVALID");
       const path = dshOperationPaths.setStoreDeliveryOrigin.path.replace("{storeId}", encodeURIComponent(normalized));
       return userRequest<StoreDeliveryOriginResponse>(accessToken, path, dshOperationPaths.setStoreDeliveryOrigin.method, { latitude: input.latitude, longitude: input.longitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },

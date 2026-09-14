@@ -32,12 +32,12 @@ func New(identityClient *identityintegration.Client, db *sql.DB) (*Service, erro
 	return &Service{identity: identityClient, db: db}, nil
 }
 
-func (s *Service) ListOwnAddresses(ctx context.Context, accessToken string, limit int) ([]postgres.DeliveryAddressRecord, error) {
+func (s *Service) ListOwnAddresses(ctx context.Context, accessToken string, limit int, cursor string) (postgres.DeliveryAddressListResult, error) {
 	actorID, err := s.requireClientSession(ctx, accessToken)
 	if err != nil {
-		return nil, err
+		return postgres.DeliveryAddressListResult{}, err
 	}
-	return postgres.ListDeliveryAddresses(ctx, s.db, actorID, limit)
+	return postgres.ListDeliveryAddresses(ctx, s.db, actorID, limit, cursor)
 }
 
 func (s *Service) ReadOwnAddress(ctx context.Context, accessToken, addressID string) (postgres.DeliveryAddressRecord, error) {
@@ -74,10 +74,11 @@ func (s *Service) UpdateOwnAddress(ctx context.Context, accessToken, addressID, 
 }
 
 func (s *Service) ReadStoreOrigin(ctx context.Context, accessToken, storeID string) (postgres.StoreDeliveryOriginRecord, bool, error) {
-	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
+	partnerActorID, err := s.requireStoreOwner(ctx, accessToken, storeID)
+	if err != nil {
 		return postgres.StoreDeliveryOriginRecord{}, false, err
 	}
-	return postgres.ReadStoreDeliveryOrigin(ctx, s.db, storeID)
+	return postgres.ReadStoreDeliveryOrigin(ctx, s.db, storeID, partnerActorID)
 }
 
 func (s *Service) SetStoreOrigin(ctx context.Context, accessToken, storeID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.StoreDeliveryOriginResult, error) {
@@ -108,15 +109,12 @@ func (s *Service) requireStoreOwner(ctx context.Context, accessToken, storeID st
 	if identity.Role != "partner" || identity.Surface != "app-partner" || strings.TrimSpace(identity.Subject) == "" {
 		return "", ErrPartnerSessionForbidden
 	}
-	store, err := postgres.ReadStore(ctx, s.db, storeID)
+	_, err = postgres.ReadStoreOwnedByPartner(ctx, s.db, storeID, identity.Subject)
 	if errors.Is(err, postgres.ErrStoreNotFound) {
 		return "", postgres.ErrStoreOriginNotFound
 	}
 	if err != nil {
 		return "", err
-	}
-	if store.PartnerActorID != identity.Subject {
-		return "", ErrStoreOwnershipForbidden
 	}
 	return identity.Subject, nil
 }

@@ -49,16 +49,16 @@ func (s *LocationCoreServer) listAddresses(w http.ResponseWriter, r *http.Reques
 		}
 		limit = parsed
 	}
-	addresses, err := s.service.ListOwnAddresses(r.Context(), bearerToken(r), limit)
+	result, err := s.service.ListOwnAddresses(r.Context(), bearerToken(r), limit, r.URL.Query().Get("cursor"))
 	if err != nil {
 		writeLocationError(w, err)
 		return
 	}
-	values := make([]contract.DeliveryAddress, 0, len(addresses))
-	for _, address := range addresses {
+	values := make([]contract.DeliveryAddress, 0, len(result.Addresses))
+	for _, address := range result.Addresses {
 		values = append(values, toDeliveryAddress(address))
 	}
-	writeJSON(w, http.StatusOK, contract.DeliveryAddressListResponse{Addresses: values})
+	writeJSON(w, http.StatusOK, contract.DeliveryAddressListResponse{Addresses: values, NextCursor: result.NextCursor})
 }
 
 func (s *LocationCoreServer) readAddress(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +75,7 @@ func (s *LocationCoreServer) readAddress(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *LocationCoreServer) createAddress(w http.ResponseWriter, r *http.Request) {
-	correlation, idempotency, _, ok := requiredLocationHeaders(w, r, false)
+	correlation, idempotency, _, ok := requiredLocationHeaders(w, r, false, false)
 	if !ok {
 		return
 	}
@@ -96,7 +96,7 @@ func (s *LocationCoreServer) createAddress(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *LocationCoreServer) updateAddress(w http.ResponseWriter, r *http.Request) {
-	correlation, idempotency, expectedVersion, ok := requiredLocationHeaders(w, r, true)
+	correlation, idempotency, expectedVersion, ok := requiredLocationHeaders(w, r, true, false)
 	if !ok {
 		return
 	}
@@ -122,11 +122,11 @@ func (s *LocationCoreServer) readStoreOrigin(w http.ResponseWriter, r *http.Requ
 		writeLocationError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.StoreDeliveryOriginResponse{StoreID: origin.StoreID, StoreVersion: origin.StoreVersion, Origin: deliveryOriginValue(origin, available)})
+	writeJSON(w, http.StatusOK, contract.StoreDeliveryOriginResponse{StoreID: origin.StoreID, OriginVersion: origin.OriginVersion, Origin: deliveryOriginValue(origin, available)})
 }
 
 func (s *LocationCoreServer) setStoreOrigin(w http.ResponseWriter, r *http.Request) {
-	correlation, idempotency, expectedVersion, ok := requiredLocationHeaders(w, r, true)
+	correlation, idempotency, expectedVersion, ok := requiredLocationHeaders(w, r, true, true)
 	if !ok {
 		return
 	}
@@ -139,10 +139,10 @@ func (s *LocationCoreServer) setStoreOrigin(w http.ResponseWriter, r *http.Reque
 		writeLocationError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.StoreDeliveryOriginResponse{StoreID: result.Origin.StoreID, StoreVersion: result.Origin.StoreVersion, Origin: deliveryOriginValue(result.Origin, true), IdempotentReplay: result.Replayed})
+	writeJSON(w, http.StatusOK, contract.StoreDeliveryOriginResponse{StoreID: result.Origin.StoreID, OriginVersion: result.Origin.OriginVersion, Origin: deliveryOriginValue(result.Origin, true), IdempotentReplay: result.Replayed})
 }
 
-func requiredLocationHeaders(w http.ResponseWriter, r *http.Request, versioned bool) (string, string, int, bool) {
+func requiredLocationHeaders(w http.ResponseWriter, r *http.Request, versioned, allowZeroVersion bool) (string, string, int, bool) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "a user session is required")
 		return "", "", 0, false
@@ -161,8 +161,16 @@ func requiredLocationHeaders(w http.ResponseWriter, r *http.Request, versioned b
 		return correlation, idempotency, 0, true
 	}
 	expectedVersion, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
-	if err != nil || expectedVersion < 1 {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Expected-Version must be a positive integer")
+	minimumVersion := 1
+	if allowZeroVersion {
+		minimumVersion = 0
+	}
+	if err != nil || expectedVersion < minimumVersion {
+		message := "X-Expected-Version must be a positive integer"
+		if allowZeroVersion {
+			message = "X-Expected-Version must be a non-negative integer"
+		}
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", message)
 		return "", "", 0, false
 	}
 	return correlation, idempotency, expectedVersion, true
@@ -185,7 +193,7 @@ func deliveryOriginValue(origin postgres.StoreDeliveryOriginRecord, available bo
 
 func writeLocationError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, locationcore.ErrLocationInputInvalid), errors.Is(err, postgres.ErrDeliveryAddressInvalidLimit):
+	case errors.Is(err, locationcore.ErrLocationInputInvalid), errors.Is(err, postgres.ErrDeliveryAddressInvalidLimit), errors.Is(err, postgres.ErrDeliveryAddressInvalidCursor):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "location facts are invalid")
 	case errors.Is(err, postgres.ErrDeliveryAddressNotFound), errors.Is(err, postgres.ErrStoreOriginNotFound), errors.Is(err, postgres.ErrStoreNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "location record was not found")

@@ -39,6 +39,7 @@ function verifyPartnerModel() {
     "services/dsh/database/migrations/005_joining_case_partner_correction.sql",
     "services/dsh/database/migrations/006_joining_case_correct_and_resubmit.sql",
     "services/dsh/database/migrations/007_location_core.sql",
+    "services/dsh/database/migrations/008_location_core_corrective_boundaries.sql",
     "services/dsh/tools/import-central-products.mjs",
     "apps/app-client/src/features/location-core/location-core.tsx",
     "apps/app-client/src/features/location-core/delivery-address-client.ts",
@@ -87,7 +88,7 @@ function verifyPartnerModel() {
     .join("\n");
   for (const required of [
     "required: [case, idempotentReplay]",
-    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, deliveryOrigin, assortments, createdAt, updatedAt]",
+    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]",
     "required: [id, name, version, assortments, publishedAt, createdAt, updatedAt]",
   ]) {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
@@ -111,7 +112,9 @@ function verifyPartnerModel() {
   const resubmitMigration = fs.existsSync(resubmitMigrationPath) ? fs.readFileSync(resubmitMigrationPath, "utf8") : "";
   const locationMigrationPath = path.join(root, "services/dsh/database/migrations/007_location_core.sql");
   const locationMigration = fs.existsSync(locationMigrationPath) ? fs.readFileSync(locationMigrationPath, "utf8") : "";
-  const dshMigrationGraph = migration + "\n" + joiningMigration + "\n" + cutoverMigration + "\n" + correctionMigration + "\n" + resubmitMigration + "\n" + locationMigration;
+  const locationCorrectionMigrationPath = path.join(root, "services/dsh/database/migrations/008_location_core_corrective_boundaries.sql");
+  const locationCorrectionMigration = fs.existsSync(locationCorrectionMigrationPath) ? fs.readFileSync(locationCorrectionMigrationPath, "utf8") : "";
+  const dshMigrationGraph = migration + "\n" + joiningMigration + "\n" + cutoverMigration + "\n" + correctionMigration + "\n" + resubmitMigration + "\n" + locationMigration + "\n" + locationCorrectionMigration;
   if (!migration.includes("partner_actor_id text NOT NULL")) failures.push("DSH baseline does not persist Store→partner_actor_id directly");
   for (const required of [
     "stores_id_partner_actor_uq",
@@ -191,7 +194,7 @@ function verifyPublicationReadiness() {
     ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
     ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
     ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
-    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V7=PASS"]],
+    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V8=PASS"]],
   ]) {
     for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
   }
@@ -227,11 +230,17 @@ function verifyLocationCore() {
   const read = (relative) => fs.readFileSync(path.join(root, ...relative.split("/")), "utf8");
   const contract = read("services/dsh/contracts/openapi/dsh.openapi.yaml") + "\n" + read("services/dsh/contracts/openapi/paths/location-core.yaml");
   const migration = read("services/dsh/database/migrations/007_location_core.sql");
+  const correctiveMigration = read("services/dsh/database/migrations/008_location_core_corrective_boundaries.sql");
   const storage = read("services/dsh/backend/internal/storage/postgres/location_core.go");
+  const storePublicationStorage = read("services/dsh/backend/internal/storage/postgres/store_publication.go");
   const service = read("services/dsh/backend/internal/locationcore/service.go");
   const transport = read("services/dsh/backend/internal/transport/http/locationcore.go");
   const mobileClient = read("services/dsh/clients/mobile.ts");
   const runtimeLocation = read("tools/dev/verify-dsh-location-runtime.mjs");
+  const clientUI = read("apps/app-client/src/features/location-core/location-core.tsx");
+  const partnerUI = read("apps/app-partner/src/features/location-core/store-delivery-origin.tsx");
+  const generatedTS = read("services/dsh/clients/generated/dsh-types.ts");
+  const generatedGo = read("services/dsh/backend/internal/contract/dsh_types_generated.go");
   for (const required of [
     "DeliveryOrigin:",
     "DeliveryAddress:",
@@ -241,7 +250,8 @@ function verifyLocationCore() {
     "/dsh/addresses:",
     "/dsh/addresses/{addressId}:",
     "/dsh/stores/{storeId}/delivery-origin:",
-    "deliveryOrigin:",
+    "OriginVersionRequired",
+    "originVersion:",
   ]) if (!contract.includes(required)) failures.push(`Location Core contract missing: ${required}`);
   for (const required of [
     "dsh.delivery_addresses",
@@ -253,13 +263,42 @@ function verifyLocationCore() {
     "delivery_addresses_latitude_chk",
     "delivery_addresses_longitude_chk",
   ]) if (!migration.includes(required)) failures.push(`Location Core migration missing: ${required}`);
+  for (const required of [
+    "delivery_origin_version",
+    "delivery_origin_updated_at",
+    "stores_delivery_origin_version_chk",
+    "stores_delivery_origin_updated_at_chk",
+    "DROP COLUMN result_version",
+    "DROP CONSTRAINT store_origin_idempotency_expected_version_chk",
+    "expected_version >= 0",
+    "DROP COLUMN address_text",
+    "DROP COLUMN latitude",
+    "DROP COLUMN longitude",
+  ]) if (!correctiveMigration.includes(required)) failures.push(`Location Core corrective migration missing: ${required}`);
   for (const [name, text, tokens] of [
-    ["Location Core storage", storage, ["CreateDeliveryAddress", "UpdateDeliveryAddress", "SetStoreDeliveryOrigin", "pg_advisory_xact_lock", "ErrDeliveryAddressVersion", "ErrStoreOriginVersion"]],
-    ["Location Core service", service, ["identity.Role != \"client\"", "identity.Surface != \"app-client\"", "identity.Role != \"partner\"", "identity.Surface != \"app-partner\""]],
-    ["Location Core transport", transport, ["X-Actor-ID", "X-Acting-Actor-ID", "X-Expected-Version", "Idempotency-Key"]],
-    ["mobile DSH client", mobileClient, ["listOwnDeliveryAddresses", "createOwnDeliveryAddress", "readStoreDeliveryOrigin", "setStoreDeliveryOrigin"]],
-    ["Location Core runtime proof", runtimeLocation, ["DSH_SCHEMA_V7=PASS", "LOCATION_CORE_RUNTIME=PASS"]],
+    ["Location Core storage", storage, ["CreateDeliveryAddress", "UpdateDeliveryAddress", "SetStoreDeliveryOrigin", "DeliveryAddressListResult", "deliveryAddressCursor", "pg_advisory_xact_lock", "ErrDeliveryAddressVersion", "ErrStoreOriginVersion"]],
+    ["Location Core service", service, ["identity.Role != \"client\"", "identity.Surface != \"app-client\"", "identity.Role != \"partner\"", "identity.Surface != \"app-partner\"", "ReadStoreOwnedByPartner"]],
+    ["Location Core transport", transport, ["X-Actor-ID", "X-Acting-Actor-ID", "X-Expected-Version", "Idempotency-Key", "ErrDeliveryAddressInvalidCursor"]],
+    ["mobile DSH client", mobileClient, ["listOwnDeliveryAddresses", "createOwnDeliveryAddress", "readStoreDeliveryOrigin", "setStoreDeliveryOrigin", "DeliveryAddressListResponse"]],
+    ["Location Core runtime proof", runtimeLocation, ["DSH_SCHEMA_V8=PASS", "LOCATION_CORE_RUNTIME=PASS", "LOCATION_CORE_PAGINATION=PASS", "LOCATION_CORE_AUTHORIZATION=PASS", "delivery_origin_version"]],
+    ["app-client Location Core", clientUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم تحديد الموقع", "nextCursor", "عرض المزيد"]],
+    ["app-partner Location Core", partnerUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم حفظ موقع أصل المتجر", "originVersion"]],
   ]) for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing Location Core invariant: ${token}`);
+  const storeViewStart = contract.indexOf("    StoreView:");
+  const storeViewEnd = contract.indexOf("    PublicationState:", storeViewStart);
+  const storeView = storeViewStart >= 0 && storeViewEnd > storeViewStart ? contract.slice(storeViewStart, storeViewEnd) : "";
+  if (!storeView || storeView.includes("deliveryOrigin") || storeView.includes("latitude") || storeView.includes("longitude")) failures.push("generic StoreView exposes precise delivery-origin fields");
+  if (storage.includes("StoreVersion") || storePublicationStorage.includes("DeliveryOriginLatitude")) failures.push("Store publication/location storage retains the retired shared Store-version origin model");
+  const permissionFunctionStart = clientUI.indexOf("async function captureLocation");
+  const clientPermissionCall = clientUI.indexOf("requestForegroundPermissionsAsync");
+  const partnerPermissionFunctionStart = partnerUI.indexOf("async function captureLocation");
+  const partnerPermissionCall = partnerUI.indexOf("requestForegroundPermissionsAsync");
+  if (permissionFunctionStart < 0 || clientPermissionCall < permissionFunctionStart || partnerPermissionFunctionStart < 0 || partnerPermissionCall < partnerPermissionFunctionStart) failures.push("foreground location permission is not confined to an explicit capture action");
+  for (const [name, text] of [["app-client Location Core", clientUI], ["app-partner Location Core", partnerUI]]) {
+    if (/watchPosition|startLocationUpdates|backgroundLocation|MapView|react-native-maps/i.test(text)) failures.push(`${name} admits background/maps location behavior`);
+    if (/coordinates\.(latitude|longitude)\s*<\/Text>|origin\.(latitude|longitude)\s*<\/Text>/.test(text)) failures.push(`${name} renders raw coordinates in normal UI`);
+  }
+  if (!generatedTS.includes("nextCursor") || !generatedGo.includes("NextCursor") || !generatedTS.includes("originVersion") || !generatedGo.includes("OriginVersion")) failures.push("generated Location Core contracts are missing v8 ownership fields");
   for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
     const config = JSON.parse(read(`apps/${app}/mobile.config.json`));
     const pkg = JSON.parse(read(`apps/${app}/package.json`));

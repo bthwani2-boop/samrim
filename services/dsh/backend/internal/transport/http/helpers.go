@@ -91,14 +91,10 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 			values = append(values, toStoreAssortment(assortment))
 		}
 	}
-	var deliveryOrigin *contract.DeliveryOrigin
-	if store.DeliveryOriginLatitude != nil && store.DeliveryOriginLongitude != nil {
-		deliveryOrigin = &contract.DeliveryOrigin{Latitude: *store.DeliveryOriginLatitude, Longitude: *store.DeliveryOriginLongitude}
-	}
 	return contract.StoreView{
 		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, Version: store.Version,
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
-		DeliveryOrigin: deliveryOrigin, CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
+		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
 		Assortments:          values,
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}

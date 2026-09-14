@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -29,12 +31,17 @@ type DeliveryAddressResult struct {
 	Replayed bool
 }
 
+type DeliveryAddressListResult struct {
+	Addresses  []DeliveryAddressRecord
+	NextCursor string
+}
+
 type StoreDeliveryOriginRecord struct {
-	StoreID      string
-	StoreVersion int
-	Latitude     float64
-	Longitude    float64
-	UpdatedAt    time.Time
+	StoreID       string
+	OriginVersion int
+	Latitude      float64
+	Longitude     float64
+	UpdatedAt     time.Time
 }
 
 type StoreDeliveryOriginResult struct {
@@ -43,14 +50,15 @@ type StoreDeliveryOriginResult struct {
 }
 
 var (
-	ErrDeliveryAddressNotFound     = errors.New("delivery address was not found")
-	ErrDeliveryAddressIdempotency  = errors.New("delivery address idempotency key was already used with different facts")
-	ErrDeliveryAddressVersion      = errors.New("delivery address version is stale")
-	ErrDeliveryAddressInvalidLimit = errors.New("delivery address limit is invalid")
-	ErrStoreOriginNotFound         = errors.New("store was not found")
-	ErrStoreOriginOwnership        = errors.New("store delivery origin ownership is invalid")
-	ErrStoreOriginIdempotency      = errors.New("store delivery origin idempotency key was already used with different facts")
-	ErrStoreOriginVersion          = errors.New("store delivery origin version is stale")
+	ErrDeliveryAddressNotFound      = errors.New("delivery address was not found")
+	ErrDeliveryAddressIdempotency   = errors.New("delivery address idempotency key was already used with different facts")
+	ErrDeliveryAddressVersion       = errors.New("delivery address version is stale")
+	ErrDeliveryAddressInvalidLimit  = errors.New("delivery address limit is invalid")
+	ErrDeliveryAddressInvalidCursor = errors.New("delivery address cursor is invalid")
+	ErrStoreOriginNotFound          = errors.New("store was not found")
+	ErrStoreOriginOwnership         = errors.New("store delivery origin ownership is invalid")
+	ErrStoreOriginIdempotency       = errors.New("store delivery origin idempotency key was already used with different facts")
+	ErrStoreOriginVersion           = errors.New("store delivery origin version is stale")
 )
 
 func HashDeliveryAddressCreateRequest(clientActorID, addressText string, latitude, longitude float64) string {
@@ -70,35 +78,74 @@ func hashLocationFacts(facts ...string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func ListDeliveryAddresses(ctx context.Context, db *sql.DB, clientActorID string, limit int) ([]DeliveryAddressRecord, error) {
+func ListDeliveryAddresses(ctx context.Context, db *sql.DB, clientActorID string, limit int, cursor string) (DeliveryAddressListResult, error) {
 	if db == nil {
-		return nil, errors.New("DSH database is nil")
+		return DeliveryAddressListResult{}, errors.New("DSH database is nil")
 	}
 	clientActorID = strings.TrimSpace(clientActorID)
 	if clientActorID == "" {
-		return nil, ErrDeliveryAddressNotFound
+		return DeliveryAddressListResult{}, ErrDeliveryAddressNotFound
 	}
 	if limit < 1 || limit > 50 {
-		return nil, ErrDeliveryAddressInvalidLimit
+		return DeliveryAddressListResult{}, ErrDeliveryAddressInvalidLimit
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, client_actor_id, address_text, latitude, longitude, version, created_at, updated_at
-		FROM dsh.delivery_addresses WHERE client_actor_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2`, clientActorID, limit)
+	where := "client_actor_id=$1"
+	args := []any{clientActorID}
+	if strings.TrimSpace(cursor) != "" {
+		position, err := decodeDeliveryAddressCursor(cursor)
+		if err != nil {
+			return DeliveryAddressListResult{}, err
+		}
+		args = append(args, position.CreatedAt, position.ID)
+		where += fmt.Sprintf(" AND (created_at,id) < ($%d,$%d)", len(args)-1, len(args))
+	}
+	args = append(args, limit+1)
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`SELECT id, client_actor_id, address_text, latitude, longitude, version, created_at, updated_at
+		FROM dsh.delivery_addresses WHERE %s ORDER BY created_at DESC, id DESC LIMIT $%d`, where, len(args)), args...)
 	if err != nil {
-		return nil, fmt.Errorf("list delivery addresses: %w", err)
+		return DeliveryAddressListResult{}, fmt.Errorf("list delivery addresses: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	addresses := make([]DeliveryAddressRecord, 0, limit)
+	addresses := make([]DeliveryAddressRecord, 0, limit+1)
 	for rows.Next() {
 		address, scanErr := scanDeliveryAddress(rows)
 		if scanErr != nil {
-			return nil, fmt.Errorf("scan delivery address: %w", scanErr)
+			return DeliveryAddressListResult{}, fmt.Errorf("scan delivery address: %w", scanErr)
 		}
 		addresses = append(addresses, address)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read delivery addresses: %w", err)
+		return DeliveryAddressListResult{}, fmt.Errorf("read delivery addresses: %w", err)
 	}
-	return addresses, nil
+	result := DeliveryAddressListResult{Addresses: addresses}
+	if len(addresses) > limit {
+		last := addresses[limit-1]
+		result.Addresses = addresses[:limit]
+		result.NextCursor = encodeDeliveryAddressCursor(last)
+	}
+	return result, nil
+}
+
+type deliveryAddressCursor struct {
+	CreatedAt time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
+}
+
+func encodeDeliveryAddressCursor(address DeliveryAddressRecord) string {
+	payload, _ := json.Marshal(deliveryAddressCursor{CreatedAt: address.CreatedAt, ID: address.ID})
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeDeliveryAddressCursor(raw string) (deliveryAddressCursor, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return deliveryAddressCursor{}, ErrDeliveryAddressInvalidCursor
+	}
+	var cursor deliveryAddressCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.ID == "" || cursor.CreatedAt.IsZero() {
+		return deliveryAddressCursor{}, ErrDeliveryAddressInvalidCursor
+	}
+	return cursor, nil
 }
 
 func ReadDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientActorID string) (DeliveryAddressRecord, error) {
@@ -142,9 +189,9 @@ func CreateDeliveryAddress(ctx context.Context, db *sql.DB, clientActorID, addre
 	}
 	var storedHash, storedAddressID, storedActor, storedOperation string
 	var storedExpected sql.NullInt64
-	var storedVersion int
-	err = tx.QueryRowContext(ctx, `SELECT request_hash, address_id, client_actor_id, operation, expected_version, result_version
-		FROM dsh.delivery_address_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedAddressID, &storedActor, &storedOperation, &storedExpected, &storedVersion)
+	err = tx.QueryRowContext(ctx, `SELECT request_hash, address_id, client_actor_id, operation, expected_version
+		FROM dsh.delivery_address_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedAddressID, &storedActor, &storedOperation, &storedExpected)
+
 	if err == nil {
 		if storedHash != requestHash || storedActor != clientActorID || storedOperation != "create" || storedExpected.Valid {
 			return DeliveryAddressResult{}, ErrDeliveryAddressIdempotency
@@ -160,7 +207,6 @@ func CreateDeliveryAddress(ctx context.Context, db *sql.DB, clientActorID, addre
 		if err := tx.Commit(); err != nil {
 			return DeliveryAddressResult{}, fmt.Errorf("commit idempotent delivery address: %w", err)
 		}
-		address.Version = storedVersion
 		return DeliveryAddressResult{Address: address, Replayed: true}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -178,13 +224,13 @@ func CreateDeliveryAddress(ctx context.Context, db *sql.DB, clientActorID, addre
 		return DeliveryAddressResult{}, fmt.Errorf("create canonical delivery address: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.delivery_address_mutation_idempotency
-		(idempotency_key, request_hash, address_id, client_actor_id, operation, result_version)
-		VALUES($1,$2,$3,$4,'create',$5)`, idempotencyKey, requestHash, address.ID, clientActorID, address.Version); err != nil {
+		(idempotency_key, request_hash, address_id, client_actor_id, operation)
+		VALUES($1,$2,$3,$4,'create')`, idempotencyKey, requestHash, address.ID, clientActorID); err != nil {
 		return DeliveryAddressResult{}, fmt.Errorf("record delivery address idempotency: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.delivery_address_audit
-		(event_type, idempotency_key, correlation_id, acting_actor_id, client_actor_id, address_id, result_version, request_hash, address_text, latitude, longitude)
-		VALUES('delivery_address_created',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, idempotencyKey, correlationID, clientActorID, clientActorID, address.ID, address.Version, requestHash, address.AddressText, address.Latitude, address.Longitude); err != nil {
+		(event_type, idempotency_key, correlation_id, acting_actor_id, client_actor_id, address_id, result_version, request_hash)
+		VALUES('delivery_address_created',$1,$2,$3,$4,$5,$6,$7)`, idempotencyKey, correlationID, clientActorID, clientActorID, address.ID, address.Version, requestHash); err != nil {
 		return DeliveryAddressResult{}, fmt.Errorf("record delivery address audit: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -215,9 +261,8 @@ func UpdateDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientAct
 	}
 	var storedHash, storedAddressID, storedActor, storedOperation string
 	var storedExpected sql.NullInt64
-	var storedVersion int
-	err = tx.QueryRowContext(ctx, `SELECT request_hash, address_id, client_actor_id, operation, expected_version, result_version
-		FROM dsh.delivery_address_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedAddressID, &storedActor, &storedOperation, &storedExpected, &storedVersion)
+	err = tx.QueryRowContext(ctx, `SELECT request_hash, address_id, client_actor_id, operation, expected_version
+		FROM dsh.delivery_address_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedAddressID, &storedActor, &storedOperation, &storedExpected)
 	if err == nil {
 		if storedHash != requestHash || storedActor != clientActorID || storedAddressID != addressID || storedOperation != "update" || !storedExpected.Valid || int(storedExpected.Int64) != expectedVersion {
 			return DeliveryAddressResult{}, ErrDeliveryAddressIdempotency
@@ -233,7 +278,6 @@ func UpdateDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientAct
 		if err := tx.Commit(); err != nil {
 			return DeliveryAddressResult{}, fmt.Errorf("commit idempotent delivery address update: %w", err)
 		}
-		address.Version = storedVersion
 		return DeliveryAddressResult{Address: address, Replayed: true}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -259,13 +303,13 @@ func UpdateDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientAct
 		return DeliveryAddressResult{}, fmt.Errorf("update canonical delivery address: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.delivery_address_mutation_idempotency
-		(idempotency_key, request_hash, address_id, client_actor_id, operation, expected_version, result_version)
-		VALUES($1,$2,$3,$4,'update',$5,$6)`, idempotencyKey, requestHash, addressID, clientActorID, expectedVersion, updated.Version); err != nil {
+		(idempotency_key, request_hash, address_id, client_actor_id, operation, expected_version)
+		VALUES($1,$2,$3,$4,'update',$5)`, idempotencyKey, requestHash, addressID, clientActorID, expectedVersion); err != nil {
 		return DeliveryAddressResult{}, fmt.Errorf("record delivery address update idempotency: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.delivery_address_audit
-		(event_type, idempotency_key, correlation_id, acting_actor_id, client_actor_id, address_id, expected_version, result_version, request_hash, address_text, latitude, longitude)
-		VALUES('delivery_address_updated',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, idempotencyKey, correlationID, clientActorID, clientActorID, addressID, expectedVersion, updated.Version, requestHash, updated.AddressText, updated.Latitude, updated.Longitude); err != nil {
+		(event_type, idempotency_key, correlation_id, acting_actor_id, client_actor_id, address_id, expected_version, result_version, request_hash)
+		VALUES('delivery_address_updated',$1,$2,$3,$4,$5,$6,$7,$8)`, idempotencyKey, correlationID, clientActorID, clientActorID, addressID, expectedVersion, updated.Version, requestHash); err != nil {
 		return DeliveryAddressResult{}, fmt.Errorf("record delivery address update audit: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -274,15 +318,24 @@ func UpdateDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientAct
 	return DeliveryAddressResult{Address: updated}, nil
 }
 
-func ReadStoreDeliveryOrigin(ctx context.Context, db *sql.DB, storeID string) (StoreDeliveryOriginRecord, bool, error) {
-	store, err := ReadStore(ctx, db, storeID)
+func ReadStoreDeliveryOrigin(ctx context.Context, db *sql.DB, storeID, partnerActorID string) (StoreDeliveryOriginRecord, bool, error) {
+	if db == nil {
+		return StoreDeliveryOriginRecord{}, false, errors.New("DSH database is nil")
+	}
+	storeID = strings.TrimSpace(storeID)
+	partnerActorID = strings.TrimSpace(partnerActorID)
+	if storeID == "" || partnerActorID == "" {
+		return StoreDeliveryOriginRecord{}, false, ErrStoreOriginNotFound
+	}
+	origin, available, err := scanStoreDeliveryOrigin(db.QueryRowContext(ctx, `SELECT id, delivery_origin_version, delivery_origin_latitude, delivery_origin_longitude, delivery_origin_updated_at
+		FROM dsh.stores WHERE id=$1 AND partner_actor_id=$2`, storeID, partnerActorID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoreDeliveryOriginRecord{}, false, ErrStoreOriginNotFound
+	}
 	if err != nil {
-		return StoreDeliveryOriginRecord{}, false, err
+		return StoreDeliveryOriginRecord{}, false, fmt.Errorf("read Store delivery origin: %w", err)
 	}
-	if store.DeliveryOriginLatitude == nil || store.DeliveryOriginLongitude == nil {
-		return StoreDeliveryOriginRecord{StoreID: store.ID, StoreVersion: store.Version, UpdatedAt: store.UpdatedAt}, false, nil
-	}
-	return StoreDeliveryOriginRecord{StoreID: store.ID, StoreVersion: store.Version, Latitude: *store.DeliveryOriginLatitude, Longitude: *store.DeliveryOriginLongitude, UpdatedAt: store.UpdatedAt}, true, nil
+	return origin, available, nil
 }
 
 func SetStoreDeliveryOrigin(ctx context.Context, db *sql.DB, storeID, partnerActorID string, latitude, longitude float64, expectedVersion int, idempotencyKey, requestHash, correlationID string) (StoreDeliveryOriginResult, error) {
@@ -292,7 +345,7 @@ func SetStoreDeliveryOrigin(ctx context.Context, db *sql.DB, storeID, partnerAct
 	requestHash = strings.TrimSpace(requestHash)
 	correlationID = strings.TrimSpace(correlationID)
 	latitude, longitude, err := normalizeLocation(latitude, longitude)
-	if db == nil || storeID == "" || partnerActorID == "" || err != nil || expectedVersion < 1 || idempotencyKey == "" || requestHash == "" || correlationID == "" {
+	if db == nil || storeID == "" || partnerActorID == "" || err != nil || expectedVersion < 0 || idempotencyKey == "" || requestHash == "" || correlationID == "" {
 		return StoreDeliveryOriginResult{}, errors.New("store delivery origin facts are invalid")
 	}
 
@@ -305,59 +358,86 @@ func SetStoreDeliveryOrigin(ctx context.Context, db *sql.DB, storeID, partnerAct
 		return StoreDeliveryOriginResult{}, fmt.Errorf("lock store delivery origin idempotency: %w", err)
 	}
 	var storedHash, storedStoreID, storedPartner string
-	var storedExpected, storedVersion int
-	var storedLatitude, storedLongitude float64
-	var storedUpdatedAt time.Time
-	err = tx.QueryRowContext(ctx, `SELECT request_hash, store_id, partner_actor_id, expected_version, result_version, result_latitude, result_longitude, result_updated_at
-		FROM dsh.store_origin_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedStoreID, &storedPartner, &storedExpected, &storedVersion, &storedLatitude, &storedLongitude, &storedUpdatedAt)
+	var storedExpected int
+	err = tx.QueryRowContext(ctx, `SELECT request_hash, store_id, partner_actor_id, expected_version
+		FROM dsh.store_origin_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedStoreID, &storedPartner, &storedExpected)
 	if err == nil {
 		if storedHash != requestHash || storedStoreID != storeID || storedPartner != partnerActorID || storedExpected != expectedVersion {
 			return StoreDeliveryOriginResult{}, ErrStoreOriginIdempotency
 		}
+		origin, available, readErr := scanStoreDeliveryOrigin(tx.QueryRowContext(ctx, `SELECT id, delivery_origin_version, delivery_origin_latitude, delivery_origin_longitude, delivery_origin_updated_at
+			FROM dsh.stores WHERE id=$1 AND partner_actor_id=$2`, storeID, partnerActorID))
+		if errors.Is(readErr, sql.ErrNoRows) {
+			return StoreDeliveryOriginResult{}, ErrStoreOriginNotFound
+		}
+		if readErr != nil {
+			return StoreDeliveryOriginResult{}, fmt.Errorf("read idempotent Store delivery origin: %w", readErr)
+		}
+		if !available {
+			return StoreDeliveryOriginResult{}, fmt.Errorf("read idempotent Store delivery origin: %w", ErrStoreOriginNotFound)
+		}
 		if err := tx.Commit(); err != nil {
 			return StoreDeliveryOriginResult{}, fmt.Errorf("commit idempotent store delivery origin: %w", err)
 		}
-		return StoreDeliveryOriginResult{Origin: StoreDeliveryOriginRecord{StoreID: storeID, StoreVersion: storedVersion, Latitude: storedLatitude, Longitude: storedLongitude, UpdatedAt: storedUpdatedAt}, Replayed: true}, nil
+		return StoreDeliveryOriginResult{Origin: origin, Replayed: true}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return StoreDeliveryOriginResult{}, fmt.Errorf("read store delivery origin idempotency: %w", err)
 	}
 
-	store, err := scanStore(tx.QueryRowContext(ctx, storeSelect+" WHERE id=$1 FOR UPDATE", storeID))
+	var currentVersion int
+	err = tx.QueryRowContext(ctx, `SELECT delivery_origin_version FROM dsh.stores
+		WHERE id=$1 AND partner_actor_id=$2 FOR UPDATE`, storeID, partnerActorID).Scan(&currentVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return StoreDeliveryOriginResult{}, ErrStoreOriginNotFound
 	}
 	if err != nil {
 		return StoreDeliveryOriginResult{}, fmt.Errorf("read store for delivery origin: %w", err)
 	}
-	if store.PartnerActorID != partnerActorID {
-		return StoreDeliveryOriginResult{}, ErrStoreOriginOwnership
-	}
-	if store.Version != expectedVersion {
+	if currentVersion != expectedVersion {
 		return StoreDeliveryOriginResult{}, ErrStoreOriginVersion
 	}
 	var result StoreDeliveryOriginRecord
 	err = tx.QueryRowContext(ctx, `UPDATE dsh.stores
-		SET delivery_origin_latitude=$2, delivery_origin_longitude=$3, version=version+1, updated_at=clock_timestamp()
-		WHERE id=$1 AND partner_actor_id=$4 AND version=$5
-		RETURNING id, version, delivery_origin_latitude, delivery_origin_longitude, updated_at`, storeID, latitude, longitude, partnerActorID, expectedVersion).Scan(&result.StoreID, &result.StoreVersion, &result.Latitude, &result.Longitude, &result.UpdatedAt)
+		SET delivery_origin_latitude=$2, delivery_origin_longitude=$3, delivery_origin_version=delivery_origin_version+1, delivery_origin_updated_at=clock_timestamp()
+		WHERE id=$1 AND partner_actor_id=$4 AND delivery_origin_version=$5
+		RETURNING id, delivery_origin_version, delivery_origin_latitude, delivery_origin_longitude, delivery_origin_updated_at`, storeID, latitude, longitude, partnerActorID, expectedVersion).Scan(&result.StoreID, &result.OriginVersion, &result.Latitude, &result.Longitude, &result.UpdatedAt)
 	if err != nil {
 		return StoreDeliveryOriginResult{}, fmt.Errorf("update canonical Store delivery origin: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_origin_mutation_idempotency
-		(idempotency_key, request_hash, store_id, partner_actor_id, expected_version, result_version, result_latitude, result_longitude, result_updated_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, idempotencyKey, requestHash, storeID, partnerActorID, expectedVersion, result.StoreVersion, result.Latitude, result.Longitude, result.UpdatedAt); err != nil {
+		(idempotency_key, request_hash, store_id, partner_actor_id, expected_version)
+		VALUES($1,$2,$3,$4,$5)`, idempotencyKey, requestHash, storeID, partnerActorID, expectedVersion); err != nil {
 		return StoreDeliveryOriginResult{}, fmt.Errorf("record store delivery origin idempotency: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.store_origin_audit
-		(event_type, idempotency_key, correlation_id, acting_actor_id, partner_actor_id, store_id, expected_version, result_version, request_hash, latitude, longitude)
-		VALUES('store_delivery_origin_set',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, idempotencyKey, correlationID, partnerActorID, partnerActorID, storeID, expectedVersion, result.StoreVersion, requestHash, result.Latitude, result.Longitude); err != nil {
+		(event_type, idempotency_key, correlation_id, acting_actor_id, partner_actor_id, store_id, expected_version, result_version, request_hash)
+		VALUES('store_delivery_origin_set',$1,$2,$3,$4,$5,$6,$7,$8)`, idempotencyKey, correlationID, partnerActorID, partnerActorID, storeID, expectedVersion, result.OriginVersion, requestHash); err != nil {
 		return StoreDeliveryOriginResult{}, fmt.Errorf("record store delivery origin audit: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return StoreDeliveryOriginResult{}, fmt.Errorf("commit Store delivery origin: %w", err)
 	}
 	return StoreDeliveryOriginResult{Origin: result}, nil
+}
+
+func scanStoreDeliveryOrigin(row rowScanner) (StoreDeliveryOriginRecord, bool, error) {
+	var origin StoreDeliveryOriginRecord
+	var latitude, longitude sql.NullFloat64
+	var updatedAt sql.NullTime
+	if err := row.Scan(&origin.StoreID, &origin.OriginVersion, &latitude, &longitude, &updatedAt); err != nil {
+		return StoreDeliveryOriginRecord{}, false, err
+	}
+	if origin.OriginVersion == 0 {
+		return origin, false, nil
+	}
+	if !latitude.Valid || !longitude.Valid || !updatedAt.Valid {
+		return StoreDeliveryOriginRecord{}, false, errors.New("canonical Store delivery origin is incomplete")
+	}
+	origin.Latitude = latitude.Float64
+	origin.Longitude = longitude.Float64
+	origin.UpdatedAt = updatedAt.Time
+	return origin, true, nil
 }
 
 type deliveryAddressScanner interface {

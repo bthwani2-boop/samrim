@@ -3,7 +3,7 @@ import * as Crypto from "expo-crypto";
 import {
   createDshMobileClient,
   type CreateDeliveryAddressRequest,
-  type DeliveryAddress,
+  type DeliveryAddressListResponse,
   type DeliveryAddressResponse,
   type UpdateDeliveryAddressRequest,
 } from "@bthwani/dsh";
@@ -17,8 +17,8 @@ function client() {
 
 const token = getUsableIdentityAccessToken;
 
-export function listOwnDeliveryAddresses(): Promise<ReadonlyArray<DeliveryAddress>> {
-  return token().then((value) => client().listOwnDeliveryAddresses(value));
+export function listOwnDeliveryAddresses(cursor = ""): Promise<DeliveryAddressListResponse> {
+  return token().then((value) => client().listOwnDeliveryAddresses(value, 50, cursor));
 }
 
 export function createOwnDeliveryAddress(input: CreateDeliveryAddressRequest): Promise<DeliveryAddressResponse> {
