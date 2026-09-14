@@ -73,7 +73,7 @@ func TestRandomEnrollmentTokenIsHighEntropy(t *testing.T) {
 	}
 }
 
-func TestPasswordPolicyNormalizesUnicodeAndRejectsWeakValues(t *testing.T) {
+func TestPasswordPolicyUsesExactUnicodeCodePointsAndRejectsWeakValues(t *testing.T) {
 	if PasswordBlocklistVersion() != "identity-passwords-v3" || len(passwordBlocklistGenerated) != 15 {
 		t.Fatal("versioned local password blocklist is missing or too small")
 	}
@@ -87,8 +87,20 @@ func TestPasswordPolicyNormalizesUnicodeAndRejectsWeakValues(t *testing.T) {
 			t.Fatalf("unexpected exact-eight password decision: %q", password)
 		}
 	}
-	if _, err := HashPassword("Cafe\u0301-123"); err != nil || !VerifyPassword(mustHashPassword(t, "Café-123"), "Cafe\u0301-123") {
-		t.Fatal("NFC password normalization failed")
+	decomposed := "Cafe\u0301-12"
+	composed := "Café-12"
+	if !PasswordAllowed(decomposed) {
+		t.Fatal("an exact-eight decomposed Unicode password was rejected")
+	}
+	if PasswordAllowed("Cafe\u0301-123") {
+		t.Fatal("a nine-code-point decomposed password was accepted after normalization")
+	}
+	hash := mustHashPassword(t, decomposed)
+	if !VerifyPassword(hash, decomposed) {
+		t.Fatal("the exact entered password was not accepted")
+	}
+	if VerifyPassword(hash, composed) {
+		t.Fatal("a composed password was accepted as an equivalent to the decomposed password")
 	}
 }
 

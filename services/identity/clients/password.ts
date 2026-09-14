@@ -1,7 +1,7 @@
 /**
  * Canonical client-side password input shape validator.
- * Validates exact Unicode code-point length (8 after server-side NFC normalization), non-whitespace, and optional confirmation matching.
- * Full security validation (blocklists, normalization, Argon2id hashing) remains server authority.
+ * Validates exact Unicode code-point length (8 as entered; no normalization), non-whitespace, and optional confirmation matching.
+ * Full security validation (blocklists and Argon2id hashing) remains server authority.
  */
 export function countUnicodeRunes(text: string): number {
   return Array.from(text).length;

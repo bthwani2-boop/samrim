@@ -19,6 +19,8 @@ type Service struct {
 
 const refreshRaceGrace = 5 * time.Second
 
+const minimumAccessLifetime = time.Second
+
 func New(db *sql.DB) *Service { return &Service{db: db, now: time.Now} }
 
 func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, clientInstanceId string) (domain.TokenPair, error) {
@@ -51,8 +53,10 @@ func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actorID, role, devic
 	}
 	now := s.now().UTC()
 	absoluteExpiry := now.Add(sessionAbsoluteLifetime(role))
-	accessExpiry := calculateAccessExpiry(now, absoluteExpiry)
-	refreshExpiry := calculateRefreshExpiry(role, now, absoluteExpiry)
+	accessExpiry, refreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry)
+	if !ok {
+		return domain.TokenPair{}, domain.ErrInvalidInput
+	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_sessions(id,actor_id,role,access_token_hash,refresh_token_hash,client_instance_id_hash,access_expires_at,refresh_expires_at,absolute_expires_at,last_used_at,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,1)", sessionID, actorID, role, identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(refreshRandom), identitysecurity.SHA256Hex(device), accessExpiry, refreshExpiry, absoluteExpiry, now); err != nil {
 		return domain.TokenPair{}, err
 	}
@@ -160,9 +164,8 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, err
 	}
 	now = s.now().UTC()
-	accessExpiry := calculateAccessExpiry(now, absoluteExpiry)
-	nextRefreshExpiry := calculateRefreshExpiry(role, now, absoluteExpiry)
-	if !nextRefreshExpiry.After(now) {
+	accessExpiry, nextRefreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry)
+	if !ok {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_refresh_token_history(session_id,token_hash) VALUES($1,$2) ON CONFLICT DO NOTHING", sessionID, currentHash); err != nil {
@@ -295,13 +298,21 @@ func calculateRefreshExpiry(role string, now, absolute time.Time) time.Time {
 	}
 	return candidate
 }
-func calculateAccessExpiry(now, absolute time.Time) time.Time {
-	candidate := now.Add(15 * time.Minute)
-	limit := absolute.Add(-time.Second)
-	if candidate.After(limit) {
-		return limit
+
+func calculateSessionExpiries(role string, now, absolute time.Time) (access, refresh time.Time, ok bool) {
+	refresh = calculateRefreshExpiry(role, now, absolute)
+	if !refresh.After(now.Add(minimumAccessLifetime)) || !absolute.After(refresh) {
+		return time.Time{}, time.Time{}, false
 	}
-	return candidate
+	candidate := now.Add(15 * time.Minute)
+	limit := refresh.Add(-time.Second)
+	if candidate.After(limit) {
+		candidate = limit
+	}
+	if !candidate.After(now) || !refresh.After(candidate) {
+		return time.Time{}, time.Time{}, false
+	}
+	return candidate, refresh, true
 }
 
 func withinRefreshRaceGrace(now, rotatedAt time.Time) bool {

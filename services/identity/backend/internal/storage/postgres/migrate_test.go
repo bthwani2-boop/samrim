@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	identityruntime "github.com/bthwani2-boop/samrim/services/identity/backend/internal/runtime"
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/storage/postgres"
 	_ "github.com/lib/pq"
 )
@@ -543,5 +544,92 @@ func TestMigrationV13ToV18Upgrade(t *testing.T) {
 		t.Fatalf("postgres.Ready failed on upgraded database: %v", err)
 	}
 
+	// Re-run the canonical runtime migrator and prove it is a no-op at v18.
+	beforeSecondRun := readMigrationNoOpSnapshot(t, testDB)
+	if err := identityruntime.RunMigrations(ctx, "development", testURL, migDir); err != nil {
+		t.Fatalf("second canonical migration run failed: %v", err)
+	}
+	afterSecondRun := readMigrationNoOpSnapshot(t, testDB)
+	assertMigrationNoOpSnapshotUnchanged(t, beforeSecondRun, afterSecondRun)
+	if version, err := postgres.CurrentSchemaVersion(ctx, testDB); err != nil || version != 18 {
+		t.Fatalf("schema version changed during second canonical migration run: version=%d err=%v", version, err)
+	}
+
 	t.Log("Migration v13 -> v18 upgrade, data preservation, passkey cutover and mobile lifetime cutover test PASSED successfully!")
+}
+
+type migrationSessionSnapshot struct {
+	id       string
+	access   time.Time
+	refresh  time.Time
+	absolute time.Time
+	version  int
+}
+
+type migrationHistorySnapshot struct {
+	version   int
+	name      string
+	sha256    string
+	appliedAt time.Time
+}
+
+type migrationNoOpSnapshot struct {
+	sessions []migrationSessionSnapshot
+	history  []migrationHistorySnapshot
+}
+
+func readMigrationNoOpSnapshot(t *testing.T, db *sql.DB) migrationNoOpSnapshot {
+	t.Helper()
+	snapshot := migrationNoOpSnapshot{}
+	sessionRows, err := db.Query("SELECT id,access_expires_at,refresh_expires_at,absolute_expires_at,version FROM identity_sessions ORDER BY id")
+	if err != nil {
+		t.Fatalf("read session no-op snapshot: %v", err)
+	}
+	defer sessionRows.Close()
+	for sessionRows.Next() {
+		var row migrationSessionSnapshot
+		if err := sessionRows.Scan(&row.id, &row.access, &row.refresh, &row.absolute, &row.version); err != nil {
+			t.Fatalf("scan session no-op snapshot: %v", err)
+		}
+		snapshot.sessions = append(snapshot.sessions, row)
+	}
+	if err := sessionRows.Err(); err != nil {
+		t.Fatalf("read session no-op snapshot rows: %v", err)
+	}
+
+	historyRows, err := db.Query("SELECT version,name,sha256,applied_at FROM identity_schema_migrations ORDER BY version")
+	if err != nil {
+		t.Fatalf("read migration history no-op snapshot: %v", err)
+	}
+	defer historyRows.Close()
+	for historyRows.Next() {
+		var row migrationHistorySnapshot
+		if err := historyRows.Scan(&row.version, &row.name, &row.sha256, &row.appliedAt); err != nil {
+			t.Fatalf("scan migration history no-op snapshot: %v", err)
+		}
+		snapshot.history = append(snapshot.history, row)
+	}
+	if err := historyRows.Err(); err != nil {
+		t.Fatalf("read migration history no-op snapshot rows: %v", err)
+	}
+	return snapshot
+}
+
+func assertMigrationNoOpSnapshotUnchanged(t *testing.T, before, after migrationNoOpSnapshot) {
+	t.Helper()
+	if len(before.sessions) != len(after.sessions) || len(before.history) != len(after.history) {
+		t.Fatalf("canonical second migration run changed snapshot cardinality: sessions %d/%d history %d/%d", len(before.sessions), len(after.sessions), len(before.history), len(after.history))
+	}
+	for index := range before.sessions {
+		left, right := before.sessions[index], after.sessions[index]
+		if left.id != right.id || !left.access.Equal(right.access) || !left.refresh.Equal(right.refresh) || !left.absolute.Equal(right.absolute) || left.version != right.version {
+			t.Fatalf("canonical second migration run changed session snapshot at %d: before=%+v after=%+v", index, left, right)
+		}
+	}
+	for index := range before.history {
+		left, right := before.history[index], after.history[index]
+		if left.version != right.version || left.name != right.name || left.sha256 != right.sha256 || !left.appliedAt.Equal(right.appliedAt) {
+			t.Fatalf("canonical second migration run changed migration history at %d: before=%+v after=%+v", index, left, right)
+		}
+	}
 }

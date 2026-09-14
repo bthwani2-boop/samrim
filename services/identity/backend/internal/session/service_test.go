@@ -5,23 +5,34 @@ import (
 	"time"
 )
 
-func TestCalculateAccessExpiryNeverOutlivesAbsoluteExpiry(t *testing.T) {
+func TestCalculateSessionExpiriesKeepStrictOrderingNearAbsoluteExpiry(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
-	absolute := now.Add(3 * time.Minute)
-	got := calculateAccessExpiry(now, absolute)
-	if !got.Before(absolute) {
-		t.Fatalf("access expiry %s is not before absolute expiry %s", got, absolute)
+	absolute := now.Add(10 * time.Minute)
+	access, refresh, ok := calculateSessionExpiries("client", now, absolute)
+	if !ok {
+		t.Fatal("session expiry calculation unexpectedly failed with a usable absolute lifetime")
 	}
-	if got != absolute.Add(-time.Second) {
-		t.Fatalf("access expiry = %s, want %s", got, absolute.Add(-time.Second))
+	if !access.Before(refresh) || !refresh.Before(absolute) {
+		t.Fatalf("session expiry ordering violated: access=%s refresh=%s absolute=%s", access, refresh, absolute)
+	}
+	if access != absolute.Add(-2*time.Second) || refresh != absolute.Add(-time.Second) {
+		t.Fatalf("near-ceiling expiries = %s/%s, want %s/%s", access, refresh, absolute.Add(-2*time.Second), absolute.Add(-time.Second))
 	}
 }
 
-func TestCalculateAccessExpiryUsesAccessLifetimeWhenSafe(t *testing.T) {
+func TestCalculateSessionExpiriesUseConfiguredLifetimesWhenSafe(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
-	got := calculateAccessExpiry(now, now.Add(time.Hour))
-	if got != now.Add(15*time.Minute) {
-		t.Fatalf("access expiry = %s, want 15 minute access lifetime", got)
+	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(365*24*time.Hour))
+	if !ok || access != now.Add(15*time.Minute) || refresh != now.Add(30*24*time.Hour) {
+		t.Fatalf("safe session expiries = %s/%s/%t, want 15m/30d/true", access, refresh, ok)
+	}
+}
+
+func TestCalculateSessionExpiriesFailClosedWithoutUsableAccessInterval(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(1500*time.Millisecond))
+	if ok || !access.IsZero() || !refresh.IsZero() {
+		t.Fatalf("near-exhausted session lifetime was not rejected: access=%s refresh=%s ok=%t", access, refresh, ok)
 	}
 }
 
