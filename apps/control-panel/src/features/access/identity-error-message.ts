@@ -8,6 +8,9 @@ export async function responseMessage(response: Response, context: "general" | "
     case "NOT_FOUND": return "لم يتم العثور على سجل الدور المطلوب.";
     case "DSH_UNAVAILABLE": return "خدمة إدارة الأدوار غير متاحة. تحقق من تشغيل الحاويات ثم أعد المحاولة.";
     case "DSH_CONFIG_ERROR": return "إعدادات خدمة إدارة الأدوار غير مكتملة. أعد تشغيل لوحة التحكم المحلية ثم حاول مرة أخرى.";
+    case "REFRESH_CONFLICT": return "تجري مزامنة جلسة المشغل من طلب متزامن. أعد المحاولة دون تسجيل الدخول من جديد.";
+    case "IDENTITY_SESSION_PERSISTENCE_UNAVAILABLE": return "تعذر حفظ تحديث جلسة المشغل بأمان. أعد المحاولة؛ لم يتم منح وصول غير مثبت.";
+    case "IDENTITY_SESSION_RECOVERY_UNKNOWN": return "تعذر تصنيف استرداد جلسة المشغل. أعد المحاولة بعد التحقق من خدمة الهوية.";
     default: return identityErrorMessage({ kind: "http", status: response.status, code, message: "" }, context);
   }
 }

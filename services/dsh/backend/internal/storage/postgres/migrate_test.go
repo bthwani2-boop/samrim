@@ -41,7 +41,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion {
 			t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d", len(records), len(migrationSQL))
 		}
-		if records[len(records)-1].Name != "011_cart_checkout_order.sql" {
+		if records[len(records)-1].Name != "014_catalog_proposal_import_closure.sql" {
 			t.Fatalf("cart/checkout/order is not the canonical final migration: %s", records[len(records)-1].Name)
 		}
 		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
@@ -72,7 +72,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if _, err := postgres.CreateCatalogCategory(ctx, db, category, "idem-category-v1", postgres.HashCatalogCategoryCreateRequest(category)); err != nil {
 			t.Fatalf("create catalog category: %v", err)
 		}
-		productInput := postgres.CatalogProductInput{VerticalID: vertical.ID, Scope: "SHARED", CanonicalName: "قهوة عربية", SellUnit: "piece", VariantTitle: "عبوة 250 غ", CategoryIDs: []string{category.ID}, IdentifierType: "GTIN", IdentifierValue: "6281000000001", ImageURI: "https://example.com/coffee.jpg"}
+		productInput := postgres.CatalogProductInput{VerticalID: vertical.ID, Scope: "SHARED", CanonicalName: "قهوة عربية", MeasurementKind: "DISCRETE", BaseUnit: "COUNT", VariantTitle: "عبوة 250 غ", CategoryIDs: []string{category.ID}, IdentifierType: "GTIN", IdentifierValue: "6281000000001", ImageURI: "https://example.com/coffee.jpg"}
 		createdProduct, err := postgres.CreateCatalogProduct(ctx, db, productInput, "idem-product-v1", postgres.HashCatalogProductCreateRequest(productInput), testOperatorActorID, "corr-product-v1")
 		if err != nil || createdProduct.Product.ID == "" || createdProduct.Product.Version != 1 {
 			t.Fatalf("create catalog product: %+v err=%v", createdProduct, err)
@@ -95,17 +95,19 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			t.Fatalf("create catalog test store: %v", err)
 		}
 		variantID := product.Variants[0].ID
-		offer, err := postgres.CreateCatalogOffer(ctx, db, "store_catalog_v1", variantID, 1250, "DISCRETE", "PER_UNIT", "idem-offer-v1", postgres.HashCatalogOfferCreateRequest("store_catalog_v1", variantID, 1250, "DISCRETE", "PER_UNIT"), testPartnerActorID, "corr-offer-v1")
+		offerInput := postgres.CatalogOfferInput{StoreID: "store_catalog_v1", VariantID: variantID, PriceMinor: 1250, QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 10, QuantityStepBaseUnits: 1, PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1}
+		offer, err := postgres.CreateCatalogOffer(ctx, db, offerInput, "idem-offer-v1", postgres.HashCatalogOfferCreateRequest(offerInput), testPartnerActorID, "corr-offer-v1")
 		if err != nil || offer.Offer.PublicationState != "draft" || offer.Offer.Version != 1 {
 			t.Fatalf("create store offer: %+v err=%v", offer, err)
 		}
-		if _, err := postgres.CreateCatalogOffer(ctx, db, "store_catalog_v1", variantID, 1250, "DISCRETE", "PER_UNIT", "idem-offer-v1", postgres.HashCatalogOfferCreateRequest("store_catalog_v1", variantID, 1250, "DISCRETE", "PER_UNIT"), testPartnerActorID, "corr-offer-replay-v1"); err != nil {
+		if _, err := postgres.CreateCatalogOffer(ctx, db, offerInput, "idem-offer-v1", postgres.HashCatalogOfferCreateRequest(offerInput), testPartnerActorID, "corr-offer-replay-v1"); err != nil {
 			t.Fatalf("store offer replay: %v", err)
 		}
-		if _, err := postgres.UpdateCatalogOffer(ctx, db, offer.Offer.ID, 1250, true, "published", 9, "idem-offer-stale-v1", postgres.HashCatalogOfferUpdateRequest(offer.Offer.ID, 1250, true, "published", 9), testPartnerActorID, "corr-offer-stale-v1"); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
+		offerUpdate := postgres.CatalogOfferUpdateInput{PriceMinor: 1250, Availability: true, PublicationState: "published", QuantityPolicy: "DISCRETE", QuantityMinBaseUnits: 1, QuantityMaxBaseUnits: 10, QuantityStepBaseUnits: 1, PricingBasis: "PER_UNIT", PricingUnitBaseUnits: 1}
+		if _, err := postgres.UpdateCatalogOffer(ctx, db, offer.Offer.ID, offerUpdate, 9, "idem-offer-stale-v1", postgres.HashCatalogOfferUpdateRequest(offer.Offer.ID, offerUpdate, 9), testPartnerActorID, "corr-offer-stale-v1"); !errors.Is(err, postgres.ErrCatalogVersionConflict) {
 			t.Fatalf("expected stale offer version rejection, got %v", err)
 		}
-		published, err := postgres.UpdateCatalogOffer(ctx, db, offer.Offer.ID, 1250, true, "published", 1, "idem-offer-publish-v1", postgres.HashCatalogOfferUpdateRequest(offer.Offer.ID, 1250, true, "published", 1), testPartnerActorID, "corr-offer-publish-v1")
+		published, err := postgres.UpdateCatalogOffer(ctx, db, offer.Offer.ID, offerUpdate, 1, "idem-offer-publish-v1", postgres.HashCatalogOfferUpdateRequest(offer.Offer.ID, offerUpdate, 1), testPartnerActorID, "corr-offer-publish-v1")
 		if err != nil || published.Offer.PublicationState != "published" || published.Offer.Version != 2 {
 			t.Fatalf("publish store offer: %+v err=%v", published, err)
 		}

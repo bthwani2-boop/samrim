@@ -5,10 +5,7 @@
       "entry": [
         "tools/dev/js-deps.mjs",
         "tools/dev/verify-candidate-runtime.mjs",
-        "tools/dev/verify-dsh-runtime.mjs",
         "tools/dev/verify-dsh-location-runtime.mjs",
-        "tools/dev/verify-identity-runtime.mjs",
-        "tools/dev/verify-migration-v13-to-v17.mjs",
         "tools/mobile/export-mobile-smoke.mjs",
         "tools/mobile/test-mobile-app.mjs"
       ]
@@ -16,7 +13,6 @@
     "apps/control-panel": {
       "entry": [
         "app/**/route.ts",
-        "playwright.config.ts",
         "playwright.global-setup.ts",
         "tests/**/*.spec.ts"
       ],
@@ -27,11 +23,13 @@
     // Expo/EAS host projections are loaded by Expo's config and fingerprint tooling.
     "apps/*/fingerprint.config.js",
     // These are explicit Nx/Identity command entrypoints, not import-graph modules.
+    "services/dsh/tools/generate-types.mjs",
+    "services/identity/tools/generate-types.mjs",
     "services/identity/tests/contract-guard.test.mjs",
+    // This is a documented manual knowledge-query entrypoint.
+    "tools/dev/query-knowledge.mjs",
     "tools/mobile/define-samrim-expo-app.d.cts",
-    "tools/mobile/with-android-development-client.d.cts",
-    "tools/mobile/export-mobile-smoke.mjs",
-    "tools/mobile/test-mobile-app.mjs"
+    "tools/mobile/with-android-development-client.d.cts"
   ],
   "ignoreDependencies": [
     // Metro probes these optional host integrations with require.resolve and falls back safely.
@@ -41,11 +39,10 @@
   "ignoreBinaries": [
     // CI, Nx project targets and developer-host binaries are resolved outside the JS graph.
     "build",
-    "go",
+    // Expo is the host binary used by the mobile export projection.
+    "expo",
     "gofmt",
-    "playwright",
     "pwsh",
-    "taskkill.exe",
     "typecheck"
   ]
 }

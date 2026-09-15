@@ -32,11 +32,18 @@ type CartLineRecord struct {
 	ProductID                 string
 	ProductName               string
 	VariantTitle              string
-	SellUnit                  string
+	MeasurementKind           string
+	BaseUnit                  string
 	PricingBasis              string
+	QuantityPolicy            string
+	QuantityMinBaseUnits      int64
+	QuantityMaxBaseUnits      int64
+	QuantityStepBaseUnits     int64
+	PricingUnitBaseUnits      int64
 	QuantityBaseUnits         int64
 	SelectedModifierOptionIDs []string
 	UnitPriceMinor            int64
+	ModifierAmountMinor       int64
 	LineAmountMinor           int64
 	Currency                  string
 	OfferVersion              int
@@ -58,23 +65,20 @@ func HashCartLineMutation(operation, storeID, offerID string, quantity int64, mo
 	return hashFacts(operation, strings.TrimSpace(storeID), strings.TrimSpace(offerID), strconv.FormatInt(quantity, 10), strings.Join(modifierIDs, ","), strconv.Itoa(expectedVersion))
 }
 
-func CalculateCatalogLineAmount(priceMinor, quantity int64, sellUnit, pricingBasis string) (int64, error) {
+func CalculateCatalogLineAmount(priceMinor, quantity int64, pricingBasis string, pricingUnitBaseUnits int64) (int64, error) {
 	if priceMinor <= 0 || quantity <= 0 {
 		return 0, ErrCartQuantityInvalid
 	}
-	if sellUnit == "piece" && pricingBasis != "PER_UNIT" {
+	if pricingUnitBaseUnits <= 0 || (pricingBasis != "PER_UNIT" && pricingBasis != "PER_MEASURE") {
 		return 0, ErrCartQuantityInvalid
 	}
-	if sellUnit == "kg" && pricingBasis != "PER_KILOGRAM" {
-		return 0, ErrCartQuantityInvalid
-	}
-	if sellUnit != "piece" && sellUnit != "kg" {
+	if pricingBasis == "PER_UNIT" && pricingUnitBaseUnits != 1 {
 		return 0, ErrCartQuantityInvalid
 	}
 	value := new(big.Int).Mul(big.NewInt(priceMinor), big.NewInt(quantity))
-	if sellUnit == "kg" {
+	if pricingBasis == "PER_MEASURE" {
 		quotient, remainder := new(big.Int), new(big.Int)
-		quotient.QuoRem(value, big.NewInt(1000), remainder)
+		quotient.QuoRem(value, big.NewInt(pricingUnitBaseUnits), remainder)
 		if remainder.Sign() != 0 {
 			return 0, ErrCartQuantityInvalid
 		}
@@ -120,7 +124,7 @@ func readCartByQuery(ctx context.Context, source rowQueryer, query string, args 
 }
 
 func listCartLines(ctx context.Context, source queryer, cartID string) ([]CartLineRecord, error) {
-	rows, err := source.QueryContext(ctx, `SELECT l.id,l.cart_id,l.store_offer_id,l.variant_id,v.product_id,p.canonical_name,v.title,v.sell_unit,o.pricing_basis,l.quantity_base_units,l.selected_modifier_option_ids,o.price_minor,o.currency,o.version,l.created_at,l.updated_at
+	rows, err := source.QueryContext(ctx, `SELECT l.id,l.cart_id,l.store_offer_id,l.variant_id,v.product_id,p.canonical_name,v.title,v.measurement_kind,v.base_unit,o.pricing_basis,o.quantity_policy,COALESCE(o.quantity_min_base_units,0),COALESCE(o.quantity_max_base_units,0),COALESCE(o.quantity_step_base_units,0),o.pricing_unit_base_units,l.quantity_base_units,l.selected_modifier_option_ids,o.price_minor,o.currency,o.version,l.created_at,l.updated_at
 FROM dsh.commerce_cart_lines l
 JOIN dsh.catalog_store_offers o ON o.id=l.store_offer_id
 JOIN dsh.catalog_product_variants v ON v.id=l.variant_id
@@ -133,24 +137,42 @@ WHERE l.cart_id=$1 AND l.removed_at IS NULL ORDER BY l.created_at,l.id`, cartID)
 	lines := make([]CartLineRecord, 0)
 	for rows.Next() {
 		var line CartLineRecord
-		if err := rows.Scan(&line.ID, &line.CartID, &line.StoreOfferID, &line.VariantID, &line.ProductID, &line.ProductName, &line.VariantTitle, &line.SellUnit, &line.PricingBasis, &line.QuantityBaseUnits, pq.Array(&line.SelectedModifierOptionIDs), &line.UnitPriceMinor, &line.Currency, &line.OfferVersion, &line.CreatedAt, &line.UpdatedAt); err != nil {
-			return nil, err
-		}
-		line.LineAmountMinor, err = CalculateCatalogLineAmount(line.UnitPriceMinor, line.QuantityBaseUnits, line.SellUnit, line.PricingBasis)
-		if err != nil {
+		if err := rows.Scan(&line.ID, &line.CartID, &line.StoreOfferID, &line.VariantID, &line.ProductID, &line.ProductName, &line.VariantTitle, &line.MeasurementKind, &line.BaseUnit, &line.PricingBasis, &line.QuantityPolicy, &line.QuantityMinBaseUnits, &line.QuantityMaxBaseUnits, &line.QuantityStepBaseUnits, &line.PricingUnitBaseUnits, &line.QuantityBaseUnits, pq.Array(&line.SelectedModifierOptionIDs), &line.UnitPriceMinor, &line.Currency, &line.OfferVersion, &line.CreatedAt, &line.UpdatedAt); err != nil {
 			return nil, err
 		}
 		lines = append(lines, line)
 	}
-	return lines, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for index := range lines {
+		line := &lines[index]
+		_, delta, err := ValidateCatalogModifierSelection(ctx, source, line.StoreOfferID, line.SelectedModifierOptionIDs)
+		if err != nil {
+			return nil, err
+		}
+		line.ModifierAmountMinor, err = CalculateCatalogModifierAmount(delta, line.QuantityBaseUnits)
+		if err != nil {
+			return nil, err
+		}
+		baseAmount, err := CalculateCatalogLineAmount(line.UnitPriceMinor, line.QuantityBaseUnits, line.PricingBasis, line.PricingUnitBaseUnits)
+		if err != nil {
+			return nil, err
+		}
+		line.LineAmountMinor, err = AddCatalogModifierAmount(baseAmount, delta, line.QuantityBaseUnits)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return lines, nil
 }
 
 func UpsertCartLine(ctx context.Context, db *sql.DB, clientActorID, storeID, offerID string, quantity int64, modifierIDs []string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CartRecord, bool, error) {
 	if strings.TrimSpace(clientActorID) == "" || strings.TrimSpace(storeID) == "" || strings.TrimSpace(offerID) == "" || expectedVersion < 0 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(correlationID) == "" {
 		return CartRecord{}, false, errors.New("cart line mutation facts are invalid")
-	}
-	if len(modifierIDs) != 0 {
-		return CartRecord{}, false, ErrCartModifierInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -185,7 +207,18 @@ func UpsertCartLine(ctx context.Context, db *sql.DB, clientActorID, storeID, off
 	if err != nil {
 		return CartRecord{}, false, err
 	}
-	if _, err := CalculateCatalogLineAmount(offer.PriceMinor, quantity, offer.Variant.SellUnit, offer.PricingBasis); err != nil {
+	if err := validateCatalogOfferQuantity(offer, quantity); err != nil {
+		return CartRecord{}, false, err
+	}
+	_, modifierDelta, err := ValidateCatalogModifierSelection(ctx, tx, offer.ID, modifierIDs)
+	if err != nil {
+		return CartRecord{}, false, err
+	}
+	baseAmount, err := CalculateCatalogLineAmount(offer.PriceMinor, quantity, offer.PricingBasis, offer.PricingUnitBaseUnits)
+	if err != nil {
+		return CartRecord{}, false, err
+	}
+	if _, err := AddCatalogModifierAmount(baseAmount, modifierDelta, quantity); err != nil {
 		return CartRecord{}, false, err
 	}
 	var cart CartRecord
@@ -252,9 +285,6 @@ func UpdateCartLine(ctx context.Context, db *sql.DB, clientActorID, lineID strin
 	if strings.TrimSpace(clientActorID) == "" || strings.TrimSpace(lineID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(correlationID) == "" {
 		return CartRecord{}, false, errors.New("cart line update facts are invalid")
 	}
-	if len(modifierIDs) != 0 {
-		return CartRecord{}, false, ErrCartModifierInvalid
-	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CartRecord{}, false, err
@@ -303,7 +333,18 @@ func UpdateCartLine(ctx context.Context, db *sql.DB, clientActorID, lineID strin
 	if err != nil {
 		return CartRecord{}, false, err
 	}
-	if _, err := CalculateCatalogLineAmount(offer.PriceMinor, quantity, offer.Variant.SellUnit, offer.PricingBasis); err != nil {
+	if err := validateCatalogOfferQuantity(offer, quantity); err != nil {
+		return CartRecord{}, false, err
+	}
+	_, modifierDelta, err := ValidateCatalogModifierSelection(ctx, tx, offer.ID, modifierIDs)
+	if err != nil {
+		return CartRecord{}, false, err
+	}
+	baseAmount, err := CalculateCatalogLineAmount(offer.PriceMinor, quantity, offer.PricingBasis, offer.PricingUnitBaseUnits)
+	if err != nil {
+		return CartRecord{}, false, err
+	}
+	if _, err := AddCatalogModifierAmount(baseAmount, modifierDelta, quantity); err != nil {
 		return CartRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_cart_lines SET quantity_base_units=$2,selected_modifier_option_ids=$3,updated_at=clock_timestamp() WHERE id=$1", lineID, quantity, pq.Array(modifierIDs)); err != nil {

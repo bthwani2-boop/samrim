@@ -45,6 +45,8 @@ export function identityErrorMessage(
       return messages.rateLimited;
     case "REFRESH_STALE":
       return messages.refreshStale;
+    case "REFRESH_CONFLICT":
+      return messages.conflict;
     case "FORBIDDEN":
       return messages.forbidden;
     case "UNAUTHENTICATED":

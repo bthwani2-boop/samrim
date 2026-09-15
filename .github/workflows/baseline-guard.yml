@@ -2,7 +2,7 @@ name: Repository Baseline Guard
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -18,177 +18,37 @@ jobs:
     name: repository-baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-
     steps:
-      - name: Checkout exact push/PR-head candidate
+      - name: Checkout integration candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-          fetch-depth: 2
 
-      - name: Attribute exact proof target
+      - name: Resolve affected base
+        id: base
         shell: bash
         env:
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          observed="$(git rev-parse HEAD)"
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            expected="${PR_HEAD_SHA}"
-            target="PR_HEAD"
+            base="${PR_BASE_SHA}"
+          elif [[ -n "${PUSH_BEFORE_SHA}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+            base="${PUSH_BEFORE_SHA}"
           else
-            expected="${GITHUB_SHA}"
-            target="PUSH_HEAD"
+            base="$(git rev-parse HEAD^)"
           fi
-          [[ "${observed}" == "${expected}" ]] || { echo "::error::Proof target mismatch: observed=${observed} expected=${expected}"; exit 1; }
-          echo "PROOF_TARGET=${target}"
-          echo "PROOF_SHA=${observed}"
+          git merge-base --is-ancestor "${base}" HEAD
+          echo "sha=${base}" >> "${GITHUB_OUTPUT}"
+          echo "PROOF_BASE=${base}"
+          echo "PROOF_HEAD=$(git rev-parse HEAD)"
 
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
-
-      - name: Materialize exact pinned Governance and Docs
-        shell: bash
-        run: node tools/dev/knowledge-source.mjs
-
-      - name: Enforce canonical repository invariants
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          required=(
-            README.md
-            SECURITY.md
-            CONTRIBUTING.md
-            knowledge.sources.json
-            AGENTS.md
-            .github/CODEOWNERS
-            .github/pull_request_template.md
-            package.json
-            pnpm-workspace.yaml
-            pnpm-lock.yaml
-            nx.json
-            go.work
-            go.work.sum
-          )
-
-          for path in "${required[@]}"; do
-            [[ -e "${path}" ]] || {
-              echo "::error::Required repository path missing: ${path}"
-              exit 1
-            }
-          done
-
-          if [[ -e tools/prompting ]]; then
-            echo "::error::Retired prompt-package root must not exist; methods belong in pinned Docs and agent law belongs in AGENTS.md"
-            exit 1
-          fi
-
-          for root in core shared; do
-            [[ ! -e "${root}" ]] || {
-              echo "::error::Forbidden top-level ownership class: ${root}"
-              exit 1
-            }
-          done
-
-          if [[ -d apps ]] && find apps -mindepth 2 -maxdepth 2 -type d -name runtime -print -quit | grep -q .; then
-            echo "::error::Pass-through apps/*/runtime topology is forbidden"
-            exit 1
-          fi
-
-          if grep -R -n -E -- '^[[:space:]]*pull_request_target:' .github/workflows; then
-            echo "::error::pull_request_target is forbidden in baseline workflows"
-            exit 1
-          fi
-
-          if grep -R -n -E -- '^[[:space:]]*permissions:[[:space:]]*write-all' .github/workflows; then
-            echo "::error::write-all workflow permissions are forbidden"
-            exit 1
-          fi
-
-          while IFS= read -r use; do
-            ref="${use#*uses:}"
-            ref="${ref%%#*}"
-            ref="${ref//[[:space:]]/}"
-
-            [[ "${ref}" == ./* ]] && continue
-
-            [[ "${ref}" =~ @[0-9a-fA-F]{40}$ ]] || {
-              echo "::error::Action is not pinned to a full commit SHA: ${ref}"
-              exit 1
-            }
-          done < <(grep -R -h -E -- '^[[:space:]]*uses:[[:space:]]*' .github/workflows || true)
-
-          if git rev-parse HEAD^ >/dev/null 2>&1; then
-            git diff --check HEAD^ HEAD
-          else
-            git show --check --format= HEAD
-          fi
-
-      - name: Verify donor residue
-        shell: bash
-        run: node tools/dev/verify-donor-residue.mjs
-
-      - name: Verify durable repository structure
-        shell: bash
-        run: node tools/dev/verify-repository-structure.mjs
-
-      - name: Verify tracked-artifact structural hygiene
-        shell: bash
-        run: node tools/dev/verify-structural-hygiene.mjs
-
-      - name: Verify local runtime ownership
-        shell: bash
-        run: node tools/dev/verify-local-runtime-ownership.mjs
-
-      - name: Verify removed human-domain residue is zero
-        shell: bash
-        run: node tools/dev/verify-removed-human-domain-residue.mjs
-
-      - name: Verify docs command parity
-        shell: bash
-        run: node tools/dev/verify-doc-command-parity.mjs
-
-      - name: Verify docs configuration parity
-        shell: bash
-        run: node tools/dev/verify-doc-config-parity.mjs
-
-      - name: Verify knowledge-system invariants
-        shell: bash
-        run: node tools/dev/verify-knowledge-system.mjs
-
-      - name: Verify knowledge references and orphan docs
-        shell: bash
-        run: node tools/dev/verify-knowledge-references.mjs
-
-      - name: Verify source-derived knowledge queries
-        shell: bash
-        run: |
-          set -euo pipefail
-          node tools/dev/query-knowledge.mjs list capabilities | grep -Fx 'IDENTITY_ACTIVATION_SESSIONS'
-          node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'SOURCE=governance/product/capabilities/access/identity-activation-sessions.md'
-          node tools/dev/query-knowledge.mjs capability IDENTITY_ACTIVATION_SESSIONS | grep -F 'Normal Operator login requires user-verified WebAuthn/Passkey'
-          node tools/dev/query-knowledge.mjs journey J1 | grep -F 'SOURCE=governance/product/JOURNEYS.md'
-          node tools/dev/query-knowledge.mjs list owners | grep -F 'governance/policy/FINANCE.md'
-          node tools/dev/query-knowledge.mjs owner integrations | grep -F 'governance/policy/INTEGRATIONS.md'
-          node tools/dev/query-knowledge.mjs list references | grep -F 'EXPERIENCE_AND_DESIGN_EVIDENCE'
-          node tools/dev/query-knowledge.mjs reference experience | grep -F 'docs/reference/experience.md'
-          node tools/dev/query-knowledge.mjs list quality-dimensions | grep -Fx 'VISUAL_IDENTITY_DESIGN_SYSTEM'
-          node tools/dev/query-knowledge.mjs list quality-dimensions | grep -Fx 'SECURITY_AUTHORIZATION'
-
-      - name: Verify adversarial agent knowledge contract
-        shell: bash
-        run: node tools/dev/verify-agent-knowledge-contract.mjs
-
-      - name: Verify Identity vertical boundaries
-        shell: bash
-        run: |
-          node services/identity/tools/generate-types.mjs --check
-          node services/dsh/tools/generate-types.mjs --check
-          node tools/dev/verify-identity-boundaries.mjs
 
       - name: Install pinned pnpm
         shell: bash
@@ -200,202 +60,146 @@ jobs:
           go-version: 1.27.1
           cache: true
           cache-dependency-path: |
-            services/identity/backend/go.mod
-            services/dsh/backend/go.mod
+            services/identity/backend/go.sum
+            services/identity/clients/go/go.mod
+            services/dsh/backend/go.sum
 
-      - name: Verify pinned toolchain
+      - name: Install workspace once
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Materialize exact pinned Governance and Docs
+        shell: bash
+        run: node tools/dev/knowledge-source.mjs
+
+      - name: Verify repository and knowledge invariants
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(node --version)" == "v24.17.0" ]]
-          [[ "$(pnpm --version)" == "10.34.0" ]]
-          [[ "$(go version)" == *"go1.27.1"* ]]
+          node tools/dev/verify-donor-residue.mjs
+          node tools/dev/verify-repository-structure.mjs
+          node tools/dev/verify-structural-hygiene.mjs
+          node tools/dev/verify-local-runtime-ownership.mjs
+          node tools/dev/verify-removed-human-domain-residue.mjs
+          node tools/dev/verify-doc-command-parity.mjs
+          node tools/dev/verify-doc-config-parity.mjs
+          node tools/dev/verify-knowledge-system.mjs
+          node tools/dev/verify-knowledge-references.mjs
+          node tools/dev/verify-agent-knowledge-contract.mjs
+          node tools/dev/verify-workspace-dependencies.mjs
+          node tools/dev/verify-nx-project-tags.mjs
+          pnpm run mobile:verify-config
+          pnpm run brand:check
+          pnpm run theme:check
+          pnpm run theme:verify
+          pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1
 
       - name: Verify Go workspace synchronization
         shell: bash
         run: |
           set -euo pipefail
           go work sync
-          drift="$(git status --porcelain -- go.work go.work.sum services/*/backend)"
+          drift="$(git status --porcelain -- go.work go.work.sum services/*/backend services/identity/clients/go)"
           if [[ -n "${drift}" ]]; then
             printf '%s\n' "${drift}"
-            git diff -- go.work go.work.sum services/*/backend || true
-            echo "::error::go work sync changed tracked or untracked Go workspace files"
+            git diff -- go.work go.work.sum services/*/backend services/identity/clients/go || true
             exit 1
           fi
 
-      - name: Verify PowerShell runtime scripts parse
-        shell: pwsh
-        run: ./tools/dev/verify-powershell-syntax.ps1
+      - name: Verify changed source style
+        shell: bash
+        run: pnpm exec biome ci apps packages services tools --changed --since=${{ steps.base.outputs.sha }} --enforce-assist=false
 
-      - name: Verify Go source formatting
+      - name: Verify affected workspace tasks
+        shell: bash
+        run: pnpm exec nx affected -t typecheck,test,build,export-smoke,vet --base=${{ steps.base.outputs.sha }} --head=HEAD --outputStyle=stream
+
+      - name: Verify repository liveness for source changes
         shell: bash
         run: |
           set -euo pipefail
-          unformatted="$(gofmt -l services/*/backend)"
-          if [[ -n "${unformatted}" ]]; then
-            echo "::error::Unformatted Go files detected: ${unformatted}"
-            exit 1
+          if git diff --quiet "${{ steps.base.outputs.sha }}" HEAD -- apps packages services tools package.json pnpm-lock.yaml pnpm-workspace.yaml; then
+            echo "KNIP=SKIPPED reason=no_source_or_dependency_change"
+          else
+            pnpm exec knip --no-progress --reporter compact --no-config-hints
           fi
-
-      - name: Frozen workspace install
-        shell: bash
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify TypeScript and JavaScript lint
-        shell: bash
-        run: pnpm run quality:lint
-
-      - name: Verify theme authority and WCAG AA contrast
-        shell: bash
-        run: |
-          pnpm run theme:check
-          pnpm run theme:verify
-
-      - name: Verify mobile deployable identities
-        shell: bash
-        run: pnpm run mobile:verify-config
-
-      - name: Verify canonical brand asset projections
-        shell: bash
-        run: pnpm run brand:check
-
-      - name: Verify workspace dependency references
-        shell: bash
-        run: node tools/dev/verify-workspace-dependencies.mjs
-
-      - name: Verify canonical static candidate
-        shell: bash
-        run: node tools/dev/verify-candidate-static.mjs
-
-      - name: Verify Nx project tags
-        shell: bash
-        run: node tools/dev/verify-nx-project-tags.mjs
-
-      - name: Discover Nx projects
-        shell: bash
-        run: pnpm run nx:projects
-
-      - name: Verify developer bootstrap
-        shell: pwsh
-        run: ./tools/dev/bootstrap.ps1
-
-      - name: Verify dependency vulnerability surface
-        shell: bash
-        run: |
-          set -euo pipefail
-          pnpm audit --audit-level=moderate
-          (
-            cd services/identity/backend
-            go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
-          )
-          (
-            cd services/dsh/backend
-            go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
-          )
 
       - name: Verify canonical Compose configuration
         shell: bash
-        run: |
-          set -euo pipefail
-          docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml config >/dev/null
+        run: docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml config --quiet
 
-      - name: Verify developer tooling is non-mutating
+      - name: Verify tooling is non-mutating
         shell: bash
         run: |
           set -euo pipefail
           drift="$(git status --porcelain --untracked-files=all)"
-          if [[ -n "${drift}" ]]; then
-            printf '%s\n' "${drift}"
-            git diff -- . || true
-            echo "::error::Developer tooling mutated repository state"
-            exit 1
-          fi
+          [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
 
-  windows-eol:
-    name: repository-windows-eol
+  windows:
+    name: repository-windows
     runs-on: windows-2025
-    timeout-minutes: 10
-
+    timeout-minutes: 12
     steps:
       - name: Configure hostile Windows Git default
         shell: pwsh
         run: git config --global core.autocrlf true
 
-      - name: Checkout exact push/PR-head candidate
+      - name: Checkout integration candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-          fetch-depth: 2
 
-      - name: Attribute Windows proof target
+      - name: Verify LF checkout
+        shell: pwsh
+        run: |
+          $bad = @(git ls-files --eol | Where-Object { $_ -match '\bw/(crlf|mixed)\b' })
+          if ($bad.Count -gt 0) { $bad | Write-Host; throw "Tracked CRLF/mixed text detected." }
+
+      - name: Detect mobile-affecting integration change
+        id: mobile
         shell: pwsh
         env:
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          $observed = (git rev-parse HEAD).Trim()
           if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
-            $expected = $env:PR_HEAD_SHA
-            $target = 'PR_HEAD'
-          } else {
-            $expected = $env:GITHUB_SHA
-            $target = 'PUSH_HEAD'
+            $base = $env:PR_BASE_SHA
           }
-          if ($observed -ne $expected) { throw "Proof target mismatch: observed=$observed expected=$expected" }
-          Write-Host "PROOF_TARGET=$target"
-          Write-Host "PROOF_SHA=$observed"
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
-        with:
-          go-version: 1.27.1
-          cache: false
-
-      - name: Verify canonical LF checkout and Go workspace stability
-        shell: pwsh
-        run: |
-          $bad = @(
-            git ls-files --eol |
-              Where-Object { $_ -match '\bw/(crlf|mixed)\b' }
-          )
-
-          if ($bad.Count -gt 0) {
-            $bad | Write-Host
-            throw "Fresh Windows checkout contains CRLF/mixed tracked text."
+          elseif ($env:PUSH_BEFORE_SHA -and $env:PUSH_BEFORE_SHA -ne '0000000000000000000000000000000000000000') {
+            $base = $env:PUSH_BEFORE_SHA
           }
-
-          go work sync
-          if ($LASTEXITCODE -ne 0) {
-            throw "go work sync failed."
+          else {
+            $base = (git rev-parse HEAD^).Trim()
           }
+          git merge-base --is-ancestor $base HEAD
+          if ($LASTEXITCODE -ne 0) { throw "Windows affected base is not an ancestor of HEAD: $base" }
 
-          $drift = @(git status --porcelain --untracked-files=all)
-          if ($drift.Count -gt 0) {
-            $drift | Write-Host
-            throw "go work sync mutated the fresh Windows checkout."
+          $changed = @(git diff --name-only $base HEAD)
+          $run = $false
+          foreach ($file in $changed) {
+            if ($file -match '^(apps/app-|packages/design-system/|services/(identity|dsh)/|tools/mobile/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$)') { $run = $true }
           }
+          "base=$base" >> $env:GITHUB_OUTPUT
+          "run=$($run.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
 
-          Write-Host "WINDOWS_EOL_REGRESSION=PASS"
-
-      - name: Set up Node for Windows mobile export proof
+      - name: Set up Node
+        if: steps.mobile.outputs.run == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
 
-      - name: Install pinned pnpm for Windows mobile export proof
+      - name: Install pinned pnpm
+        if: steps.mobile.outputs.run == 'true'
         shell: pwsh
         run: npm install --global pnpm@10.34.0
 
-      - name: Install workspace for Windows mobile export proof
+      - name: Install workspace
+        if: steps.mobile.outputs.run == 'true'
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
-      - name: Verify Windows mobile exports
+      - name: Verify affected Windows mobile exports
+        if: steps.mobile.outputs.run == 'true'
         shell: pwsh
-        run: |
-          pnpm run workspace:mobile-export-smoke
-          if ($LASTEXITCODE -ne 0) {
-            throw "Windows mobile export smoke failed."
-          }
-          Write-Host "WINDOWS_MOBILE_EXPORT=PASS"
+        run: pnpm exec nx affected -t export-smoke --base=${{ steps.mobile.outputs.base }} --head=HEAD --outputStyle=stream

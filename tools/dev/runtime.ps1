@@ -14,94 +14,82 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$ComposeDir = Join-Path $RepoRoot 'infra\local\compose'
-$ComposePath = Join-Path $ComposeDir 'compose.yaml'
-$EnvPath = Join-Path $ComposeDir '.env'
-$EnvExamplePath = Join-Path $ComposeDir '.env.example'
-$CanonicalProject = 'samrim-local'
+$ComposePath = Join-Path $RepoRoot 'infra\local\compose\compose.yaml'
+$EnvPath = Join-Path $RepoRoot 'infra\local\compose\.env'
+$EnvExamplePath = Join-Path $RepoRoot 'infra\local\compose\.env.example'
+$Project = 'samrim-local'
 $AllowedServices = @('identity','dsh','control','metro-client','metro-partner','metro-captain','metro-field')
 $CanonicalServices = @('postgres','mailpit','identity-migrate','identity','dsh-migrate','dsh','js-deps','control','metro-client','metro-partner','metro-captain','metro-field')
-$OptionalServices = @('control','metro-client','metro-partner','metro-captain','metro-field')
-$PortContracts = @(
-    @{Key='SAMRIM_MAILPIT_WEB_PORT';Service='mailpit'},
-    @{Key='SAMRIM_IDENTITY_PORT';Service='identity'},
-    @{Key='SAMRIM_DSH_PORT';Service='dsh'},
-    @{Key='SAMRIM_CONTROL_PORT';Service='control'},
-    @{Key='SAMRIM_APP_CLIENT_METRO_PORT';Service='metro-client'},
-    @{Key='SAMRIM_APP_PARTNER_METRO_PORT';Service='metro-partner'},
-    @{Key='SAMRIM_APP_CAPTAIN_METRO_PORT';Service='metro-captain'},
-    @{Key='SAMRIM_APP_FIELD_METRO_PORT';Service='metro-field'}
+$RunningServices = @('postgres','mailpit','identity','dsh','control','metro-client','metro-partner','metro-captain','metro-field')
+$OneShotServices = @('identity-migrate','dsh-migrate','js-deps')
+$Ports = @(
+    @{ Key='SAMRIM_MAILPIT_WEB_PORT'; Service='mailpit' },
+    @{ Key='SAMRIM_IDENTITY_PORT'; Service='identity' },
+    @{ Key='SAMRIM_DSH_PORT'; Service='dsh' },
+    @{ Key='SAMRIM_CONTROL_PORT'; Service='control' },
+    @{ Key='SAMRIM_APP_CLIENT_METRO_PORT'; Service='metro-client' },
+    @{ Key='SAMRIM_APP_PARTNER_METRO_PORT'; Service='metro-partner' },
+    @{ Key='SAMRIM_APP_CAPTAIN_METRO_PORT'; Service='metro-captain' },
+    @{ Key='SAMRIM_APP_FIELD_METRO_PORT'; Service='metro-field' }
 )
 
 function Fail([string]$Message) { throw $Message }
-function New-RandomHex([int]$Bytes = 32) { return [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes($Bytes)).ToLowerInvariant() }
+function New-RandomHex([int]$Bytes = 32) { [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes($Bytes)).ToLowerInvariant() }
 
-function Read-EnvMap([string]$Path) {
+function Read-Env([string]$Path) {
     $map = @{}
     foreach ($line in Get-Content -LiteralPath $Path) {
         $trimmed = $line.Trim()
         if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
         $parts = $trimmed.Split('=', 2)
-        if ($parts.Count -ne 2) { Fail "Malformed environment line in ${Path}: $line" }
+        if ($parts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($parts[0])) { Fail "Malformed environment line: $line" }
         $name = $parts[0].Trim()
-        if ([string]::IsNullOrWhiteSpace($name)) { Fail "Empty environment key in $Path." }
-        if ($map.ContainsKey($name)) { Fail "Duplicate environment key '$name' in $Path." }
+        if ($map.ContainsKey($name)) { Fail "Duplicate environment key: $name" }
         $map[$name] = $parts[1].Trim()
     }
     return $map
 }
 
-function Require-EnvValue([hashtable]$Map, [string]$Name) {
+function Require-Env([hashtable]$Map, [string]$Name) {
     if (-not $Map.ContainsKey($Name) -or [string]::IsNullOrWhiteSpace([string]$Map[$Name])) { Fail "Required local runtime setting is missing: $Name" }
     return [string]$Map[$Name]
 }
 
-function Require-TcpPort([hashtable]$Map, [string]$Name) {
-    $raw = Require-EnvValue -Map $Map -Name $Name
+function Require-Port([hashtable]$Map, [string]$Name) {
+    $raw = Require-Env $Map $Name
     $port = 0
     if (-not [int]::TryParse($raw, [ref]$port) -or $port -lt 1 -or $port -gt 65535) { Fail "Invalid TCP port in ${Name}: $raw" }
     return $port
 }
 
 function Ensure-Environment {
-    if (-not (Test-Path -LiteralPath $EnvExamplePath -PathType Leaf)) { Fail "Missing canonical local runtime template: $EnvExamplePath" }
-    $generatedSecrets = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    foreach ($name in @('SAMRIM_POSTGRES_PASSWORD','IDENTITY_CHALLENGE_HMAC_SECRET','IDENTITY_DSH_SERVICE_TOKEN','CONTROL_PANEL_SERVICE_TOKEN','IDENTITY_ABUSE_HMAC_SECRET','OPERATOR_BOOTSTRAP_SECRET')) { $null = $generatedSecrets.Add($name) }
-    $current = @{}
-    $state = 'created'
-    if (Test-Path -LiteralPath $EnvPath -PathType Leaf) { $current = Read-EnvMap -Path $EnvPath; $state = 'unchanged' }
+    if (-not (Test-Path -LiteralPath $EnvExamplePath -PathType Leaf)) { Fail "Missing runtime template: $EnvExamplePath" }
+    $current = if (Test-Path -LiteralPath $EnvPath -PathType Leaf) { Read-Env $EnvPath } else { @{} }
+    $secretNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($name in @('SAMRIM_POSTGRES_PASSWORD','IDENTITY_CHALLENGE_HMAC_SECRET','IDENTITY_DSH_SERVICE_TOKEN','CONTROL_PANEL_SERVICE_TOKEN','IDENTITY_ABUSE_HMAC_SECRET','OPERATOR_BOOTSTRAP_SECRET')) { $null = $secretNames.Add($name) }
+
     $output = [System.Collections.Generic.List[string]]::new()
-    $known = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($line in Get-Content -LiteralPath $EnvExamplePath) {
         $trimmed = $line.Trim()
         if (-not $trimmed -or $trimmed.StartsWith('#')) { $output.Add($line); continue }
         $parts = $line.Split('=', 2)
-        if ($parts.Count -ne 2) { Fail "Malformed canonical template line: $line" }
-        $name = $parts[0].Trim(); $templateValue = $parts[1].Trim()
-        if (-not $known.Add($name)) { Fail "Duplicate canonical template key '$name'." }
-        if ($generatedSecrets.Contains($name)) {
-            if ($current.ContainsKey($name) -and -not [string]::IsNullOrWhiteSpace([string]$current[$name])) { $value = [string]$current[$name] }
-            else { $value = New-RandomHex; $state = 'reconciled' }
-        } else {
-            $value = $templateValue
-            if ($current.ContainsKey($name) -and [string]$current[$name] -ne $value) { $state = 'reconciled' }
+        if ($parts.Count -ne 2) { Fail "Malformed runtime template line: $line" }
+        $name = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        if ($secretNames.Contains($name)) {
+            $value = if ($current.ContainsKey($name) -and -not [string]::IsNullOrWhiteSpace([string]$current[$name])) { [string]$current[$name] } else { New-RandomHex }
         }
         $output.Add("${name}=${value}")
     }
-    $unknown = @($current.Keys | Where-Object { -not $known.Contains([string]$_) })
-    if ($unknown.Count -gt 0) { $state = 'reconciled' }
-    $raw = (($output -join [Environment]::NewLine).TrimEnd()) + [Environment]::NewLine
-    [IO.File]::WriteAllText($EnvPath, $raw, [Text.UTF8Encoding]::new($false))
-    $map = Read-EnvMap -Path $EnvPath
-    if ((Require-EnvValue -Map $map -Name 'BTHWANI_ENV') -ne 'development') { Fail 'LOCAL_INTEGRATION requires BTHWANI_ENV=development.' }
-    Write-Host "LOCAL_RUNTIME_ENV=PASS state=$state source=infra/local/compose/.env.example secrets=preserved unknown_removed=$($unknown.Count)"
-    return $map
+
+    [IO.File]::WriteAllText($EnvPath, (($output -join [Environment]::NewLine).TrimEnd() + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
+    return Read-CanonicalEnvironment
 }
 
 function Read-CanonicalEnvironment {
     if (-not (Test-Path -LiteralPath $EnvPath -PathType Leaf)) { Fail "LOCAL_RUNTIME_ENV=NOT_READY reason=missing_env path=$EnvPath" }
-    $map = Read-EnvMap -Path $EnvPath
-    if ((Require-EnvValue -Map $map -Name 'BTHWANI_ENV') -ne 'development') { Fail 'LOCAL_RUNTIME_ENV=NOT_READY reason=BTHWANI_ENV_must_be_development' }
+    $map = Read-Env $EnvPath
+    if ((Require-Env $map 'BTHWANI_ENV') -ne 'development') { Fail 'LOCAL_INTEGRATION requires BTHWANI_ENV=development.' }
     return $map
 }
 
@@ -111,270 +99,208 @@ function Ensure-Docker {
     if ($LASTEXITCODE -ne 0) { Fail 'Docker daemon is not available.' }
 }
 
-function Get-ComposeBaseArgs {
-    $base = @('compose','--ansi','never','--progress','plain','--project-name',$CanonicalProject)
+function Compose([string[]]$Arguments, [switch]$Quiet) {
+    $base = @('compose','--ansi','never','--progress','plain','--project-name',$Project)
     if (Test-Path -LiteralPath $EnvPath -PathType Leaf) { $base += @('--env-file',$EnvPath) }
     $base += @('-f',$ComposePath)
-    return $base
-}
-
-function Invoke-Compose([string[]]$Arguments, [switch]$Quiet) {
-    $base = Get-ComposeBaseArgs
     if ($Quiet) { & docker @base @Arguments *> $null } else { & docker @base @Arguments 2>&1 | ForEach-Object { Write-Host $_ } }
     if ($LASTEXITCODE -ne 0) { Fail "Docker Compose failed: $($Arguments -join ' ')" }
 }
 
-function Get-ServiceContainerId([string]$Service) {
-    $ids = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --filter "label=com.docker.compose.service=$Service" --format '{{.ID}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect $CanonicalProject/$Service." }
-    if ($ids.Count -ne 1) { Fail "Expected exactly one container for $CanonicalProject/$Service; observed=$($ids.Count)." }
-    return $ids[0]
+function Container-Ids([string]$ServiceName) {
+    $ids = @(& docker ps -a --filter "label=com.docker.compose.project=$Project" --filter "label=com.docker.compose.service=$ServiceName" --format '{{.ID}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect $Project/$ServiceName." }
+    return $ids
 }
 
-function Assert-OneShotSucceeded([string]$Service) {
-    $id = Get-ServiceContainerId -Service $Service
-    $state = (& docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}' $id).Trim()
-    if ($LASTEXITCODE -ne 0 -or $state -ne 'exited|0') { Fail "ONE_SHOT_SERVICE=FAIL service=$Service state=$state" }
-    Write-Host "ONE_SHOT_SERVICE=PASS service=$Service"
-}
-
-function Assert-RunningService([string]$Service, [switch]$Healthy) {
-    $id = Get-ServiceContainerId -Service $Service
-    $status = (& docker inspect --format '{{.State.Status}}' $id).Trim()
-    if ($LASTEXITCODE -ne 0 -or $status -ne 'running') { Fail "SERVICE_STATE=FAIL service=$Service status=$status" }
-    if ($Healthy) {
-        $health = (& docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' $id).Trim()
-        if ($LASTEXITCODE -ne 0 -or $health -ne 'healthy') { Fail "SERVICE_HEALTH=FAIL service=$Service health=$health" }
-    }
-}
-
-function Wait-RunningService([string]$Service, [switch]$Healthy, [int]$TimeoutSeconds = 60) {
-    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
-    $lastError = 'not observed'
-    while ([DateTime]::UtcNow -lt $deadline) {
-        try { Assert-RunningService -Service $Service -Healthy:$Healthy; return } catch { $lastError = $_.Exception.Message }
-        Start-Sleep -Milliseconds 500
-    }
-    Fail "SERVICE_READY=FAIL service=$Service timeout_seconds=$TimeoutSeconds last=$lastError"
-}
-
-function Assert-NoParallelRuntimeResidue {
-    $projects = @(& docker ps -a --format '{{.Label "com.docker.compose.project"}}' | Where-Object { $_ -like 'samrim-*' -and $_ -ne $CanonicalProject } | Sort-Object -Unique)
-    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect Docker project labels.' }
+function Assert-No-Parallel-Runtime {
+    $projects = @(& docker ps -a --format '{{.Label "com.docker.compose.project"}}' | Where-Object { $_ -like 'samrim-*' -and $_ -ne $Project } | Sort-Object -Unique)
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect Docker project ownership.' }
     if ($projects.Count -gt 0) { Fail "PARALLEL_RUNTIME_RESIDUE=FAIL projects=$($projects -join ',')" }
-}
-
-function Assert-NoUnexpectedCanonicalContainers {
-    $services = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --format '{{.Label "com.docker.compose.service"}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
-    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical Docker services.' }
-    $unexpected = @($services | Where-Object { $_ -notin $CanonicalServices })
+    $unexpected = @(& docker ps -a --filter "label=com.docker.compose.project=$Project" --format '{{.Label "com.docker.compose.service"}}' | Where-Object { $_ -and $_ -notin $CanonicalServices } | Sort-Object -Unique)
     if ($unexpected.Count -gt 0) { Fail "CANONICAL_RUNTIME_RESIDUE=FAIL services=$($unexpected -join ',')" }
 }
 
-function Assert-NoNativeBackendProcesses {
+function Assert-No-Native-Backend {
     if (-not $IsWindows) { return }
-    $matches = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and (($_.CommandLine -match 'services[\\/]identity[\\/]backend') -or ($_.CommandLine -match 'services[\\/]dsh[\\/]backend')) -and $_.CommandLine -match '\bgo(?:\.exe)?\b' })
+    $matches = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -and $_.CommandLine -match '\bgo(?:\.exe)?\b' -and
+        ($_.CommandLine -match 'services[\\/]identity[\\/]backend' -or $_.CommandLine -match 'services[\\/]dsh[\\/]backend')
+    })
     if ($matches.Count -gt 0) { Fail "NATIVE_RUNTIME_RESIDUE=FAIL pids=$($matches.ProcessId -join ',')" }
 }
 
-function Assert-CanonicalPublishedPort([int]$Port, [string]$ExpectedService) {
-    $needle = ":${Port}->"
+function Assert-Service([string]$ServiceName, [switch]$Healthy) {
+    $ids = @(Container-Ids $ServiceName)
+    if ($ids.Count -ne 1) { Fail "SERVICE_STATE=FAIL service=$ServiceName containers=$($ids.Count)" }
+    $status = (& docker inspect --format '{{.State.Status}}' $ids[0]).Trim()
+    if ($status -ne 'running') { Fail "SERVICE_STATE=FAIL service=$ServiceName status=$status" }
+    if ($Healthy) {
+        $health = (& docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' $ids[0]).Trim()
+        if ($health -ne 'healthy') { Fail "SERVICE_HEALTH=FAIL service=$ServiceName health=$health" }
+    }
+}
+
+function Assert-OneShot([string]$ServiceName) {
+    $ids = @(Container-Ids $ServiceName)
+    if ($ids.Count -ne 1) { Fail "ONE_SHOT_SERVICE=FAIL service=$ServiceName containers=$($ids.Count)" }
+    $state = (& docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}' $ids[0]).Trim()
+    if ($state -ne 'exited|0') { Fail "ONE_SHOT_SERVICE=FAIL service=$ServiceName state=$state" }
+}
+
+function Assert-Port([hashtable]$EnvMap, [string]$ServiceName, [string]$Key) {
+    $port = Require-Port $EnvMap $Key
+    $needle = ":${port}->"
     $rows = @(& docker ps --format '{{.Ports}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}' | Where-Object { $_ -and $_.Contains($needle) })
-    if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect Docker port ownership for $Port." }
-    $expected = @($rows | Where-Object { $_ -match "\|$CanonicalProject\|$([regex]::Escape($ExpectedService))$" })
-    if ($rows.Count -ne 1 -or $expected.Count -ne 1 -or $rows[0] -notmatch '^127\.0\.0\.1:') { Fail "PORT_OWNERSHIP=FAIL port=$Port service=$ExpectedService observed=$($rows -join ';')" }
+    $expected = @($rows | Where-Object { $_ -match "\|$Project\|$([regex]::Escape($ServiceName))$" })
+    if ($rows.Count -ne 1 -or $expected.Count -ne 1 -or $rows[0] -notmatch '^127\.0\.0\.1:') { Fail "PORT_OWNERSHIP=FAIL port=$port service=$ServiceName observed=$($rows -join ';')" }
 }
 
-function Get-PortContract([string]$Service) {
-    $contract = @($PortContracts | Where-Object { $_.Service -eq $Service })
-    if ($contract.Count -ne 1) { Fail "PORT_CONTRACT_NOT_FOUND service=$Service" }
-    return $contract[0]
-}
-
-function Assert-CoreRuntime([hashtable]$EnvMap) {
-    Assert-OneShotSucceeded -Service 'identity-migrate'
-    Assert-OneShotSucceeded -Service 'dsh-migrate'
-    Assert-OneShotSucceeded -Service 'js-deps'
-    Assert-RunningService -Service 'postgres' -Healthy
-    Assert-RunningService -Service 'mailpit'
-    Assert-RunningService -Service 'identity' -Healthy
-    Assert-RunningService -Service 'dsh' -Healthy
-    foreach ($service in @('mailpit','identity','dsh')) {
-        $contract = Get-PortContract -Service $service
-        Assert-CanonicalPublishedPort -Port (Require-TcpPort -Map $EnvMap -Name $contract.Key) -ExpectedService $service
+function Assert-Full-Runtime([hashtable]$EnvMap) {
+    Assert-No-Parallel-Runtime
+    Assert-No-Native-Backend
+    foreach ($serviceName in $OneShotServices) { Assert-OneShot $serviceName }
+    foreach ($serviceName in $RunningServices) {
+        $healthy = $serviceName -notin @('mailpit')
+        Assert-Service $serviceName -Healthy:$healthy
     }
+    foreach ($port in $Ports) { Assert-Port $EnvMap $port.Service $port.Key }
 }
 
-function Assert-CanonicalRuntime([hashtable]$EnvMap) {
-    Assert-NoParallelRuntimeResidue
-    Assert-NoUnexpectedCanonicalContainers
-    Assert-NoNativeBackendProcesses
-    Assert-CoreRuntime -EnvMap $EnvMap
-    foreach ($service in $OptionalServices) { Assert-RunningService -Service $service -Healthy }
-    foreach ($contract in @($PortContracts | Where-Object { $_.Service -in $OptionalServices })) {
-        Assert-CanonicalPublishedPort -Port (Require-TcpPort -Map $EnvMap -Name $contract.Key) -ExpectedService $contract.Service
+function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target) {
+    Assert-No-Parallel-Runtime
+    Assert-No-Native-Backend
+    foreach ($serviceName in @('identity-migrate','dsh-migrate','js-deps')) { Assert-OneShot $serviceName }
+    $targets = @('postgres','mailpit','identity','dsh',$Target) | Select-Object -Unique
+    foreach ($serviceName in $targets) {
+        $healthy = $serviceName -ne 'mailpit'
+        Assert-Service $serviceName -Healthy:$healthy
     }
+    foreach ($port in @($Ports | Where-Object { $_.Service -in @('mailpit','identity','dsh',$Target) })) { Assert-Port $EnvMap $port.Service $port.Key }
 }
 
-function Assert-TargetRuntime([hashtable]$EnvMap, [string]$Target) {
-    if ($Target -notin $OptionalServices) { Fail "RUNTIME_TARGET_NOT_ALLOWED target=$Target" }
-    Assert-NoParallelRuntimeResidue
-    Assert-NoUnexpectedCanonicalContainers
-    Assert-NoNativeBackendProcesses
-    Assert-CoreRuntime -EnvMap $EnvMap
-    Assert-RunningService -Service $Target -Healthy
-    $contract = Get-PortContract -Service $Target
-    Assert-CanonicalPublishedPort -Port (Require-TcpPort -Map $EnvMap -Name $contract.Key) -ExpectedService $Target
-}
-
-function Start-CanonicalRuntime {
-    $envMap = Ensure-Environment; Ensure-Docker; Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
-    Invoke-Compose -Arguments @('config','--quiet') -Quiet
-    Invoke-Compose -Arguments @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')
-    Assert-CanonicalRuntime -EnvMap $envMap
-    Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=full'; Write-Host 'DOCKER_RUNTIME=PASS'; Write-Host 'BROWSER_RUNTIME=PASS'; Write-Host "DOCKER_OWNS=$($CanonicalServices -join ',')"; Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'
-    return $envMap
-}
-
-function Stop-OtherOptionalServices([string]$Target) {
-    $others = @($OptionalServices | Where-Object { $_ -ne $Target })
-    if ($others.Count -gt 0) { Invoke-Compose -Arguments (@('stop') + $others) -Quiet }
-}
-
-function Ensure-TargetRuntime([string]$Target) {
-    if ($Target -notin $OptionalServices) { Fail "RUNTIME_TARGET_NOT_ALLOWED target=$Target" }
-    $envMap = Ensure-Environment; Ensure-Docker; Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
-    Invoke-Compose -Arguments @('config','--quiet') -Quiet
-    Stop-OtherOptionalServices -Target $Target
-    Invoke-Compose -Arguments @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans',$Target)
-    Assert-TargetRuntime -EnvMap $envMap -Target $Target
-    Write-Host "CANONICAL_LOCAL_RUNTIME=PASS mode=target target=$Target"
+function Start-Full-Runtime {
+    $envMap = Ensure-Environment
+    Ensure-Docker
+    Assert-No-Parallel-Runtime
+    Assert-No-Native-Backend
+    Compose @('config','--quiet') -Quiet
+    # Full-stack up starts every Docker-owned component without making image rebuild a startup tax.
+    Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
+    Assert-Full-Runtime $envMap
+    Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=full'
     Write-Host 'DOCKER_RUNTIME=PASS'
+    Write-Host 'DOCKER_OWNS=postgres,mailpit,identity-migrate,identity,dsh-migrate,dsh,js-deps,control,metro-client,metro-partner,metro-captain,metro-field'
+}
+
+function Ensure-Target-Runtime([string]$Target) {
+    $envMap = Ensure-Environment
+    Ensure-Docker
+    Assert-No-Parallel-Runtime
+    Assert-No-Native-Backend
+    Compose @('config','--quiet') -Quiet
+    # Compose starts causal dependencies. Already-running unrelated surfaces are left untouched.
+    Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans',$Target)
+    Assert-Target-Runtime $envMap $Target
+    Write-Host "CANONICAL_LOCAL_RUNTIME=PASS mode=target target=$Target"
     return $envMap
 }
 
-function Stop-CanonicalRuntime { Ensure-Docker; Invoke-Compose -Arguments @('down','--remove-orphans'); Write-Host 'CANONICAL_RUNTIME_STOP=PASS data_volume=preserved' }
-
-function Write-DockerProjectStatus {
-    Write-Host "DOCKER_PROJECT=$CanonicalProject"
-    Write-Host "DOCKER_EXPECTED_SERVICES=$($CanonicalServices.Count)"
-    $present = 0
-    foreach ($service in $CanonicalServices) {
-        $ids = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --filter "label=com.docker.compose.service=$service" --format '{{.ID}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-        if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect $CanonicalProject/$service." }
-        if ($ids.Count -eq 0) { Write-Host "DOCKER_SERVICE=$service state=missing"; continue }
-        if ($ids.Count -ne 1) { Write-Host "DOCKER_SERVICE=$service state=duplicate count=$($ids.Count)"; continue }
-        $present += 1
+function Show-Status {
+    Write-Host "RUNTIME_STATUS=READ_ONLY scope=full-canonical-compose"
+    $envMap = $null
+    try { $envMap = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)" }
+    Ensure-Docker
+    foreach ($serviceName in $CanonicalServices) {
+        $ids = @(Container-Ids $serviceName)
+        if ($ids.Count -eq 0) { Write-Host "DOCKER_SERVICE=$serviceName state=missing"; continue }
+        if ($ids.Count -ne 1) { Write-Host "DOCKER_SERVICE=$serviceName state=duplicate count=$($ids.Count)"; continue }
         $state = (& docker inspect --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.State.ExitCode}}' $ids[0]).Trim()
-        if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect container state for $service." }
-        Write-Host "DOCKER_SERVICE=$service state=$state"
+        Write-Host "DOCKER_SERVICE=$serviceName state=$state"
     }
-    $observed = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --format '{{.Label "com.docker.compose.service"}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
-    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical Docker project.' }
-    $unexpected = @($observed | Where-Object { $_ -notin $CanonicalServices })
-    foreach ($service in $unexpected) { Write-Host "DOCKER_SERVICE=$service state=unexpected" }
-    Write-Host "DOCKER_PRESENT_SERVICES=$present"
-    Write-Host "DOCKER_UNEXPECTED_SERVICES=$($unexpected.Count)"
 }
 
-function Show-RuntimeStatus {
-    Write-Host 'RUNTIME_STATUS=READ_ONLY scope=full-canonical-compose'
-    try { $null = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)" }
-    Ensure-Docker
-    Write-DockerProjectStatus
+function Doctor {
+    $failures = @()
+    $envMap = $null
+    try { $envMap = Read-CanonicalEnvironment } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)"; $failures += 'environment' }
+    try { Ensure-Docker; Assert-No-Parallel-Runtime; Assert-No-Native-Backend } catch { Write-Host "DOCKER_RUNTIME=NOT_READY reason=$($_.Exception.Message)"; $failures += 'docker' }
+    if ($null -ne $envMap -and $failures.Count -eq 0) {
+        try { Assert-Full-Runtime $envMap; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose' }
+        catch { Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"; $failures += 'runtime' }
+    }
+    Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'
+    Write-Host 'DESTRUCTIVE=0'
+    if ($failures.Count -gt 0) { Write-Host "RUNTIME_DOCTOR=NOT_READY failures=$($failures.Count)"; exit 1 }
+    Write-Host 'RUNTIME_DOCTOR=PASS'
 }
 
-function Show-RuntimeLogs {
-    Ensure-Docker
-    $base = Get-ComposeBaseArgs
-    & docker @base logs --tail 200 -f
-    if ($LASTEXITCODE -ne 0) { Fail 'Docker Compose logs failed.' }
-}
-
-function Invoke-RuntimeDoctor {
-    $failures = @(); $envMap = $null
-    try { $envMap = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)"; $failures += 'local environment' }
-    try { Ensure-Docker; Write-Host 'DOCKER_DAEMON=PASS'; Write-DockerProjectStatus } catch { Write-Host "DOCKER_DAEMON=NOT_READY reason=$($_.Exception.Message)"; $failures += 'docker' }
-    if ($null -ne $envMap -and $failures.Count -eq 0) { try { Assert-CanonicalRuntime -EnvMap $envMap; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose' } catch { Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"; $failures += 'runtime' } }
-    Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'; Write-Host 'ADMIN_REQUIRED=0'; Write-Host 'DESTRUCTIVE=0'
-    if ($failures.Count -eq 0) { Write-Host 'RUNTIME_DOCTOR=PASS'; return }
-    Write-Host "RUNTIME_DOCTOR=NOT_READY failures=$($failures.Count)"; exit 1
-}
-
-function Reset-CanonicalRuntime {
-    Ensure-Docker; Write-Host 'RUNTIME_RESET=DESTRUCTIVE_LOCAL_DATA scope=postgres_application_state dependency_volumes=preserved secrets=preserved'; Invoke-Compose -Arguments @('down','--remove-orphans')
-    $postgresVolumes = @(& docker volume ls --filter "label=com.docker.compose.project=$CanonicalProject" --format '{{.Name}}' | Where-Object { $_ -match 'samrim-postgres-data$' })
-    foreach ($volume in $postgresVolumes) { & docker volume rm -f $volume *> $null; if ($LASTEXITCODE -ne 0) { Fail "RUNTIME_RESET=FAIL volume=$volume" } }
-    Assert-NoNativeBackendProcesses; Write-Host 'RUNTIME_RESET=PASS final_state=DOWN secrets=preserved'
-}
-
-function Purge-CanonicalRuntime {
-    Ensure-Docker; Write-Host 'RUNTIME_PURGE=DESTRUCTIVE_LOCAL_DATA scope=samrim Docker containers/networks/volumes; local .env secrets are preserved'
-    try { Invoke-Compose -Arguments @('down','--volumes','--remove-orphans') } catch { Write-Host "Canonical compose teardown was not complete: $($_.Exception.Message)" }
-    Assert-NoNativeBackendProcesses; Write-Host 'RUNTIME_PURGE=PASS final_state=DOWN secrets=preserved'
-}
-
-function Start-ControlPanel {
-    $envMap = Ensure-TargetRuntime -Target 'control'
-    $controlPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_CONTROL_PORT'
-    Write-Host 'CONTROL_PANEL_OWNER=DOCKER'
-    Write-Host "CONTROL_PANEL_READY=PASS url=http://127.0.0.1:$controlPort"
-    Write-Host 'CONTROL_PANEL_OPEN=MANUAL'
-}
-
-function Start-MobileSurface {
-    if ([string]::IsNullOrWhiteSpace($Surface)) { Fail 'SURFACE_REQUIRED allowed=client,partner,captain,field' }
-    $target = "metro-$Surface"
-    $null = Ensure-TargetRuntime -Target $target
-    Write-Host "MOBILE_SURFACE_RUNTIME=PASS surface=$Surface service=$target"
-}
-
-function Require-AllowedService {
-    if ([string]::IsNullOrWhiteSpace($Service)) { Fail "SERVICE_REQUIRED allowed=$($AllowedServices -join ',')" }
-    if ($Service -notin $AllowedServices) { Fail "SERVICE_NOT_ALLOWED service=$Service allowed=$($AllowedServices -join ',')" }
+function Require-Service {
+    if (-not $Service -or $Service -notin $AllowedServices) { Fail "SERVICE_REQUIRED allowed=$($AllowedServices -join ',')" }
     return $Service
 }
 
 function Rebuild-Service {
-    $target = Require-AllowedService
-    $null = Ensure-Environment; Ensure-Docker; Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
-    Invoke-Compose -Arguments @('config','--quiet') -Quiet
-    Invoke-Compose -Arguments @('up','-d','--build','--force-recreate','--no-deps','--wait','--wait-timeout','300',$target)
-    Wait-RunningService -Service $target -Healthy
+    $target = Require-Service
+    $null = Ensure-Environment
+    Ensure-Docker
+    Assert-No-Parallel-Runtime
+    Assert-No-Native-Backend
+    if ($target -eq 'identity') {
+        Compose @('build','identity-migrate','identity')
+        Compose @('up','-d','--force-recreate','--wait','--wait-timeout','300','identity')
+    }
+    elseif ($target -eq 'dsh') {
+        Compose @('build','dsh-migrate','dsh')
+        Compose @('up','-d','--force-recreate','--wait','--wait-timeout','300','dsh')
+    }
+    else {
+        Compose @('up','-d','--build','--force-recreate','--no-deps','--wait','--wait-timeout','300',$target)
+    }
     Write-Host "RUNTIME_SERVICE_REBUILD=PASS service=$target"
 }
 
 function Restart-Service {
-    $target = Require-AllowedService
-    $null = Read-CanonicalEnvironment; Ensure-Docker
-    Invoke-Compose -Arguments @('restart',$target)
-    Wait-RunningService -Service $target -Healthy
-    Write-Host "RUNTIME_SERVICE_RESTART=PASS service=$target"
-}
-
-function Show-ServiceLogs {
-    $target = Require-AllowedService
+    $target = Require-Service
+    $null = Read-CanonicalEnvironment
     Ensure-Docker
-    $base = Get-ComposeBaseArgs
-    & docker @base logs --tail 200 -f $target
-    if ($LASTEXITCODE -ne 0) { Fail "Docker Compose logs failed service=$target" }
+    Compose @('restart',$target)
+    Write-Host "RUNTIME_SERVICE_RESTART=PASS service=$target"
 }
 
 Push-Location $RepoRoot
 try {
     switch ($Action) {
-        'Up' {$null=Start-CanonicalRuntime}
-        'Down' {Stop-CanonicalRuntime}
-        'Restart' {Stop-CanonicalRuntime;$null=Start-CanonicalRuntime}
-        'Status' {Show-RuntimeStatus}
-        'Logs' {Show-RuntimeLogs}
-        'Doctor' {Invoke-RuntimeDoctor}
-        'Reset' {Reset-CanonicalRuntime}
-        'Purge' {Purge-CanonicalRuntime}
-        'Control' {Start-ControlPanel}
-        'Surface' {Start-MobileSurface}
-        'Rebuild' {Rebuild-Service}
-        'RestartService' {Restart-Service}
-        'LogsService' {Show-ServiceLogs}
+        'Up' { Start-Full-Runtime }
+        'Down' { Ensure-Docker; Compose @('down','--remove-orphans'); Write-Host 'CANONICAL_RUNTIME_STOP=PASS data_volume=preserved' }
+        'Restart' { Ensure-Docker; Compose @('down','--remove-orphans'); Start-Full-Runtime }
+        'Status' { Show-Status }
+        'Logs' { Ensure-Docker; Compose @('logs','--tail','200','-f') }
+        'Doctor' { Doctor }
+        'Reset' {
+            Ensure-Docker
+            Compose @('down','--remove-orphans')
+            $volumes = @(& docker volume ls --filter "label=com.docker.compose.project=$Project" --format '{{.Name}}' | Where-Object { $_ -match 'samrim-postgres-data$' })
+            foreach ($volume in $volumes) { & docker volume rm -f $volume *> $null; if ($LASTEXITCODE -ne 0) { Fail "RUNTIME_RESET=FAIL volume=$volume" } }
+            Write-Host 'RUNTIME_RESET=PASS final_state=DOWN secrets=preserved'
+        }
+        'Purge' { Ensure-Docker; Compose @('down','--volumes','--remove-orphans'); Write-Host 'RUNTIME_PURGE=PASS final_state=DOWN secrets=preserved' }
+        'Control' {
+            $envMap = Ensure-Target-Runtime 'control'
+            $port = Require-Port $envMap 'SAMRIM_CONTROL_PORT'
+            Write-Host "CONTROL_PANEL_READY=PASS url=http://127.0.0.1:$port"
+        }
+        'Surface' {
+            if (-not $Surface) { Fail 'SURFACE_REQUIRED allowed=client,partner,captain,field' }
+            $target = "metro-$Surface"
+            $null = Ensure-Target-Runtime $target
+            Write-Host "MOBILE_SURFACE_RUNTIME=PASS surface=$Surface service=$target"
+        }
+        'Rebuild' { Rebuild-Service }
+        'RestartService' { Restart-Service }
+        'LogsService' { $target = Require-Service; Ensure-Docker; Compose @('logs','--tail','200','-f',$target) }
     }
-} finally { Pop-Location }
+}
+finally {
+    Pop-Location
+}

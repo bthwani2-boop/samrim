@@ -145,7 +145,17 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
 	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if serviceCityID == "" || len(categoryID) > 128 || len(query) > 160 {
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	limit := 100
+	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+		parsed, parseErr := strconv.Atoi(rawLimit)
+		if parseErr != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	if serviceCityID == "" || len(categoryID) > 128 || len(query) > 160 || len(cursor) > 512 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog scope or filter is invalid")
 		return
 	}
@@ -157,7 +167,7 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 		writeStorePublicationError(w, err)
 		return
 	}
-	result, err := postgres.ReadPublicCatalog(r.Context(), s.db, r.PathValue("storeId"), serviceCityID, categoryID, query)
+	result, err := postgres.ReadPublicCatalog(r.Context(), s.db, r.PathValue("storeId"), serviceCityID, categoryID, query, limit, cursor)
 	if errors.Is(err, postgres.ErrStoreNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "published store catalog was not found")
 		return
@@ -174,7 +184,19 @@ func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *htt
 	for _, offer := range result.Offers {
 		offers = append(offers, toStoreOffer(offer))
 	}
-	writeJSON(w, http.StatusOK, contract.PublicCatalogResponse{StoreID: result.StoreID, VerticalID: result.VerticalID, Categories: categories, Offers: offers})
+	sections := make([]contract.CatalogStorefrontSection, 0, len(result.Sections))
+	for _, section := range result.Sections {
+		nameEn := ""
+		if section.NameEn != nil {
+			nameEn = *section.NameEn
+		}
+		sections = append(sections, contract.CatalogStorefrontSection{ID: section.ID, StoreID: section.StoreID, NameAr: section.NameAr, NameEn: nameEn, Ordinal: section.Ordinal, Active: section.Active, Version: section.Version, OfferIds: section.OfferIDs, CreatedAt: section.CreatedAt, UpdatedAt: section.UpdatedAt})
+	}
+	nextCursor := ""
+	if result.NextCursor != nil {
+		nextCursor = *result.NextCursor
+	}
+	writeJSON(w, http.StatusOK, contract.PublicCatalogResponse{StoreID: result.StoreID, VerticalID: result.VerticalID, Categories: categories, Sections: sections, Offers: offers, NextCursor: nextCursor})
 }
 
 func requiredPublicationHeaders(w http.ResponseWriter, r *http.Request) (string, string, string, int, bool) {

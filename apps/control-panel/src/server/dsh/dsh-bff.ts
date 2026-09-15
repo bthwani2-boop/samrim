@@ -180,7 +180,7 @@ export async function listCatalogProducts(query: string, verticalId: string, con
 }
 
 export async function createCatalogProduct(input: CreateCatalogProductRequest, context: CatalogProductMutationContext): Promise<Readonly<{ status: number; payload: CatalogProductResponse }>> {
-  if (!input.canonicalName.trim() || !input.verticalId.trim() || !input.scope.trim() || !input.sellUnit || input.categoryIds.length < 1) throw new Error("DSH_PRODUCT_INPUT_INVALID");
+  if (!input.canonicalName.trim() || !input.verticalId.trim() || !input.scope.trim() || !input.measurementKind || !input.baseUnit || input.categoryIds.length < 1) throw new Error("DSH_PRODUCT_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_PRODUCT_IDEMPOTENCY_INVALID");
   return requestDshJson<CatalogProductResponse>(dshOperationPaths.createCatalogProduct.method, dshOperationPaths.createCatalogProduct.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });

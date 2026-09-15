@@ -3,7 +3,7 @@ declare const process: { env: Record<string, string | undefined> };
 import type { IdentityClient } from "./client";
 import { createIdentityClient } from "./client";
 import type { ActorType } from "./generated/identity-types";
-import type { IdentitySessionState, IdentitySurface } from "./session";
+import { identityStorageError, type IdentitySessionState, type IdentitySurface } from "./session";
 import { IdentitySessionManager } from "./session";
 import { validateServiceUrl } from "./url";
 
@@ -38,10 +38,20 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
   }
 
   async function clientInstanceId(): Promise<string> {
-    const existing = (await config.secureStorage.getItem(deviceKey))?.trim();
+    let existingValue: string | null;
+    try {
+      existingValue = await config.secureStorage.getItem(deviceKey);
+    } catch (error) {
+      throw identityStorageError("read", error);
+    }
+    const existing = existingValue?.trim();
     if (existing && existing.length >= 8) return existing;
     const created = config.cryptoRandomUUID();
-    await config.secureStorage.setItem(deviceKey, created);
+    try {
+      await config.secureStorage.setItem(deviceKey, created);
+    } catch (error) {
+      throw identityStorageError("write", error);
+    }
     return created;
   }
 

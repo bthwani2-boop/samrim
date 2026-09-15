@@ -6,5 +6,22 @@
     "libsDir": "packages"
   },
   "plugins": [],
-  "analytics": false
+  "analytics": false,
+  "targetDefaults": {
+    "typecheck": {
+      "cache": true
+    },
+    "test": {
+      "cache": true
+    },
+    "build": {
+      "cache": true
+    },
+    "export-smoke": {
+      "cache": true
+    },
+    "vet": {
+      "cache": true
+    }
+  }
 }

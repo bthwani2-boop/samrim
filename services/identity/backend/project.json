@@ -1,0 +1,46 @@
+{
+  "name": "identity-backend",
+  "root": "services/identity/backend",
+  "projectType": "application",
+  "implicitDependencies": [
+    "identity",
+    "identity-database"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "command": "go build ./...",
+        "cwd": "services/identity/backend"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "command": "go test ./...",
+        "cwd": "services/identity/backend"
+      }
+    },
+    "vet": {
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "command": "go vet ./...",
+        "cwd": "services/identity/backend"
+      }
+    }
+  },
+  "tags": [
+    "scope:identity-backend",
+    "type:service"
+  ],
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "{workspaceRoot}/go.work",
+      "{workspaceRoot}/go.work.sum"
+    ]
+  }
+}

@@ -3,11 +3,11 @@ import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, View
 import * as Crypto from "expo-crypto";
 
 import { resolveTheme } from "@bthwani/design-system";
-import type { CatalogProduct, CatalogStoreOffer, CatalogVariant } from "@bthwani/dsh";
+import type { CatalogProduct, CatalogProductProposal, CatalogStoreOffer, CatalogVariant } from "@bthwani/dsh";
 import { createDshMobileClient } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
-type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer> } | { kind: "error" };
+type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };
 
 function baseUrl(): string { const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim(); if (!value) throw new Error("DSH_BASE_URL_REQUIRED"); return value; }
 const dshClient = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
@@ -36,12 +36,24 @@ export function StoreOfferManagement({ storeId }: { storeId: string }) {
   const [priceMinor, setPriceMinor] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [storeProductName, setStoreProductName] = useState("");
+  const [storeProductVerticalID, setStoreProductVerticalID] = useState("");
+  const [storeProductCategoryID, setStoreProductCategoryID] = useState("");
+  const [proposalID, setProposalID] = useState("");
+  const [proposalName, setProposalName] = useState("");
+  const [proposalVerticalID, setProposalVerticalID] = useState("");
+  const [proposalCategoryID, setProposalCategoryID] = useState("");
+  const [modifierName, setModifierName] = useState("");
+  const [modifierOptionName, setModifierOptionName] = useState("");
+  const [sectionName, setSectionName] = useState("");
+  const [extensionOfferID, setExtensionOfferID] = useState("");
 
   const load = useCallback(async () => {
     setState({ kind: "loading" }); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      setState({ kind: "ready", offers: await dshClient().readOwnStoreOffers(token, storeId) });
+      const [offers, proposals] = await Promise.all([dshClient().readOwnStoreOffers(token, storeId), dshClient().listOwnCatalogProductProposals(token)]);
+      setState({ kind: "ready", offers, proposals: proposals.proposals });
     } catch (nextError) { reportError(nextError); setState({ kind: "error" }); setError(errorText(nextError)); }
   }, [storeId]);
   useEffect(() => { void load(); }, [load]);
@@ -58,9 +70,8 @@ export function StoreOfferManagement({ storeId }: { storeId: string }) {
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const quantityPolicy = selectedVariant.sellUnit === "kg" ? "MEASURED" : "DISCRETE";
-      const pricingBasis = selectedVariant.sellUnit === "kg" ? "PER_KILOGRAM" : "PER_UNIT";
-      await dshClient().createStoreOffer(token, storeId, selectedVariant.id, parsedPrice, quantityPolicy, pricingBasis);
+      const policy = offerPolicy(selectedVariant);
+      await dshClient().createStoreOffer(token, storeId, selectedVariant.id, parsedPrice, policy.quantityPolicy, policy.pricingBasis, policy.quantityMinBaseUnits, policy.quantityMaxBaseUnits, policy.quantityStepBaseUnits, policy.pricingUnitBaseUnits);
       setSelectedProduct(null); setSelectedVariant(null); setPriceMinor(""); await load();
     } catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
@@ -68,7 +79,35 @@ export function StoreOfferManagement({ storeId }: { storeId: string }) {
   async function updateOffer(offer: CatalogStoreOffer, publicationState: "draft" | "published" | "hidden", availability: boolean) {
     if (busy) return;
     setBusy(true); setError("");
-    try { const token = await getUsableIdentityAccessToken(); await dshClient().updateStoreOffer(token, storeId, offer.offerId, offer.priceMinor, publicationState, availability, offer.version); await load(); }
+      try { const token = await getUsableIdentityAccessToken(); await dshClient().updateStoreOffer(token, storeId, offer.offerId, offer.priceMinor, publicationState, availability, offer.version, offer.quantityPolicy, offer.pricingBasis, offer.quantityMinBaseUnits, offer.quantityMaxBaseUnits, offer.quantityStepBaseUnits, offer.pricingUnitBaseUnits); await load(); }
+    catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
+  }
+
+  async function createStoreProduct() {
+    if (busy || !storeProductName.trim() || !storeProductVerticalID.trim() || !storeProductCategoryID.trim()) return;
+    setBusy(true); setError("");
+    try { const token = await getUsableIdentityAccessToken(); await dshClient().createStoreScopedProduct(token, storeId, { canonicalName: storeProductName, verticalId: storeProductVerticalID, scope: "STORE_SCOPED", storeId, variantTitle: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [storeProductCategoryID] }); setStoreProductName(""); await load(); }
+    catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
+  }
+
+  async function createProposal() {
+    if (busy || !proposalID.trim() || !proposalName.trim() || !proposalVerticalID.trim() || !proposalCategoryID.trim()) return;
+    setBusy(true); setError("");
+    try { const token = await getUsableIdentityAccessToken(); await dshClient().createCatalogProductProposal(token, { id: proposalID, verticalId: proposalVerticalID, categoryId: proposalCategoryID, proposedName: proposalName, proposedVariantTitle: "الافتراضي", proposedMeasurementKind: "DISCRETE", proposedBaseUnit: "COUNT" }); setProposalName(""); await load(); }
+    catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
+  }
+
+  async function createModifiersAndAttach() {
+    if (busy || !modifierName.trim()) return;
+    setBusy(true); setError("");
+    try { const token = await getUsableIdentityAccessToken(); const group = await dshClient().createCatalogModifierGroup(token, storeId, { nameAr: modifierName, required: false, minSelections: 0, maxSelections: 1, active: true }); if (modifierOptionName.trim()) await dshClient().createCatalogModifierOption(token, storeId, group.group.id, { nameAr: modifierOptionName, priceDeltaMinor: 0, availability: true, ordinal: 0 }); if (extensionOfferID) await dshClient().attachCatalogModifierGroup(token, storeId, extensionOfferID, group.group.id); setModifierName(""); setModifierOptionName(""); await load(); }
+    catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
+  }
+
+  async function createSectionAndAttach() {
+    if (busy || !sectionName.trim()) return;
+    setBusy(true); setError("");
+    try { const token = await getUsableIdentityAccessToken(); const section = await dshClient().createCatalogStorefrontSection(token, storeId, { nameAr: sectionName, ordinal: 0, active: true }); if (extensionOfferID) await dshClient().attachCatalogOfferToSection(token, storeId, section.section.id, extensionOfferID); setSectionName(""); await load(); }
     catch (nextError) { reportError(nextError); setError(errorText(nextError)); } finally { setBusy(false); }
   }
 
@@ -78,14 +117,22 @@ export function StoreOfferManagement({ storeId }: { storeId: string }) {
     <View style={styles.container} accessibilityLabel="إدارة عروض المتجر">
       <Text style={styles.title}>كتالوج المتجر وعروضه</Text><Text style={styles.muted}>اختر نسخة معتمدة، ثم حدّد سعرها وتوافرها ونشرها لهذا المتجر.</Text>
       <View style={styles.searchRow}><TextInput accessibilityLabel="البحث في الكتالوج" editable={!busy} onChangeText={setQuery} onSubmitEditing={() => void searchProducts()} placeholder="ابحث باسم المنتج" returnKeyType="search" value={query} style={styles.input} /><Pressable accessibilityRole="button" disabled={busy} onPress={() => void searchProducts()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>بحث</Text></Pressable></View>
-      {products.length ? <View style={styles.productList}>{products.map((product) => <View key={product.id} style={styles.product}><Text style={styles.itemTitle}>{product.canonicalName}</Text>{product.variants.map((variant) => <Pressable accessibilityRole="button" accessibilityLabel={`اختيار ${product.canonicalName} ${variant.title}`} key={variant.id} onPress={() => { setSelectedProduct(product); setSelectedVariant(variant); }} style={[styles.variant, selectedVariant?.id === variant.id && styles.productSelected]}><Text style={styles.muted}>{variant.title} · {variant.sellUnit === "kg" ? "بالكيلو" : "بالقطعة"}</Text></Pressable>)}</View>)}</View> : null}
+      {products.length ? <View style={styles.productList}>{products.map((product) => <View key={product.id} style={styles.product}><Text style={styles.itemTitle}>{product.canonicalName}</Text>{product.variants.map((variant) => <Pressable accessibilityRole="button" accessibilityLabel={`اختيار ${product.canonicalName} ${variant.title}`} key={variant.id} onPress={() => { setSelectedProduct(product); setSelectedVariant(variant); }} style={[styles.variant, selectedVariant?.id === variant.id && styles.productSelected]}><Text style={styles.muted}>{variant.title} · {variant.measurementKind === "DISCRETE" ? "بالقطعة" : variant.baseUnit === "GRAM" ? "بالغرام" : "بالمليلتر"}</Text></Pressable>)}</View>)}</View> : null}
       {selectedVariant && selectedProduct ? <View style={styles.form}><Text style={styles.selected}>المحدد: {selectedProduct.canonicalName} · {selectedVariant.title}</Text><TextInput accessibilityLabel="السعر بالريال اليمني" editable={!busy} keyboardType="number-pad" onChangeText={setPriceMinor} placeholder="السعر بالريال اليمني" value={priceMinor} style={styles.input} /><Pressable accessibilityRole="button" disabled={busy || !canAdd} onPress={() => void addOffer()} style={styles.button}><Text style={styles.buttonText}>إضافة عرض للمتجر</Text></Pressable></View> : null}
+      <View style={styles.managementBlock}><Text style={styles.itemTitle}>منتج خاص بهذا المتجر</Text><Text style={styles.muted}>أنشئ هوية Store-scoped مملوكة لهذا المتجر، مع المجال والتصنيف الكانونيين.</Text><TextInput accessibilityLabel="اسم منتج المتجر" editable={!busy} onChangeText={setStoreProductName} placeholder="اسم المنتج" value={storeProductName} style={styles.input} /><TextInput accessibilityLabel="معرّف المجال" editable={!busy} onChangeText={setStoreProductVerticalID} placeholder="معرّف المجال" value={storeProductVerticalID} style={styles.input} /><TextInput accessibilityLabel="معرّف التصنيف" editable={!busy} onChangeText={setStoreProductCategoryID} placeholder="معرّف التصنيف" value={storeProductCategoryID} style={styles.input} /><Pressable accessibilityRole="button" disabled={busy || !storeProductName.trim() || !storeProductVerticalID.trim() || !storeProductCategoryID.trim()} onPress={() => void createStoreProduct()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إنشاء منتج المتجر</Text></Pressable></View>
+      <View style={styles.managementBlock}><Text style={styles.itemTitle}>اقتراح منتج للمراجعة</Text><Text style={styles.muted}>المقترح لا يصبح حقيقة كتالوج إلا بعد قرار المالك.</Text><TextInput accessibilityLabel="معرّف المقترح" editable={!busy} onChangeText={setProposalID} placeholder="معرّف المقترح" value={proposalID} style={styles.input} /><TextInput accessibilityLabel="اسم المقترح" editable={!busy} onChangeText={setProposalName} placeholder="اسم المنتج المقترح" value={proposalName} style={styles.input} /><TextInput accessibilityLabel="مجال المقترح" editable={!busy} onChangeText={setProposalVerticalID} placeholder="معرّف المجال" value={proposalVerticalID} style={styles.input} /><TextInput accessibilityLabel="تصنيف المقترح" editable={!busy} onChangeText={setProposalCategoryID} placeholder="معرّف التصنيف" value={proposalCategoryID} style={styles.input} /><Pressable accessibilityRole="button" disabled={busy || !proposalID.trim() || !proposalName.trim() || !proposalVerticalID.trim() || !proposalCategoryID.trim()} onPress={() => void createProposal()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إرسال المقترح</Text></Pressable>{state.kind === "ready" && state.proposals.length ? state.proposals.map((proposal) => <Text key={proposal.id} style={styles.muted}>{proposal.id} · {proposal.state}{proposal.correctionReason ? ` · ${proposal.correctionReason}` : ""}</Text>) : null}</View>
+      <View style={styles.managementBlock}><Text style={styles.itemTitle}>أقسام وإضافات المتجر</Text><Text style={styles.muted}>اختر عرضًا ثم أنشئ مجموعة إضافات أو قسم عرض؛ القراءة التالية تعيد الحالة الكانونية.</Text><View style={styles.offerPicker}>{state.kind === "ready" ? state.offers.map((offer) => <Pressable accessibilityRole="button" key={offer.offerId} onPress={() => setExtensionOfferID(offer.offerId)} style={[styles.variant, extensionOfferID === offer.offerId && styles.productSelected]}><Text style={styles.muted}>{offer.productName} · {offer.offerId}</Text></Pressable>) : null}</View><TextInput accessibilityLabel="اسم مجموعة الإضافات" editable={!busy} onChangeText={setModifierName} placeholder="اسم مجموعة الإضافات" value={modifierName} style={styles.input} /><TextInput accessibilityLabel="اسم خيار الإضافة" editable={!busy} onChangeText={setModifierOptionName} placeholder="اسم خيار اختياري" value={modifierOptionName} style={styles.input} /><Pressable accessibilityRole="button" disabled={busy || !modifierName.trim()} onPress={() => void createModifiersAndAttach()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إنشاء مجموعة إضافات وربطها</Text></Pressable><TextInput accessibilityLabel="اسم القسم" editable={!busy} onChangeText={setSectionName} placeholder="اسم قسم المتجر" value={sectionName} style={styles.input} /><Pressable accessibilityRole="button" disabled={busy || !sectionName.trim()} onPress={() => void createSectionAndAttach()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إنشاء قسم وربطه</Text></Pressable></View>
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة عروض المتجر…</Text></View> : null}
       {state.kind === "error" ? <View style={styles.state}><Text style={styles.muted}>{error}</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}
-      {state.kind === "ready" ? state.offers.length === 0 ? <Text style={styles.muted}>لا توجد عروض مرتبطة بهذا المتجر بعد.</Text> : <View style={styles.offerList}>{state.offers.map((offer) => <View key={offer.offerId} style={styles.item}><View style={styles.itemText}><Text style={styles.itemTitle}>{offer.productName}</Text><Text style={styles.muted}>{offer.priceMinor} {offer.currency} · {offer.sellUnit === "kg" ? "بالكيلو" : "بالقطعة"} · v{offer.version} · {offer.publicationState}</Text></View><Switch accessibilityLabel={`توافر ${offer.productName}`} disabled={busy} onValueChange={(available) => void updateOffer(offer, offer.publicationState, available)} value={offer.availability} /><Pressable accessibilityRole="button" disabled={busy} onPress={() => void updateOffer(offer, offer.publicationState === "published" ? "hidden" : "published", offer.availability)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{offer.publicationState === "published" ? "إخفاء" : "نشر"}</Text></Pressable></View>)}</View> : null}
+      {state.kind === "ready" ? state.offers.length === 0 ? <Text style={styles.muted}>لا توجد عروض مرتبطة بهذا المتجر بعد.</Text> : <View style={styles.offerList}>{state.offers.map((offer) => <View key={offer.offerId} style={styles.item}><View style={styles.itemText}><Text style={styles.itemTitle}>{offer.productName}</Text><Text style={styles.muted}>{offer.priceMinor} {offer.currency} · {offer.measurementKind === "DISCRETE" ? "بالقطعة" : offer.baseUnit === "GRAM" ? "بالغرام" : "بالمليلتر"} · v{offer.version} · {offer.publicationState}</Text></View><Switch accessibilityLabel={`توافر ${offer.productName}`} disabled={busy} onValueChange={(available) => void updateOffer(offer, offer.publicationState, available)} value={offer.availability} /><Pressable accessibilityRole="button" disabled={busy} onPress={() => void updateOffer(offer, offer.publicationState === "published" ? "hidden" : "published", offer.availability)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{offer.publicationState === "published" ? "إخفاء" : "نشر"}</Text></Pressable></View>)}</View> : null}
       {error && state.kind !== "error" ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 12, marginTop: 16, padding: 14, width: "100%" }, state: { alignItems: "center", gap: 8 }, title: { color: theme.structure, fontSize: 17, fontWeight: "800" }, muted: { color: theme.colorMuted, fontSize: 13 }, selected: { color: theme.structure, fontSize: 14, fontWeight: "700" }, searchRow: { flexDirection: "row", gap: 8 }, form: { gap: 8 }, input: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, color: theme.structure, flex: 1, minHeight: 44, paddingHorizontal: 10 }, productList: { gap: 8 }, product: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 6, padding: 10 }, variant: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, padding: 8 }, productSelected: { borderColor: theme.actionBackground, borderWidth: 2 }, offerList: { gap: 10 }, item: { alignItems: "center", borderColor: theme.borderColor, borderTopWidth: 1, flexDirection: "row", gap: 10, paddingTop: 12 }, itemText: { flex: 1, gap: 3 }, itemTitle: { color: theme.structure, fontSize: 15, fontWeight: "700" }, button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 8, justifyContent: "center", minHeight: 44, paddingHorizontal: 12 }, buttonText: { color: theme.surface, fontWeight: "800" }, secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, justifyContent: "center", minHeight: 40, paddingHorizontal: 10 }, secondaryButtonText: { color: theme.structure, fontSize: 13, fontWeight: "700" }, error: { color: theme.danger, fontSize: 13 } }); }
+function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 12, marginTop: 16, padding: 14, width: "100%" }, state: { alignItems: "center", gap: 8 }, title: { color: theme.structure, fontSize: 17, fontWeight: "800" }, muted: { color: theme.colorMuted, fontSize: 13 }, selected: { color: theme.structure, fontSize: 14, fontWeight: "700" }, searchRow: { flexDirection: "row", gap: 8 }, form: { gap: 8 }, managementBlock: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 8, padding: 10 }, offerPicker: { gap: 6 }, input: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, color: theme.structure, flex: 1, minHeight: 44, paddingHorizontal: 10 }, productList: { gap: 8 }, product: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 6, padding: 10 }, variant: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, padding: 8 }, productSelected: { borderColor: theme.actionBackground, borderWidth: 2 }, offerList: { gap: 10 }, item: { alignItems: "center", borderColor: theme.borderColor, borderTopWidth: 1, flexDirection: "row", gap: 10, paddingTop: 12 }, itemText: { flex: 1, gap: 3 }, itemTitle: { color: theme.structure, fontSize: 15, fontWeight: "700" }, button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 8, justifyContent: "center", minHeight: 44, paddingHorizontal: 12 }, buttonText: { color: theme.surface, fontWeight: "800" }, secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, justifyContent: "center", minHeight: 40, paddingHorizontal: 10 }, secondaryButtonText: { color: theme.structure, fontSize: 13, fontWeight: "700" }, error: { color: theme.danger, fontSize: 13 } }); }
+
+function offerPolicy(variant: CatalogVariant): { quantityPolicy: "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE"; pricingBasis: "PER_UNIT" | "PER_MEASURE"; quantityMinBaseUnits: number; quantityMaxBaseUnits: number; quantityStepBaseUnits: number; pricingUnitBaseUnits: number } {
+  if (variant.measurementKind === "DISCRETE") return { quantityPolicy: "DISCRETE", pricingBasis: "PER_UNIT", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 1000, quantityStepBaseUnits: 1, pricingUnitBaseUnits: 1 };
+  return { quantityPolicy: variant.measurementKind, pricingBasis: "PER_MEASURE", quantityMinBaseUnits: 1000, quantityMaxBaseUnits: 100000, quantityStepBaseUnits: 1000, pricingUnitBaseUnits: 1000 };
+}

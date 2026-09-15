@@ -1,11 +1,11 @@
 "use client";
 
-import type { CatalogProduct, CatalogVariant, CommerceVertical, SellUnit } from "@bthwani/dsh";
+import type { BaseUnit, CatalogProduct, CatalogVariant, CommerceVertical, MeasurementKind } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 
-type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; brand: string; variantTitle: string; sellUnit: SellUnit; categoryId: string; identifierType: string; identifierValue: string; imageUri: string; active: boolean };
+type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryId: string; identifierType: string; identifierValue: string; imageUri: string; active: boolean };
 
-const emptyForm: ProductForm = { verticalId: "", scope: "SHARED", canonicalName: "", brand: "", variantTitle: "", sellUnit: "piece", categoryId: "", identifierType: "GTIN", identifierValue: "", imageUri: "", active: true };
+const emptyForm: ProductForm = { verticalId: "", scope: "SHARED", canonicalName: "", brand: "", variantTitle: "", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryId: "", identifierType: "GTIN", identifierValue: "", imageUri: "", active: true };
 
 function readError(value: unknown): string {
   if (!value || typeof value !== "object") return "تعذر تنفيذ العملية.";
@@ -26,7 +26,7 @@ function firstVariant(product: CatalogProduct): CatalogVariant | undefined { ret
 function toForm(product: CatalogProduct): ProductForm {
   const variant = firstVariant(product);
   const identifier = variant?.identifiers[0];
-  return { verticalId: product.verticalId ?? "", scope: product.scope as ProductForm["scope"], canonicalName: product.canonicalName, brand: product.brand ?? "", variantTitle: variant?.title ?? "", sellUnit: variant?.sellUnit ?? "piece", categoryId: product.categoryIds[0] ?? "", identifierType: identifier?.type ?? "GTIN", identifierValue: identifier?.value ?? "", imageUri: product.media[0]?.uri ?? "", active: product.active };
+  return { verticalId: product.verticalId ?? "", scope: product.scope as ProductForm["scope"], canonicalName: product.canonicalName, brand: product.brand ?? "", variantTitle: variant?.title ?? "", measurementKind: variant?.measurementKind ?? "DISCRETE", baseUnit: variant?.baseUnit ?? "COUNT", categoryId: product.categoryIds[0] ?? "", identifierType: identifier?.type ?? "GTIN", identifierValue: identifier?.value ?? "", imageUri: product.media[0]?.uri ?? "", active: product.active };
 }
 
 export function CentralCatalog() {
@@ -82,7 +82,7 @@ export function CentralCatalog() {
   async function saveProduct() {
     if (busy || !form.canonicalName.trim() || !form.verticalId || !form.categoryId) return;
     setBusy(true); setError(""); setNotice("");
-    const body = { canonicalName: form.canonicalName.trim(), verticalId: form.verticalId, scope: form.scope, sellUnit: form.sellUnit, categoryIds: [form.categoryId], ...(form.variantTitle.trim() ? { variantTitle: form.variantTitle.trim() } : {}), ...(form.brand.trim() ? { brand: form.brand.trim() } : {}), ...(form.identifierValue.trim() ? { identifierType: form.identifierType, identifierValue: form.identifierValue.trim() } : {}), ...(form.imageUri.trim() ? { imageUri: form.imageUri.trim() } : {}), active: form.active };
+    const body = { canonicalName: form.canonicalName.trim(), verticalId: form.verticalId, scope: form.scope, measurementKind: form.measurementKind, baseUnit: form.baseUnit, categoryIds: [form.categoryId], ...(form.variantTitle.trim() ? { variantTitle: form.variantTitle.trim() } : {}), ...(form.brand.trim() ? { brand: form.brand.trim() } : {}), ...(form.identifierValue.trim() ? { identifierType: form.identifierType, identifierValue: form.identifierValue.trim() } : {}), ...(form.imageUri.trim() ? { imageUri: form.imageUri.trim() } : {}), active: form.active };
     try {
       const response = selected
         ? await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(selected.version) }, body: JSON.stringify({ canonicalName: body.canonicalName, verticalId: body.verticalId, scope: body.scope, active: body.active, ...(body.brand ? { brand: body.brand } : {}) }) })
@@ -109,7 +109,8 @@ export function CentralCatalog() {
           <label className="field-label" htmlFor="catalog-product-name">الاسم القانوني<input id="catalog-product-name" disabled={busy} value={form.canonicalName} onChange={(event) => setForm({ ...form, canonicalName: event.target.value })} /></label>
           <label className="field-label" htmlFor="catalog-product-brand">العلامة<input id="catalog-product-brand" disabled={busy} value={form.brand} onChange={(event) => setForm({ ...form, brand: event.target.value })} /></label>
           <label className="field-label" htmlFor="catalog-variant-title">عنوان النسخة<input id="catalog-variant-title" disabled={busy || selected !== null} value={form.variantTitle} onChange={(event) => setForm({ ...form, variantTitle: event.target.value })} placeholder="الافتراضي" /></label>
-          <label className="field-label" htmlFor="catalog-unit">وحدة البيع<select id="catalog-unit" disabled={busy || selected !== null} value={form.sellUnit} onChange={(event) => setForm({ ...form, sellUnit: event.target.value as SellUnit })}><option value="piece">قطعة</option><option value="kg">كيلو</option></select></label>
+          <label className="field-label" htmlFor="catalog-measurement-kind">سياسة القياس<select id="catalog-measurement-kind" disabled={busy || selected !== null} value={form.measurementKind} onChange={(event) => { const measurementKind = event.target.value as MeasurementKind; setForm({ ...form, measurementKind, baseUnit: measurementKind === "DISCRETE" ? "COUNT" : form.baseUnit === "COUNT" ? "GRAM" : form.baseUnit }); }}><option value="DISCRETE">عددي</option><option value="MEASURED">مقاس ثابت</option><option value="VARIABLE_MEASURE">مقاس متغير</option></select></label>
+          <label className="field-label" htmlFor="catalog-base-unit">الوحدة الأساسية<select id="catalog-base-unit" disabled={busy || selected !== null} value={form.baseUnit} onChange={(event) => setForm({ ...form, baseUnit: event.target.value as BaseUnit })}><option value="COUNT">قطعة</option><option value="GRAM">غرام</option><option value="MILLILITER">مل</option></select></label>
           <label className="field-label" htmlFor="catalog-identifier">نوع المعرّف<input id="catalog-identifier" disabled={busy || selected !== null} value={form.identifierType} onChange={(event) => setForm({ ...form, identifierType: event.target.value.toUpperCase() })} /></label>
           <label className="field-label" htmlFor="catalog-identifier-value">قيمة المعرّف<input id="catalog-identifier-value" disabled={busy || selected !== null} value={form.identifierValue} onChange={(event) => setForm({ ...form, identifierValue: event.target.value })} /></label>
           <label className="field-label" htmlFor="catalog-image">رابط الوسيط الأساسي<input id="catalog-image" disabled={busy || selected !== null} inputMode="url" value={form.imageUri} onChange={(event) => setForm({ ...form, imageUri: event.target.value })} placeholder="https://…" /></label>

@@ -214,7 +214,7 @@ const samplePair = {
   assert.equal(await storage.getItem(`test.${app}.identity.session.v1`), null);
 }
 
-// Test 5: Service unavailable -> preserves tokens, returns service_unavailable
+// Test 5: Service unavailable -> preserves tokens, returns degraded(service_unavailable)
 {
   const storage = new MockStorage({
     [`test.${app}.identity.session.v1`]: JSON.stringify({
@@ -232,11 +232,12 @@ const samplePair = {
   };
   const mgr = new IdentitySessionManager(client, storage, async () => "device-fp-12345", role, surface, `test.${app}`);
   const res = await mgr.restore();
-  assert.equal(res.kind, "service_unavailable");
+  assert.equal(res.kind, "degraded");
+  assert.equal(res.reason, "service_unavailable");
   assert.ok(await storage.getItem(`test.${app}.identity.session.v1`));
 }
 
-// Test 6: REFRESH_STALE race condition -> preserves tokens, returns refresh_conflict
+// Test 6: REFRESH_STALE race condition -> preserves tokens, returns degraded(refresh_conflict)
 {
   const storage = new MockStorage({
     [`test.${app}.identity.session.v1`]: JSON.stringify({
@@ -261,11 +262,112 @@ const samplePair = {
   };
   const mgr = new IdentitySessionManager(client, storage, async () => "device-fp-12345", role, surface, `test.${app}`);
   const res = await mgr.restore();
-  assert.equal(res.kind, "refresh_conflict");
+  assert.equal(res.kind, "degraded");
+  assert.equal(res.reason, "refresh_conflict");
   assert.ok(await storage.getItem(`test.${app}.identity.session.v1`));
 }
 
-// Test 7: Adopt credentials -> stores tokens and authenticated
+// Test 7: Non-terminal refresh failures preserve session material and remain fail-closed.
+for (const [status, code, reason] of [[429, "RATE_LIMITED", "rate_limited"], [503, "IDENTITY_UNAVAILABLE", "service_unavailable"], [409, "CONFLICT", "unexpected_http"]]) {
+  const key = `test.${app}.identity.session.v1`;
+  const storage = new MockStorage({ [key]: JSON.stringify({ accessToken: samplePair.accessToken, refreshToken: samplePair.refreshToken }) });
+  const client = {
+    async session() {
+      const err = new Error("access unavailable");
+      err.kind = "http";
+      err.status = 401;
+      throw err;
+    },
+    async refresh() {
+      const err = new Error(code);
+      err.kind = "http";
+      err.status = status;
+      err.code = code;
+      throw err;
+    },
+  };
+  const mgr = new IdentitySessionManager(client, storage, async () => "device-fp-12345", role, surface, `test.${app}`);
+  const res = await mgr.restore();
+  assert.equal(res.kind, "degraded");
+  assert.equal(res.reason, reason);
+  assert.ok(await storage.getItem(key));
+}
+
+// Test 8: Unknown restore failures do not fabricate sign-out or authentication.
+{
+  const key = `test.${app}.identity.session.v1`;
+  const storage = new MockStorage({ [key]: JSON.stringify({ accessToken: samplePair.accessToken, refreshToken: samplePair.refreshToken }) });
+  const client = { async session() { throw new Error("unexpected restore failure"); } };
+  const mgr = new IdentitySessionManager(client, storage, async () => "device-fp-12345", role, surface, `test.${app}`);
+  const res = await mgr.restore();
+  assert.equal(res.kind, "degraded");
+  assert.equal(res.reason, "unknown");
+  assert.ok(await storage.getItem(key));
+}
+
+// Test 9: SecureStore read failure is recoverable and preserves opaque session material.
+{
+  const storage = {
+    async getItem() { throw new Error("secure storage is temporarily unavailable"); },
+    async setItem() {},
+    async removeItem() {},
+  };
+  const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`);
+  const res = await mgr.restore();
+  assert.equal(res.kind, "degraded");
+  assert.equal(res.reason, "storage_read");
+}
+
+// Test 10: Remote rotation followed by local persistence failure is reconciled by revoking the new pair.
+{
+  const key = `test.${app}.identity.session.v1`;
+  const storage = new MockStorage({ [key]: JSON.stringify({ accessToken: samplePair.accessToken, refreshToken: samplePair.refreshToken }) });
+  const rotatedPair = { ...samplePair, accessToken: "token_access_rotated_len_32_characters_ok", refreshToken: "token_refresh_rotated_len_32_characters_ok" };
+  let revoked = false;
+  const client = {
+    async session() { const err = new Error("expired"); err.kind = "http"; err.status = 401; throw err; },
+    async refresh() { return rotatedPair; },
+    async logout(token) { assert.equal(token, rotatedPair.accessToken); revoked = true; },
+  };
+  const failingStorage = {
+    async getItem(keyName) { return storage.getItem(keyName); },
+    async setItem() { throw new Error("secure storage write failed"); },
+    async removeItem(keyName) { return storage.removeItem(keyName); },
+  };
+  const mgr = new IdentitySessionManager(client, failingStorage, async () => "device-fp-12345", role, surface, `test.${app}`);
+  const res = await mgr.restore();
+  assert.equal(res.kind, "signed_out");
+  assert.equal(res.reason, "terminal_invalidated");
+  assert.ok(revoked);
+  assert.equal(await storage.getItem(key), null);
+}
+
+// Test 11: If remote reconciliation is unknown, retry can persist and authenticate the still-valid pair.
+{
+  const key = `test.${app}.identity.session.v1`;
+  let writesEnabled = false;
+  const storage = new MockStorage();
+  const rotatedPair = { ...samplePair, accessToken: "token_access_pending_len_32_characters_ok", refreshToken: "token_refresh_pending_len_32_characters_ok" };
+  const client = {
+    async logout() { throw Object.assign(new Error("network"), { kind: "network" }); },
+    async session(token) { assert.equal(token, rotatedPair.accessToken); return sampleIdentity; },
+  };
+  const pendingStorage = {
+    async getItem(keyName) { return storage.getItem(keyName); },
+    async setItem(keyName, value) { if (!writesEnabled) throw new Error("temporary write failure"); return storage.setItem(keyName, value); },
+    async removeItem(keyName) { return storage.removeItem(keyName); },
+  };
+  const mgr = new IdentitySessionManager(client, pendingStorage, async () => "device-fp-12345", role, surface, `test.${app}`);
+  const first = await mgr.adopt(rotatedPair);
+  assert.equal(first.kind, "degraded");
+  assert.equal(first.reason, "reconciliation_required");
+  writesEnabled = true;
+  const recovered = await mgr.restore();
+  assert.equal(recovered.kind, "authenticated");
+  assert.equal((await storage.getItem(key)) !== null, true);
+}
+
+// Test 12: Adopt credentials -> stores tokens and authenticated
 {
   const storage = new MockStorage();
   const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`);
@@ -274,7 +376,7 @@ const samplePair = {
   assert.ok(await storage.getItem(`test.${app}.identity.session.v1`));
 }
 
-// Test 8: Logout -> calls remote and clears local storage
+// Test 13: Logout -> calls remote and clears local storage
 {
   const storage = new MockStorage({
     [`test.${app}.identity.session.v1`]: JSON.stringify({
@@ -296,4 +398,4 @@ const samplePair = {
   assert.ok(loggedOut);
 }
 
-console.log(`MOBILE_TEST=PASS app=${app} cases=8`);
+console.log(`MOBILE_TEST=PASS app=${app} cases=13+`);

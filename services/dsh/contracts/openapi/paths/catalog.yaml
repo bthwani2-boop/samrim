@@ -50,6 +50,114 @@ paths:
       responses:
         "201": { description: Category created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogCategoryResponse" } } } }
 
+  /dsh/catalog/attributes:
+    get:
+      operationId: listCatalogAttributeDefinitions
+      summary: Read active typed Attribute definitions for a Commerce Vertical
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/VerticalIdRequired"
+      responses:
+        "200": { description: Bounded typed Attribute definitions., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeDefinitionListResponse" } } } }
+    post:
+      operationId: createCatalogAttributeDefinition
+      summary: Create a canonical typed Attribute definition
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogAttributeDefinitionRequest" } }
+      responses:
+        "201": { description: Attribute definition created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeDefinitionResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeDefinitionResponse" } } } }
+
+  /dsh/catalog/attributes/{attributeId}/enum-options:
+    get:
+      operationId: listCatalogAttributeEnumOptions
+      summary: Read the active values of a typed ENUM Attribute
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/AttributeId"
+      responses:
+        "200": { description: Canonical ENUM options., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeEnumOptionListResponse" } } } }
+    post:
+      operationId: createCatalogAttributeEnumOption
+      summary: Create a canonical value for a typed ENUM Attribute
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/AttributeId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogAttributeEnumOptionRequest" } }
+      responses:
+        "201": { description: ENUM option created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeEnumOptionResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeEnumOptionResponse" } } } }
+
+  /dsh/catalog/products/{productId}/attributes/{attributeId}:
+    put:
+      operationId: upsertCatalogProductAttribute
+      summary: Upsert one typed Attribute value on a canonical Product
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/AttributeId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpsertCatalogAttributeValueRequest" } }
+      responses:
+        "200": { description: Product Attribute readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+
+  /dsh/catalog/variants/{variantId}/attributes/{attributeId}:
+    put:
+      operationId: upsertCatalogVariantAttribute
+      summary: Upsert one typed Attribute value on a concrete Variant
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/VariantId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/AttributeId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpsertCatalogAttributeValueRequest" } }
+      responses:
+        "200": { description: Variant Attribute readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogVariantResponse" } } } }
+
+  /dsh/catalog/categories/{categoryId}/attribute-rules/{attributeId}:
+    put:
+      operationId: upsertCatalogCategoryAttributeRule
+      summary: Upsert the typed Attribute rule for a Category
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CategoryId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/AttributeId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpsertCatalogAttributeRuleRequest" } }
+      responses:
+        "200": { description: Category Attribute rule readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogAttributeRuleListResponse" } } } }
+
   /dsh/catalog/products:
     get:
       operationId: listCatalogProducts
@@ -95,6 +203,251 @@ paths:
           application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogProductRequest" } }
       responses:
         "200": { description: Product update readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+
+  /dsh/catalog/products/{productId}/variants:
+    post:
+      operationId: createCatalogVariant
+      summary: Create a concrete Variant for a canonical Product
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogVariantRequest" } }
+      responses:
+        "201": { description: Variant created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogVariantResponse" } } } }
+
+  /dsh/catalog/variants/{variantId}:
+    patch:
+      operationId: updateCatalogVariant
+      summary: Versioned canonical Variant update
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/VariantId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogVariantRequest" } }
+      responses:
+        "200": { description: Variant update readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogVariantResponse" } } } }
+
+  /dsh/stores/{storeId}/products:
+    post:
+      operationId: createStoreScopedProduct
+      summary: Create a Product owned by exactly one Partner Store
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogProductRequest" } }
+      responses:
+         "201": { description: Store-scoped Product created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+
+  /dsh/stores/{storeId}/products/{productId}:
+    patch:
+      operationId: updateStoreScopedProduct
+      summary: Versioned update of a Product owned by the authenticated Partner Store
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogProductRequest" } }
+      responses:
+        "200": { description: Store-scoped Product update readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+
+  /dsh/stores/{storeId}/products/{productId}/variants:
+    post:
+      operationId: createStoreVariant
+      summary: Create a concrete Variant for a Store-scoped Product owned by the authenticated Partner
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogVariantRequest" } }
+      responses:
+        "201": { description: Store-scoped Variant created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogVariantResponse" } } } }
+
+  /dsh/stores/{storeId}/variants/{variantId}:
+    patch:
+      operationId: updateStoreVariant
+      summary: Versioned update of a Store-scoped Variant owned by the authenticated Partner
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/VariantId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogVariantRequest" } }
+      responses:
+        "200": { description: Store-scoped Variant update readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogVariantResponse" } } } }
+
+  /dsh/catalog/product-proposals:
+    get:
+      operationId: listOwnCatalogProductProposals
+      summary: Read the authenticated Partner's Product proposals
+      security:
+        - userBearer: []
+      parameters:
+        - { name: state, in: query, required: false, schema: { type: string, enum: [draft, submitted, needs_correction, approved, rejected] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200": { description: Bounded Product proposal list., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalListResponse" } } } }
+    post:
+      operationId: createCatalogProductProposal
+      summary: Submit a new Product proposal for owner review
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogProductProposalRequest" } }
+      responses:
+        "201": { description: Product proposal created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalResponse" } } } }
+
+  /dsh/catalog/product-proposals/{proposalId}/submit:
+    post:
+      operationId: submitCatalogProductProposal
+      summary: Submit a draft Product proposal for owner review
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProposalId"
+      responses:
+        "200": { description: Submitted Product proposal., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalResponse" } } } }
+
+  /dsh/catalog/product-proposals/{proposalId}:
+    patch:
+      operationId: updateCatalogProductProposal
+      summary: Correct a draft or needs-correction Product proposal
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProposalId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UpdateCatalogProductProposalRequest" } }
+      responses:
+        "200": { description: Corrected Product proposal., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalResponse" } } } }
+
+  /dsh/catalog/product-proposals/review-queue:
+    get:
+      operationId: listCatalogProductProposalReviewQueue
+      summary: Read the bounded Product proposal review queue
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - { name: state, in: query, required: false, schema: { type: string, enum: [submitted, approved, needs_correction, rejected] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200": { description: Bounded review queue., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalListResponse" } } } }
+
+  /dsh/catalog/product-proposals/{proposalId}/review:
+    post:
+      operationId: reviewCatalogProductProposal
+      summary: Review a submitted Product proposal
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProposalId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ReviewCatalogProductProposalRequest" } }
+      responses:
+        "200": { description: Reviewed Product proposal., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalResponse" } } } }
+
+  /dsh/catalog/imports/preview:
+    post:
+      operationId: previewCatalogImport
+      summary: Validate and classify a bounded canonical catalog import without product mutation
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewRequest" } }
+      responses:
+        "201": { description: Canonical import preview., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
+        "200": { description: Idempotent preview replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportPreviewResponse" } } } }
+
+  /dsh/catalog/imports/{runId}:
+    get:
+      operationId: readCatalogImportRun
+      summary: Read canonical import run and item classifications
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ImportRunId"
+      responses:
+        "200": { description: Import run readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportRunResponse" } } } }
+
+  /dsh/catalog/imports/{runId}/commit:
+    post:
+      operationId: commitCatalogImport
+      summary: Explicitly commit a previously previewed canonical catalog import
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ImportRunId"
+      responses:
+        "200": { description: Canonical import commit readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogImportCommitResponse" } } } }
 
   /dsh/stores/{storeId}/offers:
     get:
@@ -142,6 +495,96 @@ paths:
       responses:
         "200": { description: StoreOffer update readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferResponse" } } } }
 
+  /dsh/stores/{storeId}/modifier-groups:
+    post:
+      operationId: createCatalogModifierGroup
+      summary: Create a Store-owned modifier selection group
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogModifierGroupRequest" } }
+      responses:
+        "201": { description: Modifier group readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogModifierGroupResponse" } } } }
+
+  /dsh/stores/{storeId}/modifier-groups/{groupId}/options:
+    post:
+      operationId: createCatalogModifierOption
+      summary: Create an option in a Store-owned modifier group
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/GroupId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogModifierOptionRequest" } }
+      responses:
+        "201": { description: Modifier option readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogModifierOptionResponse" } } } }
+
+  /dsh/stores/{storeId}/offers/{offerId}/modifier-groups/{groupId}:
+    put:
+      operationId: attachCatalogModifierGroup
+      summary: Attach a Store-owned modifier group to a StoreOffer
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/OfferId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/GroupId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/AttachCatalogOrdinalRequest" } }
+      responses:
+        "200": { description: Attached modifier group readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStoreOfferResponse" } } } }
+
+  /dsh/stores/{storeId}/sections:
+    post:
+      operationId: createCatalogStorefrontSection
+      summary: Create a Store-owned storefront section
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateCatalogStorefrontSectionRequest" } }
+      responses:
+        "201": { description: Storefront section readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStorefrontSectionResponse" } } } }
+
+  /dsh/stores/{storeId}/sections/{sectionId}/offers/{offerId}:
+    put:
+      operationId: attachCatalogOfferToSection
+      summary: Attach a Store-owned StoreOffer to a storefront section
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/SectionId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/OfferId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/AttachCatalogOrdinalRequest" } }
+      responses:
+        "200": { description: Storefront section readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogStorefrontSectionResponse" } } } }
+
   /dsh/public/stores/{storeId}/catalog:
     get:
       operationId: readPublicStoreCatalog
@@ -151,6 +594,8 @@ paths:
         - $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired"
         - { name: categoryId, in: query, required: false, schema: { type: string, maxLength: 128 } }
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 512 } }
       responses:
         "200": { description: Customer-visible catalog readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PublicCatalogResponse" } } } }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }

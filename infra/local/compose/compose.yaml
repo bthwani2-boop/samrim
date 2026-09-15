@@ -189,7 +189,6 @@ services:
 
   js-deps:
     image: samrim-local-js-runtime:dev
-    pull_policy: build
     build:
       context: ../docker
       dockerfile: js-runtime.Dockerfile
