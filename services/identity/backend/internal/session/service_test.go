@@ -1,6 +1,7 @@
 package session
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,5 +74,27 @@ func TestWithinRefreshRaceGraceAcceptsRecentHistoryOnly(t *testing.T) {
 	}
 	if withinRefreshRaceGrace(now, now.Add(time.Nanosecond)) {
 		t.Fatal("future refresh history should not be stale-safe")
+	}
+}
+
+func TestDerivedRefreshPairIsStablePerSessionGenerationAndInstance(t *testing.T) {
+	service := &Service{refreshSecret: []byte("01234567890123456789012345678901")}
+	expires := time.Date(2026, time.January, 1, 12, 15, 0, 0, time.UTC)
+	first := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-1", 2, expires)
+	retry := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-1", 2, expires)
+	next := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-1", 3, expires)
+	otherDevice := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-2", 2, expires)
+
+	if first.AccessToken != retry.AccessToken || first.RefreshToken != retry.RefreshToken {
+		t.Fatal("reconciliation did not reproduce the same token pair")
+	}
+	if first.AccessToken == next.AccessToken || first.RefreshToken == next.RefreshToken {
+		t.Fatal("different session generations share token material")
+	}
+	if first.AccessToken == otherDevice.AccessToken || first.RefreshToken == otherDevice.RefreshToken {
+		t.Fatal("different client instances share token material")
+	}
+	if parts := strings.Split(first.RefreshToken, "."); len(parts) != 2 || parts[0] != "session-1" {
+		t.Fatalf("derived refresh token format = %q", first.RefreshToken)
 	}
 }

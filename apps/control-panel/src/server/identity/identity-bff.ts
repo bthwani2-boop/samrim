@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 
 import {
@@ -57,6 +57,10 @@ async function operatorClientInstanceId(): Promise<string> {
   return created;
 }
 
+function refreshRequestId(refreshToken: string, clientInstanceId: string): string {
+  return createHash("sha256").update("identity-refresh-request-v1\0").update(refreshToken).update("\0").update(clientInstanceId).digest("base64url");
+}
+
 async function writeTokens(pair: TokenPair, clientInstanceId: string): Promise<void> {
   if (!isControlPanelIdentity(pair.identity)) throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
   const store = await cookies();
@@ -95,16 +99,7 @@ function isTerminalIdentityFailure(error: unknown): boolean {
 }
 
 function isRefreshStale(error: unknown): boolean {
-  return isIdentityClientError(error) && error.kind === "http" && error.code === "REFRESH_STALE";
-}
-
-async function revokeRefreshedPair(pair: TokenPair): Promise<boolean> {
-  try {
-    await identityClient().logout(pair.accessToken);
-    return true;
-  } catch (error) {
-    return isTerminalIdentityFailure(error);
-  }
+  return isIdentityClientError(error) && error.kind === "http" && error.status === 401 && error.code === "REFRESH_STALE";
 }
 
 export async function beginOperatorPasskeyAuthentication(): Promise<PasskeyOptions> {
@@ -225,23 +220,11 @@ async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>
   }
 
   let pair: TokenPair;
+  const requestId = refreshRequestId(refreshToken, clientInstanceId);
   try {
-    pair = await identityClient().refresh({ refreshToken, clientInstanceId });
+    pair = await identityClient().refresh({ refreshToken, clientInstanceId, refreshRequestId: requestId });
   } catch (error) {
     if (isRefreshStale(error)) {
-      for (let attempt = 0; attempt < 4; attempt++) {
-        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
-        const freshStore = await cookies();
-        const freshAccessToken = freshStore.get(accessCookie)?.value;
-        if (freshAccessToken) {
-          try {
-            const current = await identityClient().session(freshAccessToken);
-            if (isControlPanelIdentity(current)) return current;
-          } catch {
-            // Continue through the bounded reconciliation window.
-          }
-        }
-      }
       throw localSessionError(409, "REFRESH_CONFLICT", "operator session refresh is being reconciled");
     }
     if (isTerminalIdentityFailure(error)) {
@@ -256,10 +239,6 @@ async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>
     await writeTokens(pair, clientInstanceId);
     return pair.identity;
   } catch (error) {
-    if (await revokeRefreshedPair(pair)) {
-      await clearOperatorCookiesBestEffort();
-      return null;
-    }
     throw localSessionError(503, "IDENTITY_SESSION_PERSISTENCE_UNAVAILABLE", "identity session persistence is unavailable");
   }
 }
@@ -275,7 +254,7 @@ export async function logoutOperator(): Promise<void> {
   try {
     if (!tokenToRevoke && refreshToken && clientInstanceId) {
       try {
-        const pair = await identityClient().refresh({ refreshToken, clientInstanceId });
+        const pair = await identityClient().refresh({ refreshToken, clientInstanceId, refreshRequestId: refreshRequestId(refreshToken, clientInstanceId) });
         if (!isControlPanelIdentity(pair.identity)) throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
         tokenToRevoke = pair.accessToken;
       } catch (error) {

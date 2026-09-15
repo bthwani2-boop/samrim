@@ -400,7 +400,7 @@ components:
     RefreshRequest:
       type: object
       additionalProperties: false
-      required: [refreshToken, clientInstanceId]
+      required: [refreshToken, clientInstanceId, refreshRequestId]
       properties:
         refreshToken:
           type: string
@@ -408,6 +408,11 @@ components:
           type: string
           minLength: 8
           maxLength: 256
+        refreshRequestId:
+          type: string
+          minLength: 24
+          maxLength: 256
+          pattern: "^[A-Za-z0-9_-]{24,256}$"
 
     ActorIdentity:
       type: object

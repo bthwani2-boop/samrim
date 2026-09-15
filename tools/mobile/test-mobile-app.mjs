@@ -237,7 +237,7 @@ const samplePair = {
   assert.ok(await storage.getItem(`test.${app}.identity.session.v1`));
 }
 
-// Test 6: REFRESH_STALE race condition -> preserves tokens, returns degraded(refresh_conflict)
+// Test 6: The live 401 REFRESH_STALE contract is non-terminal and preserves the durable session intent.
 {
   const storage = new MockStorage({
     [`test.${app}.identity.session.v1`]: JSON.stringify({
@@ -255,7 +255,7 @@ const samplePair = {
     async refresh() {
       const err = new Error("stale refresh token");
       err.kind = "http";
-      err.status = 409;
+      err.status = 401;
       err.code = "REFRESH_STALE";
       throw err;
     },
@@ -318,53 +318,75 @@ for (const [status, code, reason] of [[429, "RATE_LIMITED", "rate_limited"], [50
   assert.equal(res.reason, "storage_read");
 }
 
-// Test 10: Remote rotation followed by local persistence failure is reconciled by revoking the new pair.
+// Test 10: A committed rotation whose response is lost is reconstructed by a new manager from durable state.
 {
   const key = `test.${app}.identity.session.v1`;
   const storage = new MockStorage({ [key]: JSON.stringify({ accessToken: samplePair.accessToken, refreshToken: samplePair.refreshToken }) });
   const rotatedPair = { ...samplePair, accessToken: "token_access_rotated_len_32_characters_ok", refreshToken: "token_refresh_rotated_len_32_characters_ok" };
-  let revoked = false;
+  let refreshCalls = 0;
+  let requestId;
   const client = {
-    async session() { const err = new Error("expired"); err.kind = "http"; err.status = 401; throw err; },
-    async refresh() { return rotatedPair; },
-    async logout(token) { assert.equal(token, rotatedPair.accessToken); revoked = true; },
+    async session(token) {
+      if (token === rotatedPair.accessToken) return sampleIdentity;
+      const err = new Error("expired"); err.kind = "http"; err.status = 401; throw err;
+    },
+    async refresh(request) {
+      refreshCalls += 1;
+      if (!requestId) {
+        requestId = request.refreshRequestId;
+        const err = new Error("response lost after remote commit"); err.kind = "network"; throw err;
+      }
+      assert.equal(request.refreshRequestId, requestId);
+      return rotatedPair;
+    },
   };
-  const failingStorage = {
-    async getItem(keyName) { return storage.getItem(keyName); },
-    async setItem() { throw new Error("secure storage write failed"); },
-    async removeItem(keyName) { return storage.removeItem(keyName); },
-  };
-  const mgr = new IdentitySessionManager(client, failingStorage, async () => "device-fp-12345", role, surface, `test.${app}`);
-  const res = await mgr.restore();
-  assert.equal(res.kind, "signed_out");
-  assert.equal(res.reason, "terminal_invalidated");
-  assert.ok(revoked);
-  assert.equal(await storage.getItem(key), null);
+  const firstManager = new IdentitySessionManager(client, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "a".repeat(36));
+  const first = await firstManager.restore();
+  assert.equal(first.kind, "degraded");
+  assert.equal(first.reason, "network");
+  assert.match(await storage.getItem(key), /pendingRefresh/);
+  const restartedManager = new IdentitySessionManager(client, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "b".repeat(36));
+  const recovered = await restartedManager.restore();
+  assert.equal(recovered.kind, "authenticated");
+  assert.equal(refreshCalls, 2);
+  assert.equal(JSON.parse(await storage.getItem(key)).pendingRefresh, undefined);
 }
 
-// Test 11: If remote reconciliation is unknown, retry can persist and authenticate the still-valid pair.
+// Test 11: A write that committed but reported failure is recovered after complete manager/process loss.
 {
   const key = `test.${app}.identity.session.v1`;
-  let writesEnabled = false;
-  const storage = new MockStorage();
+  const durableStorage = new MockStorage({ [key]: JSON.stringify({ accessToken: samplePair.accessToken, refreshToken: samplePair.refreshToken }) });
   const rotatedPair = { ...samplePair, accessToken: "token_access_pending_len_32_characters_ok", refreshToken: "token_refresh_pending_len_32_characters_ok" };
+  let writeCount = 0;
+  let refreshCalls = 0;
   const client = {
-    async logout() { throw Object.assign(new Error("network"), { kind: "network" }); },
-    async session(token) { assert.equal(token, rotatedPair.accessToken); return sampleIdentity; },
+    async session(token) {
+      if (token === rotatedPair.accessToken) return sampleIdentity;
+      const err = new Error("expired"); err.kind = "http"; err.status = 401; throw err;
+    },
+    async refresh() { refreshCalls += 1; return rotatedPair; },
   };
-  const pendingStorage = {
-    async getItem(keyName) { return storage.getItem(keyName); },
-    async setItem(keyName, value) { if (!writesEnabled) throw new Error("temporary write failure"); return storage.setItem(keyName, value); },
-    async removeItem(keyName) { return storage.removeItem(keyName); },
+  const uncertainStorage = {
+    async getItem(keyName) { return durableStorage.getItem(keyName); },
+    async setItem(keyName, value) {
+      writeCount += 1;
+      await durableStorage.setItem(keyName, value);
+      if (writeCount === 2) throw new Error("secure storage reported after commit");
+    },
+    async removeItem(keyName) { return durableStorage.removeItem(keyName); },
   };
-  const mgr = new IdentitySessionManager(client, pendingStorage, async () => "device-fp-12345", role, surface, `test.${app}`);
-  const first = await mgr.adopt(rotatedPair);
+  const firstManager = new IdentitySessionManager(client, uncertainStorage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "c".repeat(36));
+  const first = await firstManager.restore();
   assert.equal(first.kind, "degraded");
-  assert.equal(first.reason, "reconciliation_required");
-  writesEnabled = true;
-  const recovered = await mgr.restore();
+  assert.equal(first.reason, "storage_write");
+  const pendingAfterUnknownWrite = JSON.parse(await durableStorage.getItem(key));
+  assert.equal(pendingAfterUnknownWrite.accessToken, rotatedPair.accessToken);
+  assert.equal(pendingAfterUnknownWrite.pendingRefresh.previous.accessToken, samplePair.accessToken);
+  const restartedManager = new IdentitySessionManager(client, durableStorage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "d".repeat(36));
+  const recovered = await restartedManager.restore();
   assert.equal(recovered.kind, "authenticated");
-  assert.equal((await storage.getItem(key)) !== null, true);
+  assert.equal(refreshCalls, 1);
+  assert.equal(JSON.parse(await durableStorage.getItem(key)).pendingRefresh, undefined);
 }
 
 // Test 12: Adopt credentials -> stores tokens and authenticated
@@ -398,4 +420,4 @@ for (const [status, code, reason] of [[429, "RATE_LIMITED", "rate_limited"], [50
   assert.ok(loggedOut);
 }
 
-console.log(`MOBILE_TEST=PASS app=${app} cases=13+`);
+console.log(`MOBILE_TEST=PASS app=${app} cases=15+`);

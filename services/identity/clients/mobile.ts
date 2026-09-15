@@ -67,7 +67,8 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
       clientInstanceId,
       config.role,
       config.surface,
-      config.namespace
+      config.namespace,
+      config.cryptoRandomUUID,
     );
     return sessionValue;
   }

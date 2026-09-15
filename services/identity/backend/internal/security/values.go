@@ -18,6 +18,7 @@ import (
 var (
 	phonePattern            = regexp.MustCompile("^\\+[1-9][0-9]{7,14}$")
 	clientInstancePattern   = regexp.MustCompile("^[A-Za-z0-9._:-]{8,256}$")
+	refreshRequestPattern   = regexp.MustCompile("^[A-Za-z0-9_-]{24,256}$")
 	verificationCodePattern = regexp.MustCompile("^[0-9]{6}$")
 	enrollmentTokenPattern  = regexp.MustCompile("^[A-Za-z0-9_-]{24,256}$")
 	ErrInvalidValue         = errors.New("invalid identity value")
@@ -54,6 +55,14 @@ func NormalizeClientInstanceId(raw string) (string, error) {
 		return "", ErrInvalidValue
 	}
 	return instanceID, nil
+}
+
+func NormalizeRefreshRequestId(raw string) (string, error) {
+	requestID := strings.TrimSpace(raw)
+	if !refreshRequestPattern.MatchString(requestID) {
+		return "", ErrInvalidValue
+	}
+	return requestID, nil
 }
 
 func NormalizeVerificationCode(raw string) (string, error) {

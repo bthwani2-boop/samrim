@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,15 +14,18 @@ import (
 )
 
 type Service struct {
-	db  *sql.DB
-	now func() time.Time
+	db            *sql.DB
+	now           func() time.Time
+	refreshSecret []byte
 }
 
 const refreshRaceGrace = 5 * time.Second
 
 const minimumAccessLifetime = time.Second
 
-func New(db *sql.DB) *Service { return &Service{db: db, now: time.Now} }
+func New(db *sql.DB, refreshSecret []byte) *Service {
+	return &Service{db: db, now: time.Now, refreshSecret: append([]byte(nil), refreshSecret...)}
+}
 
 func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, clientInstanceId string) (domain.TokenPair, error) {
 	device, err := identitysecurity.NormalizeClientInstanceId(clientInstanceId)
@@ -94,6 +98,10 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
+	requestID, err := identitysecurity.NormalizeRefreshRequestId(input.RefreshRequestId)
+	if err != nil {
+		return domain.TokenPair{}, domain.ErrInvalidInput
+	}
 	sessionID, presented := parts[0], parts[1]
 	presentedHash := identitysecurity.SHA256Hex(presented)
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -113,9 +121,10 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	if err := tx.QueryRowContext(ctx, "SELECT enabled FROM identity_actor_roles WHERE actor_id=$1 AND role=$2 FOR UPDATE", actorID, role).Scan(&roleEnabled); err != nil || !roleEnabled {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
-	var currentHash, deviceHash string
-	var refreshExpiry, absoluteExpiry time.Time
-	err = tx.QueryRowContext(ctx, "SELECT refresh_token_hash,client_instance_id_hash,refresh_expires_at,absolute_expires_at FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentHash, &deviceHash, &refreshExpiry, &absoluteExpiry)
+	var currentAccessHash, currentHash, deviceHash string
+	var accessExpiry, refreshExpiry, absoluteExpiry time.Time
+	var version int
+	err = tx.QueryRowContext(ctx, "SELECT access_token_hash,refresh_token_hash,client_instance_id_hash,access_expires_at,refresh_expires_at,absolute_expires_at,version FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentAccessHash, &currentHash, &deviceHash, &accessExpiry, &refreshExpiry, &absoluteExpiry, &version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
@@ -128,12 +137,26 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 	}
 	if !identitysecurity.ConstantTimeHexEqual(currentHash, presentedHash) {
 		var rotatedAt time.Time
-		err := tx.QueryRowContext(ctx, "SELECT rotated_at FROM identity_refresh_token_history WHERE session_id=$1 AND token_hash=$2", sessionID, presentedHash).Scan(&rotatedAt)
+		var historicalRequestID sql.NullString
+		err := tx.QueryRowContext(ctx, "SELECT rotated_at,refresh_request_id FROM identity_refresh_token_history WHERE session_id=$1 AND token_hash=$2", sessionID, presentedHash).Scan(&rotatedAt, &historicalRequestID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.TokenPair{}, domain.ErrInvalidRefresh
 		}
 		if err != nil {
 			return domain.TokenPair{}, err
+		}
+		if historicalRequestID.Valid && historicalRequestID.String == requestID {
+			pair := s.derivedRefreshPair(sessionID, actorID, role, deviceHash, version, accessExpiry)
+			if !identitysecurity.ConstantTimeHexEqual(currentAccessHash, identitysecurity.SHA256Hex(pair.AccessToken)) {
+				return domain.TokenPair{}, domain.ErrInvalidRefresh
+			}
+			if err := auditTx(ctx, tx, "session.refresh_reconciled", actorID, actorID, "success", "", map[string]any{"sessionId": sessionID, "role": role, "version": version}); err != nil {
+				return domain.TokenPair{}, err
+			}
+			if err := tx.Commit(); err != nil {
+				return domain.TokenPair{}, err
+			}
+			return pair, nil
 		}
 		if withinRefreshRaceGrace(now, rotatedAt) {
 			if err := auditTx(ctx, tx, "session.refresh_stale", actorID, actorID, "stale", "", map[string]any{"sessionId": sessionID, "role": role}); err != nil {
@@ -155,29 +178,24 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		}
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
-	access, err := identitysecurity.RandomToken(32)
-	if err != nil {
-		return domain.TokenPair{}, err
-	}
-	nextRefresh, err := identitysecurity.RandomToken(48)
-	if err != nil {
-		return domain.TokenPair{}, err
-	}
 	now = s.now().UTC()
-	accessExpiry, nextRefreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry)
+	nextAccessExpiry, nextRefreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry)
 	if !ok {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_refresh_token_history(session_id,token_hash) VALUES($1,$2) ON CONFLICT DO NOTHING", sessionID, currentHash); err != nil {
+	nextVersion := version + 1
+	pair := s.derivedRefreshPair(sessionID, actorID, role, deviceHash, nextVersion, nextAccessExpiry)
+	if _, err := tx.ExecContext(ctx, "INSERT INTO identity_refresh_token_history(session_id,token_hash,refresh_request_id) VALUES($1,$2,$3)", sessionID, currentHash, requestID); err != nil {
 		return domain.TokenPair{}, err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET access_token_hash=$1,refresh_token_hash=$2,access_expires_at=$3,refresh_expires_at=$4,last_used_at=$5,version=version+1 WHERE id=$6", identitysecurity.SHA256Hex(access), identitysecurity.SHA256Hex(nextRefresh), accessExpiry, nextRefreshExpiry, now, sessionID); err != nil {
+	refreshPart := strings.SplitN(pair.RefreshToken, ".", 2)[1]
+	if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET access_token_hash=$1,refresh_token_hash=$2,access_expires_at=$3,refresh_expires_at=$4,last_used_at=$5,version=$6 WHERE id=$7", identitysecurity.SHA256Hex(pair.AccessToken), identitysecurity.SHA256Hex(refreshPart), nextAccessExpiry, nextRefreshExpiry, now, nextVersion, sessionID); err != nil {
 		return domain.TokenPair{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return domain.TokenPair{}, err
 	}
-	return domain.TokenPair{AccessToken: access, RefreshToken: sessionID + "." + nextRefresh, AccessExpiry: accessExpiry, Identity: identityOf(actorID, sessionID, role, accessExpiry)}, nil
+	return pair, nil
 }
 
 func (s *Service) Logout(ctx context.Context, accessToken string) error {
@@ -280,6 +298,13 @@ func (s *Service) RevokeRoleAll(ctx context.Context, actorID, role, principal, c
 func identityOf(actorID, sessionID, role string, expires time.Time) domain.ActorIdentity {
 	surface, _ := domain.SurfaceForRole(role)
 	return domain.ActorIdentity{Subject: actorID, SessionID: sessionID, Role: role, Surface: surface, ExpiresAt: expires}
+}
+
+func (s *Service) derivedRefreshPair(sessionID, actorID, role, deviceHash string, version int, accessExpiry time.Time) domain.TokenPair {
+	versionValue := strconv.Itoa(version)
+	access := identitysecurity.HMAC256Hex(s.refreshSecret, "identity-session-access-v1", sessionID, versionValue, deviceHash)
+	refresh := identitysecurity.HMAC256Hex(s.refreshSecret, "identity-session-refresh-v1", sessionID, versionValue, deviceHash)
+	return domain.TokenPair{AccessToken: access, RefreshToken: sessionID + "." + refresh, AccessExpiry: accessExpiry, Identity: identityOf(actorID, sessionID, role, accessExpiry)}
 }
 func sessionAbsoluteLifetime(role string) time.Duration {
 	if role == "operator" {

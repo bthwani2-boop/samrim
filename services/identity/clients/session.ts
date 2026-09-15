@@ -23,8 +23,7 @@ export type IdentitySessionDegradedReason =
   | "storage_read"
   | "storage_write"
   | "client_instance"
-  | "refresh_conflict"
-  | "reconciliation_required";
+  | "refresh_conflict";
 
 export type IdentitySessionSignOutReason =
   | "no_local_session"
@@ -42,6 +41,8 @@ export type IdentitySessionState =
   | Readonly<{ kind: "degraded"; reason: IdentitySessionDegradedReason }>;
 
 type StoredTokens = Readonly<{ accessToken: string; refreshToken: string }>;
+type PendingRefresh = Readonly<{ previous: StoredTokens; requestId: string }>;
+type StoredSession = Readonly<StoredTokens & { pendingRefresh?: PendingRefresh }>;
 export type IdentitySessionListener = (state: IdentitySessionState) => void;
 
 export type IdentityStorageError = Readonly<{
@@ -51,6 +52,7 @@ export type IdentityStorageError = Readonly<{
 }>;
 
 const accessTokenSafetySkewMs = 60_000;
+const refreshRequestIdPattern = /^[A-Za-z0-9_-]{24,256}$/;
 
 const roleSurface: Readonly<Record<ActorType, IdentitySurface>> = Object.freeze({
   client: "app-client",
@@ -90,19 +92,13 @@ function isIdentityUnauthenticated(value: unknown): value is IdentityClientError
 }
 
 function isRefreshStaleError(value: unknown): boolean {
-  if (isIdentityClientError(value)) {
-    if (value.kind === "http" && (value.code === "REFRESH_STALE" || value.message.includes("REFRESH_STALE"))) return true;
-  }
-  if (value && typeof value === "object" && "code" in value && (value as { code?: unknown }).code === "REFRESH_STALE") {
-    return true;
-  }
-  return false;
+  return isIdentityClientError(value) && value.kind === "http" && value.status === 401 && value.code === "REFRESH_STALE";
 }
 
-function parseStoredTokens(raw: string | null): StoredTokens | null {
-  if (!raw) return null;
+function parseTokenRecord(value: unknown): StoredTokens | null {
+  if (!value || typeof value !== "object") return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<StoredTokens>;
+    const parsed = value as Partial<StoredTokens>;
     if (
       typeof parsed.accessToken === "string" &&
       parsed.accessToken.length >= 20 &&
@@ -115,6 +111,23 @@ function parseStoredTokens(raw: string | null): StoredTokens | null {
     // Corrupt local state is discarded below.
   }
   return null;
+}
+
+function parseStoredSession(raw: string | null): StoredSession | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { accessToken?: unknown; refreshToken?: unknown; pendingRefresh?: unknown };
+    const tokens = parseTokenRecord(parsed);
+    if (!tokens) return null;
+    if (parsed.pendingRefresh === undefined) return tokens;
+    if (!parsed.pendingRefresh || typeof parsed.pendingRefresh !== "object") return null;
+    const pending = parsed.pendingRefresh as { previous?: unknown; requestId?: unknown };
+    const previous = parseTokenRecord(pending.previous);
+    if (!previous || typeof pending.requestId !== "string" || !refreshRequestIdPattern.test(pending.requestId)) return null;
+    return { ...tokens, pendingRefresh: { previous, requestId: pending.requestId } };
+  } catch {
+    return null;
+  }
 }
 
 function degradedReason(value: unknown): IdentitySessionDegradedReason {
@@ -133,6 +146,18 @@ function sameTokens(left: StoredTokens, right: StoredTokens): boolean {
   return left.accessToken === right.accessToken && left.refreshToken === right.refreshToken;
 }
 
+function sameStoredSession(left: StoredSession, right: StoredSession): boolean {
+  if (!sameTokens(left, right)) return false;
+  if (!left.pendingRefresh || !right.pendingRefresh) return left.pendingRefresh === right.pendingRefresh;
+  return left.pendingRefresh.requestId === right.pendingRefresh.requestId && sameTokens(left.pendingRefresh.previous, right.pendingRefresh.previous);
+}
+
+function defaultRefreshRequestId(): string {
+  const requestId = globalThis.crypto?.randomUUID?.();
+  if (!requestId) throw new Error("IDENTITY_REFRESH_REQUEST_ID_UNAVAILABLE");
+  return requestId;
+}
+
 export class IdentitySessionManager {
   private readonly client: IdentityClient;
   private readonly storage: IdentitySessionStorage;
@@ -140,9 +165,9 @@ export class IdentitySessionManager {
   private readonly role: ActorType;
   private readonly surface: IdentitySurface;
   private readonly key: string;
+  private readonly createRefreshRequestId: () => string;
   private stateValue: IdentitySessionState = { kind: "signed_out", reason: "no_local_session" };
   private tokens: StoredTokens | null = null;
-  private pendingPair: TokenPair | null = null;
   private refreshInFlight: Promise<IdentitySessionState> | null = null;
   private readonly listeners = new Set<IdentitySessionListener>();
 
@@ -153,12 +178,14 @@ export class IdentitySessionManager {
     role: ActorType,
     surface: IdentitySurface,
     storageNamespace: string,
+    createRefreshRequestId: () => string = defaultRefreshRequestId,
   ) {
     this.client = client;
     this.storage = storage;
     this.clientInstanceId = clientInstanceId;
     this.role = role;
     this.surface = surface;
+    this.createRefreshRequestId = createRefreshRequestId;
     if (identityRoleSurface(role) !== surface) throw new Error("IDENTITY_ROLE_SURFACE_MISMATCH");
     this.key = storageNamespace + ".identity.session.v1";
   }
@@ -200,9 +227,6 @@ export class IdentitySessionManager {
   async restore(): Promise<IdentitySessionState> {
     this.transition({ kind: "restoring" });
 
-    const pendingState = await this.restorePendingPair();
-    if (pendingState) return pendingState;
-
     let raw: string | null;
     try {
       raw = await this.readStorage();
@@ -210,7 +234,7 @@ export class IdentitySessionManager {
       return this.degraded(degradedReason(error));
     }
 
-    const stored = parseStoredTokens(raw);
+    const stored = parseStoredSession(raw);
     if (!stored) {
       if (raw !== null) {
         try {
@@ -224,6 +248,7 @@ export class IdentitySessionManager {
     }
 
     this.tokens = stored;
+    if (stored.pendingRefresh) return this.restorePendingRefresh(stored);
     try {
       const identity = await this.client.session(stored.accessToken);
       if (!identityAuthorizesSurface(identity, this.role, this.surface)) {
@@ -238,17 +263,15 @@ export class IdentitySessionManager {
   }
 
   async adopt(pair: TokenPair): Promise<IdentitySessionState> {
-    this.pendingPair = null;
-    const previousTokens = this.tokens;
     if (!identityAuthorizesSurface(pair.identity, this.role, this.surface)) {
-      return this.reconcilePair(pair, previousTokens, "surface_mismatch");
+      return this.signOut("surface_mismatch");
     }
 
     const tokens = { accessToken: pair.accessToken, refreshToken: pair.refreshToken };
     try {
       await this.persistTokens(tokens);
-    } catch {
-      return this.reconcilePair(pair, previousTokens);
+    } catch (error) {
+      return this.degraded(degradedReason(error));
     }
     this.tokens = tokens;
     this.transition({ kind: "authenticated", identity: pair.identity });
@@ -256,29 +279,29 @@ export class IdentitySessionManager {
   }
 
   async refresh(): Promise<IdentitySessionState> {
-    let stored = this.tokens;
-    if (!stored) {
-      try {
-        stored = parseStoredTokens(await this.readStorage());
-      } catch (error) {
-        return this.degraded(degradedReason(error));
-      }
+    let storedSession: StoredSession | null;
+    try {
+      storedSession = parseStoredSession(await this.readStorage());
+    } catch (error) {
+      return this.degraded(degradedReason(error));
     }
-    if (!stored) return this.signOut("no_local_session");
-    this.tokens = stored;
-    return this.refreshStored(stored);
+    if (!storedSession) return this.signOut("no_local_session");
+    this.tokens = storedSession;
+    if (storedSession.pendingRefresh) return this.restorePendingRefresh(storedSession);
+    return this.refreshStored(storedSession);
   }
 
   async logout(): Promise<void> {
-    let stored: StoredTokens | null = this.tokens;
+    let stored: StoredTokens | null = null;
+    let storedSession: StoredSession | null = null;
     let localReadError: unknown = null;
-    if (!stored) {
-      try {
-        stored = parseStoredTokens(await this.readStorage());
-      } catch (error) {
-        localReadError = error;
-      }
+    try {
+      storedSession = parseStoredSession(await this.readStorage());
+      stored = storedSession;
+    } catch (error) {
+      localReadError = error;
     }
+    if (!stored) stored = this.tokens;
 
     let remoteError: unknown = localReadError;
     try {
@@ -290,9 +313,13 @@ export class IdentitySessionManager {
             try {
               const clientInstanceId = (await this.clientInstanceId()).trim();
               if (clientInstanceId.length < 8) throw new Error("IDENTITY_CLIENT_INSTANCE_ID_UNAVAILABLE");
+              const refreshSource = storedSession?.pendingRefresh?.previous ?? stored;
+              if (!refreshSource) throw new Error("IDENTITY_REFRESH_TOKEN_UNAVAILABLE");
+              const refreshRequestId = storedSession?.pendingRefresh?.requestId ?? this.createRefreshRequestId();
               const pair = await this.client.refresh({
-                refreshToken: stored.refreshToken,
+                refreshToken: refreshSource.refreshToken,
                 clientInstanceId,
+                refreshRequestId,
               });
               if (!identityAuthorizesSurface(pair.identity, this.role, this.surface)) {
                 throw new Error("IDENTITY_SESSION_SURFACE_MISMATCH");
@@ -307,7 +334,6 @@ export class IdentitySessionManager {
         }
       }
     } finally {
-      this.pendingPair = null;
       this.tokens = null;
       await this.removeStorageBestEffort();
       this.transition({ kind: "signed_out", reason: "explicit_logout" });
@@ -316,15 +342,14 @@ export class IdentitySessionManager {
   }
 
   async clearLocalSession(): Promise<IdentitySessionState> {
-    this.pendingPair = null;
     this.tokens = null;
     await this.removeStorageBestEffort();
     return this.signOut("recovery");
   }
 
-  private async refreshStored(stored: StoredTokens): Promise<IdentitySessionState> {
+  private async refreshStored(stored: StoredTokens, requestId?: string, prepared = false): Promise<IdentitySessionState> {
     if (this.refreshInFlight) return this.refreshInFlight;
-    this.refreshInFlight = this.performRefresh(stored);
+    this.refreshInFlight = this.performRefresh(stored, requestId, prepared);
     try {
       return await this.refreshInFlight;
     } finally {
@@ -332,86 +357,84 @@ export class IdentitySessionManager {
     }
   }
 
-  private async performRefresh(stored: StoredTokens): Promise<IdentitySessionState> {
+  private async performRefresh(stored: StoredTokens, requestId: string | undefined, prepared: boolean): Promise<IdentitySessionState> {
     try {
       const clientInstanceId = (await this.clientInstanceId()).trim();
       if (clientInstanceId.length < 8) throw new Error("IDENTITY_CLIENT_INSTANCE_ID_UNAVAILABLE");
-      const pair = await this.client.refresh({ refreshToken: stored.refreshToken, clientInstanceId });
-      return this.adopt(pair);
+      const effectiveRequestId = requestId ?? this.createRefreshRequestId();
+      if (!refreshRequestIdPattern.test(effectiveRequestId)) throw new Error("IDENTITY_REFRESH_REQUEST_ID_UNAVAILABLE");
+      if (!prepared) {
+        await this.persistSession({ ...stored, pendingRefresh: { previous: stored, requestId: effectiveRequestId } });
+      }
+      const pair = await this.client.refresh({ refreshToken: stored.refreshToken, clientInstanceId, refreshRequestId: effectiveRequestId });
+      return this.adoptRefreshed(pair, stored, effectiveRequestId);
     } catch (error) {
       if (isRefreshStaleError(error)) {
-        let reRead: StoredTokens | null;
-        try {
-          reRead = parseStoredTokens(await this.readStorage());
-        } catch (storageError) {
-          return this.degraded(degradedReason(storageError));
-        }
-        if (reRead && reRead.refreshToken !== stored.refreshToken) {
-          try {
-            const identity = await this.client.session(reRead.accessToken);
-            if (identityAuthorizesSurface(identity, this.role, this.surface)) {
-              this.tokens = reRead;
-              this.transition({ kind: "authenticated", identity });
-              return this.stateValue;
-            }
-            return this.signOut("surface_mismatch");
-          } catch (sessionError) {
-            if (isIdentityUnauthenticated(sessionError)) return this.degraded("refresh_conflict");
-            return this.degraded(degradedReason(sessionError));
-          }
-        }
-        return this.degraded("refresh_conflict");
+        return this.reconcileRefreshConflict(stored);
       }
       if (isIdentityUnauthenticated(error)) return this.signOut("terminal_invalidated");
       return this.degraded(degradedReason(error));
     }
   }
 
-  private async restorePendingPair(): Promise<IdentitySessionState | null> {
-    const pending = this.pendingPair;
-    if (!pending) return null;
-
+  private async restorePendingRefresh(stored: StoredSession): Promise<IdentitySessionState> {
+    const pending = stored.pendingRefresh;
+    if (!pending) return this.degraded("unknown");
     try {
-      const identity = await this.client.session(pending.accessToken);
+      const identity = await this.client.session(stored.accessToken);
       if (!identityAuthorizesSurface(identity, this.role, this.surface)) {
-        this.pendingPair = null;
         return this.signOut("surface_mismatch");
       }
-      await this.persistTokens({ accessToken: pending.accessToken, refreshToken: pending.refreshToken });
-      this.pendingPair = null;
-      this.tokens = { accessToken: pending.accessToken, refreshToken: pending.refreshToken };
+      try {
+        await this.persistTokens(stored);
+      } catch (error) {
+        return this.degraded(degradedReason(error));
+      }
+      this.tokens = stored;
       this.transition({ kind: "authenticated", identity });
       return this.stateValue;
     } catch (error) {
-      if (isIdentityUnauthenticated(error)) {
-        this.pendingPair = null;
-        return this.signOut("terminal_invalidated");
-      }
-      return this.degraded(degradedReason(error));
+      if (!isIdentityUnauthenticated(error)) return this.degraded(degradedReason(error));
+      this.tokens = pending.previous;
+      return this.refreshStored(pending.previous, pending.requestId, true);
     }
   }
 
-  private async reconcilePair(
-    pair: TokenPair,
-    previousTokens: StoredTokens | null,
-    signOutReason: IdentitySessionSignOutReason = "terminal_invalidated",
-  ): Promise<IdentitySessionState> {
-    this.pendingPair = pair;
-    let remoteRevoked = false;
+  private async adoptRefreshed(pair: TokenPair, previous: StoredTokens, requestId: string): Promise<IdentitySessionState> {
+    if (!identityAuthorizesSurface(pair.identity, this.role, this.surface)) return this.signOut("surface_mismatch");
+    const next = { accessToken: pair.accessToken, refreshToken: pair.refreshToken };
     try {
-      await this.client.logout(pair.accessToken);
-      remoteRevoked = true;
+      await this.persistSession({ ...next, pendingRefresh: { previous, requestId } });
+      await this.persistTokens(next);
     } catch (error) {
-      remoteRevoked = isIdentityUnauthenticated(error);
+      this.tokens = previous;
+      return this.degraded(degradedReason(error));
     }
-    if (remoteRevoked) {
-      this.pendingPair = null;
-      this.tokens = null;
-      await this.removeStorageBestEffort();
-      return this.signOut(signOutReason === "surface_mismatch" ? signOutReason : "terminal_invalidated");
+    this.tokens = next;
+    this.transition({ kind: "authenticated", identity: pair.identity });
+    return this.stateValue;
+  }
+
+  private async reconcileRefreshConflict(stored: StoredTokens): Promise<IdentitySessionState> {
+    try {
+      const fresh = parseStoredSession(await this.readStorage());
+      if (!fresh || sameTokens(fresh, stored)) return this.degraded("refresh_conflict");
+      const identity = await this.client.session(fresh.accessToken);
+      if (!identityAuthorizesSurface(identity, this.role, this.surface)) return this.signOut("surface_mismatch");
+      if (fresh.pendingRefresh) {
+        try {
+          await this.persistTokens(fresh);
+        } catch (error) {
+          return this.degraded(degradedReason(error));
+        }
+      }
+      this.tokens = fresh;
+      this.transition({ kind: "authenticated", identity });
+      return this.stateValue;
+    } catch (error) {
+      if (isIdentityUnauthenticated(error)) return this.degraded("refresh_conflict");
+      return this.degraded(degradedReason(error));
     }
-    this.tokens = previousTokens;
-    return this.degraded("reconciliation_required");
   }
 
   private async readStorage(): Promise<string | null> {
@@ -423,10 +446,14 @@ export class IdentitySessionManager {
   }
 
   private async persistTokens(tokens: StoredTokens): Promise<void> {
+    await this.persistSession({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+  }
+
+  private async persistSession(session: StoredSession): Promise<void> {
     try {
-      await this.storage.setItem(this.key, JSON.stringify(tokens));
-      const readBack = parseStoredTokens(await this.storage.getItem(this.key));
-      if (!readBack || !sameTokens(readBack, tokens)) throw new Error("IDENTITY_SESSION_STORAGE_READBACK_MISMATCH");
+      await this.storage.setItem(this.key, JSON.stringify(session));
+      const readBack = parseStoredSession(await this.storage.getItem(this.key));
+      if (!readBack || !sameStoredSession(readBack, session)) throw new Error("IDENTITY_SESSION_STORAGE_READBACK_MISMATCH");
     } catch (error) {
       if (isIdentityStorageError(error)) throw error;
       throw identityStorageError("write", error);
