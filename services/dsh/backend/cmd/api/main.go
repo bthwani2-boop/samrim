@@ -53,11 +53,21 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	serviceCityServer, err := transporthttp.NewServiceCity(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	if err != nil {
+		log.Fatal(err)
+	}
+	serviceabilityServer, err := transporthttp.NewServiceability(identityClient, database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	register := func(mux *http.ServeMux) {
 		joiningCaseServer.Register(mux)
 		catalogServer.Register(mux)
 		storePublicationServer.Register(mux)
 		locationCoreServer.Register(mux)
+		serviceCityServer.Register(mux)
+		serviceabilityServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
 		if err := postgres.VerifySchema(ctx, database, records); err != nil {

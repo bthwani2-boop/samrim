@@ -36,6 +36,7 @@ const partnerPhone = "+96776" + crypto.randomInt(1_000_000, 9_999_999);
 const foreignPartnerPhone = "+96777" + crypto.randomInt(1_000_000, 9_999_999);
 const partnerStoreID = `store_location_runtime_${suffix}`;
 const foreignStoreID = `store_location_foreign_${suffix}`;
+const serviceCityID = `location-city-${suffix}`;
 const actorIDs = new Set();
 let clientActorID = "";
 let partnerActorID = "";
@@ -123,6 +124,12 @@ function cleanup() {
       sql(`DELETE FROM dsh.store_origin_mutation_idempotency WHERE store_id IN (${stores})`);
       sql(`DELETE FROM dsh.stores WHERE id IN (${stores})`);
     }
+    if (locationSchemaExists === "t") {
+      const city = sqlLiteral(serviceCityID);
+      sql(`DELETE FROM dsh.service_city_audit WHERE city_id='${city}'`);
+      sql(`DELETE FROM dsh.service_city_mutation_idempotency WHERE city_id='${city}'`);
+      sql(`DELETE FROM dsh.service_cities WHERE id='${city}'`);
+    }
     for (const actorID of actorIDs) sql(`DELETE FROM identity_actors WHERE id='${sqlLiteral(actorID)}'`);
     console.log("LOCATION_CORE_RUNTIME_CLEANUP=PASS");
   } catch (error) {
@@ -133,8 +140,8 @@ function cleanup() {
 let exitCode = 1;
 try {
   const schema = sql("SELECT count(*) FROM dsh.schema_migrations");
-  if (schema !== "8") throw new Error(`DSH schema history is not v8: ${schema}`);
-  if (sql("SELECT name FROM dsh.schema_migrations WHERE version=8") !== "008_location_core_corrective_boundaries.sql") throw new Error("Location Core corrective migration readback is not canonical");
+  if (schema !== "9") throw new Error(`DSH schema history is not v9: ${schema}`);
+  if (sql("SELECT name FROM dsh.schema_migrations WHERE version=9") !== "009_service_city_scope.sql") throw new Error("Service City migration readback is not canonical");
   for (const [table, column] of [["delivery_address_mutation_idempotency", "result_version"], ["delivery_address_audit", "address_text"], ["delivery_address_audit", "latitude"], ["delivery_address_audit", "longitude"], ["store_origin_mutation_idempotency", "result_version"], ["store_origin_mutation_idempotency", "result_latitude"], ["store_origin_mutation_idempotency", "result_longitude"], ["store_origin_mutation_idempotency", "result_updated_at"], ["store_origin_audit", "latitude"], ["store_origin_audit", "longitude"]]) {
     if (sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND table_name='${table}' AND column_name='${column}'`) !== "0") throw new Error(`Location Core precise/dead column remains: dsh.${table}.${column}`);
   }
@@ -147,17 +154,19 @@ try {
   }
   if (!operatorID) throw new Error("Location Core runtime operator fixture is unavailable");
 
+  sql(`INSERT INTO dsh.service_cities(id, display_name_ar, active) VALUES('${sqlLiteral(serviceCityID)}','مدينة اختبار المواقع ${sqlLiteral(suffix)}',true)`);
+
   const client = await createClientSession(clientPhone, `location-client-${suffix}`);
   const partnerFixture = await createPartnerSession(operatorID, partnerPhone, `location-partner-${suffix}`);
   const foreignPartnerFixture = await createPartnerSession(operatorID, foreignPartnerPhone, `location-foreign-partner-${suffix}`);
   partnerActorID = partnerFixture.actorID;
   foreignPartnerActorID = foreignPartnerFixture.actorID;
-  sql(`INSERT INTO dsh.stores(id, partner_actor_id, name) VALUES('${sqlLiteral(partnerStoreID)}','${sqlLiteral(partnerActorID)}','Location Runtime Store')`);
-  sql(`INSERT INTO dsh.stores(id, partner_actor_id, name) VALUES('${sqlLiteral(foreignStoreID)}','${sqlLiteral(foreignPartnerActorID)}','Foreign Location Runtime Store')`);
+  sql(`INSERT INTO dsh.stores(id, partner_actor_id, name, service_city_id) VALUES('${sqlLiteral(partnerStoreID)}','${sqlLiteral(partnerActorID)}','Location Runtime Store','${sqlLiteral(serviceCityID)}')`);
+  sql(`INSERT INTO dsh.stores(id, partner_actor_id, name, service_city_id) VALUES('${sqlLiteral(foreignStoreID)}','${sqlLiteral(foreignPartnerActorID)}','Foreign Location Runtime Store','${sqlLiteral(serviceCityID)}')`);
 
   const empty = await expect(dshBase, "GET", "/dsh/addresses?limit=10", 200, { token: client.accessToken });
   if (!Array.isArray(empty?.addresses) || empty.addresses.length !== 0 || empty.nextCursor !== "") throw new Error("client address empty readback is not canonical");
-  const createBody = { addressText: "شارع location runtime، صنعاء", latitude: 15.3694457, longitude: 44.1910064 };
+  const createBody = { addressText: "شارع location runtime، صنعاء", latitude: 15.3694457, longitude: 44.1910064, serviceCityId: serviceCityID };
   const createKey = `location-address-create-${suffix}`;
   const created = await expect(dshBase, "POST", "/dsh/addresses", 201, { token: client.accessToken, headers: userHeaders(createKey), body: createBody });
   if (created?.idempotentReplay || created?.address?.version !== 1) throw new Error(`client address create readback failed: ${JSON.stringify(created)}`);
@@ -168,16 +177,16 @@ try {
   if (createConflict.status !== 409 || createConflict.body?.error?.code !== "IDEMPOTENCY_CONFLICT") throw new Error(`client address idempotency conflict failed: ${JSON.stringify(createConflict)}`);
   const readAddress = await expect(dshBase, "GET", `/dsh/addresses/${encodeURIComponent(addressID)}`, 200, { token: client.accessToken });
   if (readAddress.address?.id !== addressID || readAddress.address?.version !== 1) throw new Error("client address canonical readback failed");
-  const updated = await expect(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, 200, { token: client.accessToken, headers: userHeaders(`location-address-update-${suffix}-1`, 1), body: { addressText: "شارع location runtime، صنعاء، مبنى 5", latitude: 15.369446, longitude: 44.191006 } });
+  const updated = await expect(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, 200, { token: client.accessToken, headers: userHeaders(`location-address-update-${suffix}-1`, 1), body: { addressText: "شارع location runtime، صنعاء، مبنى 5", latitude: 15.369446, longitude: 44.191006, serviceCityId: serviceCityID } });
   if (updated.address?.version !== 2) throw new Error("client address update version readback failed");
   const delayedCreateReplay = await expect(dshBase, "POST", "/dsh/addresses", 200, { token: client.accessToken, headers: userHeaders(createKey), body: createBody });
   if (delayedCreateReplay.address?.version !== 2 || delayedCreateReplay.address.addressText !== updated.address.addressText) throw new Error("delayed create replay did not reread current address");
-  const updatedAgain = await expect(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, 200, { token: client.accessToken, headers: userHeaders(`location-address-update-${suffix}-2`, 2), body: { addressText: "شارع location runtime، صنعاء، مبنى 6", latitude: 15.369447, longitude: 44.191007 } });
-  const delayedUpdateReplay = await expect(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, 200, { token: client.accessToken, headers: userHeaders(`location-address-update-${suffix}-1`, 1), body: { addressText: "شارع location runtime، صنعاء، مبنى 5", latitude: 15.369446, longitude: 44.191006 } });
+  const updatedAgain = await expect(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, 200, { token: client.accessToken, headers: userHeaders(`location-address-update-${suffix}-2`, 2), body: { addressText: "شارع location runtime، صنعاء، مبنى 6", latitude: 15.369447, longitude: 44.191007, serviceCityId: serviceCityID } });
+  const delayedUpdateReplay = await expect(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, 200, { token: client.accessToken, headers: userHeaders(`location-address-update-${suffix}-1`, 1), body: { addressText: "شارع location runtime، صنعاء، مبنى 5", latitude: 15.369446, longitude: 44.191006, serviceCityId: serviceCityID } });
   if (updatedAgain.address?.version !== 3 || delayedUpdateReplay.address?.version !== 3 || delayedUpdateReplay.address.addressText !== updatedAgain.address.addressText) throw new Error("delayed update replay did not reread current address");
-  const staleAddress = await request(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, { token: client.accessToken, headers: userHeaders(`location-address-stale-${suffix}`, 1), body: { addressText: "عنوان stale", latitude: 15.3, longitude: 44.1 } });
+  const staleAddress = await request(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, { token: client.accessToken, headers: userHeaders(`location-address-stale-${suffix}`, 1), body: { addressText: "عنوان stale", latitude: 15.3, longitude: 44.1, serviceCityId: serviceCityID } });
   if (staleAddress.status !== 409 || staleAddress.body?.error?.code !== "VERSION_CONFLICT") throw new Error(`client address stale write was accepted: ${JSON.stringify(staleAddress)}`);
-  const addressConcurrent = await Promise.all([0, 1].map((index) => request(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, { token: client.accessToken, headers: userHeaders(`location-address-concurrent-${suffix}-${index}`, 3), body: { addressText: `عنوان concurrent ${index}`, latitude: 15.5 + index / 100, longitude: 44.3 + index / 100 } })));
+  const addressConcurrent = await Promise.all([0, 1].map((index) => request(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, { token: client.accessToken, headers: userHeaders(`location-address-concurrent-${suffix}-${index}`, 3), body: { addressText: `عنوان concurrent ${index}`, latitude: 15.5 + index / 100, longitude: 44.3 + index / 100, serviceCityId: serviceCityID } })));
   if (addressConcurrent.filter((result) => result.status === 200).length !== 1 || addressConcurrent.filter((result) => result.status === 409 && result.body?.error?.code === "VERSION_CONFLICT").length !== 1) throw new Error(`client address concurrency was not serialized: ${JSON.stringify(addressConcurrent)}`);
 
   const emptyOrigin = await expect(dshBase, "GET", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, 200, { token: partnerFixture.pair.accessToken });
@@ -224,7 +233,7 @@ try {
   if (foreignWrite.status !== 404 || unknownWrite.status !== 404 || foreignWrite.body?.error?.code !== unknownWrite.body?.error?.code) throw new Error("foreign and unknown Store origin writes are distinguishable");
 
   for (let index = 0; index < 51; index += 1) {
-    const body = { addressText: `عنوان runtime pagination ${index}، صنعاء`, latitude: 15 + index / 1000, longitude: 44 + index / 1000 };
+    const body = { addressText: `عنوان runtime pagination ${index}، صنعاء`, latitude: 15 + index / 1000, longitude: 44 + index / 1000, serviceCityId: serviceCityID };
     const createdPageAddress = await expect(dshBase, "POST", "/dsh/addresses", 201, { token: client.accessToken, headers: userHeaders(`location-page-${suffix}-${index}`), body });
     if (createdPageAddress.address?.version !== 1) throw new Error(`runtime pagination seed ${index} was not created canonically`);
   }
@@ -250,7 +259,7 @@ try {
   const addressCount = sql(`SELECT count(*) FROM dsh.delivery_address_audit WHERE client_actor_id='${sqlLiteral(clientActorID)}'`);
   const originCount = sql(`SELECT count(*) FROM dsh.store_origin_audit WHERE store_id='${sqlLiteral(partnerStoreID)}'`);
   if (addressCount !== "55" || originCount !== "3") throw new Error(`audit readback is not one row per successful mutation: addresses=${addressCount} origins=${originCount}`);
-  console.log("DSH_SCHEMA_V8=PASS");
+  console.log("DSH_SCHEMA_V9=PASS");
   console.log("LOCATION_CORE_RUNTIME=PASS");
   console.log("LOCATION_CORE_CLIENT_API=PASS");
   console.log("LOCATION_CORE_PARTNER_API=PASS");

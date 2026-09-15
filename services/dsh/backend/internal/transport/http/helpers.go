@@ -92,12 +92,16 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 		}
 	}
 	return contract.StoreView{
-		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, Version: store.Version,
+		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), Version: store.Version,
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
 		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
 		Assortments:          values,
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
+}
+
+func nullableString(value string) string {
+	return strings.TrimSpace(value)
 }
 
 func toPublicationReadiness(readiness storepublication.PublicationReadiness) contract.StorePublicationReadiness {

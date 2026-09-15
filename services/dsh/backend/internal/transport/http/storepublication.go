@@ -101,7 +101,12 @@ func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.
 }
 
 func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Request) {
-	stores, err := s.service.ListPublished(r.Context())
+	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
+	if serviceCityID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId is required for scoped discovery")
+		return
+	}
+	stores, err := s.service.ListPublished(r.Context(), serviceCityID)
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return
@@ -116,7 +121,12 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Request) {
-	store, err := s.service.ReadPublished(r.Context(), r.PathValue("storeId"))
+	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
+	if serviceCityID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId is required for scoped discovery")
+		return
+	}
+	store, err := s.service.ReadPublished(r.Context(), r.PathValue("storeId"), serviceCityID)
 	if errors.Is(err, postgres.ErrStoreNotFound) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "published store was not found")
 		return
@@ -153,6 +163,8 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadGateway, "IDENTITY_UNAVAILABLE", "partner publication eligibility is unavailable")
 	case errors.Is(err, postgres.ErrStoreNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "store was not found")
+	case errors.Is(err, postgres.ErrServiceCityNotFound):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId must identify an active service city")
 	case errors.Is(err, postgres.ErrPublicationIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different publication facts")
 	case errors.Is(err, postgres.ErrPublicationVersionConflict):
@@ -186,6 +198,7 @@ func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreVie
 	}
 	return contract.PublicStoreView{
 		ID: store.ID, Name: store.Name, Version: store.Version, PublishedAt: store.PublishedAt,
+		ServiceCity: toServiceCityRecord(store.ServiceCity),
 		Assortments: assortments,
 		CreatedAt:   store.CreatedAt, UpdatedAt: store.UpdatedAt,
 	}

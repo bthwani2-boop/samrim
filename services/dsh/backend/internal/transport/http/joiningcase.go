@@ -75,7 +75,7 @@ func (s *JoiningCaseServer) listForOperator(w http.ResponseWriter, r *http.Reque
 	}
 	items := make([]contract.JoiningCaseSummary, 0, len(result.Cases))
 	for _, item := range result.Cases {
-		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, PartnerActorID: item.PartnerActorID, State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, ReviewedBy: item.ReviewedBy, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, PartnerActorID: item.PartnerActorID, State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, ReviewedBy: item.ReviewedBy, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -100,7 +100,7 @@ func (s *JoiningCaseServer) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.Create(r.Context(), postgres.JoiningCaseRecord{ContactPhoneE164: input.ContactPhoneE164, BusinessName: input.BusinessName, FirstStoreName: input.FirstStoreName}, idempotency, acting, correlation)
+	result, err := s.service.Create(r.Context(), postgres.JoiningCaseRecord{ContactPhoneE164: input.ContactPhoneE164, BusinessName: input.BusinessName, FirstStoreName: input.FirstStoreName, FirstStoreServiceCityID: input.ServiceCityID}, idempotency, acting, correlation)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -178,7 +178,7 @@ func (s *JoiningCaseServer) correctAndResubmitForPartner(w http.ResponseWriter, 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CorrectAndResubmitForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, expected, idempotency, correlation)
+	result, err := s.service.CorrectAndResubmitForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, input.ServiceCityID, expected, idempotency, correlation)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -187,7 +187,7 @@ func (s *JoiningCaseServer) correctAndResubmitForPartner(w http.ResponseWriter, 
 }
 
 func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request, status int, result postgres.JoiningCaseResult) {
-	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, State: contract.JoiningCaseState(result.Case.State), Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, State: contract.JoiningCaseState(result.Case.State), Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.CorrectionReason = result.Case.CorrectionReason
 	view.ReviewedBy = result.Case.ReviewedBy
@@ -289,6 +289,8 @@ func writeJoiningCaseError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active control operator session is required")
 	case errors.Is(err, joiningcase.ErrPartnerSessionForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active app-partner session is required")
+	case errors.Is(err, joiningcase.ErrServiceCityUnavailable), errors.Is(err, postgres.ErrJoiningCaseServiceCity):
+		writeError(w, http.StatusConflict, "SERVICE_CITY_UNAVAILABLE", "an active service city is required")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {

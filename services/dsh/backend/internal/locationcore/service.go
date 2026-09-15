@@ -47,29 +47,39 @@ func (s *Service) ReadOwnAddress(ctx context.Context, accessToken, addressID str
 	return postgres.ReadDeliveryAddress(ctx, s.db, addressID, actorID)
 }
 
-func (s *Service) CreateOwnAddress(ctx context.Context, accessToken, addressText string, latitude, longitude float64, idempotencyKey, correlationID string) (postgres.DeliveryAddressResult, error) {
+func (s *Service) CreateOwnAddress(ctx context.Context, accessToken, serviceCityID, addressText string, latitude, longitude float64, idempotencyKey, correlationID string) (postgres.DeliveryAddressResult, error) {
 	actorID, err := s.requireClientSession(ctx, accessToken)
 	if err != nil {
 		return postgres.DeliveryAddressResult{}, err
 	}
+	serviceCityID = strings.TrimSpace(serviceCityID)
 	addressText = strings.TrimSpace(addressText)
-	if addressText == "" {
+	if serviceCityID == "" || addressText == "" {
 		return postgres.DeliveryAddressResult{}, ErrLocationInputInvalid
 	}
-	return postgres.CreateDeliveryAddress(ctx, s.db, actorID, addressText, latitude, longitude, idempotencyKey, postgres.HashDeliveryAddressCreateRequest(actorID, addressText, latitude, longitude), correlationID)
+	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
+	if err != nil || !city.Active {
+		return postgres.DeliveryAddressResult{}, postgres.ErrServiceCityNotFound
+	}
+	return postgres.CreateDeliveryAddress(ctx, s.db, actorID, addressText, latitude, longitude, idempotencyKey, postgres.HashDeliveryAddressCreateRequest(actorID, addressText, latitude, longitude, serviceCityID), correlationID, serviceCityID)
 }
 
-func (s *Service) UpdateOwnAddress(ctx context.Context, accessToken, addressID, addressText string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.DeliveryAddressResult, error) {
+func (s *Service) UpdateOwnAddress(ctx context.Context, accessToken, addressID, serviceCityID, addressText string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.DeliveryAddressResult, error) {
 	actorID, err := s.requireClientSession(ctx, accessToken)
 	if err != nil {
 		return postgres.DeliveryAddressResult{}, err
 	}
 	addressID = strings.TrimSpace(addressID)
+	serviceCityID = strings.TrimSpace(serviceCityID)
 	addressText = strings.TrimSpace(addressText)
-	if addressID == "" || addressText == "" {
+	if addressID == "" || serviceCityID == "" || addressText == "" {
 		return postgres.DeliveryAddressResult{}, ErrLocationInputInvalid
 	}
-	return postgres.UpdateDeliveryAddress(ctx, s.db, addressID, actorID, addressText, latitude, longitude, expectedVersion, idempotencyKey, postgres.HashDeliveryAddressUpdateRequest(addressID, actorID, addressText, latitude, longitude, expectedVersion), correlationID)
+	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
+	if err != nil || !city.Active {
+		return postgres.DeliveryAddressResult{}, postgres.ErrServiceCityNotFound
+	}
+	return postgres.UpdateDeliveryAddress(ctx, s.db, addressID, actorID, addressText, latitude, longitude, expectedVersion, idempotencyKey, postgres.HashDeliveryAddressUpdateRequest(addressID, actorID, addressText, latitude, longitude, expectedVersion, serviceCityID), correlationID, serviceCityID)
 }
 
 func (s *Service) ReadStoreOrigin(ctx context.Context, accessToken, storeID string) (postgres.StoreDeliveryOriginRecord, bool, error) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { JoiningCasePanel } from "../../../src/features/partner-onboarding/joining-case-panel";
+import { ServiceCityPanel } from "../../../src/features/service-city/service-city-panel";
 import { useSession } from "../../../src/session/session-provider";
 
 export default function PartnersPage() {
@@ -26,6 +27,7 @@ export default function PartnersPage() {
         <p className="lead">أنشئ حالة انضمام يملكها DSH، ثم أرسلها للمراجعة حتى يحل Identity actor الشريك ويربط Store القانوني بالحالة المعتمدة.</p>
       </div>
       <JoiningCasePanel />
+      <ServiceCityPanel />
     </section>
   );
 }

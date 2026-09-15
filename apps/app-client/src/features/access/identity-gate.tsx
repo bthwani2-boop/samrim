@@ -28,6 +28,7 @@ import {
 import { identityPresentation, type IdentityCopy } from "./identity-presentation";
 import StoreDiscovery from "../store-discovery/store-discovery";
 import LocationCore from "../location-core/location-core";
+import ServiceCityScope from "../service-city/service-city-scope";
 
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
@@ -224,8 +225,10 @@ export default function IdentityGate() {
       <ScrollView contentContainerStyle={styles.authenticatedScrollContent} keyboardShouldPersistTaps="handled" nestedScrollEnabled style={styles.container}>
           <Text style={styles.title}>{copy.brand}</Text>
           <Text style={styles.status}>{copy.authenticatedStatus}</Text>
-          <StoreDiscovery />
-          <LocationCore />
+          <ServiceCityScope>
+            <StoreDiscovery />
+            <LocationCore />
+          </ServiceCityScope>
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <Pressable
             accessibilityRole="button"

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
 
 import { resolveTheme } from "@bthwani/design-system";
-import type { PublicStoreView } from "@bthwani/dsh";
-import { listPublishedStores, readPublishedStore } from "./store-discovery-client";
+import type { DeliveryAddress, PublicStoreView, ServiceabilityResponse } from "@bthwani/dsh";
+import { evaluateStoreServiceability, listOwnDeliveryAddresses, listPublishedStores, readPublishedStore } from "./store-discovery-client";
+import { useServiceCityScope } from "../service-city/service-city-scope";
 
 type DiscoveryState =
   | { kind: "loading" }
@@ -11,35 +12,91 @@ type DiscoveryState =
   | { kind: "empty" }
   | { kind: "error" };
 
+type AddressState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "ready"; addresses: ReadonlyArray<DeliveryAddress> }
+  | { kind: "error" };
+
+type ServiceabilityState =
+  | { kind: "idle" }
+  | { kind: "loading"; addressID: string }
+  | { kind: "ready"; addressID: string; result: ServiceabilityResponse }
+  | { kind: "error"; addressID: string };
+
+function serviceabilityMessage(status: ServiceabilityResponse["status"]): string {
+  if (status === "SERVICEABLE") return "العنوان متاح للتوصيل من هذا المتجر.";
+  if (status === "UNSERVICEABLE") return "العنوان خارج نطاق مدينة المتجر المختارة.";
+  return "تعذر تأكيد أهلية العنوان الآن. أعد المحاولة لاحقًا.";
+}
+
 export default function StoreDiscovery() {
+  const { cities, selectedCityID } = useServiceCityScope();
   const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
   const [selected, setSelected] = useState<PublicStoreView | null>(null);
   const [detailState, setDetailState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [addressState, setAddressState] = useState<AddressState>({ kind: "idle" });
+  const [serviceabilityState, setServiceabilityState] = useState<ServiceabilityState>({ kind: "idle" });
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     setSelected(null);
     setDetailState("idle");
+    setAddressState({ kind: "idle" });
+    setServiceabilityState({ kind: "idle" });
     try {
-      const stores = await listPublishedStores();
+      if (!selectedCityID) return;
+      const stores = await listPublishedStores(selectedCityID);
       setState(stores.length ? { kind: "ready", stores } : { kind: "empty" });
     } catch {
       setState({ kind: "error" });
     }
-  }, []);
+  }, [selectedCityID]);
 
   useEffect(() => { void load(); }, [load]);
 
   async function openStore(store: PublicStoreView) {
     setSelected(null);
     setDetailState("loading");
+    setAddressState({ kind: "loading" });
+    setServiceabilityState({ kind: "idle" });
     try {
-      setSelected(await readPublishedStore(store.id));
+      if (!selectedCityID) return;
+      setSelected(await readPublishedStore(store.id, selectedCityID));
       setDetailState("ready");
     } catch {
+      setAddressState({ kind: "idle" });
       setDetailState("error");
+      return;
+    }
+    try {
+      const result = await listOwnDeliveryAddresses();
+      setAddressState({ kind: "ready", addresses: result.addresses });
+    } catch {
+      setAddressState({ kind: "error" });
+    }
+  }
+
+  async function loadAddresses() {
+    setAddressState({ kind: "loading" });
+    try {
+      const result = await listOwnDeliveryAddresses();
+      setAddressState({ kind: "ready", addresses: result.addresses });
+    } catch {
+      setAddressState({ kind: "error" });
+    }
+  }
+
+  async function evaluateAddress(addressID: string) {
+    if (!selected) return;
+    setServiceabilityState({ kind: "loading", addressID });
+    try {
+      const result = await evaluateStoreServiceability(selected.id, addressID);
+      setServiceabilityState({ kind: "ready", addressID, result });
+    } catch {
+      setServiceabilityState({ kind: "error", addressID });
     }
   }
 
@@ -59,10 +116,10 @@ export default function StoreDiscovery() {
     return <View style={styles.state}><Text style={styles.title}>تعذر قراءة تفاصيل المتجر</Text><Pressable accessibilityRole="button" onPress={() => setDetailState("idle")} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>العودة إلى المتاجر</Text></Pressable></View>;
   }
   if (selected) {
-    return <View style={styles.detail}><Pressable accessibilityRole="button" onPress={() => { setSelected(null); setDetailState("idle"); }}><Text style={styles.back}>‹ المتاجر المنشورة</Text></Pressable><Text style={styles.title}>{selected.name}</Text><Text style={styles.muted}>متجر منشور ومتاح للاكتشاف</Text><Text style={styles.meta}>معرّف المتجر: {selected.id}</Text><Text style={styles.meta}>إصدار الحالة: {selected.version}</Text><Text style={styles.sectionTitle}>المنتجات المتاحة</Text>{selected.assortments.length ? selected.assortments.map((assortment) => <View key={assortment.productId} style={styles.item}><Text style={styles.meta}>{assortment.canonicalName}</Text><Text style={styles.meta}>{assortment.priceMinor} {assortment.currency} · {assortment.sellUnit === "kg" ? "بالكيلو" : "بالقطعة"}</Text><Text style={styles.muted}>متاح · إصدار العرض {assortment.version}</Text></View>) : <Text style={styles.muted}>لا توجد منتجات متاحة حاليًا.</Text>}</View>;
+    return <View style={styles.detail}><Pressable accessibilityRole="button" onPress={() => { setSelected(null); setDetailState("idle"); setAddressState({ kind: "idle" }); setServiceabilityState({ kind: "idle" }); }}><Text style={styles.back}>‹ المتاجر المنشورة</Text></Pressable><Text style={styles.title}>{selected.name}</Text><Text style={styles.muted}>متجر منشور ومتاح للاكتشاف</Text><Text style={styles.meta}>معرّف المتجر: {selected.id}</Text><Text style={styles.meta}>مدينة الخدمة: {selected.serviceCity.displayNameAr}</Text><Text style={styles.meta}>إصدار الحالة: {selected.version}</Text><Text style={styles.sectionTitle}>المنتجات المتاحة</Text>{selected.assortments.length ? selected.assortments.map((assortment) => <View key={assortment.productId} style={styles.item}><Text style={styles.meta}>{assortment.canonicalName}</Text><Text style={styles.meta}>{assortment.priceMinor} {assortment.currency} · {assortment.sellUnit === "kg" ? "بالكيلو" : "بالقطعة"}</Text><Text style={styles.muted}>متاح · إصدار العرض {assortment.version}</Text></View>) : <Text style={styles.muted}>لا توجد منتجات متاحة حاليًا.</Text>}<Text style={styles.sectionTitle}>تأكيد أهلية العنوان</Text><Text style={styles.muted}>اختر عنوانًا محفوظًا ليقيّم DSH توافق مدينة العنوان مع مدينة المتجر.</Text>{addressState.kind === "loading" ? <View style={styles.inlineState}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة عناوينك…</Text></View> : null}{addressState.kind === "error" ? <View style={styles.inlineState}><Text style={styles.muted}>تعذر قراءة عناوينك المحفوظة.</Text><Pressable accessibilityRole="button" onPress={() => void loadAddresses()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}{addressState.kind === "ready" && addressState.addresses.length === 0 ? <Text style={styles.muted}>لا يوجد عنوان محفوظ بعد. أضف عنوانًا من قسم العناوين ثم أعد فتح المتجر.</Text> : null}{addressState.kind === "ready" && addressState.addresses.length > 0 ? <View style={styles.addressList}>{addressState.addresses.map((address) => { const cityName = cities.find((city) => city.id === address.serviceCityId)?.displayNameAr || "مدينة غير محددة"; const selectedAddress = serviceabilityState.kind !== "idle" && serviceabilityState.addressID === address.id; return <Pressable key={address.id} accessibilityRole="button" accessibilityState={{ selected: selectedAddress, busy: serviceabilityState.kind === "loading" && selectedAddress }} disabled={serviceabilityState.kind === "loading"} onPress={() => void evaluateAddress(address.id)} style={[styles.addressButton, selectedAddress && styles.addressButtonSelected]}><Text style={styles.meta}>{address.addressText}</Text><Text style={styles.muted}>{cityName} · الإصدار {address.version}</Text></Pressable>; })}</View> : null}{serviceabilityState.kind === "error" ? <View style={styles.statusBox}><Text accessibilityRole="alert" style={styles.statusError}>تعذر تقييم الأهلية. تحقق من الاتصال ثم أعد المحاولة.</Text><Pressable accessibilityRole="button" onPress={() => void evaluateAddress(serviceabilityState.addressID)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة التقييم</Text></Pressable></View> : null}{serviceabilityState.kind === "ready" ? <View style={styles.statusBox}><Text style={styles.statusLabel}>نتيجة نطاق الخدمة</Text><Text style={serviceabilityState.result.status === "SERVICEABLE" ? styles.statusSuccess : serviceabilityState.result.status === "UNSERVICEABLE" ? styles.statusWarning : styles.statusError}>{serviceabilityMessage(serviceabilityState.result.status)}</Text><Text style={styles.muted}>سياسة التقييم: {serviceabilityState.result.evidence.policyVersion}</Text></View> : null}</View>;
   }
 
-  return <View style={styles.container}><Text style={styles.eyebrow}>اكتشاف العميل</Text><Text style={styles.title}>المتاجر المنشورة</Text><Text style={styles.muted}>هذه القائمة تأتي من DSH ولا تعرض إلا المتاجر التي اجتازت بوابات النشر الحالية.</Text><FlatList data={state.stores} keyExtractor={(item) => item.id} contentContainerStyle={styles.list} renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${item.name}`} onPress={() => void openStore(item)} style={styles.card}><Text style={styles.cardTitle}>{item.name}</Text><Text style={styles.cardMeta}>متجر منشور · إصدار {item.version}</Text></Pressable>} /></View>;
+  return <View style={styles.container}><Text style={styles.eyebrow}>اكتشاف العميل</Text><Text style={styles.title}>المتاجر المنشورة</Text><Text style={styles.muted}>هذه القائمة تأتي من DSH ضمن المدينة المختارة، ولا تعرض إلا المتاجر التي اجتازت بوابات النشر الحالية.</Text><FlatList data={state.stores} keyExtractor={(item) => item.id} contentContainerStyle={styles.list} renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${item.name}`} onPress={() => void openStore(item)} style={styles.card}><Text style={styles.cardTitle}>{item.name}</Text><Text style={styles.cardMeta}>{item.serviceCity.displayNameAr} · متجر منشور · إصدار {item.version}</Text></Pressable>} /></View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -80,6 +137,15 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     meta: { color: theme.structure, fontSize: 14, textAlign: "left" },
     sectionTitle: { color: theme.structure, fontSize: 16, fontWeight: "800", marginTop: 8, textAlign: "left" },
     item: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 4, padding: 12 },
+    inlineState: { alignItems: "center", gap: 8, paddingVertical: 8 },
+    addressList: { gap: 8 },
+    addressButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 4, padding: 12 },
+    addressButtonSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    statusBox: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 6, padding: 12 },
+    statusLabel: { color: theme.colorMuted, fontSize: 12, fontWeight: "700", textAlign: "left" },
+    statusSuccess: { color: theme.success, fontSize: 14, fontWeight: "800", textAlign: "left" },
+    statusWarning: { color: theme.warning, fontSize: 14, fontWeight: "800", textAlign: "left" },
+    statusError: { color: theme.danger, fontSize: 14, fontWeight: "800", textAlign: "left" },
     back: { color: theme.interactiveText, fontSize: 15, fontWeight: "800", textAlign: "left" },
     button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 14, minHeight: 50, justifyContent: "center", paddingHorizontal: 18 },
     buttonText: { color: theme.surface, fontSize: 15, fontWeight: "800" },

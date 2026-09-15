@@ -29,22 +29,24 @@ var (
 	ErrJoiningCaseInvalidState    = errors.New("joining case queue state is invalid")
 	ErrJoiningCaseInvalidCursor   = errors.New("joining case queue cursor is invalid")
 	ErrJoiningCaseInvalidLimit    = errors.New("joining case queue limit is invalid")
+	ErrJoiningCaseServiceCity     = errors.New("joining case requires an active service city")
 )
 
 type JoiningCaseRecord struct {
-	ID               string
-	ContactPhoneE164 string
-	BusinessName     string
-	FirstStoreName   string
-	PartnerActorID   string
-	State            string
-	CorrectionReason string
-	ReviewedBy       string
-	StoreID          string
-	Store            *StoreRecord
-	Version          int
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                      string
+	ContactPhoneE164        string
+	BusinessName            string
+	FirstStoreName          string
+	FirstStoreServiceCityID string
+	PartnerActorID          string
+	State                   string
+	CorrectionReason        string
+	ReviewedBy              string
+	StoreID                 string
+	Store                   *StoreRecord
+	Version                 int
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 type JoiningCaseResult struct {
@@ -57,23 +59,31 @@ type JoiningCaseListResult struct {
 	NextCursor string
 }
 
-func HashJoiningCaseRequest(phone, businessName, firstStoreName string) string {
-	return hashFacts(phone, businessName, firstStoreName)
+func HashJoiningCaseRequest(phone, businessName, firstStoreName string, serviceCityID ...string) string {
+	values := []string{phone, businessName, firstStoreName}
+	if len(serviceCityID) > 0 {
+		values = append(values, serviceCityID[0])
+	}
+	return hashFacts(values...)
 }
 
 func HashJoiningCaseSubmit(caseID, actorID string, expectedVersion int) string {
 	return hashFacts(caseID, actorID, strconv.Itoa(expectedVersion))
 }
 
-func HashJoiningCaseCorrectAndResubmit(caseID, actorID, businessName, firstStoreName string, expectedVersion int) string {
-	return hashFacts("correct-and-resubmit", caseID, actorID, businessName, firstStoreName, strconv.Itoa(expectedVersion))
+func HashJoiningCaseCorrectAndResubmit(caseID, actorID, businessName, firstStoreName string, expectedVersion int, serviceCityID ...string) string {
+	values := []string{"correct-and-resubmit", caseID, actorID, businessName, firstStoreName, strconv.Itoa(expectedVersion)}
+	if len(serviceCityID) > 0 {
+		values = append(values, serviceCityID[0])
+	}
+	return hashFacts(values...)
 }
 
 func HashJoiningCaseReview(caseID, decision, correctionReason string, expectedVersion int) string {
 	return hashFacts(caseID, decision, correctionReason, strconv.Itoa(expectedVersion))
 }
 
-func CreateJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestHash, actingActorID, correlationID, phone, businessName, firstStoreName string) (JoiningCaseResult, error) {
+func CreateJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestHash, actingActorID, correlationID, phone, businessName, firstStoreName string, serviceCityID ...string) (JoiningCaseResult, error) {
 	if db == nil {
 		return JoiningCaseResult{}, errors.New("DSH database is nil")
 	}
@@ -113,11 +123,15 @@ func CreateJoiningCase(ctx context.Context, db *sql.DB, idempotencyKey, requestH
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return JoiningCaseResult{}, err
 	}
+	cityID := ""
+	if len(serviceCityID) > 0 {
+		cityID = strings.TrimSpace(serviceCityID[0])
+	}
 	caseID, err := newID("join")
 	if err != nil {
 		return JoiningCaseResult{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,business_name,first_store_name) VALUES($1,$2,$3,$4)`, caseID, phone, businessName, firstStoreName); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_cases(id,contact_phone_e164,business_name,first_store_name,first_store_service_city_id) VALUES($1,$2,$3,$4,NULLIF($5,''))`, caseID, phone, businessName, firstStoreName, cityID); err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("create joining case: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.joining_case_mutation_idempotency(idempotency_key,request_hash,case_id,operation,result_version,result_state) VALUES($1,$2,$3,'create',1,'draft')`, idempotencyKey, requestHash, caseID); err != nil {
@@ -200,7 +214,7 @@ func SubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID string, 
 	return result, err
 }
 
-func CorrectAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (JoiningCaseResult, error) {
+func CorrectAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, actorID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, requestHash, correlationID string, serviceCityID ...string) (JoiningCaseResult, error) {
 	if db == nil {
 		return JoiningCaseResult{}, errors.New("DSH database is nil")
 	}
@@ -236,8 +250,12 @@ func CorrectAndResubmitJoiningCase(ctx context.Context, db *sql.DB, caseID, acto
 	if current.Case.PartnerActorID == "" || current.Case.PartnerActorID != actorID {
 		return JoiningCaseResult{}, ErrJoiningCasePartnerAccess
 	}
+	cityID := current.Case.FirstStoreServiceCityID
+	if len(serviceCityID) > 0 {
+		cityID = strings.TrimSpace(serviceCityID[0])
+	}
 	var updatedID string
-	if err := tx.QueryRowContext(ctx, `UPDATE dsh.joining_cases SET business_name=$2,first_store_name=$3,state='submitted',correction_reason=NULL,reviewed_by=NULL,store_id=NULL,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND partner_actor_id=$4 AND state='needs_correction' AND version=$5 RETURNING id`, current.Case.ID, businessName, firstStoreName, actorID, expectedVersion).Scan(&updatedID); err != nil {
+	if err := tx.QueryRowContext(ctx, `UPDATE dsh.joining_cases SET business_name=$2,first_store_name=$3,first_store_service_city_id=NULLIF($4,''),state='submitted',correction_reason=NULL,reviewed_by=NULL,store_id=NULL,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND partner_actor_id=$5 AND state='needs_correction' AND version=$6 RETURNING id`, current.Case.ID, businessName, firstStoreName, cityID, actorID, expectedVersion).Scan(&updatedID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return JoiningCaseResult{}, ErrJoiningCaseVersion
 		}
@@ -290,7 +308,7 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state string, limit int, 
 		decoded = &parsed
 	}
 
-	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at FROM dsh.joining_cases c WHERE 1=1`
+	query := `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.state,c.correction_reason,c.reviewed_by,c.version,c.created_at,c.updated_at,c.first_store_service_city_id FROM dsh.joining_cases c WHERE 1=1`
 	args := make([]any, 0, 4)
 	if state != "" {
 		args = append(args, state)
@@ -310,8 +328,8 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state string, limit int, 
 	items := make([]JoiningCaseRecord, 0, limit)
 	for rows.Next() {
 		var record JoiningCaseRecord
-		var actorID, correctionReason, reviewedBy sql.NullString
-		if err := rows.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &record.State, &correctionReason, &reviewedBy, &record.Version, &record.CreatedAt, &record.UpdatedAt); err != nil {
+		var actorID, correctionReason, reviewedBy, cityID sql.NullString
+		if err := rows.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &record.State, &correctionReason, &reviewedBy, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID); err != nil {
 			return JoiningCaseListResult{}, fmt.Errorf("scan joining case queue: %w", err)
 		}
 		if actorID.Valid {
@@ -322,6 +340,9 @@ func ListJoiningCases(ctx context.Context, db *sql.DB, state string, limit int, 
 		}
 		if reviewedBy.Valid {
 			record.ReviewedBy = reviewedBy.String
+		}
+		if cityID.Valid {
+			record.FirstStoreServiceCityID = cityID.String
 		}
 		items = append(items, record)
 	}
@@ -371,6 +392,15 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, caseID, decision, correc
 	if current.Case.State != "submitted" || current.Case.PartnerActorID == "" {
 		return JoiningCaseResult{}, ErrJoiningCaseState
 	}
+	if current.Case.FirstStoreServiceCityID == "" {
+		return JoiningCaseResult{}, ErrJoiningCaseServiceCity
+	}
+	var cityActive bool
+	if err := tx.QueryRowContext(ctx, "SELECT active FROM dsh.service_cities WHERE id=$1 FOR SHARE", current.Case.FirstStoreServiceCityID).Scan(&cityActive); errors.Is(err, sql.ErrNoRows) || (err == nil && !cityActive) {
+		return JoiningCaseResult{}, ErrJoiningCaseServiceCity
+	} else if err != nil {
+		return JoiningCaseResult{}, fmt.Errorf("read joining case service city: %w", err)
+	}
 	if strings.TrimSpace(actingActorID) == current.Case.PartnerActorID {
 		return JoiningCaseResult{}, ErrJoiningCaseSelfReview
 	}
@@ -391,7 +421,7 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, caseID, decision, correc
 		if err != nil {
 			return JoiningCaseResult{}, err
 		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name) VALUES($1,$2,$3)", storeID, current.Case.PartnerActorID, current.Case.FirstStoreName); err != nil {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id) VALUES($1,$2,$3,$4)", storeID, current.Case.PartnerActorID, current.Case.FirstStoreName, current.Case.FirstStoreServiceCityID); err != nil {
 			return JoiningCaseResult{}, fmt.Errorf("create canonical store: %w", err)
 		}
 	}
@@ -443,8 +473,8 @@ func ReadJoiningCaseForPartner(ctx context.Context, db *sql.DB, actorID string) 
 	return JoiningCaseResult{Case: caseRecord}, nil
 }
 
-const joiningCaseSelect = `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.state,c.correction_reason,c.reviewed_by,c.store_id,c.version,c.created_at,c.updated_at,
- s.id,s.partner_actor_id,s.name,s.version,s.publication_state,s.publication_changed_at,s.created_at,s.updated_at FROM dsh.joining_cases c LEFT JOIN dsh.stores s ON s.id=c.store_id`
+const joiningCaseSelect = `SELECT c.id,c.contact_phone_e164,c.business_name,c.first_store_name,c.partner_actor_id,c.state,c.correction_reason,c.reviewed_by,c.store_id,c.version,c.created_at,c.updated_at,c.first_store_service_city_id,
+ s.id,s.partner_actor_id,s.name,s.service_city_id,s.version,s.publication_state,s.publication_changed_at,s.created_at,s.updated_at FROM dsh.joining_cases c LEFT JOIN dsh.stores s ON s.id=c.store_id`
 
 func readJoiningCaseTx(ctx context.Context, tx *sql.Tx, caseID string) (JoiningCaseResult, error) {
 	caseID = strings.TrimSpace(caseID)
@@ -464,13 +494,13 @@ func readJoiningCaseTx(ctx context.Context, tx *sql.Tx, caseID string) (JoiningC
 
 func readJoiningCaseRow(ctx context.Context, row rowScanner, _ bool) (JoiningCaseRecord, error) {
 	var record JoiningCaseRecord
-	var actorID, correctionReason, reviewedBy, storeID sql.NullString
+	var actorID, correctionReason, reviewedBy, storeID, cityID sql.NullString
 	var store StoreRecord
-	var storeIDValue, storePartner, storeName, storeState sql.NullString
+	var storeIDValue, storePartner, storeName, storeCityID, storeState sql.NullString
 	var storeVersion sql.NullInt64
 	var storeChanged, storeCreated, storeUpdated sql.NullTime
-	err := row.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &record.State, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt,
-		&storeIDValue, &storePartner, &storeName, &storeVersion, &storeState, &storeChanged, &storeCreated, &storeUpdated)
+	err := row.Scan(&record.ID, &record.ContactPhoneE164, &record.BusinessName, &record.FirstStoreName, &actorID, &record.State, &correctionReason, &reviewedBy, &storeID, &record.Version, &record.CreatedAt, &record.UpdatedAt, &cityID,
+		&storeIDValue, &storePartner, &storeName, &storeCityID, &storeVersion, &storeState, &storeChanged, &storeCreated, &storeUpdated)
 	if err != nil {
 		return JoiningCaseRecord{}, err
 	}
@@ -486,10 +516,14 @@ func readJoiningCaseRow(ctx context.Context, row rowScanner, _ bool) (JoiningCas
 	if storeID.Valid {
 		record.StoreID = storeID.String
 	}
+	if cityID.Valid {
+		record.FirstStoreServiceCityID = cityID.String
+	}
 	if storeIDValue.Valid {
 		store.ID = storeIDValue.String
 		store.PartnerActorID = storePartner.String
 		store.Name = storeName.String
+		store.ServiceCityID = storeCityID.String
 		store.Version = int(storeVersion.Int64)
 		store.PublicationState = storeState.String
 		if storeChanged.Valid {

@@ -21,6 +21,7 @@ type DeliveryAddressRecord struct {
 	AddressText   string
 	Latitude      float64
 	Longitude     float64
+	ServiceCityID string
 	Version       int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -60,12 +61,20 @@ var (
 	ErrStoreOriginVersion           = errors.New("store delivery origin version is stale")
 )
 
-func HashDeliveryAddressCreateRequest(clientActorID, addressText string, latitude, longitude float64) string {
-	return hashLocationFacts("create", clientActorID, addressText, formatCoordinate(latitude), formatCoordinate(longitude))
+func HashDeliveryAddressCreateRequest(clientActorID, addressText string, latitude, longitude float64, serviceCityIDs ...string) string {
+	facts := []string{"create", clientActorID, addressText, formatCoordinate(latitude), formatCoordinate(longitude)}
+	if len(serviceCityIDs) > 0 {
+		facts = append(facts, strings.TrimSpace(serviceCityIDs[0]))
+	}
+	return hashLocationFacts(facts...)
 }
 
-func HashDeliveryAddressUpdateRequest(addressID, clientActorID, addressText string, latitude, longitude float64, expectedVersion int) string {
-	return hashLocationFacts("update", addressID, clientActorID, addressText, formatCoordinate(latitude), formatCoordinate(longitude), strconv.Itoa(expectedVersion))
+func HashDeliveryAddressUpdateRequest(addressID, clientActorID, addressText string, latitude, longitude float64, expectedVersion int, serviceCityIDs ...string) string {
+	facts := []string{"update", addressID, clientActorID, addressText, formatCoordinate(latitude), formatCoordinate(longitude), strconv.Itoa(expectedVersion)}
+	if len(serviceCityIDs) > 0 {
+		facts = append(facts, strings.TrimSpace(serviceCityIDs[0]))
+	}
+	return hashLocationFacts(facts...)
 }
 
 func HashStoreDeliveryOriginRequest(storeID, partnerActorID string, latitude, longitude float64, expectedVersion int) string {
@@ -99,7 +108,7 @@ func ListDeliveryAddresses(ctx context.Context, db *sql.DB, clientActorID string
 		where += fmt.Sprintf(" AND (created_at,id) < ($%d,$%d)", len(args)-1, len(args))
 	}
 	args = append(args, limit+1)
-	rows, err := db.QueryContext(ctx, fmt.Sprintf(`SELECT id, client_actor_id, address_text, latitude, longitude, version, created_at, updated_at
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`SELECT id, client_actor_id, address_text, latitude, longitude, service_city_id, version, created_at, updated_at
 		FROM dsh.delivery_addresses WHERE %s ORDER BY created_at DESC, id DESC LIMIT $%d`, where, len(args)), args...)
 	if err != nil {
 		return DeliveryAddressListResult{}, fmt.Errorf("list delivery addresses: %w", err)
@@ -156,7 +165,7 @@ func ReadDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientActor
 	if addressID == "" || clientActorID == "" {
 		return DeliveryAddressRecord{}, ErrDeliveryAddressNotFound
 	}
-	address, err := scanDeliveryAddress(db.QueryRowContext(ctx, `SELECT id, client_actor_id, address_text, latitude, longitude, version, created_at, updated_at
+	address, err := scanDeliveryAddress(db.QueryRowContext(ctx, `SELECT id, client_actor_id, address_text, latitude, longitude, service_city_id, version, created_at, updated_at
 		FROM dsh.delivery_addresses WHERE id=$1 AND client_actor_id=$2`, addressID, clientActorID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return DeliveryAddressRecord{}, ErrDeliveryAddressNotFound
@@ -167,12 +176,16 @@ func ReadDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientActor
 	return address, nil
 }
 
-func CreateDeliveryAddress(ctx context.Context, db *sql.DB, clientActorID, addressText string, latitude, longitude float64, idempotencyKey, requestHash, correlationID string) (DeliveryAddressResult, error) {
+func CreateDeliveryAddress(ctx context.Context, db *sql.DB, clientActorID, addressText string, latitude, longitude float64, idempotencyKey, requestHash, correlationID string, serviceCityIDs ...string) (DeliveryAddressResult, error) {
 	clientActorID = strings.TrimSpace(clientActorID)
 	addressText = strings.TrimSpace(addressText)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	requestHash = strings.TrimSpace(requestHash)
 	correlationID = strings.TrimSpace(correlationID)
+	serviceCityID := ""
+	if len(serviceCityIDs) > 0 {
+		serviceCityID = strings.TrimSpace(serviceCityIDs[0])
+	}
 	latitude, longitude, err := normalizeLocation(latitude, longitude)
 	if db == nil || clientActorID == "" || !validAddressText(addressText) || err != nil || idempotencyKey == "" || requestHash == "" || correlationID == "" {
 		return DeliveryAddressResult{}, errors.New("delivery address facts are invalid")
@@ -195,7 +208,7 @@ func CreateDeliveryAddress(ctx context.Context, db *sql.DB, clientActorID, addre
 		if storedHash != requestHash || storedActor != clientActorID || storedOperation != "create" || storedExpected.Valid {
 			return DeliveryAddressResult{}, ErrDeliveryAddressIdempotency
 		}
-		address, readErr := scanDeliveryAddress(tx.QueryRowContext(ctx, `SELECT id, client_actor_id, address_text, latitude, longitude, version, created_at, updated_at
+		address, readErr := scanDeliveryAddress(tx.QueryRowContext(ctx, `SELECT id, client_actor_id, address_text, latitude, longitude, service_city_id, version, created_at, updated_at
 			FROM dsh.delivery_addresses WHERE id=$1 AND client_actor_id=$2`, storedAddressID, clientActorID))
 		if errors.Is(readErr, sql.ErrNoRows) {
 			return DeliveryAddressResult{}, ErrDeliveryAddressNotFound
@@ -216,9 +229,9 @@ func CreateDeliveryAddress(ctx context.Context, db *sql.DB, clientActorID, addre
 	if err != nil {
 		return DeliveryAddressResult{}, err
 	}
-	address, err := scanDeliveryAddress(tx.QueryRowContext(ctx, `INSERT INTO dsh.delivery_addresses(id, client_actor_id, address_text, latitude, longitude)
-		VALUES($1,$2,$3,$4,$5)
-		RETURNING id, client_actor_id, address_text, latitude, longitude, version, created_at, updated_at`, addressID, clientActorID, addressText, latitude, longitude))
+	address, err := scanDeliveryAddress(tx.QueryRowContext(ctx, `INSERT INTO dsh.delivery_addresses(id, client_actor_id, address_text, latitude, longitude, service_city_id)
+		VALUES($1,$2,$3,$4,$5,NULLIF($6,''))
+		RETURNING id, client_actor_id, address_text, latitude, longitude, service_city_id, version, created_at, updated_at`, addressID, clientActorID, addressText, latitude, longitude, serviceCityID))
 	if err != nil {
 		return DeliveryAddressResult{}, fmt.Errorf("create canonical delivery address: %w", err)
 	}
@@ -238,13 +251,17 @@ func CreateDeliveryAddress(ctx context.Context, db *sql.DB, clientActorID, addre
 	return DeliveryAddressResult{Address: address}, nil
 }
 
-func UpdateDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientActorID, addressText string, latitude, longitude float64, expectedVersion int, idempotencyKey, requestHash, correlationID string) (DeliveryAddressResult, error) {
+func UpdateDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientActorID, addressText string, latitude, longitude float64, expectedVersion int, idempotencyKey, requestHash, correlationID string, serviceCityIDs ...string) (DeliveryAddressResult, error) {
 	addressID = strings.TrimSpace(addressID)
 	clientActorID = strings.TrimSpace(clientActorID)
 	addressText = strings.TrimSpace(addressText)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	requestHash = strings.TrimSpace(requestHash)
 	correlationID = strings.TrimSpace(correlationID)
+	serviceCityID := ""
+	if len(serviceCityIDs) > 0 {
+		serviceCityID = strings.TrimSpace(serviceCityIDs[0])
+	}
 	latitude, longitude, err := normalizeLocation(latitude, longitude)
 	if db == nil || addressID == "" || clientActorID == "" || !validAddressText(addressText) || err != nil || expectedVersion < 1 || idempotencyKey == "" || requestHash == "" || correlationID == "" {
 		return DeliveryAddressResult{}, errors.New("delivery address facts are invalid")
@@ -266,7 +283,7 @@ func UpdateDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientAct
 		if storedHash != requestHash || storedActor != clientActorID || storedAddressID != addressID || storedOperation != "update" || !storedExpected.Valid || int(storedExpected.Int64) != expectedVersion {
 			return DeliveryAddressResult{}, ErrDeliveryAddressIdempotency
 		}
-		address, readErr := scanDeliveryAddress(tx.QueryRowContext(ctx, `SELECT id, client_actor_id, address_text, latitude, longitude, version, created_at, updated_at
+		address, readErr := scanDeliveryAddress(tx.QueryRowContext(ctx, `SELECT id, client_actor_id, address_text, latitude, longitude, service_city_id, version, created_at, updated_at
 			FROM dsh.delivery_addresses WHERE id=$1 AND client_actor_id=$2`, addressID, clientActorID))
 		if errors.Is(readErr, sql.ErrNoRows) {
 			return DeliveryAddressResult{}, ErrDeliveryAddressNotFound
@@ -283,7 +300,7 @@ func UpdateDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientAct
 		return DeliveryAddressResult{}, fmt.Errorf("read delivery address update idempotency: %w", err)
 	}
 
-	current, err := scanDeliveryAddress(tx.QueryRowContext(ctx, `SELECT id, client_actor_id, address_text, latitude, longitude, version, created_at, updated_at
+	current, err := scanDeliveryAddress(tx.QueryRowContext(ctx, `SELECT id, client_actor_id, address_text, latitude, longitude, service_city_id, version, created_at, updated_at
 		FROM dsh.delivery_addresses WHERE id=$1 FOR UPDATE`, addressID))
 	if errors.Is(err, sql.ErrNoRows) || current.ClientActorID != clientActorID {
 		return DeliveryAddressResult{}, ErrDeliveryAddressNotFound
@@ -295,9 +312,9 @@ func UpdateDeliveryAddress(ctx context.Context, db *sql.DB, addressID, clientAct
 		return DeliveryAddressResult{}, ErrDeliveryAddressVersion
 	}
 	updated, err := scanDeliveryAddress(tx.QueryRowContext(ctx, `UPDATE dsh.delivery_addresses
-		SET address_text=$2, latitude=$3, longitude=$4, version=version+1, updated_at=clock_timestamp()
-		WHERE id=$1 AND client_actor_id=$5 AND version=$6
-		RETURNING id, client_actor_id, address_text, latitude, longitude, version, created_at, updated_at`, addressID, addressText, latitude, longitude, clientActorID, expectedVersion))
+		SET address_text=$2, latitude=$3, longitude=$4, service_city_id=COALESCE(NULLIF($5,''),service_city_id), version=version+1, updated_at=clock_timestamp()
+		WHERE id=$1 AND client_actor_id=$6 AND version=$7
+		RETURNING id, client_actor_id, address_text, latitude, longitude, service_city_id, version, created_at, updated_at`, addressID, addressText, latitude, longitude, serviceCityID, clientActorID, expectedVersion))
 	if err != nil {
 		return DeliveryAddressResult{}, fmt.Errorf("update canonical delivery address: %w", err)
 	}
@@ -445,8 +462,12 @@ type deliveryAddressScanner interface {
 
 func scanDeliveryAddress(row deliveryAddressScanner) (DeliveryAddressRecord, error) {
 	var address DeliveryAddressRecord
-	if err := row.Scan(&address.ID, &address.ClientActorID, &address.AddressText, &address.Latitude, &address.Longitude, &address.Version, &address.CreatedAt, &address.UpdatedAt); err != nil {
+	var serviceCityID sql.NullString
+	if err := row.Scan(&address.ID, &address.ClientActorID, &address.AddressText, &address.Latitude, &address.Longitude, &serviceCityID, &address.Version, &address.CreatedAt, &address.UpdatedAt); err != nil {
 		return DeliveryAddressRecord{}, err
+	}
+	if serviceCityID.Valid {
+		address.ServiceCityID = serviceCityID.String
 	}
 	return address, nil
 }
