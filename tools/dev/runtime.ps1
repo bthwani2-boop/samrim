@@ -185,8 +185,8 @@ function Start-Full-Runtime {
     Assert-No-Parallel-Runtime
     Assert-No-Native-Backend
     Compose @('config','--quiet') -Quiet
-    # Full-stack up converges every Docker-owned component to the current repository source.
-    Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')
+    # Full-stack up starts every Docker-owned component without making image rebuild a startup tax.
+    Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
     Assert-Full-Runtime $envMap
     Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=full'
     Write-Host 'DOCKER_RUNTIME=PASS'

@@ -147,7 +147,7 @@ jobs:
       - name: Checkout integration candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Verify LF checkout
@@ -159,12 +159,28 @@ jobs:
       - name: Detect mobile-affecting integration change
         id: mobile
         shell: pwsh
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
-          $changed = @(git diff --name-only HEAD^ HEAD)
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+            $base = $env:PR_BASE_SHA
+          }
+          elseif ($env:PUSH_BEFORE_SHA -and $env:PUSH_BEFORE_SHA -ne '0000000000000000000000000000000000000000') {
+            $base = $env:PUSH_BEFORE_SHA
+          }
+          else {
+            $base = (git rev-parse HEAD^).Trim()
+          }
+          git merge-base --is-ancestor $base HEAD
+          if ($LASTEXITCODE -ne 0) { throw "Windows affected base is not an ancestor of HEAD: $base" }
+
+          $changed = @(git diff --name-only $base HEAD)
           $run = $false
           foreach ($file in $changed) {
             if ($file -match '^(apps/app-|packages/design-system/|services/(identity|dsh)/|tools/mobile/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$)') { $run = $true }
           }
+          "base=$base" >> $env:GITHUB_OUTPUT
           "run=$($run.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
 
       - name: Set up Node
@@ -186,4 +202,4 @@ jobs:
       - name: Verify affected Windows mobile exports
         if: steps.mobile.outputs.run == 'true'
         shell: pwsh
-        run: pnpm exec nx affected -t export-smoke --base=HEAD^ --head=HEAD --outputStyle=stream
+        run: pnpm exec nx affected -t export-smoke --base=${{ steps.mobile.outputs.base }} --head=HEAD --outputStyle=stream

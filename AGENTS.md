@@ -87,7 +87,7 @@ pnpm runtime:doctor  → read/validate the complete canonical Docker stack
 pnpm runtime:status  → read the complete canonical Docker stack
 ```
 
-These commands remain full-stack commands. `runtime:up` may build the Docker-owned images needed to converge the complete stack to current source. Task-specific surface/service paths must not rebuild unrelated images; explicit service rebuild is used when a baked image is invalidated.
+These commands remain full-stack commands. `runtime:up` starts and reconciles the complete stack without rebuilding existing images by default; on a fresh machine Compose may build a missing image. When baked backend source changes, use explicit service rebuild before the runtime proof that needs the new binary. Task-specific surface/service paths must not rebuild unrelated images.
 
 A task-specific runtime proof may exercise only the services/surfaces causally required by its claim. Verification must not start, stop, rebuild or restore the complete runtime merely to manufacture a generic green result.
 

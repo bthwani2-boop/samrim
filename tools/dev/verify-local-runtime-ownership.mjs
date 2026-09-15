@@ -80,10 +80,15 @@ for (const token of [
   "CANONICAL_LOCAL_RUNTIME=PASS mode=full",
   "RUNTIME_STATUS=READ_ONLY scope=full-canonical-compose",
   "CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose",
-  "Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')",
+  "Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')",
 ]) {
   assert(runtime.includes(token), `full runtime contract missing: ${token}`);
 }
+
+assert(
+  !runtime.includes("Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')"),
+  "runtime:up must not rebuild the full stack by default",
+);
 
 assert(!runtime.includes("Stop-OtherOptionalServices"), "target startup must not stop unrelated running surfaces");
 assert(

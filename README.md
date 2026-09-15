@@ -51,7 +51,7 @@ pnpm runtime:rebuild -- -Service identity
 pnpm runtime:rebuild -- -Service dsh
 ```
 
-A deliberate full `pnpm runtime:up` converges the complete Docker stack.
+`pnpm runtime:up` starts every canonical Docker service but does not intentionally rebuild all existing images. On a fresh machine Compose may build missing images; after baked backend source changes use the targeted rebuild command above before behavior proof.
 
 ## Verification
 
