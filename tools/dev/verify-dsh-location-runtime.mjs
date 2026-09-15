@@ -140,8 +140,8 @@ function cleanup() {
 let exitCode = 1;
 try {
   const schema = sql("SELECT count(*) FROM dsh.schema_migrations");
-  if (schema !== "9") throw new Error(`DSH schema history is not v9: ${schema}`);
-  if (sql("SELECT name FROM dsh.schema_migrations WHERE version=9") !== "009_service_city_scope.sql") throw new Error("Service City migration readback is not canonical");
+  if (schema !== "11") throw new Error(`DSH schema history is not v11: ${schema}`);
+  if (sql("SELECT name FROM dsh.schema_migrations WHERE version=10") !== "010_central_catalog_refoundation.sql") throw new Error("Catalog refoundation migration is not canonical");
   for (const [table, column] of [["delivery_address_mutation_idempotency", "result_version"], ["delivery_address_audit", "address_text"], ["delivery_address_audit", "latitude"], ["delivery_address_audit", "longitude"], ["store_origin_mutation_idempotency", "result_version"], ["store_origin_mutation_idempotency", "result_latitude"], ["store_origin_mutation_idempotency", "result_longitude"], ["store_origin_mutation_idempotency", "result_updated_at"], ["store_origin_audit", "latitude"], ["store_origin_audit", "longitude"]]) {
     if (sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND table_name='${table}' AND column_name='${column}'`) !== "0") throw new Error(`Location Core precise/dead column remains: dsh.${table}.${column}`);
   }
@@ -259,7 +259,7 @@ try {
   const addressCount = sql(`SELECT count(*) FROM dsh.delivery_address_audit WHERE client_actor_id='${sqlLiteral(clientActorID)}'`);
   const originCount = sql(`SELECT count(*) FROM dsh.store_origin_audit WHERE store_id='${sqlLiteral(partnerStoreID)}'`);
   if (addressCount !== "55" || originCount !== "3") throw new Error(`audit readback is not one row per successful mutation: addresses=${addressCount} origins=${originCount}`);
-  console.log("DSH_SCHEMA_V9=PASS");
+  console.log("DSH_SCHEMA_V11=PASS");
   console.log("LOCATION_CORE_RUNTIME=PASS");
   console.log("LOCATION_CORE_CLIENT_API=PASS");
   console.log("LOCATION_CORE_PARTNER_API=PASS");

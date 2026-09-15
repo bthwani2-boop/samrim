@@ -11,6 +11,7 @@ function verifyPartnerModel() {
     "services/dsh/contracts/openapi/paths/runtime.yaml",
     "services/dsh/contracts/openapi/paths/joining-cases.yaml",
     "services/dsh/contracts/openapi/paths/catalog.yaml",
+    "services/dsh/contracts/openapi/paths/commerce.yaml",
     "services/dsh/contracts/openapi/paths/store-publication.yaml",
     "services/dsh/contracts/openapi/paths/location-core.yaml",
     "services/dsh/contracts/openapi/paths/service-city.yaml",
@@ -18,8 +19,10 @@ function verifyPartnerModel() {
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/joining_case.go",
-    "services/dsh/backend/internal/storage/postgres/central_product.go",
-    "services/dsh/backend/internal/storage/postgres/store_assortment.go",
+    "services/dsh/backend/internal/storage/postgres/catalog.go",
+    "services/dsh/backend/internal/storage/postgres/catalog_public.go",
+    "services/dsh/backend/internal/storage/postgres/cart.go",
+    "services/dsh/backend/internal/storage/postgres/order.go",
     "services/dsh/backend/internal/storage/postgres/store_publication.go",
     "services/dsh/backend/internal/storage/postgres/location_core.go",
     "services/dsh/backend/internal/storage/postgres/service_city.go",
@@ -30,7 +33,9 @@ function verifyPartnerModel() {
     "services/dsh/backend/internal/storepublication/service.go",
     "services/dsh/backend/internal/transport/http/joiningcase.go",
     "services/dsh/backend/internal/transport/http/catalog_product.go",
-    "services/dsh/backend/internal/transport/http/store_assortment.go",
+    "services/dsh/backend/internal/transport/http/catalog_offer.go",
+    "services/dsh/backend/internal/transport/http/cart.go",
+    "services/dsh/backend/internal/transport/http/order.go",
     "services/dsh/backend/internal/transport/http/storepublication.go",
     "services/dsh/backend/internal/transport/http/locationcore.go",
     "services/dsh/backend/internal/transport/http/servicecity.go",
@@ -40,15 +45,17 @@ function verifyPartnerModel() {
     "apps/control-panel/tests/live-identity.spec.ts",
     "apps/app-partner/src/features/partner-onboarding/store-readback.tsx",
     "apps/app-partner/src/features/partner-onboarding/joining-case-correction.tsx",
-    "apps/app-partner/src/features/store-assortment/store-assortment.tsx",
+    "apps/app-partner/src/features/store-offer/store-offer.tsx",
     "apps/app-client/src/features/store-discovery/store-discovery.tsx",
+    "apps/app-client/src/features/cart-checkout/cart-checkout.tsx",
+    "apps/app-partner/src/features/order-management/order-management.tsx",
     "apps/control-panel/src/features/central-catalog/central-catalog.tsx",
     "services/dsh/database/migrations/004_central_product_store_assortment_cutover.sql",
     "services/dsh/database/migrations/005_joining_case_partner_correction.sql",
     "services/dsh/database/migrations/006_joining_case_correct_and_resubmit.sql",
     "services/dsh/database/migrations/007_location_core.sql",
     "services/dsh/database/migrations/008_location_core_corrective_boundaries.sql",
-    "services/dsh/tools/import-central-products.mjs",
+    "services/dsh/tools/import-catalog-products.mjs",
     "apps/app-client/src/features/location-core/location-core.tsx",
     "apps/app-client/src/features/service-city/service-city-client.ts",
     "apps/app-client/src/features/service-city/service-city-scope.tsx",
@@ -58,6 +65,8 @@ function verifyPartnerModel() {
     "tools/dev/verify-dsh-location-runtime.mjs",
     "tools/dev/verify-dsh-runtime-core.mjs",
     "services/dsh/database/migrations/009_service_city_scope.sql",
+    "services/dsh/database/migrations/010_central_catalog_refoundation.sql",
+    "services/dsh/database/migrations/011_cart_checkout_order.sql",
   ];
   for (const relative of requiredFiles) {
     const absolute = path.join(root, ...relative.split("/"));
@@ -100,8 +109,8 @@ function verifyPartnerModel() {
     .join("\n");
   for (const required of [
     "required: [case, idempotentReplay]",
-    "required: [id, partnerActorId, name, serviceCityId, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]",
-    "required: [id, name, serviceCity, version, assortments, publishedAt, createdAt, updatedAt]",
+    "required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, version, publicationState, publicationReadiness, offers, createdAt, updatedAt]",
+    "required: [id, name, serviceCity, primaryVerticalId, version, publishedAt, createdAt, updatedAt]",
   ]) {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
   }
@@ -116,8 +125,10 @@ function verifyPartnerModel() {
   const migration = fs.existsSync(migrationPath) ? fs.readFileSync(migrationPath, "utf8") : "";
   const joiningMigrationPath = path.join(root, "services/dsh/database/migrations/003_joining_cases_and_catalog.sql");
   const joiningMigration = fs.existsSync(joiningMigrationPath) ? fs.readFileSync(joiningMigrationPath, "utf8") : "";
-  const cutoverMigrationPath = path.join(root, "services/dsh/database/migrations/004_central_product_store_assortment_cutover.sql");
+  const cutoverMigrationPath = path.join(root, "services/dsh/database/migrations/010_central_catalog_refoundation.sql");
   const cutoverMigration = fs.existsSync(cutoverMigrationPath) ? fs.readFileSync(cutoverMigrationPath, "utf8") : "";
+  const commerceMigrationPath = path.join(root, "services/dsh/database/migrations/011_cart_checkout_order.sql");
+  const commerceMigration = fs.existsSync(commerceMigrationPath) ? fs.readFileSync(commerceMigrationPath, "utf8") : "";
   const correctionMigrationPath = path.join(root, "services/dsh/database/migrations/005_joining_case_partner_correction.sql");
   const correctionMigration = fs.existsSync(correctionMigrationPath) ? fs.readFileSync(correctionMigrationPath, "utf8") : "";
   const resubmitMigrationPath = path.join(root, "services/dsh/database/migrations/006_joining_case_correct_and_resubmit.sql");
@@ -126,7 +137,7 @@ function verifyPartnerModel() {
   const locationMigration = fs.existsSync(locationMigrationPath) ? fs.readFileSync(locationMigrationPath, "utf8") : "";
   const locationCorrectionMigrationPath = path.join(root, "services/dsh/database/migrations/008_location_core_corrective_boundaries.sql");
   const locationCorrectionMigration = fs.existsSync(locationCorrectionMigrationPath) ? fs.readFileSync(locationCorrectionMigrationPath, "utf8") : "";
-  const dshMigrationGraph = migration + "\n" + joiningMigration + "\n" + cutoverMigration + "\n" + correctionMigration + "\n" + resubmitMigration + "\n" + locationMigration + "\n" + locationCorrectionMigration;
+  const dshMigrationGraph = migration + "\n" + joiningMigration + "\n" + cutoverMigration + "\n" + commerceMigration + "\n" + correctionMigration + "\n" + resubmitMigration + "\n" + locationMigration + "\n" + locationCorrectionMigration;
   if (!migration.includes("partner_actor_id text NOT NULL")) failures.push("DSH baseline does not persist Store→partner_actor_id directly");
   for (const required of [
     "stores_id_partner_actor_uq",
@@ -136,8 +147,9 @@ function verifyPartnerModel() {
     if (!dshMigrationGraph.includes(required)) failures.push(`DSH migration graph missing canonical integrity constraint: ${required}`);
   }
   for (const retired of [
-    "services/dsh/backend/internal/storage/postgres/catalog.go",
-    "services/dsh/backend/internal/transport/http/catalog.go",
+    "services/dsh/backend/internal/storage/postgres/central_product.go",
+    "services/dsh/backend/internal/storage/postgres/store_assortment.go",
+    "services/dsh/backend/internal/transport/http/store_assortment.go",
     "apps/app-partner/src/features/partner-onboarding/catalog-management.tsx",
   ]) {
     if (fs.existsSync(path.join(root, ...retired.split("/")))) failures.push(`retired central Product cutover path remains: ${retired}`);
@@ -145,8 +157,11 @@ function verifyPartnerModel() {
   for (const forbidden of ["/dsh/stores/{storeId}/catalog/items", "CatalogItem", "CreateCatalogItem", "UpdateCatalogItem", "readOwnStoreCatalog", "createCatalogItem", "updateCatalogItem"]) {
     if (contract.includes(forbidden)) failures.push(`legacy catalog contract residue remains: ${forbidden}`);
   }
-  for (const required of ["central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit", "legacy catalog evidence is non-empty"]) {
+  for (const required of ["CREATE TABLE dsh.commerce_verticals", "CREATE TABLE dsh.catalog_categories", "CREATE TABLE dsh.catalog_products", "CREATE TABLE dsh.catalog_product_variants", "CREATE TABLE dsh.catalog_variant_identifiers", "CREATE TABLE dsh.catalog_media", "CREATE TABLE dsh.catalog_store_offers", "legacy central_products/store_assortments pair", "DROP TABLE dsh.central_products", "DROP TABLE dsh.store_assortments"]) {
     if (!cutoverMigration.includes(required)) failures.push(`central Product cutover migration missing invariant: ${required}`);
+  }
+  for (const required of ["CREATE TABLE dsh.commerce_carts", "CREATE TABLE dsh.commerce_cart_lines", "commerce_cart_lines_cart_offer_uq", "CREATE TABLE dsh.commerce_orders", "CREATE TABLE dsh.commerce_order_lines", "READY_FOR_DISPATCH", "commerce_order_checkout_cart_uq", "commerce_order_audit"]) {
+    if (!commerceMigration.includes(required)) failures.push(`Cart/Checkout/Order migration missing invariant: ${required}`);
   }
   const publicationMigrationPath = path.join(root, "services/dsh/database/migrations/002_store_publication.sql");
   if (!fs.existsSync(publicationMigrationPath)) failures.push("DSH Store publication migration is missing");
@@ -189,6 +204,7 @@ function verifyPublicationReadiness() {
     "services/dsh/contracts/openapi/paths/store-publication.yaml",
     "services/dsh/contracts/openapi/paths/service-city.yaml",
     "services/dsh/contracts/openapi/paths/serviceability.yaml",
+    "services/dsh/contracts/openapi/paths/commerce.yaml",
   ].map((relative) => fs.readFileSync(path.join(root, relative), "utf8")).join("\n");
   const generatedTS = fs.readFileSync(path.join(root, "services/dsh/clients/generated/dsh-types.ts"), "utf8");
   const generatedGo = fs.readFileSync(path.join(root, "services/dsh/backend/internal/contract/dsh_types_generated.go"), "utf8");
@@ -208,7 +224,7 @@ function verifyPublicationReadiness() {
     ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
     ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
     ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
-    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V9=PASS", "DSH_CITY_SCOPE_RUNTIME=PASS"]],
+    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/catalog/verticals", "/dsh/catalog/categories", "/dsh/stores/", "/dsh/public/stores/", "/auth/managed/activation/request", "PRODUCT_NOT_ELIGIBLE", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V11=PASS", "DSH_CITY_SCOPE_RUNTIME=PASS", "DSH_CUSTOMER_VISIBLE_CATALOG=PASS", "DSH_CART_CHECKOUT=PASS", "DSH_ORDER_READY_FOR_DISPATCH=PASS"]],
   ]) {
     for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
   }
@@ -294,7 +310,7 @@ function verifyLocationCore() {
     ["Location Core service", service, ["identity.Role != \"client\"", "identity.Surface != \"app-client\"", "identity.Role != \"partner\"", "identity.Surface != \"app-partner\"", "ReadStoreOwnedByPartner"]],
     ["Location Core transport", transport, ["X-Actor-ID", "X-Acting-Actor-ID", "X-Expected-Version", "Idempotency-Key", "ErrDeliveryAddressInvalidCursor"]],
     ["mobile DSH client", mobileClient, ["listOwnDeliveryAddresses", "createOwnDeliveryAddress", "readStoreDeliveryOrigin", "setStoreDeliveryOrigin", "DeliveryAddressListResponse"]],
-    ["Location Core runtime proof", runtimeLocation, ["DSH_SCHEMA_V9=PASS", "LOCATION_CORE_RUNTIME=PASS", "LOCATION_CORE_PAGINATION=PASS", "LOCATION_CORE_AUTHORIZATION=PASS", "delivery_origin_version"]],
+    ["Location Core runtime proof", runtimeLocation, ["DSH_SCHEMA_V11=PASS", "LOCATION_CORE_RUNTIME=PASS", "LOCATION_CORE_PAGINATION=PASS", "LOCATION_CORE_AUTHORIZATION=PASS", "delivery_origin_version"]],
     ["app-client Location Core", clientUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم تحديد الموقع", "nextCursor", "عرض المزيد"]],
     ["app-partner Location Core", partnerUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم حفظ موقع أصل المتجر", "originVersion"]],
   ]) for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing Location Core invariant: ${token}`);
@@ -361,7 +377,7 @@ function verifyCityScope() {
   for (const [name, text, tokens] of [
     ["City storage", cityStorage, ["CreateServiceCity", "UpdateServiceCity", "ErrServiceCityVersion", "pg_advisory_xact_lock", "service_city_audit"]],
     ["City service", cityService, ["ReadActorRole", "operator", "SecurityEnabled", "ActivatedAt", "ListActiveServiceCities", "CreateServiceCity"]],
-    ["Serviceability storage", serviceabilityStorage, ["ReadServiceabilityFacts", "HasPublishedAssortment", "EvaluatedAt"]],
+    ["Serviceability storage", serviceabilityStorage, ["ReadServiceabilityFacts", "HasPublishedOffer", "EvaluatedAt"]],
     ["Serviceability service", serviceabilityService, ["PolicyVersion = \"CITY_SCOPE_V1\"", "identity.Role != \"client\"", "identity.Surface != \"app-client\"", "SERVICEABLE", "UNSERVICEABLE", "UNAVAILABLE"]],
     ["City transport", cityTransport, ["/dsh/service-cities", "ListActiveServiceCities", "Idempotency-Key"]],
     ["Serviceability transport", serviceabilityTransport, ["/dsh/serviceability", "ServiceabilityEvidence", "PolicyVersion"]],
@@ -396,6 +412,56 @@ function hasSequence(tokens, words) {
     if (words.every((word, offset) => tokens[index + offset] === word)) return true;
   }
   return false;
+}
+
+function verifyCommerceJourney() {
+  const failures = [];
+  const read = (relative) => fs.readFileSync(path.join(root, ...relative.split("/")), "utf8");
+  const contract = read("services/dsh/contracts/openapi/dsh.openapi.yaml") + "\n" + read("services/dsh/contracts/openapi/paths/commerce.yaml");
+  const migration = read("services/dsh/database/migrations/011_cart_checkout_order.sql");
+  const cartStorage = read("services/dsh/backend/internal/storage/postgres/cart.go");
+  const orderStorage = read("services/dsh/backend/internal/storage/postgres/order.go");
+  const cartService = read("services/dsh/backend/internal/cart/service.go");
+  const orderService = read("services/dsh/backend/internal/order/service.go");
+  const cartTransport = read("services/dsh/backend/internal/transport/http/cart.go");
+  const orderTransport = read("services/dsh/backend/internal/transport/http/order.go");
+  const main = read("services/dsh/backend/cmd/api/main.go");
+  const mobile = read("services/dsh/clients/mobile.ts");
+  const clientUI = read("apps/app-client/src/features/cart-checkout/cart-checkout.tsx");
+  const partnerUI = read("apps/app-partner/src/features/order-management/order-management.tsx");
+  const runtime = read("tools/dev/verify-dsh-runtime-core.mjs");
+  const generatedTS = read("services/dsh/clients/generated/dsh-types.ts");
+  const generatedGo = read("services/dsh/backend/internal/contract/dsh_types_generated.go");
+  for (const required of [
+    "/dsh/cart:", "/dsh/cart/lines:", "/dsh/cart/checkout:", "/dsh/orders:", "/dsh/orders/{orderId}:", "/dsh/stores/{storeId}/orders:", "/dsh/stores/{storeId}/orders/{orderId}/transition:",
+    "Cart:", "CartLine:", "CheckoutRequest:", "Order:", "OrderLine:", "OrderState:", "READY_FOR_DISPATCH", "CartExpectedVersionRequired",
+  ]) if (!contract.includes(required)) failures.push(`Commerce contract missing canonical invariant: ${required}`);
+  for (const required of [
+    "dsh.commerce_carts", "dsh.commerce_cart_lines", "dsh.commerce_cart_mutation_idempotency", "dsh.commerce_cart_audit", "dsh.commerce_orders", "dsh.commerce_order_lines", "dsh.commerce_order_checkout_idempotency", "dsh.commerce_order_transition_idempotency", "dsh.commerce_order_audit", "commerce_cart_lines_cart_offer_uq", "commerce_orders_state_chk", "commerce_order_audit_event_idempotency_uq",
+  ]) if (!migration.includes(required)) failures.push(`Commerce migration missing canonical invariant: ${required}`);
+  for (const [name, text, tokens] of [
+    ["Cart storage", cartStorage, ["UpsertCartLine", "ReadOpenCart", "ErrCartVersionConflict", "ErrCartOfferUnavailable", "HashCartLineMutation", "commerce_cart_audit", "removed_at"]],
+    ["Order storage", orderStorage, ["CreateOrderFromCart", "TransitionOrder", "HashCheckoutRequest", "HashOrderTransition", "readCustomerVisibleOfferTx", "READY_FOR_DISPATCH", "commerce_order_audit"]],
+    ["Cart service", cartService, ["requireClient", "serviceability.Evaluate", "ErrCheckoutNotServiceable", "CreateOrderFromCart"]],
+    ["Order service", orderService, ["requireOwnedStore", "ReadStoreOwnedByPartner", "TransitionOrder", "app-partner"]],
+    ["Cart transport", cartTransport, ["/dsh/cart", "X-Expected-Version", "Idempotency-Key", "X-Actor-ID", "checkout"]],
+    ["Order transport", orderTransport, ["/dsh/orders", "/dsh/stores/", "transition", "OrderTransitionRequest", "READY_FOR_DISPATCH"]],
+    ["DSH API registration", main, ["NewCart", "NewOrder", "cartServer.Register", "orderServer.Register"]],
+    ["Mobile DSH client", mobile, ["readOpenCart", "upsertCartLine", "checkoutCart", "listClientOrders", "transitionStoreOrder"]],
+    ["Generated TypeScript contract", generatedTS, ["CartResponse", "OrderResponse", "READY_FOR_DISPATCH"]],
+    ["Generated Go contract", generatedGo, ["type CartResponse struct", "type OrderResponse struct", "OrderState"]],
+    ["app-client cart journey", clientUI, ["readOpenCart", "upsertCartLine", "checkoutCart", "إتمام الطلب", "serviceableAddressId"]],
+    ["app-partner order journey", partnerUI, ["listStoreOrders", "transitionStoreOrder", "READY_FOR_DISPATCH", "قبول الطلب"]],
+    ["Commerce runtime proof", runtime, ["DSH_CART_CHECKOUT=PASS", "DSH_ORDER_READY_FOR_DISPATCH=PASS", "cart-offer-hide", "checkout-unserviceable", "commerce_order"]],
+  ]) for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing Commerce invariant: ${token}`);
+  if (/(wallet|wlt|payment|stripe|captain)/i.test([cartStorage, orderStorage, cartService, orderService, cartTransport, orderTransport].join("\n"))) failures.push("Cart/Checkout/Order implementation admits an out-of-cone payment or WLT owner");
+  if (failures.length) {
+    console.error("COMMERCE_JOURNEY_STATIC=FAIL");
+    for (const failure of failures) console.error("  " + failure);
+    process.exit(1);
+  }
+  console.log("COMMERCE_JOURNEY_STATIC=PASS");
+  console.log("COMMERCE_ORDER_TERMINAL=READY_FOR_DISPATCH");
 }
 
 function verifyRetiredFulfillmentResidue() {
@@ -446,6 +512,7 @@ verifyPartnerModel();
 verifyPublicationReadiness();
 verifyLocationCore();
 verifyCityScope();
+verifyCommerceJourney();
 verifyRetiredFulfillmentResidue();
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";

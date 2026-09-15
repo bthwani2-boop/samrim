@@ -6,7 +6,8 @@ import { resolveTheme } from "@bthwani/design-system";
 import { isJoiningCaseNotFound, listActiveServiceCities, readOwnJoiningCase } from "./store-readback-client";
 import type { ServiceCity } from "@bthwani/dsh";
 import { JoiningCaseCorrection } from "./joining-case-correction";
-import { StoreAssortmentManagement } from "../store-assortment/store-assortment";
+import { StoreOfferManagement } from "../store-offer/store-offer";
+import { OrderManagement } from "../order-management/order-management";
 import { StoreDeliveryOrigin } from "../location-core/store-delivery-origin";
 
 export function StoreReadback() {
@@ -44,7 +45,7 @@ export function StoreReadback() {
       <Text style={styles.muted}>الحالة: {state.value.case.state}</Text>
       <Text style={styles.muted}>مدينة المتجر الأول: {cityName}</Text>
       <JoiningCaseCorrection value={state.value} onUpdated={(value) => setState({ kind: "ready", value })} />
-      {state.value.case.store ? <><Text selectable style={styles.muted}>المتجر الأول: {state.value.case.store.name}</Text><Text style={styles.muted}>حالة النشر: {state.value.case.store.publicationState}</Text><Text style={styles.muted}>جاهزية النشر: {state.value.case.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</Text><Text style={styles.muted}>الإصدار الكانوني: {state.value.case.store.version}</Text><StoreDeliveryOrigin storeId={state.value.case.store.id} /><StoreAssortmentManagement storeId={state.value.case.store.id} /></> : null}
+      {state.value.case.store ? <><Text selectable style={styles.muted}>المتجر الأول: {state.value.case.store.name}</Text><Text style={styles.muted}>حالة النشر: {state.value.case.store.publicationState}</Text><Text style={styles.muted}>جاهزية النشر: {state.value.case.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</Text><Text style={styles.muted}>الإصدار الكانوني: {state.value.case.store.version}</Text><StoreDeliveryOrigin storeId={state.value.case.store.id} /><StoreOfferManagement storeId={state.value.case.store.id} /><OrderManagement storeId={state.value.case.store.id} /></> : null}
     </View>
   );
 }

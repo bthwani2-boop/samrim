@@ -18,8 +18,8 @@ export async function readOwnJoiningCase(): Promise<JoiningCaseResponse> {
   return accessToken().then((token) => dshClient().readOwnJoiningCase(token));
 }
 
-export async function correctAndResubmitOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, serviceCityId: string, expectedVersion: number): Promise<JoiningCaseResponse> {
-  return accessToken().then((token) => dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName, serviceCityId }, expectedVersion));
+export async function correctAndResubmitOwnJoiningCase(caseID: string, businessName: string, firstStoreName: string, serviceCityId: string, firstStoreVerticalId: string, expectedVersion: number): Promise<JoiningCaseResponse> {
+  return accessToken().then((token) => dshClient().correctAndResubmitJoiningCase(token, caseID, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId }, expectedVersion));
 }
 
 export function listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {

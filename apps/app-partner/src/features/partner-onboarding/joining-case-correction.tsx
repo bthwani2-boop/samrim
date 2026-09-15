@@ -35,7 +35,7 @@ export function JoiningCaseCorrection({ value, onUpdated }: { value: JoiningCase
     setBusy(true);
     setError("");
     try {
-      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, current.version);
+      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, current.firstStoreVerticalId || "", current.version);
       onUpdated(resubmitted);
     } catch (nextError) {
       if (nextError && typeof nextError === "object" && "status" in nextError && (nextError as { status?: unknown }).status === 409) {

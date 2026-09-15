@@ -49,7 +49,7 @@ func (s *Service) Evaluate(ctx context.Context, accessToken, storeID, addressID 
 		return Result{}, err
 	}
 	result := Result{Status: "UNAVAILABLE", Facts: facts}
-	if !facts.StoreFound || !facts.AddressFound || facts.StoreServiceCityID == "" || facts.AddressServiceCityID == "" || facts.ServiceCityID == "" || !facts.ServiceCityActive || !facts.AddressCityFound || !facts.AddressCityActive || facts.StorePublicationState != "published" || !facts.HasPublishedAssortment {
+	if !facts.StoreFound || !facts.AddressFound || facts.StoreServiceCityID == "" || facts.AddressServiceCityID == "" || facts.ServiceCityID == "" || !facts.ServiceCityActive || !facts.AddressCityFound || !facts.AddressCityActive || facts.StorePublicationState != "published" || !facts.HasPublishedOffer {
 		return result, nil
 	}
 	partner, err := s.identity.ReadActorRole(ctx, facts.StorePartnerActorID, "partner")

@@ -10,6 +10,7 @@ import (
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	serviceruntime "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/runtime"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/serviceability"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
 	transporthttp "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/transport/http"
@@ -57,7 +58,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	serviceabilityServer, err := transporthttp.NewServiceability(identityClient, database)
+	serviceabilityService, err := serviceability.New(identityClient, database)
+	if err != nil {
+		log.Fatal(err)
+	}
+	serviceabilityServer, err := transporthttp.NewServiceabilityWithService(serviceabilityService)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cartServer, err := transporthttp.NewCart(identityClient, database, serviceabilityService)
+	if err != nil {
+		log.Fatal(err)
+	}
+	orderServer, err := transporthttp.NewOrder(identityClient, database)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,6 +81,8 @@ func main() {
 		locationCoreServer.Register(mux)
 		serviceCityServer.Register(mux)
 		serviceabilityServer.Register(mux)
+		cartServer.Register(mux)
+		orderServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
 		if err := postgres.VerifySchema(ctx, database, records); err != nil {

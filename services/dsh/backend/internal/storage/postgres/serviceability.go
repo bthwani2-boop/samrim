@@ -10,24 +10,24 @@ import (
 )
 
 type ServiceabilityFacts struct {
-	StoreID                string
-	StoreFound             bool
-	StorePartnerActorID    string
-	StoreVersion           int
-	StoreServiceCityID     string
-	StorePublicationState  string
-	AddressID              string
-	AddressFound           bool
-	AddressVersion         int
-	AddressServiceCityID   string
-	ServiceCityID          string
-	ServiceCityVersion     int
-	ServiceCityActive      bool
-	AddressCityVersion     int
-	AddressCityActive      bool
-	AddressCityFound       bool
-	HasPublishedAssortment bool
-	EvaluatedAt            time.Time
+	StoreID               string
+	StoreFound            bool
+	StorePartnerActorID   string
+	StoreVersion          int
+	StoreServiceCityID    string
+	StorePublicationState string
+	AddressID             string
+	AddressFound          bool
+	AddressVersion        int
+	AddressServiceCityID  string
+	ServiceCityID         string
+	ServiceCityVersion    int
+	ServiceCityActive     bool
+	AddressCityVersion    int
+	AddressCityActive     bool
+	AddressCityFound      bool
+	HasPublishedOffer     bool
+	EvaluatedAt           time.Time
 }
 
 func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientActorID, addressID string) (ServiceabilityFacts, error) {
@@ -46,7 +46,8 @@ func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientAct
 	var storeVersion, addressVersion, serviceCityVersion, addressCityVersion sql.NullInt64
 	var storeState sql.NullString
 	var serviceCityActive, addressCityActive sql.NullBool
-	var addressCityFound, hasAssortment bool
+	var addressCityFound, hasPublishedOffer bool
+	visibleOfferConditions := strings.Join(customerVisibleOfferConditionsForAliases("co", "cv", "cp", "s"), " AND ")
 	err := db.QueryRowContext(ctx, `
 		SELECT s.id, s.partner_actor_id, s.version, s.service_city_id, s.publication_state,
 		       a.id, a.version, a.service_city_id,
@@ -54,14 +55,11 @@ func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientAct
 		       ac.id IS NOT NULL, ac.version, ac.active,
 		       EXISTS (
 					SELECT 1
-					FROM dsh.store_assortments sa
-					JOIN dsh.central_products cp ON cp.id=sa.product_id
-					WHERE sa.store_id=s.id
-					  AND sa.publication_state='published'
-					  AND sa.availability=true
-					  AND sa.price_minor>0
-					  AND cp.active=true
-				)
+					FROM dsh.catalog_store_offers co
+					JOIN dsh.catalog_product_variants cv ON cv.id=co.variant_id
+					JOIN dsh.catalog_products cp ON cp.id=cv.product_id
+					WHERE co.store_id=s.id AND `+visibleOfferConditions+`
+			)
 		FROM (SELECT $1::text AS store_id, $2::text AS address_id, $3::text AS client_actor_id) input
 		LEFT JOIN dsh.stores s ON s.id=input.store_id
 		LEFT JOIN dsh.delivery_addresses a ON a.id=input.address_id AND a.client_actor_id=input.client_actor_id
@@ -71,7 +69,7 @@ func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientAct
 		&addressIDValue, &addressVersion, &addressCityID,
 		&serviceCityID, &serviceCityVersion, &serviceCityActive,
 		&addressCityFound, &addressCityVersion, &addressCityActive,
-		&hasAssortment)
+		&hasPublishedOffer)
 	if err != nil {
 		return ServiceabilityFacts{}, fmt.Errorf("read serviceability facts: %w", err)
 	}
@@ -97,7 +95,7 @@ func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientAct
 	facts.AddressCityFound = addressCityFound
 	facts.AddressCityVersion = int(addressCityVersion.Int64)
 	facts.AddressCityActive = addressCityActive.Valid && addressCityActive.Bool
-	facts.HasPublishedAssortment = hasAssortment
+	facts.HasPublishedOffer = hasPublishedOffer
 	facts.EvaluatedAt = time.Now().UTC()
 	return facts, nil
 }

@@ -100,7 +100,7 @@ func (s *JoiningCaseServer) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.Create(r.Context(), postgres.JoiningCaseRecord{ContactPhoneE164: input.ContactPhoneE164, BusinessName: input.BusinessName, FirstStoreName: input.FirstStoreName, FirstStoreServiceCityID: input.ServiceCityID}, idempotency, acting, correlation)
+	result, err := s.service.Create(r.Context(), postgres.JoiningCaseRecord{ContactPhoneE164: input.ContactPhoneE164, BusinessName: input.BusinessName, FirstStoreName: input.FirstStoreName, FirstStoreServiceCityID: input.ServiceCityID, FirstStoreVerticalID: input.FirstStoreVerticalID}, idempotency, acting, correlation)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -178,7 +178,7 @@ func (s *JoiningCaseServer) correctAndResubmitForPartner(w http.ResponseWriter, 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CorrectAndResubmitForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, input.ServiceCityID, expected, idempotency, correlation)
+	result, err := s.service.CorrectAndResubmitForPartner(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, expected, idempotency, correlation)
 	if err != nil {
 		writeJoiningCaseError(w, err)
 		return
@@ -187,7 +187,7 @@ func (s *JoiningCaseServer) correctAndResubmitForPartner(w http.ResponseWriter, 
 }
 
 func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request, status int, result postgres.JoiningCaseResult) {
-	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, State: contract.JoiningCaseState(result.Case.State), Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, State: contract.JoiningCaseState(result.Case.State), Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.CorrectionReason = result.Case.CorrectionReason
 	view.ReviewedBy = result.Case.ReviewedBy
@@ -197,12 +197,12 @@ func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request
 			writeStorePublicationError(w, err)
 			return
 		}
-		assortments, err := postgres.ListStoreAssortments(ctx.Context(), s.db, result.Case.Store.ID, false)
+		offers, err := postgres.ListCatalogOffers(ctx.Context(), s.db, result.Case.Store.ID, false)
 		if err != nil {
 			writeStorageError(w, err)
 			return
 		}
-		storeView := toStoreView(*result.Case.Store, readiness, assortments)
+		storeView := toStoreView(*result.Case.Store, readiness, offers)
 		view.Store = &storeView
 	}
 	w.Header().Set("Cache-Control", "no-store")

@@ -1,5 +1,5 @@
 import { validateServiceUrl } from "@bthwani/identity";
-import { type CentralProductListResponse, type CentralProductResponse, type CreateCentralProductRequest, type CreateJoiningCaseRequest, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCentralProductRequest, dshOperationPaths } from "@bthwani/dsh";
+import { type CatalogCategoryListResponse, type CatalogProductListResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CreateCatalogProductRequest, type CreateJoiningCaseRequest, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -24,7 +24,7 @@ export type StorePublicationMutationContext = DshVersionedMutationContext & Read
 export type DshOperatorReadContext = Readonly<{
   operatorActorId: string;
 }>;
-export type CentralProductMutationContext = JoiningCaseMutationContext;
+export type CatalogProductMutationContext = JoiningCaseMutationContext;
 
 function dshBaseUrl(): string {
   const explicit = process.env.DSH_API_BASE_URL?.trim();
@@ -111,7 +111,7 @@ export async function createJoiningCase(
   input: CreateJoiningCaseRequest,
   context: JoiningCaseMutationContext,
 ): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
-  if (!phoneE164Pattern.test(input.contactPhoneE164.trim()) || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId.trim()) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
+  if (!phoneE164Pattern.test(input.contactPhoneE164.trim()) || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId.trim() || !input.firstStoreVerticalId.trim()) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_JOINING_CASE_IDEMPOTENCY_INVALID");
   return requestDshJson<JoiningCaseResponse>(dshOperationPaths.createJoiningCase.method, dshOperationPaths.createJoiningCase.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
@@ -159,27 +159,39 @@ export async function listJoiningCases(state: string, limit: number, cursor: str
   return (await requestDshJson<JoiningCaseListResponse>(dshOperationPaths.listJoiningCases.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listCentralProducts(query: string, context: DshOperatorReadContext): Promise<CentralProductListResponse> {
+export async function listCatalogVerticals(context: DshOperatorReadContext): Promise<CommerceVerticalListResponse> {
+  if (!context.operatorActorId.trim()) throw new Error("DSH_CATALOG_VERTICAL_READ_INPUT_INVALID");
+  return (await requestDshJson<CommerceVerticalListResponse>(dshOperationPaths.listCatalogVerticals.method, dshOperationPaths.listCatalogVerticals.path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function listCatalogCategories(verticalId: string): Promise<CatalogCategoryListResponse> {
+  if (!verticalId.trim()) throw new Error("DSH_CATALOG_CATEGORY_READ_INPUT_INVALID");
+  const path = `${dshOperationPaths.listCatalogCategories.path}?${new URLSearchParams({ verticalId: verticalId.trim() }).toString()}`;
+  return (await requestDshJson<CatalogCategoryListResponse>(dshOperationPaths.listCatalogCategories.method, path, undefined, {})).payload;
+}
+
+export async function listCatalogProducts(query: string, verticalId: string, context: DshOperatorReadContext): Promise<CatalogProductListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_PRODUCT_READ_INPUT_INVALID");
   const params = new URLSearchParams({ limit: "50" });
   if (query.trim()) params.set("q", query.trim());
+  if (verticalId.trim()) params.set("verticalId", verticalId.trim());
   const path = `${dshOperationPaths.listCatalogProducts.path}?${params.toString()}`;
-  return (await requestDshJson<CentralProductListResponse>(dshOperationPaths.listCatalogProducts.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+  return (await requestDshJson<CatalogProductListResponse>(dshOperationPaths.listCatalogProducts.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function createCentralProduct(input: CreateCentralProductRequest, context: CentralProductMutationContext): Promise<Readonly<{ status: number; payload: CentralProductResponse }>> {
-  if (!input.canonicalName.trim() || !input.sellUnit) throw new Error("DSH_PRODUCT_INPUT_INVALID");
+export async function createCatalogProduct(input: CreateCatalogProductRequest, context: CatalogProductMutationContext): Promise<Readonly<{ status: number; payload: CatalogProductResponse }>> {
+  if (!input.canonicalName.trim() || !input.verticalId.trim() || !input.scope.trim() || !input.sellUnit || input.categoryIds.length < 1) throw new Error("DSH_PRODUCT_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_PRODUCT_IDEMPOTENCY_INVALID");
-  return requestDshJson<CentralProductResponse>(dshOperationPaths.createCentralProduct.method, dshOperationPaths.createCentralProduct.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+  return requestDshJson<CatalogProductResponse>(dshOperationPaths.createCatalogProduct.method, dshOperationPaths.createCatalogProduct.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function updateCentralProduct(productId: string, input: UpdateCentralProductRequest, context: CentralProductMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{ status: number; payload: CentralProductResponse }>> {
+export async function updateCatalogProduct(productId: string, input: UpdateCatalogProductRequest, context: CatalogProductMutationContext & Readonly<{ expectedVersion: number }>): Promise<Readonly<{ status: number; payload: CatalogProductResponse }>> {
   if (!productId.trim() || !input.canonicalName.trim()) throw new Error("DSH_PRODUCT_INPUT_INVALID");
   validateVersionedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_PRODUCT_IDEMPOTENCY_INVALID");
-  const path = dshOperationPaths.updateCentralProduct.path.replace("{productId}", encodeURIComponent(productId.trim()));
-  return requestDshJson<CentralProductResponse>(dshOperationPaths.updateCentralProduct.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+  const path = dshOperationPaths.updateCatalogProduct.path.replace("{productId}", encodeURIComponent(productId.trim()));
+  return requestDshJson<CatalogProductResponse>(dshOperationPaths.updateCatalogProduct.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function submitJoiningCase(caseId: string, context: DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {

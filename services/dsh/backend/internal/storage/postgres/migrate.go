@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 9
+const SchemaVersion = 11
 
 type MigrationRecord struct {
 	Version int
@@ -30,126 +30,46 @@ var requiredTables = []struct {
 	indexes     []string
 }{
 	{name: "dsh.schema_migrations", columns: []string{"version", "name", "sha256", "applied_at"}, constraints: []string{"schema_migrations_pkey"}},
-	{
-		name:        "dsh.stores",
-		columns:     []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at", "delivery_origin_latitude", "delivery_origin_longitude", "delivery_origin_version", "delivery_origin_updated_at", "service_city_id"},
-		constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk", "stores_delivery_origin_pair_chk", "stores_delivery_origin_latitude_chk", "stores_delivery_origin_longitude_chk", "stores_delivery_origin_version_chk", "stores_delivery_origin_updated_at_chk", "stores_service_city_fk"},
-		indexes:     []string{"stores_partner_actor_idx", "stores_publication_state_idx", "stores_service_city_idx"},
-	},
-	{
-		name:        "dsh.joining_cases",
-		columns:     []string{"id", "contact_phone_e164", "business_name", "first_store_name", "partner_actor_id", "state", "correction_reason", "reviewed_by", "store_id", "version", "created_at", "updated_at", "first_store_service_city_id"},
-		constraints: []string{"joining_cases_pkey", "joining_cases_phone_length_chk", "joining_cases_business_name_chk", "joining_cases_store_name_chk", "joining_cases_state_chk", "joining_cases_version_positive_chk", "joining_cases_store_fk", "joining_cases_service_city_fk"},
-		indexes:     []string{"joining_cases_active_phone_uq", "joining_cases_partner_actor_uq", "joining_cases_state_idx", "joining_cases_service_city_idx"},
-	},
-	{
-		name:        "dsh.joining_case_mutation_idempotency",
-		columns:     []string{"idempotency_key", "request_hash", "case_id", "operation", "result_version", "result_state", "result_partner_actor_id", "result_store_id", "result_correction_reason", "created_at"},
-		constraints: []string{"joining_case_mutation_idempotency_pkey", "joining_case_idempotency_facts_uq", "joining_case_idempotency_operation_chk", "joining_case_idempotency_state_chk", "joining_case_idempotency_version_chk", "joining_case_idempotency_case_fk"},
-		indexes:     []string{"joining_case_idempotency_case_idx"},
-	},
-	{
-		name:        "dsh.joining_case_audit",
-		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "case_id", "from_state", "to_state", "result_version", "request_hash", "partner_actor_id", "store_id", "correction_reason", "created_at"},
-		constraints: []string{"joining_case_audit_pkey", "joining_case_audit_event_type_chk", "joining_case_audit_event_idempotency_uq", "joining_case_audit_case_fk", "joining_case_audit_version_chk"},
-		indexes:     []string{"joining_case_audit_case_idx"},
-	},
-	{
-		name:        "dsh.central_products",
-		columns:     []string{"id", "canonical_name", "brand", "barcode", "canonical_image_url", "sell_unit", "active", "version", "created_at", "updated_at"},
-		constraints: []string{"central_products_pkey", "central_products_name_chk", "central_products_sell_unit_chk", "central_products_version_chk"},
-		indexes:     []string{"central_products_barcode_uq", "central_products_active_idx", "central_products_name_prefix_idx"},
-	},
-	{
-		name:        "dsh.central_product_mutation_idempotency",
-		columns:     []string{"idempotency_key", "request_hash", "product_id", "operation", "result_version", "created_at"},
-		constraints: []string{"central_product_mutation_idempotency_pkey", "central_product_idempotency_facts_uq", "central_product_idempotency_operation_chk", "central_product_idempotency_version_chk", "central_product_idempotency_product_fk"},
-		indexes:     []string{"central_product_idempotency_product_idx"},
-	},
-	{
-		name:        "dsh.central_product_audit",
-		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "product_id", "from_version", "result_version", "request_hash", "canonical_name", "brand", "barcode", "canonical_image_url", "sell_unit", "active", "created_at"},
-		constraints: []string{"central_product_audit_pkey", "central_product_audit_event_type_chk", "central_product_audit_event_idempotency_uq", "central_product_audit_product_fk", "central_product_audit_version_chk"},
-		indexes:     []string{"central_product_audit_product_idx"},
-	},
-	{
-		name:        "dsh.store_assortments",
-		columns:     []string{"store_id", "product_id", "price_minor", "currency", "availability", "publication_state", "version", "created_at", "updated_at"},
-		constraints: []string{"store_assortments_pkey", "store_assortments_store_fk", "store_assortments_product_fk", "store_assortments_price_chk", "store_assortments_currency_chk", "store_assortments_state_chk", "store_assortments_version_chk"},
-		indexes:     []string{"store_assortments_store_idx", "store_assortments_public_idx"},
-	},
-	{
-		name:        "dsh.store_assortment_mutation_idempotency",
-		columns:     []string{"idempotency_key", "request_hash", "store_id", "product_id", "operation", "result_version", "created_at"},
-		constraints: []string{"store_assortment_mutation_idempotency_pkey", "store_assortment_idempotency_facts_uq", "store_assortment_idempotency_operation_chk", "store_assortment_idempotency_version_chk", "store_assortment_idempotency_store_fk", "store_assortment_idempotency_product_fk"},
-		indexes:     []string{"store_assortment_idempotency_store_idx"},
-	},
-	{
-		name:        "dsh.store_assortment_audit",
-		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "store_id", "product_id", "from_state", "to_state", "expected_version", "result_version", "request_hash", "price_minor", "currency", "availability", "created_at"},
-		constraints: []string{"store_assortment_audit_pkey", "store_assortment_audit_event_type_chk", "store_assortment_audit_event_idempotency_uq", "store_assortment_audit_store_fk", "store_assortment_audit_product_fk", "store_assortment_audit_price_chk", "store_assortment_audit_currency_chk", "store_assortment_audit_version_chk"},
-		indexes:     []string{"store_assortment_audit_store_idx"},
-	},
-	{
-		name:        "dsh.store_publication_idempotency",
-		columns:     []string{"idempotency_key", "request_hash", "store_id", "requested_state", "expected_version", "result_version", "result_state", "result_publication_changed_at", "result_updated_at", "created_at"},
-		constraints: []string{"store_publication_idempotency_pkey", "store_publication_idempotency_facts_uq", "store_publication_idempotency_state_chk", "store_publication_idempotency_store_fk"},
-		indexes:     []string{"store_publication_idempotency_store_idx"},
-	},
-	{
-		name:        "dsh.store_publication_audit",
-		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "store_id", "from_state", "to_state", "expected_version", "result_version", "request_hash", "requested_state", "created_at"},
-		constraints: []string{"store_publication_audit_pkey", "store_publication_audit_event_type_chk", "store_publication_audit_event_idempotency_uq", "store_publication_audit_idempotency_fk"},
-		indexes:     []string{"store_publication_audit_store_idx"},
-	},
-	{
-		name:        "dsh.delivery_addresses",
-		columns:     []string{"id", "client_actor_id", "address_text", "latitude", "longitude", "version", "created_at", "updated_at", "service_city_id"},
-		constraints: []string{"delivery_addresses_pkey", "delivery_addresses_text_chk", "delivery_addresses_latitude_chk", "delivery_addresses_longitude_chk", "delivery_addresses_version_chk", "delivery_addresses_service_city_fk"},
-		indexes:     []string{"delivery_addresses_client_idx", "delivery_addresses_service_city_idx"},
-	},
-	{
-		name:        "dsh.delivery_address_mutation_idempotency",
-		columns:     []string{"idempotency_key", "request_hash", "address_id", "client_actor_id", "operation", "expected_version", "created_at"},
-		constraints: []string{"delivery_address_mutation_idempotency_pkey", "delivery_address_idempotency_facts_uq", "delivery_address_idempotency_operation_chk", "delivery_address_idempotency_expected_version_chk", "delivery_address_idempotency_address_fk"},
-		indexes:     []string{"delivery_address_idempotency_client_idx"},
-	},
-	{
-		name:        "dsh.delivery_address_audit",
-		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "client_actor_id", "address_id", "expected_version", "result_version", "request_hash", "created_at"},
-		constraints: []string{"delivery_address_audit_pkey", "delivery_address_audit_event_type_chk", "delivery_address_audit_event_idempotency_uq", "delivery_address_audit_address_fk", "delivery_address_audit_expected_version_chk", "delivery_address_audit_result_version_chk"},
-		indexes:     []string{"delivery_address_audit_client_idx"},
-	},
-	{
-		name:        "dsh.store_origin_mutation_idempotency",
-		columns:     []string{"idempotency_key", "request_hash", "store_id", "partner_actor_id", "expected_version", "created_at"},
-		constraints: []string{"store_origin_mutation_idempotency_pkey", "store_origin_idempotency_facts_uq", "store_origin_idempotency_expected_version_chk", "store_origin_idempotency_store_partner_fk"},
-		indexes:     []string{"store_origin_idempotency_partner_idx"},
-	},
-	{
-		name:        "dsh.store_origin_audit",
-		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "partner_actor_id", "store_id", "expected_version", "result_version", "request_hash", "created_at"},
-		constraints: []string{"store_origin_audit_pkey", "store_origin_audit_event_type_chk", "store_origin_audit_event_idempotency_uq", "store_origin_audit_store_partner_fk", "store_origin_audit_expected_version_chk", "store_origin_audit_result_version_chk"},
-		indexes:     []string{"store_origin_audit_partner_idx"},
-	},
-	{
-		name:        "dsh.service_cities",
-		columns:     []string{"id", "display_name_ar", "active", "version", "created_at", "updated_at"},
-		constraints: []string{"service_cities_pkey", "service_cities_id_chk", "service_cities_display_name_ar_chk", "service_cities_version_chk"},
-		indexes:     []string{"service_cities_display_name_ar_uq", "service_cities_active_idx"},
-	},
-	{
-		name:        "dsh.service_city_mutation_idempotency",
-		columns:     []string{"idempotency_key", "request_hash", "city_id", "operation", "expected_version", "result_version", "result_display_name_ar", "result_active", "created_at"},
-		constraints: []string{"service_city_mutation_idempotency_pkey", "service_city_idempotency_facts_uq", "service_city_idempotency_operation_chk", "service_city_idempotency_expected_version_chk", "service_city_idempotency_result_version_chk", "service_city_idempotency_city_fk"},
-		indexes:     []string{"service_city_idempotency_city_idx"},
-	},
-	{
-		name:        "dsh.service_city_audit",
-		columns:     []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "city_id", "from_version", "result_version", "from_active", "to_active", "request_hash", "display_name_ar", "created_at"},
-		constraints: []string{"service_city_audit_pkey", "service_city_audit_event_type_chk", "service_city_audit_event_idempotency_uq", "service_city_audit_city_fk", "service_city_audit_from_version_chk", "service_city_audit_result_version_chk", "service_city_audit_display_name_ar_chk"},
-		indexes:     []string{"service_city_audit_city_idx"},
-	},
+	{name: "dsh.stores", columns: []string{"id", "partner_actor_id", "name", "version", "created_at", "updated_at", "publication_state", "publication_changed_at", "delivery_origin_latitude", "delivery_origin_longitude", "delivery_origin_version", "delivery_origin_updated_at", "service_city_id", "primary_vertical_id"}, constraints: []string{"stores_pkey", "stores_id_partner_actor_uq", "stores_name_length_chk", "stores_version_positive_chk", "stores_publication_state_chk", "stores_delivery_origin_pair_chk", "stores_delivery_origin_latitude_chk", "stores_delivery_origin_longitude_chk", "stores_delivery_origin_version_chk", "stores_delivery_origin_updated_at_chk", "stores_service_city_fk", "stores_primary_vertical_fk"}, indexes: []string{"stores_partner_actor_idx", "stores_publication_state_idx", "stores_service_city_idx", "stores_primary_vertical_idx"}},
+	{name: "dsh.joining_cases", columns: []string{"id", "contact_phone_e164", "business_name", "first_store_name", "partner_actor_id", "state", "correction_reason", "reviewed_by", "store_id", "version", "created_at", "updated_at", "first_store_service_city_id", "first_store_vertical_id"}, constraints: []string{"joining_cases_pkey", "joining_cases_phone_length_chk", "joining_cases_business_name_chk", "joining_cases_store_name_chk", "joining_cases_state_chk", "joining_cases_version_positive_chk", "joining_cases_store_fk", "joining_cases_service_city_fk", "joining_cases_first_store_vertical_fk"}, indexes: []string{"joining_cases_active_phone_uq", "joining_cases_partner_actor_uq", "joining_cases_state_idx", "joining_cases_service_city_idx", "joining_cases_first_store_vertical_idx"}},
+	{name: "dsh.joining_case_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "case_id", "operation", "result_version", "result_state", "result_partner_actor_id", "result_store_id", "result_correction_reason", "created_at"}, constraints: []string{"joining_case_mutation_idempotency_pkey", "joining_case_idempotency_facts_uq", "joining_case_idempotency_operation_chk", "joining_case_idempotency_state_chk", "joining_case_idempotency_version_chk", "joining_case_idempotency_case_fk"}, indexes: []string{"joining_case_idempotency_case_idx"}},
+	{name: "dsh.joining_case_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "case_id", "from_state", "to_state", "result_version", "request_hash", "partner_actor_id", "store_id", "correction_reason", "created_at"}, constraints: []string{"joining_case_audit_pkey", "joining_case_audit_event_type_chk", "joining_case_audit_event_idempotency_uq", "joining_case_audit_case_fk", "joining_case_audit_version_chk"}, indexes: []string{"joining_case_audit_case_idx"}},
+	{name: "dsh.store_publication_idempotency", columns: []string{"idempotency_key", "request_hash", "store_id", "requested_state", "expected_version", "result_version", "result_state", "result_publication_changed_at", "result_updated_at", "created_at"}, constraints: []string{"store_publication_idempotency_pkey", "store_publication_idempotency_facts_uq", "store_publication_idempotency_state_chk", "store_publication_idempotency_store_fk"}, indexes: []string{"store_publication_idempotency_store_idx"}},
+	{name: "dsh.store_publication_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "store_id", "from_state", "to_state", "expected_version", "result_version", "request_hash", "requested_state", "created_at"}, constraints: []string{"store_publication_audit_pkey", "store_publication_audit_event_type_chk", "store_publication_audit_event_idempotency_uq", "store_publication_audit_idempotency_fk"}, indexes: []string{"store_publication_audit_store_idx"}},
+	{name: "dsh.delivery_addresses", columns: []string{"id", "client_actor_id", "address_text", "latitude", "longitude", "version", "created_at", "updated_at", "service_city_id"}, constraints: []string{"delivery_addresses_pkey", "delivery_addresses_text_chk", "delivery_addresses_latitude_chk", "delivery_addresses_longitude_chk", "delivery_addresses_version_chk", "delivery_addresses_service_city_fk"}, indexes: []string{"delivery_addresses_client_idx", "delivery_addresses_service_city_idx"}},
+	{name: "dsh.delivery_address_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "address_id", "client_actor_id", "operation", "expected_version", "created_at"}, constraints: []string{"delivery_address_mutation_idempotency_pkey", "delivery_address_idempotency_facts_uq", "delivery_address_idempotency_operation_chk", "delivery_address_idempotency_expected_version_chk", "delivery_address_idempotency_address_fk"}, indexes: []string{"delivery_address_idempotency_client_idx"}},
+	{name: "dsh.delivery_address_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "client_actor_id", "address_id", "expected_version", "result_version", "request_hash", "created_at"}, constraints: []string{"delivery_address_audit_pkey", "delivery_address_audit_event_type_chk", "delivery_address_audit_event_idempotency_uq", "delivery_address_audit_address_fk", "delivery_address_audit_expected_version_chk", "delivery_address_audit_result_version_chk"}, indexes: []string{"delivery_address_audit_client_idx"}},
+	{name: "dsh.store_origin_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "store_id", "partner_actor_id", "expected_version", "created_at"}, constraints: []string{"store_origin_mutation_idempotency_pkey", "store_origin_idempotency_facts_uq", "store_origin_idempotency_expected_version_chk", "store_origin_idempotency_store_partner_fk"}, indexes: []string{"store_origin_idempotency_partner_idx"}},
+	{name: "dsh.store_origin_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "partner_actor_id", "store_id", "expected_version", "result_version", "request_hash", "created_at"}, constraints: []string{"store_origin_audit_pkey", "store_origin_audit_event_type_chk", "store_origin_audit_event_idempotency_uq", "store_origin_audit_store_partner_fk", "store_origin_audit_expected_version_chk", "store_origin_audit_result_version_chk"}, indexes: []string{"store_origin_audit_partner_idx"}},
+	{name: "dsh.service_cities", columns: []string{"id", "display_name_ar", "active", "version", "created_at", "updated_at"}, constraints: []string{"service_cities_pkey", "service_cities_id_chk", "service_cities_display_name_ar_chk", "service_cities_version_chk"}, indexes: []string{"service_cities_display_name_ar_uq", "service_cities_active_idx"}},
+	{name: "dsh.service_city_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "city_id", "operation", "expected_version", "result_version", "result_display_name_ar", "result_active", "created_at"}, constraints: []string{"service_city_mutation_idempotency_pkey", "service_city_idempotency_facts_uq", "service_city_idempotency_operation_chk", "service_city_idempotency_expected_version_chk", "service_city_idempotency_result_version_chk", "service_city_idempotency_city_fk"}, indexes: []string{"service_city_idempotency_city_idx"}},
+	{name: "dsh.service_city_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "city_id", "from_version", "result_version", "from_active", "to_active", "request_hash", "display_name_ar", "created_at"}, constraints: []string{"service_city_audit_pkey", "service_city_audit_event_type_chk", "service_city_audit_event_idempotency_uq", "service_city_audit_city_fk", "service_city_audit_from_version_chk", "service_city_audit_result_version_chk", "service_city_audit_display_name_ar_chk"}, indexes: []string{"service_city_audit_city_idx"}},
+	{name: "dsh.commerce_verticals", columns: []string{"id", "name_ar", "name_en", "active", "version", "created_at", "updated_at"}, constraints: []string{"commerce_verticals_pkey", "commerce_verticals_id_chk", "commerce_verticals_name_ar_chk", "commerce_verticals_name_en_chk", "commerce_verticals_version_chk"}, indexes: []string{"commerce_verticals_name_en_uq", "commerce_verticals_active_idx"}},
+	{name: "dsh.catalog_categories", columns: []string{"id", "vertical_id", "parent_category_id", "name_ar", "name_en", "active", "version", "created_at", "updated_at"}, constraints: []string{"catalog_categories_pkey", "catalog_categories_id_chk", "catalog_categories_name_ar_chk", "catalog_categories_name_en_chk", "catalog_categories_version_chk", "catalog_categories_vertical_fk", "catalog_categories_vertical_id_uq", "catalog_categories_parent_same_vertical_fk"}, indexes: []string{"catalog_categories_vertical_idx"}},
+	{name: "dsh.catalog_attribute_definitions", columns: []string{"id", "vertical_id", "code", "name_ar", "value_kind", "active", "version", "created_at", "updated_at"}, constraints: []string{"catalog_attribute_definitions_pkey", "catalog_attribute_definitions_code_chk", "catalog_attribute_definitions_name_chk", "catalog_attribute_definitions_kind_chk", "catalog_attribute_definitions_version_chk", "catalog_attribute_definitions_vertical_fk", "catalog_attribute_definitions_vertical_code_uq"}, indexes: []string{}},
+	{name: "dsh.catalog_products", columns: []string{"id", "vertical_id", "scope", "canonical_name", "brand", "active", "version", "created_at", "updated_at"}, constraints: []string{"catalog_products_pkey", "catalog_products_name_chk", "catalog_products_scope_chk", "catalog_products_version_chk", "catalog_products_vertical_fk"}, indexes: []string{"catalog_products_vertical_idx", "catalog_products_name_prefix_idx"}},
+	{name: "dsh.catalog_product_variants", columns: []string{"id", "product_id", "title", "sell_unit", "active", "version", "created_at", "updated_at"}, constraints: []string{"catalog_product_variants_pkey", "catalog_product_variants_title_chk", "catalog_product_variants_sell_unit_chk", "catalog_product_variants_version_chk", "catalog_product_variants_product_fk", "catalog_product_variants_product_title_uq"}, indexes: []string{"catalog_product_variants_product_idx"}},
+	{name: "dsh.catalog_variant_identifiers", columns: []string{"id", "variant_id", "identifier_type", "identifier_value", "created_at"}, constraints: []string{"catalog_variant_identifiers_pkey", "catalog_variant_identifiers_type_chk", "catalog_variant_identifiers_value_chk", "catalog_variant_identifiers_variant_fk"}, indexes: []string{"catalog_variant_identifiers_variant_idx", "catalog_variant_identifiers_value_uq"}},
+	{name: "dsh.catalog_product_categories", columns: []string{"product_id", "category_id", "created_at"}, constraints: []string{"catalog_product_categories_pkey", "catalog_product_categories_product_fk", "catalog_product_categories_category_fk"}, indexes: []string{"catalog_product_categories_category_idx"}},
+	{name: "dsh.catalog_product_attribute_values", columns: []string{"product_id", "attribute_id", "text_value", "integer_value", "decimal_value", "boolean_value", "unit"}, constraints: []string{"catalog_product_attribute_values_pkey", "catalog_product_attribute_values_product_fk", "catalog_product_attribute_values_attribute_fk", "catalog_product_attribute_values_one_value_chk"}, indexes: []string{}},
+	{name: "dsh.catalog_media", columns: []string{"id", "product_id", "uri", "media_role", "ordinal", "created_at"}, constraints: []string{"catalog_media_pkey", "catalog_media_uri_chk", "catalog_media_role_chk", "catalog_media_ordinal_chk", "catalog_media_product_fk", "catalog_media_product_ordinal_uq"}, indexes: []string{}},
+	{name: "dsh.catalog_store_offers", columns: []string{"id", "store_id", "variant_id", "price_minor", "currency", "quantity_policy", "pricing_basis", "inventory_policy", "availability", "publication_state", "version", "created_at", "updated_at"}, constraints: []string{"catalog_store_offers_pkey", "catalog_store_offers_store_fk", "catalog_store_offers_variant_fk", "catalog_store_offers_price_chk", "catalog_store_offers_currency_chk", "catalog_store_offers_quantity_policy_chk", "catalog_store_offers_pricing_basis_chk", "catalog_store_offers_inventory_policy_chk", "catalog_store_offers_state_chk", "catalog_store_offers_version_chk", "catalog_store_offers_store_variant_uq"}, indexes: []string{"catalog_store_offers_store_idx", "catalog_store_offers_public_idx"}},
+	{name: "dsh.catalog_store_offer_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "offer_id", "operation", "result_version", "created_at"}, constraints: []string{"catalog_store_offer_mutation_idempotency_pkey", "catalog_store_offer_idempotency_operation_chk", "catalog_store_offer_idempotency_version_chk", "catalog_store_offer_idempotency_offer_fk"}, indexes: []string{"catalog_store_offer_idempotency_offer_idx"}},
+	{name: "dsh.catalog_product_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "product_id", "operation", "result_version", "created_at"}, constraints: []string{"catalog_product_mutation_idempotency_pkey", "catalog_product_idempotency_operation_chk", "catalog_product_idempotency_version_chk", "catalog_product_idempotency_product_fk"}, indexes: []string{"catalog_product_idempotency_product_idx"}},
+	{name: "dsh.catalog_product_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "product_id", "from_version", "result_version", "request_hash", "canonical_name", "brand", "vertical_id", "scope", "created_at"}, constraints: []string{"catalog_product_audit_pkey", "catalog_product_audit_event_type_chk", "catalog_product_audit_event_idempotency_uq", "catalog_product_audit_product_fk", "catalog_product_audit_version_chk", "catalog_product_audit_scope_chk"}, indexes: []string{"catalog_product_audit_product_idx"}},
+	{name: "dsh.catalog_store_offer_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "offer_id", "from_state", "to_state", "expected_version", "result_version", "request_hash", "store_id", "variant_id", "price_minor", "currency", "availability", "created_at"}, constraints: []string{"catalog_store_offer_audit_pkey", "catalog_store_offer_audit_event_type_chk", "catalog_store_offer_audit_event_idempotency_uq", "catalog_store_offer_audit_offer_fk", "catalog_store_offer_audit_store_fk", "catalog_store_offer_audit_variant_fk", "catalog_store_offer_audit_price_chk", "catalog_store_offer_audit_currency_chk", "catalog_store_offer_audit_version_chk"}, indexes: []string{"catalog_store_offer_audit_store_idx"}},
+	{name: "dsh.catalog_product_proposals", columns: []string{"id", "partner_actor_id", "vertical_id", "category_id", "proposed_name", "proposed_brand", "proposed_sell_unit", "proposed_identifier_type", "proposed_identifier_value", "proposed_image_uri", "state", "correction_reason", "reviewed_by", "version", "created_at", "updated_at"}, constraints: []string{"catalog_product_proposals_pkey", "catalog_product_proposals_name_chk", "catalog_product_proposals_sell_unit_chk", "catalog_product_proposals_identifier_type_chk", "catalog_product_proposals_state_chk", "catalog_product_proposals_version_chk", "catalog_product_proposals_vertical_fk", "catalog_product_proposals_category_fk"}, indexes: []string{"catalog_product_proposals_partner_idx", "catalog_product_proposals_review_idx"}},
+	{name: "dsh.catalog_import_runs", columns: []string{"id", "acting_actor_id", "source_sha256", "mode", "state", "accepted_count", "conflict_count", "created_at"}, constraints: []string{"catalog_import_runs_pkey", "catalog_import_runs_mode_chk", "catalog_import_runs_state_chk", "catalog_import_runs_count_chk"}, indexes: []string{"catalog_import_runs_source_mode_uq"}},
+	{name: "dsh.catalog_registry_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "entity_type", "entity_id", "created_at"}, constraints: []string{"catalog_registry_mutation_idempotency_pkey", "catalog_registry_mutation_entity_chk", "catalog_registry_mutation_entity_key_uq"}, indexes: []string{"catalog_registry_mutation_entity_idx"}},
+	{name: "dsh.commerce_carts", columns: []string{"id", "client_actor_id", "store_id", "state", "version", "created_at", "updated_at"}, constraints: []string{"commerce_carts_pkey", "commerce_carts_state_chk", "commerce_carts_version_chk", "commerce_carts_store_fk"}, indexes: []string{"commerce_carts_client_store_open_uq", "commerce_carts_client_idx"}},
+	{name: "dsh.commerce_cart_lines", columns: []string{"id", "cart_id", "store_offer_id", "variant_id", "quantity_base_units", "selected_modifier_option_ids", "removed_at", "created_at", "updated_at"}, constraints: []string{"commerce_cart_lines_pkey", "commerce_cart_lines_quantity_chk", "commerce_cart_lines_modifiers_chk", "commerce_cart_lines_cart_fk", "commerce_cart_lines_offer_fk", "commerce_cart_lines_variant_fk"}, indexes: []string{"commerce_cart_lines_cart_idx", "commerce_cart_lines_cart_offer_uq"}},
+	{name: "dsh.commerce_cart_mutation_idempotency", columns: []string{"idempotency_key", "request_hash", "cart_id", "line_id", "operation", "expected_cart_version", "result_cart_version", "created_at"}, constraints: []string{"commerce_cart_mutation_idempotency_pkey", "commerce_cart_idempotency_operation_chk", "commerce_cart_idempotency_expected_version_chk", "commerce_cart_idempotency_result_version_chk", "commerce_cart_idempotency_cart_fk", "commerce_cart_idempotency_line_fk"}, indexes: []string{"commerce_cart_idempotency_cart_idx"}},
+	{name: "dsh.commerce_cart_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "cart_id", "line_id", "store_offer_id", "from_version", "result_version", "request_hash", "quantity_base_units", "created_at"}, constraints: []string{"commerce_cart_audit_pkey", "commerce_cart_audit_event_type_chk", "commerce_cart_audit_event_idempotency_uq", "commerce_cart_audit_cart_fk", "commerce_cart_audit_line_fk", "commerce_cart_audit_result_version_chk"}, indexes: []string{"commerce_cart_audit_cart_idx"}},
+	{name: "dsh.commerce_orders", columns: []string{"id", "client_actor_id", "store_id", "cart_id", "address_id", "address_version", "address_text", "address_latitude", "address_longitude", "service_city_id", "serviceability_policy_version", "serviceability_status", "serviceability_store_version", "serviceability_address_version", "state", "total_amount_minor", "currency", "version", "created_at", "updated_at"}, constraints: []string{"commerce_orders_pkey", "commerce_orders_address_version_chk", "commerce_orders_coordinates_chk", "commerce_orders_serviceability_status_chk", "commerce_orders_state_chk", "commerce_orders_total_chk", "commerce_orders_currency_chk", "commerce_orders_version_chk", "commerce_orders_store_fk", "commerce_orders_cart_fk", "commerce_orders_service_city_fk"}, indexes: []string{"commerce_orders_client_idx", "commerce_orders_store_state_idx"}},
+	{name: "dsh.commerce_order_lines", columns: []string{"id", "order_id", "store_offer_id", "variant_id", "product_id", "product_name", "variant_title", "sell_unit", "pricing_basis", "requested_quantity_base_units", "unit_price_minor", "line_amount_minor", "currency", "selected_modifier_option_ids", "created_at"}, constraints: []string{"commerce_order_lines_pkey", "commerce_order_lines_quantity_chk", "commerce_order_lines_price_chk", "commerce_order_lines_unit_chk", "commerce_order_lines_pricing_chk", "commerce_order_lines_currency_chk", "commerce_order_lines_modifiers_chk", "commerce_order_lines_order_fk", "commerce_order_lines_order_offer_uq"}, indexes: []string{"commerce_order_lines_order_idx"}},
+	{name: "dsh.commerce_order_checkout_idempotency", columns: []string{"idempotency_key", "request_hash", "cart_id", "order_id", "result_version", "created_at"}, constraints: []string{"commerce_order_checkout_idempotency_pkey", "commerce_order_checkout_idempotency_version_chk", "commerce_order_checkout_idempotency_cart_fk", "commerce_order_checkout_idempotency_order_fk"}, indexes: []string{"commerce_order_checkout_cart_uq"}},
+	{name: "dsh.commerce_order_transition_idempotency", columns: []string{"idempotency_key", "request_hash", "order_id", "requested_state", "expected_version", "result_version", "created_at"}, constraints: []string{"commerce_order_transition_idempotency_pkey", "commerce_order_transition_state_chk", "commerce_order_transition_expected_version_chk", "commerce_order_transition_result_version_chk", "commerce_order_transition_order_fk"}, indexes: []string{"commerce_order_transition_order_idx"}},
+	{name: "dsh.commerce_order_audit", columns: []string{"id", "event_type", "idempotency_key", "correlation_id", "acting_actor_id", "order_id", "from_state", "to_state", "from_version", "result_version", "request_hash", "created_at"}, constraints: []string{"commerce_order_audit_pkey", "commerce_order_audit_event_type_chk", "commerce_order_audit_event_idempotency_uq", "commerce_order_audit_order_fk", "commerce_order_audit_result_version_chk"}, indexes: []string{"commerce_order_audit_order_idx"}},
 }
 
 func Open(databaseURL string) (*sql.DB, error) {
@@ -171,7 +91,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if strings.TrimSpace(directory) == "" {
 		return nil, nil, errors.New("DSH_MIGRATION_DIR is required")
 	}
-	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql", "007_location_core.sql", "008_location_core_corrective_boundaries.sql", "009_service_city_scope.sql"}
+	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql", "007_location_core.sql", "008_location_core_corrective_boundaries.sql", "009_service_city_scope.sql", "010_central_catalog_refoundation.sql", "011_cart_checkout_order.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {
@@ -204,12 +124,7 @@ func Migrate(ctx context.Context, db *sql.DB, records []MigrationRecord, migrati
 	if _, err := tx.ExecContext(ctx, "CREATE SCHEMA IF NOT EXISTS dsh"); err != nil {
 		return fmt.Errorf("create DSH schema: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS dsh.schema_migrations (
-		version integer PRIMARY KEY,
-		name text NOT NULL,
-		sha256 text NOT NULL,
-		applied_at timestamptz NOT NULL DEFAULT clock_timestamp()
-	)`); err != nil {
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS dsh.schema_migrations (version integer PRIMARY KEY, name text NOT NULL, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT clock_timestamp())`); err != nil {
 		return fmt.Errorf("create DSH migration history: %w", err)
 	}
 	var current int
@@ -312,20 +227,20 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 			}
 		}
 		for _, constraint := range table.constraints {
-			var exists bool
-			if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=$1::regclass AND conname=$2)", table.name, constraint).Scan(&exists); err != nil {
+			var present bool
+			if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=$1::regclass AND conname=$2)", table.name, constraint).Scan(&present); err != nil {
 				return fmt.Errorf("DSH constraint check %s.%s: %w", table.name, constraint, err)
 			}
-			if !exists {
+			if !present {
 				return fmt.Errorf("DSH required constraint missing: %s.%s", table.name, constraint)
 			}
 		}
 		for _, index := range table.indexes {
-			var exists bool
-			if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname=$1 AND tablename=$2 AND indexname=$3)", parts[0], parts[1], index).Scan(&exists); err != nil {
+			var present bool
+			if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname=$1 AND tablename=$2 AND indexname=$3)", parts[0], parts[1], index).Scan(&present); err != nil {
 				return fmt.Errorf("DSH index check %s.%s: %w", table.name, index, err)
 			}
-			if !exists {
+			if !present {
 				return fmt.Errorf("DSH required index missing: %s.%s", table.name, index)
 			}
 		}

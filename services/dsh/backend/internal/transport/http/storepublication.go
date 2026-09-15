@@ -41,6 +41,7 @@ func (s *StorePublicationServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/stores/{storeId}/publication", s.readForOperator)
 	mux.HandleFunc("GET /dsh/public/stores", s.listPublic)
 	mux.HandleFunc("GET /dsh/public/stores/{storeId}", s.readPublic)
+	mux.HandleFunc("GET /dsh/public/stores/{storeId}/catalog", s.readPublicCatalog)
 }
 
 func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request) {
@@ -69,12 +70,12 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 		writeStorePublicationError(w, err)
 		return
 	}
-	assortments, err := postgres.ListStoreAssortments(r.Context(), s.serviceDB(), result.Store.ID, false)
+	offers, err := postgres.ListCatalogOffers(r.Context(), s.serviceDB(), result.Store.ID, false)
 	if err != nil {
 		writeStorageError(w, err)
 		return
 	}
-	writeStorePublication(w, http.StatusOK, result, readiness, assortments)
+	writeStorePublication(w, http.StatusOK, result, readiness, offers)
 }
 
 func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.Request) {
@@ -92,12 +93,12 @@ func (s *StorePublicationServer) readForOperator(w http.ResponseWriter, r *http.
 		writeStorePublicationError(w, err)
 		return
 	}
-	assortments, err := postgres.ListStoreAssortments(r.Context(), s.serviceDB(), store.ID, false)
+	offers, err := postgres.ListCatalogOffers(r.Context(), s.serviceDB(), store.ID, false)
 	if err != nil {
 		writeStorageError(w, err)
 		return
 	}
-	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness, assortments)
+	writeStorePublication(w, http.StatusOK, postgres.PublicationResult{Store: store}, readiness, offers)
 }
 
 func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +139,42 @@ func (s *StorePublicationServer) readPublic(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(toPublicStoreView(store))
+}
+
+func (s *StorePublicationServer) readPublicCatalog(w http.ResponseWriter, r *http.Request) {
+	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
+	categoryID := strings.TrimSpace(r.URL.Query().Get("categoryId"))
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if serviceCityID == "" || len(categoryID) > 128 || len(query) > 160 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog scope or filter is invalid")
+		return
+	}
+	if _, err := s.service.ReadPublished(r.Context(), r.PathValue("storeId"), serviceCityID); err != nil {
+		if errors.Is(err, postgres.ErrStoreNotFound) {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "published store catalog was not found")
+			return
+		}
+		writeStorePublicationError(w, err)
+		return
+	}
+	result, err := postgres.ReadPublicCatalog(r.Context(), s.db, r.PathValue("storeId"), serviceCityID, categoryID, query)
+	if errors.Is(err, postgres.ErrStoreNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "published store catalog was not found")
+		return
+	}
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	categories := make([]contract.CatalogCategory, 0, len(result.Categories))
+	for _, category := range result.Categories {
+		categories = append(categories, toCatalogCategory(category))
+	}
+	offers := make([]contract.CatalogStoreOffer, 0, len(result.Offers))
+	for _, offer := range result.Offers {
+		offers = append(offers, toStoreOffer(offer))
+	}
+	writeJSON(w, http.StatusOK, contract.PublicCatalogResponse{StoreID: result.StoreID, VerticalID: result.VerticalID, Categories: categories, Offers: offers})
 }
 
 func requiredPublicationHeaders(w http.ResponseWriter, r *http.Request) (string, string, string, int, bool) {
@@ -181,25 +218,21 @@ func writeStorePublicationError(w http.ResponseWriter, err error) {
 	}
 }
 
-func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness, assortments []postgres.StoreAssortmentRecord) {
+func writeStorePublication(w http.ResponseWriter, status int, result postgres.PublicationResult, readiness storepublication.PublicationReadiness, offers []postgres.CatalogStoreOfferRecord) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(contract.StorePublicationResponse{
-		Store:            toStoreView(result.Store, readiness, assortments),
+		Store:            toStoreView(result.Store, readiness, offers),
 		IdempotentReplay: result.Replayed,
 	})
 }
 
 func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreView {
-	assortments := make([]contract.StoreAssortment, 0, len(store.Assortments))
-	for _, assortment := range store.Assortments {
-		assortments = append(assortments, toStoreAssortment(assortment))
-	}
 	return contract.PublicStoreView{
 		ID: store.ID, Name: store.Name, Version: store.Version, PublishedAt: store.PublishedAt,
-		ServiceCity: toServiceCityRecord(store.ServiceCity),
-		Assortments: assortments,
-		CreatedAt:   store.CreatedAt, UpdatedAt: store.UpdatedAt,
+		ServiceCity:       toServiceCityRecord(store.ServiceCity),
+		PrimaryVerticalID: store.PrimaryVerticalID,
+		CreatedAt:         store.CreatedAt, UpdatedAt: store.UpdatedAt,
 	}
 }

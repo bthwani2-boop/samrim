@@ -1,6 +1,6 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const defaultEnvPath = path.join(root, "infra/local/compose/.env");
@@ -10,7 +10,7 @@ const canonicalProject = "samrim-local";
 const composeFile = path.join(root, "infra/local/compose/compose.yaml");
 const goImage = "golang:1.27.1-alpine";
 const testPath = path.join(root, "services/dsh/backend/internal/storage/postgres/migrate_test.go");
-const canonicalFreshTest = "TestFreshJoiningAndAssortmentIntegrity";
+const canonicalFreshTest = "TestFreshCatalogRefoundationIntegrity";
 
 function fail(message, error) {
   console.error(`DSH_BASELINE=FAIL ${message}`);
@@ -105,7 +105,7 @@ try {
 }
 
 console.log(output);
-if (output.includes("--- SKIP:") || !output.includes(`--- PASS: ${canonicalFreshTest}`)) fail("fresh DSH joining/assortment test was skipped or did not pass");
+if (output.includes("--- SKIP:") || !output.includes(`--- PASS: ${canonicalFreshTest}`)) fail("fresh DSH catalog refoundation test was skipped or did not pass");
 console.log(`BASELINE_TEST_NETWORK=${networks[0]}`);
 console.log(`BASELINE_TEST=${canonicalFreshTest}`);
 console.log("BASELINE_TEST_HOST_PORTS=0");

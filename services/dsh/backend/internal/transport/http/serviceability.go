@@ -21,6 +21,13 @@ func NewServiceability(identityClient *identityintegration.Client, db *sql.DB) (
 	if err != nil {
 		return nil, err
 	}
+	return NewServiceabilityWithService(service)
+}
+
+func NewServiceabilityWithService(service *serviceability.Service) (*ServiceabilityServer, error) {
+	if service == nil {
+		return nil, errors.New("serviceability configuration is invalid")
+	}
 	return &ServiceabilityServer{service: service}, nil
 }
 

@@ -21,6 +21,28 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": message}})
 }
 
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func optionalRequestString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func optionalProductValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 32*1024)
 	decoder := json.NewDecoder(r.Body)
@@ -83,19 +105,19 @@ func writeStorageError(w http.ResponseWriter, err error) {
 	}
 }
 
-func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness, assortments ...[]postgres.StoreAssortmentRecord) contract.StoreView {
-	values := []contract.StoreAssortment{}
-	if len(assortments) > 0 {
-		values = make([]contract.StoreAssortment, 0, len(assortments[0]))
-		for _, assortment := range assortments[0] {
-			values = append(values, toStoreAssortment(assortment))
+func toStoreView(store postgres.StoreRecord, readiness storepublication.PublicationReadiness, offers ...[]postgres.CatalogStoreOfferRecord) contract.StoreView {
+	values := []contract.CatalogStoreOffer{}
+	if len(offers) > 0 {
+		values = make([]contract.CatalogStoreOffer, 0, len(offers[0]))
+		for _, offer := range offers[0] {
+			values = append(values, toStoreOffer(offer))
 		}
 	}
 	return contract.StoreView{
-		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), Version: store.Version,
+		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), Version: store.Version,
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
 		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
-		Assortments:          values,
+		Offers:               values,
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
 }

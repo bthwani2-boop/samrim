@@ -44,7 +44,7 @@ for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
   const pkg = JSON.parse(read("apps/" + app + "/package.json"));
   if (pkg.dependencies?.["@bthwani/identity"] !== "workspace:*") failures.push(app + " does not consume canonical Identity package");
 }
-for (const file of ["apps/app-client/src/features/location-core/delivery-address-client.ts", "apps/app-partner/src/features/location-core/store-delivery-origin-client.ts", "apps/app-partner/src/features/partner-onboarding/store-readback-client.ts", "apps/app-partner/src/features/store-assortment/store-assortment.tsx"]) {
+for (const file of ["apps/app-client/src/features/location-core/delivery-address-client.ts", "apps/app-partner/src/features/location-core/store-delivery-origin-client.ts", "apps/app-partner/src/features/partner-onboarding/store-readback-client.ts", "apps/app-partner/src/features/store-offer/store-offer.tsx"]) {
   const consumer = read(file);
   for (const value of ["readIdentityAccessToken", "getAccessToken("]) if (consumer.includes(value)) failures.push(file + " retains raw Identity token access " + value);
   if (!consumer.includes("getUsableIdentityAccessToken")) failures.push(file + " does not use the canonical usable Identity token accessor");
