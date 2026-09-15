@@ -335,7 +335,7 @@ function verifyLocationCore() {
     ["Location Core service", service, ["identity.Role != \"client\"", "identity.Surface != \"app-client\"", "identity.Role != \"partner\"", "identity.Surface != \"app-partner\"", "ReadStoreOwnedByPartner"]],
     ["Location Core transport", transport, ["X-Actor-ID", "X-Acting-Actor-ID", "X-Expected-Version", "Idempotency-Key", "ErrDeliveryAddressInvalidCursor"]],
     ["mobile DSH client", mobileClient, ["listOwnDeliveryAddresses", "createOwnDeliveryAddress", "readStoreDeliveryOrigin", "setStoreDeliveryOrigin", "DeliveryAddressListResponse"]],
-    ["Location Core runtime proof", runtimeLocation, ["DSH_SCHEMA_V11=PASS", "LOCATION_CORE_RUNTIME=PASS", "LOCATION_CORE_PAGINATION=PASS", "LOCATION_CORE_AUTHORIZATION=PASS", "delivery_origin_version"]],
+    ["Location Core runtime proof", runtimeLocation, ["DSH_SCHEMA_V14=PASS", "LOCATION_CORE_RUNTIME=PASS", "LOCATION_CORE_PAGINATION=PASS", "LOCATION_CORE_AUTHORIZATION=PASS", "delivery_origin_version"]],
     ["app-client Location Core", clientUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم تحديد الموقع", "nextCursor", "عرض المزيد"]],
     ["app-partner Location Core", partnerUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم حفظ موقع أصل المتجر", "originVersion"]],
   ]) for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing Location Core invariant: ${token}`);
