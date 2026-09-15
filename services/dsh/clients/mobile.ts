@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { AssortmentPublicationState, CentralProduct, CentralProductListResponse, CorrectJoiningCaseRequest, CreateDeliveryAddressRequest, DeliveryAddressListResponse, DeliveryAddressResponse, JoiningCaseResponse, PublicStoreView, PublishedStoreListResponse, SetStoreDeliveryOriginRequest, StoreAssortment, StoreAssortmentListResponse, StoreAssortmentResponse, StoreDeliveryOriginResponse, UpdateDeliveryAddressRequest } from "./generated/dsh-types";
+import type { AssortmentPublicationState, CentralProduct, CentralProductListResponse, CorrectJoiningCaseRequest, CreateDeliveryAddressRequest, DeliveryAddressListResponse, DeliveryAddressResponse, JoiningCaseResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreDeliveryOriginRequest, StoreAssortment, StoreAssortmentListResponse, StoreAssortmentResponse, StoreDeliveryOriginResponse, UpdateDeliveryAddressRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -87,9 +87,10 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const normalized = caseID.trim();
       const businessName = input.businessName.trim();
       const firstStoreName = input.firstStoreName.trim();
-      if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
+      const serviceCityId = input.serviceCityId.trim();
+      if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
       const path = dshOperationPaths.correctAndResubmitJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, { businessName, firstStoreName }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, { businessName, firstStoreName, serviceCityId }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async listCentralProducts(accessToken: string, query = "", barcode = "", limit = 50): Promise<ReadonlyArray<CentralProduct>> {
 	  if (limit < 1 || limit > 50) throw new Error("DSH_PRODUCT_LIMIT_INVALID");
@@ -137,15 +138,18 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const addressText = input.addressText.trim();
       assertCoordinates(input.latitude, input.longitude);
       if (addressText.length < 3 || addressText.length > 500) throw new Error("DSH_ADDRESS_INPUT_INVALID");
-      return userRequest<DeliveryAddressResponse>(accessToken, dshOperationPaths.createOwnDeliveryAddress.path, dshOperationPaths.createOwnDeliveryAddress.method, { addressText, latitude: input.latitude, longitude: input.longitude }, mutationHeaders());
+      const serviceCityId = input.serviceCityId.trim();
+      if (!serviceCityId) throw new Error("DSH_ADDRESS_INPUT_INVALID");
+      return userRequest<DeliveryAddressResponse>(accessToken, dshOperationPaths.createOwnDeliveryAddress.path, dshOperationPaths.createOwnDeliveryAddress.method, { addressText, latitude: input.latitude, longitude: input.longitude, serviceCityId }, mutationHeaders());
     },
     async updateOwnDeliveryAddress(accessToken: string, addressID: string, input: UpdateDeliveryAddressRequest, expectedVersion: number): Promise<DeliveryAddressResponse> {
       const normalized = addressID.trim();
       const addressText = input.addressText.trim();
+      const serviceCityId = input.serviceCityId.trim();
       assertCoordinates(input.latitude, input.longitude);
-      if (!normalized || addressText.length < 3 || addressText.length > 500 || expectedVersion < 1) throw new Error("DSH_ADDRESS_INPUT_INVALID");
+      if (!normalized || addressText.length < 3 || addressText.length > 500 || !serviceCityId || expectedVersion < 1) throw new Error("DSH_ADDRESS_INPUT_INVALID");
       const path = dshOperationPaths.updateOwnDeliveryAddress.path.replace("{addressId}", encodeURIComponent(normalized));
-      return userRequest<DeliveryAddressResponse>(accessToken, path, dshOperationPaths.updateOwnDeliveryAddress.method, { addressText, latitude: input.latitude, longitude: input.longitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<DeliveryAddressResponse>(accessToken, path, dshOperationPaths.updateOwnDeliveryAddress.method, { addressText, latitude: input.latitude, longitude: input.longitude, serviceCityId }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async readStoreDeliveryOrigin(accessToken: string, storeID: string): Promise<StoreDeliveryOriginResponse> {
       const normalized = storeID.trim();
@@ -160,15 +164,28 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.setStoreDeliveryOrigin.path.replace("{storeId}", encodeURIComponent(normalized));
       return userRequest<StoreDeliveryOriginResponse>(accessToken, path, dshOperationPaths.setStoreDeliveryOrigin.method, { latitude: input.latitude, longitude: input.longitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
-    async listPublishedStores(): Promise<ReadonlyArray<PublicStoreView>> {
-      const result = await publicRequest<PublishedStoreListResponse>(dshOperationPaths.listPublishedStores.path);
+    async listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
+      return (await publicRequest<ServiceCityListResponse>(dshOperationPaths.listActiveServiceCities.path)).cities;
+    },
+    async listPublishedStores(serviceCityID: string): Promise<ReadonlyArray<PublicStoreView>> {
+      const normalizedCity = serviceCityID.trim();
+      if (!normalizedCity) throw new Error("DSH_SERVICE_CITY_REQUIRED");
+      const path = `${dshOperationPaths.listPublishedStores.path}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`;
+      const result = await publicRequest<PublishedStoreListResponse>(path);
       return result.stores;
     },
-    async readPublishedStore(storeID: string): Promise<PublicStoreView> {
+    async readPublishedStore(storeID: string, serviceCityID: string): Promise<PublicStoreView> {
       const normalized = storeID.trim();
-      if (!normalized) throw new Error("DSH_STORE_ID_REQUIRED");
-      const path = dshOperationPaths.readPublishedStore.path.replace("{storeId}", encodeURIComponent(normalized));
+      const normalizedCity = serviceCityID.trim();
+      if (!normalized || !normalizedCity) throw new Error("DSH_STORE_SCOPE_REQUIRED");
+      const path = `${dshOperationPaths.readPublishedStore.path.replace("{storeId}", encodeURIComponent(normalized))}?${new URLSearchParams({ serviceCityId: normalizedCity }).toString()}`;
       return publicRequest<PublicStoreView>(path);
+    },
+    async evaluateServiceability(accessToken: string, storeID: string, addressID: string): Promise<ServiceabilityResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedAddress = addressID.trim();
+      if (!normalizedStore || !normalizedAddress) throw new Error("DSH_SERVICEABILITY_INPUT_INVALID");
+      return userRequest<ServiceabilityResponse>(accessToken, dshOperationPaths.evaluateServiceability.path, dshOperationPaths.evaluateServiceability.method, { storeId: normalizedStore, addressId: normalizedAddress });
     },
   };
 }

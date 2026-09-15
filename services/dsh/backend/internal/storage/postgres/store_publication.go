@@ -17,6 +17,7 @@ type StoreRecord struct {
 	ID                   string
 	PartnerActorID       string
 	Name                 string
+	ServiceCityID        string
 	Version              int
 	PublicationState     string
 	PublicationChangedAt *time.Time
@@ -54,6 +55,7 @@ type PublicStoreRecord struct {
 	ID             string
 	PartnerActorID string
 	Name           string
+	ServiceCity    *ServiceCityRecord
 	Version        int
 	Assortments    []StoreAssortmentRecord
 	PublishedAt    time.Time
@@ -190,7 +192,7 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 	updated, err := scanStore(tx.QueryRowContext(ctx, `UPDATE dsh.stores
 		SET publication_state=$2, publication_changed_at=clock_timestamp(), version=version+1, updated_at=clock_timestamp()
 		WHERE id=$1 AND version=$3
-		RETURNING id, partner_actor_id, name, version, publication_state, publication_changed_at, created_at, updated_at`, storeID, requestedState, expectedVersion))
+		RETURNING id, partner_actor_id, name, service_city_id, version, publication_state, publication_changed_at, created_at, updated_at`, storeID, requestedState, expectedVersion))
 	if err != nil {
 		return PublicationResult{}, fmt.Errorf("update canonical store publication: %w", err)
 	}
@@ -214,23 +216,34 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 	return PublicationResult{Store: updated}, nil
 }
 
-func ListPublishedStores(ctx context.Context, db *sql.DB) ([]PublicStoreRecord, error) {
+func ListPublishedStores(ctx context.Context, db *sql.DB, serviceCityIDs ...string) ([]PublicStoreRecord, error) {
 	if db == nil {
 		return nil, errors.New("DSH database is nil")
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, partner_actor_id, name, version, publication_changed_at, created_at, updated_at
-		FROM dsh.stores WHERE publication_state='published' AND publication_changed_at IS NOT NULL
-		AND EXISTS (SELECT 1 FROM dsh.store_assortments a JOIN dsh.central_products p ON p.id=a.product_id WHERE a.store_id=dsh.stores.id AND a.publication_state='published' AND a.availability=true AND a.price_minor>0 AND p.active=true)
-		ORDER BY name ASC, id ASC`)
+	serviceCityID := ""
+	if len(serviceCityIDs) == 1 {
+		serviceCityID = strings.TrimSpace(serviceCityIDs[0])
+	}
+	if serviceCityID == "" {
+		return nil, ErrServiceCityNotFound
+	}
+	rows, err := db.QueryContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.version, s.publication_changed_at, s.created_at, s.updated_at,
+		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
+		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
+		WHERE s.service_city_id=$1 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
+		AND EXISTS (SELECT 1 FROM dsh.store_assortments a JOIN dsh.central_products p ON p.id=a.product_id WHERE a.store_id=s.id AND a.publication_state='published' AND a.availability=true AND a.price_minor>0 AND p.active=true)
+		ORDER BY s.name ASC, s.id ASC`, serviceCityID)
 	if err != nil {
 		return nil, fmt.Errorf("list published stores: %w", err)
 	}
 	stores := make([]PublicStoreRecord, 0)
 	for rows.Next() {
 		var store PublicStoreRecord
-		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt); err != nil {
+		var city ServiceCityRecord
+		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan published store: %w", err)
 		}
+		store.ServiceCity = &city
 		stores = append(stores, store)
 	}
 	if err := rows.Err(); err != nil {
@@ -256,21 +269,32 @@ func ListPublishedStores(ctx context.Context, db *sql.DB) ([]PublicStoreRecord, 
 	return stores, nil
 }
 
-func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string) (PublicStoreRecord, error) {
+func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, serviceCityIDs ...string) (PublicStoreRecord, error) {
 	if db == nil {
 		return PublicStoreRecord{}, errors.New("DSH database is nil")
 	}
+	serviceCityID := ""
+	if len(serviceCityIDs) == 1 {
+		serviceCityID = strings.TrimSpace(serviceCityIDs[0])
+	}
+	if serviceCityID == "" {
+		return PublicStoreRecord{}, ErrServiceCityNotFound
+	}
 	var store PublicStoreRecord
-	err := db.QueryRowContext(ctx, `SELECT id, partner_actor_id, name, version, publication_changed_at, created_at, updated_at
-		FROM dsh.stores WHERE id=$1 AND publication_state='published' AND publication_changed_at IS NOT NULL
-		AND EXISTS (SELECT 1 FROM dsh.store_assortments a JOIN dsh.central_products p ON p.id=a.product_id WHERE a.store_id=dsh.stores.id AND a.publication_state='published' AND a.availability=true AND a.price_minor>0 AND p.active=true)`, strings.TrimSpace(storeID)).Scan(
-		&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt)
+	var city ServiceCityRecord
+	err := db.QueryRowContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.version, s.publication_changed_at, s.created_at, s.updated_at,
+		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
+		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
+		WHERE s.id=$1 AND s.service_city_id=$2 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
+		AND EXISTS (SELECT 1 FROM dsh.store_assortments a JOIN dsh.central_products p ON p.id=a.product_id WHERE a.store_id=s.id AND a.publication_state='published' AND a.availability=true AND a.price_minor>0 AND p.active=true)`, strings.TrimSpace(storeID), serviceCityID).Scan(
+		&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PublicStoreRecord{}, ErrStoreNotFound
 	}
 	if err != nil {
 		return PublicStoreRecord{}, fmt.Errorf("read published store: %w", err)
 	}
+	store.ServiceCity = &city
 	store.Assortments, err = ListStoreAssortments(ctx, db, store.ID, true)
 	if err != nil {
 		return PublicStoreRecord{}, err
@@ -278,7 +302,7 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string) (Public
 	return store, nil
 }
 
-const storeSelect = `SELECT id, partner_actor_id, name, version, publication_state, publication_changed_at, created_at, updated_at FROM dsh.stores`
+const storeSelect = `SELECT id, partner_actor_id, name, service_city_id, version, publication_state, publication_changed_at, created_at, updated_at FROM dsh.stores`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -286,9 +310,13 @@ type rowScanner interface {
 
 func scanStore(row rowScanner) (StoreRecord, error) {
 	var store StoreRecord
+	var serviceCityID sql.NullString
 	var publicationChangedAt sql.NullTime
-	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.Version, &store.PublicationState, &publicationChangedAt, &store.CreatedAt, &store.UpdatedAt); err != nil {
+	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &serviceCityID, &store.Version, &store.PublicationState, &publicationChangedAt, &store.CreatedAt, &store.UpdatedAt); err != nil {
 		return StoreRecord{}, err
+	}
+	if serviceCityID.Valid {
+		store.ServiceCityID = serviceCityID.String
 	}
 	if publicationChangedAt.Valid {
 		store.PublicationChangedAt = &publicationChangedAt.Time

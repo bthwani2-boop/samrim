@@ -1,4 +1,6 @@
-import { createDshMobileClient, type PublicStoreView } from "@bthwani/dsh";
+import { createDshMobileClient, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
+import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
 
 function dshBaseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -8,10 +10,17 @@ function dshBaseUrl(): string {
 
 const client = () => createDshMobileClient(dshBaseUrl());
 
-export async function listPublishedStores(): Promise<ReadonlyArray<PublicStoreView>> {
-  return client().listPublishedStores();
+export async function listPublishedStores(serviceCityID: string): Promise<ReadonlyArray<PublicStoreView>> {
+  return client().listPublishedStores(serviceCityID);
 }
 
-export async function readPublishedStore(storeID: string): Promise<PublicStoreView> {
-  return client().readPublishedStore(storeID);
+export async function readPublishedStore(storeID: string, serviceCityID: string): Promise<PublicStoreView> {
+  return client().readPublishedStore(storeID, serviceCityID);
 }
+
+export async function evaluateStoreServiceability(storeID: string, addressID: string): Promise<ServiceabilityResponse> {
+  const accessToken = await getUsableIdentityAccessToken();
+  return client().evaluateServiceability(accessToken, storeID, addressID);
+}
+
+export { listOwnDeliveryAddresses };

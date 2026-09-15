@@ -17,6 +17,7 @@ var (
 	ErrPartnerSessionForbidden    = errors.New("an active app-partner session is required")
 	ErrPartnerIdentityUnavailable = errors.New("partner identity admission is unavailable")
 	ErrInvalidInput               = errors.New("joining case input is invalid")
+	ErrServiceCityUnavailable     = errors.New("an active service city is required")
 )
 
 var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
@@ -37,13 +38,18 @@ func (s *Service) Create(ctx context.Context, input postgres.JoiningCaseRecord, 
 	phone := strings.TrimSpace(input.ContactPhoneE164)
 	businessName := strings.TrimSpace(input.BusinessName)
 	firstStoreName := strings.TrimSpace(input.FirstStoreName)
-	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 {
+	serviceCityID := strings.TrimSpace(input.FirstStoreServiceCityID)
+	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
-	return postgres.CreateJoiningCase(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseRequest(phone, businessName, firstStoreName), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), phone, businessName, firstStoreName)
+	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
+	if err != nil || !city.Active {
+		return postgres.JoiningCaseResult{}, ErrServiceCityUnavailable
+	}
+	return postgres.CreateJoiningCase(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseRequest(phone, businessName, firstStoreName, serviceCityID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID)
 }
 
 func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.JoiningCaseResult, error) {
@@ -103,7 +109,7 @@ func (s *Service) ReadForPartner(ctx context.Context, accessToken string) (postg
 	return postgres.ReadJoiningCaseForPartner(ctx, s.db, identity.Subject)
 }
 
-func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID, businessName, firstStoreName string, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
+func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
 	identity, err := s.requirePartner(ctx, accessToken)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
@@ -111,10 +117,15 @@ func (s *Service) CorrectAndResubmitForPartner(ctx context.Context, accessToken,
 	caseID = strings.TrimSpace(caseID)
 	businessName = strings.TrimSpace(businessName)
 	firstStoreName = strings.TrimSpace(firstStoreName)
-	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || expectedVersion < 1 {
+	serviceCityID = strings.TrimSpace(serviceCityID)
+	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || expectedVersion < 1 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
-	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion), strings.TrimSpace(correlationID))
+	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
+	if err != nil || !city.Active {
+		return postgres.JoiningCaseResult{}, ErrServiceCityUnavailable
+	}
+	return postgres.CorrectAndResubmitJoiningCase(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID), strings.TrimSpace(correlationID), serviceCityID)
 }
 
 func (s *Service) ListForOperator(ctx context.Context, state string, limit int, cursor, actingActorID string) (postgres.JoiningCaseListResult, error) {

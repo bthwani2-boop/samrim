@@ -17,6 +17,7 @@ var (
 	ErrPublicationReadinessBlocked   = errors.New("store publication readiness is blocked")
 	ErrPartnerIdentityUnavailable    = errors.New("partner Identity eligibility is unavailable")
 	PartnerIdentityNotEligibleReason = "PARTNER_IDENTITY_NOT_ELIGIBLE"
+	ServiceCityNotEligibleReason     = "SERVICE_CITY_NOT_ELIGIBLE"
 )
 
 type PublicationReadiness struct {
@@ -87,8 +88,8 @@ func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID st
 	return store, readiness, err
 }
 
-func (s *Service) ListPublished(ctx context.Context) ([]postgres.PublicStoreRecord, error) {
-	stores, err := postgres.ListPublishedStores(ctx, s.db)
+func (s *Service) ListPublished(ctx context.Context, serviceCityID string) ([]postgres.PublicStoreRecord, error) {
+	stores, err := postgres.ListPublishedStores(ctx, s.db, serviceCityID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,8 +106,8 @@ func (s *Service) ListPublished(ctx context.Context) ([]postgres.PublicStoreReco
 	return visible, nil
 }
 
-func (s *Service) ReadPublished(ctx context.Context, storeID string) (postgres.PublicStoreRecord, error) {
-	store, err := postgres.ReadPublishedStore(ctx, s.db, storeID)
+func (s *Service) ReadPublished(ctx context.Context, storeID, serviceCityID string) (postgres.PublicStoreRecord, error) {
+	store, err := postgres.ReadPublishedStore(ctx, s.db, storeID, serviceCityID)
 	if err != nil {
 		return postgres.PublicStoreRecord{}, err
 	}
@@ -121,32 +122,45 @@ func (s *Service) ReadPublished(ctx context.Context, storeID string) (postgres.P
 }
 
 func (s *Service) ReadinessForStore(ctx context.Context, store postgres.StoreRecord) (PublicationReadiness, error) {
+	if strings.TrimSpace(store.ServiceCityID) == "" {
+		return blockedReadiness(ServiceCityNotEligibleReason), nil
+	}
+	city, err := postgres.ReadServiceCity(ctx, s.db, store.ServiceCityID)
+	if errors.Is(err, postgres.ErrServiceCityNotFound) {
+		return blockedReadiness(ServiceCityNotEligibleReason), nil
+	}
+	if err != nil {
+		return PublicationReadiness{}, err
+	}
+	if !city.Active {
+		return blockedReadiness(ServiceCityNotEligibleReason), nil
+	}
 	return s.ReadinessForPartner(ctx, store.PartnerActorID)
 }
 
 func (s *Service) ReadinessForPartner(ctx context.Context, partnerActorID string) (PublicationReadiness, error) {
 	partnerActorID = strings.TrimSpace(partnerActorID)
 	if partnerActorID == "" {
-		return blockedReadiness(), nil
+		return blockedReadiness(PartnerIdentityNotEligibleReason), nil
 	}
 	partner, err := s.identity.ReadActorRole(ctx, partnerActorID, "partner")
 	if err != nil {
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) && identityErr.Status == 404 {
-			return blockedReadiness(), nil
+			return blockedReadiness(PartnerIdentityNotEligibleReason), nil
 		}
 		return PublicationReadiness{}, fmt.Errorf("%w: %w", ErrPartnerIdentityUnavailable, err)
 	}
 	return evaluatePartnerReadiness(partner), nil
 }
 
-func blockedReadiness() PublicationReadiness {
-	return PublicationReadiness{BlockedReason: PartnerIdentityNotEligibleReason}
+func blockedReadiness(reason string) PublicationReadiness {
+	return PublicationReadiness{BlockedReason: reason}
 }
 
 func evaluatePartnerReadiness(partner identityclient.ActorRoleView) PublicationReadiness {
 	if partner.Role != "partner" || !partner.Enabled || !partner.SecurityEnabled || partner.ActivatedAt == nil {
-		return blockedReadiness()
+		return blockedReadiness(PartnerIdentityNotEligibleReason)
 	}
 	return PublicationReadiness{Ready: true}
 }

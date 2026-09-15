@@ -1,0 +1,15 @@
+paths:
+  /dsh/serviceability:
+    post:
+      operationId: evaluateServiceability
+      summary: Evaluate one client-owned address against one scoped published Store
+      security: [{ userBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ServiceabilityRequest" } }
+      responses:
+        "200": { description: Deterministic serviceability result with freshness evidence., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ServiceabilityResponse" } } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

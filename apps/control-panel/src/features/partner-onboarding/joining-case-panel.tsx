@@ -1,6 +1,6 @@
 "use client";
 
-import type { JoiningCaseListResponse, JoiningCaseResponse, StorePublicationResponse } from "@bthwani/dsh";
+import type { JoiningCaseListResponse, JoiningCaseResponse, ServiceCity, StorePublicationResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 
@@ -19,6 +19,8 @@ export function JoiningCasePanel() {
   const [queue, setQueue] = useState<JoiningCaseListResponse["cases"]>([]);
   const [queueBusy, setQueueBusy] = useState(false);
   const [queueError, setQueueError] = useState("");
+  const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
+  const [serviceCityId, setServiceCityId] = useState("");
 
   const loadQueue = useCallback(async () => {
     setQueueBusy(true);
@@ -38,6 +40,10 @@ export function JoiningCasePanel() {
   }, []);
 
   useEffect(() => { void loadQueue(); }, [loadQueue]);
+
+  useEffect(() => {
+    void fetch("/api/service-cities", { cache: "no-store" }).then(async (response) => response.ok ? setCities((await response.json() as { cities: ReadonlyArray<ServiceCity> }).cities) : setCities([]), () => setCities([]));
+  }, []);
 
   function rememberResult(next: JoiningCaseResponse) {
     setResult(next);
@@ -70,9 +76,9 @@ export function JoiningCasePanel() {
   }
 
   async function createCase() {
-    const input = { contactPhoneE164: phone.replace(/\s+/g, ""), businessName: businessName.trim(), firstStoreName: storeName.trim() };
-    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2) {
-      setError("أدخل رقم هاتف الشريك واسم النشاط واسم المتجر الأول.");
+    const input = { contactPhoneE164: phone.replace(/\s+/g, ""), businessName: businessName.trim(), firstStoreName: storeName.trim(), serviceCityId };
+    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2 || !input.serviceCityId) {
+      setError("أدخل رقم هاتف الشريك واسم النشاط واسم المتجر الأول واختر المدينة.");
       return;
     }
     setBusy(true);
@@ -218,6 +224,7 @@ export function JoiningCasePanel() {
           <label className="field-label" htmlFor="joining-phone">رقم هاتف الشريك (E.164)<input id="joining-phone" autoComplete="tel" disabled={busy} inputMode="tel" value={phone} onChange={(event) => { setPhone(event.target.value); clearResult(); }} placeholder="مثال: +96777000100" /></label>
           <label className="field-label" htmlFor="joining-business">اسم النشاط<input id="joining-business" disabled={busy} value={businessName} onChange={(event) => { setBusinessName(event.target.value); clearResult(); }} /></label>
           <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy} value={storeName} onChange={(event) => { setStoreName(event.target.value); clearResult(); }} /></label>
+          <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy} value={serviceCityId} onChange={(event) => { setServiceCityId(event.target.value); clearResult(); }}><option value="">اختر مدينة نشطة</option>{cities.filter((city) => city.active).map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
           <button type="button" className="button button-primary" disabled={busy} onClick={() => void createCase()}>{busy ? "جارٍ إنشاء الحالة…" : "إنشاء حالة انضمام"}</button>
         </div>
         </>
@@ -226,6 +233,7 @@ export function JoiningCasePanel() {
           <strong>الحالة: {current.state}</strong>
           <p>Case: <code>{current.id}</code> · الإصدار <code>{current.version}</code></p>
           <p>{current.businessName} · {current.firstStoreName}</p>
+          <p>مدينة المتجر الأول: {cities.find((city) => city.id === current.serviceCityId)?.displayNameAr || current.serviceCityId}</p>
           {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
           {current.state === "draft" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
           {current.state === "submitted" ? (

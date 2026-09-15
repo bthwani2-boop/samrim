@@ -83,7 +83,7 @@ func (s *LocationCoreServer) createAddress(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateOwnAddress(r.Context(), bearerToken(r), input.AddressText, input.Latitude, input.Longitude, idempotency, correlation)
+	result, err := s.service.CreateOwnAddress(r.Context(), bearerToken(r), input.ServiceCityID, input.AddressText, input.Latitude, input.Longitude, idempotency, correlation)
 	if err != nil {
 		writeLocationError(w, err)
 		return
@@ -104,7 +104,7 @@ func (s *LocationCoreServer) updateAddress(w http.ResponseWriter, r *http.Reques
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.UpdateOwnAddress(r.Context(), bearerToken(r), r.PathValue("addressId"), input.AddressText, input.Latitude, input.Longitude, expectedVersion, idempotency, correlation)
+	result, err := s.service.UpdateOwnAddress(r.Context(), bearerToken(r), r.PathValue("addressId"), input.ServiceCityID, input.AddressText, input.Latitude, input.Longitude, expectedVersion, idempotency, correlation)
 	if err != nil {
 		writeLocationError(w, err)
 		return
@@ -177,7 +177,7 @@ func requiredLocationHeaders(w http.ResponseWriter, r *http.Request, versioned, 
 }
 
 func toDeliveryAddress(address postgres.DeliveryAddressRecord) contract.DeliveryAddress {
-	return contract.DeliveryAddress{ID: address.ID, AddressText: address.AddressText, Latitude: address.Latitude, Longitude: address.Longitude, Version: address.Version, CreatedAt: address.CreatedAt, UpdatedAt: address.UpdatedAt}
+	return contract.DeliveryAddress{ID: address.ID, ServiceCityID: address.ServiceCityID, AddressText: address.AddressText, Latitude: address.Latitude, Longitude: address.Longitude, Version: address.Version, CreatedAt: address.CreatedAt, UpdatedAt: address.UpdatedAt}
 }
 
 func toDeliveryOrigin(origin postgres.StoreDeliveryOriginRecord) *contract.DeliveryOrigin {
@@ -193,7 +193,7 @@ func deliveryOriginValue(origin postgres.StoreDeliveryOriginRecord, available bo
 
 func writeLocationError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, locationcore.ErrLocationInputInvalid), errors.Is(err, postgres.ErrDeliveryAddressInvalidLimit), errors.Is(err, postgres.ErrDeliveryAddressInvalidCursor):
+	case errors.Is(err, locationcore.ErrLocationInputInvalid), errors.Is(err, postgres.ErrDeliveryAddressInvalidLimit), errors.Is(err, postgres.ErrDeliveryAddressInvalidCursor), errors.Is(err, postgres.ErrServiceCityNotFound):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "location facts are invalid")
 	case errors.Is(err, postgres.ErrDeliveryAddressNotFound), errors.Is(err, postgres.ErrStoreOriginNotFound), errors.Is(err, postgres.ErrStoreNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "location record was not found")

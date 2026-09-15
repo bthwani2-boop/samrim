@@ -64,6 +64,8 @@ paths:
     get:
       operationId: listPublishedStores
       summary: List only client-visible published Stores
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired"
       responses:
         "200":
           description: Published Store discovery result.
@@ -80,6 +82,7 @@ paths:
       summary: Read one client-visible published Store
       parameters:
         - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired"
       responses:
         "200":
           description: Published Store detail.

@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { resolveTheme } from "@bthwani/design-system";
 import type { DeliveryAddress } from "@bthwani/dsh";
 import { createOwnDeliveryAddress, isLocationHttpError, listOwnDeliveryAddresses, updateOwnDeliveryAddress } from "./delivery-address-client";
+import { useServiceCityScope } from "../service-city/service-city-scope";
 
 type AddressState =
   | { kind: "loading" }
@@ -23,10 +24,12 @@ function errorText(error: unknown): string {
 }
 
 export default function LocationCore() {
+  const { cities, selectedCityID } = useServiceCityScope();
   const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<AddressState>({ kind: "loading" });
   const [addressText, setAddressText] = useState("");
+  const [addressCityID, setAddressCityID] = useState("");
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [editing, setEditing] = useState<DeliveryAddress | null>(null);
   const [formOpen, setFormOpen] = useState(true);
@@ -71,6 +74,10 @@ export default function LocationCore() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!editing && selectedCityID && !addressCityID) setAddressCityID(selectedCityID);
+  }, [addressCityID, editing, selectedCityID]);
+
   async function captureLocation() {
     if (busy || locationBusy) return;
     setLocationBusy(true);
@@ -100,6 +107,7 @@ export default function LocationCore() {
     setFormOpen(true);
     setEditing(address);
     setAddressText(address.addressText);
+    setAddressCityID(address.serviceCityId || selectedCityID || "");
     setCoordinates({ latitude: address.latitude, longitude: address.longitude });
     setError("");
     setNotice("");
@@ -108,13 +116,14 @@ export default function LocationCore() {
   function cancelEdit() {
     setEditing(null);
     setAddressText("");
+    setAddressCityID(selectedCityID || "");
     setCoordinates(null);
     setError("");
   }
 
   async function save() {
     const value = addressText.trim();
-    if (busy || value.length < 3 || value.length > 500 || !coordinates) {
+    if (busy || value.length < 3 || value.length > 500 || !coordinates || !addressCityID) {
       setError("اكتب وصفًا واضحًا للعنوان والتقط موقعه قبل الحفظ.");
       return;
     }
@@ -124,10 +133,10 @@ export default function LocationCore() {
     try {
       let successNotice: string;
       if (editing) {
-        await updateOwnDeliveryAddress(editing.id, { addressText: value, latitude: coordinates.latitude, longitude: coordinates.longitude }, editing.version);
+        await updateOwnDeliveryAddress(editing.id, { addressText: value, latitude: coordinates.latitude, longitude: coordinates.longitude, serviceCityId: addressCityID }, editing.version);
         successNotice = "تم حفظ تغييرات العنوان.";
       } else {
-        await createOwnDeliveryAddress({ addressText: value, latitude: coordinates.latitude, longitude: coordinates.longitude });
+        await createOwnDeliveryAddress({ addressText: value, latitude: coordinates.latitude, longitude: coordinates.longitude, serviceCityId: addressCityID });
         successNotice = "تم حفظ العنوان.";
       }
       cancelEdit();
@@ -154,6 +163,8 @@ export default function LocationCore() {
       {formOpen ? <View style={styles.formCard}>
         <Text style={styles.sectionTitle}>{editing ? "تعديل العنوان" : "إضافة عنوان"}</Text>
         <Text style={styles.fieldLabel}>وصف العنوان</Text>
+        <Text style={styles.fieldLabel}>مدينة العنوان</Text>
+        <View style={styles.cityList}>{cities.map((city) => <Pressable key={city.id} accessibilityRole="button" accessibilityState={{ selected: addressCityID === city.id }} onPress={() => setAddressCityID(city.id)} style={[styles.cityButton, addressCityID === city.id && styles.cityButtonSelected]}><Text style={styles.cityButtonText}>{city.displayNameAr}</Text></Pressable>)}</View>
         <TextInput
           accessibilityLabel="وصف العنوان"
           editable={!busy}
@@ -202,6 +213,10 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     listCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 18, borderWidth: 1, gap: 10, padding: 16 },
     sectionTitle: { color: theme.structure, fontSize: 16, fontWeight: "800", textAlign: "right" },
     fieldLabel: { color: theme.structure, fontSize: 14, fontWeight: "700", textAlign: "right" },
+    cityList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    cityButton: { borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
+    cityButtonSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
+    cityButtonText: { color: theme.structure, fontSize: 13, fontWeight: "700" },
     input: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, color: theme.structure, minHeight: 84, paddingHorizontal: 12, paddingVertical: 12, textAlignVertical: "top" },
     secondaryButton: { alignItems: "center", borderColor: theme.borderColorStrong, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 48, paddingHorizontal: 14 },
     secondaryButtonText: { color: theme.structure, fontSize: 14, fontWeight: "800" },

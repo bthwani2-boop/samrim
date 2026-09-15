@@ -32,7 +32,7 @@ func TestLocationCoreIntegrity(t *testing.T) {
 	}
 
 	withFreshDatabase(t, rootDB, databaseURL, func(ctx context.Context, db *sql.DB, records []postgres.MigrationRecord, migrationSQL []string) {
-		if len(records) != postgres.SchemaVersion || records[7].Name != "008_location_core_corrective_boundaries.sql" {
+		if len(records) != postgres.SchemaVersion || records[8].Name != "009_service_city_scope.sql" {
 			t.Fatalf("Location Core migration is not the canonical schema tail: len=%d last=%q", len(records), records[len(records)-1].Name)
 		}
 		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {

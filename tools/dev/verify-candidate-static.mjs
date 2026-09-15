@@ -13,6 +13,8 @@ function verifyPartnerModel() {
     "services/dsh/contracts/openapi/paths/catalog.yaml",
     "services/dsh/contracts/openapi/paths/store-publication.yaml",
     "services/dsh/contracts/openapi/paths/location-core.yaml",
+    "services/dsh/contracts/openapi/paths/service-city.yaml",
+    "services/dsh/contracts/openapi/paths/serviceability.yaml",
     "services/dsh/clients/generated/dsh-types.ts",
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/joining_case.go",
@@ -20,13 +22,19 @@ function verifyPartnerModel() {
     "services/dsh/backend/internal/storage/postgres/store_assortment.go",
     "services/dsh/backend/internal/storage/postgres/store_publication.go",
     "services/dsh/backend/internal/storage/postgres/location_core.go",
+    "services/dsh/backend/internal/storage/postgres/service_city.go",
+    "services/dsh/backend/internal/storage/postgres/serviceability.go",
     "services/dsh/backend/internal/locationcore/service.go",
+    "services/dsh/backend/internal/servicecity/service.go",
+    "services/dsh/backend/internal/serviceability/service.go",
     "services/dsh/backend/internal/storepublication/service.go",
     "services/dsh/backend/internal/transport/http/joiningcase.go",
     "services/dsh/backend/internal/transport/http/catalog_product.go",
     "services/dsh/backend/internal/transport/http/store_assortment.go",
     "services/dsh/backend/internal/transport/http/storepublication.go",
     "services/dsh/backend/internal/transport/http/locationcore.go",
+    "services/dsh/backend/internal/transport/http/servicecity.go",
+    "services/dsh/backend/internal/transport/http/serviceability.go",
     "apps/control-panel/app/(workspace)/partners/page.tsx",
     "apps/control-panel/src/features/partner-onboarding/joining-case-panel.tsx",
     "apps/control-panel/tests/live-identity.spec.ts",
@@ -42,10 +50,14 @@ function verifyPartnerModel() {
     "services/dsh/database/migrations/008_location_core_corrective_boundaries.sql",
     "services/dsh/tools/import-central-products.mjs",
     "apps/app-client/src/features/location-core/location-core.tsx",
+    "apps/app-client/src/features/service-city/service-city-client.ts",
+    "apps/app-client/src/features/service-city/service-city-scope.tsx",
     "apps/app-client/src/features/location-core/delivery-address-client.ts",
     "apps/app-partner/src/features/location-core/store-delivery-origin.tsx",
     "apps/app-partner/src/features/location-core/store-delivery-origin-client.ts",
     "tools/dev/verify-dsh-location-runtime.mjs",
+    "tools/dev/verify-dsh-runtime-core.mjs",
+    "services/dsh/database/migrations/009_service_city_scope.sql",
   ];
   for (const relative of requiredFiles) {
     const absolute = path.join(root, ...relative.split("/"));
@@ -88,8 +100,8 @@ function verifyPartnerModel() {
     .join("\n");
   for (const required of [
     "required: [case, idempotentReplay]",
-    "required: [id, partnerActorId, name, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]",
-    "required: [id, name, version, assortments, publishedAt, createdAt, updatedAt]",
+    "required: [id, partnerActorId, name, serviceCityId, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]",
+    "required: [id, name, serviceCity, version, assortments, publishedAt, createdAt, updatedAt]",
   ]) {
     if (!contract.includes(required)) failures.push(`DSH contract missing canonical Partner invariant: ${required}`);
   }
@@ -175,6 +187,8 @@ function verifyPublicationReadiness() {
     "services/dsh/contracts/openapi/paths/joining-cases.yaml",
     "services/dsh/contracts/openapi/paths/catalog.yaml",
     "services/dsh/contracts/openapi/paths/store-publication.yaml",
+    "services/dsh/contracts/openapi/paths/service-city.yaml",
+    "services/dsh/contracts/openapi/paths/serviceability.yaml",
   ].map((relative) => fs.readFileSync(path.join(root, relative), "utf8")).join("\n");
   const generatedTS = fs.readFileSync(path.join(root, "services/dsh/clients/generated/dsh-types.ts"), "utf8");
   const generatedGo = fs.readFileSync(path.join(root, "services/dsh/backend/internal/contract/dsh_types_generated.go"), "utf8");
@@ -194,7 +208,7 @@ function verifyPublicationReadiness() {
     ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
     ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
     ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
-    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V8=PASS"]],
+    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/stores/", "/auth/managed/activation/request", "PRODUCT_DISABLED", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V9=PASS", "DSH_CITY_SCOPE_RUNTIME=PASS"]],
   ]) {
     for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
   }
@@ -280,7 +294,7 @@ function verifyLocationCore() {
     ["Location Core service", service, ["identity.Role != \"client\"", "identity.Surface != \"app-client\"", "identity.Role != \"partner\"", "identity.Surface != \"app-partner\"", "ReadStoreOwnedByPartner"]],
     ["Location Core transport", transport, ["X-Actor-ID", "X-Acting-Actor-ID", "X-Expected-Version", "Idempotency-Key", "ErrDeliveryAddressInvalidCursor"]],
     ["mobile DSH client", mobileClient, ["listOwnDeliveryAddresses", "createOwnDeliveryAddress", "readStoreDeliveryOrigin", "setStoreDeliveryOrigin", "DeliveryAddressListResponse"]],
-    ["Location Core runtime proof", runtimeLocation, ["DSH_SCHEMA_V8=PASS", "LOCATION_CORE_RUNTIME=PASS", "LOCATION_CORE_PAGINATION=PASS", "LOCATION_CORE_AUTHORIZATION=PASS", "delivery_origin_version"]],
+    ["Location Core runtime proof", runtimeLocation, ["DSH_SCHEMA_V9=PASS", "LOCATION_CORE_RUNTIME=PASS", "LOCATION_CORE_PAGINATION=PASS", "LOCATION_CORE_AUTHORIZATION=PASS", "delivery_origin_version"]],
     ["app-client Location Core", clientUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم تحديد الموقع", "nextCursor", "عرض المزيد"]],
     ["app-partner Location Core", partnerUI, ["requestForegroundPermissionsAsync", "getCurrentPositionAsync", "تم حفظ موقع أصل المتجر", "originVersion"]],
   ]) for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing Location Core invariant: ${token}`);
@@ -311,7 +325,6 @@ function verifyLocationCore() {
     if (config.nativeCapabilities.includes("maps")) failures.push(`${app}: maps capability must remain unadmitted in Location Core`);
     if (deps["react-native-maps"]) failures.push(`${app}: react-native-maps must not be added without proven provider provisioning`);
   }
-  if (transport.includes("serviceability") || storage.includes("serviceability") || mobileClient.includes("serviceability")) failures.push("Location Core admits deferred serviceability semantics");
   if (failures.length) {
     console.error("LOCATION_CORE_STATIC=FAIL");
     for (const failure of failures) console.error("  " + failure);
@@ -319,7 +332,62 @@ function verifyLocationCore() {
   }
   console.log("LOCATION_CORE_STATIC=PASS");
   console.log("LOCATION_CORE_MAPS=NOT_ADMITTED");
-  console.log("LOCATION_CORE_SERVICEABILITY_POLICY=DEFERRED");
+  console.log("LOCATION_CORE_SERVICEABILITY_POLICY=SEPARATE_CITY_SCOPE");
+}
+
+function verifyCityScope() {
+  const failures = [];
+  const read = (relative) => fs.readFileSync(path.join(root, ...relative.split("/")), "utf8");
+  const contract = read("services/dsh/contracts/openapi/dsh.openapi.yaml") + "\n" + read("services/dsh/contracts/openapi/paths/service-city.yaml") + "\n" + read("services/dsh/contracts/openapi/paths/serviceability.yaml") + "\n" + read("services/dsh/contracts/openapi/paths/store-publication.yaml");
+  const migration = read("services/dsh/database/migrations/009_service_city_scope.sql");
+  const cityStorage = read("services/dsh/backend/internal/storage/postgres/service_city.go");
+  const serviceabilityStorage = read("services/dsh/backend/internal/storage/postgres/serviceability.go");
+  const cityService = read("services/dsh/backend/internal/servicecity/service.go");
+  const serviceabilityService = read("services/dsh/backend/internal/serviceability/service.go");
+  const cityTransport = read("services/dsh/backend/internal/transport/http/servicecity.go");
+  const serviceabilityTransport = read("services/dsh/backend/internal/transport/http/serviceability.go");
+  const mobileClient = read("services/dsh/clients/mobile.ts");
+  const clientCity = read("apps/app-client/src/features/service-city/service-city-scope.tsx");
+  const partnerReadback = read("apps/app-partner/src/features/partner-onboarding/store-readback.tsx");
+  const controlCity = read("apps/control-panel/src/features/service-city/service-city-panel.tsx");
+  const runtimeCore = read("tools/dev/verify-dsh-runtime-core.mjs");
+  const generatedTS = read("services/dsh/clients/generated/dsh-types.ts");
+  const generatedGo = read("services/dsh/backend/internal/contract/dsh_types_generated.go");
+  for (const required of [
+    "ServiceCity:", "CreateServiceCityRequest:", "UpdateServiceCityRequest:", "ServiceabilityStatus:", "ServiceabilityResponse:",
+    "serviceCityId", "CITY_SCOPE_V1", "SERVICEABLE", "UNSERVICEABLE", "UNAVAILABLE", "/dsh/service-cities:", "/dsh/serviceability:",
+    "service_cities", "service_city_mutation_idempotency", "service_city_audit", "service_city_id", "first_store_service_city_id",
+  ]) if (!contract.includes(required) && !migration.includes(required) && !cityStorage.includes(required) && !serviceabilityService.includes(required)) failures.push(`City Scope is missing canonical invariant: ${required}`);
+  for (const [name, text, tokens] of [
+    ["City storage", cityStorage, ["CreateServiceCity", "UpdateServiceCity", "ErrServiceCityVersion", "pg_advisory_xact_lock", "service_city_audit"]],
+    ["City service", cityService, ["ReadActorRole", "operator", "SecurityEnabled", "ActivatedAt", "ListActiveServiceCities", "CreateServiceCity"]],
+    ["Serviceability storage", serviceabilityStorage, ["ReadServiceabilityFacts", "HasPublishedAssortment", "EvaluatedAt"]],
+    ["Serviceability service", serviceabilityService, ["PolicyVersion = \"CITY_SCOPE_V1\"", "identity.Role != \"client\"", "identity.Surface != \"app-client\"", "SERVICEABLE", "UNSERVICEABLE", "UNAVAILABLE"]],
+    ["City transport", cityTransport, ["/dsh/service-cities", "ListActiveServiceCities", "Idempotency-Key"]],
+    ["Serviceability transport", serviceabilityTransport, ["/dsh/serviceability", "ServiceabilityEvidence", "PolicyVersion"]],
+    ["Generated TypeScript contract", generatedTS, ["ServiceCity", "ServiceabilityResponse"]],
+    ["Generated Go contract", generatedGo, ["type ServiceCity struct", "type ServiceabilityResponse struct"]],
+    ["Mobile DSH client", mobileClient, ["listActiveServiceCities", "listPublishedStores", "evaluateServiceability"]],
+    ["app-client City gate", clientCity, ["samrim.app-client.service-city", "ServiceCityScope", "تغيير", "SecureStore"]],
+    ["app-partner City readback", partnerReadback, ["listActiveServiceCities", "serviceCity"]],
+    ["Control Panel City management", controlCity, ["/api/service-cities", "X-Expected-Version", "active"]],
+    ["City runtime proof", runtimeCore, ["DSH_CITY_SCOPE_RUNTIME=PASS", "DSH_SERVICEABILITY=PASS", "serviceCityId", "SERVICEABLE", "UNSERVICEABLE", "UNAVAILABLE"]],
+  ]) for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing City Scope invariant: ${token}`);
+  if (!migration.includes("service_cities") || !migration.includes("stores_service_city_fk") || !migration.includes("joining_cases_service_city_fk") || !migration.includes("delivery_addresses_service_city_fk")) failures.push("City Scope migration does not prove all canonical foreign-key boundaries");
+  if (/\bradius\b|\bpolygon\b|\bgeofence\b|\bdistance\b|backgroundlocation|watchposition|startlocationupdates|react-native-maps/i.test([cityStorage, serviceabilityStorage, serviceabilityService, serviceabilityTransport, clientCity].join("\n"))) failures.push("City Scope admits geographic/provider or background-location authority");
+  if (/latitude|longitude/i.test(serviceabilityStorage + "\n" + serviceabilityTransport)) failures.push("Serviceability evidence leaks precise coordinates");
+  const appFieldDiff = execFileSync("git", ["diff", "--name-only", "--", "apps/app-field"], { cwd: root, encoding: "utf8" }).trim();
+  const appFieldStatus = execFileSync("git", ["status", "--short", "--", "apps/app-field"], { cwd: root, encoding: "utf8" }).trim();
+  if (appFieldDiff || appFieldStatus) failures.push("app-field changed although City Scope does not affect its onboarding-only boundary");
+  if (failures.length) {
+    console.error("CITY_SCOPE_STATIC=FAIL");
+    for (const failure of failures) console.error("  " + failure);
+    process.exit(1);
+  }
+  console.log("CITY_SCOPE_STATIC=PASS");
+  console.log("CITY_SCOPE_SERVICEABILITY_POLICY=CITY_SCOPE_V1");
+  console.log("CITY_SCOPE_PROVIDER_AUTHORITY=NOT_ADMITTED");
+  console.log("CITY_SCOPE_APP_FIELD=UNAFFECTED");
 }
 
 function hasSequence(tokens, words) {
@@ -377,6 +445,7 @@ function verifyRetiredFulfillmentResidue() {
 verifyPartnerModel();
 verifyPublicationReadiness();
 verifyLocationCore();
+verifyCityScope();
 verifyRetiredFulfillmentResidue();
 
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";

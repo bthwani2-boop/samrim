@@ -63,6 +63,18 @@ paths:
   /dsh/stores/{storeId}/delivery-origin:
     $ref: "./paths/location-core.yaml#/paths/~1dsh~1stores~1{storeId}~1delivery-origin"
 
+  /dsh/service-cities:
+    $ref: "./paths/service-city.yaml#/paths/~1dsh~1service-cities"
+
+  /dsh/service-cities/{cityId}:
+    $ref: "./paths/service-city.yaml#/paths/~1dsh~1service-cities~1{cityId}"
+
+  /dsh/public/service-cities:
+    $ref: "./paths/service-city.yaml#/paths/~1dsh~1public~1service-cities"
+
+  /dsh/serviceability:
+    $ref: "./paths/serviceability.yaml#/paths/~1dsh~1serviceability"
+
 components:
   securitySchemes:
     serviceBearer:
@@ -142,6 +154,23 @@ components:
         minLength: 1
         maxLength: 128
 
+    ServiceCityIdRequired:
+      name: serviceCityId
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 128
+
+    CityId:
+      name: cityId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+
   schemas:
     StatusResponse:
       type: object
@@ -154,7 +183,7 @@ components:
 
     CreateJoiningCaseRequest:
       type: object
-      required: [contactPhoneE164, businessName, firstStoreName]
+      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId]
       additionalProperties: false
       properties:
         contactPhoneE164:
@@ -168,6 +197,9 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+        serviceCityId:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
     JoiningCaseState:
       type: string
@@ -175,7 +207,7 @@ components:
 
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -186,6 +218,10 @@ components:
           type: string
         firstStoreName:
           type: string
+        serviceCityId:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         partnerActorId:
           type: string
           nullable: true
@@ -222,7 +258,7 @@ components:
 
     JoiningCaseSummary:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -233,6 +269,10 @@ components:
           type: string
         firstStoreName:
           type: string
+        serviceCityId:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         partnerActorId:
           type: string
           nullable: true
@@ -268,7 +308,7 @@ components:
 
     CorrectJoiningCaseRequest:
       type: object
-      required: [businessName, firstStoreName]
+      required: [businessName, firstStoreName, serviceCityId]
       additionalProperties: false
       properties:
         businessName:
@@ -279,6 +319,9 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+        serviceCityId:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
     ReviewJoiningCaseRequest:
       type: object
@@ -302,11 +345,11 @@ components:
           type: boolean
         blockedReason:
           type: string
-          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE]
+          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, SERVICE_CITY_NOT_ELIGIBLE]
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -315,6 +358,10 @@ components:
           type: string
         name:
           type: string
+        serviceCityId:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         version:
           type: integer
           minimum: 1
@@ -379,7 +426,7 @@ components:
 
     DeliveryAddress:
       type: object
-      required: [id, addressText, latitude, longitude, version, createdAt, updatedAt]
+      required: [id, addressText, latitude, longitude, serviceCityId, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -396,6 +443,10 @@ components:
           type: number
           minimum: -180
           maximum: 180
+        serviceCityId:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         version:
           type: integer
           minimum: 1
@@ -408,7 +459,7 @@ components:
 
     CreateDeliveryAddressRequest:
       type: object
-      required: [addressText, latitude, longitude]
+      required: [addressText, latitude, longitude, serviceCityId]
       additionalProperties: false
       properties:
         addressText:
@@ -423,10 +474,13 @@ components:
           type: number
           minimum: -180
           maximum: 180
+        serviceCityId:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
     UpdateDeliveryAddressRequest:
       type: object
-      required: [addressText, latitude, longitude]
+      required: [addressText, latitude, longitude, serviceCityId]
       additionalProperties: false
       properties:
         addressText:
@@ -441,6 +495,9 @@ components:
           type: number
           minimum: -180
           maximum: 180
+        serviceCityId:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
     DeliveryAddressResponse:
       type: object
@@ -698,13 +755,15 @@ components:
 
     PublicStoreView:
       type: object
-      required: [id, name, version, assortments, publishedAt, createdAt, updatedAt]
+      required: [id, name, serviceCity, version, assortments, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
           type: string
         name:
           type: string
+        serviceCity:
+          $ref: "#/components/schemas/ServiceCity"
         version:
           type: integer
           minimum: 1
@@ -731,6 +790,140 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublicStoreView"
+
+    ServiceCity:
+      type: object
+      required: [id, displayNameAr, active, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        displayNameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateServiceCityRequest:
+      type: object
+      required: [id, displayNameAr, active]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        displayNameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        active:
+          type: boolean
+
+    UpdateServiceCityRequest:
+      type: object
+      required: [displayNameAr, active]
+      additionalProperties: false
+      properties:
+        displayNameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        active:
+          type: boolean
+
+    ServiceCityResponse:
+      type: object
+      required: [city, idempotentReplay]
+      additionalProperties: false
+      properties:
+        city:
+          $ref: "#/components/schemas/ServiceCity"
+        idempotentReplay:
+          type: boolean
+
+    ServiceCityListResponse:
+      type: object
+      required: [cities]
+      additionalProperties: false
+      properties:
+        cities:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceCity"
+
+    ServiceabilityStatus:
+      type: string
+      enum: [SERVICEABLE, UNSERVICEABLE, UNAVAILABLE]
+
+    ServiceabilityRequest:
+      type: object
+      required: [storeId, addressId]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        addressId:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    ServiceabilityEvidence:
+      type: object
+      required: [storeId, storeVersion, addressId, addressVersion, storeServiceCityId, addressServiceCityId, serviceCityId, serviceCityVersion, policyVersion, evaluatedAt]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        storeVersion:
+          type: integer
+          minimum: 1
+        addressId:
+          type: string
+        addressVersion:
+          type: integer
+          minimum: 1
+        storeServiceCityId:
+          type: string
+          nullable: true
+        addressServiceCityId:
+          type: string
+          nullable: true
+        serviceCityId:
+          type: string
+          nullable: true
+        serviceCityVersion:
+          type: integer
+          minimum: 1
+          nullable: true
+        policyVersion:
+          type: string
+          const: CITY_SCOPE_V1
+        evaluatedAt:
+          type: string
+          format: date-time
+
+    ServiceabilityResponse:
+      type: object
+      required: [status, evidence]
+      additionalProperties: false
+      properties:
+        status:
+          $ref: "#/components/schemas/ServiceabilityStatus"
+        evidence:
+          $ref: "#/components/schemas/ServiceabilityEvidence"
 
     ErrorResponse:
       type: object
