@@ -15,7 +15,21 @@ func (s *Service) ListOffersForPartner(ctx context.Context, accessToken, storeID
 	return postgres.ListCatalogOffers(ctx, s.db, strings.TrimSpace(storeID), false)
 }
 
-func (s *Service) CreateStoreOffer(ctx context.Context, accessToken, storeID, variantID string, priceMinor int64, quantityPolicy, pricingBasis, idempotencyKey, correlationID string) (postgres.CatalogStoreOfferResult, error) {
+func (s *Service) ReadOfferForPartner(ctx context.Context, accessToken, storeID, offerID string) (postgres.CatalogStoreOfferRecord, error) {
+	if _, err := s.requireStoreOwner(ctx, accessToken, storeID); err != nil {
+		return postgres.CatalogStoreOfferRecord{}, err
+	}
+	item, err := postgres.ReadCatalogOffer(ctx, s.db, strings.TrimSpace(offerID))
+	if err != nil {
+		return postgres.CatalogStoreOfferRecord{}, err
+	}
+	if item.StoreID != strings.TrimSpace(storeID) {
+		return postgres.CatalogStoreOfferRecord{}, postgres.ErrCatalogProductOwnership
+	}
+	return item, nil
+}
+
+func (s *Service) CreateStoreOffer(ctx context.Context, accessToken, storeID, variantID string, priceMinor int64, quantityPolicy string, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits int64, pricingBasis string, pricingUnitBaseUnits int64, idempotencyKey, correlationID string) (postgres.CatalogStoreOfferResult, error) {
 	actorID, err := s.requireStoreOwner(ctx, accessToken, storeID)
 	if err != nil {
 		return postgres.CatalogStoreOfferResult{}, err
@@ -27,10 +41,12 @@ func (s *Service) CreateStoreOffer(ctx context.Context, accessToken, storeID, va
 	if storeID == "" || variantID == "" || priceMinor <= 0 {
 		return postgres.CatalogStoreOfferResult{}, errors.New("StoreOffer facts are invalid")
 	}
-	return postgres.CreateCatalogOffer(ctx, s.db, storeID, variantID, priceMinor, quantityPolicy, pricingBasis, strings.TrimSpace(idempotencyKey), postgres.HashCatalogOfferCreateRequest(storeID, variantID, priceMinor, quantityPolicy, pricingBasis), actorID, strings.TrimSpace(correlationID))
+	input := postgres.CatalogOfferInput{StoreID: storeID, VariantID: variantID, PriceMinor: priceMinor, QuantityPolicy: quantityPolicy, QuantityMinBaseUnits: quantityMinBaseUnits, QuantityMaxBaseUnits: quantityMaxBaseUnits, QuantityStepBaseUnits: quantityStepBaseUnits, PricingBasis: pricingBasis, PricingUnitBaseUnits: pricingUnitBaseUnits}
+	requestHash := postgres.HashCatalogOfferCreateRequest(input)
+	return postgres.CreateCatalogOffer(ctx, s.db, input, strings.TrimSpace(idempotencyKey), requestHash, actorID, strings.TrimSpace(correlationID))
 }
 
-func (s *Service) UpdateStoreOffer(ctx context.Context, accessToken, storeID, offerID string, priceMinor int64, availability bool, publicationState string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogStoreOfferResult, error) {
+func (s *Service) UpdateStoreOffer(ctx context.Context, accessToken, storeID, offerID string, priceMinor int64, availability bool, publicationState, quantityPolicy string, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits int64, pricingBasis string, pricingUnitBaseUnits int64, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogStoreOfferResult, error) {
 	actorID, err := s.requireStoreOwner(ctx, accessToken, storeID)
 	if err != nil {
 		return postgres.CatalogStoreOfferResult{}, err
@@ -46,7 +62,8 @@ func (s *Service) UpdateStoreOffer(ctx context.Context, accessToken, storeID, of
 	if offer.StoreID != strings.TrimSpace(storeID) {
 		return postgres.CatalogStoreOfferResult{}, ErrStoreOwnershipForbidden
 	}
-	return postgres.UpdateCatalogOffer(ctx, s.db, offerID, priceMinor, availability, strings.ToLower(strings.TrimSpace(publicationState)), expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogOfferUpdateRequest(offerID, priceMinor, availability, publicationState, expectedVersion), actorID, strings.TrimSpace(correlationID))
+	update := postgres.CatalogOfferUpdateInput{PriceMinor: priceMinor, Availability: availability, PublicationState: strings.ToLower(strings.TrimSpace(publicationState)), QuantityPolicy: quantityPolicy, QuantityMinBaseUnits: quantityMinBaseUnits, QuantityMaxBaseUnits: quantityMaxBaseUnits, QuantityStepBaseUnits: quantityStepBaseUnits, PricingBasis: pricingBasis, PricingUnitBaseUnits: pricingUnitBaseUnits}
+	return postgres.UpdateCatalogOffer(ctx, s.db, offerID, update, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogOfferUpdateRequest(offerID, update, expectedVersion), actorID, strings.TrimSpace(correlationID))
 }
 
 func (s *Service) requireStoreOwner(ctx context.Context, accessToken, storeID string) (string, error) {

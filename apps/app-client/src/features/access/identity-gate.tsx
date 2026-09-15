@@ -29,6 +29,7 @@ import { identityPresentation, type IdentityCopy } from "./identity-presentation
 import StoreDiscovery from "../store-discovery/store-discovery";
 import LocationCore from "../location-core/location-core";
 import ServiceCityScope from "../service-city/service-city-scope";
+import ClientOrders from "../orders/orders";
 
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
@@ -229,6 +230,7 @@ export default function IdentityGate() {
             <StoreDiscovery />
             <LocationCore />
           </ServiceCityScope>
+          <ClientOrders />
           {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
           <Pressable
             accessibilityRole="button"

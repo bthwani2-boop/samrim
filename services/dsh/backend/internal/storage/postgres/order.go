@@ -51,13 +51,21 @@ type OrderLineRecord struct {
 	ProductID                  string
 	ProductName                string
 	VariantTitle               string
-	SellUnit                   string
+	MeasurementKind            string
+	BaseUnit                   string
 	PricingBasis               string
+	QuantityPolicy             string
+	QuantityMinBaseUnits       int64
+	QuantityMaxBaseUnits       int64
+	QuantityStepBaseUnits      int64
+	PricingUnitBaseUnits       int64
 	RequestedQuantityBaseUnits int64
+	FinalQuantityBaseUnits     *int64
 	UnitPriceMinor             int64
 	LineAmountMinor            int64
 	Currency                   string
 	SelectedModifierOptionIDs  []string
+	ModifierAmountMinor        int64
 	CreatedAt                  time.Time
 }
 
@@ -165,7 +173,7 @@ func listOrders(ctx context.Context, db *sql.DB, where string, args []any, state
 }
 
 func listOrderLines(ctx context.Context, source queryer, orderID string) ([]OrderLineRecord, error) {
-	rows, err := source.QueryContext(ctx, `SELECT id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,sell_unit,pricing_basis,requested_quantity_base_units,unit_price_minor,line_amount_minor,currency,selected_modifier_option_ids,created_at FROM dsh.commerce_order_lines WHERE order_id=$1 ORDER BY created_at,id`, orderID)
+	rows, err := source.QueryContext(ctx, `SELECT id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,measurement_kind,base_unit,pricing_basis,quantity_policy,quantity_min_base_units,quantity_max_base_units,quantity_step_base_units,pricing_unit_base_units,requested_quantity_base_units,final_quantity_base_units,unit_price_minor,line_amount_minor,currency,selected_modifier_option_ids,modifier_amount_minor,created_at FROM dsh.commerce_order_lines WHERE order_id=$1 ORDER BY created_at,id`, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -173,8 +181,13 @@ func listOrderLines(ctx context.Context, source queryer, orderID string) ([]Orde
 	items := make([]OrderLineRecord, 0)
 	for rows.Next() {
 		var item OrderLineRecord
-		if err := rows.Scan(&item.ID, &item.OrderID, &item.StoreOfferID, &item.VariantID, &item.ProductID, &item.ProductName, &item.VariantTitle, &item.SellUnit, &item.PricingBasis, &item.RequestedQuantityBaseUnits, &item.UnitPriceMinor, &item.LineAmountMinor, &item.Currency, pq.Array(&item.SelectedModifierOptionIDs), &item.CreatedAt); err != nil {
+		var finalQuantity sql.NullInt64
+		if err := rows.Scan(&item.ID, &item.OrderID, &item.StoreOfferID, &item.VariantID, &item.ProductID, &item.ProductName, &item.VariantTitle, &item.MeasurementKind, &item.BaseUnit, &item.PricingBasis, &item.QuantityPolicy, &item.QuantityMinBaseUnits, &item.QuantityMaxBaseUnits, &item.QuantityStepBaseUnits, &item.PricingUnitBaseUnits, &item.RequestedQuantityBaseUnits, &finalQuantity, &item.UnitPriceMinor, &item.LineAmountMinor, &item.Currency, pq.Array(&item.SelectedModifierOptionIDs), &item.ModifierAmountMinor, &item.CreatedAt); err != nil {
 			return nil, err
+		}
+		if finalQuantity.Valid {
+			value := finalQuantity.Int64
+			item.FinalQuantityBaseUnits = &value
 		}
 		items = append(items, item)
 	}
@@ -241,6 +254,8 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 		quantity               int64
 		modifiers              []string
 		offer                  CatalogStoreOfferRecord
+		modifierOptions        []CatalogModifierOptionRecord
+		modifierAmount         int64
 		amount                 int64
 	}
 	type cartLine struct {
@@ -268,7 +283,7 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	var total int64
 	for _, rawLine := range cartLines {
 		line := checkoutLine{id: rawLine.id, offerID: rawLine.offerID, variantID: rawLine.variantID, quantity: rawLine.quantity, modifiers: rawLine.modifiers}
-		if len(line.modifiers) != 0 || line.variantID == "" {
+		if line.variantID == "" {
 			return OrderRecord{}, false, ErrCheckoutEvidenceStale
 		}
 		line.offer, err = readCustomerVisibleOfferTx(ctx, tx, input.StoreID, line.offerID)
@@ -281,7 +296,23 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 			}
 			return OrderRecord{}, false, ErrCheckoutEvidenceStale
 		}
-		line.amount, err = CalculateCatalogLineAmount(line.offer.PriceMinor, line.quantity, line.offer.Variant.SellUnit, line.offer.PricingBasis)
+		if err = validateCatalogOfferQuantity(line.offer, line.quantity); err != nil {
+			return OrderRecord{}, false, err
+		}
+		var modifierDelta int64
+		line.modifierOptions, modifierDelta, err = ValidateCatalogModifierSelection(ctx, tx, line.offer.ID, line.modifiers)
+		if err != nil {
+			return OrderRecord{}, false, err
+		}
+		line.modifierAmount, err = CalculateCatalogModifierAmount(modifierDelta, line.quantity)
+		if err != nil {
+			return OrderRecord{}, false, err
+		}
+		baseAmount, err := CalculateCatalogLineAmount(line.offer.PriceMinor, line.quantity, line.offer.PricingBasis, line.offer.PricingUnitBaseUnits)
+		if err != nil {
+			return OrderRecord{}, false, err
+		}
+		line.amount, err = AddCatalogModifierAmount(baseAmount, modifierDelta, line.quantity)
 		if err != nil {
 			return OrderRecord{}, false, err
 		}
@@ -307,8 +338,25 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 		if idErr != nil {
 			return OrderRecord{}, false, idErr
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_lines(id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,sell_unit,pricing_basis,requested_quantity_base_units,unit_price_minor,line_amount_minor,currency,selected_modifier_option_ids) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, lineID, newOrderID, line.offer.ID, line.offer.VariantID, line.offer.Product.ID, line.offer.Product.CanonicalName, line.offer.Variant.Title, line.offer.Variant.SellUnit, line.offer.PricingBasis, line.quantity, line.offer.PriceMinor, line.amount, line.offer.Currency, pq.Array(line.modifiers)); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_lines(id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,measurement_kind,base_unit,pricing_basis,quantity_policy,quantity_min_base_units,quantity_max_base_units,quantity_step_base_units,pricing_unit_base_units,requested_quantity_base_units,final_quantity_base_units,unit_price_minor,line_amount_minor,currency,selected_modifier_option_ids,modifier_amount_minor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`, lineID, newOrderID, line.offer.ID, line.offer.VariantID, line.offer.Product.ID, line.offer.Product.CanonicalName, line.offer.Variant.Title, line.offer.Variant.MeasurementKind, line.offer.Variant.BaseUnit, line.offer.PricingBasis, line.offer.QuantityPolicy, quantityValue(line.offer.QuantityMinBaseUnits), quantityValue(line.offer.QuantityMaxBaseUnits), quantityValue(line.offer.QuantityStepBaseUnits), line.offer.PricingUnitBaseUnits, line.quantity, line.quantity, line.offer.PriceMinor, line.amount, line.offer.Currency, pq.Array(line.modifiers), line.modifierAmount); err != nil {
 			return OrderRecord{}, false, err
+		}
+		for _, option := range line.modifierOptions {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_line_modifier_snapshots(order_line_id,option_id,option_name_ar,price_delta_minor) VALUES($1,$2,$3,$4)`, lineID, option.ID, option.NameAr, option.PriceDeltaMinor); err != nil {
+				return OrderRecord{}, false, err
+			}
+		}
+		attributes := make(map[string]CatalogAttributeValueRecord, len(line.offer.Product.Attributes)+len(line.offer.Variant.Attributes))
+		for _, attribute := range line.offer.Product.Attributes {
+			attributes[attribute.AttributeID] = attribute
+		}
+		for _, attribute := range line.offer.Variant.Attributes {
+			attributes[attribute.AttributeID] = attribute
+		}
+		for _, attribute := range attributes {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_line_attribute_snapshots(order_line_id,attribute_id,attribute_code,value_kind,text_value,integer_value,decimal_value,boolean_value,enum_value,date_value,measurement_unit) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, lineID, attribute.AttributeID, attribute.Code, attribute.ValueKind, attribute.TextValue, attribute.IntegerValue, attribute.DecimalValue, attribute.BooleanValue, attribute.EnumValue, attribute.DateValue, attribute.MeasurementUnit); err != nil {
+				return OrderRecord{}, false, err
+			}
 		}
 	}
 	result, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_carts SET state='checked_out',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='open' AND version=$2", input.CartID, input.ExpectedCartVersion)
@@ -404,4 +452,11 @@ func validOrderTransition(from, to string) bool {
 	default:
 		return false
 	}
+}
+
+func quantityValue(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }

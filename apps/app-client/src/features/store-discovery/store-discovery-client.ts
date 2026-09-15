@@ -18,8 +18,8 @@ export async function readPublishedStore(storeID: string, serviceCityID: string)
   return client().readPublishedStore(storeID, serviceCityID);
 }
 
-export async function readPublicStoreCatalog(storeID: string, serviceCityID: string): Promise<PublicCatalogResponse> {
-  return client().readPublicStoreCatalog(storeID, serviceCityID);
+export async function readPublicStoreCatalog(storeID: string, serviceCityID: string, categoryID = "", query = "", limit = 20, cursor = ""): Promise<PublicCatalogResponse> {
+  return client().readPublicStoreCatalog(storeID, serviceCityID, categoryID, query, limit, cursor);
 }
 
 export async function evaluateStoreServiceability(storeID: string, addressID: string): Promise<ServiceabilityResponse> {

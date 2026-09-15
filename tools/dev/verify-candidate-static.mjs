@@ -20,6 +20,11 @@ function verifyPartnerModel() {
     "services/dsh/backend/internal/contract/dsh_types_generated.go",
     "services/dsh/backend/internal/storage/postgres/joining_case.go",
     "services/dsh/backend/internal/storage/postgres/catalog.go",
+    "services/dsh/backend/internal/storage/postgres/catalog_attributes.go",
+    "services/dsh/backend/internal/storage/postgres/catalog_extensions.go",
+    "services/dsh/backend/internal/storage/postgres/catalog_imports.go",
+    "services/dsh/backend/internal/storage/postgres/catalog_modifiers.go",
+    "services/dsh/backend/internal/storage/postgres/catalog_proposals.go",
     "services/dsh/backend/internal/storage/postgres/catalog_public.go",
     "services/dsh/backend/internal/storage/postgres/cart.go",
     "services/dsh/backend/internal/storage/postgres/order.go",
@@ -34,6 +39,9 @@ function verifyPartnerModel() {
     "services/dsh/backend/internal/transport/http/joiningcase.go",
     "services/dsh/backend/internal/transport/http/catalog_product.go",
     "services/dsh/backend/internal/transport/http/catalog_offer.go",
+    "services/dsh/backend/internal/transport/http/catalog_extensions.go",
+    "services/dsh/backend/internal/transport/http/catalog_proposals.go",
+    "services/dsh/backend/internal/transport/http/catalog_variants.go",
     "services/dsh/backend/internal/transport/http/cart.go",
     "services/dsh/backend/internal/transport/http/order.go",
     "services/dsh/backend/internal/transport/http/storepublication.go",
@@ -67,6 +75,10 @@ function verifyPartnerModel() {
     "services/dsh/database/migrations/009_service_city_scope.sql",
     "services/dsh/database/migrations/010_central_catalog_refoundation.sql",
     "services/dsh/database/migrations/011_cart_checkout_order.sql",
+    "services/dsh/database/migrations/012_catalog_semantic_correction.sql",
+    "services/dsh/database/migrations/013_catalog_variant_mutations.sql",
+    "services/dsh/database/migrations/014_catalog_proposal_import_closure.sql",
+    "apps/app-client/src/features/orders/orders.tsx",
   ];
   for (const relative of requiredFiles) {
     const absolute = path.join(root, ...relative.split("/"));
@@ -129,6 +141,12 @@ function verifyPartnerModel() {
   const cutoverMigration = fs.existsSync(cutoverMigrationPath) ? fs.readFileSync(cutoverMigrationPath, "utf8") : "";
   const commerceMigrationPath = path.join(root, "services/dsh/database/migrations/011_cart_checkout_order.sql");
   const commerceMigration = fs.existsSync(commerceMigrationPath) ? fs.readFileSync(commerceMigrationPath, "utf8") : "";
+  const semanticCatalogMigrationPath = path.join(root, "services/dsh/database/migrations/012_catalog_semantic_correction.sql");
+  const semanticCatalogMigration = fs.existsSync(semanticCatalogMigrationPath) ? fs.readFileSync(semanticCatalogMigrationPath, "utf8") : "";
+  const catalogMutationMigrationPath = path.join(root, "services/dsh/database/migrations/013_catalog_variant_mutations.sql");
+  const catalogMutationMigration = fs.existsSync(catalogMutationMigrationPath) ? fs.readFileSync(catalogMutationMigrationPath, "utf8") : "";
+  const closureMigrationPath = path.join(root, "services/dsh/database/migrations/014_catalog_proposal_import_closure.sql");
+  const closureMigration = fs.existsSync(closureMigrationPath) ? fs.readFileSync(closureMigrationPath, "utf8") : "";
   const correctionMigrationPath = path.join(root, "services/dsh/database/migrations/005_joining_case_partner_correction.sql");
   const correctionMigration = fs.existsSync(correctionMigrationPath) ? fs.readFileSync(correctionMigrationPath, "utf8") : "";
   const resubmitMigrationPath = path.join(root, "services/dsh/database/migrations/006_joining_case_correct_and_resubmit.sql");
@@ -137,7 +155,7 @@ function verifyPartnerModel() {
   const locationMigration = fs.existsSync(locationMigrationPath) ? fs.readFileSync(locationMigrationPath, "utf8") : "";
   const locationCorrectionMigrationPath = path.join(root, "services/dsh/database/migrations/008_location_core_corrective_boundaries.sql");
   const locationCorrectionMigration = fs.existsSync(locationCorrectionMigrationPath) ? fs.readFileSync(locationCorrectionMigrationPath, "utf8") : "";
-  const dshMigrationGraph = migration + "\n" + joiningMigration + "\n" + cutoverMigration + "\n" + commerceMigration + "\n" + correctionMigration + "\n" + resubmitMigration + "\n" + locationMigration + "\n" + locationCorrectionMigration;
+  const dshMigrationGraph = migration + "\n" + joiningMigration + "\n" + cutoverMigration + "\n" + commerceMigration + "\n" + semanticCatalogMigration + "\n" + catalogMutationMigration + "\n" + closureMigration + "\n" + correctionMigration + "\n" + resubmitMigration + "\n" + locationMigration + "\n" + locationCorrectionMigration;
   if (!migration.includes("partner_actor_id text NOT NULL")) failures.push("DSH baseline does not persist Store→partner_actor_id directly");
   for (const required of [
     "stores_id_partner_actor_uq",
@@ -162,6 +180,13 @@ function verifyPartnerModel() {
   }
   for (const required of ["CREATE TABLE dsh.commerce_carts", "CREATE TABLE dsh.commerce_cart_lines", "commerce_cart_lines_cart_offer_uq", "CREATE TABLE dsh.commerce_orders", "CREATE TABLE dsh.commerce_order_lines", "READY_FOR_DISPATCH", "commerce_order_checkout_cart_uq", "commerce_order_audit"]) {
     if (!commerceMigration.includes(required)) failures.push(`Cart/Checkout/Order migration missing invariant: ${required}`);
+  }
+  for (const required of ["catalog_products", "store_id", "measurement_kind", "base_unit", "catalog_attribute_enum_options", "catalog_category_attribute_rules", "catalog_variant_attribute_values", "catalog_storefront_sections", "catalog_modifier_groups", "catalog_modifier_options"]) {
+    if (!semanticCatalogMigration.includes(required) && !catalogMutationMigration.includes(required)) failures.push(`Catalog semantic migration missing invariant: ${required}`);
+  }
+  if (!dshMigrationGraph.includes("catalog_product_proposals")) failures.push("Catalog proposal model is missing from the canonical migration graph");
+  for (const required of ["catalog_import_mutation_idempotency", "catalog_import_run_items", "catalog_import_audit", "proposal_updated"]) {
+    if (!closureMigration.includes(required)) failures.push(`Catalog proposal/import closure migration missing invariant: ${required}`);
   }
   const publicationMigrationPath = path.join(root, "services/dsh/database/migrations/002_store_publication.sql");
   if (!fs.existsSync(publicationMigrationPath)) failures.push("DSH Store publication migration is missing");
@@ -224,7 +249,7 @@ function verifyPublicationReadiness() {
     ["publication service", service, ["SetStorePublicationWithGuard", "ReadinessForStore", "ErrPublicationReadinessBlocked", "ErrPartnerIdentityUnavailable"]],
     ["publication storage", storage, ["PublicationGuard", "before any publication state, idempotency, or audit row is written"]],
     ["runtime entrypoint", runtimeEntrypoint, ["verify-dsh-runtime-core.mjs", "ROLE_ELIGIBILITY_ONLY", "PASSKEY_PROOF=EXTERNAL_TO_THIS_CHECK", "spawnSync(process.execPath, [corePath"]],
-    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/catalog/verticals", "/dsh/catalog/categories", "/dsh/stores/", "/dsh/public/stores/", "/auth/managed/activation/request", "PRODUCT_NOT_ELIGIBLE", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V11=PASS", "DSH_CITY_SCOPE_RUNTIME=PASS", "DSH_CUSTOMER_VISIBLE_CATALOG=PASS", "DSH_CART_CHECKOUT=PASS", "DSH_ORDER_READY_FOR_DISPATCH=PASS"]],
+    ["runtime core proof", runtimeCore, ["/dsh/joining-cases", "/dsh/joining-cases/", "/correct-and-resubmit", "/dsh/catalog/products", "/dsh/catalog/verticals", "/dsh/catalog/categories", "/dsh/stores/", "/dsh/public/stores/", "/auth/managed/activation/request", "PRODUCT_NOT_ELIGIBLE", "IDENTITY_UNAVAILABLE", "DSH_SCHEMA_V14=PASS", "DSH_CITY_SCOPE_RUNTIME=PASS", "DSH_CUSTOMER_VISIBLE_CATALOG=PASS", "DSH_CART_CHECKOUT=PASS", "DSH_ORDER_READY_FOR_DISPATCH=PASS"]],
   ]) {
     for (const token of tokens) if (!text.includes(token)) failures.push(`${name} is missing readiness invariant: ${token}`);
   }

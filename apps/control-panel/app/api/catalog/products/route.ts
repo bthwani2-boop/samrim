@@ -32,13 +32,14 @@ export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body || typeof body.canonicalName !== "string" || typeof body.verticalId !== "string" || !["SHARED", "STORE_SCOPED"].includes(String(body.scope)) || !["piece", "kg"].includes(String(body.sellUnit)) || !Array.isArray(body.categoryIds) || body.categoryIds.length < 1) return errorResponse("INVALID_INPUT", "canonicalName, verticalId, scope, categoryIds and sellUnit are required", 400);
+  if (!body || typeof body.canonicalName !== "string" || typeof body.verticalId !== "string" || !["SHARED", "STORE_SCOPED"].includes(String(body.scope)) || !["DISCRETE", "MEASURED", "VARIABLE_MEASURE"].includes(String(body.measurementKind)) || !["COUNT", "GRAM", "MILLILITER"].includes(String(body.baseUnit)) || !Array.isArray(body.categoryIds) || body.categoryIds.length < 1) return errorResponse("INVALID_INPUT", "canonicalName, verticalId, scope, measurementKind, baseUnit and categoryIds are required", 400);
   const identifierType = ["GTIN", "EAN", "UPC", "SKU"].includes(String(body.identifierType)) ? String(body.identifierType) as NonNullable<CreateCatalogProductRequest["identifierType"]> : undefined;
   const input: CreateCatalogProductRequest = {
     canonicalName: body.canonicalName.trim(),
     verticalId: body.verticalId.trim(),
     scope: body.scope as CreateCatalogProductRequest["scope"],
-    sellUnit: body.sellUnit as CreateCatalogProductRequest["sellUnit"],
+    measurementKind: body.measurementKind as CreateCatalogProductRequest["measurementKind"],
+    baseUnit: body.baseUnit as CreateCatalogProductRequest["baseUnit"],
     categoryIds: body.categoryIds.filter((value): value is string => typeof value === "string").map((value) => value.trim()).filter(Boolean),
     ...(typeof body.variantTitle === "string" && body.variantTitle.trim() ? { variantTitle: body.variantTitle.trim() } : {}),
     ...(typeof body.brand === "string" && body.brand.trim() ? { brand: body.brand.trim() } : {}),

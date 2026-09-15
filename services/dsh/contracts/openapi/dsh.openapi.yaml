@@ -39,17 +39,89 @@ paths:
   /dsh/catalog/categories:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories"
 
+  /dsh/catalog/attributes:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1attributes"
+
+  /dsh/catalog/attributes/{attributeId}/enum-options:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1attributes~1{attributeId}~1enum-options"
+
   /dsh/catalog/products:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products"
 
   /dsh/catalog/products/{productId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
 
+  /dsh/catalog/products/{productId}/attributes/{attributeId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1attributes~1{attributeId}"
+
+  /dsh/catalog/products/{productId}/variants:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1variants"
+
+  /dsh/catalog/variants/{variantId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1variants~1{variantId}"
+
+  /dsh/catalog/variants/{variantId}/attributes/{attributeId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1variants~1{variantId}~1attributes~1{attributeId}"
+
+  /dsh/catalog/categories/{categoryId}/attribute-rules/{attributeId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories~1{categoryId}~1attribute-rules~1{attributeId}"
+
+  /dsh/stores/{storeId}/products:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products"
+
+  /dsh/stores/{storeId}/products/{productId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products~1{productId}"
+
+  /dsh/stores/{storeId}/products/{productId}/variants:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products~1{productId}~1variants"
+
+  /dsh/stores/{storeId}/variants/{variantId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1variants~1{variantId}"
+
+  /dsh/catalog/product-proposals:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1product-proposals"
+
+  /dsh/catalog/product-proposals/{proposalId}/submit:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1product-proposals~1{proposalId}~1submit"
+
+  /dsh/catalog/product-proposals/{proposalId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1product-proposals~1{proposalId}"
+
+  /dsh/catalog/product-proposals/review-queue:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1product-proposals~1review-queue"
+
+  /dsh/catalog/product-proposals/{proposalId}/review:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1product-proposals~1{proposalId}~1review"
+
+  /dsh/catalog/imports/preview:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1imports~1preview"
+
+  /dsh/catalog/imports/{runId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1imports~1{runId}"
+
+  /dsh/catalog/imports/{runId}/commit:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1imports~1{runId}~1commit"
+
   /dsh/stores/{storeId}/offers:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers"
 
   /dsh/stores/{storeId}/offers/{offerId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers~1{offerId}"
+
+  /dsh/stores/{storeId}/modifier-groups:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1modifier-groups"
+
+  /dsh/stores/{storeId}/modifier-groups/{groupId}/options:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1modifier-groups~1{groupId}~1options"
+
+  /dsh/stores/{storeId}/offers/{offerId}/modifier-groups/{groupId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers~1{offerId}~1modifier-groups~1{groupId}"
+
+  /dsh/stores/{storeId}/sections:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1sections"
+
+  /dsh/stores/{storeId}/sections/{sectionId}/offers/{offerId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1sections~1{sectionId}~1offers~1{offerId}"
 
   /dsh/public/stores/{storeId}/catalog:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1public~1stores~1{storeId}~1catalog"
@@ -206,6 +278,69 @@ components:
         type: string
         minLength: 1
         maxLength: 128
+
+    VariantId:
+      name: variantId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+    AttributeId:
+      name: attributeId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+    SectionId:
+      name: sectionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+    ProposalId:
+      name: proposalId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+    ImportRunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 160
 
     OfferId:
       name: offerId
@@ -650,13 +785,259 @@ components:
         idempotentReplay:
           type: boolean
 
-    SellUnit:
+    MeasurementKind:
       type: string
-      enum: [piece, kg]
+      enum: [DISCRETE, MEASURED, VARIABLE_MEASURE]
+
+    BaseUnit:
+      type: string
+      enum: [COUNT, GRAM, MILLILITER]
+
+    CatalogAttributeValue:
+      type: object
+      required: [attributeId, code, valueKind]
+      additionalProperties: false
+      properties:
+        attributeId:
+          type: string
+        code:
+          type: string
+        valueKind:
+          type: string
+          enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, ENUM, MEASUREMENT, DATE]
+        textValue:
+          type: string
+          nullable: true
+        integerValue:
+          type: integer
+          nullable: true
+        decimalValue:
+          type: string
+          nullable: true
+        booleanValue:
+          type: boolean
+          nullable: true
+        enumValue:
+          type: string
+          nullable: true
+        dateValue:
+          type: string
+          nullable: true
+        measurementUnit:
+          type: string
+          nullable: true
+
+    CatalogAttributeDefinition:
+      type: object
+      required: [id, verticalId, code, nameAr, valueKind, active, filterable, version]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        verticalId:
+          type: string
+        code:
+          type: string
+        nameAr:
+          type: string
+        valueKind:
+          type: string
+          enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, ENUM, MEASUREMENT, DATE]
+        active:
+          type: boolean
+        filterable:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+
+    CreateCatalogAttributeDefinitionRequest:
+      type: object
+      required: [id, verticalId, code, nameAr, valueKind, active]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        verticalId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        code:
+          type: string
+          minLength: 1
+          maxLength: 128
+        nameAr:
+          type: string
+          minLength: 1
+          maxLength: 160
+        valueKind:
+          type: string
+          enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, ENUM, MEASUREMENT, DATE]
+        active:
+          type: boolean
+
+    CatalogAttributeDefinitionResponse:
+      type: object
+      required: [definition, idempotentReplay]
+      additionalProperties: false
+      properties:
+        definition:
+          $ref: "#/components/schemas/CatalogAttributeDefinition"
+        idempotentReplay:
+          type: boolean
+
+    CatalogAttributeDefinitionListResponse:
+      type: object
+      required: [definitions]
+      additionalProperties: false
+      properties:
+        definitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeDefinition"
+
+    CatalogAttributeEnumOption:
+      type: object
+      required: [attributeId, optionValue, active, ordinal]
+      additionalProperties: false
+      properties:
+        attributeId:
+          type: string
+        optionValue:
+          type: string
+        active:
+          type: boolean
+        ordinal:
+          type: integer
+
+    CreateCatalogAttributeEnumOptionRequest:
+      type: object
+      required: [optionValue, active, ordinal]
+      additionalProperties: false
+      properties:
+        optionValue:
+          type: string
+          minLength: 1
+          maxLength: 160
+        active:
+          type: boolean
+        ordinal:
+          type: integer
+          minimum: 0
+          maximum: 100
+
+    CatalogAttributeEnumOptionResponse:
+      type: object
+      required: [option, idempotentReplay]
+      additionalProperties: false
+      properties:
+        option:
+          $ref: "#/components/schemas/CatalogAttributeEnumOption"
+        idempotentReplay:
+          type: boolean
+
+    CatalogAttributeEnumOptionListResponse:
+      type: object
+      required: [options]
+      additionalProperties: false
+      properties:
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeEnumOption"
+
+    UpsertCatalogAttributeValueRequest:
+      type: object
+      required: [valueKind]
+      additionalProperties: false
+      properties:
+        valueKind:
+          type: string
+          enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, ENUM, MEASUREMENT, DATE]
+        textValue:
+          type: string
+          nullable: true
+        integerValue:
+          type: integer
+          nullable: true
+        decimalValue:
+          type: string
+          nullable: true
+        booleanValue:
+          type: boolean
+          nullable: true
+        enumValue:
+          type: string
+          nullable: true
+        dateValue:
+          type: string
+          format: date
+          nullable: true
+        measurementUnit:
+          type: string
+          nullable: true
+
+    CatalogAttributeRule:
+      type: object
+      required: [categoryId, attributeId, code, nameAr, valueKind, required, filterable, variantAxis, version]
+      additionalProperties: false
+      properties:
+        categoryId:
+          type: string
+        attributeId:
+          type: string
+        code:
+          type: string
+        nameAr:
+          type: string
+        valueKind:
+          type: string
+          enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, ENUM, MEASUREMENT, DATE]
+        required:
+          type: boolean
+        filterable:
+          type: boolean
+        variantAxis:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+
+    UpsertCatalogAttributeRuleRequest:
+      type: object
+      required: [required, filterable, variantAxis]
+      additionalProperties: false
+      properties:
+        required:
+          type: boolean
+        filterable:
+          type: boolean
+        variantAxis:
+          type: boolean
+
+    CatalogAttributeRuleResponse:
+      type: object
+      required: [rule]
+      additionalProperties: false
+      properties:
+        rule:
+          $ref: "#/components/schemas/CatalogAttributeRule"
+
+    CatalogAttributeRuleListResponse:
+      type: object
+      required: [rules]
+      additionalProperties: false
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeRule"
 
     CatalogProduct:
       type: object
-      required: [id, verticalId, scope, canonicalName, active, version, variants, categoryIds, media, createdAt, updatedAt]
+      required: [id, verticalId, scope, canonicalName, active, version, variants, categoryIds, attributes, media, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -667,6 +1048,9 @@ components:
         scope:
           type: string
           enum: [SHARED, STORE_SCOPED]
+        storeId:
+          type: string
+          nullable: true
         canonicalName:
           type: string
         brand:
@@ -692,6 +1076,10 @@ components:
           type: array
           items:
             type: string
+        attributes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValue"
         media:
           type: array
           items:
@@ -699,7 +1087,7 @@ components:
 
     CatalogVariant:
       type: object
-      required: [id, productId, title, sellUnit, active, version, identifiers, createdAt, updatedAt]
+      required: [id, productId, title, measurementKind, baseUnit, active, version, identifiers, attributes, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -708,8 +1096,10 @@ components:
           type: string
         title:
           type: string
-        sellUnit:
-          $ref: "#/components/schemas/SellUnit"
+        measurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        baseUnit:
+          $ref: "#/components/schemas/BaseUnit"
         active:
           type: boolean
         version:
@@ -719,6 +1109,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CatalogIdentifier"
+        attributes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogAttributeValue"
         createdAt:
           type: string
           format: date-time
@@ -752,7 +1146,7 @@ components:
 
     CreateCatalogProductRequest:
       type: object
-      required: [verticalId, scope, canonicalName, sellUnit, categoryIds]
+      required: [verticalId, scope, canonicalName, measurementKind, baseUnit, categoryIds]
       additionalProperties: false
       properties:
         canonicalName:
@@ -764,6 +1158,9 @@ components:
         scope:
           type: string
           enum: [SHARED, STORE_SCOPED]
+        storeId:
+          type: string
+          nullable: true
         brand:
           type: string
           nullable: true
@@ -772,8 +1169,10 @@ components:
           type: string
           nullable: true
           maxLength: 160
-        sellUnit:
-          $ref: "#/components/schemas/SellUnit"
+        measurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        baseUnit:
+          $ref: "#/components/schemas/BaseUnit"
         categoryIds:
           type: array
           items:
@@ -805,6 +1204,9 @@ components:
         scope:
           type: string
           enum: [SHARED, STORE_SCOPED]
+        storeId:
+          type: string
+          nullable: true
         brand:
           type: string
           nullable: true
@@ -832,13 +1234,396 @@ components:
           items:
             $ref: "#/components/schemas/CatalogProduct"
 
+    CreateCatalogVariantRequest:
+      type: object
+      required: [id, title, measurementKind, baseUnit, active]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        measurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        baseUnit:
+          $ref: "#/components/schemas/BaseUnit"
+        active:
+          type: boolean
+        identifierType:
+          type: string
+          nullable: true
+          enum: [GTIN, EAN, UPC, SKU]
+        identifierValue:
+          type: string
+          nullable: true
+          maxLength: 128
+
+    UpdateCatalogVariantRequest:
+      type: object
+      required: [title, measurementKind, baseUnit, active]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        measurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        baseUnit:
+          $ref: "#/components/schemas/BaseUnit"
+        active:
+          type: boolean
+
+    CatalogVariantResponse:
+      type: object
+      required: [variant, idempotentReplay]
+      additionalProperties: false
+      properties:
+        variant:
+          $ref: "#/components/schemas/CatalogVariant"
+        idempotentReplay:
+          type: boolean
+
+    CreateCatalogProductProposalRequest:
+      type: object
+      required: [id, verticalId, categoryId, proposedName, proposedVariantTitle, proposedMeasurementKind, proposedBaseUnit]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        verticalId:
+          type: string
+        categoryId:
+          type: string
+        proposedName:
+          type: string
+          minLength: 1
+          maxLength: 160
+        proposedBrand:
+          type: string
+          nullable: true
+          maxLength: 160
+        proposedVariantTitle:
+          type: string
+          minLength: 1
+          maxLength: 160
+        proposedMeasurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        proposedBaseUnit:
+          $ref: "#/components/schemas/BaseUnit"
+        proposedIdentifierType:
+          type: string
+          nullable: true
+          enum: [GTIN, EAN, UPC, SKU]
+        proposedIdentifierValue:
+          type: string
+          nullable: true
+          maxLength: 128
+        proposedImageUri:
+          type: string
+          nullable: true
+          maxLength: 2048
+
+    ReviewCatalogProductProposalRequest:
+      type: object
+      required: [state]
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum: [approved, rejected, needs_correction]
+        reason:
+          type: string
+          maxLength: 1000
+
+    UpdateCatalogProductProposalRequest:
+      type: object
+      required: [verticalId, categoryId, proposedName, proposedVariantTitle, proposedMeasurementKind, proposedBaseUnit]
+      additionalProperties: false
+      properties:
+        verticalId:
+          type: string
+        categoryId:
+          type: string
+        proposedName:
+          type: string
+          minLength: 1
+          maxLength: 160
+        proposedBrand:
+          type: string
+          nullable: true
+          maxLength: 160
+        proposedVariantTitle:
+          type: string
+          minLength: 1
+          maxLength: 160
+        proposedMeasurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        proposedBaseUnit:
+          $ref: "#/components/schemas/BaseUnit"
+        proposedIdentifierType:
+          type: string
+          nullable: true
+          enum: [GTIN, EAN, UPC, SKU]
+        proposedIdentifierValue:
+          type: string
+          nullable: true
+          maxLength: 128
+        proposedImageUri:
+          type: string
+          nullable: true
+          maxLength: 2048
+
+    CatalogImportRow:
+      type: object
+      required: [rowNumber, stableKey, verticalId, scope, canonicalName, variantTitle, measurementKind, baseUnit, categoryIds]
+      additionalProperties: false
+      properties:
+        rowNumber:
+          type: integer
+          minimum: 1
+        stableKey:
+          type: string
+          minLength: 1
+          maxLength: 512
+        verticalId:
+          type: string
+        scope:
+          type: string
+          enum: [SHARED, STORE_SCOPED]
+        storeId:
+          type: string
+          nullable: true
+        canonicalName:
+          type: string
+          minLength: 1
+          maxLength: 160
+        brand:
+          type: string
+          nullable: true
+          maxLength: 160
+        variantTitle:
+          type: string
+          minLength: 1
+          maxLength: 160
+        measurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        baseUnit:
+          $ref: "#/components/schemas/BaseUnit"
+        categoryIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        identifierType:
+          type: string
+          nullable: true
+          enum: [GTIN, EAN, UPC, SKU]
+        identifierValue:
+          type: string
+          nullable: true
+          maxLength: 128
+        imageUri:
+          type: string
+          nullable: true
+          maxLength: 2048
+
+    CatalogImportItem:
+      type: object
+      required: [rowNumber, stableKey, classification, committed]
+      additionalProperties: false
+      properties:
+        rowNumber:
+          type: integer
+        stableKey:
+          type: string
+        classification:
+          type: string
+          enum: [READY, DUPLICATE_INPUT, DUPLICATE_EXISTING, CONFLICT_EXISTING, INVALID_INPUT, IMPORTED, REPLAYED, FAILED]
+        productId:
+          type: string
+          nullable: true
+        variantId:
+          type: string
+          nullable: true
+        errorCode:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+        committed:
+          type: boolean
+
+    CatalogImportRun:
+      type: object
+      required: [id, actingActorId, sourceSha256, mode, state, acceptedCount, conflictCount, createdAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        actingActorId:
+          type: string
+        sourceSha256:
+          type: string
+        mode:
+          type: string
+          enum: [preview, commit]
+        state:
+          type: string
+          enum: [previewed, committed, rejected]
+        acceptedCount:
+          type: integer
+        conflictCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    CatalogImportPreviewRequest:
+      type: object
+      required: [runId, sourceSha256, rows]
+      additionalProperties: false
+      properties:
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        sourceSha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items:
+            $ref: "#/components/schemas/CatalogImportRow"
+
+    CatalogImportPreviewResponse:
+      type: object
+      required: [run, items, idempotentReplay]
+      additionalProperties: false
+      properties:
+        run:
+          $ref: "#/components/schemas/CatalogImportRun"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogImportItem"
+        idempotentReplay:
+          type: boolean
+
+    CatalogImportRunResponse:
+      type: object
+      required: [run, items]
+      additionalProperties: false
+      properties:
+        run:
+          $ref: "#/components/schemas/CatalogImportRun"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogImportItem"
+
+    CatalogImportCommitResponse:
+      type: object
+      required: [run, items, idempotentReplay]
+      additionalProperties: false
+      properties:
+        run:
+          $ref: "#/components/schemas/CatalogImportRun"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogImportItem"
+        idempotentReplay:
+          type: boolean
+
+    CatalogProductProposal:
+      type: object
+      required: [id, partnerActorId, verticalId, categoryId, proposedName, proposedVariantTitle, proposedMeasurementKind, proposedBaseUnit, state, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        partnerActorId:
+          type: string
+        verticalId:
+          type: string
+        categoryId:
+          type: string
+        proposedName:
+          type: string
+        proposedBrand:
+          type: string
+          nullable: true
+        proposedVariantTitle:
+          type: string
+        proposedMeasurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        proposedBaseUnit:
+          $ref: "#/components/schemas/BaseUnit"
+        proposedIdentifierType:
+          type: string
+          nullable: true
+        proposedIdentifierValue:
+          type: string
+          nullable: true
+        proposedImageUri:
+          type: string
+          nullable: true
+        state:
+          type: string
+          enum: [draft, submitted, needs_correction, approved, rejected]
+        correctionReason:
+          type: string
+          nullable: true
+        reviewedBy:
+          type: string
+          nullable: true
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CatalogProductProposalResponse:
+      type: object
+      required: [proposal, idempotentReplay]
+      additionalProperties: false
+      properties:
+        proposal:
+          $ref: "#/components/schemas/CatalogProductProposal"
+        idempotentReplay:
+          type: boolean
+
+    CatalogProductProposalListResponse:
+      type: object
+      required: [proposals]
+      additionalProperties: false
+      properties:
+        proposals:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogProductProposal"
+
     StoreOfferPublicationState:
       type: string
       enum: [draft, published, hidden]
 
     CatalogStoreOffer:
       type: object
-      required: [offerId, storeId, variantId, productId, productName, sellUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, pricingBasis, inventoryPolicy, availability, publicationState, version, createdAt, updatedAt]
+      required: [offerId, storeId, variantId, productId, productName, measurementKind, baseUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, availability, publicationState, modifierGroups, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         offerId:
@@ -854,8 +1639,10 @@ components:
         brand:
           type: string
           nullable: true
-        sellUnit:
-          $ref: "#/components/schemas/SellUnit"
+        measurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        baseUnit:
+          $ref: "#/components/schemas/BaseUnit"
         productActive:
           type: boolean
         variantActive:
@@ -871,10 +1658,22 @@ components:
           const: YER
         quantityPolicy:
           type: string
-          enum: [DISCRETE, MEASURED]
+          enum: [DISCRETE, MEASURED, VARIABLE_MEASURE]
+        quantityMinBaseUnits:
+          type: integer
+          minimum: 1
+        quantityMaxBaseUnits:
+          type: integer
+          minimum: 1
+        quantityStepBaseUnits:
+          type: integer
+          minimum: 1
         pricingBasis:
           type: string
-          enum: [PER_UNIT, PER_KILOGRAM]
+          enum: [PER_UNIT, PER_MEASURE]
+        pricingUnitBaseUnits:
+          type: integer
+          minimum: 1
         inventoryPolicy:
           type: string
           const: AVAILABILITY_ONLY
@@ -882,6 +1681,10 @@ components:
           type: boolean
         publicationState:
           $ref: "#/components/schemas/StoreOfferPublicationState"
+        modifierGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogModifierGroup"
         version:
           type: integer
           minimum: 1
@@ -892,9 +1695,151 @@ components:
           type: string
           format: date-time
 
+    CatalogModifierOption:
+      type: object
+      required: [id, groupId, nameAr, priceDeltaMinor, availability, ordinal, version]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        groupId:
+          type: string
+        nameAr:
+          type: string
+        priceDeltaMinor:
+          type: integer
+          minimum: 0
+        availability:
+          type: boolean
+        ordinal:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 1
+
+    CatalogModifierGroup:
+      type: object
+      required: [id, storeId, nameAr, required, minSelections, maxSelections, active, version, options]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        storeId:
+          type: string
+        nameAr:
+          type: string
+        required:
+          type: boolean
+        minSelections:
+          type: integer
+          minimum: 0
+        maxSelections:
+          type: integer
+          minimum: 0
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogModifierOption"
+
+    CreateCatalogModifierGroupRequest:
+      type: object
+      required: [nameAr, required, minSelections, maxSelections, active]
+      additionalProperties: false
+      properties:
+        nameAr:
+          type: string
+          minLength: 1
+          maxLength: 160
+        required:
+          type: boolean
+        minSelections:
+          type: integer
+          minimum: 0
+        maxSelections:
+          type: integer
+          minimum: 0
+        active:
+          type: boolean
+
+    CreateCatalogModifierOptionRequest:
+      type: object
+      required: [nameAr, priceDeltaMinor, availability, ordinal]
+      additionalProperties: false
+      properties:
+        nameAr:
+          type: string
+          minLength: 1
+          maxLength: 160
+        priceDeltaMinor:
+          type: integer
+          minimum: 0
+        availability:
+          type: boolean
+        ordinal:
+          type: integer
+          minimum: 0
+
+    CatalogModifierGroupResponse:
+      type: object
+      required: [group]
+      additionalProperties: false
+      properties:
+        group:
+          $ref: "#/components/schemas/CatalogModifierGroup"
+
+    CatalogModifierOptionResponse:
+      type: object
+      required: [option]
+      additionalProperties: false
+      properties:
+        option:
+          $ref: "#/components/schemas/CatalogModifierOption"
+
+    CreateCatalogStorefrontSectionRequest:
+      type: object
+      required: [nameAr, ordinal, active]
+      additionalProperties: false
+      properties:
+        nameAr:
+          type: string
+          minLength: 1
+          maxLength: 160
+        nameEn:
+          type: string
+          nullable: true
+          maxLength: 160
+        ordinal:
+          type: integer
+          minimum: 0
+        active:
+          type: boolean
+
+    AttachCatalogOrdinalRequest:
+      type: object
+      required: [ordinal]
+      additionalProperties: false
+      properties:
+        ordinal:
+          type: integer
+          minimum: 0
+
+    CatalogStorefrontSectionResponse:
+      type: object
+      required: [section]
+      additionalProperties: false
+      properties:
+        section:
+          $ref: "#/components/schemas/CatalogStorefrontSection"
+
     CreateStoreOfferRequest:
       type: object
-      required: [variantId, priceMinor, quantityPolicy, pricingBasis]
+      required: [variantId, priceMinor, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits]
       additionalProperties: false
       properties:
         variantId:
@@ -906,14 +1851,26 @@ components:
           minimum: 1
         quantityPolicy:
           type: string
-          enum: [DISCRETE, MEASURED]
+          enum: [DISCRETE, MEASURED, VARIABLE_MEASURE]
+        quantityMinBaseUnits:
+          type: integer
+          minimum: 1
+        quantityMaxBaseUnits:
+          type: integer
+          minimum: 1
+        quantityStepBaseUnits:
+          type: integer
+          minimum: 1
         pricingBasis:
           type: string
-          enum: [PER_UNIT, PER_KILOGRAM]
+          enum: [PER_UNIT, PER_MEASURE]
+        pricingUnitBaseUnits:
+          type: integer
+          minimum: 1
 
     UpdateStoreOfferRequest:
       type: object
-      required: [priceMinor, availability, publicationState]
+      required: [priceMinor, availability, publicationState, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits]
       additionalProperties: false
       properties:
         priceMinor:
@@ -923,6 +1880,24 @@ components:
           type: boolean
         publicationState:
           $ref: "#/components/schemas/StoreOfferPublicationState"
+        quantityPolicy:
+          type: string
+          enum: [DISCRETE, MEASURED, VARIABLE_MEASURE]
+        quantityMinBaseUnits:
+          type: integer
+          minimum: 1
+        quantityMaxBaseUnits:
+          type: integer
+          minimum: 1
+        quantityStepBaseUnits:
+          type: integer
+          minimum: 1
+        pricingBasis:
+          type: string
+          enum: [PER_UNIT, PER_MEASURE]
+        pricingUnitBaseUnits:
+          type: integer
+          minimum: 1
 
     CatalogStoreOfferResponse:
       type: object
@@ -1066,7 +2041,7 @@ components:
 
     PublicCatalogResponse:
       type: object
-      required: [storeId, verticalId, categories, offers]
+      required: [storeId, verticalId, categories, sections, offers, nextCursor]
       additionalProperties: false
       properties:
         storeId:
@@ -1077,10 +2052,48 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CatalogCategory"
+        sections:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogStorefrontSection"
         offers:
           type: array
           items:
             $ref: "#/components/schemas/CatalogStoreOffer"
+        nextCursor:
+          type: string
+          nullable: true
+
+    CatalogStorefrontSection:
+      type: object
+      required: [id, storeId, nameAr, ordinal, active, version, offerIds, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        storeId:
+          type: string
+        nameAr:
+          type: string
+        nameEn:
+          type: string
+          nullable: true
+        ordinal:
+          type: integer
+        active:
+          type: boolean
+        version:
+          type: integer
+        offerIds:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     PublicStoreView:
       type: object
@@ -1259,7 +2272,7 @@ components:
 
     CartLine:
       type: object
-      required: [id, cartId, storeOfferId, variantId, productId, productName, variantTitle, sellUnit, pricingBasis, quantityBaseUnits, selectedModifierOptionIds, unitPriceMinor, lineAmountMinor, currency, offerVersion, createdAt, updatedAt]
+      required: [id, cartId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, quantityBaseUnits, selectedModifierOptionIds, unitPriceMinor, modifierAmountMinor, lineAmountMinor, currency, offerVersion, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -1276,11 +2289,28 @@ components:
           type: string
         variantTitle:
           type: string
-        sellUnit:
-          $ref: "#/components/schemas/SellUnit"
+        measurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        baseUnit:
+          $ref: "#/components/schemas/BaseUnit"
         pricingBasis:
           type: string
-          enum: [PER_UNIT, PER_KILOGRAM]
+          enum: [PER_UNIT, PER_MEASURE]
+        quantityPolicy:
+          type: string
+          enum: [DISCRETE, MEASURED, VARIABLE_MEASURE]
+        quantityMinBaseUnits:
+          type: integer
+          minimum: 1
+        quantityMaxBaseUnits:
+          type: integer
+          minimum: 1
+        quantityStepBaseUnits:
+          type: integer
+          minimum: 1
+        pricingUnitBaseUnits:
+          type: integer
+          minimum: 1
         quantityBaseUnits:
           type: integer
           minimum: 1
@@ -1291,6 +2321,9 @@ components:
         unitPriceMinor:
           type: integer
           minimum: 1
+        modifierAmountMinor:
+          type: integer
+          minimum: 0
         lineAmountMinor:
           type: integer
           minimum: 1
@@ -1402,7 +2435,7 @@ components:
 
     OrderLine:
       type: object
-      required: [id, orderId, storeOfferId, variantId, productId, productName, variantTitle, sellUnit, pricingBasis, requestedQuantityBaseUnits, unitPriceMinor, lineAmountMinor, currency, selectedModifierOptionIds, createdAt]
+      required: [id, orderId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, requestedQuantityBaseUnits, finalQuantityBaseUnits, unitPriceMinor, lineAmountMinor, currency, selectedModifierOptionIds, modifierAmountMinor, createdAt]
       additionalProperties: false
       properties:
         id:
@@ -1419,14 +2452,37 @@ components:
           type: string
         variantTitle:
           type: string
-        sellUnit:
-          $ref: "#/components/schemas/SellUnit"
+        measurementKind:
+          $ref: "#/components/schemas/MeasurementKind"
+        baseUnit:
+          $ref: "#/components/schemas/BaseUnit"
         pricingBasis:
           type: string
-          enum: [PER_UNIT, PER_KILOGRAM]
+          enum: [PER_UNIT, PER_MEASURE]
+        quantityPolicy:
+          type: string
+          enum: [DISCRETE, MEASURED, VARIABLE_MEASURE]
+        quantityMinBaseUnits:
+          type: integer
+          minimum: 1
+        quantityMaxBaseUnits:
+          type: integer
+          minimum: 1
+        quantityStepBaseUnits:
+          type: integer
+          minimum: 1
+        pricingUnitBaseUnits:
+          type: integer
+          minimum: 1
         requestedQuantityBaseUnits:
           type: integer
           minimum: 1
+        finalQuantityBaseUnits:
+          type: integer
+          minimum: 1
+        modifierAmountMinor:
+          type: integer
+          minimum: 0
         unitPriceMinor:
           type: integer
           minimum: 1
