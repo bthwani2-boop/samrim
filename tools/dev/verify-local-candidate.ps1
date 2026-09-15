@@ -128,7 +128,11 @@ try {
         }
     }
 
-    if (Changed-Matches '^(apps/|packages/|services/|tools/).+\.(ts|tsx|js|jsx|mjs)$') {
+    $changedBiome = @($changed | Where-Object {
+        $_ -match '^(apps/|packages/|services/|tools/).+\.(ts|tsx|js|jsx|mjs)$' -and
+        (Test-Path -LiteralPath (Join-Path $Repo $_) -PathType Leaf)
+    })
+    if ($changedBiome.Count -gt 0) {
         Run-Step 'Changed-source lint' {
             pnpm exec biome lint apps packages services tools --changed --since=$BaseSha --diagnostic-level=error
         }
