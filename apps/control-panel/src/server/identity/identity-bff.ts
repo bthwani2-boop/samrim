@@ -78,6 +78,35 @@ async function clearOperatorCookies(): Promise<void> {
   for (const key of [accessCookie, refreshCookie, deviceCookie]) store.set(key, "", { ...cookieOptions(), maxAge: 0 });
 }
 
+async function clearOperatorCookiesBestEffort(): Promise<void> {
+  try {
+    await clearOperatorCookies();
+  } catch {
+    // A confirmed terminal session remains fail-closed even if cookie cleanup is unavailable.
+  }
+}
+
+function localSessionError(status: number, code: string, message: string): IdentityClientError {
+  return { kind: "http", status, code, message };
+}
+
+function isTerminalIdentityFailure(error: unknown): boolean {
+  return isIdentityClientError(error) && error.kind === "http" && error.status === 401;
+}
+
+function isRefreshStale(error: unknown): boolean {
+  return isIdentityClientError(error) && error.kind === "http" && error.code === "REFRESH_STALE";
+}
+
+async function revokeRefreshedPair(pair: TokenPair): Promise<boolean> {
+  try {
+    await identityClient().logout(pair.accessToken);
+    return true;
+  } catch (error) {
+    return isTerminalIdentityFailure(error);
+  }
+}
+
 export async function beginOperatorPasskeyAuthentication(): Promise<PasskeyOptions> {
   return identityClient().beginOperatorPasskeyAuthentication();
 }
@@ -180,7 +209,7 @@ async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>
     try {
       const identity = await identityClient().session(accessToken);
       if (!isControlPanelIdentity(identity)) {
-        await clearOperatorCookies();
+        await clearOperatorCookiesBestEffort();
         return null;
       }
       return identity;
@@ -191,36 +220,47 @@ async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>
   }
 
   if (!refreshToken || !clientInstanceId) {
-    await clearOperatorCookies();
+    await clearOperatorCookiesBestEffort();
     return null;
   }
 
+  let pair: TokenPair;
   try {
-    const pair = await identityClient().refresh({ refreshToken, clientInstanceId });
+    pair = await identityClient().refresh({ refreshToken, clientInstanceId });
+  } catch (error) {
+    if (isRefreshStale(error)) {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+        const freshStore = await cookies();
+        const freshAccessToken = freshStore.get(accessCookie)?.value;
+        if (freshAccessToken) {
+          try {
+            const current = await identityClient().session(freshAccessToken);
+            if (isControlPanelIdentity(current)) return current;
+          } catch {
+            // Continue through the bounded reconciliation window.
+          }
+        }
+      }
+      throw localSessionError(409, "REFRESH_CONFLICT", "operator session refresh is being reconciled");
+    }
+    if (isTerminalIdentityFailure(error)) {
+      await clearOperatorCookiesBestEffort();
+      return null;
+    }
+    if (isIdentityClientError(error)) throw error;
+    throw localSessionError(503, "IDENTITY_SESSION_RECOVERY_UNKNOWN", "identity session recovery could not be classified");
+  }
+
+  try {
     await writeTokens(pair, clientInstanceId);
     return pair.identity;
   } catch (error) {
-    if (isIdentityClientError(error)) {
-      if (error.kind === "network") throw error;
-      if (error.code === "REFRESH_STALE") {
-        for (let attempt = 0; attempt < 4; attempt++) {
-          await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
-          const freshStore = await cookies();
-          const freshAccessToken = freshStore.get(accessCookie)?.value;
-          if (freshAccessToken) {
-            try {
-              const current = await identityClient().session(freshAccessToken);
-              if (isControlPanelIdentity(current)) return current;
-            } catch {
-              // continue
-            }
-          }
-        }
-        throw new Error("REFRESH_CONFLICT_RETRY");
-      }
+    if (await revokeRefreshedPair(pair)) {
+      await clearOperatorCookiesBestEffort();
+      return null;
     }
-    await clearOperatorCookies();
-    return null;
+    throw localSessionError(503, "IDENTITY_SESSION_PERSISTENCE_UNAVAILABLE", "identity session persistence is unavailable");
   }
 }
 
@@ -250,7 +290,7 @@ export async function logoutOperator(): Promise<void> {
       }
     }
   } finally {
-    await clearOperatorCookies();
+    await clearOperatorCookiesBestEffort();
   }
   if (remoteError) throw remoteError;
 }

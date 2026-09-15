@@ -92,7 +92,7 @@ export default function IdentityGate() {
       setState(await restoreIdentitySession());
     } catch (cause) {
       setError(identityErrorMessage(cause, "general", copy.errors));
-      setState({ kind: "signed_out" });
+      setState({ kind: "degraded", reason: "unknown" });
     } finally {
       setBusy(false);
     }
@@ -246,40 +246,22 @@ export default function IdentityGate() {
     );
   }
 
-  if (state.kind === "service_unavailable") {
+  if (state.kind === "degraded") {
+    const conflict = state.reason === "refresh_conflict";
     return (
       <View style={styles.container}>
         <Text style={styles.title}>{copy.brand}</Text>
-        <Text style={styles.status}>{copy.serviceUnavailable}</Text>
+        <Text style={styles.status}>{conflict ? copy.refreshingSession : copy.serviceUnavailable}</Text>
+        {conflict ? <Text style={styles.muted}>{copy.refreshConflict}</Text> : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={copy.retryVerification}
+          accessibilityLabel={conflict ? copy.syncSession : copy.retryVerification}
           accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={restore}
           style={styles.secondaryButton}
         >
-          <Text style={styles.secondaryButtonText}>{copy.retryVerification}</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  if (state.kind === "refresh_conflict") {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>{copy.brand}</Text>
-        <Text style={styles.status}>{copy.refreshingSession}</Text>
-        <Text style={styles.muted}>{copy.refreshConflict}</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={copy.syncSession}
-          accessibilityState={{ busy, disabled: busy }}
-          disabled={busy}
-          onPress={restore}
-          style={styles.primaryButton}
-        >
-          <Text style={styles.primaryButtonText}>{busy ? copy.syncing : copy.syncSession}</Text>
+          <Text style={styles.secondaryButtonText}>{busy ? copy.syncing : conflict ? copy.syncSession : copy.retryVerification}</Text>
         </Pressable>
       </View>
     );

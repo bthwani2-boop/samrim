@@ -9,12 +9,14 @@ if (!baseURL) {
 }
 
 const liveIdentityProof = process.env.PLAYWRIGHT_LIVE_IDENTITY === "1";
+const configuredExpectTimeout = Number.parseInt(process.env.PLAYWRIGHT_EXPECT_TIMEOUT ?? "", 10);
+const expectTimeout = Number.isFinite(configuredExpectTimeout) && configuredExpectTimeout > 0 ? configuredExpectTimeout : 5_000;
 
 export default defineConfig({
   testDir: "./tests",
   globalSetup: "./playwright.global-setup.ts",
   timeout: 30_000,
-  expect: { timeout: 5_000 },
+  expect: { timeout: expectTimeout },
   fullyParallel: true,
   ...(liveIdentityProof ? { grep: /@live/ } : { grepInvert: /@live/ }),
   reporter: "list",

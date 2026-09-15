@@ -70,7 +70,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
       setState(await binding.restoreIdentitySession());
     } catch (cause) {
       setError(identityErrorMessage(cause));
-      setState({ kind: "signed_out" });
+      setState({ kind: "degraded", reason: "unknown" });
     } finally {
       setBusy(false);
     }
@@ -212,39 +212,21 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
     );
   }
 
-  if (state.kind === "service_unavailable") {
+  if (state.kind === "degraded") {
+    const conflict = state.reason === "refresh_conflict";
     return shell(
       <View style={styles.card}>
-        <Text style={styles.title}>تعذر الوصول إلى الهوية</Text>
-        <Text style={styles.description}>تحقق من تشغيل خدمة الهوية ثم أعد المحاولة.</Text>
+        <Text style={styles.title}>{conflict ? "تحديث جلسة الجهاز" : "تعذر استعادة الجلسة"}</Text>
+        <Text style={styles.description}>{conflict ? "تم اكتشاف تحديث متزامن للجلسة. أعد المزامنة للمتابعة دون إعادة تسجيل الدخول." : "لم يثبت انتهاء الجلسة. أعد التحقق لاستعادة الوصول بأمان."}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="إعادة التحقق"
+          accessibilityLabel={conflict ? "مزامنة الجلسة" : "إعادة التحقق"}
           accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={restoreSession}
           style={styles.primaryButton}
         >
-          <Text style={styles.primaryButtonText}>إعادة التحقق</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  if (state.kind === "refresh_conflict") {
-    return shell(
-      <View style={styles.card}>
-        <Text style={styles.title}>تحديث جلسة الجهاز</Text>
-        <Text style={styles.description}>تم تجديد بيانات الجلسة من عملية متزامنة. أعد مزامنة الجلسة للمتابعة دون إعادة تسجيل الدخول.</Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="مزامنة الجلسة"
-          accessibilityState={{ busy, disabled: busy }}
-          disabled={busy}
-          onPress={restoreSession}
-          style={styles.primaryButton}
-        >
-          <Text style={styles.primaryButtonText}>مزامنة الجلسة</Text>
+          <Text style={styles.primaryButtonText}>{conflict ? "مزامنة الجلسة" : "إعادة التحقق"}</Text>
         </Pressable>
       </View>
     );
