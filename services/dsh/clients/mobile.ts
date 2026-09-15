@@ -10,6 +10,24 @@ export type DshMobileClientOptions = Readonly<{
   cryptoRandomUUID?: () => string;
 }>;
 
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      fetch(input, { ...init, signal: controller.signal }),
+      new Promise<Response>((_, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(new Error("dsh request timeout"));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
 export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClientOptions = {}) {
   const timeoutMs = options.timeoutMs ?? 8_000;
   let baseUrl = rawBaseUrl.trim();
@@ -19,52 +37,40 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
   if (!/^https?:\/\//i.test(baseUrl)) throw new Error("DSH_BASE_URL_INVALID");
 
   async function publicRequest<T>(path: string): Promise<T> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
     try {
-      let response: Response;
-      try {
-        response = await fetch(`${baseUrl}${path}`, { method: "GET", headers: { Accept: "application/json" }, signal: controller.signal });
-      } catch (error) {
-        throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshMobileClientError;
-      }
-      if (!response.ok) {
-        const raw = await response.json().catch(() => null) as { error?: { code?: unknown; message?: unknown } } | null;
-        const nested = raw?.error;
-        throw {
-          kind: "http",
-          status: response.status,
-          code: typeof nested?.code === "string" ? nested.code : "DSH_ERROR",
-          message: typeof nested?.message === "string" ? nested.message : "dsh request failed",
-        } satisfies DshMobileClientError;
-      }
-      return await response.json() as T;
-    } finally {
-      clearTimeout(timeout);
+      response = await fetchWithTimeout(`${baseUrl}${path}`, { method: "GET", headers: { Accept: "application/json" } }, timeoutMs);
+    } catch (error) {
+      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshMobileClientError;
     }
+    if (!response.ok) {
+      const raw = await response.json().catch(() => null) as { error?: { code?: unknown; message?: unknown } } | null;
+      const nested = raw?.error;
+      throw {
+        kind: "http",
+        status: response.status,
+        code: typeof nested?.code === "string" ? nested.code : "DSH_ERROR",
+        message: typeof nested?.message === "string" ? nested.message : "dsh request failed",
+      } satisfies DshMobileClientError;
+    }
+    return await response.json() as T;
   }
 
   async function userRequest<T>(accessToken: string, path: string, method: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
     const token = accessToken.trim();
     if (!token) throw new Error("DSH_ACCESS_TOKEN_REQUIRED");
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
     try {
-      let response: Response;
-      try {
-        response = await fetch(`${baseUrl}${path}`, { method, headers: { Accept: "application/json", Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: controller.signal });
-      } catch (error) {
-        throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshMobileClientError;
-      }
-      if (!response.ok) {
-        const raw = await response.json().catch(() => null) as { error?: { code?: unknown; message?: unknown } } | null;
-        const nested = raw?.error;
-        throw { kind: "http", status: response.status, code: typeof nested?.code === "string" ? nested.code : "DSH_ERROR", message: typeof nested?.message === "string" ? nested.message : "dsh request failed" } satisfies DshMobileClientError;
-      }
-      return await response.json() as T;
-    } finally {
-      clearTimeout(timeout);
+      response = await fetchWithTimeout(`${baseUrl}${path}`, { method, headers: { Accept: "application/json", Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, timeoutMs);
+    } catch (error) {
+      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshMobileClientError;
     }
+    if (!response.ok) {
+      const raw = await response.json().catch(() => null) as { error?: { code?: unknown; message?: unknown } } | null;
+      const nested = raw?.error;
+      throw { kind: "http", status: response.status, code: typeof nested?.code === "string" ? nested.code : "DSH_ERROR", message: typeof nested?.message === "string" ? nested.message : "dsh request failed" } satisfies DshMobileClientError;
+    }
+    return await response.json() as T;
   }
 
   function mutationHeaders(): Record<string, string> {

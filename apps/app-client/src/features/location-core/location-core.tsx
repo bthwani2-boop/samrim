@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as Location from "expo-location";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
-
 import { resolveTheme } from "@bthwani/design-system";
 import type { DeliveryAddress } from "@bthwani/dsh";
-import { createOwnDeliveryAddress, isLocationHttpError, listOwnDeliveryAddresses, updateOwnDeliveryAddress } from "./delivery-address-client";
+import * as Location from "expo-location";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
+import { createOwnDeliveryAddress, isLocationHttpError, listOwnDeliveryAddresses, updateOwnDeliveryAddress } from "./delivery-address-client";
 
 type AddressState =
   | { kind: "loading" }
@@ -197,7 +196,7 @@ export default function LocationCore() {
         {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة العناوين…</Text></View> : null}
         {state.kind === "error" ? <View style={styles.state}><Text selectable style={styles.muted}>{error || "تعذر قراءة العناوين."}</Text><Pressable accessibilityRole="button" accessibilityLabel="إعادة قراءة العناوين" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}
         {state.kind === "ready" && state.addresses.length === 0 ? <View style={styles.state}><Text style={styles.muted}>لا توجد عناوين محفوظة بعد.</Text><Text style={styles.muted}>أضف عنوانًا ليصبح جاهزًا للاستخدام لاحقًا.</Text></View> : null}
-        {state.kind === "ready" && state.addresses.length > 0 ? <ScrollView contentInsetAdjustmentBehavior="automatic" nestedScrollEnabled style={styles.addressScroll}><View style={styles.addressList}>{state.addresses.map((address) => <View key={address.id} style={styles.addressItem}><Text selectable style={styles.addressText}>{address.addressText}</Text><Text selectable style={styles.addressMeta}>الموقع: تم تحديد الموقع · الإصدار {address.version}</Text><Pressable accessibilityRole="button" accessibilityLabel={`تعديل العنوان ${address.addressText}`} disabled={busy} onPress={() => beginEdit(address)} style={styles.editButton}><Text style={styles.editButtonText}>تعديل العنوان</Text></Pressable></View>)}</View>{state.nextCursor ? <Pressable accessibilityRole="button" accessibilityLabel="عرض المزيد من العناوين" accessibilityState={{ busy: loadingMore }} disabled={loadingMore} onPress={() => void loadMore()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{loadingMore ? "جارٍ تحميل المزيد…" : "عرض المزيد"}</Text></Pressable> : null}</ScrollView> : null}
+        {state.kind === "ready" && state.addresses.length > 0 ? <><View style={styles.addressList}>{state.addresses.map((address) => <View key={address.id} style={styles.addressItem}><Text selectable style={styles.addressText}>{address.addressText}</Text><Text selectable style={styles.addressMeta}>الموقع: تم تحديد الموقع · الإصدار {address.version}</Text><Pressable accessibilityRole="button" accessibilityLabel={`تعديل العنوان ${address.addressText}`} disabled={busy} onPress={() => beginEdit(address)} style={styles.editButton}><Text style={styles.editButtonText}>تعديل العنوان</Text></Pressable></View>)}</View>{state.nextCursor ? <Pressable accessibilityRole="button" accessibilityLabel="عرض المزيد من العناوين" accessibilityState={{ busy: loadingMore }} disabled={loadingMore} onPress={() => void loadMore()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{loadingMore ? "جارٍ تحميل المزيد…" : "عرض المزيد"}</Text></Pressable> : null}</> : null}
       </View>
     </View>
   );
@@ -232,7 +231,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     notice: { backgroundColor: theme.successSoft, borderRadius: 10, color: theme.success, fontSize: 13, padding: 10, textAlign: "right" },
     error: { backgroundColor: theme.dangerSoft, borderRadius: 10, color: theme.danger, fontSize: 13, padding: 10, textAlign: "right" },
     state: { alignItems: "center", gap: 8, minHeight: 110, justifyContent: "center" },
-    addressScroll: { maxHeight: 320 },
     addressList: { gap: 10 },
     addressItem: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 8, padding: 12 },
     addressText: { color: theme.structure, fontSize: 15, fontWeight: "700", lineHeight: 22, textAlign: "right" },
