@@ -117,7 +117,9 @@ try {
         Run-Step 'PowerShell syntax' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 }
     }
 
-    $changedGo = @($changed | Where-Object { $_ -match '\.go$' })
+    $changedGo = @($changed | Where-Object {
+        $_ -match '\.go$' -and (Test-Path -LiteralPath (Join-Path $Repo $_) -PathType Leaf)
+    })
     if ($changedGo.Count -gt 0) {
         Run-Step 'Changed Go formatting' {
             $unformatted = @(& gofmt -l @changedGo)

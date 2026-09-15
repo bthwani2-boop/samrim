@@ -73,6 +73,7 @@ for (const service of services) {
 
 assert(/^name:\s*samrim-local\s*$/m.test(compose), "Compose project must be samrim-local");
 assert(!compose.includes("profiles:"), "parallel Compose profiles are forbidden");
+assert(!/js-deps:\s*[\s\S]*?pull_policy:\s*build/.test(compose), "js-deps must not force image builds during routine runtime startup");
 assert(!/\bgo\s+run\b/i.test(runtime), "runtime.ps1 must not create host-native Go runtime paths");
 assert(!/\b(?:next\s+dev|expo\s+start)\b/i.test(runtime), "runtime.ps1 must not create host-native JS runtime paths");
 
@@ -126,3 +127,4 @@ console.log("DOCKER_RUNTIME_OWNER=tools/dev/runtime.ps1");
 console.log("FULL_RUNTIME_COMMANDS=runtime:up,runtime:doctor,runtime:status");
 console.log("TARGET_RUNTIME_STOPS_UNRELATED_SURFACES=0");
 console.log("CANDIDATE_VERIFIER_OWNS_RUNTIME=0");
+console.log("ROUTINE_JS_IMAGE_FORCE_BUILD=0");
