@@ -12,7 +12,7 @@
 
 ## Diagnosis and decision
 
-<!-- What current evidence was inspected? What is the root cause? Which alternatives were considered, and why is this the simplest complete safe canonical solution? -->
+<!-- What current evidence was inspected? What is the root cause? Which alternatives were considered, and why is this the simplest complete safe canonical solution? For any materially costly-to-reverse identity, boundary, persistent-data or contract decision, state its reversibility/evolution cost and the defensible migration/extension/cutover path without using speculative future implementation as proof. -->
 
 ## Governance impact
 
@@ -46,7 +46,7 @@
 
 ## Migration / Cutover
 
-<!-- If replacing an authority/path/contract/writer/data shape, describe truth preservation, migration/backfill/reconciliation, consumer cutover, old-write disablement and loser deletion. Use N/A only when proven. -->
+<!-- If replacing an authority/path/contract/writer/data shape, describe truth preservation, migration/backfill/reconciliation, consumer cutover, old-write disablement and loser deletion. For materially costly-to-reverse decisions include evolution-safety/migratability evidence. Use N/A only when proven. -->
 
 ## Deployable identity / runtime
 
@@ -58,7 +58,7 @@
 
 ## Verification
 
-<!-- Exact checks/evidence executed against the same candidate. State the material claims, proof class, negative/failure/recovery coverage, and what remains unproven. For user-facing changes include design-readiness evidence, representative responsive/RTL/theme/accessibility/error states, and real browser/device journey proof where material. -->
+<!-- Exact checks/evidence executed against the same candidate. State the material claims, proof class, negative/failure/recovery coverage, and what remains unproven. For user-facing changes include design-readiness evidence, representative responsive/RTL/theme/accessibility/error states, and real browser/device journey proof where material. Distinguish current-cone closure from capability/domain/platform finality. -->
 
 `MATERIAL_DIMENSIONS_UNEXAMINED=0`
 `AFFECTED_DIMENSIONS_WITHOUT_OWNER=0`
@@ -67,6 +67,7 @@
 `KNOWN_MATERIAL_DEFECTS=0`
 `KNOWN_MATERIAL_CONTRADICTIONS=0`
 `DECISION_CRITICAL_UNKNOWNS=0`
+`KNOWN_MATERIAL_EVOLUTION_DEAD_ENDS=0`
 `KNOWN_GOVERNANCE_DRIFT=0`
 
 ## Security / Secrets
@@ -79,7 +80,7 @@
 
 ## Negative space
 
-<!-- What old authority, alias, wrapper, stale path, parallel writer, forbidden scope, donor residue, obsolete verifier, future breadth or compatibility structure was actively searched for and removed/rejected? -->
+<!-- What old authority, alias, wrapper, stale path, parallel writer, forbidden scope, donor residue, obsolete verifier, future breadth or compatibility structure was actively searched for and removed/rejected? What speculative future machinery was deliberately rejected, and what evidence-backed material evolution dead ends were checked for? -->
 
 ## Checklist
 
@@ -87,9 +88,10 @@
 - [ ] Every pinned-Governance material quality dimension is resolved with reason/evidence.
 - [ ] Required truth and deployable/external identities are preserved.
 - [ ] One canonical owner/writer/contract provenance remains.
+- [ ] Materially costly-to-reverse decisions have proportionate reversibility/evolution-safety evidence without speculative future scaffolding.
 - [ ] No secret values or machine-local bindings are committed.
 - [ ] Migration/cutover and loser deletion are complete where applicable.
 - [ ] New dependency/provider adoption passed current review where applicable.
 - [ ] Material failure/recovery/negative cases and canonical readback are proven.
-- [ ] No known losing/shadow authority or Governance drift remains in the affected cone.
+- [ ] No known losing/shadow authority, material evolution dead end or Governance drift remains in the affected cone.
 - [ ] Green tools/CI are not presented as broader proof than they actually provide.
