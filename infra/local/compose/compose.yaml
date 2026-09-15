@@ -226,6 +226,7 @@ services:
       IDENTITY_API_BASE_URL: "http://identity:8082"
       DSH_API_BASE_URL: "http://dsh:8080"
       CONTROL_PANEL_SERVICE_TOKEN: "${CONTROL_PANEL_SERVICE_TOKEN}"
+      NEXT_PRIVATE_DISABLE_DEV_OVERLAY_UX: "1"
     command: ["pnpm", "--dir", "apps/control-panel", "exec", "next", "dev", "-H", "0.0.0.0", "-p", "13000"]
     ports:
       - "127.0.0.1:${SAMRIM_CONTROL_PORT:-13000}:13000"

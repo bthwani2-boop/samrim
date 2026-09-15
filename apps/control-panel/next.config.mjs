@@ -1,10 +1,10 @@
 /** @type {import("next").NextConfig} */
-const isProduction = process.env.NODE_ENV === "production";
-
 const nextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   transpilePackages: ["@bthwani/identity", "@bthwani/design-system"],
   poweredByHeader: false,
+  // The development overlay injects inline styles that violate the application CSP.
+  devIndicators: false,
   // Keep Next dev from scaffolding agent instruction files inside this app.
   agentRules: false,
   async headers() {
@@ -28,12 +28,10 @@ const nextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=(), payment=()",
           },
-          ...(isProduction
-            ? [{
-                key: "Strict-Transport-Security",
-                value: "max-age=63072000; includeSubDomains; preload",
-              }]
-            : []),
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
         ],
       },
     ];
