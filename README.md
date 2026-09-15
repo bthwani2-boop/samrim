@@ -15,14 +15,18 @@ Durable documentation must not hard-code a temporary working branch as permanent
 
 - `knowledge.sources.json` — the canonical machine-readable binding to the exact immutable Governance/Docs commit used by this repository.
 - `AGENTS.md` — the sole repository-local agent operating law; not Product or current-state truth.
-- `tools/` — machine safeguards, automation, inspection, generation and evidence; not Product Truth.
+- `tools/` — automation, inspection, generation and evidence; not Product Truth.
 - `apps/`, `services/`, `packages/`, `contracts/`, `infra/` — executable implementation roots whose durable placement/admission rules come from the exact pinned Governance; their current contents and existence are proven by live source.
 
 Logical paths beginning with `governance/` or `docs/` refer to the exact Governance/Docs commit pinned by `knowledge.sources.json`. Repository tools that need that source materialize the exact pin into ignored local cache automatically. For direct inspection, run `node tools/dev/knowledge-source.mjs`. Mutable external facts must still be revalidated at use.
 
-## Verification
+## Verification and push safety
 
-`pnpm verify` is the canonical human local-candidate verification entrypoint. Internal evidence producers remain direct repository tools and are not duplicated as root package aliases.
+`pnpm verify` proves the exact current local candidate and does not require the branch to have been pushed already. It requires a clean worktree, keeps the candidate HEAD fixed throughout verification, and runs the repository's applicable static/workspace/runtime evidence.
+
+`pnpm safe:push` reruns `pnpm verify`, requires a clean unchanged HEAD, permits only fast-forward/first push of the same working branch, and confirms the exact remote SHA after push.
+
+GitHub CI independently re-proves the pushed exact SHA.
 
 ## Secrets
 

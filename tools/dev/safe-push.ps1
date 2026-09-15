@@ -10,7 +10,6 @@ $ErrorActionPreference = "Stop"
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $expectedRepository = "bthwani2-boop/samrim"
-$guardPath = Join-Path $repo "tools\dev\agent-execution-guard.mjs"
 
 function Fail([string] $Message) {
     throw "SAFE_PUSH_INTERLOCK=FAIL $Message"
@@ -34,6 +33,11 @@ function Test-ExpectedOrigin([string] $RemoteUrl) {
     )
 }
 
+function Assert-CleanTree([string] $Context) {
+    $status = @(Invoke-Git -Arguments @("status", "--porcelain=v1", "--untracked-files=all"))
+    if ($status.Count -gt 0) { Fail ("working tree must be clean during ${Context}: " + ($status -join "; ")) }
+}
+
 Push-Location $repo
 try {
     $branchName = ((Invoke-Git -Arguments @("branch", "--show-current")) -join "").Trim()
@@ -46,17 +50,18 @@ try {
     $origin = ((Invoke-Git -Arguments @("remote", "get-url", "origin")) -join "").Trim()
     if (-not (Test-ExpectedOrigin $origin)) { Fail "origin mismatch: observed=$origin expected_repository=$expectedRepository" }
 
-    $status = @(Invoke-Git -Arguments @("status", "--porcelain=v1", "--untracked-files=all"))
-    if ($status.Count -gt 0) { Fail ("working tree must be clean before push: " + ($status -join "; ")) }
-
-    if (-not (Test-Path -LiteralPath $guardPath -PathType Leaf)) { Fail "agent execution guard is missing: $guardPath" }
-    $closureOutput = @(& node $guardPath require-closure 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        Fail ("CLOSURE_READY proof is required for the exact current HEAD before push: " + ($closureOutput -join [Environment]::NewLine))
-    }
-    Write-Host ($closureOutput -join [Environment]::NewLine)
-
+    Assert-CleanTree -Context "safe-push start"
     $localSha = ((Invoke-Git -Arguments @("rev-parse", "HEAD")) -join "").Trim()
+
+    Write-Host "SAFE_PUSH_VERIFY=START branch=$branchName sha=$localSha"
+    & pnpm verify
+    if ($LASTEXITCODE -ne 0) { Fail "pnpm verify failed for exact local candidate sha=$localSha" }
+
+    $verifiedSha = ((Invoke-Git -Arguments @("rev-parse", "HEAD")) -join "").Trim()
+    if ($verifiedSha -ne $localSha) { Fail "HEAD changed during verification: before=$localSha after=$verifiedSha" }
+    Assert-CleanTree -Context "post-verification"
+    Write-Host "SAFE_PUSH_VERIFY=PASS sha=$localSha"
+
     $remoteQuery = @(& git -C $repo ls-remote --heads origin "refs/heads/$branchName" 2>&1)
     if ($LASTEXITCODE -ne 0) { Fail ("unable to inspect remote branch state: " + ($remoteQuery -join [Environment]::NewLine)) }
 
@@ -71,6 +76,8 @@ try {
         if ($LASTEXITCODE -ne 0) { Fail "remote branch is not an ancestor of local HEAD; reconcile instead of overwriting" }
         if ($localSha -eq $remoteSha) {
             Write-Host "SAFE_PUSH=NOOP branch=$branchName sha=$localSha"
+            Write-Host "REMOTE_SHA_CONFIRMATION=PASS branch=$branchName sha=$localSha"
+            Write-Host "SAFE_PUSH=PASS repository=$expectedRepository branch=$branchName sha=$localSha"
             return
         }
     }
@@ -87,6 +94,7 @@ try {
     $confirmedRemote = (($confirmed[0] -split '\s+')[0]).Trim()
     if ($confirmedRemote -ne $localSha) { Fail "remote SHA mismatch after push: local=$localSha remote=$confirmedRemote" }
 
+    Write-Host "REMOTE_SHA_CONFIRMATION=PASS branch=$branchName sha=$confirmedRemote"
     Write-Host "SAFE_PUSH=PASS repository=$expectedRepository branch=$branchName sha=$localSha"
 }
 finally {

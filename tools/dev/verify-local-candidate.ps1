@@ -1,9 +1,7 @@
 #Requires -Version 7.4
 [CmdletBinding()]
 param(
-    [string]$ExpectedBranch = '',
-    [switch]$SkipFetch,
-    [switch]$SkipRuntime
+    [string]$ExpectedBranch = ''
 )
 
 Set-StrictMode -Version Latest
@@ -81,20 +79,14 @@ Push-Location $repo
 try {
     $branch = (& git branch --show-current).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) { Fail 'Unable to determine current Git branch.' }
-    $verificationBranch = if ([string]::IsNullOrWhiteSpace($ExpectedBranch)) { $branch } else { $ExpectedBranch }
     if (-not [string]::IsNullOrWhiteSpace($ExpectedBranch) -and $branch -ne $ExpectedBranch) {
         Fail "Expected branch '$ExpectedBranch', found '$branch'."
     }
 
+    $startHead = (& git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $startHead -notmatch '^[0-9a-f]{40}$') { Fail 'Unable to determine exact local candidate HEAD.' }
     Assert-CleanTree 'candidate start'
-
-    if (-not $SkipFetch) {
-        Run-Step 'Fetch exact remote candidate' { git fetch origin $verificationBranch --prune }
-        $localHead = (& git rev-parse HEAD).Trim()
-        $remoteHead = (& git rev-parse ("origin/" + $verificationBranch)).Trim()
-        if ($localHead -ne $remoteHead) { Fail "Exact candidate HEAD mismatch: local=$localHead remote=$remoteHead" }
-        Write-Host "EXACT_HEAD_SHA=$localHead"
-    }
+    Write-Host "EXACT_LOCAL_CANDIDATE_SHA=$startHead"
 
     if ((& node --version).Trim() -ne 'v24.17.0') { Fail 'Node version mismatch.' }
     if ((& pnpm --version).Trim() -ne '10.34.0') { Fail 'pnpm version mismatch.' }
@@ -111,7 +103,6 @@ try {
     Run-Step 'Knowledge invariants' { node tools/dev/verify-knowledge-system.mjs }
     Run-Step 'Knowledge references' { node tools/dev/verify-knowledge-references.mjs }
     Run-Step 'Agent knowledge contract' { node tools/dev/verify-agent-knowledge-contract.mjs }
-    Run-Step 'Agent guard behavior' { node --test tools/dev/agent-execution-guard.test.mjs }
     Run-Step 'PowerShell syntax' { pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-powershell-syntax.ps1 }
     Run-Step 'Mobile deployable identities' { pnpm run mobile:verify-config }
     Run-Step 'Workspace dependency references' { node tools/dev/verify-workspace-dependencies.mjs }
@@ -124,39 +115,40 @@ try {
         docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f $composePath config --quiet
     }
 
-    if (-not $SkipRuntime) {
-        try {
-            $runtimeSnapshot = Get-RuntimeSnapshot
-            Write-Host "PREEXISTING_RUNTIME_MODE=$($runtimeSnapshot.Mode)"
-            if ($runtimeSnapshot.Mode -eq 'target') { Write-Host "PREEXISTING_RUNTIME_TARGET=$($runtimeSnapshot.Target)" }
+    try {
+        $runtimeSnapshot = Get-RuntimeSnapshot
+        Write-Host "PREEXISTING_RUNTIME_MODE=$($runtimeSnapshot.Mode)"
+        if ($runtimeSnapshot.Mode -eq 'target') { Write-Host "PREEXISTING_RUNTIME_TARGET=$($runtimeSnapshot.Target)" }
 
-            if ($runtimeSnapshot.Mode -ne 'full') {
-                $runtimeChangedByVerifier = $true
-                Run-Step 'Canonical full runtime up' { pnpm runtime:up }
-            }
-            else { Write-Host 'CANONICAL_RUNTIME_START=SKIPPED reason=pre_existing_full_runtime' }
-
-            Run-Step 'Canonical runtime doctor' { pnpm runtime:doctor }
-            $runtimeVerificationArgs = @("--env-file=$envPath")
-            if ($runtimeSnapshot.Mode -ne 'none') { $runtimeVerificationArgs += '--preexisting-runtime' }
-            Run-Step 'Canonical runtime verification' { node tools/dev/verify-candidate-runtime.mjs @runtimeVerificationArgs }
-            Run-Step 'Canonical runtime status' { pnpm runtime:status }
-            Write-Host 'LOCAL_CANDIDATE_RUNTIME=PASS'
+        if ($runtimeSnapshot.Mode -ne 'full') {
+            $runtimeChangedByVerifier = $true
+            Run-Step 'Canonical full runtime up' { pnpm runtime:up }
         }
-        finally {
-            if ($runtimeChangedByVerifier -and $null -ne $runtimeSnapshot) {
-                try { Restore-RuntimeSnapshot -Snapshot $runtimeSnapshot }
-                catch {
-                    $cleanupFailure = $_.Exception.Message
-                    Write-Host "CANDIDATE_RUNTIME_RESTORE=FAIL reason=$cleanupFailure"
-                }
+        else { Write-Host 'CANONICAL_RUNTIME_START=SKIPPED reason=pre_existing_full_runtime' }
+
+        Run-Step 'Canonical runtime doctor' { pnpm runtime:doctor }
+        $runtimeVerificationArgs = @("--env-file=$envPath")
+        if ($runtimeSnapshot.Mode -ne 'none') { $runtimeVerificationArgs += '--preexisting-runtime' }
+        Run-Step 'Canonical runtime verification' { node tools/dev/verify-candidate-runtime.mjs @runtimeVerificationArgs }
+        Run-Step 'Canonical runtime status' { pnpm runtime:status }
+        Write-Host 'LOCAL_CANDIDATE_RUNTIME=PASS'
+    }
+    finally {
+        if ($runtimeChangedByVerifier -and $null -ne $runtimeSnapshot) {
+            try { Restore-RuntimeSnapshot -Snapshot $runtimeSnapshot }
+            catch {
+                $cleanupFailure = $_.Exception.Message
+                Write-Host "CANDIDATE_RUNTIME_RESTORE=FAIL reason=$cleanupFailure"
             }
         }
     }
 
     Assert-CleanTree 'candidate completion'
+    $endHead = (& git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $endHead -ne $startHead) { Fail "Candidate HEAD changed during verification: before=$startHead after=$endHead" }
     Write-Host 'LOCAL_CANDIDATE_WORKSPACE=PASS'
     Write-Host 'LOCAL_CANDIDATE_WINDOWS_PROOF=PASS'
+    Write-Host "VERIFY=PASS head=$startHead"
 }
 finally {
     Pop-Location

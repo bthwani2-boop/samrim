@@ -10,29 +10,6 @@ CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 MATERIAL = capable of changing behavior, meaning, ownership, authority, safety, durable data, contracts, runtime/configuration, user experience, external/deployable identity, evidence validity or operational outcome.
 
 THIS FILE IS HARD OPERATING LAW, NOT OPTIONAL GUIDANCE OR A CHECKLIST. Apply every materially applicable invariant to the whole outcome.
-
-AGENT ENTRY / EXECUTION GATE
-
-NO DECISION-AFFECTING REPOSITORY WORK MAY BEGIN UNTIL THIS ROOT `AGENTS.md` HAS BEEN LOADED IN FULL AND THE EXACT REPOSITORY / BRANCH OR REF / HEAD / AGENTS BLOB / PINNED GOVERNANCE SHA ARE ESTABLISHED. Minimal read-only discovery required to locate, load and pin those facts is bootstrap only; it must not become substantive design reasoning or a mutation.
-`AGENT_BOOTSTRAP=PASS` precedes repository reasoning, planning or inspection that can influence a decision. For every material task, each relevant evidence class is explicitly `USED` or `PROVEN_UNNECESSARY` with reason; silence is not evidence that a source class is unnecessary.
-SPEED IS NOT A SUCCESS CRITERION. Never optimize elapsed time, token economy, tool-call count, smallest diff or early implementation at the expense of material completeness. Continue investigation while further evidence can change need, owner, boundary, root cause, invariant, safety, migration/recovery, treatment choice or proof; stop when it cannot.
-
-For material repository mutation:
-~~~text
-AGENT_BOOTSTRAP=PASS
-→ EXACT CURRENT STATE + PINNED GOVERNANCE
-→ MATERIAL AFFECTED CONE + QUALITY / EVIDENCE CENSUS
-→ CAUSAL ROOT + VIABLE OPTIONS + FALSIFICATION
-→ DECISION_CRITICAL_UNKNOWNS=0
-→ MUTATION_READY=PASS
-→ SCOPED CANONICAL MUTATION + COHERENT COMMIT
-→ CANDIDATE_PROOF=PASS
-→ FRESH ADVERSARIAL / NEGATIVE-SPACE RE-CENSUS
-→ CLOSURE_READY=PASS
-→ REPOSITORY-OWNED SAFE PUSH
-~~~
-The repository-owned Agent Execution Guard mechanically enforces only deterministically decidable entry, scope, candidate and closure boundaries; it owns no Product, architecture or semantic decision and never substitutes for this constitution's reasoning duties. A changed HEAD, branch, `AGENTS.md`, `knowledge.sources.json`, Governance pin or active evidence receipt invalidates affected readiness/closure and requires re-establishment before further mutation or promotion.
-
 Repository placement is governed operationally by `REPOSITORY-STRUCTURE.md`: before creating, moving, splitting, extracting or materially extending code/config/tests/contracts, resolve the destination against that contract and the exact current owner path; its templates never authorize future scope.
 Any structural deviation or cutover must be evidence-justified and completed as one canonical change, updating `REPOSITORY-STRUCTURE.md` and structural verifiers in the same change when their rule must change; never create a parallel/shadow topology.
 

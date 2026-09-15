@@ -83,7 +83,7 @@ jobs:
           done
 
           if [[ -e tools/prompting ]]; then
-            echo "::error::Retired prompt-package root must not exist; methods belong in pinned Docs and agent safety belongs in AGENTS.md plus machine safeguards"
+            echo "::error::Retired prompt-package root must not exist; methods belong in pinned Docs and agent law belongs in AGENTS.md"
             exit 1
           fi
 
@@ -182,10 +182,6 @@ jobs:
       - name: Verify adversarial agent knowledge contract
         shell: bash
         run: node tools/dev/verify-agent-knowledge-contract.mjs
-
-      - name: Verify Agent Execution Guard adversarial behavior
-        shell: bash
-        run: node --test tools/dev/agent-execution-guard.test.mjs
 
       - name: Verify Identity vertical boundaries
         shell: bash

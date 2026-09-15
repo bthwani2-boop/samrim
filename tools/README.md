@@ -26,7 +26,17 @@ Do not move service/app-specific behavior into `tools/` merely for convenience.
 
 Root `package.json` is the human/developer command surface, not an index of every repository executable.
 
-`pnpm verify` is the canonical human local-candidate verification entrypoint. Agent guard lifecycle, knowledge verification, docs verification, repository verification and candidate evidence producers remain internal implementations and are invoked directly by their owning hooks, CI or verifier.
+`pnpm verify` is the canonical exact-local-candidate verification entrypoint. Knowledge, docs, repository and candidate evidence producers remain internal implementations invoked directly by CI or the verifier.
+
+`pnpm safe:push` reruns `pnpm verify`, reconciles the current branch with the remote using fast-forward-only rules, pushes the same branch, and confirms the exact remote SHA.
+
+~~~text
+AGENTS.md      → repository agent law
+Git            → repository state
+pnpm verify    → exact local candidate proof
+pnpm safe:push → push safety + remote SHA confirmation
+GitHub CI      → independent exact-SHA confirmation
+~~~
 
 Pinned Governance/Docs materializes automatically when an internal consumer needs it. For explicit source inspection use:
 
@@ -54,7 +64,7 @@ A generated registry/map/catalog must identify its canonical inputs and be repro
 
 ## Adding a tool
 
-Before adding a material tool/guard/registry/manifest:
+Before adding a material tool/registry/manifest:
 
 1. prove the concrete current consumer/problem;
 2. identify the lifecycle owner;
@@ -67,6 +77,6 @@ Before adding a material tool/guard/registry/manifest:
 
 ## Removing or replacing a tool
 
-Account for package scripts, CI/workflows, Docs, `AGENTS.md` and callers. Remove obsolete wrappers, path filters, allowlists, generated outputs and stale docs after cutover.
+Account for package scripts, CI/workflows, Docs, `AGENTS.md` and callers. Remove obsolete wrappers, path filters, generated outputs and stale docs after cutover.
 
 Green output proves only the tool's claim; it never certifies Product/architecture/closure by itself.
