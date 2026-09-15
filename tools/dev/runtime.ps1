@@ -2,9 +2,11 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Purge','Control','Rebuild','RestartService','LogsService')]
+    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Purge','Control','Rebuild','RestartService','LogsService','Surface')]
     [string]$Action,
-    [string]$Service = ''
+    [string]$Service = '',
+    [ValidateSet('client','partner','captain','field')]
+    [string]$Surface = ''
 )
 
 Set-StrictMode -Version Latest
@@ -18,9 +20,20 @@ $EnvPath = Join-Path $ComposeDir '.env'
 $EnvExamplePath = Join-Path $ComposeDir '.env.example'
 $CanonicalProject = 'samrim-local'
 $AllowedServices = @('identity','dsh','control','metro-client','metro-partner','metro-captain','metro-field')
+$CanonicalServices = @('postgres','mailpit','identity-migrate','identity','dsh-migrate','dsh','js-deps','control','metro-client','metro-partner','metro-captain','metro-field')
+$OptionalServices = @('control','metro-client','metro-partner','metro-captain','metro-field')
+$PortContracts = @(
+    @{Key='SAMRIM_MAILPIT_WEB_PORT';Service='mailpit'},
+    @{Key='SAMRIM_IDENTITY_PORT';Service='identity'},
+    @{Key='SAMRIM_DSH_PORT';Service='dsh'},
+    @{Key='SAMRIM_CONTROL_PORT';Service='control'},
+    @{Key='SAMRIM_APP_CLIENT_METRO_PORT';Service='metro-client'},
+    @{Key='SAMRIM_APP_PARTNER_METRO_PORT';Service='metro-partner'},
+    @{Key='SAMRIM_APP_CAPTAIN_METRO_PORT';Service='metro-captain'},
+    @{Key='SAMRIM_APP_FIELD_METRO_PORT';Service='metro-field'}
+)
 
 function Fail([string]$Message) { throw $Message }
-
 function New-RandomHex([int]$Bytes = 32) { return [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes($Bytes)).ToLowerInvariant() }
 
 function Read-EnvMap([string]$Path) {
@@ -151,6 +164,13 @@ function Assert-NoParallelRuntimeResidue {
     if ($projects.Count -gt 0) { Fail "PARALLEL_RUNTIME_RESIDUE=FAIL projects=$($projects -join ',')" }
 }
 
+function Assert-NoUnexpectedCanonicalContainers {
+    $services = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --format '{{.Label "com.docker.compose.service"}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical Docker services.' }
+    $unexpected = @($services | Where-Object { $_ -notin $CanonicalServices })
+    if ($unexpected.Count -gt 0) { Fail "CANONICAL_RUNTIME_RESIDUE=FAIL services=$($unexpected -join ',')" }
+}
+
 function Assert-NoNativeBackendProcesses {
     if (-not $IsWindows) { return }
     $matches = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and (($_.CommandLine -match 'services[\\/]identity[\\/]backend') -or ($_.CommandLine -match 'services[\\/]dsh[\\/]backend')) -and $_.CommandLine -match '\bgo(?:\.exe)?\b' })
@@ -165,43 +185,100 @@ function Assert-CanonicalPublishedPort([int]$Port, [string]$ExpectedService) {
     if ($rows.Count -ne 1 -or $expected.Count -ne 1 -or $rows[0] -notmatch '^127\.0\.0\.1:') { Fail "PORT_OWNERSHIP=FAIL port=$Port service=$ExpectedService observed=$($rows -join ';')" }
 }
 
-function Assert-CanonicalRuntime([hashtable]$EnvMap) {
-    Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
-    Assert-OneShotSucceeded -Service 'identity-migrate'; Assert-OneShotSucceeded -Service 'dsh-migrate'; Assert-OneShotSucceeded -Service 'js-deps'
-    Assert-RunningService -Service 'postgres' -Healthy; Assert-RunningService -Service 'mailpit'; Assert-RunningService -Service 'identity' -Healthy; Assert-RunningService -Service 'dsh' -Healthy; Assert-RunningService -Service 'control' -Healthy; Assert-RunningService -Service 'metro-client' -Healthy; Assert-RunningService -Service 'metro-partner' -Healthy; Assert-RunningService -Service 'metro-captain' -Healthy; Assert-RunningService -Service 'metro-field' -Healthy
-    foreach ($contract in @(@{Key='SAMRIM_MAILPIT_WEB_PORT';Service='mailpit'},@{Key='SAMRIM_IDENTITY_PORT';Service='identity'},@{Key='SAMRIM_DSH_PORT';Service='dsh'},@{Key='SAMRIM_CONTROL_PORT';Service='control'},@{Key='SAMRIM_APP_CLIENT_METRO_PORT';Service='metro-client'},@{Key='SAMRIM_APP_PARTNER_METRO_PORT';Service='metro-partner'},@{Key='SAMRIM_APP_CAPTAIN_METRO_PORT';Service='metro-captain'},@{Key='SAMRIM_APP_FIELD_METRO_PORT';Service='metro-field'})) { Assert-CanonicalPublishedPort -Port (Require-TcpPort -Map $EnvMap -Name $contract.Key) -ExpectedService $contract.Service }
+function Get-PortContract([string]$Service) {
+    $contract = @($PortContracts | Where-Object { $_.Service -eq $Service })
+    if ($contract.Count -ne 1) { Fail "PORT_CONTRACT_NOT_FOUND service=$Service" }
+    return $contract[0]
 }
 
-function Test-CanonicalRuntimeReady([hashtable]$EnvMap) { try { Assert-CanonicalRuntime -EnvMap $EnvMap; return $true } catch { return $false } }
+function Assert-CoreRuntime([hashtable]$EnvMap) {
+    Assert-OneShotSucceeded -Service 'identity-migrate'
+    Assert-OneShotSucceeded -Service 'dsh-migrate'
+    Assert-OneShotSucceeded -Service 'js-deps'
+    Assert-RunningService -Service 'postgres' -Healthy
+    Assert-RunningService -Service 'mailpit'
+    Assert-RunningService -Service 'identity' -Healthy
+    Assert-RunningService -Service 'dsh' -Healthy
+    foreach ($service in @('mailpit','identity','dsh')) {
+        $contract = Get-PortContract -Service $service
+        Assert-CanonicalPublishedPort -Port (Require-TcpPort -Map $EnvMap -Name $contract.Key) -ExpectedService $service
+    }
+}
+
+function Assert-CanonicalRuntime([hashtable]$EnvMap) {
+    Assert-NoParallelRuntimeResidue
+    Assert-NoUnexpectedCanonicalContainers
+    Assert-NoNativeBackendProcesses
+    Assert-CoreRuntime -EnvMap $EnvMap
+    foreach ($service in $OptionalServices) { Assert-RunningService -Service $service -Healthy }
+    foreach ($contract in @($PortContracts | Where-Object { $_.Service -in $OptionalServices })) {
+        Assert-CanonicalPublishedPort -Port (Require-TcpPort -Map $EnvMap -Name $contract.Key) -ExpectedService $contract.Service
+    }
+}
+
+function Assert-TargetRuntime([hashtable]$EnvMap, [string]$Target) {
+    if ($Target -notin $OptionalServices) { Fail "RUNTIME_TARGET_NOT_ALLOWED target=$Target" }
+    Assert-NoParallelRuntimeResidue
+    Assert-NoUnexpectedCanonicalContainers
+    Assert-NoNativeBackendProcesses
+    Assert-CoreRuntime -EnvMap $EnvMap
+    Assert-RunningService -Service $Target -Healthy
+    $contract = Get-PortContract -Service $Target
+    Assert-CanonicalPublishedPort -Port (Require-TcpPort -Map $EnvMap -Name $contract.Key) -ExpectedService $Target
+}
 
 function Start-CanonicalRuntime {
     $envMap = Ensure-Environment; Ensure-Docker; Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
     Invoke-Compose -Arguments @('config','--quiet') -Quiet
     Invoke-Compose -Arguments @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')
     Assert-CanonicalRuntime -EnvMap $envMap
-    Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS'; Write-Host 'DOCKER_RUNTIME=PASS'; Write-Host 'BROWSER_RUNTIME=PASS'; Write-Host 'DOCKER_OWNS=postgres,mailpit,identity,dsh,control,metro-client,metro-partner,metro-captain,metro-field'; Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'
+    Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=full'; Write-Host 'DOCKER_RUNTIME=PASS'; Write-Host 'BROWSER_RUNTIME=PASS'; Write-Host "DOCKER_OWNS=$($CanonicalServices -join ',')"; Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'
     return $envMap
 }
 
-function Ensure-CanonicalRuntime {
-    $envMap = Ensure-Environment; Ensure-Docker
-    if (Test-CanonicalRuntimeReady -EnvMap $envMap) { Write-Host 'DOCKER_RUNTIME=PASS'; Write-Host 'CANONICAL_LOCAL_RUNTIME=READY'; return $envMap }
-    return Start-CanonicalRuntime
+function Stop-OtherOptionalServices([string]$Target) {
+    $others = @($OptionalServices | Where-Object { $_ -ne $Target })
+    if ($others.Count -gt 0) { Invoke-Compose -Arguments (@('stop') + $others) -Quiet }
+}
+
+function Ensure-TargetRuntime([string]$Target) {
+    if ($Target -notin $OptionalServices) { Fail "RUNTIME_TARGET_NOT_ALLOWED target=$Target" }
+    $envMap = Ensure-Environment; Ensure-Docker; Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
+    Invoke-Compose -Arguments @('config','--quiet') -Quiet
+    Stop-OtherOptionalServices -Target $Target
+    Invoke-Compose -Arguments @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans',$Target)
+    Assert-TargetRuntime -EnvMap $envMap -Target $Target
+    Write-Host "CANONICAL_LOCAL_RUNTIME=PASS mode=target target=$Target"
+    Write-Host 'DOCKER_RUNTIME=PASS'
+    return $envMap
 }
 
 function Stop-CanonicalRuntime { Ensure-Docker; Invoke-Compose -Arguments @('down','--remove-orphans'); Write-Host 'CANONICAL_RUNTIME_STOP=PASS data_volume=preserved' }
 
 function Write-DockerProjectStatus {
-    $rows = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --format '{{.Names}}|{{.State}}|{{.Label "com.docker.compose.service"}}')
-    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical Docker project.' }
     Write-Host "DOCKER_PROJECT=$CanonicalProject"
-    if ($rows.Count -eq 0) { Write-Host 'DOCKER_CONTAINERS=0'; return }
-    Write-Host "DOCKER_CONTAINERS=$($rows.Count)"
-    $rows | ForEach-Object { Write-Host "DOCKER_CONTAINER=$_" }
+    Write-Host "DOCKER_EXPECTED_SERVICES=$($CanonicalServices.Count)"
+    $present = 0
+    foreach ($service in $CanonicalServices) {
+        $ids = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --filter "label=com.docker.compose.service=$service" --format '{{.ID}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect $CanonicalProject/$service." }
+        if ($ids.Count -eq 0) { Write-Host "DOCKER_SERVICE=$service state=missing"; continue }
+        if ($ids.Count -ne 1) { Write-Host "DOCKER_SERVICE=$service state=duplicate count=$($ids.Count)"; continue }
+        $present += 1
+        $state = (& docker inspect --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.State.ExitCode}}' $ids[0]).Trim()
+        if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect container state for $service." }
+        Write-Host "DOCKER_SERVICE=$service state=$state"
+    }
+    $observed = @(& docker ps -a --filter "label=com.docker.compose.project=$CanonicalProject" --format '{{.Label "com.docker.compose.service"}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique)
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect canonical Docker project.' }
+    $unexpected = @($observed | Where-Object { $_ -notin $CanonicalServices })
+    foreach ($service in $unexpected) { Write-Host "DOCKER_SERVICE=$service state=unexpected" }
+    Write-Host "DOCKER_PRESENT_SERVICES=$present"
+    Write-Host "DOCKER_UNEXPECTED_SERVICES=$($unexpected.Count)"
 }
 
 function Show-RuntimeStatus {
-    Write-Host 'RUNTIME_STATUS=READ_ONLY'
+    Write-Host 'RUNTIME_STATUS=READ_ONLY scope=full-canonical-compose'
     try { $null = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)" }
     Ensure-Docker
     Write-DockerProjectStatus
@@ -218,7 +295,7 @@ function Invoke-RuntimeDoctor {
     $failures = @(); $envMap = $null
     try { $envMap = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)"; $failures += 'local environment' }
     try { Ensure-Docker; Write-Host 'DOCKER_DAEMON=PASS'; Write-DockerProjectStatus } catch { Write-Host "DOCKER_DAEMON=NOT_READY reason=$($_.Exception.Message)"; $failures += 'docker' }
-    if ($null -ne $envMap -and $failures.Count -eq 0) { try { Assert-CanonicalRuntime -EnvMap $envMap; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS' } catch { Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"; $failures += 'runtime' } }
+    if ($null -ne $envMap -and $failures.Count -eq 0) { try { Assert-CanonicalRuntime -EnvMap $envMap; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose' } catch { Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"; $failures += 'runtime' } }
     Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'; Write-Host 'ADMIN_REQUIRED=0'; Write-Host 'DESTRUCTIVE=0'
     if ($failures.Count -eq 0) { Write-Host 'RUNTIME_DOCTOR=PASS'; return }
     Write-Host "RUNTIME_DOCTOR=NOT_READY failures=$($failures.Count)"; exit 1
@@ -238,7 +315,18 @@ function Purge-CanonicalRuntime {
 }
 
 function Start-ControlPanel {
-    $envMap = Ensure-CanonicalRuntime; $controlPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_CONTROL_PORT'; Assert-RunningService -Service 'control' -Healthy; Assert-CanonicalPublishedPort -Port $controlPort -ExpectedService 'control'; Write-Host 'CONTROL_PANEL_OWNER=DOCKER'; Write-Host "CONTROL_PANEL_READY=PASS url=http://127.0.0.1:$controlPort"; Write-Host 'CONTROL_PANEL_OPEN=MANUAL'
+    $envMap = Ensure-TargetRuntime -Target 'control'
+    $controlPort = Require-TcpPort -Map $envMap -Name 'SAMRIM_CONTROL_PORT'
+    Write-Host 'CONTROL_PANEL_OWNER=DOCKER'
+    Write-Host "CONTROL_PANEL_READY=PASS url=http://127.0.0.1:$controlPort"
+    Write-Host 'CONTROL_PANEL_OPEN=MANUAL'
+}
+
+function Start-MobileSurface {
+    if ([string]::IsNullOrWhiteSpace($Surface)) { Fail 'SURFACE_REQUIRED allowed=client,partner,captain,field' }
+    $target = "metro-$Surface"
+    $null = Ensure-TargetRuntime -Target $target
+    Write-Host "MOBILE_SURFACE_RUNTIME=PASS surface=$Surface service=$target"
 }
 
 function Require-AllowedService {
@@ -249,7 +337,7 @@ function Require-AllowedService {
 
 function Rebuild-Service {
     $target = Require-AllowedService
-    $envMap = Ensure-Environment; Ensure-Docker; Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
+    $null = Ensure-Environment; Ensure-Docker; Assert-NoParallelRuntimeResidue; Assert-NoNativeBackendProcesses
     Invoke-Compose -Arguments @('config','--quiet') -Quiet
     Invoke-Compose -Arguments @('up','-d','--build','--force-recreate','--no-deps','--wait','--wait-timeout','300',$target)
     Wait-RunningService -Service $target -Healthy
@@ -284,6 +372,7 @@ try {
         'Reset' {Reset-CanonicalRuntime}
         'Purge' {Purge-CanonicalRuntime}
         'Control' {Start-ControlPanel}
+        'Surface' {Start-MobileSurface}
         'Rebuild' {Rebuild-Service}
         'RestartService' {Restart-Service}
         'LogsService' {Show-ServiceLogs}

@@ -149,28 +149,33 @@ function Ensure-CanonicalWifiFallback([pscustomobject]$UsbDevice) {
 }
 
 function Ensure-CanonicalAdbReverse([string]$Serial, [int[]]$Ports) {
-    foreach ($port in @($Ports | Sort-Object -Unique)) {
+    $uniquePorts = @($Ports | Sort-Object -Unique)
+    if ($uniquePorts.Count -eq 0 -or @($uniquePorts | Where-Object { $_ -lt 1 -or $_ -gt 65535 }).Count -gt 0) {
+        Fail 'ADB_REVERSE_NOT_READY reason=invalid_port_set'
+    }
+    foreach ($port in $uniquePorts) {
         & adb -s $Serial reverse "tcp:$port" "tcp:$port" *> $null
         if ($LASTEXITCODE -ne 0) { Fail "ADB_REVERSE_NOT_READY reason=prepare_failed serial=$Serial port=$port" }
     }
     $rows = @(& adb -s $Serial reverse --list 2>&1)
     if ($LASTEXITCODE -ne 0) { Fail "ADB_REVERSE_NOT_READY reason=readback_failed serial=$Serial" }
-    foreach ($port in @($Ports | Sort-Object -Unique)) {
+    foreach ($port in $uniquePorts) {
         if (@($rows | Where-Object { $_ -match "(^|\s)tcp:$port\s+tcp:$port($|\s)" }).Count -ne 1) {
             Fail "ADB_REVERSE_NOT_READY reason=missing_port serial=$Serial port=$port"
         }
     }
-    Write-Host "ADB_REVERSE=PASS serial=$Serial ports=$(@($Ports | Sort-Object -Unique) -join ',')"
+    Write-Host "ADB_REVERSE=PASS serial=$Serial ports=$($uniquePorts -join ',')"
 }
 
 function Prepare-CanonicalAdbDevice {
     param(
         [string]$EnvPath,
+        [int[]]$Ports = @(),
         [switch]$RequireUsbPrimary,
         [switch]$PrepareWifiFallback
     )
 
-    $ports = @(Get-CanonicalReversePorts -EnvPath $EnvPath)
+    $portsToPrepare = if ($Ports.Count -gt 0) { @($Ports | Sort-Object -Unique) } else { @(Get-CanonicalReversePorts -EnvPath $EnvPath) }
     $device = Get-CanonicalAdbDevice -RequireUsbPrimary:$RequireUsbPrimary
     Write-Host "ADB_DEVICE=PASS serial=$($device.Serial) transport=$($device.Kind) identity=$($device.Identity)"
     if ($PrepareWifiFallback) {
@@ -178,7 +183,7 @@ function Prepare-CanonicalAdbDevice {
         $fallback = Ensure-CanonicalWifiFallback -UsbDevice $device
         Write-Host "ADB_FALLBACK=WIFI serial=$($fallback.Serial)"
     }
-    Ensure-CanonicalAdbReverse -Serial $device.Serial -Ports $ports
+    Ensure-CanonicalAdbReverse -Serial $device.Serial -Ports $portsToPrepare
     return $device
 }
 

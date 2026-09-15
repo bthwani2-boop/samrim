@@ -10,15 +10,10 @@ const json = (file) => { try { return JSON.parse(fs.readFileSync(path.join(root,
 const children = (base) => [...new Set(tracked.filter((p) => p.startsWith(`${base}/`)).map((p) => p.slice(base.length + 1)).filter((p) => p.includes("/")).map((p) => p.split("/", 1)[0]))].sort();
 function project(base, name, tag) { const file = `${base}/${name}/project.json`; assert(set.has(file), `${file} missing`); if (!set.has(file)) return null; const p = json(file); if (!p) return null; assert(p.root === `${base}/${name}`, `${file} root mismatch`); assert(p.name === name, `${file} name mismatch`); assert(Array.isArray(p.tags) && p.tags.includes(tag), `${file} missing ${tag}`); return p; }
 
-const allowed = new Set([".claude", ".gemini", ".github", "apps", "contracts", "infra", "packages", "services", "tools"]);
+const allowed = new Set([".github", "apps", "contracts", "infra", "packages", "services", "tools"]);
 const tops = [...new Set(tracked.filter((p) => p.includes("/")).map((p) => p.split("/", 1)[0]))].sort();
 for (const top of tops) assert(allowed.has(top), `Unadmitted top-level ownership class tracked: ${top}`);
-for (const required of [".github", ".claude", ".gemini", "tools"]) assert(tops.includes(required), `Required repository/tool host root missing: ${required}`);
-for (const [hostRoot, admitted] of [[".claude", ".claude/settings.json"], [".gemini", ".gemini/settings.json"]]) {
-  const files = tracked.filter((p) => p.startsWith(`${hostRoot}/`));
-  assert(files.length === 1 && files[0] === admitted, `${hostRoot} is host configuration only; expected exactly ${admitted}, found ${files.join(",")}`);
-  assert(Boolean(json(admitted)), `${admitted} must be valid JSON`);
-}
+for (const required of [".github", "tools"]) assert(tops.includes(required), `Required repository/tool root missing: ${required}`);
 
 assert(set.has("knowledge.sources.json"), "knowledge.sources.json missing");
 assert(set.has("REPOSITORY-STRUCTURE.md"), "REPOSITORY-STRUCTURE.md missing");
@@ -88,6 +83,17 @@ const githubAppPrefixes = [
 const hasGithubAppReference = (text) => text
   .split(/[\s"'`()[\]{}<>]+/)
   .some((token) => githubAppPrefixes.some((prefix) => token.startsWith(prefix)));
+for (const value of [
+  "github.com/bthwani2-boop/samrim/apps/app-client",
+  "https://github.com/bthwani2-boop/samrim/apps/app-client",
+  "http://github.com/bthwani2-boop/samrim/apps/app-client",
+  '"https://github.com/bthwani2-boop/samrim/apps/app-client"',
+]) assert(hasGithubAppReference(value), `Repository app-reference matcher rejected canonical value: ${value}`);
+for (const value of [
+  "https://evil.example/github.com/bthwani2-boop/samrim/apps/app-client",
+  "prefixhttps://github.com/bthwani2-boop/samrim/apps/app-client",
+  "https://github.com/bthwani2-boop/samrim/apps",
+]) assert(!hasGithubAppReference(value), `Repository app-reference matcher accepted invalid value: ${value}`);
 for (const item of tracked.filter((p) => p.startsWith("services/") && /\.(go|ts|tsx|js|jsx|mjs|cjs|json|yaml|yml)$/.test(p))) { const text = fs.readFileSync(path.join(root, item), "utf8"); if (hasGithubAppReference(text) || /(?:\.\.\/)+apps\//.test(text)) failures.push(`SERVICE_TO_APP_DEPENDENCY: ${item}`); }
 for (const item of tracked.filter((p) => p.startsWith("contracts/"))) { if (item === "contracts/README.md") continue; const rel = item.slice("contracts/".length); if (!["protocol/", "generated/", "catalog/"].some((prefix) => rel.startsWith(prefix))) failures.push(`Root contract requires protocol/generated/catalog placement: ${item}`); }
 const packages = children("packages");
@@ -96,7 +102,6 @@ for (const item of tracked.filter((p) => p.startsWith("infra/"))) if (/\/(contra
 
 if (failures.length) { console.error("REPOSITORY_STRUCTURE=FAIL"); for (const f of [...new Set(failures)].sort()) console.error(`  ${f}`); process.exit(1); }
 console.log("TOP_LEVEL_TAXONOMY=PASS");
-console.log("AGENT_HOST_CONFIG_ROOTS=PASS hosts=claude,gemini");
 console.log(`DISCOVERED_APPS=${apps.join(",")}`);
 console.log(`DISCOVERED_SERVICES=${services.join(",")}`);
 console.log(`DISCOVERED_PACKAGES=${packages.join(",")}`);
