@@ -15,7 +15,9 @@ Any structural deviation or cutover must be evidence-justified and completed as 
 
 STRUCTURAL MATURITY LAW
 
-NO NEED→NO SCAFFOLD; COHESIVE→EXTEND; NONCOHESIVE→CUT OVER; FUTURE→NO SCAFFOLD. `PREMATURE_STRUCTURE`/`LATE_STRUCTURE`=defect; `TIMELY_STRUCTURE`=canonical. Re-evaluate scope, distant, assurance, paths, modular cost, exceeded scope. Verify: authority, no parallel, entrypoint, nonempty.
+NO NEED→NO IMPLEMENTATION / NO SCAFFOLD; CURRENT COHESIVE NEED→EXTEND; CURRENT NONCOHESIVE NEED→SPLIT / REHOME / CUT OVER; FUTURE CAPABILITY→NO IMPLEMENTATION; MATERIAL HIGH-COST EVOLUTION RISK→PRESERVE CHANGEABILITY, NOT FUTURE STRUCTURE. `PREMATURE_STRUCTURE` / `LATE_STRUCTURE` / evidence-backed `EVOLUTION_DEAD_END`=defect; `TIMELY_STRUCTURE`=canonical. Re-evaluate scope, distance, assurance, paths, modular cost, exceeded scope, reversibility and evolution cost. Verify: authority, no parallel, entrypoint, nonempty, defensible migration/cutover where material.
+
+`NO SCAFFOLD` in `REPOSITORY-STRUCTURE.md` forbids unused future topology; it does not waive evolution-safety for materially costly-to-reverse current identities, boundaries, persistent data shapes or contracts.
 
 ## 0. BThwani orientation and authority
 
@@ -112,6 +114,8 @@ PIN EXACT SAMRIM STATE
 → CLASSIFY FACT / INFERENCE / HYPOTHESIS / ASSUMPTION / UNKNOWN
 → DIAGNOSE CAUSAL PROBLEM
 → DEFINE SUCCESS / FAILURE + MATERIAL QUALITY DIMENSIONS / INVARIANTS
+→ CLASSIFY REVERSIBILITY / EVOLUTION COST FOR MATERIALLY COSTLY-TO-REVERSE DECISIONS
+→ TEST SEMANTIC SUFFICIENCY + MATERIAL EVOLUTION SAFETY
 → GENERATE VIABLE BTHWANI-FIT SOLUTIONS
 → ELIMINATE INVALID / DUPLICATE / SPECULATIVE / UNSAFE / OVERCOMPLEX OPTIONS
 → SELECT SIMPLEST COMPLETE DURABLE CANONICAL BEST FIT
@@ -147,6 +151,25 @@ Audit the causal cone, not only the visible symptom. Expand only while evidence 
 RIGOR SCALES WITH CONSEQUENCE + UNCERTAINTY + BLAST RADIUS + IRREVERSIBILITY.
 DURABLE TARGET MODEL != CURRENT IMPLEMENTATION INVENTORY != CURRENT AUTHORIZED DELIVERY SLICE. Future responsibility needs CURRENT NEED + CAUSAL PREREQUISITE + AUTHORIZED OBJECTIVE.
 MINIMUM PRODUCT BREADTH LAW: unless explicitly required by the current human-authorized outcome, select and preserve only the smallest complete current delivery core/journey and its causal prerequisites; broader future Product breadth is unadmitted until a later proven need.
+
+EVOLUTIONARY COMPLETENESS LAW
+
+CURRENT COMPLETE != PERMANENTLY FINAL.
+MINIMUM COMPLETE != MINIMAL SHAPE.
+NO SCAFFOLD != NO EVOLUTION PATH.
+
+Implement the smallest complete current model. Do not implement speculative future capabilities, abstractions, services, tables, packages, extension points or compatibility machinery merely for possible future use.
+
+Simplification may remove unjustified structure, never material current meaning. Before omitting, merging or collapsing a concept, prove the authorized current journey remains losslessly representable and provable without overloaded fields, encoded naming conventions, UI-only compensation, hidden exceptions, duplicate logic or parallel/shadow truth.
+
+If current facts differ materially in meaning, owner/writer/readback, lifecycle, authorization, contract, user/business outcome, failure/recovery or proof obligation, preserve that distinction at its correct owner.
+
+Do not create unnecessary coupling that makes a materially plausible high-cost evolution require reinterpretation of canonical historical facts, and do not turn a current implementation convenience into an unjustified permanent architecture constraint. Before fixing a durable identity, ownership/state boundary, public/external contract, persistent data shape or other materially costly-to-reverse decision, classify its reversibility and evolution cost. When current evidence exposes a plausible high-cost evolution risk, prove a defensible migration / extension / cutover path without implementing the future capability itself.
+
+PRESERVE CHANGEABILITY, NOT SPECULATIVE MACHINERY.
+A future extension path is a property of correct current semantics, stable identities, boundaries and migration feasibility. It is not permission for unused scaffolding.
+
+Evolution inquiry is risk-scaled. Cheap/reversible decisions do not justify speculative future design; high-cost/hard-to-reverse decisions require proportionately deeper falsification when the result can change the current choice.
 
 PLATFORM PROGRESSION LAW:
 BTHWANI PROGRESSES BY BUSINESS CAPABILITY / JOURNEY ACROSS ITS MATERIAL OWNERS, PARTICIPANTS AND CONSUMERS, NOT BY EXHAUSTING ONE ACTOR, APP, SERVICE OR SURFACE BACKLOG.
@@ -208,6 +231,8 @@ Decision law:
 PROVE ACTUAL NEED + CONSTRAINTS
 → DEFINE SUCCESS / FAILURE + REQUIRED INVARIANTS
 → DETERMINE MATERIAL QUALITY DIMENSIONS
+→ CLASSIFY REVERSIBILITY / EVOLUTION COST WHERE MATERIALLY COSTLY TO REVERSE
+→ TEST SEMANTIC SUFFICIENCY + MATERIAL EVOLUTION SAFETY
 → GENERATE VIABLE OPTIONS
 → ELIMINATE INVALID / DOMINATED / REDUNDANT / UNSAFE / NONCANONICAL / UNJUSTIFIABLY COMPLEX OPTIONS
 → COMPARE STRONGEST SURVIVORS ON WHOLE BTHWANI OUTCOME
@@ -224,7 +249,7 @@ LOCAL OPTIMUM != WHOLE-PLATFORM OUTCOME.
 BEST PRACTICE != AUTOMATIC BEST FIT.
 NO COMPLEXITY WITHOUT MATERIAL BENEFIT.
 SMALLEST DIFF != SIMPLEST SYSTEM.
-Prefer the simplest complete solution.
+Prefer the simplest complete solution. For materially costly-to-reverse decisions, the simplest complete solution also avoids evidence-backed evolution dead ends when comparable current simplicity can preserve materially cheaper later migration/cutover without future machinery.
 
 DONOR / OSS / REFERENCE EXTRACTION:
 ~~~text
@@ -242,6 +267,7 @@ Proven durable Product/System/Policy truth requires Governance/Docs impact class
 ## 3. Canonical execution, cutover and safety
 
 CHOOSE THE MINIMUM COMPLETE CANONICAL TREATMENT. MINIMUM != PARTIAL.
+PRESERVE CHANGEABILITY, NOT SPECULATIVE MACHINERY. NO SCAFFOLD != NO EVOLUTION PATH.
 
 LOCAL_INTEGRATION RUNTIME LAW:
 Docker is the sole canonical runtime owner for PostgreSQL, Mailpit, Identity, DSH, Control Panel, and all four Metro servers. Host-native or parallel launch paths for these components are forbidden. Runtime lifecycle routes through `tools/dev/runtime.ps1`; Windows owns development/device tooling only, Android app execution remains device-owned.
@@ -329,8 +355,10 @@ CI / PR are integration assurance, not diagnosis/runtime proof. Applicable exact
 IMPLEMENTATION SUCCESS != DECISION SUCCESS.
 TREATMENT DOES NOT PROVE CLOSURE.
 CLOSURE IS ADVERSARIAL, NOT CONFIRMATORY.
+CURRENT CONE COMPLETE != CAPABILITY EXHAUSTED != DOMAIN PERMANENTLY FINAL != PLATFORM FINAL.
+Closure proves the authorized current cone only. It does not declare unexamined future Product breadth permanently unnecessary.
 
-Before closure, perform a FRESH ADVERSARIAL RE-CENSUS from exact resulting state for forgotten consumers, stale evidence, shadow authority, partial cutovers, hidden failures, lost meaning/data/identity and knowledge drift.
+Before closure, perform a FRESH ADVERSARIAL RE-CENSUS from exact resulting state for forgotten consumers, stale evidence, shadow authority, partial cutovers, hidden failures, lost meaning/data/identity, evidence-backed evolution dead ends and knowledge drift.
 
 ~~~text
 AUTHORIZED OBJECTIVE / SUCCESS CRITERIA = PROVEN
@@ -342,13 +370,14 @@ MATERIAL REGRESSIONS = NONE KNOWN
 DECISION-CRITICAL UNKNOWNS = 0
 UNEXPLAINED MATERIAL CONTRADICTIONS = 0
 KNOWN MATERIAL DURABLE GOVERNANCE DRIFT = 0
+KNOWN MATERIAL EVOLUTION DEAD ENDS = 0
 KNOWN PARTIAL CUTOVERS = 0
 KNOWN PARALLEL / SHADOW TRUTH = 0
 KNOWN UNJUSTIFIED RESIDUE = 0
 INVALIDATED REQUIRED EVIDENCE = 0
 ~~~
 
-A material unaccounted consumer/surface/writer/readback/external effect/knowledge conflict or decision-critical unknown keeps the cone open.
+A material unaccounted consumer/surface/writer/readback/external effect/knowledge conflict, evidence-backed evolution dead end or decision-critical unknown keeps the cone open.
 
 A coherent verified recovery-safe unit:
 ~~~text
