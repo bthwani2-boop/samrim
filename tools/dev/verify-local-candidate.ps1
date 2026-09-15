@@ -128,7 +128,7 @@ try {
         }
     }
 
-    if (Changed-Matches '^(apps/|packages/|services/|tools/).+\.(ts|tsx|js|mjs|cjs|json)$') {
+    if (Changed-Matches '^(apps/|packages/|services/|tools/).+\.(ts|tsx|js|jsx|mjs)$') {
         Run-Step 'Changed-source lint' {
             pnpm exec biome lint apps packages services tools --changed --since=$BaseSha --diagnostic-level=error
         }

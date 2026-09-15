@@ -38,6 +38,11 @@ try {
 
     $origin = ((Invoke-Git @('remote','get-url','origin')) -join '').Trim()
     if (-not (Test-ExpectedOrigin $origin)) { Fail "origin mismatch: observed=$origin expected_repository=$ExpectedRepository" }
+    $pushOrigins = @(Invoke-Git @('remote','get-url','--all','--push','origin') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $unexpectedPushOrigins = @($pushOrigins | Where-Object { -not (Test-ExpectedOrigin $_) })
+    if ($pushOrigins.Count -eq 0 -or $unexpectedPushOrigins.Count -gt 0) {
+        Fail "origin push URL mismatch: observed=$($pushOrigins -join ',') expected_repository=$ExpectedRepository"
+    }
 
     $status = @(Invoke-Git @('status','--porcelain=v1','--untracked-files=all'))
     if ($status.Count -gt 0) { Fail ('working tree must be clean: ' + ($status -join '; ')) }
