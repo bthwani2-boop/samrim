@@ -2,34 +2,75 @@
 
 This repository is the canonical BThwani platform repository.
 
-## Branch model
+## Repository authority
 
-- `main` — protected canonical promotion branch.
-- Active implementation/refoundation work occurs on the exact working branch supplied by current human authorization and live Git state.
-- Temporary implementation branches must preserve exact-head, non-conflicting ownership and an explicitly owned integration path.
-- Promotion to `main` is a separate operation requiring its applicable explicit authorization and delivery gates.
+- `AGENTS.md` — sole repository-local agent operating law.
+- `REPOSITORY-STRUCTURE.md` — repository placement contract delegated by `AGENTS.md`.
+- `knowledge.sources.json` — exact immutable Governance/Docs binding.
+- exact source/config/runtime/database/readback — authority for current executable state.
 
-Durable documentation must not hard-code a temporary working branch as permanently active.
+Durable Governance and Docs remain in the separately pinned repository; do not duplicate them here.
 
-## Repository roles
+## Development
 
-- `knowledge.sources.json` — the canonical machine-readable binding to the exact immutable Governance/Docs commit used by this repository.
-- `AGENTS.md` — the sole repository-local agent operating law; not Product or current-state truth.
-- `tools/` — automation, inspection, generation and evidence; not Product Truth.
-- `apps/`, `services/`, `packages/`, `contracts/`, `infra/` — executable implementation roots whose durable placement/admission rules come from the exact pinned Governance; their current contents and existence are proven by live source.
+Bootstrap dependencies only when setup inputs changed or the workspace is not ready:
 
-Logical paths beginning with `governance/` or `docs/` refer to the exact Governance/Docs commit pinned by `knowledge.sources.json`. Repository tools that need that source materialize the exact pin into ignored local cache automatically. For direct inspection, run `node tools/dev/knowledge-source.mjs`. Mutable external facts must still be revalidated at use.
+```text
+pnpm bootstrap
+```
 
-## Verification and push safety
+Start the complete Docker-owned local integration stack:
 
-`pnpm verify` proves the exact current local candidate and does not require the branch to have been pushed already. It requires a clean worktree, keeps the candidate HEAD fixed throughout verification, and runs the repository's applicable static/workspace/runtime evidence.
+```text
+pnpm runtime:up
+```
 
-`pnpm safe:push` reruns `pnpm verify`, requires a clean unchanged HEAD, permits only fast-forward/first push of the same working branch, and confirms the exact remote SHA after push.
+Read the complete stack:
 
-GitHub CI independently re-proves the pushed exact SHA.
+```text
+pnpm runtime:doctor
+pnpm runtime:status
+```
+
+Open one development surface without stopping other already-running surfaces:
+
+```text
+pnpm client
+pnpm partner
+pnpm captain
+pnpm field
+pnpm control
+```
+
+Docker remains the sole LOCAL_INTEGRATION runtime owner for PostgreSQL, Mailpit, Identity, DSH, Control Panel and all four Metro servers. Device execution remains device-owned.
+
+When baked backend source changes, rebuild only the invalidated service when a runtime proof requires current binaries:
+
+```text
+pnpm runtime:rebuild -- -Service identity
+pnpm runtime:rebuild -- -Service dsh
+```
+
+A deliberate full `pnpm runtime:up` converges the complete Docker stack.
+
+## Verification
+
+Normal work is affected-based, not repository-wide by default.
+
+`pnpm verify` verifies the exact clean candidate against a supplied/derived Git base using repository invariants plus Nx affected targets. It is non-mutating and does not bootstrap dependencies or own Docker lifecycle.
+
+Runtime and user-facing behavior are proved separately only when the claim requires them.
+
+`pnpm safe:push`:
+
+1. reconciles the current branch with its remote;
+2. returns immediately when the exact SHA is already remote;
+3. performs one final affected exact-candidate verification;
+4. pushes only fast-forward/first-branch state;
+5. confirms the exact remote SHA.
+
+CI performs independent integration/promotion assurance. Heavy backend runtime CI is skipped when the change cannot affect backend runtime.
 
 ## Secrets
 
-Secret values, signing keys, provider credentials and machine-local bindings are external to Git. The exact secret source/binding is environment- and deployment-specific; live executable configuration is the authority for what is actually supported.
-
-Do not commit credentials, Firebase service files, signing files, real `.env` files, tokens, or private keys.
+Never commit credentials, Firebase service files, signing files, real `.env` files, tokens or private keys. Ordinary pushes scan the current candidate and newly introduced commits; a scheduled/manual job performs the expensive full-history scan.

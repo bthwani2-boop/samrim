@@ -1,0 +1,35 @@
+{
+  "name": "identity-go-client",
+  "root": "services/identity/clients/go",
+  "projectType": "library",
+  "implicitDependencies": [
+    "identity"
+  ],
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test ./...",
+        "cwd": "services/identity/clients/go"
+      }
+    },
+    "vet": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go vet ./...",
+        "cwd": "services/identity/clients/go"
+      }
+    }
+  },
+  "tags": [
+    "scope:identity-go-client",
+    "type:service"
+  ],
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "{workspaceRoot}/go.work",
+      "{workspaceRoot}/go.work.sum"
+    ]
+  }
+}

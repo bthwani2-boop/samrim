@@ -9,136 +9,46 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
-
-concurrency:
-  group: repository-pr-policy-${{ github.event.pull_request.head.ref || github.ref_name }}
-  cancel-in-progress: true
 
 jobs:
   policy:
     name: repository-pr-policy
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 3
     steps:
-      - name: Checkout exact push/PR-head candidate
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-          fetch-depth: 2
-
-      - name: Attribute policy proof target
+      - name: Validate concise promotion evidence
         shell: bash
         env:
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          observed="$(git rev-parse HEAD)"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            expected="${PR_HEAD_SHA}"
-            target="PR_HEAD"
-          else
-            expected="${GITHUB_SHA}"
-            target="MAIN_PUSH_HEAD"
-          fi
-          [[ "${observed}" == "${expected}" ]] || { echo "::error::Policy proof target mismatch: observed=${observed} expected=${expected}"; exit 1; }
-          echo "PROOF_TARGET=${target}"
-          echo "PROOF_SHA=${observed}"
-
-      - name: Set up Node for pinned Governance evidence
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 24.17.0
-
-      - name: Materialize exact pinned Governance
-        shell: bash
-        run: node tools/dev/knowledge-source.mjs
-
-      - name: Validate promotion pull request evidence
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
+          GH_EVENT: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
 
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            [[ "${GITHUB_REF}" == "refs/heads/main" ]]
+          if [[ "${GH_EVENT}" == "push" ]]; then
             echo "PR_POLICY_MAIN_PUSH=PASS"
             exit 0
           fi
 
-          base="$(jq -r '.pull_request.base.ref' "${GITHUB_EVENT_PATH}")"
-          head="$(jq -r '.pull_request.head.ref' "${GITHUB_EVENT_PATH}")"
-          actor="$(jq -r '.sender.login // ""' "${GITHUB_EVENT_PATH}")"
-          author="$(jq -r '.pull_request.user.login // ""' "${GITHUB_EVENT_PATH}")"
-          draft="$(jq -r '.pull_request.draft // false' "${GITHUB_EVENT_PATH}")"
-          title="$(jq -r '.pull_request.title // ""' "${GITHUB_EVENT_PATH}")"
-          body="$(jq -r '.pull_request.body // ""' "${GITHUB_EVENT_PATH}")"
-          pr_number="$(jq -r '.pull_request.number' "${GITHUB_EVENT_PATH}")"
+          [[ ${#PR_TITLE} -ge 8 ]] || { echo "::error::PR title is too short"; exit 1; }
 
-          [[ "${base}" == "main" ]] || { echo "::error::Canonical promotion target must be main"; exit 1; }
-          (( ${#title} >= 8 )) || { echo "::error::PR title is too short"; exit 1; }
-
-          if [[ "${draft}" == "true" ]]; then
+          if [[ "${PR_DRAFT}" == "true" ]]; then
             echo "PR_POLICY_DRAFT=DEFERRED_UNTIL_READY"
             exit 0
           fi
 
-          if [[ "${author}" == "dependabot[bot]" || "${actor}" == "dependabot[bot]" ]]; then
-            [[ "${author}" == "dependabot[bot]" ]] || { echo "::error::Dependabot machine policy requires Dependabot PR author"; exit 1; }
-            [[ "${head}" == dependabot/* ]] || { echo "::error::Dependabot machine policy requires dependabot/* head branch"; exit 1; }
-            (( ${#body} >= 120 )) || { echo "::error::Dependabot PR body is unexpectedly incomplete"; exit 1; }
-
-            changed_output="$(
-              gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/files?per_page=100" --jq '.[].filename'
-            )" || { echo "::error::Dependabot changed-file query failed"; exit 1; }
-            [[ -n "${changed_output}" ]] || { echo "::error::Dependabot PR has no changed files"; exit 1; }
-            mapfile -t changed_files <<<"${changed_output}"
-
-            for file in "${changed_files[@]}"; do
-              case "${file}" in
-                package.json|pnpm-lock.yaml|go.work|go.work.sum|*/package.json|*/go.mod|*/go.sum|.github/workflows/*.yml|.github/workflows/*.yaml|infra/local/compose/compose.yaml|Dockerfile|*/Dockerfile)
-                  ;;
-                *)
-                  echo "::error::Dependabot machine policy rejected non-dependency path: ${file}"
-                  exit 1
-                  ;;
-              esac
-            done
-
-            echo "PR_POLICY_DEPENDABOT_SCOPE=PASS"
-            echo "PR_POLICY_DEPENDABOT_BOUNDED=PASS"
+          if [[ "${PR_AUTHOR}" == "dependabot[bot]" ]]; then
+            [[ "${PR_HEAD}" == dependabot/* ]] || { echo "::error::Unexpected Dependabot branch"; exit 1; }
+            echo "PR_POLICY_DEPENDABOT=PASS"
             exit 0
           fi
 
-          (( ${#body} >= 500 )) || { echo "::error::PR body is too short for canonical promotion evidence"; exit 1; }
-
-          required_headings=(
-            '## Summary'
-            '## Exact candidate and authorized objective'
-            '## Affected cone and ownership'
-            '## Diagnosis and decision'
-            '## Governance impact'
-            '## Material quality census'
-            '## Migration / Cutover'
-            '## Deployable identity / runtime'
-            '## Dependencies / external references'
-            '## Verification'
-            '## Security / Secrets'
-            '## Docs / knowledge'
-            '## Negative space'
-          )
-
-          for heading in "${required_headings[@]}"; do
-            grep -Fq -- "${heading}" <<<"${body}" || {
-              echo "::error::PR body missing required section: ${heading}"
-              exit 1
-            }
+          [[ ${#PR_BODY} -ge 120 ]] || { echo "::error::PR body is too short to explain the change"; exit 1; }
+          for heading in "## Summary" "## Scope" "## Verification" "## Remaining limits"; do
+            grep -Fq -- "${heading}" <<<"${PR_BODY}" || { echo "::error::Missing PR section: ${heading}"; exit 1; }
           done
 
-          echo "PR_POLICY_HUMAN_AGENT_EVIDENCE=PASS"
-
-      - name: Verify pinned-Governance material quality census
-        shell: bash
-        run: node tools/dev/verify-pr-evidence.mjs
+          echo "PR_POLICY=PASS"

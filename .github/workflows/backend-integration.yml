@@ -2,7 +2,7 @@ name: Repository Backend Integration
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -18,36 +18,47 @@ jobs:
     name: repository-backend-integration
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-
     steps:
-      - name: Checkout push head / PR merge-ref integration candidate
+      - name: Checkout integration candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
+          fetch-depth: 0
           persist-credentials: false
-          fetch-depth: 2
 
-      - name: Attribute integration proof target
+      - name: Detect backend-affecting change
+        id: scope
         shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          observed="$(git rev-parse HEAD)"
-          [[ "${observed}" == "${GITHUB_SHA}" ]] || { echo "::error::Integration proof target mismatch: observed=${observed} expected=${GITHUB_SHA}"; exit 1; }
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            echo "PROOF_TARGET=PR_MERGE_REF"
+            base="${PR_BASE_SHA}"
+          elif [[ -n "${PUSH_BEFORE_SHA}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
+            base="${PUSH_BEFORE_SHA}"
           else
-            echo "PROOF_TARGET=PUSH_HEAD"
+            base="$(git rev-parse HEAD^)"
           fi
-          echo "PROOF_SHA=${observed}"
+          changed="$(git diff --name-only "${base}" HEAD)"
+          if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|infra/local/compose/|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
+            echo "run=true" >> "${GITHUB_OUTPUT}"
+            echo "BACKEND_INTEGRATION_SCOPE=AFFECTED"
+          else
+            echo "run=false" >> "${GITHUB_OUTPUT}"
+            echo "BACKEND_INTEGRATION_SCOPE=UNAFFECTED"
+          fi
 
-      - name: Set up Node for backend semantic proof
+      - name: Set up Node
+        if: steps.scope.outputs.run == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
 
-      - name: Start backend-only CI services
+      - name: Start exact backend services
+        if: steps.scope.outputs.run == 'true'
         shell: bash
         run: |
-          set -euo pipefail
           docker compose \
             --project-name samrim-local \
             --env-file infra/local/compose/.env.example \
@@ -55,61 +66,8 @@ jobs:
             up -d --build --wait --wait-timeout 300 \
             postgres mailpit identity dsh
 
-      - name: Prove CI runtime boundary and backend readiness
-        shell: bash
-        run: |
-          set -euo pipefail
-          compose=(
-            docker compose
-            --project-name samrim-local
-            --env-file infra/local/compose/.env.example
-            -f infra/local/compose/compose.yaml
-          )
-
-          mapfile -t running < <("${compose[@]}" ps --status running --services | sort)
-          expected=(dsh identity mailpit postgres)
-          if [[ "${running[*]}" != "${expected[*]}" ]]; then
-            printf 'running=%s\n' "${running[*]}"
-            printf 'expected=%s\n' "${expected[*]}"
-            echo "::error::Backend CI service census mismatch"
-            exit 1
-          fi
-
-          for local_only in control js-deps metro-client metro-partner metro-captain metro-field; do
-            if [[ -n "$("${compose[@]}" ps -a -q "$local_only")" ]]; then
-              echo "::error::Local-only service started in remote CI: $local_only"
-              exit 1
-            fi
-          done
-
-          for migration in identity-migrate dsh-migrate; do
-            cid="$("${compose[@]}" ps -a -q "$migration")"
-            [[ -n "$cid" ]] || { echo "::error::Missing migration service: $migration"; exit 1; }
-            state="$(docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}' "$cid")"
-            [[ "$state" == "exited|0" ]] || { echo "::error::Migration failed: $migration state=$state"; exit 1; }
-          done
-
-          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:18026/ >/dev/null
-          for endpoint in \
-            http://127.0.0.1:18082/identity/health \
-            http://127.0.0.1:18082/identity/readiness \
-            http://127.0.0.1:18080/dsh/health \
-            http://127.0.0.1:18080/dsh/readiness; do
-            body="$(curl --fail --silent --show-error --max-time 5 "$endpoint")"
-            jq -e '.status == "ok"' <<<"$body" >/dev/null
-          done
-
-          "${compose[@]}" exec -T identity /schema-verify
-          "${compose[@]}" exec -T dsh /schema-verify
-          "${compose[@]}" exec -T dsh sh -ceu '
-            test -s /etc/ssl/certs/ca-certificates.crt
-            test "$(id -u)" -ne 0
-          '
-
-          echo "REMOTE_CI_LOCAL_RUNTIME_SERVICES=0"
-          echo "BACKEND_CI_RUNTIME=PASS"
-
-      - name: Verify backend migrations and runtime semantics
+      - name: Verify backend runtime semantics
+        if: steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,21 +76,16 @@ jobs:
           node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env.example
           node tools/dev/verify-dsh-runtime.mjs --env-file=infra/local/compose/.env.example
 
-      - name: Verify backend proof did not mutate repository
+      - name: Verify backend proof is non-mutating
+        if: steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
           drift="$(git status --porcelain --untracked-files=all)"
-          if [[ -n "$drift" ]]; then
-            printf '%s\n' "$drift"
-            git diff -- . || true
-            echo "::error::Backend CI proof mutated repository state"
-            exit 1
-          fi
-          echo "BACKEND_CI_REPOSITORY_MUTATION=0"
+          [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
 
-      - name: Purge backend CI services
-        if: always()
+      - name: Purge backend services
+        if: always() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           docker compose \

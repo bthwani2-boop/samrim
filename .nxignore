@@ -1,0 +1,5 @@
+**/*.md
+.github/**
+tools/dev/**
+infra/**
+knowledge.sources.json

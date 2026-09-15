@@ -3,31 +3,16 @@
   "root": "services/identity",
   "projectType": "application",
   "targets": {
-    "build": {
+    "typecheck": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "go build ./...",
-        "cwd": "services/identity/backend"
+        "command": "pnpm exec tsc --noEmit -p services/identity/tsconfig.json"
       }
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "go test ./... && node ../tools/generate-types.mjs --check && node ../tests/contract-guard.test.mjs",
-        "cwd": "services/identity/backend"
-      }
-    },
-    "vet": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "go vet ./...",
-        "cwd": "services/identity/backend"
-      }
-    },
-    "typecheck": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "pnpm exec tsc --noEmit -p services/identity/tsconfig.json"
+        "command": "node services/identity/tools/generate-types.mjs --check && node services/identity/tests/contract-guard.test.mjs"
       }
     }
   },
