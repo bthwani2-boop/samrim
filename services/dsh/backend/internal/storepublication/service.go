@@ -18,6 +18,7 @@ var (
 	ErrPartnerIdentityUnavailable    = errors.New("partner Identity eligibility is unavailable")
 	PartnerIdentityNotEligibleReason = "PARTNER_IDENTITY_NOT_ELIGIBLE"
 	ServiceCityNotEligibleReason     = "SERVICE_CITY_NOT_ELIGIBLE"
+	CatalogNotReadyReason            = "CATALOG_NOT_READY"
 )
 
 type PublicationReadiness struct {
@@ -134,6 +135,13 @@ func (s *Service) ReadinessForStore(ctx context.Context, store postgres.StoreRec
 	}
 	if !city.Active {
 		return blockedReadiness(ServiceCityNotEligibleReason), nil
+	}
+	catalogReady, err := postgres.HasPublishableCatalog(ctx, s.db, store.ID)
+	if err != nil {
+		return PublicationReadiness{}, err
+	}
+	if !catalogReady {
+		return blockedReadiness(CatalogNotReadyReason), nil
 	}
 	return s.ReadinessForPartner(ctx, store.PartnerActorID)
 }

@@ -1,4 +1,4 @@
-import { createDshMobileClient, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
+import { createDshMobileClient, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
 
@@ -16,6 +16,10 @@ export async function listPublishedStores(serviceCityID: string): Promise<Readon
 
 export async function readPublishedStore(storeID: string, serviceCityID: string): Promise<PublicStoreView> {
   return client().readPublishedStore(storeID, serviceCityID);
+}
+
+export async function readPublicStoreCatalog(storeID: string, serviceCityID: string): Promise<PublicCatalogResponse> {
+  return client().readPublicStoreCatalog(storeID, serviceCityID);
 }
 
 export async function evaluateStoreServiceability(storeID: string, addressID: string): Promise<ServiceabilityResponse> {

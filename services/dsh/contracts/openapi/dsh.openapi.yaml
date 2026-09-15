@@ -33,17 +33,26 @@ paths:
   /dsh/joining-cases/{caseId}/review:
     $ref: "./paths/joining-cases.yaml#/paths/~1dsh~1joining-cases~1{caseId}~1review"
 
+  /dsh/catalog/verticals:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1verticals"
+
+  /dsh/catalog/categories:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1categories"
+
   /dsh/catalog/products:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products"
 
   /dsh/catalog/products/{productId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
 
-  /dsh/stores/{storeId}/assortment:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1assortment"
+  /dsh/stores/{storeId}/offers:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers"
 
-  /dsh/stores/{storeId}/assortment/{productId}:
-    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1assortment~1{productId}"
+  /dsh/stores/{storeId}/offers/{offerId}:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1offers~1{offerId}"
+
+  /dsh/public/stores/{storeId}/catalog:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1public~1stores~1{storeId}~1catalog"
 
   /dsh/stores/{storeId}/publication:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1stores~1{storeId}~1publication"
@@ -74,6 +83,33 @@ paths:
 
   /dsh/serviceability:
     $ref: "./paths/serviceability.yaml#/paths/~1dsh~1serviceability"
+
+  /dsh/cart:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart"
+
+  /dsh/cart/lines:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart~1lines"
+
+  /dsh/cart/lines/{lineId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart~1lines~1{lineId}"
+
+  /dsh/cart/checkout:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart~1checkout"
+
+  /dsh/orders:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders"
+
+  /dsh/orders/{orderId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}"
+
+  /dsh/stores/{storeId}/orders:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
+
+  /dsh/stores/{storeId}/orders/{orderId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}"
+
+  /dsh/stores/{storeId}/orders/{orderId}/transition:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1transition"
 
 components:
   securitySchemes:
@@ -138,6 +174,14 @@ components:
       schema:
         type: integer
         minimum: 1
+
+    CartExpectedVersionRequired:
+      name: X-Expected-Version
+      in: header
+      required: true
+      schema:
+        type: integer
+        minimum: 0
     OriginVersionRequired:
       name: X-Expected-Version
       in: header
@@ -152,6 +196,42 @@ components:
       schema:
         type: string
         minLength: 1
+        maxLength: 128
+
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+    OfferId:
+      name: offerId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+    VerticalId:
+      name: verticalId
+      in: query
+      required: false
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 128
+
+    VerticalIdRequired:
+      name: verticalId
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 2
         maxLength: 128
 
     ServiceCityIdRequired:
@@ -183,7 +263,7 @@ components:
 
     CreateJoiningCaseRequest:
       type: object
-      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId]
+      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId]
       additionalProperties: false
       properties:
         contactPhoneE164:
@@ -200,6 +280,9 @@ components:
         serviceCityId:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreVerticalId:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
     JoiningCaseState:
       type: string
@@ -207,7 +290,7 @@ components:
 
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -219,6 +302,10 @@ components:
         firstStoreName:
           type: string
         serviceCityId:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreVerticalId:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
@@ -258,7 +345,7 @@ components:
 
     JoiningCaseSummary:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -270,6 +357,10 @@ components:
         firstStoreName:
           type: string
         serviceCityId:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreVerticalId:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
@@ -308,7 +399,7 @@ components:
 
     CorrectJoiningCaseRequest:
       type: object
-      required: [businessName, firstStoreName, serviceCityId]
+      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId]
       additionalProperties: false
       properties:
         businessName:
@@ -320,6 +411,9 @@ components:
           minLength: 2
           maxLength: 160
         serviceCityId:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreVerticalId:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
 
@@ -345,11 +439,11 @@ components:
           type: boolean
         blockedReason:
           type: string
-          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, SERVICE_CITY_NOT_ELIGIBLE]
+          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, SERVICE_CITY_NOT_ELIGIBLE, CATALOG_NOT_READY]
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, version, publicationState, publicationReadiness, assortments, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, version, publicationState, publicationReadiness, offers, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -359,6 +453,10 @@ components:
         name:
           type: string
         serviceCityId:
+          type: string
+          nullable: true
+          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        primaryVerticalId:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
@@ -373,10 +471,10 @@ components:
           type: string
           format: date-time
           nullable: true
-        assortments:
+        offers:
           type: array
           items:
-            $ref: "#/components/schemas/StoreAssortment"
+            $ref: "#/components/schemas/CatalogStoreOffer"
         createdAt:
           type: string
           format: date-time
@@ -556,26 +654,24 @@ components:
       type: string
       enum: [piece, kg]
 
-    CentralProduct:
+    CatalogProduct:
       type: object
-      required: [id, canonicalName, sellUnit, active, version, createdAt, updatedAt]
+      required: [id, verticalId, scope, canonicalName, active, version, variants, categoryIds, media, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
           type: string
+        verticalId:
+          type: string
+          nullable: true
+        scope:
+          type: string
+          enum: [SHARED, STORE_SCOPED]
         canonicalName:
           type: string
         brand:
           type: string
           nullable: true
-        barcode:
-          type: string
-          nullable: true
-        canonicalImageUrl:
-          type: string
-          nullable: true
-        sellUnit:
-          $ref: "#/components/schemas/SellUnit"
         active:
           type: boolean
         version:
@@ -588,65 +684,145 @@ components:
           type: string
           format: date-time
 
-    CreateCentralProductRequest:
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogVariant"
+        categoryIds:
+          type: array
+          items:
+            type: string
+        media:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogMedia"
+
+    CatalogVariant:
       type: object
-      required: [canonicalName, sellUnit]
+      required: [id, productId, title, sellUnit, active, version, identifiers, createdAt, updatedAt]
       additionalProperties: false
       properties:
-        canonicalName:
+        id:
           type: string
-          minLength: 1
-          maxLength: 160
-        brand:
+        productId:
           type: string
-          nullable: true
-          maxLength: 160
-        barcode:
+        title:
           type: string
-          nullable: true
-          maxLength: 128
-        canonicalImageUrl:
-          type: string
-          nullable: true
-          maxLength: 2048
         sellUnit:
           $ref: "#/components/schemas/SellUnit"
+        active:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        identifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogIdentifier"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
-    UpdateCentralProductRequest:
+    CatalogIdentifier:
       type: object
-      required: [canonicalName, active]
+      required: [type, value]
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [GTIN, EAN, UPC, SKU, LEGACY_BARCODE]
+        value:
+          type: string
+
+    CatalogMedia:
+      type: object
+      required: [uri, role, ordinal]
+      additionalProperties: false
+      properties:
+        uri:
+          type: string
+        role:
+          type: string
+          enum: [primary, gallery]
+        ordinal:
+          type: integer
+
+    CreateCatalogProductRequest:
+      type: object
+      required: [verticalId, scope, canonicalName, sellUnit, categoryIds]
       additionalProperties: false
       properties:
         canonicalName:
           type: string
           minLength: 1
           maxLength: 160
+        verticalId:
+          type: string
+        scope:
+          type: string
+          enum: [SHARED, STORE_SCOPED]
         brand:
           type: string
           nullable: true
           maxLength: 160
-        barcode:
+        variantTitle:
+          type: string
+          nullable: true
+          maxLength: 160
+        sellUnit:
+          $ref: "#/components/schemas/SellUnit"
+        categoryIds:
+          type: array
+          items:
+            type: string
+        identifierType:
+          type: string
+          nullable: true
+          enum: [GTIN, EAN, UPC, SKU]
+        identifierValue:
           type: string
           nullable: true
           maxLength: 128
-        canonicalImageUrl:
+        imageUri:
           type: string
           nullable: true
           maxLength: 2048
+
+    UpdateCatalogProductRequest:
+      type: object
+      required: [verticalId, scope, canonicalName, active]
+      additionalProperties: false
+      properties:
+        canonicalName:
+          type: string
+          minLength: 1
+          maxLength: 160
+        verticalId:
+          type: string
+        scope:
+          type: string
+          enum: [SHARED, STORE_SCOPED]
+        brand:
+          type: string
+          nullable: true
+          maxLength: 160
         active:
           type: boolean
 
-    CentralProductResponse:
+    CatalogProductResponse:
       type: object
       required: [product, idempotentReplay]
       additionalProperties: false
       properties:
         product:
-          $ref: "#/components/schemas/CentralProduct"
+          $ref: "#/components/schemas/CatalogProduct"
         idempotentReplay:
           type: boolean
 
-    CentralProductListResponse:
+    CatalogProductListResponse:
       type: object
       required: [products]
       additionalProperties: false
@@ -654,35 +830,35 @@ components:
         products:
           type: array
           items:
-            $ref: "#/components/schemas/CentralProduct"
+            $ref: "#/components/schemas/CatalogProduct"
 
-    AssortmentPublicationState:
+    StoreOfferPublicationState:
       type: string
       enum: [draft, published, hidden]
 
-    StoreAssortment:
+    CatalogStoreOffer:
       type: object
-      required: [storeId, productId, canonicalName, sellUnit, productActive, productVersion, priceMinor, currency, availability, publicationState, version, createdAt, updatedAt]
+      required: [offerId, storeId, variantId, productId, productName, sellUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, pricingBasis, inventoryPolicy, availability, publicationState, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
+        offerId:
+          type: string
         storeId:
+          type: string
+        variantId:
           type: string
         productId:
           type: string
-        canonicalName:
+        productName:
           type: string
         brand:
-          type: string
-          nullable: true
-        barcode:
-          type: string
-          nullable: true
-        canonicalImageUrl:
           type: string
           nullable: true
         sellUnit:
           $ref: "#/components/schemas/SellUnit"
         productActive:
+          type: boolean
+        variantActive:
           type: boolean
         productVersion:
           type: integer
@@ -693,10 +869,19 @@ components:
         currency:
           type: string
           const: YER
+        quantityPolicy:
+          type: string
+          enum: [DISCRETE, MEASURED]
+        pricingBasis:
+          type: string
+          enum: [PER_UNIT, PER_KILOGRAM]
+        inventoryPolicy:
+          type: string
+          const: AVAILABILITY_ONLY
         availability:
           type: boolean
         publicationState:
-          $ref: "#/components/schemas/AssortmentPublicationState"
+          $ref: "#/components/schemas/StoreOfferPublicationState"
         version:
           type: integer
           minimum: 1
@@ -707,20 +892,26 @@ components:
           type: string
           format: date-time
 
-    CreateStoreAssortmentRequest:
+    CreateStoreOfferRequest:
       type: object
-      required: [productId, priceMinor]
+      required: [variantId, priceMinor, quantityPolicy, pricingBasis]
       additionalProperties: false
       properties:
-        productId:
+        variantId:
           type: string
           minLength: 1
           maxLength: 128
         priceMinor:
           type: integer
           minimum: 1
+        quantityPolicy:
+          type: string
+          enum: [DISCRETE, MEASURED]
+        pricingBasis:
+          type: string
+          enum: [PER_UNIT, PER_KILOGRAM]
 
-    UpdateStoreAssortmentRequest:
+    UpdateStoreOfferRequest:
       type: object
       required: [priceMinor, availability, publicationState]
       additionalProperties: false
@@ -731,31 +922,169 @@ components:
         availability:
           type: boolean
         publicationState:
-          $ref: "#/components/schemas/AssortmentPublicationState"
+          $ref: "#/components/schemas/StoreOfferPublicationState"
 
-    StoreAssortmentResponse:
+    CatalogStoreOfferResponse:
       type: object
-      required: [assortment, idempotentReplay]
+      required: [offer, idempotentReplay]
       additionalProperties: false
       properties:
-        assortment:
-          $ref: "#/components/schemas/StoreAssortment"
+        offer:
+          $ref: "#/components/schemas/CatalogStoreOffer"
         idempotentReplay:
           type: boolean
 
-    StoreAssortmentListResponse:
+    CatalogStoreOfferListResponse:
       type: object
-      required: [assortments]
+      required: [offers]
       additionalProperties: false
       properties:
-        assortments:
+        offers:
           type: array
           items:
-            $ref: "#/components/schemas/StoreAssortment"
+            $ref: "#/components/schemas/CatalogStoreOffer"
+
+    CommerceVertical:
+      type: object
+      required: [id, nameAr, nameEn, active, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        nameAr:
+          type: string
+        nameEn:
+          type: string
+        active:
+          type: boolean
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCommerceVerticalRequest:
+      type: object
+      required: [id, nameAr, nameEn, active]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        nameAr:
+          type: string
+        nameEn:
+          type: string
+        active:
+          type: boolean
+
+    CommerceVerticalResponse:
+      type: object
+      required: [vertical, idempotentReplay]
+      additionalProperties: false
+      properties:
+        vertical:
+          $ref: "#/components/schemas/CommerceVertical"
+        idempotentReplay:
+          type: boolean
+
+    CommerceVerticalListResponse:
+      type: object
+      required: [verticals]
+      additionalProperties: false
+      properties:
+        verticals:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommerceVertical"
+
+    CatalogCategory:
+      type: object
+      required: [id, verticalId, nameAr, nameEn, active, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        verticalId:
+          type: string
+        parentCategoryId:
+          type: string
+          nullable: true
+        nameAr:
+          type: string
+        nameEn:
+          type: string
+        active:
+          type: boolean
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCatalogCategoryRequest:
+      type: object
+      required: [id, verticalId, nameAr, nameEn, active]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        verticalId:
+          type: string
+        parentCategoryId:
+          type: string
+          nullable: true
+        nameAr:
+          type: string
+        nameEn:
+          type: string
+        active:
+          type: boolean
+
+    CatalogCategoryResponse:
+      type: object
+      required: [category]
+      additionalProperties: false
+      properties:
+        category:
+          $ref: "#/components/schemas/CatalogCategory"
+
+    CatalogCategoryListResponse:
+      type: object
+      required: [categories]
+      additionalProperties: false
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogCategory"
+
+    PublicCatalogResponse:
+      type: object
+      required: [storeId, verticalId, categories, offers]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        verticalId:
+          type: string
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogCategory"
+        offers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogStoreOffer"
 
     PublicStoreView:
       type: object
-      required: [id, name, serviceCity, version, assortments, publishedAt, createdAt, updatedAt]
+      required: [id, name, serviceCity, primaryVerticalId, version, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -764,13 +1093,12 @@ components:
           type: string
         serviceCity:
           $ref: "#/components/schemas/ServiceCity"
+        primaryVerticalId:
+          type: string
+          nullable: true
         version:
           type: integer
           minimum: 1
-        assortments:
-          type: array
-          items:
-            $ref: "#/components/schemas/StoreAssortment"
         publishedAt:
           type: string
           format: date-time
@@ -924,6 +1252,290 @@ components:
           $ref: "#/components/schemas/ServiceabilityStatus"
         evidence:
           $ref: "#/components/schemas/ServiceabilityEvidence"
+
+    CartState:
+      type: string
+      enum: [open, checked_out]
+
+    CartLine:
+      type: object
+      required: [id, cartId, storeOfferId, variantId, productId, productName, variantTitle, sellUnit, pricingBasis, quantityBaseUnits, selectedModifierOptionIds, unitPriceMinor, lineAmountMinor, currency, offerVersion, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        cartId:
+          type: string
+        storeOfferId:
+          type: string
+        variantId:
+          type: string
+        productId:
+          type: string
+        productName:
+          type: string
+        variantTitle:
+          type: string
+        sellUnit:
+          $ref: "#/components/schemas/SellUnit"
+        pricingBasis:
+          type: string
+          enum: [PER_UNIT, PER_KILOGRAM]
+        quantityBaseUnits:
+          type: integer
+          minimum: 1
+        selectedModifierOptionIds:
+          type: array
+          items:
+            type: string
+        unitPriceMinor:
+          type: integer
+          minimum: 1
+        lineAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        offerVersion:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Cart:
+      type: object
+      required: [id, storeId, state, version, lines, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        storeId:
+          type: string
+        state:
+          $ref: "#/components/schemas/CartState"
+        version:
+          type: integer
+          minimum: 1
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/CartLine"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CartResponse:
+      type: object
+      required: [cart, idempotentReplay]
+      additionalProperties: false
+      properties:
+        cart:
+          $ref: "#/components/schemas/Cart"
+        idempotentReplay:
+          type: boolean
+
+    UpsertCartLineRequest:
+      type: object
+      required: [storeId, storeOfferId, quantityBaseUnits, selectedModifierOptionIds]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeOfferId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        quantityBaseUnits:
+          type: integer
+          minimum: 1
+        selectedModifierOptionIds:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+
+    UpdateCartLineRequest:
+      type: object
+      required: [quantityBaseUnits, selectedModifierOptionIds]
+      additionalProperties: false
+      properties:
+        quantityBaseUnits:
+          type: integer
+          minimum: 1
+        selectedModifierOptionIds:
+          type: array
+          items:
+            type: string
+            maxLength: 128
+
+    CheckoutRequest:
+      type: object
+      required: [cartId, storeId, addressId]
+      additionalProperties: false
+      properties:
+        cartId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        addressId:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    OrderState:
+      type: string
+      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, REJECTED]
+
+    OrderLine:
+      type: object
+      required: [id, orderId, storeOfferId, variantId, productId, productName, variantTitle, sellUnit, pricingBasis, requestedQuantityBaseUnits, unitPriceMinor, lineAmountMinor, currency, selectedModifierOptionIds, createdAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        storeOfferId:
+          type: string
+        variantId:
+          type: string
+        productId:
+          type: string
+        productName:
+          type: string
+        variantTitle:
+          type: string
+        sellUnit:
+          $ref: "#/components/schemas/SellUnit"
+        pricingBasis:
+          type: string
+          enum: [PER_UNIT, PER_KILOGRAM]
+        requestedQuantityBaseUnits:
+          type: integer
+          minimum: 1
+        unitPriceMinor:
+          type: integer
+          minimum: 1
+        lineAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        selectedModifierOptionIds:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    Order:
+      type: object
+      required: [id, clientActorId, storeId, cartId, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, totalAmountMinor, currency, version, lines, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        clientActorId:
+          type: string
+        storeId:
+          type: string
+        cartId:
+          type: string
+        addressId:
+          type: string
+        addressVersion:
+          type: integer
+          minimum: 1
+        addressText:
+          type: string
+        addressLatitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        addressLongitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        serviceCityId:
+          type: string
+        serviceabilityPolicyVersion:
+          type: string
+          const: CITY_SCOPE_V1
+        serviceabilityStatus:
+          type: string
+          const: SERVICEABLE
+        serviceabilityStoreVersion:
+          type: integer
+          minimum: 1
+        serviceabilityAddressVersion:
+          type: integer
+          minimum: 1
+        state:
+          $ref: "#/components/schemas/OrderState"
+        totalAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        version:
+          type: integer
+          minimum: 1
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLine"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OrderResponse:
+      type: object
+      required: [order, idempotentReplay]
+      additionalProperties: false
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        idempotentReplay:
+          type: boolean
+
+    OrderListResponse:
+      type: object
+      required: [orders]
+      additionalProperties: false
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+
+    OrderTransitionRequest:
+      type: object
+      required: [state]
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum: [PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, REJECTED]
 
     ErrorResponse:
       type: object
