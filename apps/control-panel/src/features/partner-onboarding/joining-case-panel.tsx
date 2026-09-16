@@ -1,17 +1,11 @@
 "use client";
 
-import type { JoiningCaseListResponse, JoiningCaseResponse, JoiningCaseState, PublicationState, ServiceCity, StorePublicationResponse } from "@bthwani/dsh";
+import { joiningCaseStateLabel, publicationStateLabel, type JoiningCaseListResponse, type JoiningCaseResponse, type ServiceCity, type StorePublicationResponse } from "@bthwani/dsh";
 import { toAsciiDigits } from "@bthwani/design-system";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
-
-const joiningStateLabels: Record<JoiningCaseState, string> = { draft: "مسودة", submitted: "مرسلة للمراجعة", needs_correction: "بحاجة إلى تصحيح", approved: "معتمدة" };
-const publicationStateLabels: Record<PublicationState, string> = { unpublished: "غير منشور", published: "منشور", hidden: "مخفي" };
-
-function joiningStateLabel(state: JoiningCaseState): string { return joiningStateLabels[state]; }
-function publicationStateLabel(state: PublicationState): string { return publicationStateLabels[state]; }
 
 export function JoiningCasePanel() {
   const [phone, setPhone] = useState("");
@@ -225,7 +219,7 @@ export function JoiningCasePanel() {
           {queueBusy ? <p>جارٍ تحميل الطابور…</p> : null}
           {queueError ? <p role="alert">{queueError} <button type="button" className="button button-secondary" onClick={() => void loadQueue()}>إعادة المحاولة</button></p> : null}
           {!queueBusy && !queueError && queue.length === 0 ? <p>لا توجد حالات انضمام حاليًا.</p> : null}
-          {queue.length ? <ul>{queue.map((item) => <li key={item.id}><button type="button" className="button button-secondary" disabled={busy} onClick={() => void openCase(item.id)}>{joiningStateLabel(item.state)} · {item.businessName}</button></li>)}</ul> : null}
+          {queue.length ? <ul>{queue.map((item) => <li key={item.id}><button type="button" className="button button-secondary" disabled={busy} onClick={() => void openCase(item.id)}>{joiningCaseStateLabel(item.state)} · {item.businessName}</button></li>)}</ul> : null}
         </div>
         <div className="access-form">
           <label className="field-label" htmlFor="joining-phone">رقم هاتف الشريك (E.164)<input id="joining-phone" autoComplete="tel" disabled={busy} inputMode="tel" value={phone} onChange={(event) => { setPhone(toAsciiDigits(event.target.value)); clearResult(); }} placeholder="مثال: +96777000100" /></label>
@@ -237,14 +231,14 @@ export function JoiningCasePanel() {
         </>
       ) : (
         <div className="managed-status managed-status-info" role="status">
-          <strong>الحالة: {joiningStateLabel(current.state)}</strong>
+          <strong>الحالة: {joiningCaseStateLabel(current.state)}</strong>
           <p>{current.businessName} · {current.firstStoreName}</p>
-          <p>مدينة المتجر الأول: {cities.find((city) => city.id === current.serviceCityId)?.displayNameAr || current.serviceCityId}</p>
+          <p>مدينة المتجر الأول: {cities.find((city) => city.id === current.serviceCityId)?.displayNameAr || "مدينة غير معرّفة"}</p>
           {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
           {current.state === "draft" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
           {current.state === "submitted" ? (
             <>
-              <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
+              <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
               <button type="button" className="button button-primary" disabled={busy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر</button>
               <button type="button" className="button button-secondary" disabled={busy} onClick={() => void reviewCase("needs_correction")}>إعادة للتصحيح</button>
             </>

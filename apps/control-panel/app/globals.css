@@ -43,6 +43,9 @@ button:disabled { cursor: not-allowed; }
 .field-label input::placeholder { color: var(--text-muted); opacity: 0.65; }
 .field-label input:focus { border-color: var(--focus-ring); box-shadow: 0 0 0 4px var(--action-soft); }
 .field-label input:disabled { background: var(--disabled-bg); color: var(--disabled-text); }
+.field-label textarea { width: 100%; min-height: 120px; resize: none; border: 1px solid var(--border-strong); border-radius: 15px; outline: none; background: var(--surface); color: var(--text); font: inherit; padding: 14px 16px; text-align: right; }
+.field-label textarea:focus { border-color: var(--focus-ring); box-shadow: 0 0 0 4px var(--action-soft); }
+.field-label textarea:disabled { background: var(--disabled-bg); color: var(--disabled-text); }
 .password-field { position: relative; }
 .password-field input { padding-inline-start: 74px; }
 .password-toggle { position: absolute; top: 50%; inset-inline-start: 10px; min-height: 36px; padding: 0 9px; transform: translateY(-50%); border: 0; border-radius: 9px; background: var(--brand-structure-soft); color: var(--color-primary); font-size: 12px; font-weight: 800; }

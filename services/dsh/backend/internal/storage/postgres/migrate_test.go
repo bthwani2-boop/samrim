@@ -21,6 +21,24 @@ const (
 	testOperatorActorID = "act_operator_catalog_v1"
 )
 
+func assertRequiredMigrationOrder(t *testing.T, records []postgres.MigrationRecord, required ...string) {
+	t.Helper()
+	lastIndex := -1
+	for _, name := range required {
+		foundIndex := -1
+		for index, record := range records {
+			if record.Name == name {
+				foundIndex = index
+				break
+			}
+		}
+		if foundIndex <= lastIndex {
+			t.Fatalf("required DSH migration is missing or out of order: %s", name)
+		}
+		lastIndex = foundIndex
+	}
+}
+
 func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if databaseURL == "" {
@@ -41,9 +59,11 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion {
 			t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d", len(records), len(migrationSQL))
 		}
-		if records[len(records)-1].Name != "018_remove_unjustified_captain_terminated_state.sql" {
-			t.Fatalf("captain dispatch is not the canonical final migration: %s", records[len(records)-1].Name)
-		}
+		assertRequiredMigrationOrder(t, records,
+			"018_remove_unjustified_captain_terminated_state.sql",
+			"019_captain_delivery_recovery.sql",
+			"020_field_standing_admission_and_joining_scope.sql",
+		)
 		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
 			t.Fatalf("apply fresh DSH migrations: %v", err)
 		}

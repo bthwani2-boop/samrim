@@ -88,8 +88,9 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
   });
   await page.goto("/access");
   await page.getByLabel("رقم الهاتف للبحث").fill("+96777000102");
-  await expect(page.getByText("actorId: act_partner_canonical")).toBeVisible();
-  await expect(page.getByText(/partner · active · act_partner_canonical/)).toBeVisible();
+  await expect(page.getByText("الحالة: نشط")).toBeVisible();
+  await expect(page.getByText("الشريك · نشط")).toBeVisible();
+  await expect(page.getByText("act_partner_canonical")).toHaveCount(0);
   await page.getByLabel("سبب التغيير").fill("مراجعة صلاحية الحساب");
   await page.getByRole("button", { name: "إيقاف الدور" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_partner_canonical", role: "partner", action: "disable-role", expectedVersion: 3 });
@@ -125,13 +126,34 @@ test("field access exposes DSH-owned eligibility and role controls", async ({ pa
   await page.goto("/access");
   await page.getByLabel("الدور الإداري").selectOption("field");
   await page.getByLabel("رقم الهاتف للبحث").fill("+96777000103");
-  await expect(page.getByText("الأهلية التشغيلية: eligible")).toBeVisible();
+  await expect(page.getByText("الأهلية التشغيلية: مؤهل للتشغيل")).toBeVisible();
   await expect(page.getByRole("button", { name: "إصدار دعوة إعادة تسجيل الدور" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "إيقاف الدور" })).toBeVisible();
   await expect(page.getByRole("button", { name: "إيقاف الهوية بالكامل" })).toBeVisible();
   await page.getByLabel("سبب التغيير").fill("تجميد أهلية الميدان");
   await page.getByRole("button", { name: "إيقاف الدور" }).click();
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", role: "field", action: "disable-role", expectedVersion: 2 });
+});
+
+test("operator captain operations present Arabic state without backend identifiers", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/captains", async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        operation: "admit",
+        idempotentReplay: false,
+        admission: { id: "cap_adm_test", actorId: "act_captain_test", state: "eligible", availabilityState: "unavailable", version: 4 },
+      }),
+    });
+  });
+  await page.goto("/captains");
+  await page.getByLabel("هاتف الكابتن المراد قبوله").fill("+96777000105");
+  await page.getByRole("button", { name: "قبول الكابتن" }).click();
+  await expect(page.getByText("حالة القبول: مؤهل للتشغيل · التوفر: غير متاح حاليًا")).toBeVisible();
+  await expect(page.getByText("act_captain_test")).toHaveCount(0);
+  await expect(page.getByText(/الإصدار/)).toHaveCount(0);
 });
 
 test("operator admits a Field actor through the DSH-owned Field surface", async ({ page }) => {
@@ -148,8 +170,8 @@ test("operator admits a Field actor through the DSH-owned Field surface", async 
   await page.goto("/fields");
   await expect(page.getByRole("heading", { name: "قبول ممثل ميداني" })).toBeVisible();
   await page.getByLabel("هاتف الممثل الميداني").fill("+96777000104");
-  await page.getByRole("button", { name: "قبول Field" }).click();
-  await expect(page.getByText(/تمت قراءة admission الكانونية: fld_adm_test/)).toBeVisible();
+  await page.getByRole("button", { name: "قبول الميدان" }).click();
+  await expect(page.getByText(/تمت قراءة حالة القبول: مؤهل لإنشاء الملفات/)).toBeVisible();
   expect(requestBody).toEqual({ contactPhoneE164: "+96777000104" });
 });
 
