@@ -32,7 +32,7 @@ const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
 if (dshToken.length < 24 || bootstrapToken.length < 24 || challengeSecret.length < 32) fail("canonical internal secrets are too weak");
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
-const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set();
+const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set();
 const cityA = `city-a-${suffix}`;
 const cityB = `city-b-${suffix}`;
 const verticalID = `grocery-${suffix}`;
@@ -58,6 +58,26 @@ function cleanup() {
     sql(`DELETE FROM dsh.catalog_import_mutation_idempotency WHERE run_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_import_run_items WHERE run_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_import_runs WHERE id='${value}'`);
+  }
+  for (const assignmentID of captainAssignmentIDs) {
+    const value = sqlLiteral(assignmentID);
+    sql(`DELETE FROM dsh.captain_audit WHERE assignment_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_operation_idempotency WHERE assignment_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_handoffs WHERE assignment_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_assignments WHERE id='${value}'`);
+  }
+  for (const offerID of captainOfferIDs) {
+    const value = sqlLiteral(offerID);
+    sql(`DELETE FROM dsh.captain_audit WHERE offer_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_operation_idempotency WHERE offer_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_dispatch_offers WHERE id='${value}'`);
+  }
+  for (const admissionID of captainAdmissionIDs) {
+    const value = sqlLiteral(admissionID);
+    sql(`DELETE FROM dsh.captain_admission_audit WHERE admission_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_admission_idempotency WHERE admission_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_operation_idempotency WHERE admission_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_admissions WHERE id='${value}'`);
   }
   for (const orderID of orderIDs) {
     const value = sqlLiteral(orderID);
@@ -184,6 +204,13 @@ async function activatePartner(phone, password) {
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "partner") fail("Partner activation failed", JSON.stringify(activation));
   return String(activation.body.accessToken);
 }
+async function activateCaptain(phone, password) {
+  const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "captain" } });
+  if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Captain activation challenge failed", JSON.stringify(challenge));
+  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "captain", verificationCode: hmacChallengeCode(challenge.body.challengeId, "managed_activate"), password, clientInstanceId: `dsh-captain-${suffix}` } });
+  if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "captain" || activation.body?.identity?.surface !== "app-captain") fail("Captain activation failed", JSON.stringify(activation));
+  return String(activation.body.accessToken);
+}
 async function createClientSession(phone) {
   const challenge = await request(identityBase, "POST", "/auth/client/registration/request", { body: { phone } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Client registration challenge failed", JSON.stringify(challenge));
@@ -204,21 +231,25 @@ if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is inva
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "14", "DSH migration history is not v14");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "16", "DSH migration history is not v16");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=13", "013_catalog_variant_mutations.sql", "DSH catalog mutation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=14", "014_catalog_proposal_import_closure.sql", "DSH proposal/import closure migration is not canonical");
+expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=15", "015_captain_dispatch_and_identity_boundary.sql", "DSH Captain migration is not canonical");
+expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=16", "016_captain_phone_constraint_correction.sql", "DSH Captain phone correction migration is not canonical");
 for (const table of ["commerce_carts", "commerce_cart_lines", "commerce_cart_mutation_idempotency", "commerce_cart_audit", "commerce_orders", "commerce_order_lines", "commerce_order_checkout_idempotency", "commerce_order_transition_idempotency", "commerce_order_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required commerce relation is missing: ${table}`);
 for (const table of ["central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NULL`, "t", `retired catalog relation remains: ${table}`);
 for (const table of ["catalog_attribute_enum_options", "catalog_category_attribute_rules", "catalog_variant_attribute_values", "catalog_storefront_sections", "catalog_modifier_groups", "catalog_modifier_options", "catalog_variant_mutation_idempotency", "catalog_variant_audit", "catalog_attribute_mutation_idempotency", "commerce_order_line_modifier_snapshots", "commerce_order_line_attribute_snapshots"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v12/v13 relation is missing: ${table}`);
 for (const table of ["catalog_import_mutation_idempotency", "catalog_import_run_items", "catalog_import_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v14 relation is missing: ${table}`);
-console.log("DSH_SCHEMA_V14=PASS");
+for (const table of ["captain_admissions", "captain_admission_idempotency", "captain_admission_audit", "captain_dispatch_offers", "captain_assignments", "captain_handoffs", "captain_operation_idempotency", "captain_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v16 relation is missing: ${table}`);
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_phone_chk'", "CHECK (((contact_phone_e164 IS NULL) OR (contact_phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'::text)))", "Captain phone constraint is not canonical");
+console.log("DSH_SCHEMA_V16=PASS");
 
-for (const role of ["captain", "field"]) {
+for (const role of ["field"]) {
   const response = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: identityDshToken, headers: { "X-Acting-Actor-ID": actingOperatorID, "X-Correlation-ID": crypto.randomUUID() }, body: { phoneE164: "+9677" + crypto.randomInt(10_000_000, 99_999_999), role } });
-  if (response.status !== 403) fail("DSH admitted a non-partner managed role", JSON.stringify({ role, response }));
+  if (response.status !== 403) fail("DSH admitted a closed managed role", JSON.stringify({ role, response }));
 }
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { id: cityA, displayNameAr: `مدينة أ ${suffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { id: cityB, displayNameAr: `مدينة ب ${suffix}`, active: true } });
@@ -534,6 +565,72 @@ const finalOrder = await request(dshBase, "GET", `/dsh/orders/${encodeURICompone
 if (invalidTransition.status !== 409 || finalOrder.status !== 200 || finalOrder.body?.order?.state !== "READY_FOR_DISPATCH" || finalOrder.body.order.version !== 4 || finalOrder.body.order.lines?.[0]?.lineAmountMinor !== 4200) fail("Order final readback or invalid transition guard failed", JSON.stringify({ invalidTransition, finalOrder }));
 console.log("DSH_CART_CHECKOUT=PASS");
 console.log("DSH_ORDER_READY_FOR_DISPATCH=PASS");
+
+const captainPhone = "+96779" + crypto.randomInt(1_000_000, 9_999_999);
+const captainAdmissionResponse = await request(dshBase, "POST", "/dsh/captains/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-admit-${suffix}`), body: { contactPhoneE164: captainPhone } });
+if (captainAdmissionResponse.status !== 201 || captainAdmissionResponse.body?.admission?.state !== "eligible" || !captainAdmissionResponse.body.admission.actorId) fail("Captain admission did not bind an eligible Identity actor", JSON.stringify(captainAdmissionResponse));
+const captainAdmissionID = String(captainAdmissionResponse.body.admission.id);
+const captainActorID = String(captainAdmissionResponse.body.admission.actorId);
+captainAdmissionIDs.add(captainAdmissionID); actorIDs.add(captainActorID);
+const captainAccessToken = await activateCaptain(captainPhone, `Capt${suffix.slice(0, 4)}`);
+const captainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
+const captainAvailability = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: captainAccessToken, headers: partnerHeaders(`captain-availability-${suffix}`, captainSelf.body?.admission?.version), body: { available: true } });
+const partnerCaptainOffers = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: first.accessToken });
+if (captainSelf.status !== 200 || captainSelf.body?.admission?.actorId !== captainActorID || captainAvailability.status !== 200 || captainAvailability.body?.admission?.availabilityState !== "available" || partnerCaptainOffers.status !== 403) fail("Captain session or cross-role Captain read boundary failed", JSON.stringify({ captainSelf, captainAvailability, partnerCaptainOffers }));
+const firstDispatchKey = `captain-dispatch-first-${suffix}`;
+const firstDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, firstDispatchKey) });
+if (firstDispatch.status !== 201 || firstDispatch.body?.offer?.state !== "offered" || firstDispatch.body.offer.captainActorId !== captainActorID) fail("Captain dispatch did not create an addressed offer", JSON.stringify(firstDispatch));
+const firstCaptainOfferID = String(firstDispatch.body.offer.id); captainOfferIDs.add(firstCaptainOfferID);
+const firstDispatchReplay = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, firstDispatchKey) });
+const captainOffersAfterDispatch = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: captainAccessToken });
+if (firstDispatchReplay.status !== 200 || firstDispatchReplay.body?.idempotentReplay !== true || firstDispatchReplay.body.offer.id !== firstCaptainOfferID || captainOffersAfterDispatch.status !== 200 || !captainOffersAfterDispatch.body?.offers?.some((offer) => offer.id === firstCaptainOfferID && offer.state === "offered")) fail("Captain dispatch idempotent readback failed", JSON.stringify({ firstDispatchReplay, captainOffersAfterDispatch }));
+const rejectKey = `captain-reject-${suffix}`;
+const rejectedOffer = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(firstCaptainOfferID)}/respond`, { token: captainAccessToken, headers: partnerHeaders(rejectKey, 1), body: { decision: "reject" } });
+const rejectedReplay = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(firstCaptainOfferID)}/respond`, { token: captainAccessToken, headers: partnerHeaders(rejectKey, 1), body: { decision: "reject" } });
+if (rejectedOffer.status !== 200 || rejectedOffer.body?.offer?.state !== "rejected" || rejectedReplay.status !== 200 || rejectedReplay.body?.idempotentReplay !== true || rejectedReplay.body.offer.state !== "rejected") fail("Captain offer rejection or replay failed", JSON.stringify({ rejectedOffer, rejectedReplay }));
+const secondDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-dispatch-second-${suffix}`) });
+if (secondDispatch.status !== 201 || secondDispatch.body?.offer?.state !== "offered" || secondDispatch.body.offer.captainActorId !== captainActorID) fail("Captain redispatch after rejection failed", JSON.stringify(secondDispatch));
+const secondCaptainOfferID = String(secondDispatch.body.offer.id); captainOfferIDs.add(secondCaptainOfferID);
+const acceptedCaptainOffer = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(secondCaptainOfferID)}/respond`, { token: captainAccessToken, headers: partnerHeaders(`captain-accept-${suffix}`, 1), body: { decision: "accept" } });
+if (acceptedCaptainOffer.status !== 200 || acceptedCaptainOffer.body?.offer?.state !== "accepted" || acceptedCaptainOffer.body?.assignment?.state !== "assigned") fail("Captain offer acceptance did not create one assignment", JSON.stringify(acceptedCaptainOffer));
+const captainAssignmentID = String(acceptedCaptainOffer.body.assignment.id); captainAssignmentIDs.add(captainAssignmentID);
+const pickupBeforeHandoff = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/pickup`, { token: captainAccessToken, headers: partnerHeaders(`captain-pickup-before-store-${suffix}`, 1) });
+const storeAssignment = await request(dshBase, "GET", `/dsh/stores/${encodeURIComponent(first.storeID)}/orders/${encodeURIComponent(orderID)}/captain-assignment`, { token: first.accessToken });
+if (pickupBeforeHandoff.status !== 409 || storeAssignment.status !== 200 || storeAssignment.body?.assignment?.id !== captainAssignmentID || storeAssignment.body.assignment.handoff.state !== "pending") fail("Store handoff boundary did not fail closed", JSON.stringify({ pickupBeforeHandoff, storeAssignment }));
+const confirmedHandoff = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/orders/${encodeURIComponent(orderID)}/handoff`, { token: first.accessToken, headers: partnerHeaders(`captain-handoff-${suffix}`, 1), body: { assignmentId: captainAssignmentID } });
+if (confirmedHandoff.status !== 200 || confirmedHandoff.body?.assignment?.handoff?.state !== "store_confirmed") fail("Store Captain handoff confirmation failed", JSON.stringify(confirmedHandoff));
+const confirmedHandoffReplay = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/orders/${encodeURIComponent(orderID)}/handoff`, { token: first.accessToken, headers: partnerHeaders(`captain-handoff-${suffix}`, 1), body: { assignmentId: captainAssignmentID } });
+if (confirmedHandoffReplay.status !== 200 || confirmedHandoffReplay.body?.idempotentReplay !== true || confirmedHandoffReplay.body.assignment.handoff.state !== "store_confirmed") fail("Store Captain handoff replay failed", JSON.stringify(confirmedHandoffReplay));
+const pickedUp = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/pickup`, { token: captainAccessToken, headers: partnerHeaders(`captain-pickup-${suffix}`, 2) });
+const completed = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-${suffix}`, 2), body: { result: "delivered" } });
+const deliveredOrder = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}`, { token: client.accessToken });
+const captainAfterDelivery = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
+if (pickedUp.status !== 200 || pickedUp.body?.assignment?.state !== "in_custody" || completed.status !== 200 || completed.body?.assignment?.state !== "delivered" || deliveredOrder.status !== 200 || deliveredOrder.body?.order?.state !== "DELIVERED" || captainAfterDelivery.status !== 200 || captainAfterDelivery.body?.admission?.availabilityState !== "available") fail("Captain custody and terminal delivery journey failed", JSON.stringify({ pickedUp, completed, deliveredOrder, captainAfterDelivery }));
+const captainAuditCount = sql(`SELECT count(*) FROM dsh.captain_audit WHERE order_id='${sqlLiteral(orderID)}'`);
+const captainOperationCount = sql(`SELECT count(*) FROM dsh.captain_operation_idempotency WHERE order_id='${sqlLiteral(orderID)}'`);
+if (captainAuditCount !== "7" || captainOperationCount !== "7") fail("Captain audit/idempotency readback is incomplete", JSON.stringify({ captainAuditCount, captainOperationCount }));
+console.log("DSH_CAPTAIN_DISPATCH_HANDOFF_DELIVERY=PASS");
+
+const expiryCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`captain-expiry-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [modifierOptionID] } });
+if (expiryCartCreate.status !== 201 || !expiryCartCreate.body?.cart?.id) fail("Captain expiry order cart fixture failed", JSON.stringify(expiryCartCreate));
+const expiryCartID = String(expiryCartCreate.body.cart.id); cartIDs.add(expiryCartID);
+const expiryCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`captain-expiry-checkout-${suffix}`, 1), body: { cartId: expiryCartID, storeId: first.storeID, addressId: addressAID } });
+if (expiryCheckout.status !== 201 || !expiryCheckout.body?.order?.id) fail("Captain expiry order checkout fixture failed", JSON.stringify(expiryCheckout));
+const expiryOrderID = String(expiryCheckout.body.order.id); orderIDs.add(expiryOrderID);
+for (const [next, expectedVersion] of [["PARTNER_ACCEPTED", 1], ["PREPARING", 2], ["READY_FOR_DISPATCH", 3]]) {
+  const transition = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/orders/${encodeURIComponent(expiryOrderID)}/transition`, { token: first.accessToken, headers: partnerHeaders(`captain-expiry-transition-${next}-${suffix}`, expectedVersion), body: { state: next } });
+  if (transition.status !== 200 || transition.body?.order?.state !== next) fail("Captain expiry order did not reach READY_FOR_DISPATCH", JSON.stringify({ next, transition }));
+}
+const expiryDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(expiryOrderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-expiry-dispatch-${suffix}`) });
+if (expiryDispatch.status !== 201 || expiryDispatch.body?.offer?.state !== "offered") fail("Captain expiry offer fixture failed", JSON.stringify(expiryDispatch));
+const expiryOfferID = String(expiryDispatch.body.offer.id); captainOfferIDs.add(expiryOfferID);
+sql(`UPDATE dsh.captain_dispatch_offers SET expires_at=clock_timestamp()-interval '1 second' WHERE id='${sqlLiteral(expiryOfferID)}'`);
+const expiredOffer = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(expiryOfferID)}/respond`, { token: captainAccessToken, headers: partnerHeaders(`captain-expiry-respond-${suffix}`, 1), body: { decision: "accept" } });
+const expiredOfferReplay = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(expiryOfferID)}/respond`, { token: captainAccessToken, headers: partnerHeaders(`captain-expiry-respond-${suffix}`, 1), body: { decision: "accept" } });
+const expiredOfferRead = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: captainAccessToken });
+if (expiredOffer.status !== 409 || expiredOfferReplay.status !== 409 || expiredOfferRead.status !== 200 || !expiredOfferRead.body?.offers?.some((offer) => offer.id === expiryOfferID && offer.state === "expired") || sql(`SELECT count(*) FROM dsh.captain_operation_idempotency WHERE idempotency_key='captain-expiry-respond-${suffix}'`) !== "1") fail("Captain offer expiry was not durable and idempotent", JSON.stringify({ expiredOffer, expiredOfferReplay, expiredOfferRead }));
+console.log("DSH_CAPTAIN_OFFER_REJECT_EXPIRY=PASS");
+
 const hiddenA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-hide-${suffix}`, crypto.randomUUID(), 2), body: { state: "hidden" } });
 if (hiddenA.status !== 200) fail("Store hide failed", JSON.stringify(hiddenA));
 const afterHideA = await request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(cityA)}`);

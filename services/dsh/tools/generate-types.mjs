@@ -10,6 +10,7 @@ const pathModulePaths = [
   path.join(root, "services/dsh/contracts/openapi/paths/joining-cases.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/catalog.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/commerce.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/captain.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/store-publication.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/location-core.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/service-city.yaml"),

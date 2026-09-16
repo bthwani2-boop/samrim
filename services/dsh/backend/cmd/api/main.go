@@ -74,6 +74,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	captainServer, err := transporthttp.NewCaptain(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	register := func(mux *http.ServeMux) {
 		joiningCaseServer.Register(mux)
 		catalogServer.Register(mux)
@@ -83,6 +87,7 @@ func main() {
 		serviceabilityServer.Register(mux)
 		cartServer.Register(mux)
 		orderServer.Register(mux)
+		captainServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
 		if err := postgres.VerifySchema(ctx, database, records); err != nil {

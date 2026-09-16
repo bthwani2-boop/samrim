@@ -99,6 +99,7 @@ export function AccountAccessPanel() {
   }, [phone, role]);
 
   const managedRole = role === "partner" || role === "captain" || role === "field";
+  const roleMutationClosed = role === "field";
 
   async function provision(reenroll = false) {
     setBusy(true);
@@ -170,7 +171,7 @@ export function AccountAccessPanel() {
   }
 
   const canIssueActivation = role === "operator" && status !== null && !status.activated;
-  const canIssueReenrollment = (role === "partner" || role === "captain" || role === "field") && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
+  const canIssueReenrollment = (role === "partner" || role === "captain") && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
   const activationBlocked = status?.exists === true && status.enabled === false;
   const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true);
 
@@ -213,7 +214,7 @@ export function AccountAccessPanel() {
               {status.activated && managedRole ? (
                 <div className="managed-status managed-status-warning" role="alert">
                   <strong>تم تفعيل هذا الدور من قبل.</strong>
-                  <p>{canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
+                  <p>{roleMutationClosed ? "إدارة دور الميداني مغلقة حتى يثبت مسار مجال canonical مملوك لـDSH." : canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
                   {canIssueReenrollment ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ إصدار دعوة إعادة التسجيل…" : "إصدار دعوة إعادة تسجيل الدور"}</button> : null}
                 </div>
               ) : null}
@@ -222,7 +223,7 @@ export function AccountAccessPanel() {
                 <input id="access-reason" maxLength={500} placeholder="مثال: انتهاء التعاقد أو استرداد الجهاز" value={reason} onChange={(event) => setReason(event.target.value)} />
               </label>
               <div className="managed-status-actions">
-                {status.enabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-role")}>إيقاف الدور</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-role")}>إعادة تفعيل الدور</button>}
+                {!roleMutationClosed ? status.enabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-role")}>إيقاف الدور</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-role")}>إعادة تفعيل الدور</button> : null}
                 {status.securityEnabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-identity")}>إيقاف الهوية بالكامل</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-identity")}>إعادة تفعيل الهوية</button>}
               </div>
             </>

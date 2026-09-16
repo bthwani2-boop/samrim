@@ -183,6 +183,51 @@ paths:
   /dsh/stores/{storeId}/orders/{orderId}/transition:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1transition"
 
+  /dsh/captains/admissions:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions"
+
+  /dsh/captains/admissions/{admissionId}:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}"
+
+  /dsh/captains/me:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me"
+
+  /dsh/captains/me/availability:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1availability"
+
+  /dsh/captains/me/offers:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1offers"
+
+  /dsh/captains/me/offers/{offerId}/respond:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1offers~1{offerId}~1respond"
+
+  /dsh/captains/me/assignments:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments"
+
+  /dsh/captains/me/assignments/{assignmentId}/pickup:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1pickup"
+
+  /dsh/captains/me/assignments/{assignmentId}/complete:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1complete"
+
+  /dsh/orders/{orderId}/dispatch:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1orders~1{orderId}~1dispatch"
+
+  /dsh/orders/{orderId}/reassign:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1orders~1{orderId}~1reassign"
+
+  /dsh/stores/{storeId}/orders/{orderId}/handoff:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1handoff"
+
+  /dsh/stores/{storeId}/orders/{orderId}/captain-assignment:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1captain-assignment"
+
+  /dsh/partners/{actorId}/identity-role:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1{actorId}~1identity-role"
+
+  /dsh/captains/{actorId}/identity-role:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1identity-role"
+
 components:
   securitySchemes:
     serviceBearer:
@@ -2429,9 +2474,236 @@ components:
           minLength: 1
           maxLength: 128
 
+    CaptainAdmissionRequest:
+      type: object
+      required: [contactPhoneE164]
+      additionalProperties: false
+      properties:
+        contactPhoneE164:
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+
+    CaptainAdmission:
+      type: object
+      required: [id, state, availabilityState, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        actorId:
+          type: string
+          nullable: true
+        state:
+          type: string
+          enum: [pending_identity, eligible, suspended, terminated]
+        availabilityState:
+          type: string
+          enum: [available, unavailable]
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CaptainAdmissionResponse:
+      type: object
+      required: [admission, idempotentReplay]
+      additionalProperties: false
+      properties:
+        admission:
+          $ref: "#/components/schemas/CaptainAdmission"
+        idempotentReplay:
+          type: boolean
+
+    CaptainAvailabilityRequest:
+      type: object
+      required: [available]
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+
+    CaptainOffer:
+      type: object
+      required: [id, orderId, captainActorId, state, expiresAt, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        captainActorId:
+          type: string
+        state:
+          type: string
+          enum: [offered, accepted, rejected, expired, superseded]
+        expiresAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CaptainOfferListResponse:
+      type: object
+      required: [offers]
+      additionalProperties: false
+      properties:
+        offers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptainOffer"
+
+    CaptainOfferDecisionRequest:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [accept, reject]
+
+    CaptainHandoff:
+      type: object
+      required: [assignmentId, orderId, storeId, state, version]
+      additionalProperties: false
+      properties:
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        storeId:
+          type: string
+        state:
+          type: string
+          enum: [pending, store_confirmed, completed, superseded]
+        version:
+          type: integer
+          minimum: 1
+        storeConfirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        captainPickedUpAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CaptainAssignment:
+      type: object
+      required: [id, orderId, captainActorId, acceptedOfferId, state, version, handoff, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        captainActorId:
+          type: string
+        acceptedOfferId:
+          type: string
+        state:
+          type: string
+          enum: [assigned, in_custody, delivered, delivery_failed, reassigned]
+        version:
+          type: integer
+          minimum: 1
+        custodyStartedAt:
+          type: string
+          format: date-time
+          nullable: true
+        terminalResult:
+          type: string
+          nullable: true
+        terminalAt:
+          type: string
+          format: date-time
+          nullable: true
+        handoff:
+          $ref: "#/components/schemas/CaptainHandoff"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CaptainAssignmentResponse:
+      type: object
+      required: [assignment, idempotentReplay]
+      additionalProperties: false
+      properties:
+        assignment:
+          $ref: "#/components/schemas/CaptainAssignment"
+        idempotentReplay:
+          type: boolean
+
+    CaptainAssignmentListResponse:
+      type: object
+      required: [assignments]
+      additionalProperties: false
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptainAssignment"
+
+    CaptainOfferResponse:
+      type: object
+      required: [offer, idempotentReplay]
+      additionalProperties: false
+      properties:
+        offer:
+          $ref: "#/components/schemas/CaptainOffer"
+        assignment:
+          $ref: "#/components/schemas/CaptainAssignment"
+          nullable: true
+        idempotentReplay:
+          type: boolean
+
+    CaptainHandoffRequest:
+      type: object
+      required: [assignmentId]
+      additionalProperties: false
+      properties:
+        assignmentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    CaptainCompletionRequest:
+      type: object
+      required: [result]
+      additionalProperties: false
+      properties:
+        result:
+          type: string
+          enum: [delivered, delivery_failed]
+
+    ManagedRoleMutationRequest:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 500
+
     OrderState:
       type: string
-      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, REJECTED]
+      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, CAPTAIN_ASSIGNED, IN_CUSTODY, DELIVERED, DELIVERY_FAILED, REJECTED]
 
     OrderLineModifierSnapshot:
       type: object

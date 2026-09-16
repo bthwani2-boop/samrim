@@ -34,6 +34,7 @@ function WorkspaceNavigation({ pathname }: Readonly<{ pathname: string }>) {
       <Link className="workspace-nav-link" href="/access" aria-current={pathname === "/access" ? "page" : undefined}>الحسابات والأدوار</Link>
       <p className="workspace-nav-label workspace-nav-label-spaced">التشغيل</p>
       <Link className="workspace-nav-link" href="/partners" aria-current={pathname === "/partners" ? "page" : undefined}>تهيئة الشركاء</Link>
+      <Link className="workspace-nav-link" href="/captains" aria-current={pathname === "/captains" ? "page" : undefined}>عمليات الكابتن</Link>
       <Link className="workspace-nav-link" href="/catalog" aria-current={pathname === "/catalog" ? "page" : undefined}>المنتجات المركزية</Link>
     </nav>
   );

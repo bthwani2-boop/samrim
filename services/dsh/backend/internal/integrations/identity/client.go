@@ -70,10 +70,18 @@ func (c *Client) ProvisionPartnerWithContext(ctx context.Context, input ActorInp
 	return c.inner.ProvisionRoleWithContext(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: "partner"}, correlationID, operatorActorID)
 }
 
+func (c *Client) ProvisionCaptainWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
+	return c.inner.ProvisionRoleWithContext(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: "captain"}, correlationID, operatorActorID)
+}
+
 func (c *Client) ReadActorRole(ctx context.Context, actorID, role string) (identityclient.ActorRoleView, error) {
 	return c.inner.ReadRole(ctx, actorID, role)
 }
 
 func (c *Client) ReadSession(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
 	return c.inner.ReadSession(ctx, accessToken)
+}
+
+func (c *Client) SetRoleEnabledWithContext(ctx context.Context, actorID, role string, enabled bool, correlationID, reason, operatorActorID string, expectedVersion int) error {
+	return c.inner.SetRoleEnabledWithContext(ctx, actorID, role, enabled, correlationID, reason, operatorActorID, expectedVersion)
 }

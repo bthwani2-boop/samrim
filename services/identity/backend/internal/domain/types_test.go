@@ -18,13 +18,13 @@ func TestCanonicalRoleSurfaceMapping(t *testing.T) {
 }
 
 func TestTrustedCallerProvisionBoundary(t *testing.T) {
-	allowed := [][2]string{{"dsh", "partner"}, {"control-panel", "operator"}}
+	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"control-panel", "operator"}}
 	for _, pair := range allowed {
 		if !CanProvisionRole(pair[0], pair[1]) {
 			t.Fatalf("expected %s to manage %s", pair[0], pair[1])
 		}
 	}
-	denied := [][2]string{{"dsh", "operator"}, {"dsh", "captain"}, {"dsh", "field"}, {"control-panel", "client"}, {"browser", "operator"}}
+	denied := [][2]string{{"dsh", "operator"}, {"dsh", "field"}, {"control-panel", "client"}, {"control-panel", "captain"}, {"control-panel", "field"}, {"browser", "operator"}}
 	for _, pair := range denied {
 		if CanProvisionRole(pair[0], pair[1]) {
 			t.Fatalf("unexpected permission: %s can manage %s", pair[0], pair[1])
@@ -39,7 +39,7 @@ func TestTrustedCallerProvisionBoundary(t *testing.T) {
 }
 
 func TestTrustedCallerOperationBoundaries(t *testing.T) {
-	if !CanReadRole("control-panel", "client") || !CanReadRole("dsh", "partner") || !CanReadRole("dsh", "operator") {
+	if !CanReadRole("control-panel", "client") || !CanReadRole("dsh", "partner") || !CanReadRole("dsh", "captain") || !CanReadRole("dsh", "operator") {
 		t.Fatal("expected role reads inside caller boundaries")
 	}
 	for _, pair := range [][2]string{{"browser", "operator"}} {
@@ -104,5 +104,23 @@ func TestControlPanelRoleBoundary(t *testing.T) {
 		if IsControlPanelRole(role) {
 			t.Fatalf("unexpected control-panel role %q", role)
 		}
+	}
+}
+
+func TestManagedRoleSecurityMutationBoundary(t *testing.T) {
+	if !CanSetRoleEnabled("dsh", "partner") || !CanSetRoleEnabled("dsh", "captain") {
+		t.Fatal("DSH must own managed-role security transitions")
+	}
+	if CanSetRoleEnabled("dsh", "field") || CanSetRoleEnabled("control-panel", "partner") || CanSetRoleEnabled("control-panel", "captain") || CanSetRoleEnabled("control-panel", "field") {
+		t.Fatal("managed-role security transitions must not bypass the owning DSH boundary")
+	}
+}
+
+func TestManagedRoleReenrollmentBoundary(t *testing.T) {
+	if !CanAuthorizeReenrollment("control-panel", "partner") || !CanAuthorizeReenrollment("control-panel", "captain") {
+		t.Fatal("operator must be able to request governed partner/captain reenrollment")
+	}
+	if CanAuthorizeReenrollment("control-panel", "field") {
+		t.Fatal("field reenrollment must remain closed until a canonical field admission path exists")
 	}
 }

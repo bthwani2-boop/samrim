@@ -95,6 +95,36 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
   expect(mutationBody).toMatchObject({ actorId: "act_partner_canonical", role: "partner", action: "disable-role", expectedVersion: 3 });
 });
 
+test("field access remains a read-only gate until its owning DSH domain exists", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/access/managed-user/status**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        actorId: "act_field_closed",
+        phoneE164: "+96777000103",
+        role: "field",
+        exists: true,
+        enabled: true,
+        activated: true,
+        securityEnabled: true,
+        state: "active",
+        actorVersion: 4,
+        roleVersion: 2,
+        admittedRoles: [{ actorId: "act_field_closed", role: "field", state: "active", enabled: true, activated: true, securityEnabled: true }],
+      }),
+    });
+  });
+  await page.goto("/access");
+  await page.getByLabel("الدور الإداري").selectOption("field");
+  await page.getByLabel("رقم الهاتف للبحث").fill("+96777000103");
+  await expect(page.getByText("إدارة دور الميداني مغلقة حتى يثبت مسار مجال canonical مملوك لـDSH.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إصدار دعوة إعادة تسجيل الدور" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "إيقاف الدور" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "إيقاف الهوية بالكامل" })).toBeVisible();
+});
+
 test("operator creates a DSH-owned joining case from prospective partner facts", async ({ page }) => {
   await stubAuthenticatedSession(page);
   let requestBody: unknown;

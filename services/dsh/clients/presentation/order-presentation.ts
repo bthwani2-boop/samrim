@@ -7,6 +7,10 @@ const orderStateLabels: Record<Order["state"], string> = {
   PARTNER_ACCEPTED: "قبله المتجر",
   PREPARING: "قيد التجهيز",
   READY_FOR_DISPATCH: "جاهز للتسليم",
+  CAPTAIN_ASSIGNED: "تم إسناده إلى الكابتن",
+  IN_CUSTODY: "مع الكابتن",
+  DELIVERED: "تم التسليم",
+  DELIVERY_FAILED: "تعذر التسليم",
   REJECTED: "تعذر قبول الطلب",
 };
 

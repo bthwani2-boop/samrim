@@ -19,12 +19,13 @@ export async function POST(request: Request) {
   if (body?.recover !== undefined || (body?.reenroll !== undefined && typeof body.reenroll !== "boolean")) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "recover is retired; use boolean reenroll" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   const reenroll = body?.reenroll === true;
   if (!roles.has(role)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "a supported role is required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
+  if (role === "field") return NextResponse.json({ error: { code: "MANAGED_ROLE_DOMAIN_CLOSED", message: "Field role reenrollment requires a DSH-owned Field domain admission, which is not currently defined" } }, { status: 409, headers: { "Cache-Control": "no-store" } });
 
   try {
     const mutationOptions = { operatorActorId: identity.subject, correlationId: randomUUID() };
     if (role !== "operator") {
       if (!reenroll || !actorId) return NextResponse.json({ error: { code: "DOMAIN_ADMISSION_REQUIRED", message: "managed role admission is owned by the domain workflow; this screen only addresses an admitted actor for reenrollment" } }, { status: 409, headers: { "Cache-Control": "no-store" } });
-      await authorizeIdentityRoleReenrollment(actorId, role as "partner" | "captain" | "field", mutationOptions);
+      await authorizeIdentityRoleReenrollment(actorId, role as "partner" | "captain", mutationOptions);
       return NextResponse.json({ status: "role_reenrollment_authorized", actorId, role }, { status: 200, headers: { "Cache-Control": "no-store" } });
     }
     if (reenroll || !phone) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "operator invitation requires a phone and does not use generic reenrollment" } }, { status: 400, headers: { "Cache-Control": "no-store" } });

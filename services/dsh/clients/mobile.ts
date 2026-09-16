@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { CartResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogStorefrontSectionResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, DeliveryAddressListResponse, DeliveryAddressResponse, JoiningCaseResponse, OrderListResponse, OrderResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreDeliveryOriginRequest, StoreDeliveryOriginResponse, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateCartLineRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCompletionRequest, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogStorefrontSectionResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, DeliveryAddressListResponse, DeliveryAddressResponse, JoiningCaseResponse, OrderListResponse, OrderResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreDeliveryOriginRequest, StoreDeliveryOriginResponse, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateCartLineRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -280,6 +280,55 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || !normalizedOrder || expectedVersion < 1) throw new Error("DSH_ORDER_INPUT_INVALID");
       const path = dshOperationPaths.transitionStoreOrder.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
       return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.transitionStoreOrder.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async readStoreCaptainAssignment(accessToken: string, storeID: string, orderID: string): Promise<CaptainAssignmentResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedOrder = orderID.trim();
+      if (!normalizedStore || !normalizedOrder) throw new Error("DSH_CAPTAIN_ASSIGNMENT_INPUT_INVALID");
+      const path = dshOperationPaths.readStoreCaptainAssignment.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
+      return userRequest<CaptainAssignmentResponse>(accessToken, path, dshOperationPaths.readStoreCaptainAssignment.method);
+    },
+    async confirmCaptainStoreHandoff(accessToken: string, storeID: string, orderID: string, assignmentID: string, expectedVersion: number): Promise<CaptainAssignmentResponse> {
+      const normalizedStore = storeID.trim();
+      const normalizedOrder = orderID.trim();
+      const normalizedAssignment = assignmentID.trim();
+      if (!normalizedStore || !normalizedOrder || !normalizedAssignment || expectedVersion < 1) throw new Error("DSH_CAPTAIN_HANDOFF_INPUT_INVALID");
+      const path = dshOperationPaths.confirmCaptainStoreHandoff.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{orderId}", encodeURIComponent(normalizedOrder));
+      return userRequest<CaptainAssignmentResponse>(accessToken, path, dshOperationPaths.confirmCaptainStoreHandoff.method, { assignmentId: normalizedAssignment }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async readOwnCaptainAdmission(accessToken: string): Promise<CaptainAdmissionResponse> {
+      return userRequest<CaptainAdmissionResponse>(accessToken, dshOperationPaths.readOwnCaptainAdmission.path, dshOperationPaths.readOwnCaptainAdmission.method);
+    },
+    async setCaptainAvailability(accessToken: string, available: boolean, expectedVersion: number): Promise<CaptainAdmissionResponse> {
+      if (expectedVersion < 1) throw new Error("DSH_CAPTAIN_VERSION_INVALID");
+      const input: CaptainAvailabilityRequest = { available };
+      return userRequest<CaptainAdmissionResponse>(accessToken, dshOperationPaths.setCaptainAvailability.path, dshOperationPaths.setCaptainAvailability.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async listOwnCaptainOffers(accessToken: string, limit = 50): Promise<CaptainOfferListResponse> {
+      if (limit < 1 || limit > 100) throw new Error("DSH_CAPTAIN_LIMIT_INVALID");
+      return userRequest<CaptainOfferListResponse>(accessToken, `${dshOperationPaths.listOwnCaptainOffers.path}?${new URLSearchParams({ limit: String(limit) }).toString()}`, dshOperationPaths.listOwnCaptainOffers.method);
+    },
+    async respondToCaptainOffer(accessToken: string, offerID: string, input: CaptainOfferDecisionRequest, expectedVersion: number): Promise<CaptainOfferResponse> {
+      const normalized = offerID.trim();
+      if (!normalized || expectedVersion < 1 || !input.decision) throw new Error("DSH_CAPTAIN_OFFER_INPUT_INVALID");
+      const path = dshOperationPaths.respondToCaptainOffer.path.replace("{offerId}", encodeURIComponent(normalized));
+      return userRequest<CaptainOfferResponse>(accessToken, path, dshOperationPaths.respondToCaptainOffer.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async listOwnCaptainAssignments(accessToken: string, limit = 50): Promise<CaptainAssignmentListResponse> {
+      if (limit < 1 || limit > 100) throw new Error("DSH_CAPTAIN_LIMIT_INVALID");
+      return userRequest<CaptainAssignmentListResponse>(accessToken, `${dshOperationPaths.listOwnCaptainAssignments.path}?${new URLSearchParams({ limit: String(limit) }).toString()}`, dshOperationPaths.listOwnCaptainAssignments.method);
+    },
+    async completeCaptainPickup(accessToken: string, assignmentID: string, expectedVersion: number): Promise<CaptainAssignmentResponse> {
+      const normalized = assignmentID.trim();
+      if (!normalized || expectedVersion < 1) throw new Error("DSH_CAPTAIN_ASSIGNMENT_INPUT_INVALID");
+      const path = dshOperationPaths.completeCaptainPickup.path.replace("{assignmentId}", encodeURIComponent(normalized));
+      return userRequest<CaptainAssignmentResponse>(accessToken, path, dshOperationPaths.completeCaptainPickup.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
+    async completeCaptainAssignment(accessToken: string, assignmentID: string, input: CaptainCompletionRequest, expectedVersion: number): Promise<CaptainAssignmentResponse> {
+      const normalized = assignmentID.trim();
+      if (!normalized || expectedVersion < 1 || !input.result) throw new Error("DSH_CAPTAIN_ASSIGNMENT_INPUT_INVALID");
+      const path = dshOperationPaths.completeCaptainAssignment.path.replace("{assignmentId}", encodeURIComponent(normalized));
+      return userRequest<CaptainAssignmentResponse>(accessToken, path, dshOperationPaths.completeCaptainAssignment.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async listOwnDeliveryAddresses(accessToken: string, limit = 50, cursor = ""): Promise<DeliveryAddressListResponse> {
       if (limit < 1 || limit > 50) throw new Error("DSH_ADDRESS_LIMIT_INVALID");

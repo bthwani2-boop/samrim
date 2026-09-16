@@ -1,5 +1,5 @@
 import { validateServiceUrl } from "@bthwani/identity";
-import { type CatalogCategoryListResponse, type CatalogProductListResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CreateCatalogProductRequest, type CreateJoiningCaseRequest, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, dshOperationPaths } from "@bthwani/dsh";
+import { type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogProductListResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CreateCatalogProductRequest, type CreateJoiningCaseRequest, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ManagedRoleMutationRequest, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -101,7 +101,7 @@ async function requestDshJson<T>(method: string, path: string, body: unknown | u
       const parsed = parseErrorPayload(await response.json().catch(() => null));
       throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
     }
-    return { status: response.status, payload: await response.json() as T };
+    return { status: response.status, payload: response.status === 204 ? undefined as T : await response.json() as T };
   } finally {
     clearTimeout(timeout);
   }
@@ -287,4 +287,45 @@ export async function setStorePublication(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function setDshManagedRoleEnabled(path: string, input: ManagedRoleMutationRequest, context: DshVersionedMutationContext): Promise<void> {
+  validateVersionedMutationContext(context);
+  if (input.reason !== undefined && input.reason.trim().length > 500) throw new Error("DSH_MANAGED_ROLE_REASON_INVALID");
+  await requestDshJson<undefined>("POST", path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion) });
+}
+
+export async function setDshPartnerRoleEnabled(actorId: string, input: ManagedRoleMutationRequest, context: DshVersionedMutationContext): Promise<void> {
+  const normalized = actorId.trim();
+  if (!normalized) throw new Error("DSH_MANAGED_ROLE_ACTOR_REQUIRED");
+  await setDshManagedRoleEnabled(dshOperationPaths.setPartnerManagedRoleEnabled.path.replace("{actorId}", encodeURIComponent(normalized)), input, context);
+}
+
+export async function setDshCaptainRoleEnabled(actorId: string, input: ManagedRoleMutationRequest, context: DshVersionedMutationContext): Promise<void> {
+  const normalized = actorId.trim();
+  if (!normalized) throw new Error("DSH_MANAGED_ROLE_ACTOR_REQUIRED");
+  await setDshManagedRoleEnabled(dshOperationPaths.setCaptainManagedRoleEnabled.path.replace("{actorId}", encodeURIComponent(normalized)), input, context);
+}
+
+export async function admitCaptain(input: CaptainAdmissionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CaptainAdmissionResponse }>> {
+  if (!/^\+[1-9][0-9]{7,14}$/.test(input.contactPhoneE164.trim())) throw new Error("DSH_CAPTAIN_PHONE_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CAPTAIN_IDEMPOTENCY_INVALID");
+  return requestDshJson<CaptainAdmissionResponse>(dshOperationPaths.admitCaptain.method, dshOperationPaths.admitCaptain.path, { contactPhoneE164: input.contactPhoneE164.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function dispatchCaptainOffer(orderId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CaptainOfferResponse }>> {
+  if (!orderId.trim()) throw new Error("DSH_CAPTAIN_ORDER_REQUIRED");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CAPTAIN_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.dispatchCaptainOffer.path.replace("{orderId}", encodeURIComponent(orderId.trim()));
+  return requestDshJson<CaptainOfferResponse>(dshOperationPaths.dispatchCaptainOffer.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function reassignCaptainOffer(orderId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CaptainOfferResponse }>> {
+  if (!orderId.trim()) throw new Error("DSH_CAPTAIN_ORDER_REQUIRED");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CAPTAIN_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.reassignCaptainOffer.path.replace("{orderId}", encodeURIComponent(orderId.trim()));
+  return requestDshJson<CaptainOfferResponse>(dshOperationPaths.reassignCaptainOffer.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
