@@ -135,6 +135,10 @@ jobs:
           drift="$(git status --porcelain --untracked-files=all)"
           [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
 
+      - name: Nx Cloud Self-Healing CI
+        if: always()
+        run: pnpm exec nx fix-ci
+
   windows:
     name: repository-windows
     runs-on: windows-2025
@@ -203,6 +207,3 @@ jobs:
         if: steps.mobile.outputs.run == 'true'
         shell: pwsh
         run: pnpm exec nx affected -t export-smoke --base=${{ steps.mobile.outputs.base }} --head=HEAD --outputStyle=stream
-
-      - run: pnpm exec nx fix-ci
-        if: always()
