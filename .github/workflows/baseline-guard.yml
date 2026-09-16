@@ -108,7 +108,7 @@ jobs:
 
       - name: Verify changed source style
         shell: bash
-        run: pnpm exec biome ci apps packages services tools --changed --since=${{ steps.base.outputs.sha }} --enforce-assist=false
+        run: pnpm exec biome ci apps packages services tools --changed --since=${{ steps.base.outputs.sha }} --no-errors-on-unmatched --enforce-assist=false
 
       - name: Verify affected workspace tasks
         shell: bash
