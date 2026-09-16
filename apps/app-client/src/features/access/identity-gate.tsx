@@ -1,22 +1,20 @@
+import { direction as designDirection, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
+import { type IdentitySessionState, identityErrorMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Pressable,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  View,
   useColorScheme,
+  View,
 } from "react-native";
-
-import { resolveTextAlign, resolveTheme, resolveRowDirection } from "@bthwani/design-system";
-import { identityErrorMessage, isIdentityClientError, validatePasswordInputShape, type IdentitySessionState } from "@bthwani/identity";
 import {
   currentIdentityState,
-  subscribeIdentitySession,
   loginClient,
   logoutIdentity,
   recoverClient,
@@ -24,12 +22,13 @@ import {
   requestClientRecovery,
   requestClientRegistration,
   restoreIdentitySession,
+  subscribeIdentitySession,
 } from "../../bootstrap/identity";
-import { identityPresentation, type IdentityCopy } from "./identity-presentation";
-import StoreDiscovery from "../store-discovery/store-discovery";
 import LocationCore from "../location-core/location-core";
-import ServiceCityScope from "../service-city/service-city-scope";
 import ClientOrders from "../orders/orders";
+import ServiceCityScope from "../service-city/service-city-scope";
+import StoreDiscovery from "../store-discovery/store-discovery";
+import { type IdentityCopy, identityPresentation } from "./identity-presentation";
 
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
@@ -46,7 +45,8 @@ function getColors(isDark: boolean) {
     actionBackground: theme.actionBackground,
     interactiveText: theme.interactiveText,
     surface: theme.surface,
-    disabled: theme.borderColorStrong,
+    disabled: theme.disabledBackground,
+    disabledText: theme.disabledText,
     dangerBackground: theme.dangerSoft,
     danger: theme.danger,
     noticeBackground: theme.actionSoft,
@@ -67,10 +67,10 @@ function isCredentialFailure(value: unknown): boolean {
 
 export default function IdentityGate() {
   const colorScheme = useColorScheme();
-  const { direction, copy } = identityPresentation;
+  const { copy } = identityPresentation;
   const isDark = colorScheme === "dark";
   const colors = useMemo(() => getColors(isDark), [isDark]);
-  const styles = useMemo(() => createStyles(colors, direction), [colors]);
+  const styles = useMemo(() => createStyles(colors, designDirection.defaultDirection), [colors]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [mode, setMode] = useState<AuthMode>("login");
@@ -134,7 +134,7 @@ export default function IdentityGate() {
   }
 
   function updatePhone(value: string) {
-    setPhone(value);
+    setPhone(toAsciiDigits(value));
     if (mode === "login") {
       setLoginFailed(false);
       setError("");
@@ -142,11 +142,15 @@ export default function IdentityGate() {
   }
 
   function updatePassword(value: string) {
-    setPassword(value);
+    setPassword(limitPasswordInput(value));
     if (mode === "login") {
       setLoginFailed(false);
       setError("");
     }
+  }
+
+  function updatePasswordConfirmation(value: string) {
+    setPasswordConfirmation(limitPasswordInput(value));
   }
 
   async function requestProof() {
@@ -238,9 +242,9 @@ export default function IdentityGate() {
             accessibilityState={{ busy, disabled: busy }}
             disabled={busy}
             onPress={logout}
-            style={styles.primaryButton}
+            style={[styles.primaryButton, busy && styles.primaryButtonDisabled]}
           >
-            <Text style={styles.primaryButtonText}>{busy ? copy.busyAction : copy.logout}</Text>
+            <Text style={[styles.primaryButtonText, busy && styles.primaryButtonTextDisabled]}>{busy ? copy.busyAction : copy.logout}</Text>
           </Pressable>
       </ScrollView>
     );
@@ -259,9 +263,9 @@ export default function IdentityGate() {
           accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={restore}
-          style={styles.secondaryButton}
+          style={[styles.secondaryButton, busy && styles.secondaryButtonDisabled]}
         >
-          <Text style={styles.secondaryButtonText}>{busy ? copy.syncing : conflict ? copy.syncSession : copy.retryVerification}</Text>
+          <Text style={[styles.secondaryButtonText, busy && styles.disabledText]}>{busy ? copy.syncing : conflict ? copy.syncSession : copy.retryVerification}</Text>
         </Pressable>
       </View>
     );
@@ -342,7 +346,7 @@ export default function IdentityGate() {
                         keyboardType="number-pad"
                         maxLength={6}
                         onBlur={() => setFocusedField(null)}
-                        onChangeText={(value) => setCode(value.replace(/\D/g, "").slice(0, 6))}
+                        onChangeText={(value) => setCode(toAsciiDigits(value).replace(/\D/g, "").slice(0, 6))}
                         onFocus={() => setFocusedField("code")}
                         placeholder={copy.verificationCodePlaceholder}
                         placeholderTextColor={colors.muted}
@@ -359,8 +363,9 @@ export default function IdentityGate() {
                         accessibilityLabel={mode === "recover" ? copy.newPasswordLabel : copy.passwordLabel}
                         autoCapitalize="none"
                         autoComplete="new-password"
+                        maxLength={8}
                         onBlur={() => setFocusedField(null)}
-                        onChangeText={setPassword}
+                        onChangeText={updatePassword}
                         onFocus={() => setFocusedField("password")}
                         placeholder={copy.newPasswordPlaceholder}
                         placeholderTextColor={colors.muted}
@@ -376,8 +381,9 @@ export default function IdentityGate() {
                         accessibilityLabel={copy.passwordConfirmationLabel}
                         autoCapitalize="none"
                         autoComplete="new-password"
+                        maxLength={8}
                         onBlur={() => setFocusedField(null)}
-                        onChangeText={setPasswordConfirmation}
+                        onChangeText={updatePasswordConfirmation}
                         onFocus={() => setFocusedField("passwordConfirmation")}
                         placeholder={copy.passwordConfirmationPlaceholder}
                         placeholderTextColor={colors.muted}
@@ -396,6 +402,7 @@ export default function IdentityGate() {
                   accessibilityLabel={copy.passwordLabel}
                   autoCapitalize="none"
                   autoComplete="current-password"
+                  maxLength={8}
                   onBlur={() => setFocusedField(null)}
                   onChangeText={updatePassword}
                   onFocus={() => setFocusedField("password")}
@@ -427,14 +434,15 @@ export default function IdentityGate() {
             {error ? <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
             {mode === "login" && loginFailed ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={copy.forgotPassword}
-                accessibilityState={{ busy, disabled: busy }}
-                onPress={() => selectMode("recover")}
-                style={styles.recoveryButton}
-              >
-                <Text style={styles.recoveryButtonText}>{copy.forgotPassword}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={copy.forgotPassword}
+                  accessibilityState={{ busy, disabled: busy }}
+                  disabled={busy}
+                  onPress={() => selectMode("recover")}
+                  style={[styles.recoveryButton, busy && styles.secondaryButtonDisabled]}
+                >
+                <Text style={[styles.recoveryButtonText, busy && styles.disabledText]}>{copy.forgotPassword}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -459,34 +467,44 @@ export default function IdentityGate() {
 
 function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
   const startTextAlign = resolveTextAlign("start", activeDirection);
+  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
   const endCrossAxisAlignment = activeDirection === "rtl" ? "flex-end" : "flex-start";
+  const logicalText = {
+    textAlign: startTextAlign,
+    writingDirection: activeDirection,
+  };
+  const fullWidthLogicalText = { ...logicalText, width: "100%" as const };
+  const fullWidthLogicalInput = { ...fullWidthLogicalText, textAlign: startInputTextAlign };
 
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background, direction: activeDirection },
-    authenticatedScrollContent: { alignItems: "stretch", flexGrow: 1, gap: 16, paddingBottom: 160, paddingHorizontal: 20, paddingTop: 32, width: "100%" },
-    scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32 },
-    authShell: { width: "100%", maxWidth: 480, alignSelf: "center" },
-    brandBlock: { alignItems: "center", marginBottom: 24 },
-    brand: { color: colors.navy, fontSize: 34, fontWeight: "800", textAlign: "center" },
+    authenticatedScrollContent: { alignItems: "stretch", flexGrow: 1, gap: 16, paddingBottom: 160, paddingHorizontal: 20, paddingTop: 32, width: "100%", direction: activeDirection },
+    scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32, direction: activeDirection },
+    authShell: { width: "100%", maxWidth: 480, alignSelf: "center", direction: activeDirection },
+    brandBlock: { alignItems: "center", marginBottom: 24, direction: activeDirection },
+    brand: { color: colors.navy, fontSize: 34, fontWeight: "800", textAlign: "center", writingDirection: activeDirection },
     brandAccent: { backgroundColor: colors.brandAction, borderRadius: 3, height: 4, marginTop: 8, width: 42 },
-    title: { color: colors.navy, fontSize: 28, fontWeight: "800", textAlign: "center" },
+    title: { color: colors.navy, fontSize: 28, fontWeight: "800", textAlign: "center", writingDirection: activeDirection },
     authCard: {
+      alignItems: "stretch",
       backgroundColor: colors.surface,
       borderColor: colors.border,
       borderRadius: 24,
       borderWidth: 1,
+      direction: activeDirection,
       padding: 20,
+      width: "100%",
       shadowColor: colors.navy,
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.08,
       shadowRadius: 20,
       elevation: 3,
     },
-    formTitle: { color: colors.navy, fontSize: 22, fontWeight: "800", marginBottom: 16, textAlign: startTextAlign },
-    fieldBlock: { marginBottom: 14 },
-    fieldLabel: { color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7, textAlign: startTextAlign },
-    input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13, textAlign: startTextAlign, writingDirection: activeDirection },
-    numericInput: { textAlign: "left", writingDirection: "ltr" },
+    formTitle: { ...fullWidthLogicalText, color: colors.navy, fontSize: 22, fontWeight: "800", marginBottom: 16 },
+    fieldBlock: { alignItems: "stretch", marginBottom: 14, width: "100%" },
+    fieldLabel: { ...fullWidthLogicalText, color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7 },
+    input: { ...fullWidthLogicalInput, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13 },
+    numericInput: { alignSelf: "stretch", textAlign: resolveTextInputAlign("start", "ltr"), writingDirection: "ltr" },
     inputFocused: { borderColor: colors.focus, borderWidth: 2 },
     codeAction: { alignSelf: endCrossAxisAlignment, paddingBottom: 8, paddingTop: 2 },
     codeActionText: { color: colors.interactiveText, fontSize: 14, fontWeight: "800" },
@@ -494,19 +512,20 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
     codeActionPrimaryText: { color: colors.surface, fontSize: 16 },
     codeActionDisabled: { backgroundColor: colors.disabled },
     modeLinks: { alignItems: "center", flexDirection: resolveRowDirection(activeDirection), flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
-    modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline" },
+    modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline", writingDirection: activeDirection },
     recoveryButton: { alignItems: "center", borderColor: colors.interactiveText, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
     recoveryButtonText: { color: colors.interactiveText, fontSize: 15, fontWeight: "800" },
-    disabledText: { color: colors.muted },
-    status: { textAlign: "center", fontSize: 17, fontWeight: "600", color: colors.navy },
-    muted: { color: colors.muted, fontSize: 14, textAlign: "center" },
+    disabledText: { color: colors.disabledText },
+    status: { color: colors.navy, fontSize: 17, fontWeight: "600", textAlign: "center", writingDirection: activeDirection },
+    muted: { color: colors.muted, fontSize: 14, textAlign: "center", writingDirection: activeDirection },
     secondaryButton: { alignItems: "center", borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 16 },
+    secondaryButtonDisabled: { backgroundColor: colors.disabled, borderColor: colors.disabled },
     secondaryButtonText: { color: colors.navy, fontSize: 15, fontWeight: "700", textAlign: "center" },
     primaryButton: { alignItems: "center", backgroundColor: colors.actionBackground, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
     primaryButtonDisabled: { backgroundColor: colors.disabled },
     primaryButtonText: { color: colors.surface, fontSize: 16, fontWeight: "800" },
-    primaryButtonTextDisabled: { color: colors.muted },
-    notice: { backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10, textAlign: startTextAlign, writingDirection: activeDirection },
-    error: { backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10, textAlign: startTextAlign, writingDirection: activeDirection },
+    primaryButtonTextDisabled: { color: colors.disabledText },
+    notice: { ...fullWidthLogicalText, backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10 },
+    error: { ...fullWidthLogicalText, backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10 },
   });
 }

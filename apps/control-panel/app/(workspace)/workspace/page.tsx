@@ -16,7 +16,7 @@ export default function WorkspacePage() {
         </div>
         <div className="session-summary">
           <div><span className="summary-label">الدور الحالي</span><strong>المشغل</strong></div>
-          <div><span className="summary-label">السطح</span><strong>{state.identity.surface}</strong></div>
+          <div><span className="summary-label">المساحة</span><strong>لوحة التحكم</strong></div>
           <div><span className="summary-label">حالة الجلسة</span><strong className="summary-value-success">موثقة</strong></div>
         </div>
         <div className="workspace-note">

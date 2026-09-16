@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, request, test, type Page } from "@playwright/test";
 
 type PreparedOperator = {
   actorId: string;
@@ -105,6 +105,66 @@ function cleanupPreparedOperator(operator: PreparedOperator): void {
   if (output.split(/\r?\n/).at(-1) !== "0") throw new Error("live Identity fixture cleanup left actor data");
 }
 
+function mutateOperatorSessions(actorId: string, mutation: string): void {
+  const runtime = readCanonicalRuntime();
+  const actorLiteral = actorId.replaceAll("'", "''");
+  execFileSync(
+    "docker",
+    [
+      "compose",
+      "--project-name",
+      "samrim-local",
+      "--env-file",
+      runtime.envFile,
+      "-f",
+      path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"),
+      "exec",
+      "-T",
+      "postgres",
+      "psql",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      runtime.postgresUser,
+      "-d",
+      runtime.postgresDatabase,
+      "-Atc",
+      `UPDATE identity_sessions SET ${mutation} WHERE actor_id='${actorLiteral}';`,
+    ],
+    { cwd: runtime.repoRoot, encoding: "utf8", stdio: "ignore" },
+  );
+}
+
+function restartIdentity(): void {
+  const runtime = readCanonicalRuntime();
+  execFileSync(
+    "docker",
+    [
+      "compose",
+      "--project-name",
+      "samrim-local",
+      "--env-file",
+      runtime.envFile,
+      "-f",
+      path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"),
+      "up",
+      "-d",
+      "--wait",
+      "--wait-timeout",
+      "300",
+      "identity",
+    ],
+    { cwd: runtime.repoRoot, encoding: "utf8", stdio: "ignore" },
+  );
+}
+
+async function readBrowserSession(page: Page): Promise<{ status: number; body: Record<string, any> }> {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/auth/session", { cache: "no-store" });
+    return { status: response.status, body: await response.json() };
+  });
+}
+
 test.afterEach(() => {
   const operator = preparedOperatorForCleanup;
   preparedOperatorForCleanup = undefined;
@@ -144,7 +204,7 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
 }
 
 test("@live operator passkey registration, authentication and governed recovery survive browser readback", async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
   const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
   const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
@@ -169,10 +229,52 @@ test("@live operator passkey registration, authentication and governed recovery 
   await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
   await expect(page).toHaveURL(/\/workspace$/);
   await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
-  const firstSession = await page.evaluate(async () => { const response = await fetch("/api/auth/session", { cache: "no-store" }); return { status: response.status, body: await response.json() }; });
+  const firstSession = await readBrowserSession(page);
   expect(firstSession.status).toBe(200);
   expect(firstSession.body.identity.role).toBe("operator");
   expect(firstSession.body.identity.surface).toBe("control-panel");
+
+  // Expired access + dropped response: the next independent browser request
+  // sends the old cookies and receives the same canonical refresh generation.
+  mutateOperatorSessions(operator.actorId, "access_expires_at=clock_timestamp()-interval '1 second'");
+  const cookiesBeforeDroppedResponse = await page.context().cookies();
+  const accessBeforeDroppedResponse = cookiesBeforeDroppedResponse.find((cookie) => cookie.name.endsWith("bt_identity_access"))?.value;
+  const refreshBeforeDroppedResponse = cookiesBeforeDroppedResponse.find((cookie) => cookie.name.endsWith("bt_identity_refresh"))?.value;
+  const deviceBeforeDroppedResponse = cookiesBeforeDroppedResponse.find((cookie) => cookie.name.endsWith("bt_identity_device"))?.value;
+  const droppedResponseContext = await request.newContext();
+  try {
+    const droppedResponse = await droppedResponseContext.get(new URL("/api/auth/session", page.url()).toString(), {
+      headers: {
+        Accept: "application/json",
+        Cookie: cookiesBeforeDroppedResponse.map((cookie) => `${cookie.name}=${cookie.value}`).join("; "),
+      },
+    });
+    expect(droppedResponse.status(), await droppedResponse.text()).toBe(200);
+  } finally {
+    await droppedResponseContext.dispose();
+  }
+  const cookiesAfterDroppedResponse = await page.context().cookies();
+  expect(cookiesAfterDroppedResponse.find((cookie) => cookie.name.endsWith("bt_identity_access"))?.value).toBe(accessBeforeDroppedResponse);
+  expect(cookiesAfterDroppedResponse.find((cookie) => cookie.name.endsWith("bt_identity_refresh"))?.value).toBe(refreshBeforeDroppedResponse);
+  expect(cookiesAfterDroppedResponse.find((cookie) => cookie.name.endsWith("bt_identity_device"))?.value).toBe(deviceBeforeDroppedResponse);
+  const reconciledSession = await readBrowserSession(page);
+  expect(reconciledSession.status, JSON.stringify(reconciledSession.body)).toBe(200);
+  expect(reconciledSession.body.identity.role).toBe("operator");
+
+  // Identity outage is transient: the BFF returns 503 and leaves cookies intact.
+  mutateOperatorSessions(operator.actorId, "access_expires_at=clock_timestamp()-interval '1 second'");
+  const cookiesBeforeOutage = await page.context().cookies();
+  const accessBeforeOutage = cookiesBeforeOutage.find((cookie) => cookie.name.endsWith("bt_identity_access"))?.value;
+  const runtime = readCanonicalRuntime();
+  execFileSync("docker", ["compose", "--project-name", "samrim-local", "--env-file", runtime.envFile, "-f", path.join(runtime.repoRoot, "infra/local/compose/compose.yaml"), "stop", "identity"], { cwd: runtime.repoRoot, encoding: "utf8", stdio: "ignore" });
+  try {
+    const transientSession = await readBrowserSession(page);
+    expect(transientSession.status).toBe(503);
+    expect(transientSession.body.error.code).toBe("IDENTITY_UNAVAILABLE");
+    expect((await page.context().cookies()).find((cookie) => cookie.name.endsWith("bt_identity_access"))?.value).toBe(accessBeforeOutage);
+  } finally {
+    restartIdentity();
+  }
 
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
@@ -194,8 +296,15 @@ test("@live operator passkey registration, authentication and governed recovery 
   expect(replacementRecoveryCredential).not.toBe(firstRecoveryCredential);
   await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
   await expect(page).toHaveURL(/\/workspace$/);
-  const recoveredSession = await page.evaluate(async () => { const response = await fetch("/api/auth/session", { cache: "no-store" }); return { status: response.status, body: await response.json() }; });
+  const recoveredSession = await readBrowserSession(page);
   expect(recoveredSession.status).toBe(200);
   expect(recoveredSession.body.identity.role).toBe("operator");
   expect(recoveredSession.body.identity.surface).toBe("control-panel");
+
+  // Confirmed terminal invalidation clears the browser session cookies.
+  mutateOperatorSessions(operator.actorId, "revoked_at=clock_timestamp()");
+  const terminalSession = await readBrowserSession(page);
+  expect(terminalSession.status).toBe(401);
+  expect(terminalSession.body.error.code).toBe("UNAUTHENTICATED");
+  expect((await page.context().cookies()).filter((cookie) => cookie.name.endsWith("bt_identity_access") || cookie.name.endsWith("bt_identity_refresh") || cookie.name.endsWith("bt_identity_device"))).toHaveLength(0);
 });

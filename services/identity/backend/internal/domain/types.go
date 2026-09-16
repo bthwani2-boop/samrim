@@ -170,6 +170,7 @@ type Challenge struct {
 type RefreshRequest struct {
 	RefreshToken     string `json:"refreshToken"`
 	ClientInstanceId string `json:"clientInstanceId"`
+	RefreshRequestId string `json:"refreshRequestId"`
 }
 
 type ActorIdentity struct {

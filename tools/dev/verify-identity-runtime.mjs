@@ -68,6 +68,8 @@ const session = (pair, role, surface, subject) => {
   assert(typeof pair?.accessToken === "string" && typeof pair?.refreshToken === "string", "token pair missing");
   assert(pair.identity?.role === role && pair.identity?.surface === surface && pair.identity?.subject === subject, "session identity mismatch");
 };
+const refreshRequestId = (refreshToken, clientInstanceId) => crypto.createHash("sha256").update("identity-refresh-request-v1\0").update(refreshToken).update("\0").update(clientInstanceId).digest("base64url");
+const randomRefreshRequestId = () => crypto.randomBytes(24).toString("base64url");
 
 for (const pathName of ["/identity/health", "/identity/readiness"]) await expect("GET", pathName, 200);
 for (const pathName of ["/auth/operator/login/start", "/auth/operator/login/complete", "/auth/managed/recovery/request", "/auth/managed/recover"]) await expect("POST", pathName, 404, { body: {} });
@@ -101,31 +103,40 @@ assert(loginLifetime[1] >= 29 * 86400 && loginLifetime[1] <= 31 * 86400, "mobile
 sql("UPDATE identity_sessions SET last_used_at=clock_timestamp()-interval '3 days' WHERE access_token_hash='" + sqlLiteral(loginAccessHash) + "'");
 await expect("GET", "/auth/session", 200, { token: loginPair.accessToken });
 sql("UPDATE identity_sessions SET last_used_at=clock_timestamp()-interval '3 days' WHERE access_token_hash='" + sqlLiteral(loginAccessHash) + "'");
-await expect("POST", "/auth/refresh", 200, { body: { refreshToken: loginPair.refreshToken, clientInstanceId: loginClientInstance } });
+await expect("POST", "/auth/refresh", 200, { body: { refreshToken: loginPair.refreshToken, clientInstanceId: loginClientInstance, refreshRequestId: refreshRequestId(loginPair.refreshToken, loginClientInstance) } });
 
 const refreshClientInstance = "runtime-refresh-instance-" + crypto.randomUUID();
 const refreshFirst = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: refreshClientInstance } });
-const refreshSecond = await expect("POST", "/auth/refresh", 200, { body: { refreshToken: refreshFirst.refreshToken, clientInstanceId: refreshClientInstance } });
+const refreshFirstRequestId = refreshRequestId(refreshFirst.refreshToken, refreshClientInstance);
+const refreshSecond = await expect("POST", "/auth/refresh", 200, { body: { refreshToken: refreshFirst.refreshToken, clientInstanceId: refreshClientInstance, refreshRequestId: refreshFirstRequestId } });
 session(refreshSecond, "client", "app-client", clientPair.identity.subject);
 assert(refreshFirst.refreshToken !== refreshSecond.refreshToken && refreshFirst.accessToken !== refreshSecond.accessToken, "refresh did not atomically rotate both tokens");
-await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshSecond.refreshToken, clientInstanceId: "runtime-wrong-instance-" + crypto.randomUUID() } });
-const refreshThird = await expect("POST", "/auth/refresh", 200, { body: { refreshToken: refreshSecond.refreshToken, clientInstanceId: refreshClientInstance } });
+const refreshSecondReplay = await expect("POST", "/auth/refresh", 200, { body: { refreshToken: refreshFirst.refreshToken, clientInstanceId: refreshClientInstance, refreshRequestId: refreshFirstRequestId } });
+assert(refreshSecondReplay.accessToken === refreshSecond.accessToken && refreshSecondReplay.refreshToken === refreshSecond.refreshToken, "refresh reconciliation did not return the committed generation");
+await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshSecond.refreshToken, clientInstanceId: "runtime-wrong-instance-" + crypto.randomUUID(), refreshRequestId: randomRefreshRequestId() } });
+const refreshSecondRequestId = refreshRequestId(refreshSecond.refreshToken, refreshClientInstance);
+const refreshThird = await expect("POST", "/auth/refresh", 200, { body: { refreshToken: refreshSecond.refreshToken, clientInstanceId: refreshClientInstance, refreshRequestId: refreshSecondRequestId } });
 session(refreshThird, "client", "app-client", clientPair.identity.subject);
-await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshSecond.refreshToken, clientInstanceId: refreshClientInstance } });
+const staleReplay = await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshSecond.refreshToken, clientInstanceId: refreshClientInstance, refreshRequestId: randomRefreshRequestId() } });
+assert(staleReplay?.error?.code === "REFRESH_STALE", "stale refresh did not preserve the REFRESH_STALE contract");
 const firstRefreshSecret = refreshFirst.refreshToken.split(".")[1];
 const firstRefreshHash = crypto.createHash("sha256").update(firstRefreshSecret).digest("hex");
 const refreshHistoryMatch = sql("SELECT count(*) FROM identity_refresh_token_history WHERE token_hash='" + sqlLiteral(firstRefreshHash) + "'");
 assert(refreshHistoryMatch === "1", "refresh history aging readback failed before update: " + refreshHistoryMatch);
 sql("UPDATE identity_refresh_token_history SET rotated_at=clock_timestamp()-interval '6 seconds' WHERE token_hash='" + sqlLiteral(firstRefreshHash) + "'");
 assert(sql("SELECT count(*) FROM identity_refresh_token_history WHERE token_hash='" + sqlLiteral(firstRefreshHash) + "' AND rotated_at < clock_timestamp()-interval '5 seconds'") === "1", "refresh history aging readback failed during update");
-await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshFirst.refreshToken, clientInstanceId: refreshClientInstance } });
-await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshThird.refreshToken, clientInstanceId: refreshClientInstance } });
+const replayAfterGrace = await expect("POST", "/auth/refresh", 200, { body: { refreshToken: refreshFirst.refreshToken, clientInstanceId: refreshClientInstance, refreshRequestId: refreshFirstRequestId } });
+assert(replayAfterGrace.accessToken === refreshThird.accessToken && replayAfterGrace.refreshToken === refreshThird.refreshToken, "post-grace reconciliation did not return the current canonical generation");
+const compromisedReplay = await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshFirst.refreshToken, clientInstanceId: refreshClientInstance, refreshRequestId: randomRefreshRequestId() } });
+assert(compromisedReplay?.error?.code === "UNAUTHENTICATED", "post-grace refresh reuse did not become terminal authentication failure");
+const revokedCurrent = await expect("POST", "/auth/refresh", 401, { body: { refreshToken: refreshThird.refreshToken, clientInstanceId: refreshClientInstance, refreshRequestId: randomRefreshRequestId() } });
+assert(revokedCurrent?.error?.code === "UNAUTHENTICATED", "compromised session still accepted its current refresh token");
 const unknownInstance = "runtime-unknown-family-" + crypto.randomUUID();
 const unknownFamily = await expect("POST", "/auth/client/login", 200, { body: { phone: clientPhone, password: clientPassword, clientInstanceId: unknownInstance } });
 const unknownParts = unknownFamily.refreshToken.split(".");
 const unknownRefresh = unknownParts[0] + "." + crypto.randomBytes(48).toString("base64url");
-await expect("POST", "/auth/refresh", 401, { body: { refreshToken: unknownRefresh, clientInstanceId: unknownInstance } });
-await expect("POST", "/auth/refresh", 200, { body: { refreshToken: unknownFamily.refreshToken, clientInstanceId: unknownInstance } });
+await expect("POST", "/auth/refresh", 401, { body: { refreshToken: unknownRefresh, clientInstanceId: unknownInstance, refreshRequestId: randomRefreshRequestId() } });
+await expect("POST", "/auth/refresh", 200, { body: { refreshToken: unknownFamily.refreshToken, clientInstanceId: unknownInstance, refreshRequestId: refreshRequestId(unknownFamily.refreshToken, unknownInstance) } });
 
 const recoveryPassword = password("Client-Recovered");
 const recovery = await issue("/auth/client/recovery/request", { phone: clientPhone }, "client_recover");

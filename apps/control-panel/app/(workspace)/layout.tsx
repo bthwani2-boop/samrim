@@ -16,7 +16,7 @@ function WorkspaceHeader({ identity, busy, onLogout }: Readonly<{ identity: Acto
       </Link>
       <div className="workspace-actor-context">
         <span className="surface-label">مساحة العمل الموثقة</span>
-        <span className="actor-context">مشغل لوحة التحكم · {identity.surface}</span>
+        <span className="actor-context">مشغل لوحة التحكم</span>
       </div>
       <button type="button" className="button button-secondary workspace-logout" disabled={busy} onClick={onLogout}>
         {busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}

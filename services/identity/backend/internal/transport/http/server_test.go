@@ -3,8 +3,10 @@ package identityhttp
 import (
 	"net"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 	identitysecurity "github.com/bthwani2-boop/samrim/services/identity/backend/internal/security"
 )
 
@@ -49,5 +51,31 @@ func TestIPHashUsesCanonicalClientIPAndAbuseKey(t *testing.T) {
 	want := identitysecurity.HMAC256Hex(secret, "client-ip", "198.18.0.9")
 	if got := server.ipHash(request); got != want {
 		t.Fatalf("ipHash() = %q, want keyed hash of canonical client IP", got)
+	}
+}
+
+func TestWriteDomainErrorPreservesRefreshStaleContract(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		statusCode int
+		code       string
+	}{
+		{name: "refresh stale", err: domain.ErrRefreshStale, statusCode: 401, code: "REFRESH_STALE"},
+		{name: "invalid refresh", err: domain.ErrInvalidRefresh, statusCode: 401, code: "UNAUTHENTICATED"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			writeDomainError(response, test.err)
+
+			if response.Code != test.statusCode {
+				t.Fatalf("status = %d, want %d", response.Code, test.statusCode)
+			}
+			if !strings.Contains(response.Body.String(), `"code":"`+test.code+`"`) {
+				t.Fatalf("body = %q, want code %q", response.Body.String(), test.code)
+			}
+		})
 	}
 }

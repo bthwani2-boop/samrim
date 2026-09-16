@@ -1,10 +1,17 @@
 "use client";
 
-import type { JoiningCaseListResponse, JoiningCaseResponse, ServiceCity, StorePublicationResponse } from "@bthwani/dsh";
+import type { JoiningCaseListResponse, JoiningCaseResponse, JoiningCaseState, PublicationState, ServiceCity, StorePublicationResponse } from "@bthwani/dsh";
+import { toAsciiDigits } from "@bthwani/design-system";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
+
+const joiningStateLabels: Record<JoiningCaseState, string> = { draft: "مسودة", submitted: "مرسلة للمراجعة", needs_correction: "بحاجة إلى تصحيح", approved: "معتمدة" };
+const publicationStateLabels: Record<PublicationState, string> = { unpublished: "غير منشور", published: "منشور", hidden: "مخفي" };
+
+function joiningStateLabel(state: JoiningCaseState): string { return joiningStateLabels[state]; }
+function publicationStateLabel(state: PublicationState): string { return publicationStateLabels[state]; }
 
 export function JoiningCasePanel() {
   const [phone, setPhone] = useState("");
@@ -33,7 +40,7 @@ export function JoiningCasePanel() {
       }
       setQueue((await response.json() as JoiningCaseListResponse).cases);
     } catch {
-      setQueueError("تعذر قراءة طابور حالات الانضمام من DSH.");
+      setQueueError("تعذر قراءة طابور حالات الانضمام.");
     } finally {
       setQueueBusy(false);
     }
@@ -69,7 +76,7 @@ export function JoiningCasePanel() {
       setResult(await response.json() as JoiningCaseResponse);
       setPublication(null);
     } catch {
-      setError("تعذر فتح حالة الانضمام من DSH.");
+      setError("تعذر فتح حالة الانضمام.");
     } finally {
       setBusy(false);
     }
@@ -97,7 +104,7 @@ export function JoiningCasePanel() {
       setPublication(null);
       void loadQueue();
     } catch {
-      setError("تعذر الوصول إلى مسار joining في DSH.");
+      setError("تعذر الوصول إلى مسار حالة الانضمام.");
     } finally {
       setBusy(false);
     }
@@ -120,7 +127,7 @@ export function JoiningCasePanel() {
       rememberResult(await response.json() as JoiningCaseResponse);
       void loadQueue();
     } catch {
-      setError("تعذر إرسال joining case. أعد قراءة الحالة قبل التكرار.");
+      setError("تعذر إرسال حالة الانضمام. أعد قراءة الحالة قبل التكرار.");
     } finally {
       setBusy(false);
     }
@@ -205,23 +212,23 @@ export function JoiningCasePanel() {
   return (
     <section className="access-card" aria-labelledby="joining-case-title">
       <div className="access-card-heading">
-        <span className="step-chip">J1 · DSH</span>
+        <span className="step-chip">مسار الانضمام</span>
         <p className="eyebrow">حالة انضمام الشريك</p>
         <h2 id="joining-case-title">مراجعة طلب انضمام الشريك</h2>
-        <p className="muted">ينشئ DSH حالة انضمام prospective، ثم يطلب هوية الشريك من Identity عند الإرسال، ولا ينشئ سجل actor محليًا.</p>
+        <p className="muted">تنشئ المنصة حالة انضمام للشريك، ثم تطلب إثبات هويته عند الإرسال، ولا تنشئ سجلًا محليًا بديلًا.</p>
       </div>
       {!current ? (
         <>
         <div className="managed-status managed-status-info" role="status">
           <strong>طابور حالات الانضمام الكانوني</strong>
-          <p>يمكن لأي متصفح جديد اكتشاف الحالات من DSH؛ لا يعتمد الاستئناف على localStorage.</p>
+          <p>يمكن لأي متصفح جديد اكتشاف الحالات المحفوظة؛ لا يعتمد الاستئناف على جهاز بعينه.</p>
           {queueBusy ? <p>جارٍ تحميل الطابور…</p> : null}
           {queueError ? <p role="alert">{queueError} <button type="button" className="button button-secondary" onClick={() => void loadQueue()}>إعادة المحاولة</button></p> : null}
           {!queueBusy && !queueError && queue.length === 0 ? <p>لا توجد حالات انضمام حاليًا.</p> : null}
-          {queue.length ? <ul>{queue.map((item) => <li key={item.id}><button type="button" className="button button-secondary" disabled={busy} onClick={() => void openCase(item.id)}>{item.state} · {item.businessName} · <code>{item.id}</code></button></li>)}</ul> : null}
+          {queue.length ? <ul>{queue.map((item) => <li key={item.id}><button type="button" className="button button-secondary" disabled={busy} onClick={() => void openCase(item.id)}>{joiningStateLabel(item.state)} · {item.businessName}</button></li>)}</ul> : null}
         </div>
         <div className="access-form">
-          <label className="field-label" htmlFor="joining-phone">رقم هاتف الشريك (E.164)<input id="joining-phone" autoComplete="tel" disabled={busy} inputMode="tel" value={phone} onChange={(event) => { setPhone(event.target.value); clearResult(); }} placeholder="مثال: +96777000100" /></label>
+          <label className="field-label" htmlFor="joining-phone">رقم هاتف الشريك (E.164)<input id="joining-phone" autoComplete="tel" disabled={busy} inputMode="tel" value={phone} onChange={(event) => { setPhone(toAsciiDigits(event.target.value)); clearResult(); }} placeholder="مثال: +96777000100" /></label>
           <label className="field-label" htmlFor="joining-business">اسم النشاط<input id="joining-business" disabled={busy} value={businessName} onChange={(event) => { setBusinessName(event.target.value); clearResult(); }} /></label>
           <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy} value={storeName} onChange={(event) => { setStoreName(event.target.value); clearResult(); }} /></label>
           <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy} value={serviceCityId} onChange={(event) => { setServiceCityId(event.target.value); clearResult(); }}><option value="">اختر مدينة نشطة</option>{cities.filter((city) => city.active).map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
@@ -230,8 +237,7 @@ export function JoiningCasePanel() {
         </>
       ) : (
         <div className="managed-status managed-status-info" role="status">
-          <strong>الحالة: {current.state}</strong>
-          <p>Case: <code>{current.id}</code> · الإصدار <code>{current.version}</code></p>
+          <strong>الحالة: {joiningStateLabel(current.state)}</strong>
           <p>{current.businessName} · {current.firstStoreName}</p>
           <p>مدينة المتجر الأول: {cities.find((city) => city.id === current.serviceCityId)?.displayNameAr || current.serviceCityId}</p>
           {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
@@ -239,13 +245,13 @@ export function JoiningCasePanel() {
           {current.state === "submitted" ? (
             <>
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
-              <button type="button" className="button button-primary" disabled={busy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء Store</button>
+              <button type="button" className="button button-primary" disabled={busy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر</button>
               <button type="button" className="button button-secondary" disabled={busy} onClick={() => void reviewCase("needs_correction")}>إعادة للتصحيح</button>
             </>
           ) : null}
-          {storeId ? <p>Store: <code>{storeId}</code> · {current.store?.name}</p> : null}
+          {storeId ? <p>المتجر: {current.store?.name}</p> : null}
           {storeId && !publication ? <button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة قراءة النشر</button> : null}
-          {publication ? <div className="managed-status managed-status-info"><strong>نشر Store: {publication.store.publicationState}</strong><p>الجاهزية: {publication.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</p><button type="button" className="button button-primary" disabled={publicationBusy || (!publication.store.publicationReadiness.ready && publication.store.publicationState !== "published")} onClick={() => void changePublication()}>{publicationBusy ? "جارٍ التحديث…" : publication.store.publicationState === "published" ? "إخفاء Store" : "نشر Store"}</button><button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة القراءة</button></div> : null}
+          {publication ? <div className="managed-status managed-status-info"><strong>حالة النشر: {publicationStateLabel(publication.store.publicationState)}</strong><p>الجاهزية: {publication.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</p><button type="button" className="button button-primary" disabled={publicationBusy || (!publication.store.publicationReadiness.ready && publication.store.publicationState !== "published")} onClick={() => void changePublication()}>{publicationBusy ? "جارٍ التحديث…" : publication.store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button><button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة القراءة</button></div> : null}
           <button type="button" className="button button-secondary" disabled={busy || publicationBusy} onClick={clearResult}>حالة انضمام جديدة</button>
         </div>
       )}
