@@ -81,8 +81,9 @@ try {
 
     $e2e = Read-Workflow '.github/workflows/control-panel-e2e.yml'
     if ($e2e -notmatch 'workflow_dispatch\s*:') { Fail 'control-panel-e2e.yml has no workflow_dispatch trigger' }
-    if ($e2e -notmatch 'control-panel:e2e' -or $e2e -notmatch 'skip-remote-cache') {
-        Fail 'control-panel-e2e.yml does not contain the uncached Nx E2E proof'
+    $e2eProject = (Get-Content -LiteralPath (Join-Path $RepoRoot 'apps/control-panel/project.json') -Raw) | ConvertFrom-Json
+    if ($e2e -notmatch 'control-panel:e2e' -or $null -eq $e2eProject.targets.e2e -or $e2eProject.targets.e2e.cache -ne $false) {
+        Fail 'control-panel:e2e must be an intrinsically uncached Nx target'
     }
 
     Write-Host 'NX_CLOUD_GITHUB_VERIFY=PASS'
@@ -90,6 +91,7 @@ try {
     Write-Host 'NX_CLOUD_REPOSITORY_RO=present'
     Write-Host "NX_CLOUD_PROTECTED_RW=present environment=$ProtectedEnvironment"
     Write-Host 'NX_CLOUD_WORKFLOW_DISPATCH=present'
+    Write-Host 'NX_E2E_TARGET_FRESHNESS=intrinsic'
     Write-Host "NX_CLOUD_REF_VERIFIED=$Ref"
 }
 finally {

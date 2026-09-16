@@ -9,7 +9,7 @@
   "targets": {
     "build": {
       "executor": "nx:run-commands",
-      "inputs": ["default"],
+      "inputs": ["default", "^default"],
       "options": {
         "command": "go build ./...",
         "cwd": "services/identity/backend"
@@ -17,7 +17,7 @@
     },
     "test": {
       "executor": "nx:run-commands",
-      "inputs": ["default"],
+      "inputs": ["default", "^default"],
       "options": {
         "command": "go test ./...",
         "cwd": "services/identity/backend"
@@ -25,7 +25,7 @@
     },
     "vet": {
       "executor": "nx:run-commands",
-      "inputs": ["default"],
+      "inputs": ["default", "^default"],
       "options": {
         "command": "go vet ./...",
         "cwd": "services/identity/backend"

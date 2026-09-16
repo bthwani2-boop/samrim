@@ -110,7 +110,7 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:13000
           CONTROL_PANEL_PUBLIC_ORIGIN: http://localhost:13000
-        run: pnpm exec nx run control-panel:e2e --skip-nx-cache --skip-remote-cache --outputStyle=stream
+        run: pnpm exec nx run control-panel:e2e --outputStyle=stream
 
       - name: Run live Identity browser proof
         shell: bash

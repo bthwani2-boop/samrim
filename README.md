@@ -57,6 +57,20 @@ pnpm runtime:rebuild -- -Service dsh
 
 Normal work is affected-based, not repository-wide by default.
 
+For fast dirty-tree feedback, run the nearest Nx target directly when the project is known:
+
+```text
+pnpm exec nx run <project>:<target>
+```
+
+When the change crosses projects or its cone is unclear, let Nx include committed, uncommitted, and untracked changes from the current commit:
+
+```text
+pnpm exec nx affected -t typecheck test build export-smoke vet --base=HEAD --outputStyle=dynamic-legacy
+```
+
+This loop is for feedback during editing. Use `pnpm verify` only after the candidate is coherent and clean; use `pnpm exec nx run control-panel:e2e` only when the Docker-owned runtime is already ready, because that target is intrinsically uncached.
+
 `pnpm verify` verifies the exact clean candidate against a supplied/derived Git base using repository invariants plus Nx affected targets. It is non-mutating and does not bootstrap dependencies or own Docker lifecycle.
 
 Runtime and user-facing behavior are proved separately only when the claim requires them.
