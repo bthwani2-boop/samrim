@@ -115,7 +115,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			t.Fatalf("expected duplicate identifier rejection, got %v", err)
 		}
 
-		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,publication_state,publication_changed_at) VALUES('store_catalog_v1',$1,'متجر القهوة',$2,'grocery','published',clock_timestamp())`, testPartnerActorID, createdCity.City.ID); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,publication_state,publication_changed_at) VALUES('store_catalog_v1',$1,'متجر القهوة',$2,$3,'published',clock_timestamp())`, testPartnerActorID, createdCity.City.ID, vertical.ID); err != nil {
 			t.Fatalf("create catalog test store: %v", err)
 		}
 		variantID := product.Variants[0].ID
