@@ -1,22 +1,20 @@
+import { resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { type IdentitySessionState, identityErrorMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Pressable,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  View,
   useColorScheme,
+  View,
 } from "react-native";
-
-import { resolveTextAlign, resolveTheme, resolveRowDirection } from "@bthwani/design-system";
-import { identityErrorMessage, isIdentityClientError, validatePasswordInputShape, type IdentitySessionState } from "@bthwani/identity";
 import {
   currentIdentityState,
-  subscribeIdentitySession,
   loginClient,
   logoutIdentity,
   recoverClient,
@@ -24,12 +22,13 @@ import {
   requestClientRecovery,
   requestClientRegistration,
   restoreIdentitySession,
+  subscribeIdentitySession,
 } from "../../bootstrap/identity";
-import { identityPresentation, type IdentityCopy } from "./identity-presentation";
-import StoreDiscovery from "../store-discovery/store-discovery";
 import LocationCore from "../location-core/location-core";
-import ServiceCityScope from "../service-city/service-city-scope";
 import ClientOrders from "../orders/orders";
+import ServiceCityScope from "../service-city/service-city-scope";
+import StoreDiscovery from "../store-discovery/store-discovery";
+import { type IdentityCopy, identityPresentation } from "./identity-presentation";
 
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
@@ -143,11 +142,15 @@ export default function IdentityGate() {
   }
 
   function updatePassword(value: string) {
-    setPassword(value);
+    setPassword(limitPasswordInput(value));
     if (mode === "login") {
       setLoginFailed(false);
       setError("");
     }
+  }
+
+  function updatePasswordConfirmation(value: string) {
+    setPasswordConfirmation(limitPasswordInput(value));
   }
 
   async function requestProof() {
@@ -360,8 +363,9 @@ export default function IdentityGate() {
                         accessibilityLabel={mode === "recover" ? copy.newPasswordLabel : copy.passwordLabel}
                         autoCapitalize="none"
                         autoComplete="new-password"
+                        maxLength={8}
                         onBlur={() => setFocusedField(null)}
-                        onChangeText={setPassword}
+                        onChangeText={updatePassword}
                         onFocus={() => setFocusedField("password")}
                         placeholder={copy.newPasswordPlaceholder}
                         placeholderTextColor={colors.muted}
@@ -377,8 +381,9 @@ export default function IdentityGate() {
                         accessibilityLabel={copy.passwordConfirmationLabel}
                         autoCapitalize="none"
                         autoComplete="new-password"
+                        maxLength={8}
                         onBlur={() => setFocusedField(null)}
-                        onChangeText={setPasswordConfirmation}
+                        onChangeText={updatePasswordConfirmation}
                         onFocus={() => setFocusedField("passwordConfirmation")}
                         placeholder={copy.passwordConfirmationPlaceholder}
                         placeholderTextColor={colors.muted}
@@ -397,6 +402,7 @@ export default function IdentityGate() {
                   accessibilityLabel={copy.passwordLabel}
                   autoCapitalize="none"
                   autoComplete="current-password"
+                  maxLength={8}
                   onBlur={() => setFocusedField(null)}
                   onChangeText={updatePassword}
                   onFocus={() => setFocusedField("password")}

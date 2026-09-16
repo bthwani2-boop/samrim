@@ -15,8 +15,12 @@ export type PasswordShapeValidationResult = Readonly<{
 
 export const PASSWORD_LENGTH = 8;
 
+export function limitPasswordInput(password: string): string {
+  return Array.from(password).slice(0, PASSWORD_LENGTH).join("");
+}
+
 export function validatePasswordInputShape(password: string, confirmation?: string): PasswordShapeValidationResult {
-  if (!password || !password.trim()) {
+  if (!password?.trim()) {
     return { valid: false, code: "EMPTY", message: "كلمة المرور مطلوبة" };
   }
   const length = countUnicodeRunes(password);

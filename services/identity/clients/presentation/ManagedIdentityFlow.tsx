@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
+import { direction, radius, resolveRowDirection, resolveTextAlign, resolveTheme, spacing, type ThemeColors } from "@bthwani/design-system";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-import { direction, resolveRowDirection, resolveTextAlign, resolveTheme, radius, spacing, type ThemeColors } from "@bthwani/design-system";
 import { identityErrorMessage } from "../errors";
-import { validatePasswordInputShape } from "../password";
 import type { IdentitySessionState } from "../index";
+import { limitPasswordInput, validatePasswordInputShape } from "../password";
 
 export interface ManagedIdentityBinding {
   role?: "partner" | "captain" | "field";
@@ -50,7 +49,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const theme = resolveTheme(isDark ? "dark" : "light");
-  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [step, setStep] = useState<"phone" | "password" | "activation">("phone");
@@ -289,8 +288,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
         <TextInput
           accessibilityLabel="كلمة المرور"
           autoComplete="current-password"
+          maxLength={8}
           onChangeText={(value: string) => {
-            setPassword(value);
+            setPassword(limitPasswordInput(value));
             setError("");
           }}
           placeholder="8 أحرف بالضبط"
@@ -356,7 +356,8 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
               <TextInput
               accessibilityLabel="كلمة المرور"
               autoComplete="new-password"
-              onChangeText={setPassword}
+              maxLength={8}
+              onChangeText={(value: string) => setPassword(limitPasswordInput(value))}
               placeholder="8 أحرف بالضبط"
               placeholderTextColor={theme.colorMuted}
               secureTextEntry
@@ -368,7 +369,8 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
             <TextInput
               accessibilityLabel="تأكيد كلمة المرور"
               autoComplete="new-password"
-              onChangeText={setPasswordConfirmation}
+              maxLength={8}
+              onChangeText={(value: string) => setPasswordConfirmation(limitPasswordInput(value))}
               placeholder="أعد إدخال كلمة المرور"
               placeholderTextColor={theme.colorMuted}
               secureTextEntry
@@ -412,7 +414,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   );
 }
 
-function createStyles(theme: ThemeColors, isDark: boolean) {
+function createStyles(theme: ThemeColors) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
   const numericTextAlign = resolveTextAlign("start", "ltr");
