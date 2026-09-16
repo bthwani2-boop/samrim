@@ -74,6 +74,10 @@ func (c *Client) ProvisionCaptainWithContext(ctx context.Context, input ActorInp
 	return c.inner.ProvisionRoleWithContext(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: "captain"}, correlationID, operatorActorID)
 }
 
+func (c *Client) ProvisionFieldWithContext(ctx context.Context, input ActorInput, correlationID, operatorActorID string) (identityclient.ActorRoleView, error) {
+	return c.inner.ProvisionRoleWithContext(ctx, identityclient.ProvisionActorRoleRequest{PhoneE164: input.PhoneE164, Role: "field"}, correlationID, operatorActorID)
+}
+
 func (c *Client) ReadActorRole(ctx context.Context, actorID, role string) (identityclient.ActorRoleView, error) {
 	return c.inner.ReadRole(ctx, actorID, role)
 }

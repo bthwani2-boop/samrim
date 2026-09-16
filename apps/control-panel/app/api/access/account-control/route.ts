@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import type { ActorType } from "@bthwani/identity";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, setDshCaptainRoleEnabled, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, setDshCaptainRoleEnabled, setDshFieldRoleEnabled, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, setIdentityRoleEnabled, setIdentitySecurityEnabled } from "../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       } else if (role === "captain") {
         await setDshCaptainRoleEnabled(actorId, { enabled, reason }, mutationOptions);
       } else if (role === "field") {
-        return jsonError("MANAGED_ROLE_DOMAIN_CLOSED", "Field role mutation requires a DSH-owned Field domain admission, which is not currently defined", 409);
+        await setDshFieldRoleEnabled(actorId, { enabled, reason }, mutationOptions);
       } else {
         await setIdentityRoleEnabled(actorId, role, enabled, reason, mutationOptions);
       }

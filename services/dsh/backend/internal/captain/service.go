@@ -190,6 +190,18 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, expectedVersion), strings.TrimSpace(correlationID))
 }
 
+func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
+	actingActorID = strings.TrimSpace(actingActorID)
+	assignmentID = strings.TrimSpace(assignmentID)
+	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, actingActorID) || assignmentID == "" {
+		return postgres.CaptainAssignment{}, false, ErrInvalidInput
+	}
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.CaptainAssignment{}, false, err
+	}
+	return postgres.RecoverCaptainAssignment(ctx, s.db, assignmentID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainRecoveryRequest(assignmentID, expectedVersion), actingActorID, strings.TrimSpace(correlationID))
+}
+
 func (s *Service) Dispatch(ctx context.Context, orderID, actingActorID, idempotencyKey, correlationID string) (postgres.CaptainOffer, bool, error) {
 	if !validMutation(idempotencyKey, correlationID, actingActorID) {
 		return postgres.CaptainOffer{}, false, ErrInvalidInput

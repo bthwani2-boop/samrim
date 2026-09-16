@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   if (body?.recover !== undefined || (body?.reenroll !== undefined && typeof body.reenroll !== "boolean")) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "recover is retired; use boolean reenroll" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
   const reenroll = body?.reenroll === true;
   if (!roles.has(role)) return NextResponse.json({ error: { code: "INVALID_INPUT", message: "a supported role is required" } }, { status: 400, headers: { "Cache-Control": "no-store" } });
-  if (role === "field") return NextResponse.json({ error: { code: "MANAGED_ROLE_DOMAIN_CLOSED", message: "Field role reenrollment requires a DSH-owned Field domain admission, which is not currently defined" } }, { status: 409, headers: { "Cache-Control": "no-store" } });
+  if (role === "field") return NextResponse.json({ error: { code: "MANAGED_ROLE_DOMAIN_OWNED", message: "Field admission and lifecycle are owned by the DSH Field workflow; this endpoint does not issue Field reenrollment" } }, { status: 409, headers: { "Cache-Control": "no-store" } });
 
   try {
     const mutationOptions = { operatorActorId: identity.subject, correlationId: randomUUID() };

@@ -32,7 +32,7 @@ const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
 if (dshToken.length < 24 || bootstrapToken.length < 24 || challengeSecret.length < 32) fail("canonical internal secrets are too weak");
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
-const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set();
+const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set();
 const cityA = `city-a-${suffix}`;
 const cityB = `city-b-${suffix}`;
 const verticalID = `grocery-${suffix}`;
@@ -78,6 +78,12 @@ function cleanup() {
     sql(`DELETE FROM dsh.captain_admission_idempotency WHERE admission_id='${value}'`);
     sql(`DELETE FROM dsh.captain_operation_idempotency WHERE admission_id='${value}'`);
     sql(`DELETE FROM dsh.captain_admissions WHERE id='${value}'`);
+  }
+  for (const admissionID of fieldAdmissionIDs) {
+    const value = sqlLiteral(admissionID);
+    sql(`DELETE FROM dsh.field_admission_audit WHERE admission_id='${value}'`);
+    sql(`DELETE FROM dsh.field_admission_idempotency WHERE admission_id='${value}'`);
+    sql(`DELETE FROM dsh.field_admissions WHERE id='${value}'`);
   }
   for (const orderID of orderIDs) {
     const value = sqlLiteral(orderID);
@@ -141,6 +147,8 @@ function cleanup() {
     sql(`DELETE FROM dsh.catalog_store_offer_audit WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_store_offer_mutation_idempotency WHERE offer_id IN (SELECT id FROM dsh.catalog_store_offers WHERE store_id='${value}')`);
     sql(`DELETE FROM dsh.catalog_store_offers WHERE store_id='${value}'`);
+    sql(`DELETE FROM dsh.store_origin_audit WHERE store_id='${value}'`);
+    sql(`DELETE FROM dsh.store_origin_mutation_idempotency WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.store_publication_audit WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.store_publication_idempotency WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.stores WHERE id='${value}'`);
@@ -211,6 +219,13 @@ async function activateCaptain(phone, password) {
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "captain" || activation.body?.identity?.surface !== "app-captain") fail("Captain activation failed", JSON.stringify(activation));
   return String(activation.body.accessToken);
 }
+async function activateField(phone, password) {
+  const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "field" } });
+  if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Field activation challenge failed", JSON.stringify(challenge));
+  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "field", verificationCode: hmacChallengeCode(challenge.body.challengeId, "managed_activate"), password, clientInstanceId: `dsh-field-${suffix}` } });
+  if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "field" || activation.body?.identity?.surface !== "app-field") fail("Field activation failed", JSON.stringify(activation));
+  return String(activation.body.accessToken);
+}
 async function createClientSession(phone) {
   const challenge = await request(identityBase, "POST", "/auth/client/registration/request", { body: { phone } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Client registration challenge failed", JSON.stringify(challenge));
@@ -231,7 +246,7 @@ if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is inva
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "18", "DSH migration history is not v18");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "20", "DSH migration history is not v20");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -241,6 +256,8 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=15", "015_captai
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=16", "016_captain_phone_constraint_correction.sql", "DSH Captain phone correction migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=17", "017_captain_access_and_timeout_canonicalization.sql", "DSH Captain access/timeout migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=18", "018_remove_unjustified_captain_terminated_state.sql", "DSH Captain state simplification migration is not canonical");
+expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=19", "019_captain_delivery_recovery.sql", "DSH Captain delivery recovery migration is not canonical");
+expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=20", "020_field_standing_admission_and_joining_scope.sql", "DSH Field admission migration is not canonical");
 for (const table of ["commerce_carts", "commerce_cart_lines", "commerce_cart_mutation_idempotency", "commerce_cart_audit", "commerce_orders", "commerce_order_lines", "commerce_order_checkout_idempotency", "commerce_order_transition_idempotency", "commerce_order_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required commerce relation is missing: ${table}`);
 for (const table of ["central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NULL`, "t", `retired catalog relation remains: ${table}`);
 for (const table of ["catalog_attribute_enum_options", "catalog_category_attribute_rules", "catalog_variant_attribute_values", "catalog_storefront_sections", "catalog_modifier_groups", "catalog_modifier_options", "catalog_variant_mutation_idempotency", "catalog_variant_audit", "catalog_attribute_mutation_idempotency", "commerce_order_line_modifier_snapshots", "commerce_order_line_attribute_snapshots"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v12/v13 relation is missing: ${table}`);
@@ -250,12 +267,15 @@ expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='ca
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_suspended_availability_chk'", "CHECK (((state <> 'suspended'::text) OR (availability_state = 'unavailable'::text)))", "Captain suspended availability invariant is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission state set is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admission_idempotency_state_chk'", "CHECK ((result_state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission idempotency state set is not canonical");
-console.log("DSH_SCHEMA_V18=PASS");
-
-for (const role of ["field"]) {
-  const response = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: identityDshToken, headers: { "X-Acting-Actor-ID": actingOperatorID, "X-Correlation-ID": crypto.randomUUID() }, body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role } });
-  if (response.status !== 403) fail("DSH admitted a closed managed role", JSON.stringify({ role, response }));
-}
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_operation_idempotency_operation_chk'", "CHECK ((operation = ANY (ARRAY['availability'::text, 'dispatch'::text, 'respond_offer'::text, 'reassign'::text, 'store_confirm'::text, 'pickup'::text, 'complete'::text, 'recover'::text])))", "Captain recovery operation is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['dispatch_offer_created'::text, 'dispatch_offer_accepted'::text, 'dispatch_offer_rejected'::text, 'dispatch_offer_expired'::text, 'captain_offer_superseded_by_access'::text, 'captain_assignment_reassigned'::text, 'store_handoff_confirmed'::text, 'captain_pickup_completed'::text, 'delivery_completed'::text, 'delivery_failed'::text, 'delivery_recovered'::text])))", "Captain delivery recovery audit events are not canonical");
+for (const table of ["field_admissions", "field_admission_idempotency", "field_admission_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required Field relation is missing: ${table}`);
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Field admission state set is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_idempotency_operation_chk'", "CHECK ((operation = 'create'::text))", "Field admission idempotency operation is not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "CHECK (((originating_field_actor_id IS NULL) OR (length(btrim(originating_field_actor_id)) > 0)))", "Field joining-case origin invariant is not canonical");
+expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name='originating_field_actor_id')", "t", "Field joining-case origin column is missing");
+console.log("DSH_SCHEMA_V20=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { id: cityA, displayNameAr: `مدينة أ ${suffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { id: cityB, displayNameAr: `مدينة ب ${suffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201) fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -308,6 +328,56 @@ async function createApprovedPartner(phone, name, serviceCityId) {
 }
 const first = await createApprovedPartner(`+96772${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime A", cityA);
 const second = await createApprovedPartner(`+96774${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime B", cityB);
+const fieldPhone = `+96771${crypto.randomInt(1_000_000, 9_999_999)}`;
+const fieldAdmissionResponse = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-${suffix}`), body: { contactPhoneE164: fieldPhone } });
+const fieldAdmissionReplay = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-${suffix}`), body: { contactPhoneE164: fieldPhone } });
+if (fieldAdmissionResponse.status !== 201 || fieldAdmissionResponse.body?.admission?.state !== "eligible" || !fieldAdmissionResponse.body?.admission?.actorId || fieldAdmissionReplay.status !== 200 || fieldAdmissionReplay.body?.idempotentReplay !== true || fieldAdmissionReplay.body.admission.id !== fieldAdmissionResponse.body.admission.id) fail("Field admission did not bind and replay one DSH-owned actor", JSON.stringify({ fieldAdmissionResponse, fieldAdmissionReplay }));
+const fieldAdmissionID = String(fieldAdmissionResponse.body.admission.id);
+const fieldActorID = String(fieldAdmissionResponse.body.admission.actorId);
+fieldAdmissionIDs.add(fieldAdmissionID); actorIDs.add(fieldActorID);
+const fieldAccessToken = await activateField(fieldPhone, `Fiel${suffix.slice(0, 4)}`);
+const fieldSelf = await request(dshBase, "GET", "/dsh/fields/me", { token: fieldAccessToken });
+const fieldAdmissionRead = await request(dshBase, "GET", `/dsh/fields/admissions/${encodeURIComponent(fieldAdmissionID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const fieldActorAdmissionRead = await request(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(fieldActorID)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const fieldDirectIdentityWrite = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: fieldAccessToken, body: { phoneE164: `+96770${crypto.randomInt(1_000_000, 9_999_999)}`, role: "field" } });
+if (fieldSelf.status !== 200 || fieldSelf.body?.admission?.actorId !== fieldActorID || fieldAdmissionRead.status !== 200 || fieldAdmissionRead.body?.admission?.id !== fieldAdmissionID || fieldActorAdmissionRead.status !== 200 || fieldActorAdmissionRead.body?.admission?.actorId !== fieldActorID || fieldDirectIdentityWrite.status !== 401) fail("Field admission readback or direct Identity creation boundary failed", JSON.stringify({ fieldSelf, fieldAdmissionRead, fieldActorAdmissionRead, fieldDirectIdentityWrite }));
+const secondFieldPhone = `+96773${crypto.randomInt(1_000_000, 9_999_999)}`;
+const secondFieldAdmission = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-second-${suffix}`), body: { contactPhoneE164: secondFieldPhone } });
+if (secondFieldAdmission.status !== 201 || secondFieldAdmission.body?.admission?.state !== "eligible" || !secondFieldAdmission.body?.admission?.actorId) fail("second Field admission fixture failed", JSON.stringify(secondFieldAdmission));
+const secondFieldAdmissionID = String(secondFieldAdmission.body.admission.id); const secondFieldActorID = String(secondFieldAdmission.body.admission.actorId); fieldAdmissionIDs.add(secondFieldAdmissionID); actorIDs.add(secondFieldActorID);
+const secondFieldAccessToken = await activateField(secondFieldPhone, `Fiel${suffix.slice(0, 4)}`);
+const fieldCasePhone = `+96775${crypto.randomInt(1_000_000, 9_999_999)}`;
+const fieldCaseKey = `field-case-${suffix}`;
+const fieldCaseCreated = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: fieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": fieldCaseKey }, body: { contactPhoneE164: fieldCasePhone, businessName: `Field ${suffix} business`, firstStoreName: `Field ${suffix} store`, serviceCityId: cityA, firstStoreVerticalId: verticalID } });
+const fieldCaseReplay = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: fieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": fieldCaseKey }, body: { contactPhoneE164: fieldCasePhone, businessName: `Field ${suffix} business`, firstStoreName: `Field ${suffix} store`, serviceCityId: cityA, firstStoreVerticalId: verticalID } });
+if (fieldCaseCreated.status !== 201 || fieldCaseCreated.body?.case?.state !== "draft" || fieldCaseCreated.body?.case?.version !== 1 || fieldCaseReplay.status !== 200 || fieldCaseReplay.body?.idempotentReplay !== true || fieldCaseReplay.body.case.id !== fieldCaseCreated.body.case.id) fail("Field joining-case create/replay did not preserve one draft", JSON.stringify({ fieldCaseCreated, fieldCaseReplay }));
+const fieldCaseID = String(fieldCaseCreated.body.case.id); caseIDs.add(fieldCaseID);
+const fieldCases = await request(dshBase, "GET", "/dsh/field/joining-cases?limit=25", { token: fieldAccessToken });
+const fieldCaseRead = await request(dshBase, "GET", `/dsh/field/joining-cases/${encodeURIComponent(fieldCaseID)}`, { token: fieldAccessToken });
+const secondFieldCaseRead = await request(dshBase, "GET", `/dsh/field/joining-cases/${encodeURIComponent(fieldCaseID)}`, { token: secondFieldAccessToken });
+const secondFieldCases = await request(dshBase, "GET", "/dsh/field/joining-cases?limit=25", { token: secondFieldAccessToken });
+if (fieldCases.status !== 200 || !fieldCases.body?.cases?.some((item) => item.id === fieldCaseID && item.state === "draft") || fieldCaseRead.status !== 200 || fieldCaseRead.body?.case?.id !== fieldCaseID || secondFieldCaseRead.status !== 404 || secondFieldCases.status !== 200 || secondFieldCases.body?.cases?.some((item) => item.id === fieldCaseID)) fail("Field joining-case scope leaked across Field actors", JSON.stringify({ fieldCases, fieldCaseRead, secondFieldCaseRead, secondFieldCases }));
+const fieldSubmitKey = `field-submit-${suffix}`;
+const fieldSubmitted = await request(dshBase, "POST", `/dsh/field/joining-cases/${encodeURIComponent(fieldCaseID)}/submit`, { token: fieldAccessToken, headers: partnerHeaders(fieldSubmitKey, 1) });
+const fieldSubmittedReplay = await request(dshBase, "POST", `/dsh/field/joining-cases/${encodeURIComponent(fieldCaseID)}/submit`, { token: fieldAccessToken, headers: partnerHeaders(fieldSubmitKey, 1) });
+const fieldSubmittedCanonical = await request(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const fieldReviewAttempt = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}/review`, { token: fieldAccessToken, headers: serviceHeaders(fieldActorID, `field-self-review-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved" } });
+if (fieldSubmitted.status !== 200 || fieldSubmitted.body?.case?.state !== "submitted" || fieldSubmitted.body?.case?.version !== 2 || fieldSubmittedReplay.status !== 200 || fieldSubmittedReplay.body?.idempotentReplay !== true || fieldSubmittedReplay.body.case.version !== 2 || fieldSubmittedCanonical.status !== 200 || !fieldSubmittedCanonical.body?.case?.partnerActorId || fieldReviewAttempt.status !== 401) fail("Field joining-case submission, replay, or review boundary failed", JSON.stringify({ fieldSubmitted, fieldSubmittedReplay, fieldSubmittedCanonical, fieldReviewAttempt }));
+const fieldPartnerActorID = String(fieldSubmittedCanonical.body.case.partnerActorId); actorIDs.add(fieldPartnerActorID);
+const fieldPublicationAttempt = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/publication`, { token: fieldAccessToken, headers: partnerHeaders(`field-publication-${suffix}`, 1), body: { state: "published" } });
+if (fieldPublicationAttempt.status !== 401 && fieldPublicationAttempt.status !== 403) fail("Field reached the Store publication writer", JSON.stringify(fieldPublicationAttempt));
+const fieldApproved = await request(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(fieldCaseID)}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-approve-${suffix}`, crypto.randomUUID(), 2), body: { decision: "approved" } });
+if (fieldApproved.status !== 200 || fieldApproved.body?.case?.state !== "approved" || !fieldApproved.body?.case?.store?.id) fail("operator approval of Field-originated joining case failed", JSON.stringify(fieldApproved));
+storeIDs.add(String(fieldApproved.body.case.store.id));
+const fieldRoleBeforeDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(fieldActorID)}/roles/field`, { token: dshToken });
+const fieldDisabled = await request(dshBase, "POST", `/dsh/fields/${encodeURIComponent(fieldActorID)}/identity-role`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-disable-${suffix}`, crypto.randomUUID(), fieldRoleBeforeDisable.body?.roleVersion), body: { enabled: false, reason: "تعليق Field واختبار إلغاء الجلسة" } });
+const fieldAdmissionSuspended = await request(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(fieldActorID)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const revokedFieldSession = await request(dshBase, "GET", "/dsh/fields/me", { token: fieldAccessToken });
+const fieldRoleAfterDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(fieldActorID)}/roles/field`, { token: dshToken });
+const fieldEnabled = await request(dshBase, "POST", `/dsh/fields/${encodeURIComponent(fieldActorID)}/identity-role`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-enable-${suffix}`, crypto.randomUUID(), fieldRoleAfterDisable.body?.roleVersion), body: { enabled: true, reason: "إعادة Field إلى الأهلية التشغيلية" } });
+const fieldAdmissionRestored = await request(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(fieldActorID)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (fieldRoleBeforeDisable.status !== 200 || fieldDisabled.status !== 204 || fieldAdmissionSuspended.status !== 200 || fieldAdmissionSuspended.body?.admission?.state !== "suspended" || fieldDisabled.status !== 204 || fieldRoleAfterDisable.body?.enabled !== false || revokedFieldSession.status !== 401 || fieldEnabled.status !== 204 || fieldAdmissionRestored.status !== 200 || fieldAdmissionRestored.body?.admission?.state !== "eligible") fail("Field DSH/Identity suspend/restore lifecycle was not fail-closed and versioned", JSON.stringify({ fieldRoleBeforeDisable, fieldDisabled, fieldAdmissionSuspended, revokedFieldSession, fieldRoleAfterDisable, fieldEnabled, fieldAdmissionRestored }));
+console.log("DSH_FIELD_ADMISSION_AND_SCOPED_JOINING=PASS");
 const correctionPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
 const correctionCreated = await request(dshBase, "POST", "/dsh/joining-cases", { token: dshToken, headers: serviceHeaders(actingOperatorID, `joining-correction-${suffix}`), body: { contactPhoneE164: correctionPhone, businessName: "Correction business", firstStoreName: "Correction store", serviceCityId: cityA, firstStoreVerticalId: verticalID } });
 if (correctionCreated.status !== 201 || correctionCreated.body?.case?.state !== "draft") fail("correction joining case creation failed", JSON.stringify(correctionCreated));
@@ -320,16 +390,13 @@ const needsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${cor
 if (needsCorrection.status !== 200 || needsCorrection.body?.case?.state !== "needs_correction" || needsCorrection.body.case.version !== 3) fail("joining case correction review failed", JSON.stringify(needsCorrection));
 const corrected = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/correct-and-resubmit`, { token: correctionAccessToken, headers: partnerHeaders(`correct-and-resubmit-${suffix}`, 3), body: { businessName: "Correction business fixed", firstStoreName: "Correction store fixed", serviceCityId: cityA, firstStoreVerticalId: verticalID } });
 if (corrected.status !== 200 || corrected.body?.case?.state !== "submitted" || corrected.body.case.version !== 4 || corrected.body.case.firstStoreVerticalId !== verticalID) fail("joining case correct-and-resubmit failed", JSON.stringify(corrected));
-const correctedApproved = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-correction-${suffix}`, crypto.randomUUID(), 4), body: { decision: "approved" } });
-if (correctedApproved.status !== 200 || correctedApproved.body?.case?.state !== "approved" || !correctedApproved.body?.case?.store?.id) fail("corrected joining case approval failed", JSON.stringify(correctedApproved));
-storeIDs.add(String(correctedApproved.body.case.store.id));
 const correctionRoleBeforeDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(correctionActorID)}/roles/partner`, { token: dshToken });
 const correctionRoleDisable = await request(dshBase, "POST", `/dsh/partners/${encodeURIComponent(correctionActorID)}/identity-role`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-disable-${suffix}`, crypto.randomUUID(), correctionRoleBeforeDisable.body?.roleVersion), body: { enabled: false, reason: "اختبار تعليق شريك قبل إعادة التفعيل" } });
-const needsCorrectionForReenable = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `needs-correction-reenable-${suffix}`, crypto.randomUUID(), 5), body: { decision: "needs_correction", correctionReason: "تحقق من بيانات المتجر" } });
 const correctionRoleAfterDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(correctionActorID)}/roles/partner`, { token: dshToken });
 const correctionRoleEnable = await request(dshBase, "POST", `/dsh/partners/${encodeURIComponent(correctionActorID)}/identity-role`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-enable-needs-correction-${suffix}`, crypto.randomUUID(), correctionRoleAfterDisable.body?.roleVersion), body: { enabled: true, reason: "إعادة تفعيل بعد تصحيح مطلوب" } });
-const approvedAfterReenable = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-reenable-${suffix}`, crypto.randomUUID(), 6), body: { decision: "approved" } });
-if (correctionRoleBeforeDisable.status !== 200 || correctionRoleDisable.status !== 204 || needsCorrectionForReenable.status !== 200 || needsCorrectionForReenable.body?.case?.state !== "needs_correction" || correctionRoleAfterDisable.status !== 200 || correctionRoleEnable.status !== 204 || approvedAfterReenable.status !== 200 || approvedAfterReenable.body?.case?.state !== "approved") fail("Partner re-enable did not honor the needs_correction joining lifecycle", JSON.stringify({ correctionRoleBeforeDisable, correctionRoleDisable, needsCorrectionForReenable, correctionRoleAfterDisable, correctionRoleEnable, approvedAfterReenable }));
+const approvedAfterReenable = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-reenable-${suffix}`, crypto.randomUUID(), 4), body: { decision: "approved" } });
+if (correctionRoleBeforeDisable.status !== 200 || correctionRoleDisable.status !== 204 || correctionRoleAfterDisable.status !== 200 || correctionRoleEnable.status !== 204 || approvedAfterReenable.status !== 200 || approvedAfterReenable.body?.case?.state !== "approved") fail("Partner re-enable did not honor the submitted joining lifecycle", JSON.stringify({ correctionRoleBeforeDisable, correctionRoleDisable, correctionRoleAfterDisable, correctionRoleEnable, approvedAfterReenable }));
+storeIDs.add(String(approvedAfterReenable.body.case.store.id));
 console.log("DSH_JOINING_CASE_VERTICAL=PASS");
 console.log("DSH_JOINING_CASE_CORRECTION=PASS");
 
@@ -625,13 +692,22 @@ if (confirmedHandoff.status !== 200 || confirmedHandoff.body?.assignment?.handof
 const confirmedHandoffReplay = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/orders/${encodeURIComponent(orderID)}/handoff`, { token: first.accessToken, headers: partnerHeaders(`captain-handoff-${suffix}`, 1), body: { assignmentId: captainAssignmentID } });
 if (confirmedHandoffReplay.status !== 200 || confirmedHandoffReplay.body?.idempotentReplay !== true || confirmedHandoffReplay.body.assignment.handoff.state !== "store_confirmed") fail("Store Captain handoff replay failed", JSON.stringify(confirmedHandoffReplay));
 const pickedUp = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/pickup`, { token: captainAccessToken, headers: partnerHeaders(`captain-pickup-${suffix}`, 2) });
-const completed = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-${suffix}`, 2), body: { result: "delivered" } });
+const failedDelivery = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-failed-${suffix}`, 2), body: { result: "delivery_failed" } });
+const failedOrder = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}`, { token: client.accessToken });
+const captainAfterFailure = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
+const recoveryKey = `captain-recover-${suffix}`;
+const recovered = await request(dshBase, "POST", `/dsh/captains/assignments/${encodeURIComponent(captainAssignmentID)}/recover`, { token: dshToken, headers: serviceHeaders(actingOperatorID, recoveryKey, crypto.randomUUID(), 3) });
+const recoveredReplay = await request(dshBase, "POST", `/dsh/captains/assignments/${encodeURIComponent(captainAssignmentID)}/recover`, { token: dshToken, headers: serviceHeaders(actingOperatorID, recoveryKey, crypto.randomUUID(), 3) });
+const recoveredTask = await request(dshBase, "GET", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/delivery-task`, { token: captainAccessToken });
+const reassignmentAfterFailure = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/reassign`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-reassign-after-failure-${suffix}`) });
+const completed = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-${suffix}`, 4), body: { result: "delivered" } });
+const completedReplay = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-${suffix}`, 4), body: { result: "delivered" } });
 const deliveredOrder = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}`, { token: client.accessToken });
 const captainAfterDelivery = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
-if (pickedUp.status !== 200 || pickedUp.body?.assignment?.state !== "in_custody" || completed.status !== 200 || completed.body?.assignment?.state !== "delivered" || deliveredOrder.status !== 200 || deliveredOrder.body?.order?.state !== "DELIVERED" || captainAfterDelivery.status !== 200 || captainAfterDelivery.body?.admission?.availabilityState !== "available") fail("Captain custody and terminal delivery journey failed", JSON.stringify({ pickedUp, completed, deliveredOrder, captainAfterDelivery }));
+if (pickedUp.status !== 200 || pickedUp.body?.assignment?.state !== "in_custody" || failedDelivery.status !== 200 || failedDelivery.body?.assignment?.state !== "delivery_failed" || failedOrder.status !== 200 || failedOrder.body?.order?.state !== "DELIVERY_FAILED" || captainAfterFailure.status !== 200 || captainAfterFailure.body?.admission?.availabilityState !== "unavailable" || recovered.status !== 200 || recovered.body?.assignment?.state !== "in_custody" || recovered.body.assignment.captainActorId !== captainActorID || recoveredReplay.status !== 200 || recoveredReplay.body?.idempotentReplay !== true || recoveredReplay.body.assignment.version !== recovered.body.assignment.version || recoveredTask.status !== 200 || recoveredTask.body?.task?.deliveryState !== "in_custody" || reassignmentAfterFailure.status !== 409 || completed.status !== 200 || completed.body?.assignment?.state !== "delivered" || completedReplay.status !== 200 || completedReplay.body?.idempotentReplay !== true || deliveredOrder.status !== 200 || deliveredOrder.body?.order?.state !== "DELIVERED" || captainAfterDelivery.status !== 200 || captainAfterDelivery.body?.admission?.availabilityState !== "available") fail("Captain custody, governed failure recovery, and terminal delivery journey failed", JSON.stringify({ pickedUp, failedDelivery, failedOrder, captainAfterFailure, recovered, recoveredReplay, recoveredTask, reassignmentAfterFailure, completed, completedReplay, deliveredOrder, captainAfterDelivery }));
 const captainAuditCount = sql(`SELECT count(*) FROM dsh.captain_audit WHERE order_id='${sqlLiteral(orderID)}'`);
 const captainOperationCount = sql(`SELECT count(*) FROM dsh.captain_operation_idempotency WHERE order_id='${sqlLiteral(orderID)}'`);
-if (captainAuditCount !== "7" || captainOperationCount !== "7") fail("Captain audit/idempotency readback is incomplete", JSON.stringify({ captainAuditCount, captainOperationCount }));
+if (captainAuditCount !== "9" || captainOperationCount !== "9" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='delivery_failed' AND order_id='${sqlLiteral(orderID)}'`) !== "1" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='delivery_recovered' AND order_id='${sqlLiteral(orderID)}'`) !== "1") fail("Captain audit/idempotency readback is incomplete", JSON.stringify({ captainAuditCount, captainOperationCount }));
 console.log("DSH_CAPTAIN_DISPATCH_HANDOFF_DELIVERY=PASS");
 
 const expiryCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`captain-expiry-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [modifierOptionID] } });
@@ -648,11 +724,15 @@ const expiryDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURICo
 if (expiryDispatch.status !== 201 || expiryDispatch.body?.offer?.state !== "offered") fail("Captain expiry offer fixture failed", JSON.stringify(expiryDispatch));
 const expiryOfferID = String(expiryDispatch.body.offer.id); captainOfferIDs.add(expiryOfferID);
 sql(`UPDATE dsh.captain_dispatch_offers SET expires_at=clock_timestamp()-interval '1 second' WHERE id='${sqlLiteral(expiryOfferID)}'`);
-const expiredOfferRead = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: captainAccessToken });
-const captainAfterExpiry = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
+const [expiredOfferRead, captainAfterExpiry, concurrentExpiryRead] = await Promise.all([
+  request(dshBase, "GET", "/dsh/captains/me/offers", { token: captainAccessToken }),
+  request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken }),
+  request(dshBase, "GET", "/dsh/captains/me/offers", { token: captainAccessToken }),
+]);
+const expiredOfferRepeat = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: captainAccessToken });
 const expiredOffer = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(expiryOfferID)}/respond`, { token: captainAccessToken, headers: partnerHeaders(`captain-expiry-respond-${suffix}`, 1), body: { decision: "accept" } });
 const expiredOfferReplay = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(expiryOfferID)}/respond`, { token: captainAccessToken, headers: partnerHeaders(`captain-expiry-respond-${suffix}`, 1), body: { decision: "accept" } });
-if (expiredOffer.status !== 409 || expiredOfferReplay.status !== 409 || expiredOfferRead.status !== 200 || !expiredOfferRead.body?.offers?.some((offer) => offer.id === expiryOfferID && offer.state === "expired") || captainAfterExpiry.status !== 200 || captainAfterExpiry.body?.admission?.availabilityState !== "available" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='dispatch_offer_expired' AND offer_id='${sqlLiteral(expiryOfferID)}'`) !== "1" || sql(`SELECT count(*) FROM dsh.captain_operation_idempotency WHERE idempotency_key='captain-expiry-respond-${suffix}'`) !== "1") fail("Captain offer expiry was not durable and idempotent", JSON.stringify({ expiredOffer, expiredOfferReplay, expiredOfferRead, captainAfterExpiry }));
+if (expiredOffer.status !== 409 || expiredOfferReplay.status !== 409 || expiredOfferRead.status !== 200 || !expiredOfferRead.body?.offers?.some((offer) => offer.id === expiryOfferID && offer.state === "expired") || concurrentExpiryRead.status !== 200 || expiredOfferRepeat.status !== 200 || expiredOfferRepeat.body?.offers?.some((offer) => offer.id === expiryOfferID && offer.state === "offered") || captainAfterExpiry.status !== 200 || captainAfterExpiry.body?.admission?.availabilityState !== "available" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='dispatch_offer_expired' AND offer_id='${sqlLiteral(expiryOfferID)}'`) !== "1" || sql(`SELECT count(*) FROM dsh.captain_operation_idempotency WHERE idempotency_key='captain-expiry-respond-${suffix}'`) !== "1") fail("Captain offer expiry was not durable and idempotent", JSON.stringify({ expiredOffer, expiredOfferReplay, expiredOfferRead, concurrentExpiryRead, expiredOfferRepeat, captainAfterExpiry }));
 console.log("DSH_CAPTAIN_OFFER_REJECT_EXPIRY=PASS");
 
 const captainRoleBeforeDisable = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(captainActorID)}/roles/captain`, { token: dshToken });

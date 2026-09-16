@@ -18,13 +18,13 @@ func TestCanonicalRoleSurfaceMapping(t *testing.T) {
 }
 
 func TestTrustedCallerProvisionBoundary(t *testing.T) {
-	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"control-panel", "operator"}}
+	allowed := [][2]string{{"dsh", "partner"}, {"dsh", "captain"}, {"dsh", "field"}, {"control-panel", "operator"}}
 	for _, pair := range allowed {
 		if !CanProvisionRole(pair[0], pair[1]) {
 			t.Fatalf("expected %s to manage %s", pair[0], pair[1])
 		}
 	}
-	denied := [][2]string{{"dsh", "operator"}, {"dsh", "field"}, {"control-panel", "client"}, {"control-panel", "captain"}, {"control-panel", "field"}, {"browser", "operator"}}
+	denied := [][2]string{{"dsh", "operator"}, {"control-panel", "client"}, {"control-panel", "captain"}, {"control-panel", "field"}, {"browser", "operator"}}
 	for _, pair := range denied {
 		if CanProvisionRole(pair[0], pair[1]) {
 			t.Fatalf("unexpected permission: %s can manage %s", pair[0], pair[1])
@@ -111,7 +111,7 @@ func TestManagedRoleSecurityMutationBoundary(t *testing.T) {
 	if !CanSetRoleEnabled("dsh", "partner") || !CanSetRoleEnabled("dsh", "captain") {
 		t.Fatal("DSH must own managed-role security transitions")
 	}
-	if CanSetRoleEnabled("dsh", "field") || CanSetRoleEnabled("control-panel", "partner") || CanSetRoleEnabled("control-panel", "captain") || CanSetRoleEnabled("control-panel", "field") {
+	if !CanSetRoleEnabled("dsh", "field") || CanSetRoleEnabled("control-panel", "partner") || CanSetRoleEnabled("control-panel", "captain") || CanSetRoleEnabled("control-panel", "field") {
 		t.Fatal("managed-role security transitions must not bypass the owning DSH boundary")
 	}
 }
@@ -121,6 +121,6 @@ func TestManagedRoleReenrollmentBoundary(t *testing.T) {
 		t.Fatal("operator must be able to request governed partner/captain reenrollment")
 	}
 	if CanAuthorizeReenrollment("control-panel", "field") {
-		t.Fatal("field reenrollment must remain closed until a canonical field admission path exists")
+		t.Fatal("field reenrollment must remain unavailable because DSH owns the Field admission lifecycle")
 	}
 }

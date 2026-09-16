@@ -253,7 +253,7 @@ func CanProvisionRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch strings.ToLower(strings.TrimSpace(caller)) {
 	case "dsh":
-		return role == "partner" || role == "captain"
+		return role == "partner" || role == "captain" || role == "field"
 	case "control-panel":
 		return role == "operator"
 	default:
@@ -270,7 +270,7 @@ func CanReadRole(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch caller {
 	case "dsh":
-		return role == "partner" || role == "captain" || role == "operator"
+		return role == "partner" || role == "captain" || role == "field" || role == "operator"
 	case "control-panel":
 		return role == "client" || IsManagedRole(role) || role == "operator"
 	default:
@@ -283,7 +283,7 @@ func CanSetRoleEnabled(caller, role string) bool {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch caller {
 	case "dsh":
-		return IsManagedRole(role) && role != "field"
+		return IsManagedRole(role)
 	case "control-panel":
 		return role == "client" || role == "operator"
 	default:

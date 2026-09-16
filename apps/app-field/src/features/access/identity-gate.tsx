@@ -1,4 +1,5 @@
 import { ManagedIdentityFlow } from "@bthwani/identity/presentation";
+import { FieldOperations } from "../field-operations/field-operations";
 import {
   activateManagedIdentity,
   currentIdentityState,
@@ -20,6 +21,7 @@ export default function IdentityGate() {
       surface={surface}
       roleLabel="الميدان"
       binding={identity}
+      authenticatedContent={<FieldOperations />}
     />
   );
 }

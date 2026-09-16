@@ -101,7 +101,6 @@ export function AccountAccessPanel() {
   }, [phone, role]);
 
   const managedRole = role === "partner" || role === "captain" || role === "field";
-  const roleMutationClosed = role === "field";
 
   async function provision(reenroll = false) {
     setBusy(true);
@@ -175,7 +174,7 @@ export function AccountAccessPanel() {
   const canIssueActivation = role === "operator" && status !== null && !status.activated;
   const canIssueReenrollment = (role === "partner" || role === "captain") && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
   const activationBlocked = status?.exists === true && status.enabled === false;
-  const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true && (status.role !== "captain" || status.state === "active"));
+  const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true && ((status.role !== "captain" && status.role !== "field") || status.state === "active"));
 
   return (
     <section className="access-card" aria-labelledby="account-access-title">
@@ -212,12 +211,12 @@ export function AccountAccessPanel() {
             <>
               <strong>{status.enabled ? "الدور مفعّل" : "الدور موقوف"} · {status.securityEnabled ? "الهوية مسموحة" : "الهوية موقوفة بالكامل"}</strong>
               <p>actorId: <code>{status.actorId}</code> · الحالة: {status.state}</p>
-              {status.role === "captain" ? <p>الأهلية التشغيلية: {status.operationalAdmissionState ?? "غير موجودة"} · التوافر: {status.operationalAvailabilityState ?? "غير متاح"}</p> : null}
+              {status.role === "captain" || status.role === "field" ? <p>الأهلية التشغيلية: {status.operationalAdmissionState ?? "غير موجودة"}{status.role === "captain" ? ` · التوافر: ${status.operationalAvailabilityState ?? "غير متاح"}` : ""}</p> : null}
               <p>{status.activated ? "يوجد تسجيل سابق لهذا الدور." : "الدور مهيأ ولم يكتمل تفعيله بعد."}</p>
               {status.activated && managedRole ? (
                 <div className="managed-status managed-status-warning" role="alert">
                   <strong>تم تفعيل هذا الدور من قبل.</strong>
-                  <p>{roleMutationClosed ? "إدارة دور الميداني مغلقة حتى يثبت مسار مجال canonical مملوك لـDSH." : canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
+                  <p>{canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين؛ ويخضع الميداني أيضًا لأهلية DSH."}</p>
                   {canIssueReenrollment ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ إصدار دعوة إعادة التسجيل…" : "إصدار دعوة إعادة تسجيل الدور"}</button> : null}
                 </div>
               ) : null}
@@ -226,7 +225,7 @@ export function AccountAccessPanel() {
                 <input id="access-reason" maxLength={500} placeholder="مثال: انتهاء التعاقد أو استرداد الجهاز" value={reason} onChange={(event) => setReason(event.target.value)} />
               </label>
               <div className="managed-status-actions">
-                {!roleMutationClosed ? status.enabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-role")}>إيقاف الدور</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-role")}>إعادة تفعيل الدور</button> : null}
+                {status.enabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-role")}>إيقاف الدور</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-role")}>إعادة تفعيل الدور</button>}
                 {status.securityEnabled ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void changeAccess("disable-identity")}>إيقاف الهوية بالكامل</button> : <button type="button" className="button button-primary" disabled={busy} onClick={() => void changeAccess("enable-identity")}>إعادة تفعيل الهوية</button>}
               </div>
             </>

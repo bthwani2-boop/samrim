@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { ActorType } from "@bthwani/identity";
-import { dshErrorPayload, dshHttpStatus, isDshClientError, readCaptainAdmissionByActor } from "../../../../../src/server/dsh/dsh-bff";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, readCaptainAdmissionByActor, readFieldAdmissionByActor } from "../../../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, lookupIdentityRoles, readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 
 const roles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
@@ -27,6 +27,14 @@ export async function GET(request: Request) {
         if (!isDshClientError(error) || dshHttpStatus(error) !== 404) throw error;
       }
     }));
+    const fieldAdmissions = new Map<string, Awaited<ReturnType<typeof readFieldAdmissionByActor>>["admission"]>();
+    await Promise.all(records.filter((candidate) => candidate.role === "field").map(async (candidate) => {
+      try {
+        fieldAdmissions.set(candidate.actorId, (await readFieldAdmissionByActor(candidate.actorId, { operatorActorId: identity.subject })).admission);
+      } catch (error) {
+        if (!isDshClientError(error) || dshHttpStatus(error) !== 404) throw error;
+      }
+    }));
     const toStatus = (candidate: typeof record) => candidate ? {
       actorId: candidate.actorId,
       phoneE164: candidate.phoneE164,
@@ -36,8 +44,8 @@ export async function GET(request: Request) {
       activated: Boolean(candidate.activatedAt),
       securityEnabled: candidate.securityEnabled,
       reenrollable: Boolean(candidate.enabled && candidate.activatedAt && (candidate.role === "partner" || candidate.role === "captain")),
-      state: !candidate.securityEnabled ? "identity_disabled" : !candidate.enabled ? "role_disabled" : !candidate.activatedAt ? "pending_activation" : candidate.role === "captain" && !captainAdmissions.has(candidate.actorId) ? "operational_not_admitted" : candidate.role === "captain" && captainAdmissions.get(candidate.actorId)?.state === "suspended" ? "operational_suspended" : candidate.role === "captain" && captainAdmissions.get(candidate.actorId)?.availabilityState === "unavailable" ? "active_unavailable" : "active",
-      operationalAdmissionState: candidate.role === "captain" ? captainAdmissions.get(candidate.actorId)?.state : undefined,
+      state: !candidate.securityEnabled ? "identity_disabled" : !candidate.enabled ? "role_disabled" : !candidate.activatedAt ? "pending_activation" : candidate.role === "captain" && !captainAdmissions.has(candidate.actorId) ? "operational_not_admitted" : candidate.role === "captain" && captainAdmissions.get(candidate.actorId)?.state === "suspended" ? "operational_suspended" : candidate.role === "field" && !fieldAdmissions.has(candidate.actorId) ? "operational_not_admitted" : candidate.role === "field" && fieldAdmissions.get(candidate.actorId)?.state === "suspended" ? "operational_suspended" : candidate.role === "captain" && captainAdmissions.get(candidate.actorId)?.availabilityState === "unavailable" ? "active_unavailable" : "active",
+      operationalAdmissionState: candidate.role === "captain" ? captainAdmissions.get(candidate.actorId)?.state : candidate.role === "field" ? fieldAdmissions.get(candidate.actorId)?.state : undefined,
       operationalAvailabilityState: candidate.role === "captain" ? captainAdmissions.get(candidate.actorId)?.availabilityState : undefined,
       actorVersion: candidate.actorVersion,
       roleVersion: candidate.roleVersion,
@@ -52,6 +60,8 @@ export async function GET(request: Request) {
       securityEnabled: record?.securityEnabled ?? false,
       reenrollable: Boolean(record?.enabled && record?.activatedAt && (record.role === "partner" || record.role === "captain")),
       state: toStatus(record)?.state ?? "not_admitted",
+      operationalAdmissionState: toStatus(record)?.operationalAdmissionState,
+      operationalAvailabilityState: toStatus(record)?.operationalAvailabilityState,
       role,
       actorVersion: record?.actorVersion,
       roleVersion: record?.roleVersion,

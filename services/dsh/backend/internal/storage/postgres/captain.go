@@ -137,6 +137,10 @@ func HashCaptainCompletionRequest(assignmentID, result string, expectedVersion i
 	return hashFacts("captain-complete", strings.TrimSpace(assignmentID), strings.TrimSpace(result), strconv.Itoa(expectedVersion))
 }
 
+func HashCaptainRecoveryRequest(assignmentID string, expectedVersion int) string {
+	return hashFacts("captain-recover", strings.TrimSpace(assignmentID), strconv.Itoa(expectedVersion))
+}
+
 func HashCaptainAccessRequest(actorID, role string, enabled bool, expectedVersion int) string {
 	return hashFacts("captain-access", strings.TrimSpace(actorID), strings.TrimSpace(role), strconv.FormatBool(enabled), strconv.Itoa(expectedVersion))
 }
@@ -1126,19 +1130,127 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 	} else if rows != 1 {
 		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_admissions SET availability_state='available',version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND state='eligible' AND availability_state='unavailable'", captainActorID); err != nil {
-		return CaptainAssignment{}, false, err
+	if result == "delivered" {
+		if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_admissions SET availability_state='available',version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND state='eligible' AND availability_state='unavailable'", captainActorID); err != nil {
+			return CaptainAssignment{}, false, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,assignment_id,result_version) VALUES($1,$2,'complete',$3,$4,$5)`, idempotencyKey, requestHash, orderID, assignmentID, assignment.Version+1); err != nil {
 		return CaptainAssignment{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,assignment_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('delivery_completed',$1,$2,$3,$4,$5,$6,'in_custody',$7,$8,$9)`, idempotencyKey, correlationID, captainActorID, orderID, assignmentID, captainActorID, orderState, assignment.Version+1, requestHash); err != nil {
+	auditEvent := "delivery_completed"
+	if result == "delivery_failed" {
+		auditEvent = "delivery_failed"
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,assignment_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,'in_custody',$8,$9,$10)`, auditEvent, idempotencyKey, correlationID, captainActorID, orderID, assignmentID, captainActorID, orderState, assignment.Version+1, requestHash); err != nil {
 		return CaptainAssignment{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return CaptainAssignment{}, false, err
 	}
 	assignment, err = ReadCaptainAssignment(ctx, db, assignmentID)
+	return assignment, false, err
+}
+
+// RecoverCaptainAssignment is the only legal recovery from a failed delivery.
+// It preserves the current Captain and custody, returning the same assignment
+// to in_custody. Ordinary dispatch/reassignment is intentionally not involved.
+func RecoverCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAssignment, bool, error) {
+	if db == nil || strings.TrimSpace(assignmentID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+		return CaptainAssignment{}, false, ErrCaptainOperationConflict
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "recover")
+	if err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	if replay != nil {
+		assignment, readErr := readCaptainAssignmentTx(ctx, tx, "id=$1", replay.AssignmentID)
+		if readErr != nil {
+			return CaptainAssignment{}, false, readErr
+		}
+		if err := tx.Commit(); err != nil {
+			return CaptainAssignment{}, false, err
+		}
+		return assignment, true, nil
+	}
+	var orderID, captainActorID, assignmentState, handoffState string
+	var version int
+	err = tx.QueryRowContext(ctx, `SELECT a.order_id,a.captain_actor_id,a.state,a.version,h.state
+		FROM dsh.captain_assignments a
+		JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
+		WHERE a.id=$1
+		FOR UPDATE OF a,h`, strings.TrimSpace(assignmentID)).Scan(&orderID, &captainActorID, &assignmentState, &version, &handoffState)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CaptainAssignment{}, false, ErrCaptainAssignmentNotFound
+	}
+	if err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	if assignmentState != "delivery_failed" || version != expectedVersion || handoffState != "completed" {
+		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
+	}
+	var orderState string
+	if err := tx.QueryRowContext(ctx, `SELECT state FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE`, orderID).Scan(&orderState); errors.Is(err, sql.ErrNoRows) {
+		return CaptainAssignment{}, false, ErrOrderNotFound
+	} else if err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	if orderState != "DELIVERY_FAILED" {
+		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
+	}
+	var hasOtherActiveAssignment bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND id<>$2 AND state IN ('assigned','in_custody'))`, captainActorID, assignmentID).Scan(&hasOtherActiveAssignment); err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	if hasOtherActiveAssignment {
+		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
+	}
+	var admissionID, admissionState, availabilityState string
+	var admissionVersion int
+	if err := tx.QueryRowContext(ctx, `SELECT id,state,availability_state,version FROM dsh.captain_admissions WHERE actor_id=$1 FOR UPDATE`, captainActorID).Scan(&admissionID, &admissionState, &availabilityState, &admissionVersion); errors.Is(err, sql.ErrNoRows) {
+		return CaptainAssignment{}, false, ErrCaptainNotEligible
+	} else if err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	if admissionState != "eligible" {
+		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
+	}
+	if availabilityState == "available" {
+		if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_admissions SET availability_state='unavailable',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND availability_state='available' RETURNING version`, admissionID).Scan(&admissionVersion); err != nil {
+			return CaptainAssignment{}, false, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,'available','unavailable',$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, admissionID, captainActorID, admissionVersion-1, admissionVersion, requestHash); err != nil {
+			return CaptainAssignment{}, false, err
+		}
+	} else if availabilityState != "unavailable" {
+		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
+	}
+	var updatedVersion int
+	if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_assignments SET state='in_custody',terminal_result=NULL,terminal_at=NULL,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='delivery_failed' AND version=$2 RETURNING version`, assignmentID, expectedVersion).Scan(&updatedVersion); err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	if result, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_orders SET state='IN_CUSTODY',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='DELIVERY_FAILED'`, orderID); err != nil {
+		return CaptainAssignment{}, false, err
+	} else if rows, err := result.RowsAffected(); err != nil {
+		return CaptainAssignment{}, false, err
+	} else if rows != 1 {
+		return CaptainAssignment{}, false, ErrCaptainCustodyConflict
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,assignment_id,result_version) VALUES($1,$2,'recover',$3,$4,$5)`, idempotencyKey, requestHash, orderID, assignmentID, updatedVersion); err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,assignment_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('delivery_recovered',$1,$2,$3,$4,$5,$6,'delivery_failed','in_custody',$7,$8)`, idempotencyKey, correlationID, actingActorID, orderID, assignmentID, captainActorID, updatedVersion, requestHash); err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	assignment, err := ReadCaptainAssignment(ctx, db, assignmentID)
 	return assignment, false, err
 }
 

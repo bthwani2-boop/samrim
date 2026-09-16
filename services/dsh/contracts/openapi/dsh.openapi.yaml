@@ -216,6 +216,9 @@ paths:
   /dsh/captains/me/assignments/{assignmentId}/complete:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1complete"
 
+  /dsh/captains/assignments/{assignmentId}/recover:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1assignments~1{assignmentId}~1recover"
+
   /dsh/orders/{orderId}/dispatch:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1orders~1{orderId}~1dispatch"
 
@@ -233,6 +236,30 @@ paths:
 
   /dsh/captains/{actorId}/identity-role:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1identity-role"
+
+  /dsh/fields/admissions:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions"
+
+  /dsh/fields/admissions/{admissionId}:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}"
+
+  /dsh/fields/actors/{actorId}/admission:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1actors~1{actorId}~1admission"
+
+  /dsh/fields/me:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me"
+
+  /dsh/fields/{actorId}/identity-role:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1{actorId}~1identity-role"
+
+  /dsh/field/joining-cases:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases"
+
+  /dsh/field/joining-cases/{caseId}:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}"
+
+  /dsh/field/joining-cases/{caseId}/submit:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
 
 components:
   securitySchemes:
@@ -2522,6 +2549,48 @@ components:
       properties:
         admission:
           $ref: "#/components/schemas/CaptainAdmission"
+        idempotentReplay:
+          type: boolean
+
+    FieldAdmissionRequest:
+      type: object
+      required: [contactPhoneE164]
+      additionalProperties: false
+      properties:
+        contactPhoneE164:
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+
+    FieldAdmission:
+      type: object
+      required: [id, state, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        actorId:
+          type: string
+          nullable: true
+        state:
+          type: string
+          enum: [pending_identity, eligible, suspended]
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FieldAdmissionResponse:
+      type: object
+      required: [admission, idempotentReplay]
+      additionalProperties: false
+      properties:
+        admission:
+          $ref: "#/components/schemas/FieldAdmission"
         idempotentReplay:
           type: boolean
 

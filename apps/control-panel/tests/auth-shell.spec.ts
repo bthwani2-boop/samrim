@@ -95,14 +95,15 @@ test("operator access keeps phone discovery separate from actorId mutation", asy
   expect(mutationBody).toMatchObject({ actorId: "act_partner_canonical", role: "partner", action: "disable-role", expectedVersion: 3 });
 });
 
-test("field access remains a read-only gate until its owning DSH domain exists", async ({ page }) => {
+test("field access exposes DSH-owned eligibility and role controls", async ({ page }) => {
   await stubAuthenticatedSession(page);
+  let mutationBody: Record<string, unknown> | undefined;
   await page.route("**/api/access/managed-user/status**", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        actorId: "act_field_closed",
+        actorId: "act_field_admitted",
         phoneE164: "+96777000103",
         role: "field",
         exists: true,
@@ -112,17 +113,44 @@ test("field access remains a read-only gate until its owning DSH domain exists",
         state: "active",
         actorVersion: 4,
         roleVersion: 2,
-        admittedRoles: [{ actorId: "act_field_closed", role: "field", state: "active", enabled: true, activated: true, securityEnabled: true }],
+        operationalAdmissionState: "eligible",
+        admittedRoles: [{ actorId: "act_field_admitted", role: "field", state: "active", enabled: true, activated: true, securityEnabled: true }],
       }),
     });
+  });
+  await page.route("**/api/access/account-control", async (route) => {
+    mutationBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 204 });
   });
   await page.goto("/access");
   await page.getByLabel("الدور الإداري").selectOption("field");
   await page.getByLabel("رقم الهاتف للبحث").fill("+96777000103");
-  await expect(page.getByText("إدارة دور الميداني مغلقة حتى يثبت مسار مجال canonical مملوك لـDSH.")).toBeVisible();
+  await expect(page.getByText("الأهلية التشغيلية: eligible")).toBeVisible();
   await expect(page.getByRole("button", { name: "إصدار دعوة إعادة تسجيل الدور" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "إيقاف الدور" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "إيقاف الدور" })).toBeVisible();
   await expect(page.getByRole("button", { name: "إيقاف الهوية بالكامل" })).toBeVisible();
+  await page.getByLabel("سبب التغيير").fill("تجميد أهلية الميدان");
+  await page.getByRole("button", { name: "إيقاف الدور" }).click();
+  expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", role: "field", action: "disable-role", expectedVersion: 2 });
+});
+
+test("operator admits a Field actor through the DSH-owned Field surface", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let requestBody: Record<string, unknown> | undefined;
+  await page.route("**/api/fields", async (route) => {
+    requestBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ admission: { id: "fld_adm_test", actorId: "act_field_test", state: "eligible", version: 2 }, idempotentReplay: false }),
+    });
+  });
+  await page.goto("/fields");
+  await expect(page.getByRole("heading", { name: "قبول ممثل ميداني" })).toBeVisible();
+  await page.getByLabel("هاتف الممثل الميداني").fill("+96777000104");
+  await page.getByRole("button", { name: "قبول Field" }).click();
+  await expect(page.getByText(/تمت قراءة admission الكانونية: fld_adm_test/)).toBeVisible();
+  expect(requestBody).toEqual({ contactPhoneE164: "+96777000104" });
 });
 
 test("operator creates a DSH-owned joining case from prospective partner facts", async ({ page }) => {

@@ -44,6 +44,7 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/captains/me/assignments/{assignmentId}/delivery-task", s.readDeliveryTask)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/pickup", s.pickup)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/complete", s.complete)
+	mux.HandleFunc("POST /dsh/captains/assignments/{assignmentId}/recover", s.recover)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/dispatch", s.dispatch)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/reassign", s.reassign)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/handoff", s.confirmHandoff)
@@ -257,6 +258,23 @@ func (s *CaptainServer) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	assignment, replayed, err := s.service.Complete(r.Context(), bearerToken(r), r.PathValue("assignmentId"), input.Result, expected, idempotency, correlation)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainAssignmentResponse{Assignment: toCaptainAssignment(assignment), IdempotentReplay: replayed})
+}
+
+func (s *CaptainServer) recover(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok || acting == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID, X-Correlation-ID, Idempotency-Key, and X-Expected-Version are required")
+		return
+	}
+	assignment, replayed, err := s.service.Recover(r.Context(), r.PathValue("assignmentId"), acting, expected, idempotency, correlation)
 	if err != nil {
 		writeCaptainError(w, err)
 		return
