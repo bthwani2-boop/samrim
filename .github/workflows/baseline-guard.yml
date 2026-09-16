@@ -140,10 +140,6 @@ jobs:
           drift="$(git status --porcelain --untracked-files=all)"
           [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
 
-      - name: Nx Cloud Self-Healing CI
-        if: always()
-        run: pnpm exec nx fix-ci
-
   windows:
     name: repository-windows
     runs-on: windows-2025
