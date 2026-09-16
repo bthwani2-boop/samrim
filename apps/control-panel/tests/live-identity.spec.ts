@@ -232,6 +232,7 @@ test("@live operator passkey registration, authentication and governed recovery 
   await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
   const firstSession = await readBrowserSession(page);
   expect(firstSession.status).toBe(200);
+  expect(firstSession.body.identity.subject).toBe(operator.actorId);
   expect(firstSession.body.identity.role).toBe("operator");
   expect(firstSession.body.identity.surface).toBe("control-panel");
 
@@ -299,6 +300,7 @@ test("@live operator passkey registration, authentication and governed recovery 
   await expect(page).toHaveURL(/\/workspace$/);
   const recoveredSession = await readBrowserSession(page);
   expect(recoveredSession.status).toBe(200);
+  expect(recoveredSession.body.identity.subject).toBe(operator.actorId);
   expect(recoveredSession.body.identity.role).toBe("operator");
   expect(recoveredSession.body.identity.surface).toBe("control-panel");
 
