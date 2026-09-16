@@ -181,8 +181,9 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
     const bootstrap = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: phone, role: "operator" });
     expect(bootstrap.response.status, "fresh operator bootstrap must succeed").toBe(201);
     expect(bootstrap.body?.role?.role).toBe("operator");
-    const operator = { actorId: String(bootstrap.body?.actorId), phone, token: String(bootstrap.body?.enrollmentToken?.code), createdByTest: false };
+    const operator = { actorId: String(bootstrap.body?.role?.actorId), phone, token: String(bootstrap.body?.enrollmentToken?.code), createdByTest: false };
     preparedOperatorForCleanup = operator;
+    expect(operator.actorId).toMatch(/^act_/);
     return operator;
   }
 
