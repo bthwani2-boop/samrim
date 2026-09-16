@@ -44,8 +44,8 @@ button:disabled { cursor: not-allowed; }
 .field-label input:focus { border-color: var(--focus-ring); box-shadow: 0 0 0 4px var(--action-soft); }
 .field-label input:disabled { background: var(--disabled-bg); color: var(--disabled-text); }
 .password-field { position: relative; }
-.password-field input { padding-left: 74px; }
-.password-toggle { position: absolute; top: 50%; left: 10px; min-height: 36px; padding: 0 9px; transform: translateY(-50%); border: 0; border-radius: 9px; background: var(--brand-structure-soft); color: var(--color-primary); font-size: 12px; font-weight: 800; }
+.password-field input { padding-inline-start: 74px; }
+.password-toggle { position: absolute; top: 50%; inset-inline-start: 10px; min-height: 36px; padding: 0 9px; transform: translateY(-50%); border: 0; border-radius: 9px; background: var(--brand-structure-soft); color: var(--color-primary); font-size: 12px; font-weight: 800; }
 .password-toggle:focus-visible, .text-button:focus-visible, .button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 .field-help { color: var(--text-muted); font-size: 12px; font-weight: 600; }
 .form-actions { display: grid; gap: 13px; margin-top: 25px; }
@@ -145,8 +145,6 @@ button:disabled { cursor: not-allowed; }
 .central-product-form { display: grid; gap: 4px; }
 .central-active-toggle { display: flex; align-items: center; gap: 9px; margin: 2px 0 12px; color: var(--color-primary); font-size: 13px; font-weight: 700; }
 .central-active-toggle input { width: 18px; height: 18px; accent-color: var(--action-bg); }
-.password-field input { padding-inline-start: 74px; }
-.password-toggle { inset-inline-start: 10px; left: auto; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }

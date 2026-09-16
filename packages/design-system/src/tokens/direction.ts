@@ -9,16 +9,20 @@ export const direction = {
 
 /**
  * Resolve logical alignment for React Native Text nodes.
- * Text nodes interpret left/right together with writingDirection, so the
- * logical start/end mapping is intentionally the inverse of TextInput's.
+ * `textAlign` is a physical left/right value on Android, so the mapping
+ * must follow the active layout direction. `writingDirection` is iOS-only
+ * and cannot be the source of alignment truth on Android.
  */
 export function resolveTextAlign(value: "center", activeDirection: Direction): "center";
-export function resolveTextAlign(value: "start", activeDirection: Direction): "left";
-export function resolveTextAlign(value: "end", activeDirection: Direction): "right";
+export function resolveTextAlign(value: "start", activeDirection: "rtl"): "right";
+export function resolveTextAlign(value: "start", activeDirection: "ltr"): "left";
+export function resolveTextAlign(value: "end", activeDirection: "rtl"): "left";
+export function resolveTextAlign(value: "end", activeDirection: "ltr"): "right";
 export function resolveTextAlign(value: LogicalAlignment, activeDirection: Direction): "left" | "center" | "right";
-export function resolveTextAlign(value: LogicalAlignment, _activeDirection: Direction): "left" | "center" | "right" {
+export function resolveTextAlign(value: LogicalAlignment, activeDirection: Direction): "left" | "center" | "right" {
   if (value === "center") return "center";
-  return value === "start" ? "left" : "right";
+  if (value === "start") return activeDirection === "rtl" ? "right" : "left";
+  return activeDirection === "rtl" ? "left" : "right";
 }
 
 /** Resolve logical alignment for React Native TextInput nodes. */
