@@ -162,9 +162,38 @@ func toOrder(item postgres.OrderRecord) contract.Order {
 		if line.FinalQuantityBaseUnits != nil {
 			finalQuantity = int(*line.FinalQuantityBaseUnits)
 		}
-		lines = append(lines, contract.OrderLine{ID: line.ID, OrderID: line.OrderID, StoreOfferID: line.StoreOfferID, VariantID: line.VariantID, ProductID: line.ProductID, ProductName: line.ProductName, VariantTitle: line.VariantTitle, MeasurementKind: contract.MeasurementKind(line.MeasurementKind), BaseUnit: contract.BaseUnit(line.BaseUnit), PricingBasis: line.PricingBasis, QuantityPolicy: line.QuantityPolicy, QuantityMinBaseUnits: int(line.QuantityMinBaseUnits), QuantityMaxBaseUnits: int(line.QuantityMaxBaseUnits), QuantityStepBaseUnits: int(line.QuantityStepBaseUnits), PricingUnitBaseUnits: int(line.PricingUnitBaseUnits), RequestedQuantityBaseUnits: int(line.RequestedQuantityBaseUnits), FinalQuantityBaseUnits: finalQuantity, ModifierAmountMinor: int(line.ModifierAmountMinor), UnitPriceMinor: int(line.UnitPriceMinor), LineAmountMinor: int(line.LineAmountMinor), Currency: line.Currency, SelectedModifierOptionIds: line.SelectedModifierOptionIDs, CreatedAt: line.CreatedAt})
+		modifierSnapshots := make([]contract.OrderLineModifierSnapshot, 0, len(line.ModifierSnapshots))
+		for _, snapshot := range line.ModifierSnapshots {
+			modifierSnapshots = append(modifierSnapshots, contract.OrderLineModifierSnapshot{OptionID: snapshot.OptionID, OptionNameAr: snapshot.OptionNameAr, PriceDeltaMinor: int(snapshot.PriceDeltaMinor)})
+		}
+		attributeSnapshots := make([]contract.OrderLineAttributeSnapshot, 0, len(line.AttributeSnapshots))
+		for _, snapshot := range line.AttributeSnapshots {
+			attributeSnapshots = append(attributeSnapshots, contract.OrderLineAttributeSnapshot{AttributeID: snapshot.AttributeID, Code: snapshot.Code, ValueKind: snapshot.ValueKind, TextValue: snapshotStringValue(snapshot.TextValue), IntegerValue: snapshotIntValue(snapshot.IntegerValue), DecimalValue: snapshotStringValue(snapshot.DecimalValue), BooleanValue: snapshotBoolValue(snapshot.BooleanValue), EnumValue: snapshotStringValue(snapshot.EnumValue), DateValue: snapshotStringValue(snapshot.DateValue), MeasurementUnit: snapshotStringValue(snapshot.MeasurementUnit)})
+		}
+		lines = append(lines, contract.OrderLine{ID: line.ID, OrderID: line.OrderID, StoreOfferID: line.StoreOfferID, VariantID: line.VariantID, ProductID: line.ProductID, ProductName: line.ProductName, VariantTitle: line.VariantTitle, MeasurementKind: contract.MeasurementKind(line.MeasurementKind), BaseUnit: contract.BaseUnit(line.BaseUnit), PricingBasis: line.PricingBasis, QuantityPolicy: line.QuantityPolicy, QuantityMinBaseUnits: int(line.QuantityMinBaseUnits), QuantityMaxBaseUnits: int(line.QuantityMaxBaseUnits), QuantityStepBaseUnits: int(line.QuantityStepBaseUnits), PricingUnitBaseUnits: int(line.PricingUnitBaseUnits), RequestedQuantityBaseUnits: int(line.RequestedQuantityBaseUnits), FinalQuantityBaseUnits: finalQuantity, ModifierAmountMinor: int(line.ModifierAmountMinor), UnitPriceMinor: int(line.UnitPriceMinor), LineAmountMinor: int(line.LineAmountMinor), Currency: line.Currency, SelectedModifierOptionIds: line.SelectedModifierOptionIDs, ModifierSnapshots: modifierSnapshots, AttributeSnapshots: attributeSnapshots, CreatedAt: line.CreatedAt})
 	}
 	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CartID: item.CartID, AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+
+func snapshotStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func snapshotIntValue(value *int64) int {
+	if value == nil {
+		return 0
+	}
+	return int(*value)
+}
+
+func snapshotBoolValue(value *bool) bool {
+	if value == nil {
+		return false
+	}
+	return *value
 }
 
 func writeOrderError(w http.ResponseWriter, err error) {

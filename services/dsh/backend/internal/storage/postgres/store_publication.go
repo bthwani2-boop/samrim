@@ -59,7 +59,6 @@ type PublicStoreRecord struct {
 	ServiceCity       *ServiceCityRecord
 	PrimaryVerticalID string
 	Version           int
-	Offers            []CatalogStoreOfferRecord
 	PublishedAt       time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -255,20 +254,6 @@ func ListPublishedStores(ctx context.Context, db *sql.DB, serviceCityIDs ...stri
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("close published stores: %w", err)
 	}
-	storeIDs := make([]string, 0, len(stores))
-	for _, store := range stores {
-		storeIDs = append(storeIDs, store.ID)
-	}
-	offersByStore, err := ListCatalogOffersForStores(ctx, db, storeIDs, true)
-	if err != nil {
-		return nil, err
-	}
-	for index := range stores {
-		stores[index].Offers = offersByStore[stores[index].ID]
-		if stores[index].Offers == nil {
-			stores[index].Offers = []CatalogStoreOfferRecord{}
-		}
-	}
 	return stores, nil
 }
 
@@ -299,10 +284,6 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, service
 		return PublicStoreRecord{}, fmt.Errorf("read published store: %w", err)
 	}
 	store.ServiceCity = &city
-	store.Offers, err = ListCatalogOffers(ctx, db, store.ID, true)
-	if err != nil {
-		return PublicStoreRecord{}, err
-	}
 	return store, nil
 }
 

@@ -65,8 +65,29 @@ type OrderLineRecord struct {
 	LineAmountMinor            int64
 	Currency                   string
 	SelectedModifierOptionIDs  []string
+	ModifierSnapshots          []OrderLineModifierSnapshotRecord
+	AttributeSnapshots         []OrderLineAttributeSnapshotRecord
 	ModifierAmountMinor        int64
 	CreatedAt                  time.Time
+}
+
+type OrderLineModifierSnapshotRecord struct {
+	OptionID        string
+	OptionNameAr    string
+	PriceDeltaMinor int64
+}
+
+type OrderLineAttributeSnapshotRecord struct {
+	AttributeID     string
+	Code            string
+	ValueKind       string
+	TextValue       *string
+	IntegerValue    *int64
+	DecimalValue    *string
+	BooleanValue    *bool
+	EnumValue       *string
+	DateValue       *string
+	MeasurementUnit *string
 }
 
 type OrderRecord struct {
@@ -177,7 +198,6 @@ func listOrderLines(ctx context.Context, source queryer, orderID string) ([]Orde
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	items := make([]OrderLineRecord, 0)
 	for rows.Next() {
 		var item OrderLineRecord
@@ -188,6 +208,56 @@ func listOrderLines(ctx context.Context, source queryer, orderID string) ([]Orde
 		if finalQuantity.Valid {
 			value := finalQuantity.Int64
 			item.FinalQuantityBaseUnits = &value
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	for index := range items {
+		items[index].ModifierSnapshots, err = listOrderLineModifierSnapshots(ctx, source, items[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		items[index].AttributeSnapshots, err = listOrderLineAttributeSnapshots(ctx, source, items[index].ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
+}
+
+func listOrderLineModifierSnapshots(ctx context.Context, source queryer, orderLineID string) ([]OrderLineModifierSnapshotRecord, error) {
+	rows, err := source.QueryContext(ctx, "SELECT option_id,option_name_ar,price_delta_minor FROM dsh.commerce_order_line_modifier_snapshots WHERE order_line_id=$1 ORDER BY created_at,option_id", orderLineID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]OrderLineModifierSnapshotRecord, 0)
+	for rows.Next() {
+		var item OrderLineModifierSnapshotRecord
+		if err := rows.Scan(&item.OptionID, &item.OptionNameAr, &item.PriceDeltaMinor); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func listOrderLineAttributeSnapshots(ctx context.Context, source queryer, orderLineID string) ([]OrderLineAttributeSnapshotRecord, error) {
+	rows, err := source.QueryContext(ctx, "SELECT attribute_id,attribute_code,value_kind,text_value,integer_value,decimal_value,boolean_value,enum_value,date_value,measurement_unit FROM dsh.commerce_order_line_attribute_snapshots WHERE order_line_id=$1 ORDER BY created_at,attribute_id", orderLineID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]OrderLineAttributeSnapshotRecord, 0)
+	for rows.Next() {
+		var item OrderLineAttributeSnapshotRecord
+		if err := rows.Scan(&item.AttributeID, &item.Code, &item.ValueKind, &item.TextValue, &item.IntegerValue, &item.DecimalValue, &item.BooleanValue, &item.EnumValue, &item.DateValue, &item.MeasurementUnit); err != nil {
+			return nil, err
 		}
 		items = append(items, item)
 	}

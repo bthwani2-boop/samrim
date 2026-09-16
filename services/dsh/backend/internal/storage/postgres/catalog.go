@@ -828,17 +828,6 @@ func ListCatalogOffers(ctx context.Context, db *sql.DB, storeID string, publicOn
 	}
 	return items, nil
 }
-func ListCatalogOffersForStores(ctx context.Context, db *sql.DB, storeIDs []string, publicOnly bool) (map[string][]CatalogStoreOfferRecord, error) {
-	result := make(map[string][]CatalogStoreOfferRecord, len(storeIDs))
-	for _, id := range storeIDs {
-		items, err := ListCatalogOffers(ctx, db, id, publicOnly)
-		if err != nil {
-			return nil, err
-		}
-		result[id] = items
-	}
-	return result, nil
-}
 func ReadCatalogOffer(ctx context.Context, db *sql.DB, offerID string) (CatalogStoreOfferRecord, error) {
 	item, err := scanCatalogOffer(db.QueryRowContext(ctx, catalogOfferSelect+" WHERE o.id=$1", strings.TrimSpace(offerID)))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -860,6 +849,13 @@ func validateOfferInput(input CatalogOfferInput) error {
 		return ErrCatalogOfferQuantityInvalid
 	}
 	if input.PricingBasis != "PER_UNIT" && input.PricingBasis != "PER_MEASURE" {
+		return ErrCatalogOfferQuantityInvalid
+	}
+	if input.QuantityPolicy == "DISCRETE" {
+		if input.PricingBasis != "PER_UNIT" || input.PricingUnitBaseUnits != 1 {
+			return ErrCatalogOfferQuantityInvalid
+		}
+	} else if input.PricingBasis != "PER_MEASURE" {
 		return ErrCatalogOfferQuantityInvalid
 	}
 	return nil
@@ -910,13 +906,7 @@ func CreateCatalogOffer(ctx context.Context, db *sql.DB, input CatalogOfferInput
 	if storeVertical == "" || productVertical == "" || storeVertical != productVertical {
 		return CatalogStoreOfferResult{}, ErrCatalogOfferProductDisabled
 	}
-	if kind == "DISCRETE" && input.QuantityPolicy != "DISCRETE" {
-		return CatalogStoreOfferResult{}, ErrCatalogOfferQuantityInvalid
-	}
-	if kind != "DISCRETE" && input.QuantityPolicy == "DISCRETE" {
-		return CatalogStoreOfferResult{}, ErrCatalogOfferQuantityInvalid
-	}
-	if input.PricingBasis == "PER_UNIT" && kind != "DISCRETE" {
+	if input.QuantityPolicy != kind {
 		return CatalogStoreOfferResult{}, ErrCatalogOfferQuantityInvalid
 	}
 	offerID, err := newID("offer")
@@ -986,6 +976,12 @@ func UpdateCatalogOffer(ctx context.Context, db *sql.DB, offerID string, input C
 	}
 	if current.Version != expectedVersion {
 		return CatalogStoreOfferResult{}, ErrCatalogVersionConflict
+	}
+	if input.QuantityPolicy != current.Variant.MeasurementKind {
+		return CatalogStoreOfferResult{}, ErrCatalogOfferQuantityInvalid
+	}
+	if input.PublicationState == "published" && current.Variant.MeasurementKind == "VARIABLE_MEASURE" {
+		return CatalogStoreOfferResult{}, ErrCatalogOfferProductDisabled
 	}
 	if input.PublicationState == "published" && (!current.Product.Active || !current.Variant.Active || current.Product.VerticalID == "") {
 		return CatalogStoreOfferResult{}, ErrCatalogOfferProductDisabled

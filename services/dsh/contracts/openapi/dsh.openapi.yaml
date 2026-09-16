@@ -2433,9 +2433,56 @@ components:
       type: string
       enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, REJECTED]
 
+    OrderLineModifierSnapshot:
+      type: object
+      required: [optionId, optionNameAr, priceDeltaMinor]
+      additionalProperties: false
+      properties:
+        optionId:
+          type: string
+        optionNameAr:
+          type: string
+        priceDeltaMinor:
+          type: integer
+          minimum: 0
+
+    OrderLineAttributeSnapshot:
+      type: object
+      required: [attributeId, code, valueKind]
+      additionalProperties: false
+      properties:
+        attributeId:
+          type: string
+        code:
+          type: string
+        valueKind:
+          type: string
+          enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, ENUM, MEASUREMENT, DATE]
+        textValue:
+          type: string
+          nullable: true
+        integerValue:
+          type: integer
+          nullable: true
+        decimalValue:
+          type: string
+          nullable: true
+        booleanValue:
+          type: boolean
+          nullable: true
+        enumValue:
+          type: string
+          nullable: true
+        dateValue:
+          type: string
+          nullable: true
+        measurementUnit:
+          type: string
+          nullable: true
+
     OrderLine:
       type: object
-      required: [id, orderId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, requestedQuantityBaseUnits, finalQuantityBaseUnits, unitPriceMinor, lineAmountMinor, currency, selectedModifierOptionIds, modifierAmountMinor, createdAt]
+      required: [id, orderId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, requestedQuantityBaseUnits, finalQuantityBaseUnits, unitPriceMinor, lineAmountMinor, currency, selectedModifierOptionIds, modifierSnapshots, attributeSnapshots, modifierAmountMinor, createdAt]
       additionalProperties: false
       properties:
         id:
@@ -2496,6 +2543,14 @@ components:
           type: array
           items:
             type: string
+        modifierSnapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineModifierSnapshot"
+        attributeSnapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineAttributeSnapshot"
         createdAt:
           type: string
           format: date-time

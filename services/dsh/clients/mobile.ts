@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { CartResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogStorefrontSectionResponse, CatalogVariantResponse, CheckoutRequest, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, DeliveryAddressListResponse, DeliveryAddressResponse, JoiningCaseResponse, OrderListResponse, OrderResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreDeliveryOriginRequest, StoreDeliveryOriginResponse, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateCartLineRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { CartResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogStorefrontSectionResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, DeliveryAddressListResponse, DeliveryAddressResponse, JoiningCaseResponse, OrderListResponse, OrderResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreDeliveryOriginRequest, StoreDeliveryOriginResponse, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateCartLineRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -95,6 +95,14 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
   }
 
   return {
+    async listCatalogVerticals(): Promise<CommerceVerticalListResponse["verticals"]> {
+      return (await publicRequest<CommerceVerticalListResponse>(dshOperationPaths.listCatalogVerticals.path)).verticals;
+    },
+    async listCatalogCategories(verticalID: string): Promise<CatalogCategoryListResponse["categories"]> {
+      const normalized = verticalID.trim();
+      if (!normalized) throw new Error("DSH_VERTICAL_ID_REQUIRED");
+      return (await publicRequest<CatalogCategoryListResponse>(`${dshOperationPaths.listCatalogCategories.path}?${new URLSearchParams({ verticalId: normalized }).toString()}`)).categories;
+    },
     async readOwnJoiningCase(accessToken: string): Promise<JoiningCaseResponse> {
       return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.readOwnJoiningCase.path, dshOperationPaths.readOwnJoiningCase.method);
     },
@@ -208,7 +216,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.readOwnStoreOffers.path.replace("{storeId}", encodeURIComponent(normalized));
       return (await userRequest<CatalogStoreOfferListResponse>(accessToken, path, dshOperationPaths.readOwnStoreOffers.method)).offers;
     },
-    async createStoreOffer(accessToken: string, storeID: string, variantID: string, priceMinor: number, quantityPolicy = "DISCRETE", pricingBasis = "PER_UNIT", quantityMinBaseUnits = 1, quantityMaxBaseUnits = 1, quantityStepBaseUnits = 1, pricingUnitBaseUnits = 1): Promise<CatalogStoreOfferResponse> {
+    async createStoreOffer(accessToken: string, storeID: string, variantID: string, priceMinor: number, quantityPolicy: "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE", pricingBasis: "PER_UNIT" | "PER_MEASURE", quantityMinBaseUnits: number, quantityMaxBaseUnits: number, quantityStepBaseUnits: number, pricingUnitBaseUnits: number): Promise<CatalogStoreOfferResponse> {
       const normalized = storeID.trim();
       const normalizedVariant = variantID.trim();
       if (!normalized || !normalizedVariant || !Number.isSafeInteger(priceMinor) || priceMinor < 1) throw new Error("DSH_OFFER_INPUT_INVALID");
@@ -216,7 +224,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (![quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits].every(Number.isSafeInteger) || quantityMinBaseUnits < 1 || quantityMaxBaseUnits < quantityMinBaseUnits || quantityStepBaseUnits < 1 || pricingUnitBaseUnits < 1) throw new Error("DSH_OFFER_QUANTITY_INVALID");
       return userRequest<CatalogStoreOfferResponse>(accessToken, path, dshOperationPaths.createStoreOffer.method, { variantId: normalizedVariant, priceMinor, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits }, mutationHeaders());
     },
-    async updateStoreOffer(accessToken: string, storeID: string, offerID: string, priceMinor: number, publicationState: "draft" | "published" | "hidden", availability: boolean, expectedVersion: number, quantityPolicy = "DISCRETE", pricingBasis = "PER_UNIT", quantityMinBaseUnits = 1, quantityMaxBaseUnits = 1, quantityStepBaseUnits = 1, pricingUnitBaseUnits = 1): Promise<CatalogStoreOfferResponse> {
+    async updateStoreOffer(accessToken: string, storeID: string, offerID: string, priceMinor: number, publicationState: "draft" | "published" | "hidden", availability: boolean, expectedVersion: number, quantityPolicy: "DISCRETE" | "MEASURED" | "VARIABLE_MEASURE", pricingBasis: "PER_UNIT" | "PER_MEASURE", quantityMinBaseUnits: number, quantityMaxBaseUnits: number, quantityStepBaseUnits: number, pricingUnitBaseUnits: number): Promise<CatalogStoreOfferResponse> {
       const normalizedStore = storeID.trim();
       const normalizedOffer = offerID.trim();
       if (!normalizedStore || !normalizedOffer || !Number.isSafeInteger(priceMinor) || priceMinor < 1 || expectedVersion < 1) throw new Error("DSH_OFFER_INPUT_INVALID");

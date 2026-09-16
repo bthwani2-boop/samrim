@@ -229,6 +229,7 @@ func publishableCatalogOfferConditionsForAliases(offerAlias, variantAlias, produ
 		"(" + productAlias + ".scope='SHARED' OR (" + productAlias + ".scope='STORE_SCOPED' AND " + productAlias + ".store_id=" + offerAlias + ".store_id))",
 		"EXISTS (SELECT 1 FROM dsh.commerce_verticals cv WHERE cv.id=" + storeAlias + ".primary_vertical_id AND cv.active=true)",
 		offerAlias + ".quantity_policy=" + variantAlias + ".measurement_kind",
+		offerAlias + ".quantity_policy<>'VARIABLE_MEASURE'",
 		offerAlias + ".quantity_min_base_units IS NOT NULL",
 		offerAlias + ".quantity_max_base_units IS NOT NULL",
 		offerAlias + ".quantity_step_base_units IS NOT NULL",

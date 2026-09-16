@@ -108,6 +108,8 @@ export default function IdentityGate() {
     return unsubscribe;
   }, []);
 
+  const publicDiscovery = <View style={styles.publicDiscovery}><ServiceCityScope><StoreDiscovery isAuthenticated={state.kind === "authenticated"} /></ServiceCityScope></View>;
+
   function selectMode(next: AuthMode) {
     setMode(next);
     setCode("");
@@ -221,6 +223,7 @@ export default function IdentityGate() {
       <View style={styles.container}>
         <ActivityIndicator color={colors.actionBackground} />
         <Text style={styles.muted}>{copy.restoringSession}</Text>
+        {publicDiscovery}
       </View>
     );
   }
@@ -231,7 +234,7 @@ export default function IdentityGate() {
           <Text style={styles.title}>{copy.brand}</Text>
           <Text style={styles.status}>{copy.authenticatedStatus}</Text>
           <ServiceCityScope>
-            <StoreDiscovery />
+            <StoreDiscovery isAuthenticated />
             <LocationCore />
           </ServiceCityScope>
           <ClientOrders />
@@ -267,6 +270,7 @@ export default function IdentityGate() {
         >
           <Text style={[styles.secondaryButtonText, busy && styles.disabledText]}>{busy ? copy.syncing : conflict ? copy.syncSession : copy.retryVerification}</Text>
         </Pressable>
+        {publicDiscovery}
       </View>
     );
   }
@@ -287,6 +291,7 @@ export default function IdentityGate() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {publicDiscovery}
         <View style={styles.authShell}>
           <View style={styles.brandBlock}>
             <Text style={styles.brand}>{copy.brand}</Text>
@@ -478,6 +483,7 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
 
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background, direction: activeDirection },
+    publicDiscovery: { flexShrink: 0, minHeight: 260, paddingVertical: 16, width: "100%", direction: activeDirection },
     authenticatedScrollContent: { alignItems: "stretch", flexGrow: 1, gap: 16, paddingBottom: 160, paddingHorizontal: 20, paddingTop: 32, width: "100%", direction: activeDirection },
     scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32, direction: activeDirection },
     authShell: { width: "100%", maxWidth: 480, alignSelf: "center", direction: activeDirection },
