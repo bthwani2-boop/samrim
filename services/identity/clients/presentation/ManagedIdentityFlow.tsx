@@ -2,7 +2,7 @@ import { direction, radius, resolveRowDirection, resolveTextAlign, resolveTextIn
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { identityErrorMessage } from "../errors";
+import { identityErrorMessage, identitySessionSignOutMessage } from "../errors";
 import type { IdentitySessionState } from "../index";
 import { limitPasswordInput, validatePasswordInputShape } from "../password";
 
@@ -57,6 +57,8 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   const [verificationCode, setVerificationCode] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
   const [challengeRequested, setChallengeRequested] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -90,6 +92,8 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
     setVerificationCode("");
     setPassword("");
     setPasswordConfirmation("");
+    setShowPassword(false);
+    setShowPasswordConfirmation(false);
     setChallengeRequested(false);
     setError("");
     setNotice("");
@@ -100,6 +104,8 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
     setVerificationCode("");
     setPassword("");
     setPasswordConfirmation("");
+    setShowPassword(false);
+    setShowPasswordConfirmation(false);
     setChallengeRequested(false);
     setError("");
     setNotice("");
@@ -126,6 +132,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
     try {
       setState(await binding.loginManagedIdentity(phone, password));
       setPassword("");
+      setShowPassword(false);
     } catch (cause) {
       setError(identityErrorMessage(cause, "login"));
     } finally {
@@ -163,7 +170,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
 
   const shell = (content: ReactNode) => (
     <ScrollView
-      contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top + spacing[4], spacing[8]) }]}
+      contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + spacing[12], spacing[12]), paddingTop: Math.max(insets.top + spacing[4], spacing[8]) }]}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
@@ -241,6 +248,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
         <Text style={styles.eyebrow}>دخول موحّد</Text>
         <Text style={styles.title}>تسجيل الدخول</Text>
         <Text style={styles.description}>أدخل رقم الهاتف وكلمة المرور الخاصة بدور {roleLabel}.</Text>
+        {state.kind === "signed_out" ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.notice}>{identitySessionSignOutMessage(state.reason)}</Text> : null}
         <Text style={styles.fieldLabel}>رقم الهاتف</Text>
         <TextInput
           accessibilityLabel="رقم الهاتف"
@@ -267,10 +275,13 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           }}
           placeholder="8 أحرف بالضبط"
           placeholderTextColor={theme.colorMuted}
-          secureTextEntry
-          style={styles.input}
-          value={password}
-        />
+           secureTextEntry={!showPassword}
+           style={styles.input}
+           value={password}
+         />
+         <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"} onPress={() => setShowPassword((value) => !value)} style={styles.revealButton}>
+           <Text style={styles.revealText}>{showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}</Text>
+         </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="تسجيل الدخول"
@@ -331,10 +342,13 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
               onChangeText={(value: string) => setPassword(limitPasswordInput(value))}
               placeholder="8 أحرف بالضبط"
               placeholderTextColor={theme.colorMuted}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               style={styles.input}
               value={password}
             />
+            <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"} onPress={() => setShowPassword((value) => !value)} style={styles.revealButton}>
+              <Text style={styles.revealText}>{showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}</Text>
+            </Pressable>
             <Text style={styles.fieldLabel}>تأكيد كلمة المرور</Text>
             <TextInput
               accessibilityLabel="تأكيد كلمة المرور"
@@ -343,10 +357,13 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
               onChangeText={(value: string) => setPasswordConfirmation(limitPasswordInput(value))}
               placeholder="أعد إدخال كلمة المرور"
               placeholderTextColor={theme.colorMuted}
-              secureTextEntry
+              secureTextEntry={!showPasswordConfirmation}
               style={styles.input}
               value={passwordConfirmation}
             />
+            <Pressable accessibilityRole="button" accessibilityLabel={showPasswordConfirmation ? "إخفاء تأكيد كلمة المرور" : "إظهار تأكيد كلمة المرور"} onPress={() => setShowPasswordConfirmation((value) => !value)} style={styles.revealButton}>
+              <Text style={styles.revealText}>{showPasswordConfirmation ? "إخفاء تأكيد كلمة المرور" : "إظهار تأكيد كلمة المرور"}</Text>
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="حفظ كلمة المرور والدخول"
@@ -513,6 +530,8 @@ function createStyles(theme: ThemeColors) {
       textAlign: numericTextAlign,
       writingDirection: "ltr",
     },
+    revealButton: { alignSelf: "flex-end", minHeight: 40, justifyContent: "center", paddingHorizontal: spacing[1] },
+    revealText: { color: theme.interactiveText, fontSize: 13, fontWeight: "700", textDecorationLine: "underline", writingDirection: activeDirection },
     summaryPhone: {
       backgroundColor: theme.structureSoft,
       borderRadius: radius.sm,

@@ -188,6 +188,7 @@ const rootFiles = new Set([
   ".node-version",
   ".nvmrc",
   "CONTRIBUTING.md",
+  "DESIGN.md",
   "README.md",
   "REPOSITORY-STRUCTURE.md",
   "SECURITY.md",

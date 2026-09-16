@@ -23,6 +23,8 @@ export type IdentityCopy = {
   loginPasswordPlaceholder: string;
   newPasswordPlaceholder: string;
   passwordConfirmationPlaceholder: string;
+  showPassword: string;
+  hidePassword: string;
   sendCode: string;
   resendCode: string;
   verificationCodeLabel: string;
@@ -62,6 +64,8 @@ const identityCopy: IdentityCopy = {
   loginPasswordPlaceholder: "أدخل كلمة المرور",
   newPasswordPlaceholder: "8 أحرف بالضبط",
   passwordConfirmationPlaceholder: "أعد إدخال كلمة المرور",
+  showPassword: "إظهار كلمة المرور",
+  hidePassword: "إخفاء كلمة المرور",
   sendCode: "إرسال رمز التحقق",
   resendCode: "إعادة إرسال رمز التحقق",
   verificationCodeLabel: "رمز التحقق",

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 
 import { direction, resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { createDshMobileClient, fieldAdmissionStateLabel, joiningCaseStateLabel, type CreateJoiningCaseRequest, type FieldAdmission, type JoiningCaseSummary } from "@bthwani/dsh";
+import { createDshMobileClient, fieldAdmissionStateLabel, joiningCaseStateLabel, type CommerceVertical, type CreateJoiningCaseRequest, type FieldAdmission, type JoiningCaseSummary, type ServiceCity } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function client() {
@@ -17,7 +17,10 @@ export function FieldOperations() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [admission, setAdmission] = useState<FieldAdmission | null>(null);
   const [cases, setCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
-  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "+967700000000", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "" });
+  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "" });
+  const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
+  const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
+  const [optionsLoading, setOptionsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -41,8 +44,30 @@ export function FieldOperations() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    let active = true;
+    setOptionsLoading(true);
+    void Promise.all([client().listActiveServiceCities(), client().listCatalogVerticals()]).then(
+      ([nextCities, nextVerticals]) => {
+        if (!active) return;
+        setCities(nextCities);
+        setVerticals(nextVerticals);
+      },
+      (cause) => {
+        console.error("DSH Field canonical options read failed", cause);
+        if (active) setError("تعذر قراءة المدن والأنشطة المتاحة. أعد المحاولة.");
+      },
+    ).finally(() => {
+      if (active) setOptionsLoading(false);
+    });
+    return () => { active = false; };
+  }, []);
+
   async function createCase() {
-    if (busy) return;
+    if (busy || !input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId) {
+      setError("أكمل الهاتف والأسماء واختر مدينة الخدمة والنشاط التجاري.");
+      return;
+    }
     setBusy("create");
     setError("");
     try {
@@ -51,7 +76,7 @@ export function FieldOperations() {
       await load();
     } catch (cause) {
       console.error("DSH Field joining-case creation failed", cause);
-      setError("تعذر حفظ الملف. تحقق من الهاتف والأسماء ومعرفي المدينة والنشاط.");
+      setError("تعذر حفظ الملف. تحقق من الهاتف والأسماء والاختيارات ثم أعد المحاولة.");
     } finally {
       setBusy("");
     }
@@ -74,26 +99,35 @@ export function FieldOperations() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} accessibilityLabel="عمليات الميدان">
+    <ScrollView contentContainerStyle={styles.container} accessibilityLabel="عمليات الميدان" keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>عمليات الميدان</Text>
       <Text style={styles.muted}>القبول وملفات الانضمام مملوكة لـ DSH، ولا يملك الميدان نشر المتجر أو مراجعته.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
-      {!loading && admission ? <View style={styles.card}><Text style={styles.cardTitle}>قبول الميدان</Text><Text style={styles.muted}>الحالة: {fieldAdmissionStateLabel(admission.state)} · النسخة: {admission.version}</Text></View> : null}
+      {!loading && admission ? <View style={styles.card}><Text style={styles.cardTitle}>قبول الميدان</Text><Text style={styles.muted}>الحالة: {fieldAdmissionStateLabel(admission.state)}</Text></View> : null}
       {!loading && !admission ? <View style={styles.card} accessibilityLiveRegion="polite"><Text style={styles.cardTitle}>لا توجد أهلية تشغيلية</Text><Text style={styles.muted}>لم تصل أهلية الميدان من DSH. أعد المحاولة أو تواصل مع المشغل.</Text></View> : null}
       {!loading && admission?.state === "eligible" ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>ملف انضمام جديد</Text>
-          <TextInput accessibilityLabel="هاتف صاحب النشاط" autoCapitalize="none" keyboardType="phone-pad" placeholder="هاتف صاحب النشاط (+967...)" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
+          <Text style={styles.label}>هاتف صاحب النشاط</Text>
+          <TextInput accessibilityLabel="هاتف صاحب النشاط" autoCapitalize="none" keyboardType="phone-pad" placeholder="مثال: ‎+967…" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.contactPhoneE164} onChangeText={(value) => setInput((current) => ({ ...current, contactPhoneE164: value }))} />
+          <Text style={styles.label}>اسم النشاط</Text>
           <TextInput accessibilityLabel="اسم النشاط" placeholder="اسم النشاط" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.businessName} onChangeText={(value) => setInput((current) => ({ ...current, businessName: value }))} />
+          <Text style={styles.label}>اسم أول متجر</Text>
           <TextInput accessibilityLabel="اسم أول متجر" placeholder="اسم أول متجر" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreName} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreName: value }))} />
-          <TextInput accessibilityLabel="معرف مدينة الخدمة" autoCapitalize="none" placeholder="معرف مدينة الخدمة" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.serviceCityId} onChangeText={(value) => setInput((current) => ({ ...current, serviceCityId: value }))} />
-          <TextInput accessibilityLabel="معرف النشاط التجاري" autoCapitalize="none" placeholder="معرف النشاط التجاري" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreVerticalId} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreVerticalId: value }))} />
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void createCase()} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ الملف"}</Text></Pressable>
+          <Text style={styles.label}>مدينة الخدمة</Text>
+          {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة المدن المتاحة…</Text> : null}
+          {!optionsLoading && cities.length === 0 ? <Text style={styles.error}>لا توجد مدينة خدمة متاحة حاليًا.</Text> : null}
+          <View style={styles.optionList}>{cities.map((city) => { const selected = input.serviceCityId === city.id; return <Pressable key={city.id} accessibilityRole="button" accessibilityState={{ selected, disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => setInput((current) => ({ ...current, serviceCityId: city.id }))} style={[styles.optionButton, selected && styles.optionButtonSelected]}><Text style={styles.optionText}>{city.displayNameAr}</Text></Pressable>; })}</View>
+          <Text style={styles.label}>النشاط التجاري</Text>
+          {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
+          {!optionsLoading && verticals.length === 0 ? <Text style={styles.error}>لا يوجد نشاط تجاري متاح حاليًا.</Text> : null}
+          <View style={styles.optionList}>{verticals.map((vertical) => { const selected = input.firstStoreVerticalId === vertical.id; return <Pressable key={vertical.id} accessibilityRole="button" accessibilityState={{ selected, disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} style={[styles.optionButton, selected && styles.optionButtonSelected]}><Text style={styles.optionText}>{vertical.nameAr}</Text></Pressable>; })}</View>
+          <Pressable accessibilityRole="button" accessibilityState={{ busy: busy === "create", disabled: Boolean(busy) || optionsLoading }} disabled={Boolean(busy) || optionsLoading} onPress={() => void createCase()} style={[styles.button, (busy || optionsLoading) && styles.disabledButton]}><Text style={styles.buttonText}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ الملف"}</Text></Pressable>
         </View>
       ) : null}
       {!loading ? <Text style={styles.sectionTitle}>ملفات الانضمام ({cases.length})</Text> : null}
       {!loading && cases.length === 0 ? <Text style={styles.muted}>لا توجد ملفات من هذا الميدان.</Text> : null}
-      {cases.map((item) => <View key={item.id} style={styles.card}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><Text style={styles.muted}>الحالة: {joiningCaseStateLabel(item.state)} · النسخة: {item.version}</Text>{item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}{item.state === "draft" ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void submitCase(item)} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === item.id ? "جارٍ الإرسال…" : "إرسال للمراجعة"}</Text></Pressable> : null}</View>)}
+      {cases.map((item) => <View key={item.id} style={styles.card}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><Text style={styles.muted}>الحالة: {joiningCaseStateLabel(item.state)}</Text>{item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}{item.state === "draft" ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void submitCase(item)} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === item.id ? "جارٍ الإرسال…" : "إرسال للمراجعة"}</Text></Pressable> : null}</View>)}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void load()} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>تحديث الحالة</Text></Pressable>
     </ScrollView>
@@ -112,7 +146,12 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     state: { alignItems: "center", gap: 8, paddingVertical: 8 },
     card: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 7, padding: 10 },
     cardTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
+    label: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
     input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, color: theme.color, minHeight: 44, paddingHorizontal: 12, textAlign: startTextAlign },
+    optionList: { flexDirection: rowDirection, flexWrap: "wrap", gap: 8 },
+    optionButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10 },
+    optionButtonSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground },
+    optionText: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
     button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 8, flexDirection: rowDirection, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },
     buttonText: { color: theme.onAction, fontWeight: "800" },
     secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },

@@ -1,5 +1,5 @@
 import { direction as designDirection, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
-import { type IdentitySessionState, identityErrorMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
+import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -77,6 +77,8 @@ export default function IdentityGate() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
   const [code, setCode] = useState("");
   const [proofRequested, setProofRequested] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -114,6 +116,8 @@ export default function IdentityGate() {
     setCode("");
     setPassword("");
     setPasswordConfirmation("");
+    setShowPassword(false);
+    setShowPasswordConfirmation(false);
     setProofRequested(false);
     setError("");
     setNotice("");
@@ -133,6 +137,8 @@ export default function IdentityGate() {
     setPhone("");
     setPassword("");
     setPasswordConfirmation("");
+    setShowPassword(false);
+    setShowPasswordConfirmation(false);
     setCode("");
     setProofRequested(false);
     setError("");
@@ -197,6 +203,8 @@ export default function IdentityGate() {
       setCode("");
       setPassword("");
       setPasswordConfirmation("");
+      setShowPassword(false);
+      setShowPasswordConfirmation(false);
       setProofRequested(false);
       setMode("login");
     } catch (cause) {
@@ -311,6 +319,7 @@ export default function IdentityGate() {
 
           <View style={styles.authCard}>
             <Text style={styles.formTitle}>{copy[modeDetails[mode]]}</Text>
+            {state.kind === "signed_out" ? <Text accessibilityRole="text" accessibilityLiveRegion="polite" style={styles.notice}>{identitySessionSignOutMessage(state.reason)}</Text> : null}
 
             <View style={styles.fieldBlock}>
               <Text style={styles.fieldLabel}>{copy.phoneLabel}</Text>
@@ -385,10 +394,13 @@ export default function IdentityGate() {
                         onFocus={() => setFocusedField("password")}
                         placeholder={copy.newPasswordPlaceholder}
                         placeholderTextColor={colors.muted}
-                        secureTextEntry
+                        secureTextEntry={!showPassword}
                         style={[styles.input, focusedField === "password" && styles.inputFocused]}
                         value={password}
                       />
+                      <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? copy.hidePassword : copy.showPassword} onPress={() => setShowPassword((value) => !value)} style={styles.revealButton}>
+                        <Text style={styles.revealText}>{showPassword ? copy.hidePassword : copy.showPassword}</Text>
+                      </Pressable>
                     </View>
 
                     <View style={styles.fieldBlock}>
@@ -403,10 +415,13 @@ export default function IdentityGate() {
                         onFocus={() => setFocusedField("passwordConfirmation")}
                         placeholder={copy.passwordConfirmationPlaceholder}
                         placeholderTextColor={colors.muted}
-                        secureTextEntry
+                        secureTextEntry={!showPasswordConfirmation}
                         style={[styles.input, focusedField === "passwordConfirmation" && styles.inputFocused]}
                         value={passwordConfirmation}
                       />
+                      <Pressable accessibilityRole="button" accessibilityLabel={showPasswordConfirmation ? copy.hidePassword : copy.showPassword} onPress={() => setShowPasswordConfirmation((value) => !value)} style={styles.revealButton}>
+                        <Text style={styles.revealText}>{showPasswordConfirmation ? copy.hidePassword : copy.showPassword}</Text>
+                      </Pressable>
                     </View>
                   </>
                 ) : null}
@@ -424,10 +439,13 @@ export default function IdentityGate() {
                   onFocus={() => setFocusedField("password")}
                   placeholder={copy.loginPasswordPlaceholder}
                   placeholderTextColor={colors.muted}
-                  secureTextEntry
+                  secureTextEntry={!showPassword}
                   style={[styles.input, focusedField === "password" && styles.inputFocused]}
                   value={password}
                 />
+                <Pressable accessibilityRole="button" accessibilityLabel={showPassword ? copy.hidePassword : copy.showPassword} onPress={() => setShowPassword((value) => !value)} style={styles.revealButton}>
+                  <Text style={styles.revealText}>{showPassword ? copy.hidePassword : copy.showPassword}</Text>
+                </Pressable>
               </View>
             )}
 
@@ -526,6 +544,8 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
     input: { ...fullWidthLogicalInput, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13 },
     numericInput: { alignSelf: "stretch", textAlign: resolveTextInputAlign("start", "ltr"), writingDirection: "ltr" },
     inputFocused: { borderColor: colors.focus, borderWidth: 2 },
+    revealButton: { alignSelf: endCrossAxisAlignment, minHeight: 40, justifyContent: "center", paddingHorizontal: 4 },
+    revealText: { color: colors.interactiveText, fontSize: 13, fontWeight: "700", textDecorationLine: "underline", writingDirection: activeDirection },
     codeAction: { alignSelf: endCrossAxisAlignment, paddingBottom: 8, paddingTop: 2 },
     codeActionText: { color: colors.interactiveText, fontSize: 14, fontWeight: "800" },
     codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: colors.actionBackground, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },

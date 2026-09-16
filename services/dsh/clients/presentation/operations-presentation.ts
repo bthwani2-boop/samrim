@@ -2,6 +2,7 @@ import type {
   BaseUnit,
   CaptainAdmission,
   CaptainAssignment,
+  CaptainDeliveryTask,
   CaptainHandoff,
   CaptainOffer,
   CatalogProductProposal,
@@ -137,6 +138,16 @@ export function captainAssignmentStateLabel(state: CaptainAssignment["state"]): 
 
 export function captainHandoffStateLabel(state: CaptainHandoff["state"]): string {
   return captainHandoffLabels[state];
+}
+
+export function captainTaskProgressLabel(task: Pick<CaptainDeliveryTask, "handoffState" | "deliveryState">): string {
+  if (task.deliveryState === "delivered") return "اكتملت الرحلة وتم التسليم";
+  if (task.deliveryState === "delivery_failed") return "تعذر التسليم — الطلب ما زال في عهدتك وبانتظار معالجة المشغل";
+  if (task.deliveryState === "in_custody") return "الطلب في عهدتك — أكمل التسليم للعميل";
+  if (task.handoffState === "store_confirmed") return "المتجر أكد الجاهزية — يمكنك تأكيد الاستلام";
+  if (task.handoffState === "completed") return "تم استلام الطلب من المتجر";
+  if (task.handoffState === "superseded") return "تم استبدال التسليم بتكليف أحدث";
+  return "بانتظار تأكيد المتجر قبل الاستلام";
 }
 
 export function fieldAdmissionStateLabel(state: FieldAdmission["state"]): string {

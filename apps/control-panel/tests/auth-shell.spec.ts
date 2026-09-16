@@ -228,8 +228,8 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
     });
   });
   await page.goto("/partners");
-  await page.getByRole("button", { name: /مرسلة للمراجعة · نشاط مستعاد/ }).click();
-  await expect(page.getByRole("status")).toContainText("الحالة: مرسلة للمراجعة");
+  await page.getByRole("button", { name: /قيد المراجعة · نشاط مستعاد/ }).click();
+  await expect(page.getByRole("status")).toContainText("الحالة: قيد المراجعة");
   await expect(page.getByRole("status")).toContainText("نشاط مستعاد");
 });
 
