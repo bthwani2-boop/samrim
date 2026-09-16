@@ -1,4 +1,4 @@
-import { direction, resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { direction, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
 import type { DeliveryAddress } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -172,7 +172,7 @@ export default function LocationCore() {
           placeholder="مثال: شارع الزبيري، جوار المبنى الأبيض"
           placeholderTextColor={theme.colorMuted}
           style={styles.input}
-          textAlign={resolveTextAlign("start", direction.defaultDirection)}
+          textAlign={resolveTextInputAlign("start", direction.defaultDirection)}
           value={addressText}
         />
         <Pressable accessibilityRole="button" accessibilityLabel="التقاط الموقع الحالي" accessibilityState={{ busy: locationBusy, disabled: busy || locationBusy }} disabled={busy || locationBusy} onPress={() => void captureLocation()} style={styles.secondaryButton}>
@@ -205,6 +205,7 @@ export default function LocationCore() {
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
+  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
   const rowDirection = resolveRowDirection(activeDirection);
 
   return StyleSheet.create({
@@ -220,7 +221,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     cityButton: { borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
     cityButtonSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
     cityButtonText: { color: theme.color, fontSize: 13, fontWeight: "700" },
-    input: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, color: theme.color, minHeight: 84, paddingHorizontal: 12, paddingVertical: 12, textAlign: startTextAlign, textAlignVertical: "top", writingDirection: activeDirection },
+    input: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, color: theme.color, minHeight: 84, paddingHorizontal: 12, paddingVertical: 12, textAlign: startInputTextAlign, textAlignVertical: "top", writingDirection: activeDirection },
     secondaryButton: { alignItems: "center", borderColor: theme.borderColorStrong, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 48, paddingHorizontal: 14 },
     secondaryButtonText: { color: theme.color, fontSize: 14, fontWeight: "800" },
     coordinateBox: { backgroundColor: theme.structureSoft, borderRadius: 12, gap: 4, padding: 12 },

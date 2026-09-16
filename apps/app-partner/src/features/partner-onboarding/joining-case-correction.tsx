@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
 
-import { direction, resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { direction, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
 import type { JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
 import { correctAndResubmitOwnJoiningCase, listActiveServiceCities } from "./store-readback-client";
 
@@ -71,6 +71,7 @@ export function JoiningCaseCorrection({ value, onUpdated }: { value: JoiningCase
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
+  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
   const rowDirection = resolveRowDirection(activeDirection);
 
   return StyleSheet.create({
@@ -79,7 +80,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     reason: { color: theme.color, fontSize: 14, lineHeight: 20, textAlign: startTextAlign },
     phone: { color: theme.colorSecondary, fontSize: 13, textAlign: startTextAlign },
     phoneValue: { writingDirection: "ltr" },
-    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, minHeight: 44, paddingHorizontal: 10, textAlign: startTextAlign, writingDirection: activeDirection },
+    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, minHeight: 44, paddingHorizontal: 10, textAlign: startInputTextAlign, writingDirection: activeDirection },
     label: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
     cityList: { flexDirection: rowDirection, flexWrap: "wrap", gap: 8 },
     cityButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },

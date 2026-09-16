@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { type ActorType, type OperatorEnrollmentToken } from "@bthwani/identity";
+import { toAsciiDigits } from "@bthwani/design-system";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "./identity-error-message";
 
@@ -194,7 +195,7 @@ export function AccountAccessPanel() {
         </label>
         <label className="field-label" htmlFor="account-phone">
           رقم الهاتف للبحث
-          <input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(event.target.value)} />
+          <input id="account-phone" autoComplete="tel" disabled={busy} inputMode="tel" placeholder="مثال: 967 77 000 100" value={phone} onChange={(event) => setPhone(toAsciiDigits(event.target.value))} />
         </label>
         {canIssueActivation ? (
           <button type="button" className="button button-primary" disabled={busy || !phone.trim() || activationBlocked} onClick={() => void provision()}>

@@ -45,7 +45,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
   --brand-action: #FF500D;
-  --brand-structure: #0A2F5C;
+  --brand-structure: #F8FAFC;
   --brand-action-hover: #FF9A6B;
   --brand-action-pressed: #FFC0A3;
   --brand-action-soft: rgba(255, 80, 13, 0.18);

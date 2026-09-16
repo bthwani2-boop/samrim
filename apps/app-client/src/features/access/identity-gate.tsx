@@ -1,4 +1,4 @@
-import { resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { direction as designDirection, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
 import { type IdentitySessionState, identityErrorMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -40,7 +40,7 @@ function getColors(isDark: boolean) {
     border: theme.borderColor,
     focus: theme.focusRing,
     muted: theme.colorMuted,
-    navy: theme.brandStructure,
+    navy: theme.structure,
     brandAction: theme.brandAction,
     actionBackground: theme.actionBackground,
     interactiveText: theme.interactiveText,
@@ -67,10 +67,10 @@ function isCredentialFailure(value: unknown): boolean {
 
 export default function IdentityGate() {
   const colorScheme = useColorScheme();
-  const { direction, copy } = identityPresentation;
+  const { copy } = identityPresentation;
   const isDark = colorScheme === "dark";
   const colors = useMemo(() => getColors(isDark), [isDark]);
-  const styles = useMemo(() => createStyles(colors, direction), [colors]);
+  const styles = useMemo(() => createStyles(colors, designDirection.defaultDirection), [colors]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [mode, setMode] = useState<AuthMode>("login");
@@ -134,7 +134,7 @@ export default function IdentityGate() {
   }
 
   function updatePhone(value: string) {
-    setPhone(value);
+    setPhone(toAsciiDigits(value));
     if (mode === "login") {
       setLoginFailed(false);
       setError("");
@@ -346,7 +346,7 @@ export default function IdentityGate() {
                         keyboardType="number-pad"
                         maxLength={6}
                         onBlur={() => setFocusedField(null)}
-                        onChangeText={(value) => setCode(value.replace(/\D/g, "").slice(0, 6))}
+                        onChangeText={(value) => setCode(toAsciiDigits(value).replace(/\D/g, "").slice(0, 6))}
                         onFocus={() => setFocusedField("code")}
                         placeholder={copy.verificationCodePlaceholder}
                         placeholderTextColor={colors.muted}
@@ -467,34 +467,44 @@ export default function IdentityGate() {
 
 function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
   const startTextAlign = resolveTextAlign("start", activeDirection);
+  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
   const endCrossAxisAlignment = activeDirection === "rtl" ? "flex-end" : "flex-start";
+  const logicalText = {
+    textAlign: startTextAlign,
+    writingDirection: activeDirection,
+  };
+  const fullWidthLogicalText = { ...logicalText, width: "100%" as const };
+  const fullWidthLogicalInput = { ...fullWidthLogicalText, textAlign: startInputTextAlign };
 
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background, direction: activeDirection },
-    authenticatedScrollContent: { alignItems: "stretch", flexGrow: 1, gap: 16, paddingBottom: 160, paddingHorizontal: 20, paddingTop: 32, width: "100%" },
-    scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32 },
-    authShell: { width: "100%", maxWidth: 480, alignSelf: "center" },
-    brandBlock: { alignItems: "center", marginBottom: 24 },
-    brand: { color: colors.navy, fontSize: 34, fontWeight: "800", textAlign: "center" },
+    authenticatedScrollContent: { alignItems: "stretch", flexGrow: 1, gap: 16, paddingBottom: 160, paddingHorizontal: 20, paddingTop: 32, width: "100%", direction: activeDirection },
+    scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32, direction: activeDirection },
+    authShell: { width: "100%", maxWidth: 480, alignSelf: "center", direction: activeDirection },
+    brandBlock: { alignItems: "center", marginBottom: 24, direction: activeDirection },
+    brand: { color: colors.navy, fontSize: 34, fontWeight: "800", textAlign: "center", writingDirection: activeDirection },
     brandAccent: { backgroundColor: colors.brandAction, borderRadius: 3, height: 4, marginTop: 8, width: 42 },
-    title: { color: colors.navy, fontSize: 28, fontWeight: "800", textAlign: "center" },
+    title: { color: colors.navy, fontSize: 28, fontWeight: "800", textAlign: "center", writingDirection: activeDirection },
     authCard: {
+      alignItems: "stretch",
       backgroundColor: colors.surface,
       borderColor: colors.border,
       borderRadius: 24,
       borderWidth: 1,
+      direction: activeDirection,
       padding: 20,
+      width: "100%",
       shadowColor: colors.navy,
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.08,
       shadowRadius: 20,
       elevation: 3,
     },
-    formTitle: { color: colors.navy, fontSize: 22, fontWeight: "800", marginBottom: 16, textAlign: startTextAlign },
-    fieldBlock: { marginBottom: 14 },
-    fieldLabel: { color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7, textAlign: startTextAlign },
-    input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13, textAlign: startTextAlign, writingDirection: activeDirection },
-    numericInput: { textAlign: resolveTextAlign("start", "ltr"), writingDirection: "ltr" },
+    formTitle: { ...fullWidthLogicalText, color: colors.navy, fontSize: 22, fontWeight: "800", marginBottom: 16 },
+    fieldBlock: { alignItems: "stretch", marginBottom: 14, width: "100%" },
+    fieldLabel: { ...fullWidthLogicalText, color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7 },
+    input: { ...fullWidthLogicalInput, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13 },
+    numericInput: { alignSelf: "stretch", textAlign: resolveTextInputAlign("start", "ltr"), writingDirection: "ltr" },
     inputFocused: { borderColor: colors.focus, borderWidth: 2 },
     codeAction: { alignSelf: endCrossAxisAlignment, paddingBottom: 8, paddingTop: 2 },
     codeActionText: { color: colors.interactiveText, fontSize: 14, fontWeight: "800" },
@@ -502,12 +512,12 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
     codeActionPrimaryText: { color: colors.surface, fontSize: 16 },
     codeActionDisabled: { backgroundColor: colors.disabled },
     modeLinks: { alignItems: "center", flexDirection: resolveRowDirection(activeDirection), flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
-    modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline" },
+    modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline", writingDirection: activeDirection },
     recoveryButton: { alignItems: "center", borderColor: colors.interactiveText, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
     recoveryButtonText: { color: colors.interactiveText, fontSize: 15, fontWeight: "800" },
     disabledText: { color: colors.disabledText },
-    status: { textAlign: "center", fontSize: 17, fontWeight: "600", color: colors.navy },
-    muted: { color: colors.muted, fontSize: 14, textAlign: "center" },
+    status: { color: colors.navy, fontSize: 17, fontWeight: "600", textAlign: "center", writingDirection: activeDirection },
+    muted: { color: colors.muted, fontSize: 14, textAlign: "center", writingDirection: activeDirection },
     secondaryButton: { alignItems: "center", borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 16 },
     secondaryButtonDisabled: { backgroundColor: colors.disabled, borderColor: colors.disabled },
     secondaryButtonText: { color: colors.navy, fontSize: 15, fontWeight: "700", textAlign: "center" },
@@ -515,7 +525,7 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
     primaryButtonDisabled: { backgroundColor: colors.disabled },
     primaryButtonText: { color: colors.surface, fontSize: 16, fontWeight: "800" },
     primaryButtonTextDisabled: { color: colors.disabledText },
-    notice: { backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10, textAlign: startTextAlign, writingDirection: activeDirection },
-    error: { backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10, textAlign: startTextAlign, writingDirection: activeDirection },
+    notice: { ...fullWidthLogicalText, backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10 },
+    error: { ...fullWidthLogicalText, backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10 },
   });
 }

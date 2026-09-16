@@ -1,4 +1,4 @@
-import { direction, radius, resolveRowDirection, resolveTextAlign, resolveTheme, spacing, type ThemeColors } from "@bthwani/design-system";
+import { direction, radius, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme, spacing, toAsciiDigits, type ThemeColors } from "@bthwani/design-system";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -247,7 +247,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           autoComplete="tel"
           keyboardType="phone-pad"
           onChangeText={(value: string) => {
-            setPhone(value);
+            setPhone(toAsciiDigits(value));
             setError("");
           }}
           placeholder="مثال: 967 77 000 101"
@@ -297,7 +297,6 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           placeholderTextColor={theme.colorMuted}
           secureTextEntry
           style={styles.input}
-          textAlign="right"
           value={password}
         />
         <Pressable
@@ -345,7 +344,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
               accessibilityLabel="رمز تحقق الهاتف"
               keyboardType="number-pad"
               maxLength={6}
-              onChangeText={(value: string) => setVerificationCode(value.replace(/\D/g, "").slice(0, 6))}
+              onChangeText={(value: string) => setVerificationCode(toAsciiDigits(value).replace(/\D/g, "").slice(0, 6))}
               placeholder="رمز من 6 أرقام"
               placeholderTextColor={theme.colorMuted}
               style={[styles.input, styles.numericInput]}
@@ -362,7 +361,6 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
               placeholderTextColor={theme.colorMuted}
               secureTextEntry
               style={styles.input}
-              textAlign="right"
               value={password}
             />
             <Text style={styles.fieldLabel}>تأكيد كلمة المرور</Text>
@@ -375,7 +373,6 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
               placeholderTextColor={theme.colorMuted}
               secureTextEntry
               style={styles.input}
-              textAlign="right"
               value={passwordConfirmation}
             />
             <Pressable
@@ -417,7 +414,8 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
 function createStyles(theme: ThemeColors) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
-  const numericTextAlign = resolveTextAlign("start", "ltr");
+  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
+  const numericTextAlign = resolveTextInputAlign("start", "ltr");
   const rowDirection = resolveRowDirection(activeDirection);
 
   return StyleSheet.create({
@@ -442,7 +440,7 @@ function createStyles(theme: ThemeColors) {
       height: 22,
     },
     brandMarkNavy: {
-      backgroundColor: theme.brandStructure,
+      backgroundColor: theme.structure,
       borderRadius: radius.xs,
       height: 22,
       width: 8,
@@ -536,6 +534,8 @@ function createStyles(theme: ThemeColors) {
       minHeight: 52,
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[2],
+      textAlign: startInputTextAlign,
+      writingDirection: activeDirection,
     },
     numericInput: {
       textAlign: numericTextAlign,

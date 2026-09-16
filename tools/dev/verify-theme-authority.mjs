@@ -82,6 +82,19 @@ if (!themeIndexTs.includes("export function themeToCssVariables")) {
 // 2. Parity check on light and dark keys
 const { lightThemeColors, darkThemeColors } = await import("../../packages/design-system/src/tokens/colors.ts");
 const { generateThemeCss } = await import("../../packages/design-system/src/theme/index.ts");
+const { resolveTextAlign, resolveTextInputAlign, toAsciiDigits } = await import("../../packages/design-system/src/tokens/direction.ts");
+
+if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1234567890") {
+  failures.push("Design System ASCII digit normalization is incomplete");
+}
+if (
+  resolveTextAlign("start", "rtl") !== "left" ||
+  resolveTextAlign("end", "rtl") !== "right" ||
+  resolveTextInputAlign("start", "rtl") !== "right" ||
+  resolveTextInputAlign("end", "rtl") !== "left"
+) {
+  failures.push("Design System native RTL alignment contract is inconsistent");
+}
 
 const lightKeys = Object.keys(lightThemeColors).sort();
 const darkKeys = Object.keys(darkThemeColors).sort();
@@ -115,6 +128,8 @@ checkContrast("light", "focusRing", lightThemeColors.focusRing, "background", li
 checkContrast("light", "focusRing", lightThemeColors.focusRing, "surface", lightThemeColors.surface, 3.0);
 checkContrast("light", "color", lightThemeColors.color, "background", lightThemeColors.background, 4.5);
 checkContrast("light", "color", lightThemeColors.color, "surface", lightThemeColors.surface, 4.5);
+checkContrast("light", "structure", lightThemeColors.structure, "background", lightThemeColors.background, 4.5);
+checkContrast("light", "onAction", lightThemeColors.onAction, "structure", lightThemeColors.structure, 4.5);
 checkContrast("light", "successText", lightThemeColors.successText, "successSoft", lightThemeColors.successSoft, 4.5);
 checkContrast("light", "warningText", lightThemeColors.warningText, "warningSoft", lightThemeColors.warningSoft, 4.5);
 checkContrast("light", "dangerText", lightThemeColors.dangerText, "dangerSoft", lightThemeColors.dangerSoft, 4.5);
@@ -128,6 +143,8 @@ checkContrast("dark", "focusRing", darkThemeColors.focusRing, "background", dark
 checkContrast("dark", "focusRing", darkThemeColors.focusRing, "surface", darkThemeColors.surface, 3.0);
 checkContrast("dark", "color", darkThemeColors.color, "background", darkThemeColors.background, 4.5);
 checkContrast("dark", "color", darkThemeColors.color, "surface", darkThemeColors.surface, 4.5);
+checkContrast("dark", "structure", darkThemeColors.structure, "background", darkThemeColors.background, 4.5);
+checkContrast("dark", "onAction", darkThemeColors.onAction, "structure", darkThemeColors.structure, 4.5);
 checkContrast("dark", "successText", darkThemeColors.successText, "surface", darkThemeColors.surface, 4.5);
 checkContrast("dark", "warningText", darkThemeColors.warningText, "surface", darkThemeColors.surface, 4.5);
 checkContrast("dark", "dangerText", darkThemeColors.dangerText, "surface", darkThemeColors.surface, 4.5);
@@ -200,6 +217,11 @@ if (clientGate.includes("colorRoles.") || clientGate.includes("statusScale.")) {
 const managedFlow = read("services/identity/clients/presentation/ManagedIdentityFlow.tsx");
 if (managedFlow.includes("colorRoles.") || managedFlow.includes("statusScale.")) {
   failures.push("ManagedIdentityFlow retains obsolete static colorRoles or statusScale");
+}
+
+const clientIdentityPresentation = read("apps/app-client/src/features/access/identity-presentation.ts");
+if (clientIdentityPresentation.includes("direction:")) {
+  failures.push("app-client identity presentation retains a local direction authority");
 }
 
 for (const [name, body] of [

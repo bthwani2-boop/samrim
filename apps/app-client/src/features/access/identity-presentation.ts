@@ -90,6 +90,5 @@ const identityCopy: IdentityCopy = {
 };
 
 export const identityPresentation = {
-  direction: "rtl" as const,
   copy: identityCopy,
 };

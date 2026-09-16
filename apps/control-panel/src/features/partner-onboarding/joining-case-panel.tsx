@@ -1,6 +1,7 @@
 "use client";
 
 import type { JoiningCaseListResponse, JoiningCaseResponse, JoiningCaseState, PublicationState, ServiceCity, StorePublicationResponse } from "@bthwani/dsh";
+import { toAsciiDigits } from "@bthwani/design-system";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 
@@ -227,7 +228,7 @@ export function JoiningCasePanel() {
           {queue.length ? <ul>{queue.map((item) => <li key={item.id}><button type="button" className="button button-secondary" disabled={busy} onClick={() => void openCase(item.id)}>{joiningStateLabel(item.state)} · {item.businessName}</button></li>)}</ul> : null}
         </div>
         <div className="access-form">
-          <label className="field-label" htmlFor="joining-phone">رقم هاتف الشريك (E.164)<input id="joining-phone" autoComplete="tel" disabled={busy} inputMode="tel" value={phone} onChange={(event) => { setPhone(event.target.value); clearResult(); }} placeholder="مثال: +96777000100" /></label>
+          <label className="field-label" htmlFor="joining-phone">رقم هاتف الشريك (E.164)<input id="joining-phone" autoComplete="tel" disabled={busy} inputMode="tel" value={phone} onChange={(event) => { setPhone(toAsciiDigits(event.target.value)); clearResult(); }} placeholder="مثال: +96777000100" /></label>
           <label className="field-label" htmlFor="joining-business">اسم النشاط<input id="joining-business" disabled={busy} value={businessName} onChange={(event) => { setBusinessName(event.target.value); clearResult(); }} /></label>
           <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy} value={storeName} onChange={(event) => { setStoreName(event.target.value); clearResult(); }} /></label>
           <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy} value={serviceCityId} onChange={(event) => { setServiceCityId(event.target.value); clearResult(); }}><option value="">اختر مدينة نشطة</option>{cities.filter((city) => city.active).map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
