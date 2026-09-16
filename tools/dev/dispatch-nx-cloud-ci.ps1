@@ -33,18 +33,24 @@ try {
     & pwsh -NoProfile -ExecutionPolicy Bypass -File $VerifyScript -Repository $Repository -Ref $Ref
     if ($LASTEXITCODE -ne 0) { Fail 'Nx Cloud/GitHub preflight failed; no workflow was dispatched' }
 
-    $dispatchStarted = [DateTime]::UtcNow
+    $existingRunsRaw = ((Invoke-Gh @('run', 'list', '--repo', $Repository, '--workflow', $Workflow, '--branch', $Ref, '--event', 'workflow_dispatch', '--limit', '20', '--json', 'databaseId,createdAt,url,headBranch,status,conclusion')) -join '')
+    $existingRuns = if ($existingRunsRaw.Trim()) { @($existingRunsRaw | ConvertFrom-Json) } else { @() }
+    $existingRunIds = [System.Collections.Generic.HashSet[long]]::new()
+    foreach ($existingRun in $existingRuns) {
+        $null = $existingRunIds.Add([long]$existingRun.databaseId)
+    }
+
     $null = Invoke-Gh @('workflow', 'run', $Workflow, '--repo', $Repository, '--ref', $Ref)
     Write-Host "NX_CLOUD_DISPATCH=REQUESTED workflow=$Workflow ref=$Ref"
 
     $run = $null
     for ($attempt = 0; $attempt -lt 15 -and $null -eq $run; $attempt++) {
-        $rawRuns = ((Invoke-Gh @('run', 'list', '--repo', $Repository, '--workflow', $Workflow, '--branch', $Ref, '--event', 'workflow_dispatch', '--limit', '10', '--json', 'databaseId,createdAt,url,headBranch,status,conclusion')) -join '')
+        $rawRuns = ((Invoke-Gh @('run', 'list', '--repo', $Repository, '--workflow', $Workflow, '--branch', $Ref, '--event', 'workflow_dispatch', '--limit', '20', '--json', 'databaseId,createdAt,url,headBranch,status,conclusion')) -join '')
         $runs = if ($rawRuns.Trim()) { @($rawRuns | ConvertFrom-Json) } else { @() }
         $candidates = @($runs |
             Where-Object {
                 $_.headBranch -eq $Ref -and
-                [DateTime]::Parse([string]$_.createdAt).ToUniversalTime() -ge $dispatchStarted.AddSeconds(-5)
+                -not $existingRunIds.Contains([long]$_.databaseId)
             } |
             Sort-Object { [DateTime]::Parse([string]$_.createdAt) } -Descending |
             Select-Object -First 1)
