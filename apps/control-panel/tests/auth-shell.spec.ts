@@ -181,6 +181,9 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.route("**/api/service-cities**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
+  await page.route("**/api/catalog/verticals", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
   await page.route("**/api/partners/joining-cases", async (route) => {
     requestBody = route.request().postDataJSON();
     await route.fulfill({
@@ -199,13 +202,127 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await expect(page.getByLabel("رقم هاتف الشريك")).toBeVisible();
 
   await page.getByLabel("رقم هاتف الشريك").fill("+967 77000100");
-  await page.getByLabel("اسم النشاط").fill("نشاط الاختبار");
+  await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
+  await page.getByLabel("المجال التجاري").selectOption("grocery");
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
 
   await expect(page.getByRole("status")).toContainText("الحالة: مسودة");
-  expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa" });
+  expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa", firstStoreVerticalId: "grocery" });
+});
+
+test("operator gets an actionable empty state when no active commerce vertical exists", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/service-cities**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [] }) });
+  });
+  await page.route("**/api/catalog/verticals", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [] }) });
+  });
+  await page.route("**/api/partners/joining-cases?limit=50", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cases: [] }) });
+  });
+  await page.goto("/partners");
+  await expect(page.getByText("لا يمكن إنشاء طلب شريك بعد", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "فتح الكتالوج لإضافة مجال" })).toHaveAttribute("href", "/catalog");
+  await expect(page.getByRole("button", { name: "إنشاء حالة انضمام" })).toBeDisabled();
+});
+
+test("operator city creation delegates the stable id to DSH", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let requestBody: unknown;
+  await page.route("**/api/service-cities**", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [] }) });
+      return;
+    }
+    requestBody = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ city: { id: "city_0123456789abcdef0123456789abcdef", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" } }),
+    });
+  });
+
+  await page.goto("/partners");
+  await page.getByLabel("الاسم العربي").fill("صنعاء");
+  await page.getByRole("button", { name: "إضافة مدينة" }).click();
+
+  await expect(page.getByText("المعرف التلقائي: city_0123456789abcdef0123456789abcdef")).toBeVisible();
+  expect(requestBody).toEqual({ displayNameAr: "صنعاء", active: true });
+});
+
+test("operator city creation rejects non-Arabic names before mutation", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let mutationAttempted = false;
+  await page.route("**/api/service-cities**", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [] }) });
+      return;
+    }
+    mutationAttempted = true;
+    await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "UNEXPECTED_MUTATION" } }) });
+  });
+  await page.goto("/partners");
+  await page.getByLabel("الاسم العربي").fill("Sana'a");
+  await page.getByRole("button", { name: "إضافة مدينة" }).click();
+  await expect(page.locator("p.identity-error")).toContainText("باللغة العربية فقط");
+  expect(mutationAttempted).toBe(false);
+});
+
+test("operator creates a canonical commerce vertical before onboarding partners", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let requestBody: unknown;
+  await page.route("**/api/catalog/verticals", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [] }) });
+      return;
+    }
+    requestBody = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ vertical: { id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "مطاعم", nameEn: "Restaurants", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }),
+    });
+  });
+  await page.route("**/api/catalog/products**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
+  });
+  await page.goto("/catalog");
+  await expect(page.getByLabel("المعرف البرمجي", { exact: true })).toHaveCount(0);
+  await page.getByLabel("الاسم العربي", { exact: true }).fill("مطاعم");
+  await page.getByLabel("الاسم الإنجليزي", { exact: true }).fill("Restaurants");
+  await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
+  await expect(page.getByRole("status")).toContainText("المعرف التلقائي: vertical_0123456789abcdef0123456789abcdef");
+  expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", active: true });
+});
+
+test("operator creates a product category under its commerce vertical", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let requestBody: unknown;
+  await page.route("**/api/catalog/verticals", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "vertical_0123456789abcdef0123456789abcdef", nameAr: "مطاعم", nameEn: "Restaurants", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/catalog/categories**", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [] }) });
+      return;
+    }
+    requestBody = route.request().postDataJSON();
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ category: { id: "category_0123456789abcdef0123456789abcdef", verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" } }) });
+  });
+  await page.route("**/api/catalog/products**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [] }) });
+  });
+  await page.goto("/catalog");
+  await expect(page.getByLabel("المعرف البرمجي للتصنيف", { exact: true })).toHaveCount(0);
+  await page.getByLabel("المجال التجاري").first().selectOption("vertical_0123456789abcdef0123456789abcdef");
+  await page.getByLabel("الاسم العربي للتصنيف").fill("قهوة");
+  await page.getByLabel("الاسم الإنجليزي للتصنيف").fill("Coffee");
+  await page.getByRole("button", { name: "إضافة تصنيف" }).click();
+  await expect(page.getByRole("status")).toContainText("المعرف التلقائي: category_0123456789abcdef0123456789abcdef");
+  expect(requestBody).toEqual({ verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true });
 });
 
 test("operator resumes a canonical joining case from the DSH queue", async ({ page }) => {
@@ -238,6 +355,9 @@ test("partner Store publication exposes the canonical readiness block", async ({
   await page.route("**/api/service-cities**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
+  await page.route("**/api/catalog/verticals", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
   await page.route("**/api/partners/joining-cases", async (route) => {
     await route.fulfill({
       status: 201,
@@ -253,9 +373,10 @@ test("partner Store publication exposes the canonical readiness block", async ({
   });
   await page.goto("/partners");
   await page.getByLabel("رقم هاتف الشريك").fill("+96777000100");
-  await page.getByLabel("اسم النشاط").fill("نشاط الاختبار");
+  await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
+  await page.getByLabel("المجال التجاري").selectOption("grocery");
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
   await page.getByRole("button", { name: "إعادة قراءة النشر" }).click();
   await expect(page.getByRole("status")).toContainText("الجاهزية: محجوب");

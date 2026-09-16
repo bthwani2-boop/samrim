@@ -32,12 +32,13 @@ const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
 if (dshToken.length < 24 || bootstrapToken.length < 24 || challengeSecret.length < 32) fail("canonical internal secrets are too weak");
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
+const citySuffix = String(Date.now());
 const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set();
-const cityA = `city-a-${suffix}`;
-const cityB = `city-b-${suffix}`;
-const verticalID = `grocery-${suffix}`;
-const categoryID = `coffee-${suffix}`;
-const childCategoryID = `beans-${suffix}`;
+let cityA = "";
+let cityB = "";
+let verticalID = "";
+let categoryID = "";
+let childCategoryID = "";
 const enumAttributeID = `roast-${suffix}`;
 const measurementAttributeID = `net-weight-${suffix}`;
 const dateAttributeID = `expiry-${suffix}`;
@@ -236,7 +237,8 @@ async function createClientSession(phone) {
 }
 async function waitForIdentityReady(timeoutMs = 30_000) { const deadline = Date.now() + timeoutMs; while (Date.now() < deadline) { const health = await request(identityBase, "GET", "/identity/health", { timeoutMs: 1_000, allowNetworkError: true }); if (health.status === 200) return; await new Promise((resolve) => setTimeout(resolve, 250)); } fail("Identity did not become ready after restart"); }
 
-let actingOperatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
+let actingOperatorID = sql("SELECT actor_id FROM identity_actor_roles WHERE role='operator' AND enabled AND activated_at IS NOT NULL ORDER BY activated_at DESC, actor_id LIMIT 1");
+if (!actingOperatorID) actingOperatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
 if (!actingOperatorID) {
   const bootstrapped = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role: "operator" } });
   if (bootstrapped.status !== 201 || !bootstrapped.body?.actorId) fail("operator bootstrap failed", JSON.stringify(bootstrapped));
@@ -276,19 +278,25 @@ expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='fi
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "CHECK (((originating_field_actor_id IS NULL) OR (length(btrim(originating_field_actor_id)) > 0)))", "Field joining-case origin invariant is not canonical");
 expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name='originating_field_actor_id')", "t", "Field joining-case origin column is missing");
 console.log("DSH_SCHEMA_V20=PASS");
-const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { id: cityA, displayNameAr: `مدينة أ ${suffix}`, active: true } });
-const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { id: cityB, displayNameAr: `مدينة ب ${suffix}`, active: true } });
-if (cityAResponse.status !== 201 || cityBResponse.status !== 201) fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
+const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
+const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
+if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
+cityA = cityAResponse.body.city.id;
+cityB = cityBResponse.body.city.id;
 cityIDs.add(cityA); cityIDs.add(cityB);
 console.log("DSH_CITY_SCOPE_RUNTIME=PASS");
 
-const verticalCreate = await request(dshBase, "POST", "/dsh/catalog/verticals", { token: dshToken, headers: serviceHeaders(actingOperatorID, `vertical-${suffix}`), body: { id: verticalID, nameAr: `بقالة ${suffix}`, nameEn: `Grocery ${suffix}`, active: true } });
-if (verticalCreate.status !== 201 || verticalCreate.body?.vertical?.id !== verticalID) fail("commerce vertical creation failed", JSON.stringify(verticalCreate));
+const verticalCreate = await request(dshBase, "POST", "/dsh/catalog/verticals", { token: dshToken, headers: serviceHeaders(actingOperatorID, `vertical-${suffix}`), body: { nameAr: `بقالة ${suffix}`, nameEn: `Grocery ${suffix}`, active: true } });
+if (verticalCreate.status !== 201 || !String(verticalCreate.body?.vertical?.id || "").startsWith("vertical_")) fail("commerce vertical creation failed", JSON.stringify(verticalCreate));
+verticalID = String(verticalCreate.body.vertical.id);
 const verticalList = await request(dshBase, "GET", "/dsh/catalog/verticals", { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (verticalList.status !== 200 || !verticalList.body?.verticals?.some((item) => item.id === verticalID)) fail("commerce vertical registry readback failed", JSON.stringify(verticalList));
-const categoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-${suffix}`), body: { id: categoryID, verticalId: verticalID, nameAr: `قهوة ${suffix}`, nameEn: `Coffee ${suffix}`, active: true } });
-const childCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-child-${suffix}`), body: { id: childCategoryID, verticalId: verticalID, parentCategoryId: categoryID, nameAr: `حبوب ${suffix}`, nameEn: `Beans ${suffix}`, active: true } });
-if (categoryCreate.status !== 201 || childCategoryCreate.status !== 201 || childCategoryCreate.body?.category?.parentCategoryId !== categoryID) fail("catalog parent category tree failed", JSON.stringify({ categoryCreate, childCategoryCreate }));
+const categoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-${suffix}`), body: { verticalId: verticalID, nameAr: `قهوة ${suffix}`, nameEn: `Coffee ${suffix}`, active: true } });
+if (categoryCreate.status !== 201 || !String(categoryCreate.body?.category?.id || "").startsWith("category_")) fail("catalog category creation failed", JSON.stringify(categoryCreate));
+categoryID = String(categoryCreate.body.category.id);
+const childCategoryCreate = await request(dshBase, "POST", "/dsh/catalog/categories", { token: dshToken, headers: serviceHeaders(actingOperatorID, `category-child-${suffix}`), body: { verticalId: verticalID, parentCategoryId: categoryID, nameAr: `حبوب ${suffix}`, nameEn: `Beans ${suffix}`, active: true } });
+if (childCategoryCreate.status !== 201 || !String(childCategoryCreate.body?.category?.id || "").startsWith("category_") || childCategoryCreate.body?.category?.parentCategoryId !== categoryID) fail("catalog parent category tree failed", JSON.stringify({ categoryCreate, childCategoryCreate }));
+childCategoryID = String(childCategoryCreate.body.category.id);
 categoryIDs.add(categoryID); categoryIDs.add(childCategoryID);
 console.log("DSH_CATALOG_REGISTRY=PASS");
 

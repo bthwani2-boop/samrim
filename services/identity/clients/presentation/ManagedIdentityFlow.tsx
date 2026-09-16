@@ -59,6 +59,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const [challengeRequested, setChallengeRequested] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -88,6 +89,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   }, [binding]);
 
   function resetToLogin() {
+    setShowAccount(false);
     setStep("login");
     setVerificationCode("");
     setPassword("");
@@ -194,26 +196,64 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   }
 
   if (state.kind === "authenticated") {
+    if (showAccount) {
+      return shell(
+        <View style={styles.card}>
+          <View style={styles.accountHeading}>
+            <Text style={styles.eyebrow}>إدارة الحساب</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="العودة إلى المساحة"
+              onPress={() => setShowAccount(false)}
+              style={styles.linkButton}
+            >
+              <Text style={styles.linkText}>العودة إلى المساحة</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.title}>الحساب</Text>
+          <Text style={styles.description}>راجع حالة جلسة هذا الجهاز وأنهِ الوصول منه عند الحاجة.</Text>
+          <View style={styles.accountStatus}>
+            <View style={styles.successBadge}>
+              <View style={styles.successDot} />
+              <Text style={styles.successBadgeText}>الجهاز جاهز للعمل</Text>
+            </View>
+            <Text style={styles.description}>الدور: {roleLabel}</Text>
+            <Text style={styles.description}>جلسة هذا الجهاز نشطة ومحفوظة محليًا.</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="تسجيل الخروج من هذا الجهاز"
+            accessibilityState={{ busy, disabled: busy }}
+            disabled={busy}
+            onPress={logoutDevice}
+            style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, busy && styles.disabledButton]}
+          >
+            <Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج من هذا الجهاز"}</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
     return shell(
       <View style={styles.card}>
-        <View style={styles.successBadge}>
-          <View style={styles.successDot} />
-          <Text style={styles.successBadgeText}>الجهاز جاهز للعمل</Text>
+        <View style={styles.authenticatedToolbar}>
+          <View style={styles.successBadge}>
+            <View style={styles.successDot} />
+            <Text style={styles.successBadgeText}>الجهاز جاهز للعمل</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="الحساب"
+            onPress={() => setShowAccount(true)}
+            style={({ pressed }: { pressed: boolean }) => [styles.accountButton, pressed && styles.secondaryButtonPressed]}
+          >
+            <Text style={styles.accountButtonText}>الحساب</Text>
+          </Pressable>
         </View>
         <Text style={styles.title}>مرحباً بك في مساحة {roleLabel}</Text>
         <Text style={styles.description}>تم تفعيل جلسة هذا الجهاز بنجاح.</Text>
         {authenticatedContent}
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="إنهاء جلسة هذا الجهاز"
-          accessibilityState={{ busy, disabled: busy }}
-          disabled={busy}
-          onPress={logoutDevice}
-          style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, busy && styles.disabledButton]}
-        >
-          <Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ إنهاء الجلسة…" : "إنهاء جلسة هذا الجهاز"}</Text>
-        </Pressable>
       </View>
     );
   }
@@ -630,6 +670,39 @@ function createStyles(theme: ThemeColors) {
       gap: spacing[2],
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[2],
+    },
+    authenticatedToolbar: {
+      alignItems: "center",
+      flexDirection: rowDirection,
+      gap: spacing[2],
+      justifyContent: "space-between",
+    },
+    accountButton: {
+      alignItems: "center",
+      borderColor: theme.borderColorStrong,
+      borderRadius: radius.round,
+      borderWidth: 1,
+      justifyContent: "center",
+      minHeight: 42,
+      paddingHorizontal: spacing[3],
+    },
+    accountButtonText: {
+      color: theme.interactiveText,
+      fontSize: 13,
+      fontWeight: "800",
+    },
+    accountHeading: {
+      alignItems: "center",
+      flexDirection: rowDirection,
+      gap: spacing[2],
+      justifyContent: "space-between",
+    },
+    accountStatus: {
+      backgroundColor: theme.structureSoft,
+      borderRadius: radius.sm,
+      gap: spacing[2],
+      marginTop: spacing[2],
+      padding: spacing[3],
     },
     successDot: {
       backgroundColor: theme.success,

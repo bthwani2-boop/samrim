@@ -224,6 +224,12 @@ func CreateCommerceVertical(ctx context.Context, db *sql.DB, item CommerceVertic
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CommerceVerticalResult{}, err
 	}
+	if item.ID == "" {
+		item.ID, err = newID("vertical")
+		if err != nil {
+			return CommerceVerticalResult{}, err
+		}
+	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.commerce_verticals(id,name_ar,name_en,active) VALUES($1,$2,$3,$4)", item.ID, item.NameAr, item.NameEn, item.Active); err != nil {
 		return CommerceVerticalResult{}, err
 	}
@@ -266,6 +272,12 @@ func CreateCatalogCategory(ctx context.Context, db *sql.DB, item CatalogCategory
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return CatalogCategoryRecord{}, err
+	}
+	if item.ID == "" {
+		item.ID, err = newID("category")
+		if err != nil {
+			return CatalogCategoryRecord{}, err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_categories(id,vertical_id,parent_category_id,name_ar,name_en,active) VALUES($1,$2,NULLIF($3,''),$4,$5,$6)", item.ID, item.VerticalID, item.ParentCategoryID, item.NameAr, item.NameEn, item.Active); err != nil {
 		return CatalogCategoryRecord{}, err

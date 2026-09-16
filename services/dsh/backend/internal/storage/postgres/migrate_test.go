@@ -80,18 +80,21 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			}
 		}
 
-		if _, err := postgres.CreateServiceCity(ctx, db, "sanaa", "صنعاء", true, "idem-city-catalog-v1", postgres.HashServiceCityCreateRequest("sanaa", "صنعاء", true), testOperatorActorID, "corr-city-catalog-v1"); err != nil {
+		if _, err := postgres.CreateServiceCity(ctx, db, "صنعاء", true, "idem-city-catalog-v1", postgres.HashServiceCityCreateRequest("صنعاء", true), testOperatorActorID, "corr-city-catalog-v1"); err != nil {
 			t.Fatalf("create service city: %v", err)
 		}
-		vertical := postgres.CommerceVerticalRecord{ID: "grocery", NameAr: "بقالة", NameEn: "Grocery", Active: true}
+		vertical := postgres.CommerceVerticalRecord{NameAr: "بقالة", NameEn: "Grocery", Active: true}
 		createdVertical, err := postgres.CreateCommerceVertical(ctx, db, vertical, "idem-vertical-v1", postgres.HashCatalogVerticalCreateRequest(vertical))
-		if err != nil || createdVertical.Vertical.ID != vertical.ID || createdVertical.Vertical.Version != 1 {
+		if err != nil || !strings.HasPrefix(createdVertical.Vertical.ID, "vertical_") || createdVertical.Vertical.Version != 1 {
 			t.Fatalf("create commerce vertical: %+v err=%v", createdVertical, err)
 		}
-		category := postgres.CatalogCategoryRecord{ID: "coffee", VerticalID: vertical.ID, NameAr: "قهوة", NameEn: "Coffee", Active: true}
-		if _, err := postgres.CreateCatalogCategory(ctx, db, category, "idem-category-v1", postgres.HashCatalogCategoryCreateRequest(category)); err != nil {
+		vertical.ID = createdVertical.Vertical.ID
+		category := postgres.CatalogCategoryRecord{VerticalID: vertical.ID, NameAr: "قهوة", NameEn: "Coffee", Active: true}
+		createdCategory, err := postgres.CreateCatalogCategory(ctx, db, category, "idem-category-v1", postgres.HashCatalogCategoryCreateRequest(category))
+		if err != nil || !strings.HasPrefix(createdCategory.ID, "category_") {
 			t.Fatalf("create catalog category: %v", err)
 		}
+		category.ID = createdCategory.ID
 		productInput := postgres.CatalogProductInput{VerticalID: vertical.ID, Scope: "SHARED", CanonicalName: "قهوة عربية", MeasurementKind: "DISCRETE", BaseUnit: "COUNT", VariantTitle: "عبوة 250 غ", CategoryIDs: []string{category.ID}, IdentifierType: "GTIN", IdentifierValue: "6281000000001", ImageURI: "https://example.com/coffee.jpg"}
 		createdProduct, err := postgres.CreateCatalogProduct(ctx, db, productInput, "idem-product-v1", postgres.HashCatalogProductCreateRequest(productInput), testOperatorActorID, "corr-product-v1")
 		if err != nil || createdProduct.Product.ID == "" || createdProduct.Product.Version != 1 {

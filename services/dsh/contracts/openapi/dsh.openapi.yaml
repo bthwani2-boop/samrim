@@ -2021,11 +2021,12 @@ components:
 
     CreateCommerceVerticalRequest:
       type: object
-      required: [id, nameAr, nameEn, active]
+      required: [nameAr, nameEn, active]
       additionalProperties: false
       properties:
         id:
           type: string
+          description: Optional legacy/import identifier. When omitted, DSH generates and returns an immutable identifier.
         nameAr:
           type: string
         nameEn:
@@ -2082,11 +2083,12 @@ components:
 
     CreateCatalogCategoryRequest:
       type: object
-      required: [id, verticalId, nameAr, nameEn, active]
+      required: [verticalId, nameAr, nameEn, active]
       additionalProperties: false
       properties:
         id:
           type: string
+          description: Optional legacy/import identifier. When omitted, DSH generates and returns an immutable identifier.
         verticalId:
           type: string
         parentCategoryId:
@@ -2222,6 +2224,7 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+          description: اسم عرض عربي قانوني للمدينة؛ يرفض DSH الحروف اللاتينية والمختلطة وقت الكتابة.
         active:
           type: boolean
         version:
@@ -2236,16 +2239,14 @@ components:
 
     CreateServiceCityRequest:
       type: object
-      required: [id, displayNameAr, active]
+      required: [displayNameAr, active]
       additionalProperties: false
       properties:
-        id:
-          type: string
-          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         displayNameAr:
           type: string
           minLength: 2
           maxLength: 160
+          description: اسم عرض عربي قانوني للمدينة؛ يرفض DSH الحروف اللاتينية والمختلطة وقت الكتابة.
         active:
           type: boolean
 
@@ -2258,6 +2259,7 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+          description: اسم عرض عربي قانوني للمدينة؛ يرفض DSH الحروف اللاتينية والمختلطة وقت الكتابة.
         active:
           type: boolean
 

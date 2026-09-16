@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type ServiceCityRecord struct {
@@ -32,8 +33,8 @@ var (
 	ErrServiceCityInvalid     = errors.New("service city facts are invalid")
 )
 
-func HashServiceCityCreateRequest(cityID, displayNameAr string, active bool) string {
-	return hashFacts("create-service-city", strings.TrimSpace(cityID), strings.TrimSpace(displayNameAr), strconv.FormatBool(active))
+func HashServiceCityCreateRequest(displayNameAr string, active bool) string {
+	return hashFacts("create-service-city", strings.TrimSpace(displayNameAr), strconv.FormatBool(active))
 }
 
 func HashServiceCityUpdateRequest(cityID, displayNameAr string, active bool, expectedVersion int) string {
@@ -94,14 +95,13 @@ func ReadServiceCity(ctx context.Context, db *sql.DB, cityID string) (ServiceCit
 	return city, nil
 }
 
-func CreateServiceCity(ctx context.Context, db *sql.DB, cityID, displayNameAr string, active bool, idempotencyKey, requestHash, actingActorID, correlationID string) (ServiceCityResult, error) {
-	cityID = strings.TrimSpace(cityID)
+func CreateServiceCity(ctx context.Context, db *sql.DB, displayNameAr string, active bool, idempotencyKey, requestHash, actingActorID, correlationID string) (ServiceCityResult, error) {
 	displayNameAr = strings.TrimSpace(displayNameAr)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	requestHash = strings.TrimSpace(requestHash)
 	actingActorID = strings.TrimSpace(actingActorID)
 	correlationID = strings.TrimSpace(correlationID)
-	if db == nil || !validServiceCityID(cityID) || !validServiceCityName(displayNameAr) || idempotencyKey == "" || requestHash == "" || actingActorID == "" || correlationID == "" {
+	if db == nil || !validServiceCityName(displayNameAr) || idempotencyKey == "" || requestHash == "" || actingActorID == "" || correlationID == "" {
 		return ServiceCityResult{}, ErrServiceCityInvalid
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -117,10 +117,10 @@ func CreateServiceCity(ctx context.Context, db *sql.DB, cityID, displayNameAr st
 	err = tx.QueryRowContext(ctx, `SELECT request_hash, city_id, operation, expected_version
 		FROM dsh.service_city_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE`, idempotencyKey).Scan(&storedHash, &storedCityID, &operation, &storedExpected)
 	if err == nil {
-		if storedHash != requestHash || storedCityID != cityID || operation != "create" || storedExpected.Valid {
+		if storedHash != requestHash || operation != "create" || storedExpected.Valid {
 			return ServiceCityResult{}, ErrServiceCityIdempotency
 		}
-		city, readErr := readServiceCityTx(ctx, tx, cityID)
+		city, readErr := readServiceCityTx(ctx, tx, storedCityID)
 		if readErr != nil {
 			return ServiceCityResult{}, readErr
 		}
@@ -132,17 +132,18 @@ func CreateServiceCity(ctx context.Context, db *sql.DB, cityID, displayNameAr st
 	if !errors.Is(err, sql.ErrNoRows) {
 		return ServiceCityResult{}, fmt.Errorf("read service city idempotency: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:service-city:id:"+cityID); err != nil {
-		return ServiceCityResult{}, err
-	}
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:service-city:name:"+strings.ToLower(displayNameAr)); err != nil {
 		return ServiceCityResult{}, err
 	}
 	var existing string
-	if err := tx.QueryRowContext(ctx, "SELECT id FROM dsh.service_cities WHERE id=$1 OR lower(btrim(display_name_ar))=lower(btrim($2))", cityID, displayNameAr).Scan(&existing); err == nil {
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM dsh.service_cities WHERE lower(btrim(display_name_ar))=lower(btrim($1))", displayNameAr).Scan(&existing); err == nil {
 		return ServiceCityResult{}, ErrServiceCityExists
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return ServiceCityResult{}, err
+	}
+	cityID, err := newID("city")
+	if err != nil {
+		return ServiceCityResult{}, fmt.Errorf("generate service city id: %w", err)
 	}
 	city, err := scanServiceCity(tx.QueryRowContext(ctx, `INSERT INTO dsh.service_cities(id,display_name_ar,active)
 		VALUES($1,$2,$3) RETURNING id,display_name_ar,active,version,created_at,updated_at`, cityID, displayNameAr, active))
@@ -259,7 +260,22 @@ func validServiceCityID(value string) bool {
 
 func validServiceCityName(value string) bool {
 	trimmed := strings.TrimSpace(value)
-	return len([]rune(trimmed)) >= 2 && len([]rune(trimmed)) <= 160
+	if len([]rune(trimmed)) < 2 || len([]rune(trimmed)) > 160 {
+		return false
+	}
+	hasArabic := false
+	for _, char := range trimmed {
+		switch {
+		case unicode.Is(unicode.Arabic, char):
+			hasArabic = true
+		case unicode.IsSpace(char), unicode.IsDigit(char), unicode.IsMark(char), unicode.IsPunct(char):
+			// Allow normal display-name punctuation and spacing, but no Latin
+			// or other-script letters.
+		default:
+			return false
+		}
+	}
+	return hasArabic
 }
 
 func lockServiceCityKey(ctx context.Context, tx *sql.Tx, key string) error {
