@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { type ActorType, type OperatorEnrollmentToken } from "@bthwani/identity";
+import type { ActorType, OperatorEnrollmentToken } from "@bthwani/identity";
 import { toAsciiDigits } from "@bthwani/design-system";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "./identity-error-message";
@@ -16,6 +16,8 @@ type ManagedAccountStatus = Readonly<{
   actorVersion?: number;
   roleVersion?: number;
   state?: string;
+  operationalAdmissionState?: string;
+  operationalAvailabilityState?: string;
   phoneE164?: string;
   admittedRoles?: ReadonlyArray<Readonly<{
     actorId: string;
@@ -39,7 +41,7 @@ export function AccountAccessPanel() {
   const requestId = useRef(0);
 
   async function readCanonicalStatus(): Promise<ManagedAccountStatus> {
-    const response = await identityFetch("/api/access/managed-user/status?" + new URLSearchParams({ phone: phone.trim(), role }));
+    const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: phone.trim(), role })}`);
     if (!response.ok) throw { status: response.status, message: await responseMessage(response) } satisfies { status: number; message: string };
     return await response.json() as ManagedAccountStatus;
   }
@@ -79,7 +81,7 @@ export function AccountAccessPanel() {
     if (value.length < 5) return;
     const timeout = window.setTimeout(() => void (async () => {
       try {
-        const response = await identityFetch("/api/access/managed-user/status?" + new URLSearchParams({ phone: value, role }));
+        const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: value, role })}`);
         if (id !== requestId.current) return;
         if (!response.ok) {
           setStatus(null);
@@ -173,7 +175,7 @@ export function AccountAccessPanel() {
   const canIssueActivation = role === "operator" && status !== null && !status.activated;
   const canIssueReenrollment = (role === "partner" || role === "captain") && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
   const activationBlocked = status?.exists === true && status.enabled === false;
-  const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true);
+  const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true && (status.role !== "captain" || status.state === "active"));
 
   return (
     <section className="access-card" aria-labelledby="account-access-title">
@@ -205,11 +207,12 @@ export function AccountAccessPanel() {
         ) : <span className="form-action-placeholder" aria-hidden="true" />}
       </div>
       {status ? (
-        <div className={"managed-status " + (statusIsHealthy ? "managed-status-info" : "managed-status-warning")} role="status">
+        <div className={`managed-status ${statusIsHealthy ? "managed-status-info" : "managed-status-warning"}`} role="status">
           {status.exists ? (
             <>
               <strong>{status.enabled ? "الدور مفعّل" : "الدور موقوف"} · {status.securityEnabled ? "الهوية مسموحة" : "الهوية موقوفة بالكامل"}</strong>
               <p>actorId: <code>{status.actorId}</code> · الحالة: {status.state}</p>
+              {status.role === "captain" ? <p>الأهلية التشغيلية: {status.operationalAdmissionState ?? "غير موجودة"} · التوافر: {status.operationalAvailabilityState ?? "غير متاح"}</p> : null}
               <p>{status.activated ? "يوجد تسجيل سابق لهذا الدور." : "الدور مهيأ ولم يكتمل تفعيله بعد."}</p>
               {status.activated && managedRole ? (
                 <div className="managed-status managed-status-warning" role="alert">

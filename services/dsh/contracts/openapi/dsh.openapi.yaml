@@ -189,6 +189,9 @@ paths:
   /dsh/captains/admissions/{admissionId}:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}"
 
+  /dsh/captains/actors/{actorId}/admission:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1actors~1{actorId}~1admission"
+
   /dsh/captains/me:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me"
 
@@ -203,6 +206,9 @@ paths:
 
   /dsh/captains/me/assignments:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments"
+
+  /dsh/captains/me/assignments/{assignmentId}/delivery-task:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1delivery-task"
 
   /dsh/captains/me/assignments/{assignmentId}/pickup:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1pickup"
@@ -2495,7 +2501,7 @@ components:
           nullable: true
         state:
           type: string
-          enum: [pending_identity, eligible, suspended, terminated]
+          enum: [pending_identity, eligible, suspended]
         availabilityState:
           type: string
           enum: [available, unavailable]
@@ -2657,6 +2663,56 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CaptainAssignment"
+
+    CaptainLocation:
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    CaptainDeliveryTask:
+      type: object
+      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, orderState, handoffState, deliveryState]
+      additionalProperties: false
+      properties:
+        assignmentId:
+          type: string
+        orderReference:
+          type: string
+        storeId:
+          type: string
+        storeName:
+          type: string
+        pickupOrigin:
+          $ref: "#/components/schemas/CaptainLocation"
+        customerAddressText:
+          type: string
+        customerDestination:
+          $ref: "#/components/schemas/CaptainLocation"
+        orderState:
+          $ref: "#/components/schemas/OrderState"
+        handoffState:
+          type: string
+          enum: [pending, store_confirmed, completed, superseded]
+        deliveryState:
+          type: string
+          enum: [assigned, in_custody, delivered, delivery_failed]
+
+    CaptainDeliveryTaskResponse:
+      type: object
+      required: [task]
+      additionalProperties: false
+      properties:
+        task:
+          $ref: "#/components/schemas/CaptainDeliveryTask"
 
     CaptainOfferResponse:
       type: object

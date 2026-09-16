@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { ActorType } from "@bthwani/identity";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, readCaptainAdmissionByActor } from "../../../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, lookupIdentityRoles, readOperatorSession } from "../../../../../src/server/identity/identity-bff";
 
 const roles = new Set<ActorType>(["client", "partner", "captain", "field", "operator"]);
@@ -18,6 +19,14 @@ export async function GET(request: Request) {
   try {
     const records = await lookupIdentityRoles(phone);
     const record = records.find((candidate) => candidate.role === role);
+    const captainAdmissions = new Map<string, Awaited<ReturnType<typeof readCaptainAdmissionByActor>>["admission"]>();
+    await Promise.all(records.filter((candidate) => candidate.role === "captain").map(async (candidate) => {
+      try {
+        captainAdmissions.set(candidate.actorId, (await readCaptainAdmissionByActor(candidate.actorId, { operatorActorId: identity.subject })).admission);
+      } catch (error) {
+        if (!isDshClientError(error) || dshHttpStatus(error) !== 404) throw error;
+      }
+    }));
     const toStatus = (candidate: typeof record) => candidate ? {
       actorId: candidate.actorId,
       phoneE164: candidate.phoneE164,
@@ -27,7 +36,9 @@ export async function GET(request: Request) {
       activated: Boolean(candidate.activatedAt),
       securityEnabled: candidate.securityEnabled,
       reenrollable: Boolean(candidate.enabled && candidate.activatedAt && (candidate.role === "partner" || candidate.role === "captain")),
-      state: !candidate.securityEnabled ? "identity_disabled" : !candidate.enabled ? "role_disabled" : !candidate.activatedAt ? "pending_activation" : "active",
+      state: !candidate.securityEnabled ? "identity_disabled" : !candidate.enabled ? "role_disabled" : !candidate.activatedAt ? "pending_activation" : candidate.role === "captain" && !captainAdmissions.has(candidate.actorId) ? "operational_not_admitted" : candidate.role === "captain" && captainAdmissions.get(candidate.actorId)?.state === "suspended" ? "operational_suspended" : candidate.role === "captain" && captainAdmissions.get(candidate.actorId)?.availabilityState === "unavailable" ? "active_unavailable" : "active",
+      operationalAdmissionState: candidate.role === "captain" ? captainAdmissions.get(candidate.actorId)?.state : undefined,
+      operationalAvailabilityState: candidate.role === "captain" ? captainAdmissions.get(candidate.actorId)?.availabilityState : undefined,
       actorVersion: candidate.actorVersion,
       roleVersion: candidate.roleVersion,
       credentialVersion: candidate.credentialVersion,
@@ -48,6 +59,7 @@ export async function GET(request: Request) {
       admittedRoles: records.map(toStatus),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return NextResponse.json({ error: identityErrorPayload(error) }, { status: identityHttpStatus(error), headers: { "Cache-Control": "no-store" } });
+    const payload = isDshClientError(error) ? dshErrorPayload(error) : identityErrorPayload(error);
+    return NextResponse.json({ error: payload }, { status: isDshClientError(error) ? dshHttpStatus(error) : identityHttpStatus(error), headers: { "Cache-Control": "no-store" } });
   }
 }

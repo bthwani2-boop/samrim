@@ -70,6 +70,37 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/captains/actors/{actorId}/admission:
+    get:
+      operationId: readCaptainAdmissionForOperatorActor
+      summary: Read a Captain admission by actor for an operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200":
+          description: Canonical DSH Captain admission readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
   /dsh/captains/me:
     get:
       operationId: readOwnCaptainAdmission
@@ -222,6 +253,38 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
         "403":
           $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/assignments/{assignmentId}/delivery-task:
+    get:
+      operationId: readOwnCaptainDeliveryTask
+      summary: Read the bounded delivery task for the current Captain assignment
+      security:
+        - userBearer: []
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Server-composed pickup, destination, and operational task projection.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainDeliveryTaskResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
@@ -494,6 +557,7 @@ paths:
             maxLength: 128
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
       requestBody:
         required: true
@@ -531,6 +595,7 @@ paths:
             maxLength: 128
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
         - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
       requestBody:
         required: true

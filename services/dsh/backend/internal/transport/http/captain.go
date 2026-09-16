@@ -35,11 +35,13 @@ func NewCaptain(identityClient *identityintegration.Client, accessToken string, 
 func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/captains/admissions", s.admit)
 	mux.HandleFunc("GET /dsh/captains/admissions/{admissionId}", s.readAdmission)
+	mux.HandleFunc("GET /dsh/captains/actors/{actorId}/admission", s.readAdmissionForActor)
 	mux.HandleFunc("GET /dsh/captains/me", s.readOwnAdmission)
 	mux.HandleFunc("POST /dsh/captains/me/availability", s.setAvailability)
 	mux.HandleFunc("GET /dsh/captains/me/offers", s.listOffers)
 	mux.HandleFunc("POST /dsh/captains/me/offers/{offerId}/respond", s.respondToOffer)
 	mux.HandleFunc("GET /dsh/captains/me/assignments", s.listAssignments)
+	mux.HandleFunc("GET /dsh/captains/me/assignments/{assignmentId}/delivery-task", s.readDeliveryTask)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/pickup", s.pickup)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/complete", s.complete)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/dispatch", s.dispatch)
@@ -85,6 +87,23 @@ func (s *CaptainServer) readAdmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	admission, err := s.service.ReadForOperator(r.Context(), r.PathValue("admissionId"), acting)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainAdmissionResponse{Admission: toCaptainAdmission(admission)})
+}
+
+func (s *CaptainServer) readAdmissionForActor(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedService(w, r) {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	admission, err := s.service.ReadForOperatorByActor(r.Context(), r.PathValue("actorId"), acting)
 	if err != nil {
 		writeCaptainError(w, err)
 		return
@@ -187,6 +206,24 @@ func (s *CaptainServer) listAssignments(w http.ResponseWriter, r *http.Request) 
 		items = append(items, toCaptainAssignment(assignment))
 	}
 	writeJSON(w, http.StatusOK, contract.CaptainAssignmentListResponse{Assignments: items})
+}
+
+func (s *CaptainServer) readDeliveryTask(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
+		return
+	}
+	task, err := s.service.ReadDeliveryTask(r.Context(), bearerToken(r), r.PathValue("assignmentId"))
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainDeliveryTaskResponse{Task: contract.CaptainDeliveryTask{
+		AssignmentID: task.AssignmentID, OrderReference: task.OrderReference, StoreID: task.StoreID, StoreName: task.StoreName,
+		PickupOrigin: contract.CaptainLocation{Latitude: task.PickupLatitude, Longitude: task.PickupLongitude}, CustomerAddressText: task.CustomerAddressText,
+		CustomerDestination: contract.CaptainLocation{Latitude: task.DestinationLatitude, Longitude: task.DestinationLongitude}, OrderState: contract.OrderState(task.OrderState),
+		HandoffState: task.HandoffState, DeliveryState: task.DeliveryState,
+	}})
 }
 
 func (s *CaptainServer) pickup(w http.ResponseWriter, r *http.Request) {
@@ -309,7 +346,7 @@ func (s *CaptainServer) setManagedRole(w http.ResponseWriter, r *http.Request, r
 	if !s.authorizedService(w, r) {
 		return
 	}
-	acting, correlation, _, expected, ok := captainHeaders(w, r, false)
+	acting, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
 	if !ok || acting == "" || expected < 1 {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID, X-Correlation-ID, and X-Expected-Version are required")
 		return
@@ -318,7 +355,7 @@ func (s *CaptainServer) setManagedRole(w http.ResponseWriter, r *http.Request, r
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if err := s.service.SetManagedRoleEnabled(r.Context(), role, r.PathValue("actorId"), acting, correlation, input.Reason, expected, input.Enabled); err != nil {
+	if err := s.service.SetManagedRoleEnabled(r.Context(), role, r.PathValue("actorId"), acting, correlation, idempotency, input.Reason, expected, input.Enabled); err != nil {
 		writeCaptainError(w, err)
 		return
 	}
@@ -397,9 +434,9 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Captain input is invalid")
 	case errors.Is(err, captain.ErrCaptainSessionForbidden), errors.Is(err, captain.ErrPartnerSessionForbidden), errors.Is(err, captain.ErrOperatorNotActive), errors.Is(err, captain.ErrManagedRoleClosed):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not permitted for this Captain operation")
-	case errors.Is(err, postgres.ErrCaptainAdmissionNotFound), errors.Is(err, postgres.ErrCaptainOfferNotFound), errors.Is(err, postgres.ErrCaptainAssignmentNotFound), errors.Is(err, postgres.ErrOrderNotFound):
+	case errors.Is(err, postgres.ErrCaptainAdmissionNotFound), errors.Is(err, postgres.ErrCaptainOfferNotFound), errors.Is(err, postgres.ErrCaptainAssignmentNotFound), errors.Is(err, postgres.ErrCaptainDeliveryTaskNotFound), errors.Is(err, postgres.ErrOrderNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain operational resource was not found")
-	case errors.Is(err, postgres.ErrCaptainAdmissionExists), errors.Is(err, postgres.ErrCaptainAdmissionConflict), errors.Is(err, postgres.ErrCaptainOperationConflict), errors.Is(err, postgres.ErrCaptainDispatchConflict), errors.Is(err, postgres.ErrCaptainOfferConflict), errors.Is(err, postgres.ErrCaptainAssignmentConflict), errors.Is(err, postgres.ErrCaptainCustodyConflict), errors.Is(err, postgres.ErrCaptainTerminalConflict), errors.Is(err, captain.ErrManagedRoleNotEligible), errors.Is(err, postgres.ErrCaptainNoAvailable), errors.Is(err, postgres.ErrCaptainOfferExpired), errors.Is(err, postgres.ErrCaptainOfferForbidden), errors.Is(err, postgres.ErrCaptainNotEligible), errors.Is(err, postgres.ErrCaptainVersionConflict):
+	case errors.Is(err, postgres.ErrCaptainAdmissionExists), errors.Is(err, postgres.ErrCaptainAdmissionConflict), errors.Is(err, postgres.ErrCaptainOperationConflict), errors.Is(err, postgres.ErrCaptainDispatchConflict), errors.Is(err, postgres.ErrCaptainOfferConflict), errors.Is(err, postgres.ErrCaptainAssignmentConflict), errors.Is(err, postgres.ErrCaptainCustodyConflict), errors.Is(err, postgres.ErrCaptainTerminalConflict), errors.Is(err, postgres.ErrCaptainDeliveryTaskInvalid), errors.Is(err, captain.ErrManagedRoleNotEligible), errors.Is(err, captain.ErrManagedRoleVersionConflict), errors.Is(err, postgres.ErrCaptainNoAvailable), errors.Is(err, postgres.ErrCaptainOfferExpired), errors.Is(err, postgres.ErrCaptainOfferForbidden), errors.Is(err, postgres.ErrCaptainNotEligible), errors.Is(err, postgres.ErrCaptainVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain operational state or eligibility is stale or not actionable")
 	default:
 		var identityErr *identityclient.Error

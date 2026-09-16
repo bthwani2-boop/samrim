@@ -26,6 +26,8 @@ var (
 	ErrCaptainOfferConflict        = errors.New("captain dispatch offer is not actionable")
 	ErrCaptainOfferForbidden       = errors.New("captain dispatch offer belongs to another captain")
 	ErrCaptainAssignmentNotFound   = errors.New("captain assignment was not found")
+	ErrCaptainDeliveryTaskNotFound = errors.New("captain delivery task was not found")
+	ErrCaptainDeliveryTaskInvalid  = errors.New("captain delivery task is not currently available")
 	ErrCaptainAssignmentConflict   = errors.New("captain assignment is in conflict")
 	ErrCaptainCustodyConflict      = errors.New("captain custody transition is not allowed")
 	ErrCaptainTerminalConflict     = errors.New("captain assignment is already terminal")
@@ -83,6 +85,21 @@ type CaptainOfferResult struct {
 	Replayed   bool
 }
 
+type CaptainDeliveryTask struct {
+	AssignmentID         string
+	OrderReference       string
+	StoreID              string
+	StoreName            string
+	PickupLatitude       float64
+	PickupLongitude      float64
+	CustomerAddressText  string
+	DestinationLatitude  float64
+	DestinationLongitude float64
+	OrderState           string
+	HandoffState         string
+	DeliveryState        string
+}
+
 type CaptainOperationResult struct {
 	Assignment CaptainAssignment
 	Replayed   bool
@@ -118,6 +135,10 @@ func HashCaptainPickupRequest(assignmentID string, expectedVersion int) string {
 
 func HashCaptainCompletionRequest(assignmentID, result string, expectedVersion int) string {
 	return hashFacts("captain-complete", strings.TrimSpace(assignmentID), strings.TrimSpace(result), strconv.Itoa(expectedVersion))
+}
+
+func HashCaptainAccessRequest(actorID, role string, enabled bool, expectedVersion int) string {
+	return hashFacts("captain-access", strings.TrimSpace(actorID), strings.TrimSpace(role), strconv.FormatBool(enabled), strconv.Itoa(expectedVersion))
 }
 
 func CreateCaptainAdmissionCandidate(ctx context.Context, db *sql.DB, phone, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, bool, error) {
@@ -180,14 +201,52 @@ func ReadCaptainAdmission(ctx context.Context, db *sql.DB, admissionID string) (
 	if db == nil || strings.TrimSpace(admissionID) == "" {
 		return CaptainAdmission{}, ErrCaptainAdmissionNotFound
 	}
-	return readCaptainAdmissionTx(ctx, db, "id=$1", strings.TrimSpace(admissionID))
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var actorID string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(actor_id,'') FROM dsh.captain_admissions WHERE id=$1`, strings.TrimSpace(admissionID)).Scan(&actorID); errors.Is(err, sql.ErrNoRows) {
+		return CaptainAdmission{}, ErrCaptainAdmissionNotFound
+	} else if err != nil {
+		return CaptainAdmission{}, err
+	}
+	if actorID != "" {
+		if err := canonicalizeCaptainOffersTx(ctx, tx, actorID); err != nil {
+			return CaptainAdmission{}, err
+		}
+	}
+	admission, err := readCaptainAdmissionTx(ctx, tx, "id=$1", strings.TrimSpace(admissionID))
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainAdmission{}, err
+	}
+	return admission, nil
 }
 
 func ReadCaptainAdmissionForActor(ctx context.Context, db *sql.DB, actorID string) (CaptainAdmission, error) {
 	if db == nil || strings.TrimSpace(actorID) == "" {
 		return CaptainAdmission{}, ErrCaptainAdmissionNotFound
 	}
-	return readCaptainAdmissionTx(ctx, db, "actor_id=$1", strings.TrimSpace(actorID))
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
+		return CaptainAdmission{}, err
+	}
+	admission, err := readCaptainAdmissionTx(ctx, tx, "actor_id=$1", strings.TrimSpace(actorID))
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainAdmission{}, err
+	}
+	return admission, nil
 }
 
 func BindCaptainAdmission(ctx context.Context, db *sql.DB, admissionID, actorID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, error) {
@@ -245,6 +304,9 @@ func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, ava
 		return CaptainAdmission{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
+		return CaptainAdmission{}, false, err
+	}
 	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "availability")
 	if err != nil {
 		return CaptainAdmission{}, false, err
@@ -304,6 +366,187 @@ func SetCaptainAvailability(ctx context.Context, db *sql.DB, actorID string, ava
 	return admission, false, nil
 }
 
+// SuspendCaptainAdmission is the DSH half of a managed Captain role disable.
+// It releases offers, reopens pre-custody assignments for dispatch, and leaves
+// the admission unavailable before Identity security is changed.
+func SuspendCaptainAdmission(ctx context.Context, db *sql.DB, actorID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, error) {
+	if db == nil || strings.TrimSpace(actorID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+		return CaptainAdmission{}, ErrCaptainAdmissionConflict
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	actorID = strings.TrimSpace(actorID)
+	if err := canonicalizeCaptainOffersTx(ctx, tx, actorID); err != nil {
+		return CaptainAdmission{}, err
+	}
+	replayed, err := captainAdmissionAccessReplayTx(ctx, tx, "captain_admission_suspended", idempotencyKey, requestHash)
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	if replayed {
+		admission, readErr := readCaptainAdmissionTx(ctx, tx, "actor_id=$1", actorID)
+		if readErr != nil {
+			return CaptainAdmission{}, readErr
+		}
+		if err := tx.Commit(); err != nil {
+			return CaptainAdmission{}, err
+		}
+		return admission, nil
+	}
+	var offerID, offerOrderID string
+	err = tx.QueryRowContext(ctx, `SELECT id,order_id FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state='offered' FOR UPDATE`, actorID).Scan(&offerID, &offerOrderID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return CaptainAdmission{}, err
+	}
+
+	var admission CaptainAdmission
+	err = tx.QueryRowContext(ctx, `SELECT id,actor_id,state,availability_state,version,created_at,updated_at FROM dsh.captain_admissions WHERE actor_id=$1 FOR UPDATE`, actorID).Scan(&admission.ID, &admission.ActorID, &admission.State, &admission.AvailabilityState, &admission.Version, &admission.CreatedAt, &admission.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CaptainAdmission{}, ErrCaptainAdmissionNotFound
+	}
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	if admission.State != "eligible" {
+		if admission.State != "suspended" {
+			return CaptainAdmission{}, ErrCaptainNotEligible
+		}
+	}
+
+	var assignmentID, orderID, assignmentState string
+	err = tx.QueryRowContext(ctx, `SELECT id,order_id,state FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state IN ('assigned','in_custody') FOR UPDATE`, actorID).Scan(&assignmentID, &orderID, &assignmentState)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return CaptainAdmission{}, err
+	}
+	if assignmentState == "in_custody" {
+		return CaptainAdmission{}, ErrCaptainCustodyConflict
+	}
+	if assignmentID != "" {
+		var assignmentVersion int
+		if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_assignments SET state='reassigned',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='assigned' RETURNING version`, assignmentID).Scan(&assignmentVersion); err != nil {
+			return CaptainAdmission{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.captain_handoffs SET state='superseded',version=version+1,updated_at=clock_timestamp() WHERE assignment_id=$1 AND state <> 'superseded'`, assignmentID); err != nil {
+			return CaptainAdmission{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_orders SET state='READY_FOR_DISPATCH',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='CAPTAIN_ASSIGNED'`, orderID); err != nil {
+			return CaptainAdmission{}, err
+		}
+		assignmentKey := idempotencyKey + ":assignment:" + assignmentID
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,assignment_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('captain_assignment_reassigned',$1,$2,$3,$4,$5,$6,'assigned','reassigned',$7,$8)`, assignmentKey, correlationID, actingActorID, orderID, assignmentID, actorID, assignmentVersion, requestHash); err != nil {
+			return CaptainAdmission{}, err
+		}
+	}
+
+	if offerID != "" {
+		var supersededVersion int
+		if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_dispatch_offers SET state='superseded',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='offered' RETURNING version`, offerID).Scan(&supersededVersion); err != nil {
+			return CaptainAdmission{}, err
+		}
+		offerKey := idempotencyKey + ":offer:" + offerID
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('captain_offer_superseded_by_access',$1,$2,$3,$4,$5,$6,'offered','superseded',$7,$8)`, offerKey, correlationID, actingActorID, offerOrderID, offerID, actorID, supersededVersion, requestHash); err != nil {
+			return CaptainAdmission{}, err
+		}
+	}
+	if admission.State == "suspended" {
+		if err := tx.Commit(); err != nil {
+			return CaptainAdmission{}, err
+		}
+		return admission, nil
+	}
+
+	var suspended CaptainAdmission
+	if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_admissions SET state='suspended',availability_state='unavailable',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='eligible' RETURNING id,actor_id,state,availability_state,version,created_at,updated_at`, admission.ID).Scan(&suspended.ID, &suspended.ActorID, &suspended.State, &suspended.AvailabilityState, &suspended.Version, &suspended.CreatedAt, &suspended.UpdatedAt); err != nil {
+		return CaptainAdmission{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_admission_suspended',$1,$2,$3,$4,$5,'eligible','suspended',$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, suspended.ID, actorID, admission.Version, suspended.Version, requestHash); err != nil {
+		return CaptainAdmission{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainAdmission{}, err
+	}
+	return suspended, nil
+}
+
+// RestoreCaptainAdmission restores operational eligibility only. It always
+// returns the Captain unavailable so an operator cannot silently grant work.
+func RestoreCaptainAdmission(ctx context.Context, db *sql.DB, actorID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAdmission, error) {
+	if db == nil || strings.TrimSpace(actorID) == "" || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+		return CaptainAdmission{}, ErrCaptainAdmissionConflict
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	actorID = strings.TrimSpace(actorID)
+	if err := canonicalizeCaptainOffersTx(ctx, tx, actorID); err != nil {
+		return CaptainAdmission{}, err
+	}
+	replayed, err := captainAdmissionAccessReplayTx(ctx, tx, "captain_admission_restored", idempotencyKey, requestHash)
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	if replayed {
+		admission, readErr := readCaptainAdmissionTx(ctx, tx, "actor_id=$1", actorID)
+		if readErr != nil {
+			return CaptainAdmission{}, readErr
+		}
+		if err := tx.Commit(); err != nil {
+			return CaptainAdmission{}, err
+		}
+		return admission, nil
+	}
+	var admission CaptainAdmission
+	err = tx.QueryRowContext(ctx, `SELECT id,actor_id,state,availability_state,version,created_at,updated_at FROM dsh.captain_admissions WHERE actor_id=$1 FOR UPDATE`, actorID).Scan(&admission.ID, &admission.ActorID, &admission.State, &admission.AvailabilityState, &admission.Version, &admission.CreatedAt, &admission.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CaptainAdmission{}, ErrCaptainAdmissionNotFound
+	}
+	if err != nil {
+		return CaptainAdmission{}, err
+	}
+	if admission.State == "pending_identity" {
+		return CaptainAdmission{}, ErrCaptainNotEligible
+	}
+	if admission.State == "eligible" {
+		if admission.AvailabilityState == "available" {
+			var updated CaptainAdmission
+			if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_admissions SET availability_state='unavailable',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='eligible' AND availability_state='available' RETURNING id,actor_id,state,availability_state,version,created_at,updated_at`, admission.ID).Scan(&updated.ID, &updated.ActorID, &updated.State, &updated.AvailabilityState, &updated.Version, &updated.CreatedAt, &updated.UpdatedAt); err != nil {
+				return CaptainAdmission{}, err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_availability_changed',$1,$2,$3,$4,$5,'available','unavailable',$6,$7,$8)`, idempotencyKey+":availability", correlationID, actingActorID, updated.ID, actorID, admission.Version, updated.Version, requestHash); err != nil {
+				return CaptainAdmission{}, err
+			}
+			admission = updated
+		}
+		if err := tx.Commit(); err != nil {
+			return CaptainAdmission{}, err
+		}
+		return admission, nil
+	}
+	var hasActiveWork bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state='offered') OR EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state IN ('assigned','in_custody'))`, actorID).Scan(&hasActiveWork); err != nil {
+		return CaptainAdmission{}, err
+	}
+	if hasActiveWork {
+		return CaptainAdmission{}, ErrCaptainCustodyConflict
+	}
+	var restored CaptainAdmission
+	if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_admissions SET state='eligible',availability_state='unavailable',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='suspended' RETURNING id,actor_id,state,availability_state,version,created_at,updated_at`, admission.ID).Scan(&restored.ID, &restored.ActorID, &restored.State, &restored.AvailabilityState, &restored.Version, &restored.CreatedAt, &restored.UpdatedAt); err != nil {
+		return CaptainAdmission{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_admission_audit(event_type,idempotency_key,correlation_id,acting_actor_id,admission_id,actor_id,from_state,to_state,from_version,result_version,request_hash) VALUES('captain_admission_restored',$1,$2,$3,$4,$5,'suspended','eligible',$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, restored.ID, actorID, admission.Version, restored.Version, requestHash); err != nil {
+		return CaptainAdmission{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainAdmission{}, err
+	}
+	return restored, nil
+}
+
 func CreateCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainOffer, bool, error) {
 	return createCaptainDispatchOffer(ctx, db, orderID, "", idempotencyKey, requestHash, actingActorID, correlationID, "dispatch")
 }
@@ -317,6 +560,9 @@ func createCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, exclud
 		return CaptainOffer{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, ""); err != nil {
+		return CaptainOffer{}, false, err
+	}
 	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, operation)
 	if err != nil {
 		return CaptainOffer{}, false, err
@@ -391,14 +637,43 @@ func ReadCaptainOffer(ctx context.Context, db *sql.DB, offerID string) (CaptainO
 	if db == nil || strings.TrimSpace(offerID) == "" {
 		return CaptainOffer{}, ErrCaptainOfferNotFound
 	}
-	return readCaptainOfferTx(ctx, db, "id=$1", strings.TrimSpace(offerID))
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainOffer{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var actorID string
+	if err := tx.QueryRowContext(ctx, `SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE id=$1`, strings.TrimSpace(offerID)).Scan(&actorID); errors.Is(err, sql.ErrNoRows) {
+		return CaptainOffer{}, ErrCaptainOfferNotFound
+	} else if err != nil {
+		return CaptainOffer{}, err
+	}
+	if err := canonicalizeCaptainOffersTx(ctx, tx, actorID); err != nil {
+		return CaptainOffer{}, err
+	}
+	offer, err := readCaptainOfferTx(ctx, tx, "id=$1", strings.TrimSpace(offerID))
+	if err != nil {
+		return CaptainOffer{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainOffer{}, err
+	}
+	return offer, nil
 }
 
 func ListCaptainOffers(ctx context.Context, db *sql.DB, actorID string, limit int) ([]CaptainOffer, error) {
 	if db == nil || strings.TrimSpace(actorID) == "" || limit < 1 || limit > 100 {
 		return nil, ErrCaptainOperationConflict
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id,order_id,captain_actor_id,state,expires_at,version,created_at,updated_at FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state<>'superseded' ORDER BY created_at DESC,id DESC LIMIT $2`, actorID, limit)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id,order_id,captain_actor_id,state,expires_at,version,created_at,updated_at FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state<>'superseded' ORDER BY created_at DESC,id DESC LIMIT $2`, actorID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -411,7 +686,13 @@ func ListCaptainOffers(ctx context.Context, db *sql.DB, actorID string, limit in
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActorID, decision string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (CaptainOfferResult, error) {
@@ -424,6 +705,9 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		return CaptainOfferResult{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, ""); err != nil {
+		return CaptainOfferResult{}, err
+	}
 	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "respond_offer")
 	if err != nil {
 		return CaptainOfferResult{}, err
@@ -460,30 +744,36 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 	if offer.CaptainActorID != captainActorID {
 		return CaptainOfferResult{}, ErrCaptainOfferForbidden
 	}
-	if offer.Version != expectedVersion {
-		return CaptainOfferResult{}, ErrCaptainVersionConflict
-	}
-	if offer.State != "offered" {
-		return CaptainOfferResult{}, ErrCaptainOfferConflict
-	}
-	if !time.Now().UTC().Before(offer.ExpiresAt) {
-		newVersion := offer.Version + 1
-		if _, err := tx.ExecContext(ctx, `UPDATE dsh.captain_dispatch_offers SET state='expired',version=$2,updated_at=clock_timestamp() WHERE id=$1 AND version=$3`, offer.ID, newVersion, offer.Version); err != nil {
-			return CaptainOfferResult{}, err
+	if offer.State == "expired" || (offer.State == "offered" && !time.Now().UTC().Before(offer.ExpiresAt)) {
+		if offer.State == "offered" {
+			var expiredVersion int
+			if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_dispatch_offers SET state='expired',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='offered' AND version=$2 RETURNING version`, offer.ID, offer.Version).Scan(&expiredVersion); err != nil {
+				return CaptainOfferResult{}, err
+			}
+			key := "captain-timeout:" + offer.ID
+			hash := hashFacts("captain-offer-expired", offer.ID)
+			if err := restoreCaptainAvailabilityTx(ctx, tx, offer.CaptainActorID, key, hash, "system:captain-timeout", key); err != nil {
+				return CaptainOfferResult{}, err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('dispatch_offer_expired',$1,$2,$3,$4,$5,$6,'offered','expired',$7,$8) ON CONFLICT (event_type,idempotency_key) DO NOTHING`, key, key, "system:captain-timeout", offer.OrderID, offer.ID, offer.CaptainActorID, expiredVersion, hash); err != nil {
+				return CaptainOfferResult{}, err
+			}
+			offer.State = "expired"
+			offer.Version = expiredVersion
 		}
-		if err := restoreCaptainAvailabilityTx(ctx, tx, captainActorID, idempotencyKey, requestHash, captainActorID, correlationID); err != nil {
-			return CaptainOfferResult{}, err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,result_version) VALUES($1,$2,'respond_offer',$3,$4,$5)`, idempotencyKey, requestHash, offer.OrderID, offer.ID, newVersion); err != nil {
-			return CaptainOfferResult{}, err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('dispatch_offer_expired',$1,$2,$3,$4,$5,$6,'offered','expired',$7,$8)`, idempotencyKey, correlationID, captainActorID, offer.OrderID, offer.ID, captainActorID, newVersion, requestHash); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,result_version) VALUES($1,$2,'respond_offer',$3,$4,$5)`, idempotencyKey, requestHash, offer.OrderID, offer.ID, offer.Version); err != nil {
 			return CaptainOfferResult{}, err
 		}
 		if err := tx.Commit(); err != nil {
 			return CaptainOfferResult{}, err
 		}
 		return CaptainOfferResult{}, ErrCaptainOfferExpired
+	}
+	if offer.Version != expectedVersion {
+		return CaptainOfferResult{}, ErrCaptainVersionConflict
+	}
+	if offer.State != "offered" {
+		return CaptainOfferResult{}, ErrCaptainOfferConflict
 	}
 	if decision == "reject" {
 		if _, err := tx.ExecContext(ctx, `UPDATE dsh.captain_dispatch_offers SET state='rejected',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$2`, offer.ID, offer.Version); err != nil {
@@ -574,6 +864,9 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 		return CaptainOffer{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, ""); err != nil {
+		return CaptainOffer{}, false, err
+	}
 	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "reassign")
 	if err != nil {
 		return CaptainOffer{}, false, err
@@ -853,21 +1146,115 @@ func ReadCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID string)
 	if db == nil || strings.TrimSpace(assignmentID) == "" {
 		return CaptainAssignment{}, ErrCaptainAssignmentNotFound
 	}
-	return readCaptainAssignmentTx(ctx, db, "id=$1", strings.TrimSpace(assignmentID))
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainAssignment{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var actorID string
+	if err := tx.QueryRowContext(ctx, `SELECT captain_actor_id FROM dsh.captain_assignments WHERE id=$1`, strings.TrimSpace(assignmentID)).Scan(&actorID); errors.Is(err, sql.ErrNoRows) {
+		return CaptainAssignment{}, ErrCaptainAssignmentNotFound
+	} else if err != nil {
+		return CaptainAssignment{}, err
+	}
+	if err := canonicalizeCaptainOffersTx(ctx, tx, actorID); err != nil {
+		return CaptainAssignment{}, err
+	}
+	assignment, err := readCaptainAssignmentTx(ctx, tx, "id=$1", strings.TrimSpace(assignmentID))
+	if err != nil {
+		return CaptainAssignment{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainAssignment{}, err
+	}
+	return assignment, nil
 }
 
 func ReadCaptainAssignmentForOrder(ctx context.Context, db *sql.DB, orderID string) (CaptainAssignment, error) {
 	if db == nil || strings.TrimSpace(orderID) == "" {
 		return CaptainAssignment{}, ErrCaptainAssignmentNotFound
 	}
-	return readCaptainAssignmentTx(ctx, db, "order_id=$1 AND state IN ('assigned','in_custody','delivered','delivery_failed')", strings.TrimSpace(orderID))
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainAssignment{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var actorID string
+	if err := tx.QueryRowContext(ctx, `SELECT captain_actor_id FROM dsh.captain_assignments WHERE order_id=$1 AND state IN ('assigned','in_custody','delivered','delivery_failed') ORDER BY created_at DESC LIMIT 1`, strings.TrimSpace(orderID)).Scan(&actorID); errors.Is(err, sql.ErrNoRows) {
+		return CaptainAssignment{}, ErrCaptainAssignmentNotFound
+	} else if err != nil {
+		return CaptainAssignment{}, err
+	}
+	if err := canonicalizeCaptainOffersTx(ctx, tx, actorID); err != nil {
+		return CaptainAssignment{}, err
+	}
+	assignment, err := readCaptainAssignmentTx(ctx, tx, "order_id=$1 AND state IN ('assigned','in_custody','delivered','delivery_failed')", strings.TrimSpace(orderID))
+	if err != nil {
+		return CaptainAssignment{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainAssignment{}, err
+	}
+	return assignment, nil
+}
+
+// ReadCaptainDeliveryTask is the bounded Captain projection. Its joins are
+// intentionally server-side so a client cannot compose a task from generic
+// order, store, or address reads.
+func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, captainActorID string) (CaptainDeliveryTask, error) {
+	if db == nil || strings.TrimSpace(assignmentID) == "" || strings.TrimSpace(captainActorID) == "" {
+		return CaptainDeliveryTask{}, ErrCaptainDeliveryTaskNotFound
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainDeliveryTask{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(captainActorID)); err != nil {
+		return CaptainDeliveryTask{}, err
+	}
+	var task CaptainDeliveryTask
+	var pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude sql.NullFloat64
+	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state
+		FROM dsh.captain_assignments a
+		JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
+		JOIN dsh.commerce_orders o ON o.id=a.order_id
+		JOIN dsh.stores s ON s.id=o.store_id
+		WHERE a.id=$1 AND a.captain_actor_id=$2 AND a.state <> 'reassigned'`, strings.TrimSpace(assignmentID), strings.TrimSpace(captainActorID)).Scan(
+		&task.AssignmentID, &task.OrderReference, &task.StoreID, &task.StoreName, &pickupLatitude, &pickupLongitude,
+		&task.CustomerAddressText, &destinationLatitude, &destinationLongitude, &task.OrderState, &task.HandoffState, &task.DeliveryState)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CaptainDeliveryTask{}, ErrCaptainDeliveryTaskNotFound
+	}
+	if err != nil {
+		return CaptainDeliveryTask{}, err
+	}
+	if !pickupLatitude.Valid || !pickupLongitude.Valid || !destinationLatitude.Valid || !destinationLongitude.Valid || strings.TrimSpace(task.CustomerAddressText) == "" {
+		return CaptainDeliveryTask{}, ErrCaptainDeliveryTaskInvalid
+	}
+	task.PickupLatitude = pickupLatitude.Float64
+	task.PickupLongitude = pickupLongitude.Float64
+	task.DestinationLatitude = destinationLatitude.Float64
+	task.DestinationLongitude = destinationLongitude.Float64
+	if err := tx.Commit(); err != nil {
+		return CaptainDeliveryTask{}, err
+	}
+	return task, nil
 }
 
 func ListCaptainAssignments(ctx context.Context, db *sql.DB, actorID string, limit int) ([]CaptainAssignment, error) {
 	if db == nil || strings.TrimSpace(actorID) == "" || limit < 1 || limit > 100 {
 		return nil, ErrCaptainOperationConflict
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state<>'reassigned' ORDER BY created_at DESC,id DESC LIMIT $2`, actorID, limit)
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM dsh.captain_assignments WHERE captain_actor_id=$1 AND state<>'reassigned' ORDER BY created_at DESC,id DESC LIMIT $2`, actorID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -878,13 +1265,19 @@ func ListCaptainAssignments(ctx context.Context, db *sql.DB, actorID string, lim
 		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		item, err := ReadCaptainAssignment(ctx, db, id)
+		item, err := readCaptainAssignmentTx(ctx, tx, "id=$1", id)
 		if err != nil {
 			return nil, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 type captainOperation struct {
@@ -893,6 +1286,109 @@ type captainOperation struct {
 	OfferID       string
 	AssignmentID  string
 	ResultVersion int
+}
+
+func captainAdmissionAccessReplayTx(ctx context.Context, tx *sql.Tx, eventType, idempotencyKey, requestHash string) (bool, error) {
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "dsh:captain-access:"+idempotencyKey); err != nil {
+		return false, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT event_type,request_hash FROM dsh.captain_admission_audit WHERE idempotency_key=$1 ORDER BY id FOR UPDATE`, idempotencyKey)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	count := 0
+	matching := false
+	for rows.Next() {
+		var storedEventType, storedHash string
+		if err := rows.Scan(&storedEventType, &storedHash); err != nil {
+			return false, err
+		}
+		count++
+		matching = matching || (storedEventType == eventType && storedHash == requestHash)
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	if count == 0 {
+		return false, nil
+	}
+	if count != 1 || !matching {
+		return false, ErrCaptainOperationConflict
+	}
+	return true, nil
+}
+
+// CanonicalizeCaptainOffers applies the DSH timeout state transition for
+// expired offers. It is deliberately lazy: every relevant read/write boundary
+// invokes the same transaction-local implementation, so no worker or timer is
+// a second owner of operational state.
+func CanonicalizeCaptainOffers(ctx context.Context, db *sql.DB, actorID string) error {
+	if db == nil {
+		return ErrCaptainOperationConflict
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func canonicalizeCaptainOffersTx(ctx context.Context, tx *sql.Tx, actorID string) error {
+	query := `SELECT id,order_id,captain_actor_id,version FROM dsh.captain_dispatch_offers WHERE state='offered' AND expires_at <= clock_timestamp()`
+	args := []any{}
+	if strings.TrimSpace(actorID) != "" {
+		query += " AND captain_actor_id=$1"
+		args = append(args, strings.TrimSpace(actorID))
+	}
+	query += " ORDER BY id FOR UPDATE"
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	type expiredOffer struct {
+		ID             string
+		OrderID        string
+		CaptainActorID string
+		Version        int
+	}
+	offers := make([]expiredOffer, 0)
+	for rows.Next() {
+		var offer expiredOffer
+		if err := rows.Scan(&offer.ID, &offer.OrderID, &offer.CaptainActorID, &offer.Version); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		offers = append(offers, offer)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, offer := range offers {
+		var resultVersion int
+		if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_dispatch_offers SET state='expired',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='offered' AND version=$2 RETURNING version`, offer.ID, offer.Version).Scan(&resultVersion); errors.Is(err, sql.ErrNoRows) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		key := "captain-timeout:" + offer.ID
+		hash := hashFacts("captain-offer-expired", offer.ID)
+		if err := restoreCaptainAvailabilityTx(ctx, tx, offer.CaptainActorID, key, hash, "system:captain-timeout", key); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('dispatch_offer_expired',$1,$2,$3,$4,$5,$6,'offered','expired',$7,$8) ON CONFLICT (event_type,idempotency_key) DO NOTHING`, key, key, "system:captain-timeout", offer.OrderID, offer.ID, offer.CaptainActorID, resultVersion, hash); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func captainOperationReplayTx(ctx context.Context, tx *sql.Tx, idempotencyKey, requestHash, operation string) (*captainOperation, error) {

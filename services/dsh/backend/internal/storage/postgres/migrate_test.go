@@ -41,7 +41,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion {
 			t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d", len(records), len(migrationSQL))
 		}
-		if records[len(records)-1].Name != "016_captain_phone_constraint_correction.sql" {
+		if records[len(records)-1].Name != "018_remove_unjustified_captain_terminated_state.sql" {
 			t.Fatalf("captain dispatch is not the canonical final migration: %s", records[len(records)-1].Name)
 		}
 		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {

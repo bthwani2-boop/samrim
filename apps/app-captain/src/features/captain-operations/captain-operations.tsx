@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
 
 import { direction, resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { createDshMobileClient, type CaptainAdmission, type CaptainAssignment, type CaptainOffer } from "@bthwani/dsh";
+import { createDshMobileClient, type CaptainAdmission, type CaptainAssignment, type CaptainDeliveryTask, type CaptainOffer } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function baseUrl(): string {
@@ -22,6 +22,7 @@ export function CaptainOperations() {
   const [admission, setAdmission] = useState<CaptainAdmission | null>(null);
   const [offers, setOffers] = useState<ReadonlyArray<CaptainOffer>>([]);
   const [assignments, setAssignments] = useState<ReadonlyArray<CaptainAssignment>>([]);
+  const [tasks, setTasks] = useState<Readonly<Record<string, CaptainDeliveryTask>>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -40,6 +41,16 @@ export function CaptainOperations() {
       setAdmission(admissionResponse.admission);
       setOffers(offerResponse.offers);
       setAssignments(assignmentResponse.assignments);
+      const taskEntries = await Promise.all(assignmentResponse.assignments.map(async (assignment) => {
+        try {
+          const response = await api.readOwnCaptainDeliveryTask(token, assignment.id);
+          return [assignment.id, response.task] as const;
+        } catch (cause) {
+          console.warn("DSH Captain delivery task unavailable", assignment.id, cause);
+          return null;
+        }
+      }));
+      setTasks(Object.fromEntries(taskEntries.filter((entry): entry is readonly [string, CaptainDeliveryTask] => entry !== null)));
     } catch (cause) {
       console.error("DSH Captain readback failed", cause);
       setError("تعذر قراءة حالة الكابتن والطلبات. أعد المحاولة.");
@@ -134,7 +145,7 @@ export function CaptainOperations() {
       {offers.map((offer) => <View key={offer.id} style={styles.card}><Text style={styles.cardTitle}>عرض للطلب {offer.orderId}</Text><Text style={styles.muted}>الحالة: {offer.state} · ينتهي: {new Date(offer.expiresAt).toLocaleString("ar-YE")}</Text>{offer.state === "offered" ? <View style={styles.row}><Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void respond(offer, "accept")} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === offer.id ? "جارٍ الحفظ…" : "قبول العرض"}</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void respond(offer, "reject")} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>رفض</Text></Pressable></View> : null}</View>)}
       {!loading ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
       {!loading && !assignments.length ? <Text style={styles.muted}>لا توجد تكليفات.</Text> : null}
-      {assignments.map((assignment) => <View key={assignment.id} style={styles.card}><Text style={styles.cardTitle}>طلب {assignment.orderId}</Text><Text style={styles.muted}>الحالة: {assignment.state} · تسليم المتجر: {assignment.handoff.state}</Text>{assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void pickup(assignment)} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === assignment.id ? "جارٍ الحفظ…" : "تأكيد الاستلام"}</Text></Pressable> : null}{assignment.state === "in_custody" ? <View style={styles.row}><Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void complete(assignment, "delivered")} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === assignment.id ? "جارٍ الحفظ…" : "تم التسليم"}</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void complete(assignment, "delivery_failed")} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>تعذر التسليم</Text></Pressable></View> : null}</View>)}
+      {assignments.map((assignment) => { const task = tasks[assignment.id]; return <View key={assignment.id} style={styles.card}><Text style={styles.cardTitle}>مهمة الطلب {task?.orderReference ?? assignment.orderId}</Text><Text style={styles.muted}>الحالة: {task?.deliveryState ?? assignment.state} · تسليم المتجر: {task?.handoffState ?? assignment.handoff.state}</Text>{task ? <View style={styles.task}><Text style={styles.muted}>المتجر: {task.storeName}</Text><Text style={styles.muted}>نقطة الاستلام: {task.pickupOrigin.latitude.toFixed(6)}, {task.pickupOrigin.longitude.toFixed(6)}</Text><Text style={styles.muted}>العنوان: {task.customerAddressText}</Text><Text style={styles.muted}>الوجهة: {task.customerDestination.latitude.toFixed(6)}, {task.customerDestination.longitude.toFixed(6)}</Text><Text style={styles.muted}>حالة الطلب: {task.orderState}</Text></View> : <Text style={styles.muted}>تفاصيل المهمة غير متاحة حاليًا.</Text>}{assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void pickup(assignment)} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === assignment.id ? "جارٍ الحفظ…" : "تأكيد الاستلام"}</Text></Pressable> : null}{assignment.state === "in_custody" ? <View style={styles.row}><Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void complete(assignment, "delivered")} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === assignment.id ? "جارٍ الحفظ…" : "تم التسليم"}</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void complete(assignment, "delivery_failed")} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>تعذر التسليم</Text></Pressable></View> : null}</View>; })}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void load()} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>تحديث الحالة</Text></Pressable>
     </View>
@@ -153,6 +164,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     state: { alignItems: "center", gap: 8, paddingVertical: 8 },
     card: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 7, padding: 10 },
     cardTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
+    task: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 3, padding: 8 },
     row: { flexDirection: rowDirection, gap: 8 },
     button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 8, flex: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },
     buttonText: { color: theme.onAction, fontWeight: "800" },
