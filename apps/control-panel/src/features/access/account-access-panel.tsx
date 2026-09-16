@@ -234,7 +234,7 @@ export function AccountAccessPanel() {
           {status.admittedRoles?.length ? <div><strong>الأدوار المقبولة لهذا الممثل</strong><ul>{status.admittedRoles.map((admitted) => <li key={admitted.role}>{admitted.role} · {admitted.state} · <code>{admitted.actorId}</code></li>)}</ul></div> : null}
         </div>
       ) : null}
-      {result ? <div className="code-output" role="status"><span className="summary-label">دعوة موظف عالية الأمان</span><code>{result.code}</code><p>تُعرض هذه الدعوة مرة واحدة فقط وتُستخدم لتفعيل موظف لوحة التحكم، وتنتهي في {new Date(result.expiresAt).toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}
+      {result ? <div className="code-output" role="status"><span className="summary-label">دعوة موظف عالية الأمان</span><code>{result.code}</code><p>تُعرض هذه الدعوة مرة واحدة فقط وتُستخدم لتفعيل موظف لوحة التحكم، وتنتهي في {new Date(result.expiresAt).toLocaleString("ar-YE-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}
       {finalStateUnverified ? <p className="identity-error" role="alert">الحالة النهائية غير متحققة؛ أعد تحميل الحالة قبل تنفيذ إجراء آخر.</p> : null}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
     </section>

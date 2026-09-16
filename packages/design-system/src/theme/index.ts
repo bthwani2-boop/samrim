@@ -32,6 +32,7 @@ export function resolveTheme(name?: string | null): ThemeColors {
 export function themeToCssVariables(themeColors: ThemeColors): Record<string, string> {
   return {
     "--brand-action": themeColors.brandAction,
+    "--brand-structure": themeColors.brandStructure,
     "--brand-action-hover": themeColors.brandActionHover,
     "--brand-action-pressed": themeColors.brandActionPressed,
     "--brand-action-soft": themeColors.brandActionSoft,
@@ -41,7 +42,6 @@ export function themeToCssVariables(themeColors: ThemeColors): Record<string, st
     "--action-soft": themeColors.actionSoft,
     "--action-text": themeColors.actionText,
     "--interactive-text": themeColors.interactiveText,
-    "--brand-structure": themeColors.structure,
     "--brand-structure-soft": themeColors.structureSoft,
     "--surface-warm": themeColors.background,
     "--surface-base": themeColors.surface,
@@ -67,6 +67,8 @@ export function themeToCssVariables(themeColors: ThemeColors): Record<string, st
     "--info": themeColors.info,
     "--info-soft": themeColors.infoSoft,
     "--info-text": themeColors.infoText,
+    "--disabled-bg": themeColors.disabledBackground,
+    "--disabled-text": themeColors.disabledText,
     "--shadow-card": themeColors.shadowCard
   };
 }

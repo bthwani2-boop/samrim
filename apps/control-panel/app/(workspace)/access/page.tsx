@@ -12,7 +12,7 @@ export default function AccessPage() {
       <div className="workspace-page-heading">
         <p className="eyebrow">إدارة الوصول</p>
         <h1 id="access-page-title">الحسابات والأدوار</h1>
-        <p className="lead">يدير مشغل لوحة التحكم الوصول عبر Identity وDSH، وتُقرأ الحالة الكانونية بعد كل تغيير.</p>
+        <p className="lead">يدير مشغل لوحة التحكم الوصول، وتُقرأ الحالة الكانونية بعد كل تغيير.</p>
       </div>
       <AccountAccessPanel />
     </section>

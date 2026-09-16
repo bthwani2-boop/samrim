@@ -148,6 +148,7 @@ export const neutralScale = {
 
 export const lightThemeColors = {
   brandAction: colorRoles.brandAction,
+  brandStructure: brandRoots.brandStructure,
   brandActionHover: colorRoles.brandActionHover,
   brandActionPressed: colorRoles.brandActionPressed,
   brandActionSoft: colorRoles.brandActionSoft,
@@ -184,6 +185,8 @@ export const lightThemeColors = {
   info: statusScale.infoStrong,
   infoSoft: statusScale.infoSoft,
   infoText: statusScale.infoStrong,
+  disabledBackground: brandScale.surface[100],
+  disabledText: brandScale.structure[500],
   onAction: brandRoots.surfaceBase,
   shadowColor: colorRoles.shadowBase,
   shadowCard: "0 22px 60px rgba(10, 47, 92, 0.1)"
@@ -191,6 +194,7 @@ export const lightThemeColors = {
 
 export const darkThemeColors = {
   brandAction: colorRoles.brandAction,
+  brandStructure: brandRoots.brandStructure,
   brandActionHover: brandScale.action[300],
   brandActionPressed: brandScale.action[200],
   brandActionSoft: alpha(brandRoots.brandAction, 0.18),
@@ -227,6 +231,8 @@ export const darkThemeColors = {
   info: "#8BB4E8",
   infoSoft: alpha("#8BB4E8", 0.14),
   infoText: "#8BB4E8",
+  disabledBackground: neutralScale[800],
+  disabledText: neutralScale[400],
   onAction: neutralScale[950],
   shadowColor: colorRoles.shadowBase,
   shadowCard: "0 22px 60px rgba(0, 0, 0, 0.5)"

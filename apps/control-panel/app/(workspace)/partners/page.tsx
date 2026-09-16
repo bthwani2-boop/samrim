@@ -22,9 +22,9 @@ export default function PartnersPage() {
   return (
     <section className="workspace-page" aria-labelledby="partners-page-title">
       <div className="workspace-page-heading">
-        <p className="eyebrow">DSH · J1</p>
+        <p className="eyebrow">إدارة انضمام الشركاء</p>
         <h1 id="partners-page-title">انضمام الشركاء</h1>
-        <p className="lead">أنشئ حالة انضمام يملكها DSH، ثم أرسلها للمراجعة حتى يحل Identity actor الشريك ويربط Store القانوني بالحالة المعتمدة.</p>
+        <p className="lead">أنشئ حالة انضمام للشريك، ثم أرسلها للمراجعة حتى تُربط هوية الشريك بالمتجر المعتمد.</p>
       </div>
       <JoiningCasePanel />
       <ServiceCityPanel />

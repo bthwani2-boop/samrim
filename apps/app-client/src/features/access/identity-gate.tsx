@@ -41,12 +41,13 @@ function getColors(isDark: boolean) {
     border: theme.borderColor,
     focus: theme.focusRing,
     muted: theme.colorMuted,
-    navy: theme.structure,
+    navy: theme.brandStructure,
     brandAction: theme.brandAction,
     actionBackground: theme.actionBackground,
     interactiveText: theme.interactiveText,
     surface: theme.surface,
-    disabled: theme.borderColorStrong,
+    disabled: theme.disabledBackground,
+    disabledText: theme.disabledText,
     dangerBackground: theme.dangerSoft,
     danger: theme.danger,
     noticeBackground: theme.actionSoft,
@@ -238,9 +239,9 @@ export default function IdentityGate() {
             accessibilityState={{ busy, disabled: busy }}
             disabled={busy}
             onPress={logout}
-            style={styles.primaryButton}
+            style={[styles.primaryButton, busy && styles.primaryButtonDisabled]}
           >
-            <Text style={styles.primaryButtonText}>{busy ? copy.busyAction : copy.logout}</Text>
+            <Text style={[styles.primaryButtonText, busy && styles.primaryButtonTextDisabled]}>{busy ? copy.busyAction : copy.logout}</Text>
           </Pressable>
       </ScrollView>
     );
@@ -259,9 +260,9 @@ export default function IdentityGate() {
           accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={restore}
-          style={styles.secondaryButton}
+          style={[styles.secondaryButton, busy && styles.secondaryButtonDisabled]}
         >
-          <Text style={styles.secondaryButtonText}>{busy ? copy.syncing : conflict ? copy.syncSession : copy.retryVerification}</Text>
+          <Text style={[styles.secondaryButtonText, busy && styles.disabledText]}>{busy ? copy.syncing : conflict ? copy.syncSession : copy.retryVerification}</Text>
         </Pressable>
       </View>
     );
@@ -427,14 +428,15 @@ export default function IdentityGate() {
             {error ? <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
             {mode === "login" && loginFailed ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={copy.forgotPassword}
-                accessibilityState={{ busy, disabled: busy }}
-                onPress={() => selectMode("recover")}
-                style={styles.recoveryButton}
-              >
-                <Text style={styles.recoveryButtonText}>{copy.forgotPassword}</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={copy.forgotPassword}
+                  accessibilityState={{ busy, disabled: busy }}
+                  disabled={busy}
+                  onPress={() => selectMode("recover")}
+                  style={[styles.recoveryButton, busy && styles.secondaryButtonDisabled]}
+                >
+                <Text style={[styles.recoveryButtonText, busy && styles.disabledText]}>{copy.forgotPassword}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -486,7 +488,7 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
     fieldBlock: { marginBottom: 14 },
     fieldLabel: { color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7, textAlign: startTextAlign },
     input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13, textAlign: startTextAlign, writingDirection: activeDirection },
-    numericInput: { textAlign: "left", writingDirection: "ltr" },
+    numericInput: { textAlign: resolveTextAlign("start", "ltr"), writingDirection: "ltr" },
     inputFocused: { borderColor: colors.focus, borderWidth: 2 },
     codeAction: { alignSelf: endCrossAxisAlignment, paddingBottom: 8, paddingTop: 2 },
     codeActionText: { color: colors.interactiveText, fontSize: 14, fontWeight: "800" },
@@ -497,15 +499,16 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
     modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline" },
     recoveryButton: { alignItems: "center", borderColor: colors.interactiveText, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
     recoveryButtonText: { color: colors.interactiveText, fontSize: 15, fontWeight: "800" },
-    disabledText: { color: colors.muted },
+    disabledText: { color: colors.disabledText },
     status: { textAlign: "center", fontSize: 17, fontWeight: "600", color: colors.navy },
     muted: { color: colors.muted, fontSize: 14, textAlign: "center" },
     secondaryButton: { alignItems: "center", borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 16 },
+    secondaryButtonDisabled: { backgroundColor: colors.disabled, borderColor: colors.disabled },
     secondaryButtonText: { color: colors.navy, fontSize: 15, fontWeight: "700", textAlign: "center" },
     primaryButton: { alignItems: "center", backgroundColor: colors.actionBackground, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
     primaryButtonDisabled: { backgroundColor: colors.disabled },
     primaryButtonText: { color: colors.surface, fontSize: 16, fontWeight: "800" },
-    primaryButtonTextDisabled: { color: colors.muted },
+    primaryButtonTextDisabled: { color: colors.disabledText },
     notice: { backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10, textAlign: startTextAlign, writingDirection: activeDirection },
     error: { backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10, textAlign: startTextAlign, writingDirection: activeDirection },
   });

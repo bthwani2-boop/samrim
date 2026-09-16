@@ -124,7 +124,7 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.getByLabel("مدينة المتجر الأول").selectOption("sanaa");
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
 
-  await expect(page.getByRole("status")).toContainText("الحالة: draft");
+  await expect(page.getByRole("status")).toContainText("الحالة: مسودة");
   expect(requestBody).toEqual({ contactPhoneE164: "+96777000100", businessName: "نشاط الاختبار", firstStoreName: "متجر الاختبار", serviceCityId: "sanaa" });
 });
 
@@ -148,8 +148,8 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
     });
   });
   await page.goto("/partners");
-  await page.getByRole("button", { name: /submitted · نشاط مستعاد/ }).click();
-  await expect(page.getByRole("status")).toContainText("الحالة: submitted");
+  await page.getByRole("button", { name: /مرسلة للمراجعة · نشاط مستعاد/ }).click();
+  await expect(page.getByRole("status")).toContainText("الحالة: مرسلة للمراجعة");
   await expect(page.getByRole("status")).toContainText("نشاط مستعاد");
 });
 
@@ -179,7 +179,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
   await page.getByRole("button", { name: "إعادة قراءة النشر" }).click();
   await expect(page.getByRole("status")).toContainText("الجاهزية: محجوب");
-  await expect(page.getByRole("button", { name: "نشر Store" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "نشر المتجر" })).toBeDisabled();
 });
 
 test("authenticated workspace keeps navigation meaning across light and dark themes", async ({ page }) => {

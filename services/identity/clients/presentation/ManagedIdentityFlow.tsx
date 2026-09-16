@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { resolveTheme, radius, spacing, type ThemeColors } from "@bthwani/design-system";
+import { direction, resolveRowDirection, resolveTextAlign, resolveTheme, radius, spacing, type ThemeColors } from "@bthwani/design-system";
 import { identityErrorMessage } from "../errors";
 import { validatePasswordInputShape } from "../password";
 import type { IdentitySessionState } from "../index";
@@ -204,9 +204,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={logoutDevice}
-          style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.pressed, busy && styles.disabledButton]}
+          style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, busy && styles.disabledButton]}
         >
-          <Text style={styles.secondaryButtonText}>{busy ? "جارٍ إنهاء الجلسة…" : "إنهاء جلسة هذا الجهاز"}</Text>
+          <Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ إنهاء الجلسة…" : "إنهاء جلسة هذا الجهاز"}</Text>
         </Pressable>
       </View>
     );
@@ -224,9 +224,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           accessibilityState={{ busy, disabled: busy }}
           disabled={busy}
           onPress={restoreSession}
-          style={styles.primaryButton}
+          style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.primaryButtonPressed, busy && styles.disabledButton]}
         >
-          <Text style={styles.primaryButtonText}>{conflict ? "مزامنة الجلسة" : "إعادة التحقق"}</Text>
+          <Text style={[styles.primaryButtonText, busy && styles.disabledButtonText]}>{conflict ? "مزامنة الجلسة" : "إعادة التحقق"}</Text>
         </Pressable>
       </View>
     );
@@ -253,8 +253,8 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           }}
           placeholder="مثال: 967 77 000 101"
           placeholderTextColor={theme.colorMuted}
-          style={styles.input}
-          textAlign="right"
+          style={[styles.input, styles.numericInput]}
+          textAlign="center"
           value={phone}
         />
         <Pressable
@@ -263,9 +263,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           accessibilityState={{ busy, disabled: busy || !phoneReady }}
           disabled={busy || !phoneReady}
           onPress={() => chooseIntent("password")}
-          style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.pressed, (busy || !phoneReady) && styles.disabledButton]}
+          style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.primaryButtonPressed, (busy || !phoneReady) && styles.disabledButton]}
         >
-          <Text style={styles.primaryButtonText}>تسجيل الدخول</Text>
+          <Text style={[styles.primaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>تسجيل الدخول</Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -273,9 +273,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           accessibilityState={{ busy, disabled: busy || !phoneReady }}
           disabled={busy || !phoneReady}
           onPress={() => chooseIntent("activation")}
-          style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.pressed, (busy || !phoneReady) && styles.disabledButton]}
+          style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, (busy || !phoneReady) && styles.disabledButton]}
         >
-          <Text style={styles.secondaryButtonText}>التفعيل لأول مرة</Text>
+          <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>التفعيل لأول مرة</Text>
         </Pressable>
         <Text style={styles.helper}>فقدت الوصول؟ اطلب إعادة التفعيل من مسؤول المنصة عبر المسار المحكوم.</Text>
       </>
@@ -293,7 +293,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
             setPassword(value);
             setError("");
           }}
-          placeholder="١٥ حرفاً على الأقل"
+          placeholder="8 أحرف بالضبط"
           placeholderTextColor={theme.colorMuted}
           secureTextEntry
           style={styles.input}
@@ -306,9 +306,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           accessibilityState={{ busy, disabled: busy || !validatePasswordInputShape(password).valid }}
           disabled={busy || !validatePasswordInputShape(password).valid}
           onPress={loginDevice}
-          style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.pressed, (busy || !validatePasswordInputShape(password).valid) && styles.disabledButton]}
+          style={({ pressed }: { pressed: boolean }) => [styles.primaryButton, pressed && styles.primaryButtonPressed, (busy || !validatePasswordInputShape(password).valid) && styles.disabledButton]}
         >
-          <Text style={styles.primaryButtonText}>{busy ? "جارٍ تسجيل الدخول…" : "تسجيل الدخول"}</Text>
+          <Text style={[styles.primaryButtonText, (busy || !validatePasswordInputShape(password).valid) && styles.disabledButtonText]}>{busy ? "جارٍ تسجيل الدخول…" : "تسجيل الدخول"}</Text>
         </Pressable>
         <Text style={styles.helper}>فقدت الوصول؟ اطلب إعادة تفعيل محكومة من مسؤول المنصة.</Text>
         <Pressable
@@ -319,7 +319,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           onPress={resetToPhone}
           style={styles.linkButton}
         >
-          <Text style={styles.mutedLink}>تغيير رقم الهاتف</Text>
+          <Text style={[styles.mutedLink, busy && styles.disabledLinkText]}>تغيير رقم الهاتف</Text>
         </Pressable>
       </>
     ) : (
@@ -334,30 +334,30 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           accessibilityState={{ busy, disabled: busy || !phoneReady }}
           disabled={busy || !phoneReady}
           onPress={requestActivationVerification}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>{busy ? "جارٍ إرسال رمز الهاتف…" : challengeRequested ? "إعادة إرسال رمز الهاتف" : "إرسال رمز تحقق الهاتف"}</Text>
+           style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, (busy || !phoneReady) && styles.disabledButton]}
+         >
+           <Text style={[styles.secondaryButtonText, (busy || !phoneReady) && styles.disabledButtonText]}>{busy ? "جارٍ إرسال رمز الهاتف…" : challengeRequested ? "إعادة إرسال رمز الهاتف" : "إرسال رمز تحقق الهاتف"}</Text>
         </Pressable>
         {challengeRequested ? (
           <>
             <Text style={styles.fieldLabel}>رمز تحقق الهاتف</Text>
-            <TextInput
+              <TextInput
               accessibilityLabel="رمز تحقق الهاتف"
               keyboardType="number-pad"
               maxLength={6}
               onChangeText={(value: string) => setVerificationCode(value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="رمز من ٦ أرقام"
+              placeholder="رمز من 6 أرقام"
               placeholderTextColor={theme.colorMuted}
-              style={styles.input}
-              textAlign="right"
+              style={[styles.input, styles.numericInput]}
+              textAlign="center"
               value={verificationCode}
             />
             <Text style={styles.fieldLabel}>كلمة المرور</Text>
-            <TextInput
+              <TextInput
               accessibilityLabel="كلمة المرور"
               autoComplete="new-password"
               onChangeText={setPassword}
-              placeholder="١٥ حرفاً على الأقل"
+              placeholder="8 أحرف بالضبط"
               placeholderTextColor={theme.colorMuted}
               secureTextEntry
               style={styles.input}
@@ -382,9 +382,9 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
               accessibilityState={{ busy, disabled: busy || !verificationReady || !passwordReady }}
               disabled={busy || !verificationReady || !passwordReady}
               onPress={activateDevice}
-              style={styles.primaryButton}
+              style={[styles.primaryButton, (busy || !verificationReady || !passwordReady) && styles.disabledButton]}
             >
-              <Text style={styles.primaryButtonText}>{busy ? "جارٍ التفعيل…" : "حفظ كلمة المرور والدخول"}</Text>
+              <Text style={[styles.primaryButtonText, (busy || !verificationReady || !passwordReady) && styles.disabledButtonText]}>{busy ? "جارٍ التفعيل…" : "حفظ كلمة المرور والدخول"}</Text>
             </Pressable>
           </>
         ) : null}
@@ -396,7 +396,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
           onPress={resetToPhone}
           style={styles.linkButton}
         >
-          <Text style={styles.mutedLink}>تغيير رقم الهاتف</Text>
+          <Text style={[styles.mutedLink, busy && styles.disabledLinkText]}>تغيير رقم الهاتف</Text>
         </Pressable>
       </>
     );
@@ -413,6 +413,11 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
 }
 
 function createStyles(theme: ThemeColors, isDark: boolean) {
+  const activeDirection = direction.defaultDirection;
+  const startTextAlign = resolveTextAlign("start", activeDirection);
+  const numericTextAlign = resolveTextAlign("start", "ltr");
+  const rowDirection = resolveRowDirection(activeDirection);
+
   return StyleSheet.create({
     content: {
       flexGrow: 1,
@@ -424,18 +429,18 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
     },
     brandRow: {
       alignItems: "center",
-      flexDirection: "row",
+      flexDirection: rowDirection,
       gap: spacing[2],
       justifyContent: "center",
     },
     brandMark: {
       alignItems: "flex-end",
-      flexDirection: "row",
+      flexDirection: rowDirection,
       gap: 3,
       height: 22,
     },
     brandMarkNavy: {
-      backgroundColor: theme.structure,
+      backgroundColor: theme.brandStructure,
       borderRadius: radius.xs,
       height: 22,
       width: 8,
@@ -456,7 +461,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       alignSelf: "center",
       backgroundColor: theme.structureSoft,
       borderRadius: radius.round,
-      flexDirection: "row",
+      flexDirection: rowDirection,
       gap: spacing[2],
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[2],
@@ -498,26 +503,26 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       color: theme.interactiveText,
       fontSize: 13,
       fontWeight: "800",
-      textAlign: "right",
+      textAlign: startTextAlign,
     },
     title: {
       color: theme.color,
       fontSize: 23,
       fontWeight: "800",
-      textAlign: "right",
+      textAlign: startTextAlign,
     },
     description: {
       color: theme.colorSecondary,
       fontSize: 14,
       lineHeight: 23,
-      textAlign: "right",
+      textAlign: startTextAlign,
     },
     fieldLabel: {
       color: theme.color,
       fontSize: 14,
       fontWeight: "700",
       marginTop: spacing[2],
-      textAlign: "right",
+      textAlign: startTextAlign,
     },
     input: {
       backgroundColor: theme.surface,
@@ -530,6 +535,10 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[2],
     },
+    numericInput: {
+      textAlign: numericTextAlign,
+      writingDirection: "ltr",
+    },
     summaryPhone: {
       backgroundColor: theme.structureSoft,
       borderRadius: radius.sm,
@@ -538,6 +547,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       marginTop: spacing[2],
       padding: spacing[2],
       textAlign: "center",
+      writingDirection: "ltr",
     },
     primaryButton: {
       alignItems: "center",
@@ -569,8 +579,11 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       fontWeight: "800",
       textAlign: "center",
     },
-    disabledButton: { opacity: 0.45 },
-    pressed: { opacity: 0.8 },
+    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
+    disabledButtonText: { color: theme.disabledText },
+    disabledLinkText: { color: theme.disabledText },
+    primaryButtonPressed: { backgroundColor: theme.actionPressed },
+    secondaryButtonPressed: { backgroundColor: theme.surfaceInset },
     linkButton: {
       alignItems: "center",
       paddingVertical: spacing[2],
@@ -599,7 +612,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       fontSize: 13,
       marginTop: spacing[2],
       padding: spacing[2],
-      textAlign: "right",
+      textAlign: startTextAlign,
     },
     error: {
       backgroundColor: theme.dangerSoft,
@@ -608,7 +621,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       fontSize: 13,
       marginTop: spacing[2],
       padding: spacing[2],
-      textAlign: "right",
+      textAlign: startTextAlign,
     },
     muted: {
       color: theme.colorMuted,
@@ -620,7 +633,7 @@ function createStyles(theme: ThemeColors, isDark: boolean) {
       alignSelf: "flex-end",
       backgroundColor: theme.structureSoft,
       borderRadius: radius.round,
-      flexDirection: "row-reverse",
+      flexDirection: rowDirection,
       gap: spacing[2],
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[2],

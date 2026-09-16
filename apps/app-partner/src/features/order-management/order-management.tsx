@@ -2,9 +2,8 @@ import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
 
-import { resolveTheme } from "@bthwani/design-system";
-import type { Order } from "@bthwani/dsh";
-import { createDshMobileClient } from "@bthwani/dsh";
+import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { createDshMobileClient, formatMoney, formatOrderDate, orderStateLabel, type Order } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function baseUrl(): string {
@@ -48,21 +47,26 @@ export function OrderManagement({ storeId }: { storeId: string }) {
     finally { setBusy(""); }
   }
 
-  return <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر"><Text style={styles.title}>طلبات المتجر</Text><Text style={styles.muted}>تظهر الطلبات بعد إتمام العميل، وتنتقل هنا حتى تصبح جاهزة للتسليم.</Text>{loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View> : null}{!loading && !orders.length ? <Text style={styles.muted}>لا توجد طلبات جديدة.</Text> : null}{orders.map((order) => { const next = nextState(order); return <View key={order.id} style={styles.order}><Text style={styles.orderTitle}>طلب {order.id}</Text><Text style={styles.muted}>الحالة: {order.state} · الإجمالي: {order.totalAmountMinor} {order.currency} · الإصدار {order.version}</Text><Text style={styles.muted}>{order.lines.length} منتج · العنوان: {order.addressText}</Text>{next ? <Pressable accessibilityRole="button" accessibilityState={{ busy: busy === order.id }} disabled={Boolean(busy)} onPress={() => void transition(order)} style={styles.button}><Text style={styles.buttonText}>{busy === order.id ? "جارٍ الحفظ…" : next === "PARTNER_ACCEPTED" ? "قبول الطلب" : next === "PREPARING" ? "بدء التجهيز" : "جاهز للتسليم"}</Text></Pressable> : null}</View>; })}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}<Pressable accessibilityRole="button" disabled={Boolean(busy)} onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>تحديث الطلبات</Text></Pressable></View>;
+  return <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر"><Text style={styles.title}>طلبات المتجر</Text><Text style={styles.muted}>تظهر الطلبات بعد إتمام العميل، وتنتقل هنا حتى تصبح جاهزة للتسليم.</Text>{loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View> : null}{!loading && !orders.length ? <Text style={styles.muted}>لا توجد طلبات جديدة.</Text> : null}{orders.map((order) => { const next = nextState(order); return <View key={order.id} style={styles.order}><Text style={styles.orderTitle}>طلب بتاريخ {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.muted}>{order.lines.length} منتج · العنوان: {order.addressText}</Text>{next ? <Pressable accessibilityRole="button" accessibilityState={{ busy: busy === order.id, disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void transition(order)} style={[styles.button, busy && styles.disabledButton]}><Text style={[styles.buttonText, busy && styles.disabledButtonText]}>{busy === order.id ? "جارٍ الحفظ…" : next === "PARTNER_ACCEPTED" ? "قبول الطلب" : next === "PREPARING" ? "بدء التجهيز" : "جاهز للتسليم"}</Text></Pressable> : null}</View>; })}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}<Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void load()} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>تحديث الطلبات</Text></Pressable></View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
+  const activeDirection = direction.defaultDirection;
+  const startTextAlign = resolveTextAlign("start", activeDirection);
+
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 10, marginTop: 16, padding: 14, width: "100%" },
-    title: { color: theme.structure, fontSize: 17, fontWeight: "800" },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 19 },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 10, marginTop: 16, padding: 14, width: "100%", direction: activeDirection },
+    title: { color: theme.color, fontSize: 17, fontWeight: "800", textAlign: startTextAlign },
+    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 19, textAlign: startTextAlign },
     state: { alignItems: "center", gap: 8, paddingVertical: 8 },
-    order: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 5, padding: 10 },
-    orderTitle: { color: theme.structure, fontSize: 14, fontWeight: "800" },
+    order: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 5, padding: 10 },
+    orderTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
     button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 8, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },
-    buttonText: { color: theme.surface, fontWeight: "800" },
+    buttonText: { color: theme.onAction, fontWeight: "800" },
     secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, justifyContent: "center", minHeight: 40, paddingHorizontal: 10 },
-    secondaryButtonText: { color: theme.structure, fontSize: 13, fontWeight: "700" },
-    error: { color: theme.danger, fontSize: 13 },
+    secondaryButtonText: { color: theme.color, fontSize: 13, fontWeight: "700" },
+    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
+    disabledButtonText: { color: theme.disabledText },
+    error: { color: theme.danger, fontSize: 13, textAlign: startTextAlign },
   });
 }
