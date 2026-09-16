@@ -1,0 +1,142 @@
+name: Control Panel Browser Integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/control-panel/**"
+      - "packages/design-system/**"
+      - "services/identity/**"
+      - "services/dsh/**"
+      - "infra/local/compose/**"
+      - "tools/dev/run-playwright-live.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "nx.json"
+      - ".github/workflows/control-panel-e2e.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/control-panel/**"
+      - "packages/design-system/**"
+      - "services/identity/**"
+      - "services/dsh/**"
+      - "infra/local/compose/**"
+      - "tools/dev/run-playwright-live.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "nx.json"
+      - ".github/workflows/control-panel-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-panel-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  control-panel-e2e:
+    name: control-panel-e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout integration candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.17.0
+
+      - name: Install pinned pnpm
+        shell: bash
+        run: npm install --global pnpm@10.34.0
+
+      - name: Install workspace once
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium runtime
+        shell: bash
+        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
+
+      - name: Materialize isolated CI runtime environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = "infra/local/compose/.env";
+          const example = fs.readFileSync("infra/local/compose/.env.example", "utf8");
+          const names = [
+            "SAMRIM_POSTGRES_PASSWORD",
+            "IDENTITY_CHALLENGE_HMAC_SECRET",
+            "IDENTITY_DSH_SERVICE_TOKEN",
+            "CONTROL_PANEL_SERVICE_TOKEN",
+            "IDENTITY_ABUSE_HMAC_SECRET",
+            "OPERATOR_BOOTSTRAP_SECRET",
+          ];
+          const values = new Map(names.map((name) => [name, crypto.randomBytes(32).toString("hex")]));
+          const output = example.split(/\r?\n/).map((line) => {
+            const separator = line.indexOf("=");
+            if (separator < 1) return line;
+            const name = line.slice(0, separator).trim();
+            return values.has(name) ? `${name}=${values.get(name)}` : line;
+          }).join("\n");
+          fs.writeFileSync(path, output.endsWith("\n") ? output : `${output}\n`, { mode: 0o600 });
+          NODE
+
+      - name: Start exact Control Panel runtime cone
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose \
+            --project-name samrim-local \
+            --env-file infra/local/compose/.env \
+            -f infra/local/compose/compose.yaml \
+            up -d --build --wait --wait-timeout 300 \
+            postgres mailpit identity dsh control
+
+      - name: Run Control Panel browser shell through Nx
+        shell: bash
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:13000
+          CONTROL_PANEL_PUBLIC_ORIGIN: http://localhost:13000
+        run: pnpm exec nx run control-panel:e2e --skip-nx-cache --skip-remote-cache --outputStyle=stream
+
+      - name: Run live Identity browser proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/compose/.env
+          set +a
+          export PLAYWRIGHT_BASE_URL="$CONTROL_PANEL_PUBLIC_ORIGIN"
+          export PLAYWRIGHT_IDENTITY_API_BASE_URL="$IDENTITY_API_BASE_URL"
+          export PLAYWRIGHT_DSH_API_BASE_URL="$DSH_API_BASE_URL"
+          export PLAYWRIGHT_MAILPIT_BASE_URL="http://127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT}"
+          export PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN="$OPERATOR_BOOTSTRAP_SECRET"
+          export PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN="$CONTROL_PANEL_SERVICE_TOKEN"
+          pnpm --dir apps/control-panel test:e2e:live
+
+      - name: Purge Control Panel runtime
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f infra/local/compose/.env ]]; then
+            docker compose \
+              --project-name samrim-local \
+              --env-file infra/local/compose/.env \
+              -f infra/local/compose/compose.yaml \
+              down --volumes --remove-orphans
+            rm -f infra/local/compose/.env
+          fi

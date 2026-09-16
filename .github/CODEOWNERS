@@ -1,3 +1,4 @@
 # Review routing only. Required CODEOWNER approval is intentionally not enabled
 # while this repository has a single human owner.
+/.github/ @bthwani2-boop
 * @bthwani2-boop

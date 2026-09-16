@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,6 +19,10 @@ jobs:
     name: repository-baseline
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'nx-cloud-protected' || 'nx-cloud-unprotected' }}
+    env:
+      NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
     steps:
       - name: Checkout integration candidate
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -143,6 +148,10 @@ jobs:
     name: repository-windows
     runs-on: windows-2025
     timeout-minutes: 12
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && 'nx-cloud-protected' || 'nx-cloud-unprotected' }}
+    env:
+      NX_CLOUD_ACCESS_TOKEN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && secrets.NX_CLOUD_RW_TOKEN || secrets.NX_CLOUD_RO_TOKEN }}
     steps:
       - name: Configure hostile Windows Git default
         shell: pwsh

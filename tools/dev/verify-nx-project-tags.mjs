@@ -6,7 +6,7 @@ const projectFiles = [];
 
 function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (["node_modules", ".git", ".nx", ".next", "dist", "build", "coverage"].includes(entry.name)) {
+    if (["node_modules", ".git", ".kilo", ".nx", ".next", "dist", "build", "coverage"].includes(entry.name)) {
       continue;
     }
 
