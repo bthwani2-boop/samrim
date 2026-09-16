@@ -108,7 +108,7 @@ function cleanupPreparedOperator(operator: PreparedOperator): void {
 function mutateOperatorSessions(actorId: string, mutation: string): void {
   const runtime = readCanonicalRuntime();
   const actorLiteral = actorId.replaceAll("'", "''");
-  execFileSync(
+  const output = execFileSync(
     "docker",
     [
       "compose",
@@ -129,10 +129,11 @@ function mutateOperatorSessions(actorId: string, mutation: string): void {
       "-d",
       runtime.postgresDatabase,
       "-Atc",
-      `UPDATE identity_sessions SET ${mutation} WHERE actor_id='${actorLiteral}';`,
+      `UPDATE identity_sessions SET ${mutation} WHERE actor_id='${actorLiteral}' AND revoked_at IS NULL RETURNING id;`,
     ],
-    { cwd: runtime.repoRoot, encoding: "utf8", stdio: "ignore" },
-  );
+    { cwd: runtime.repoRoot, encoding: "utf8" },
+  ).trim();
+  if (!output) throw new Error(`live Identity fixture mutation matched no active sessions for actor ${actorId}`);
 }
 
 function restartIdentity(): void {
