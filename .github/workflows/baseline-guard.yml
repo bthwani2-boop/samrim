@@ -203,3 +203,6 @@ jobs:
         if: steps.mobile.outputs.run == 'true'
         shell: pwsh
         run: pnpm exec nx affected -t export-smoke --base=${{ steps.mobile.outputs.base }} --head=HEAD --outputStyle=stream
+
+      - run: pnpm exec nx fix-ci
+        if: always()
