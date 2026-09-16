@@ -80,7 +80,8 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			}
 		}
 
-		if _, err := postgres.CreateServiceCity(ctx, db, "صنعاء", true, "idem-city-catalog-v1", postgres.HashServiceCityCreateRequest("صنعاء", true), testOperatorActorID, "corr-city-catalog-v1"); err != nil {
+		createdCity, err := postgres.CreateServiceCity(ctx, db, "صنعاء", true, "idem-city-catalog-v1", postgres.HashServiceCityCreateRequest("صنعاء", true), testOperatorActorID, "corr-city-catalog-v1")
+		if err != nil {
 			t.Fatalf("create service city: %v", err)
 		}
 		vertical := postgres.CommerceVerticalRecord{NameAr: "بقالة", NameEn: "Grocery", Active: true}
@@ -114,7 +115,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			t.Fatalf("expected duplicate identifier rejection, got %v", err)
 		}
 
-		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,publication_state,publication_changed_at) VALUES('store_catalog_v1',$1,'متجر القهوة','sanaa','grocery','published',clock_timestamp())`, testPartnerActorID); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,publication_state,publication_changed_at) VALUES('store_catalog_v1',$1,'متجر القهوة',$2,'grocery','published',clock_timestamp())`, testPartnerActorID, createdCity.City.ID); err != nil {
 			t.Fatalf("create catalog test store: %v", err)
 		}
 		variantID := product.Variants[0].ID
