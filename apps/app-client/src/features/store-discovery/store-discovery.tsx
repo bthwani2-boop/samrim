@@ -1,9 +1,9 @@
-import { direction, resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { formatMoney, type DeliveryAddress, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
+import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { type DeliveryAddress, formatMoney, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
-import { useServiceCityScope } from "../service-city/service-city-scope";
 import { CartCheckout } from "../cart-checkout/cart-checkout";
+import { useServiceCityScope } from "../service-city/service-city-scope";
 import { evaluateStoreServiceability, listOwnDeliveryAddresses, listPublishedStores, readPublicStoreCatalog, readPublishedStore } from "./store-discovery-client";
 
 type DiscoveryState =
@@ -31,7 +31,7 @@ function serviceabilityMessage(status: ServiceabilityResponse["status"]): string
   return "تعذر تأكيد أهلية العنوان الآن. أعد المحاولة لاحقًا.";
 }
 
-export default function StoreDiscovery({ isAuthenticated = true }: { isAuthenticated?: boolean }) {
+export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined }) {
   const { cities, selectedCityID } = useServiceCityScope();
   const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -160,7 +160,7 @@ export default function StoreDiscovery({ isAuthenticated = true }: { isAuthentic
         {catalog?.nextCursor ? <Pressable accessibilityRole="button" accessibilityState={{ busy: catalogLoadingMore, disabled: catalogLoadingMore }} disabled={catalogLoadingMore} onPress={() => void loadMoreCatalog()} style={[styles.secondaryButton, catalogLoadingMore && styles.disabledButton]}><Text style={[styles.secondaryButtonText, catalogLoadingMore && styles.disabledButtonText]}>{catalogLoadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</Text></Pressable> : null}
         <Text style={styles.sectionTitle}>تأكيد التوصيل</Text>
         <Text style={styles.muted}>اختر عنوانًا محفوظًا لتأكيد إمكانية التوصيل من هذا المتجر.</Text>
-        {addressState.kind === "unauthenticated" ? <View style={styles.statusBox}><Text style={styles.muted}>سجّل الدخول لإضافة عنوان وإتمام الطلب.</Text></View> : null}
+        {addressState.kind === "unauthenticated" ? <View style={styles.statusBox}><Text style={styles.muted}>ابدأ الطلب بتسجيل الدخول لإضافة عنوان وإتمامه.</Text>{onRequireAuthentication ? <Pressable accessibilityRole="button" accessibilityLabel="بدء الطلب" onPress={onRequireAuthentication} style={styles.button}><Text style={styles.buttonText}>بدء الطلب</Text></Pressable> : null}</View> : null}
         {addressState.kind === "loading" ? <View style={styles.inlineState}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة عناوينك…</Text></View> : null}
         {addressState.kind === "error" ? <View style={styles.inlineState}><Text style={styles.muted}>تعذر قراءة عناوينك المحفوظة.</Text><Pressable accessibilityRole="button" onPress={() => void loadAddresses()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}
         {addressState.kind === "ready" && addressState.addresses.length === 0 ? <Text style={styles.muted}>لا يوجد عنوان محفوظ بعد. أضف عنوانًا من قسم العناوين ثم أعد فتح المتجر.</Text> : null}

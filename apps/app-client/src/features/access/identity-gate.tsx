@@ -84,6 +84,7 @@ export default function IdentityGate() {
   const [notice, setNotice] = useState("");
   const [focusedField, setFocusedField] = useState<FieldName | null>(null);
   const [loginFailed, setLoginFailed] = useState(false);
+  const [authPromptVisible, setAuthPromptVisible] = useState(false);
 
   const restore = useCallback(async () => {
     setBusy(true);
@@ -108,9 +109,7 @@ export default function IdentityGate() {
     return unsubscribe;
   }, []);
 
-  const publicDiscovery = <View style={styles.publicDiscovery}><ServiceCityScope><StoreDiscovery isAuthenticated={state.kind === "authenticated"} /></ServiceCityScope></View>;
-
-  function selectMode(next: AuthMode) {
+  const selectMode = useCallback((next: AuthMode) => {
     setMode(next);
     setCode("");
     setPassword("");
@@ -120,7 +119,14 @@ export default function IdentityGate() {
     setNotice("");
     setFocusedField(null);
     setLoginFailed(false);
-  }
+  }, []);
+
+  const requestAuthentication = useCallback(() => {
+    selectMode("login");
+    setAuthPromptVisible(true);
+  }, [selectMode]);
+
+  const publicDiscovery = <View style={styles.publicDiscovery}><ServiceCityScope><StoreDiscovery isAuthenticated={state.kind === "authenticated"} onRequireAuthentication={state.kind === "signed_out" ? requestAuthentication : undefined} /></ServiceCityScope></View>;
 
   function resetSignedOutAuthState() {
     setMode("login");
@@ -213,6 +219,7 @@ export default function IdentityGate() {
     } finally {
       setState(currentIdentityState());
       resetSignedOutAuthState();
+      setAuthPromptVisible(false);
       if (!remoteRevocationConfirmed) setNotice(copy.remoteLogoutFailure);
       setBusy(false);
     }
@@ -273,6 +280,10 @@ export default function IdentityGate() {
         {publicDiscovery}
       </View>
     );
+  }
+
+  if (!authPromptVisible) {
+    return <View style={styles.container}>{publicDiscovery}</View>;
   }
 
   const needsProof = mode !== "login";
@@ -453,6 +464,9 @@ export default function IdentityGate() {
           </View>
 
           <View style={styles.modeLinks}>
+            <Pressable accessibilityRole="button" accessibilityLabel={copy.continueBrowsing} onPress={() => { setAuthPromptVisible(false); resetSignedOutAuthState(); }}>
+              <Text style={styles.modeLinkText}>{copy.continueBrowsing}</Text>
+            </Pressable>
             {mode !== "login" ? (
               <Pressable accessibilityRole="link" accessibilityLabel={copy.signInLink} onPress={() => selectMode("login")}>
                 <Text style={styles.modeLinkText}>{copy.signInLink}</Text>

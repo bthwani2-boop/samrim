@@ -34,6 +34,7 @@ export type IdentityCopy = {
   forgotPassword: string;
   signInLink: string;
   newAccountLink: string;
+  continueBrowsing: string;
   remoteLogoutFailure: string;
   errors: IdentityErrorMessages;
 };
@@ -72,6 +73,7 @@ const identityCopy: IdentityCopy = {
   forgotPassword: "نسيت كلمة المرور؟",
   signInLink: "دخول",
   newAccountLink: "حساب جديد",
+  continueBrowsing: "متابعة التصفح",
   remoteLogoutFailure: "تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم.",
   errors: {
     generic: "تعذر إكمال العملية. تحقق من البيانات ثم حاول مرة أخرى.",
