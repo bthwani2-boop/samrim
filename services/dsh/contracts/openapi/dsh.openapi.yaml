@@ -2350,9 +2350,22 @@ components:
       type: string
       enum: [open, checked_out]
 
+    CartLineModifier:
+      type: object
+      required: [optionId, optionNameAr, priceDeltaMinor]
+      additionalProperties: false
+      properties:
+        optionId:
+          type: string
+        optionNameAr:
+          type: string
+        priceDeltaMinor:
+          type: integer
+          minimum: 0
+
     CartLine:
       type: object
-      required: [id, cartId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, quantityBaseUnits, selectedModifierOptionIds, unitPriceMinor, modifierAmountMinor, lineAmountMinor, currency, offerVersion, createdAt, updatedAt]
+      required: [id, cartId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, quantityBaseUnits, selectedModifierOptionIds, selectedModifiers, unitPriceMinor, modifierAmountMinor, lineAmountMinor, currency, offerVersion, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2398,6 +2411,10 @@ components:
           type: array
           items:
             type: string
+        selectedModifiers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CartLineModifier"
         unitPriceMinor:
           type: integer
           minimum: 1

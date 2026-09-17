@@ -1,4 +1,4 @@
-import { direction, radius, resolveTextAlign, resolveTextInputAlign, spacing, toAsciiDigits, type ThemeColors } from "@bthwani/design-system";
+import { direction, radius, resolveTextAlign, resolveTextInputAlign, spacing, type ThemeColors, toAsciiDigits } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -42,6 +42,16 @@ export interface ManagedIdentityFlowProps {
   roleLabel: string;
   binding: ManagedIdentityBinding;
   authenticatedContent?: ReactNode;
+}
+
+/**
+ * Resolve a host-owned internal return path without allowing protocol or
+ * protocol-relative navigation. Route admission stays with the host app.
+ */
+export function resolveInternalReturnPath(value: string | string[] | undefined, fallback: string, admitted: RegExp): string {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate?.startsWith("/") || candidate.startsWith("//")) return fallback;
+  return admitted.test(candidate) ? candidate : fallback;
 }
 
 function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
@@ -255,7 +265,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   }
 
   if (state.kind === "authenticated") {
-    return authenticatedContent ? <>{authenticatedContent}</> : null;
+    return authenticatedContent ?? null;
   }
 
   if (state.kind === "degraded") {

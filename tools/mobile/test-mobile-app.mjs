@@ -47,7 +47,7 @@ const pkgPath = path.join(appDir, "package.json");
 assert.ok(fs.existsSync(pkgPath), `${app}: missing package.json`);
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-assert.equal(allDeps["expo-localization"], "~57.0.1", `${app}: static RTL requires expo-localization`);
+assert.equal(allDeps["expo-localization"], "~57.0.2", `${app}: static RTL requires expo-localization`);
 
 const forbiddenDependencyRegressions = [
   "@react-native-community/netinfo",
@@ -67,7 +67,7 @@ for (const forbidden of forbiddenDependencyRegressions) {
   assert.ok(!allDeps[forbidden], `${app}: contains unused dependency: ${forbidden}`);
 }
 if (app === "app-client" || app === "app-partner") {
-  assert.equal(allDeps["expo-location"], "~57.0.17", `${app}: location core requires the Expo 57 location module`);
+  assert.equal(allDeps["expo-location"], "~57.0.18", `${app}: location core requires the Expo 57 location module`);
 } else {
   assert.ok(!allDeps["expo-location"], `${app}: location dependency must remain scoped to Location Core hosts`);
 }

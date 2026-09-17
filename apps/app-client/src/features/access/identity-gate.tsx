@@ -1,7 +1,8 @@
-import { direction as designDirection, resolveTextAlign, resolveTextInputAlign, toAsciiDigits, type ThemeColors } from "@bthwani/design-system";
+import { direction as designDirection, resolveTextAlign, resolveTextInputAlign, type ThemeColors, toAsciiDigits } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
-import { Redirect, type Href, useLocalSearchParams } from "expo-router";
+import { resolveInternalReturnPath } from "@bthwani/identity/presentation";
+import { type Href, Redirect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -63,10 +64,7 @@ function isCredentialFailure(value: unknown): boolean {
 }
 
 function safeReturnTo(value: string | string[] | undefined): Href {
-  const candidate = Array.isArray(value) ? value[0] : value;
-  if (!candidate || candidate.startsWith("//")) return "/home";
-  const admitted = /^\/(?:home|account|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+|cart\/[A-Za-z0-9._~%-]+)$/u;
-  return (admitted.test(candidate) ? candidate : "/home") as Href;
+  return resolveInternalReturnPath(value, "/home", /^\/(?:home|account|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+|cart\/[A-Za-z0-9._~%-]+)$/u) as Href;
 }
 
 export default function IdentityGate() {

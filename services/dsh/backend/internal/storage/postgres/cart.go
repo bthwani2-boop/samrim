@@ -42,6 +42,7 @@ type CartLineRecord struct {
 	PricingUnitBaseUnits      int64
 	QuantityBaseUnits         int64
 	SelectedModifierOptionIDs []string
+	SelectedModifiers         []CartLineModifierRecord
 	UnitPriceMinor            int64
 	ModifierAmountMinor       int64
 	LineAmountMinor           int64
@@ -49,6 +50,12 @@ type CartLineRecord struct {
 	OfferVersion              int
 	CreatedAt                 time.Time
 	UpdatedAt                 time.Time
+}
+
+type CartLineModifierRecord struct {
+	OptionID        string
+	OptionNameAr    string
+	PriceDeltaMinor int64
 }
 
 type CartRecord struct {
@@ -150,9 +157,13 @@ WHERE l.cart_id=$1 AND l.removed_at IS NULL ORDER BY l.created_at,l.id`, cartID)
 	}
 	for index := range lines {
 		line := &lines[index]
-		_, delta, err := ValidateCatalogModifierSelection(ctx, source, line.StoreOfferID, line.SelectedModifierOptionIDs)
+		selectedOptions, delta, err := ValidateCatalogModifierSelection(ctx, source, line.StoreOfferID, line.SelectedModifierOptionIDs)
 		if err != nil {
 			return nil, err
+		}
+		line.SelectedModifiers = make([]CartLineModifierRecord, 0, len(selectedOptions))
+		for _, option := range selectedOptions {
+			line.SelectedModifiers = append(line.SelectedModifiers, CartLineModifierRecord{OptionID: option.ID, OptionNameAr: option.NameAr, PriceDeltaMinor: option.PriceDeltaMinor})
 		}
 		line.ModifierAmountMinor, err = CalculateCatalogModifierAmount(delta, line.QuantityBaseUnits)
 		if err != nil {

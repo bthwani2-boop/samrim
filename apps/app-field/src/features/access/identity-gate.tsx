@@ -1,26 +1,29 @@
-import { ManagedIdentityFlow } from "@bthwani/identity/presentation";
-import { Redirect, type Href } from "expo-router";
+import { ManagedIdentityFlow, resolveInternalReturnPath } from "@bthwani/identity/presentation";
+import { type Href, Redirect, useLocalSearchParams } from "expo-router";
 import {
   activateManagedIdentity,
   currentIdentityState,
   loginManagedIdentity,
   requestManagedActivation,
   restoreIdentitySession,
-  subscribeIdentitySession,
   role,
+  subscribeIdentitySession,
   surface,
 } from "../../bootstrap/identity";
 
 const identity = { role, surface, restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession, requestManagedActivation, activateManagedIdentity, loginManagedIdentity };
 
 export default function IdentityGate() {
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const safeReturnTo = resolveInternalReturnPath(returnTo, "/home", /^(?:\/home|\/cases|\/account|\/new-case)$/u) as Href;
+
   return (
     <ManagedIdentityFlow
       managedRole={role}
       surface={surface}
       roleLabel="الميدان"
       binding={identity}
-    authenticatedContent={<Redirect href={"/home" as Href} />}
+      authenticatedContent={<Redirect href={safeReturnTo} />}
     />
   );
 }

@@ -39,7 +39,7 @@ function parseRgb(colorStr) {
 function relativeLuminance(colorStr) {
   const [r, g, b] = parseRgb(colorStr).map((c) => {
     const s = c / 255;
-    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
@@ -261,12 +261,12 @@ if (failures.length > 0) {
 }
 
 console.log("DESIGN_SYSTEM_SINGLE_THEME_AUTHORITY=PASS");
-console.log("LOCAL_SEMANTIC_COLOR_AUTHORITY=0");
-console.log("DUPLICATE_LIGHT_DARK_TRUTH=0");
+console.log("SCOPED_LOCAL_SEMANTIC_COLOR_AUTHORITY=0");
+console.log("SCOPED_DUPLICATE_LIGHT_DARK_TRUTH=0");
 console.log("DEAD_THEME_TOKEN=0");
 console.log("STATUS_BAR_THEME_SYNC=PASS");
 console.log("CONTROL_PANEL_RAW_SEMANTIC_COLORS=0");
 console.log("THEME_KEYS_PARITY=PASS");
-console.log("WCAG_AA_THEME_CONTRAST=PASS");
+console.log("STATIC_THEME_TOKEN_CONTRAST_MATRIX=PASS");
 console.log("UNJUSTIFIED_DUPLICATE_THEME_CSS=0");
 console.log("DEAD_MANUAL_THEME_BRANCH=0");

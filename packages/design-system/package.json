@@ -16,12 +16,18 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
-  "devDependencies": {
+  "dependencies": {
     "@expo/material-symbols": "0.1.1",
-    "@expo/ui": "57.0.16",
+    "@expo/ui": "~57.0.18"
+  },
+  "peerDependencies": {
+    "react": "19.2.3",
+    "react-native": "0.86.3"
+  },
+  "devDependencies": {
     "@types/react": "19.2.17",
     "react": "19.2.3",
-    "react-native": "0.86.2",
+    "react-native": "0.86.3",
     "typescript": "6.0.2"
   }
 }
