@@ -1,19 +1,6 @@
 import {
-  borders,
-  breakpoints,
   darkThemeColors,
-  direction,
-  elevation,
-  fontFamilies,
-  fontWeights,
   lightThemeColors,
-  motion,
-  opacity,
-  radius,
-  sizing,
-  spacing,
-  typography,
-  zIndex,
   type ThemeColors
 } from "../tokens/index";
 
@@ -24,6 +11,21 @@ export const themes = {
 
 export type ThemeName = keyof typeof themes;
 export type UiTheme = ThemeColors;
+
+export const themePreferences = ["system", "light", "dark"] as const;
+export type ThemePreference = (typeof themePreferences)[number];
+
+export function isThemePreference(value: unknown): value is ThemePreference {
+  return typeof value === "string" && themePreferences.includes(value as ThemePreference);
+}
+
+export function resolveThemeName(
+  preference?: string | null,
+  systemColorScheme?: "light" | "dark" | "unspecified" | null,
+): ThemeName {
+  if (preference === "light" || preference === "dark") return preference;
+  return systemColorScheme === "dark" ? "dark" : "light";
+}
 
 export function resolveTheme(name?: string | null): ThemeColors {
   return name === "dark" ? darkThemeColors : lightThemeColors;
@@ -84,6 +86,16 @@ export function generateThemeCss(): string {
   return `:root {
   color-scheme: light dark;
 ${lightVars}
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+${lightVars}
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+${darkVars}
 }
 
 @media (prefers-color-scheme: dark) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
-import { resolveTheme } from "@bthwani/design-system";
 import { captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, orderStateLabel, type CaptainAssignment, type CaptainDeliveryTask } from "@bthwani/dsh";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -9,7 +9,7 @@ import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
 
 export function CaptainDeliveries() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createCaptainOperationStyles(theme), [theme]);
   const [assignments, setAssignments] = useState<ReadonlyArray<CaptainAssignment>>([]);
   const [tasks, setTasks] = useState<Readonly<Record<string, CaptainDeliveryTask>>>({});

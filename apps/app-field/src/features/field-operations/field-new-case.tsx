@@ -1,6 +1,7 @@
 import { Link, type Href } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, TextInput, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
 import { joiningCaseStateLabel, type CommerceVertical, type CreateJoiningCaseRequest, type FieldAdmission, type JoiningCaseResponse, type ServiceCity } from "@bthwani/dsh";
@@ -10,7 +11,7 @@ import { fieldClient } from "./field-client";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 export function FieldNewCase() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const [admission, setAdmission] = useState<FieldAdmission | null>(null);
   const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "" });

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import * as SecureStore from "expo-secure-store";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 import type { ServiceCity } from "@bthwani/dsh";
@@ -24,7 +25,7 @@ export function useServiceCityScope(): ScopeContextValue {
 }
 
 export default function ServiceCityScope({ children }: PropsWithChildren) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [selectedCityID, setSelectedCityID] = useState<string | null>(null);

@@ -1,11 +1,12 @@
 import { useMemo, type PropsWithChildren } from "react";
-import { ScrollView, StyleSheet, Text, useColorScheme, View, type ColorValue } from "react-native";
+import { ScrollView, StyleSheet, Text, View, type ColorValue } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { direction, radius, resolveTextAlign, resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 
 export function ClientPublicShell({ children }: PropsWithChildren) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <SafeAreaView edges={["top"]} style={styles.shell}>
@@ -31,7 +32,7 @@ function ClientHeader({ context, styles }: { context: string; styles: ReturnType
 }
 
 export function ClientScrollScreen({ children }: PropsWithChildren) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <ScrollView contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -42,7 +43,7 @@ export function ClientScrollScreen({ children }: PropsWithChildren) {
 
 export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
   const styles = createStyles(theme);
-  const icons = { home: "⌂", orders: "▤", account: "◉" } as const;
+  const icons = { home: "home", orders: "orders", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
     header: () => <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><ClientHeader context="مساحة العميل" styles={styles} /></SafeAreaView>,
@@ -51,7 +52,7 @@ export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
     tabBarHideOnKeyboard: true,
     tabBarInactiveTintColor: theme.colorMuted,
     tabBarShowIcon: true,
-    tabBarIcon: ({ color }: { color: ColorValue }) => <Text accessible={false} style={[styles.navigationIcon, { color }]}>{icons[route.name as keyof typeof icons] ?? "•"}</Text>,
+    tabBarIcon: ({ color }: { color: ColorValue }) => { const icon = icons[route.name as keyof typeof icons]; return icon ? <BthwaniIcon name={icon} color={color} size={22} /> : null; },
     tabBarItemStyle: styles.navigationItem,
     tabBarLabelStyle: styles.navigationLabel,
     tabBarStyle: styles.navigation,
@@ -76,7 +77,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     screenContent: { direction: activeDirection, flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
     navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: 1, direction: activeDirection, flexDirection: "row", paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
     navigationItem: { borderRadius: radius.md, minHeight: sizing.controlLg, paddingHorizontal: spacing[2] },
-    navigationIcon: { fontSize: 22, fontWeight: "800", lineHeight: 26 },
     navigationLabel: { fontSize: typography.caption.fontSize, fontWeight: "700" },
   });
 }

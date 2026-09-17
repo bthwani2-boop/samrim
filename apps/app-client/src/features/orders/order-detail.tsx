@@ -1,7 +1,8 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, orderStateLabel, type Order } from "@bthwani/dsh";
@@ -19,7 +20,7 @@ export default function ClientOrderDetail() {
   const { orderId: rawOrderId } = useLocalSearchParams<{ orderId?: string | string[] }>();
   const orderId = Array.isArray(rawOrderId) ? rawOrderId[0] ?? "" : rawOrderId ?? "";
   const router = useRouter();
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; order: Order } | { kind: "error" }>({ kind: "loading" });
 

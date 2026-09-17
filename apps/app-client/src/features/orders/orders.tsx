@@ -1,7 +1,8 @@
 import { type Href, useRouter } from "expo-router";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 import { createDshMobileClient, formatMoney, formatOrderDate, orderStateLabel, type Order } from "@bthwani/dsh";
@@ -19,7 +20,7 @@ const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => 
 
 export default function ClientOrders() {
   const router = useRouter();
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OrdersState>({ kind: "loading" });
 

@@ -2,7 +2,8 @@ import { direction, resolveTextAlign, resolveTextInputAlign, resolveTheme } from
 import type { DeliveryAddress } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { createOwnDeliveryAddress, isLocationHttpError, listOwnDeliveryAddresses, updateOwnDeliveryAddress } from "./delivery-address-client";
 
@@ -24,7 +25,7 @@ function errorText(error: unknown): string {
 
 export default function LocationCore() {
   const { cities, selectedCityID } = useServiceCityScope();
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<AddressState>({ kind: "loading" });
   const [addressText, setAddressText] = useState("");

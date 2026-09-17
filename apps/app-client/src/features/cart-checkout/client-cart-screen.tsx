@@ -1,16 +1,17 @@
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import type { DeliveryAddress, PublicCatalogResponse, PublicStoreView, ServiceabilityResponse } from "@bthwani/dsh";
-import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublicStoreCatalog, readPublishedStore } from "../store-discovery/store-discovery-client";
+import type { DeliveryAddress, PublicStoreView, ServiceabilityResponse } from "@bthwani/dsh";
+import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { CartCheckout } from "./cart-checkout";
 
 type CartScreenState =
   | { kind: "loading" }
-  | { kind: "ready"; store: PublicStoreView; catalog: PublicCatalogResponse; addresses: ReadonlyArray<DeliveryAddress> }
+  | { kind: "ready"; store: PublicStoreView; addresses: ReadonlyArray<DeliveryAddress> }
   | { kind: "error" };
 
 type ServiceabilityState =
@@ -24,7 +25,7 @@ export default function ClientCartScreen() {
   const storeId = Array.isArray(rawStoreId) ? rawStoreId[0] ?? "" : rawStoreId ?? "";
   const router = useRouter();
   const { selectedCityID } = useServiceCityScope();
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartScreenState>({ kind: "loading" });
   const [serviceability, setServiceability] = useState<ServiceabilityState>({ kind: "idle" });
@@ -37,12 +38,11 @@ export default function ClientCartScreen() {
     setState({ kind: "loading" });
     setServiceability({ kind: "idle" });
     try {
-      const [store, catalog, addressResponse] = await Promise.all([
+      const [store, addressResponse] = await Promise.all([
         readPublishedStore(storeId, selectedCityID),
-        readPublicStoreCatalog(storeId, selectedCityID),
         listOwnDeliveryAddresses(),
       ]);
-      setState({ kind: "ready", store, catalog, addresses: addressResponse.addresses });
+      setState({ kind: "ready", store, addresses: addressResponse.addresses });
     } catch {
       setState({ kind: "error" });
     }
@@ -62,7 +62,7 @@ export default function ClientCartScreen() {
   }
 
   if (state.kind === "loading") {
-    return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ تجهيز السلة" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الكتالوج والسلة والعناوين…</Text></View>;
+    return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ تجهيز السلة" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة السلة والعناوين…</Text></View>;
   }
   if (state.kind === "error") {
     return <View style={styles.state}><Text style={styles.title}>تعذر تجهيز السلة</Text><Text style={styles.muted}>تحقق من الاتصال أو أهلية المتجر ثم أعد المحاولة.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.button}><Text style={styles.buttonText}>إعادة المحاولة</Text></Pressable><Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>العودة إلى المتجر</Text></Pressable></View>;
@@ -85,7 +85,7 @@ export default function ClientCartScreen() {
         })}
         {serviceability.kind === "error" ? <Text accessibilityRole="alert" style={styles.error}>تعذر تقييم العنوان. أعد المحاولة.</Text> : null}
       </View>
-      <CartCheckout storeId={state.store.id} offers={state.catalog.offers} addresses={state.addresses} serviceableAddressId={serviceableAddressId} />
+      <CartCheckout storeId={state.store.id} addresses={state.addresses} serviceableAddressId={serviceableAddressId} />
     </View>
   );
 }

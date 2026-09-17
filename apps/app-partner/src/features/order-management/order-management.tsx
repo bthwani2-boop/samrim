@@ -1,6 +1,7 @@
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 import { captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, orderStateLabel, type CaptainAssignment, type Order } from "@bthwani/dsh";
@@ -22,7 +23,7 @@ function nextState(order: Order): "PARTNER_ACCEPTED" | "PREPARING" | "READY_FOR_
 }
 
 export function OrderManagement({ storeId }: { storeId: string }) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
   const [assignments, setAssignments] = useState<Readonly<Record<string, CaptainAssignment>>>({});

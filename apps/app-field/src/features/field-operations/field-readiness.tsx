@@ -1,8 +1,8 @@
 import { Link, type Href } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
-import { resolveTheme } from "@bthwani/design-system";
 import { fieldAdmissionStateLabel, type FieldAdmission } from "@bthwani/dsh";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -10,7 +10,7 @@ import { fieldClient } from "./field-client";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 export function FieldReadiness() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const [admission, setAdmission] = useState<FieldAdmission | null>(null);
   const [loading, setLoading] = useState(true);

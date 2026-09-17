@@ -81,7 +81,7 @@ if (!themeIndexTs.includes("export function themeToCssVariables")) {
 
 // 2. Parity check on light and dark keys
 const { lightThemeColors, darkThemeColors } = await import("../../packages/design-system/src/tokens/colors.ts");
-const { generateThemeCss } = await import("../../packages/design-system/src/theme/index.ts");
+const { generateThemeCss, isThemePreference, resolveThemeName, themePreferences } = await import("../../packages/design-system/src/theme/index.ts");
 const { resolveTextAlign, resolveTextInputAlign, toAsciiDigits } = await import("../../packages/design-system/src/tokens/direction.ts");
 
 if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1234567890") {
@@ -168,6 +168,12 @@ const expectedCss = expectedHeader + generateThemeCss();
 if (dsThemeCss !== expectedCss) {
   failures.push("packages/design-system/theme.css has drifted from canonical generateThemeCss()");
 }
+if (!themePreferences.every((preference) => isThemePreference(preference))) {
+  failures.push("Design System theme preference contract is incomplete");
+}
+if (resolveThemeName("system", "dark") !== "dark" || resolveThemeName("system", "light") !== "light") {
+  failures.push("Design System system theme resolution does not follow the platform scheme");
+}
 
 // Verify no duplicate editable theme.css in control-panel
 if (fs.existsSync(path.join(repoRoot, "apps/control-panel/app/theme.css"))) {
@@ -189,8 +195,8 @@ if (globalsCss.includes("@media (prefers-color-scheme: dark)")) {
 if (globalsCss.includes('[data-theme="dark"]') || globalsCss.includes('[data-theme="light"]')) {
   failures.push("apps/control-panel/app/globals.css contains dead data-theme manual branch");
 }
-if (dsThemeCss.includes("[data-theme=")) {
-  failures.push("packages/design-system/theme.css contains dead data-theme manual branch");
+if (!dsThemeCss.includes(':root[data-theme="light"]') || !dsThemeCss.includes(':root[data-theme="dark"]')) {
+  failures.push("packages/design-system/theme.css is missing canonical explicit theme preference overrides");
 }
 
 // Verify no raw hex or rgb colors in control-panel globals.css
@@ -213,7 +219,7 @@ for (const app of mobileApps) {
   if (/style=["'](?:dark|light)["']/.test(layout)) {
     failures.push(`apps/${app}/app/_layout.tsx has fixed StatusBar style instead of adaptive`);
   }
-  if (!layout.includes("useColorScheme") && !layout.includes("style=\"auto\"")) {
+  if (!layout.includes("AppearanceProvider")) {
     failures.push(`apps/${app}/app/_layout.tsx is not theme-adaptive`);
   }
 }

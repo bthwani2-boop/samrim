@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { joiningCaseStateLabel, type JoiningCaseSummary } from "@bthwani/dsh";
-import { resolveTheme } from "@bthwani/design-system";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 export function FieldCases() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const [cases, setCases] = useState<ReadonlyArray<JoiningCaseSummary>>([]);
   const [loading, setLoading] = useState(true);

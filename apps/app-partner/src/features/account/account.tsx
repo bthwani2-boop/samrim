@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { AppearancePicker, useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 import { logoutIdentity } from "../../bootstrap/identity";
 
 export default function PartnerAccount() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = createStyles(theme);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -15,7 +16,7 @@ export default function PartnerAccount() {
     setNotice("");
     try { await logoutIdentity(); } catch { setNotice("تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم."); } finally { setBusy(false); }
   }
-  return <View style={styles.container} accessibilityLabel="حساب الشريك"><Text style={styles.eyebrow}>إدارة الحساب</Text><Text style={styles.title}>حساب الشريك</Text><Text style={styles.description}>تظل حالة المتجر والكتالوج والطلبات مرتبطة بصلاحيات الشريك الحالية.</Text><View style={styles.card}><Text style={styles.cardTitle}>جلسة التشغيل</Text><Text style={styles.description}>الجلسة الحالية مفعّلة لهذا الجهاز.</Text></View><Pressable accessibilityRole="button" accessibilityLabel="تسجيل الخروج" accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void logout()} style={[styles.button, busy && styles.disabledButton]}><Text style={[styles.buttonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"}</Text></Pressable>{notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}</View>;
+  return <View style={styles.container} accessibilityLabel="حساب الشريك"><Text style={styles.eyebrow}>إدارة الحساب</Text><Text style={styles.title}>حساب الشريك</Text><Text style={styles.description}>تظل حالة المتجر والكتالوج والطلبات مرتبطة بصلاحيات الشريك الحالية.</Text><View style={styles.card}><Text style={styles.cardTitle}>جلسة التشغيل</Text><Text style={styles.description}>الجلسة الحالية مفعّلة لهذا الجهاز.</Text></View><AppearancePicker /><Pressable accessibilityRole="button" accessibilityLabel="تسجيل الخروج" accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void logout()} style={[styles.button, busy && styles.disabledButton]}><Text style={[styles.buttonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"}</Text></Pressable>{notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}</View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

@@ -1,6 +1,7 @@
-import { direction, radius, resolveTextAlign, resolveTextInputAlign, resolveTheme, spacing, toAsciiDigits, type ThemeColors } from "@bthwani/design-system";
+import { direction, radius, resolveTextAlign, resolveTextInputAlign, spacing, toAsciiDigits, type ThemeColors } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { identityErrorMessage, identitySessionSignOutMessage } from "../errors";
 import type { IdentitySessionState } from "../index";
@@ -56,7 +57,7 @@ function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
 }
 
 export function AuthenticatedMobileBoundary({ binding, onUnauthenticated, children }: AuthenticatedMobileBoundaryProps) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [busy, setBusy] = useState(false);
@@ -124,9 +125,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
     throw new Error(`MANAGED_FLOW_SURFACE_MISMATCH: binding surface ${binding.surface} !== prop surface ${surface}`);
   }
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const theme = resolveTheme(isDark ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, View, useColorScheme } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Crypto from "expo-crypto";
 
 import { direction, resolveTextAlign, resolveTextInputAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
@@ -27,7 +28,7 @@ function errorText(error: unknown): string {
 function reportError(error: unknown): void { console.error("DSH StoreOffer request failed", error); }
 
 export function StoreOfferManagement({ storeId }: { storeId: string }) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OfferState>({ kind: "loading" });
   const [products, setProducts] = useState<ReadonlyArray<CatalogProduct>>([]);

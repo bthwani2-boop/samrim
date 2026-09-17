@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { AppearancePicker, useAppearanceTheme } from "@bthwani/design-system/native";
 import { logoutIdentity } from "../../bootstrap/identity";
 import LocationCore from "../location-core/location-core";
 
 export default function ClientAccount() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = createStyles(theme);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -33,6 +34,7 @@ export default function ClientAccount() {
         <Text style={styles.cardTitle}>جلسة العميل</Text>
         <Text style={styles.description}>الجلسة الحالية مفعّلة، والطلبات والعناوين تُقرأ من الخدمات الرسمية عند فتح كل مساحة.</Text>
       </View>
+      <AppearancePicker />
       <LocationCore />
       <Pressable accessibilityRole="button" accessibilityLabel="تسجيل الخروج" accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void logout()} style={[styles.button, busy && styles.disabledButton]}>
         <Text style={[styles.buttonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"}</Text>

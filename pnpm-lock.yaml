@@ -37,6 +37,12 @@ importers:
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
+      '@expo/material-symbols':
+        specifier: 0.1.1
+        version: 0.1.1
+      '@expo/ui':
+        specifier: 57.0.16
+        version: 57.0.16(@babel/core@7.29.7)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(expo@57.0.20)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       expo:
         specifier: ^57.0.0
         version: 57.0.20(@babel/core@7.29.7)(@expo/metro-runtime@57.0.15)(@typescript/typescript6@6.0.2)(expo-router@57.0.19)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
@@ -116,6 +122,12 @@ importers:
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
+      '@expo/material-symbols':
+        specifier: 0.1.1
+        version: 0.1.1
+      '@expo/ui':
+        specifier: 57.0.16
+        version: 57.0.16(@babel/core@7.29.7)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(expo@57.0.20)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       expo:
         specifier: ^57.0.0
         version: 57.0.20(@babel/core@7.29.7)(@expo/metro-runtime@57.0.15)(@typescript/typescript6@6.0.2)(expo-router@57.0.19)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
@@ -198,6 +210,12 @@ importers:
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
+      '@expo/material-symbols':
+        specifier: 0.1.1
+        version: 0.1.1
+      '@expo/ui':
+        specifier: 57.0.16
+        version: 57.0.16(@babel/core@7.29.7)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(expo@57.0.20)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       expo:
         specifier: ^57.0.0
         version: 57.0.20(@babel/core@7.29.7)(@expo/metro-runtime@57.0.15)(@typescript/typescript6@6.0.2)(expo-router@57.0.19)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
@@ -277,6 +295,12 @@ importers:
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
+      '@expo/material-symbols':
+        specifier: 0.1.1
+        version: 0.1.1
+      '@expo/ui':
+        specifier: 57.0.16
+        version: 57.0.16(@babel/core@7.29.7)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(expo@57.0.20)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
       expo:
         specifier: ^57.0.0
         version: 57.0.20(@babel/core@7.29.7)(@expo/metro-runtime@57.0.15)(@typescript/typescript6@6.0.2)(expo-router@57.0.19)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
@@ -387,6 +411,21 @@ importers:
 
   packages/design-system:
     devDependencies:
+      '@expo/material-symbols':
+        specifier: 0.1.1
+        version: 0.1.1
+      '@expo/ui':
+        specifier: 57.0.16
+        version: 57.0.16(@babel/core@7.29.7)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(expo@57.0.20)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.2)(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3))(react-native@0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)
+      '@types/react':
+        specifier: 19.2.17
+        version: 19.2.17
+      react:
+        specifier: 19.2.3
+        version: 19.2.3
+      react-native:
+        specifier: 0.86.2
+        version: 0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3)
       typescript:
         specifier: 6.0.2
         version: 6.0.2
@@ -966,6 +1005,10 @@ packages:
       expo: '*'
       react: '*'
       react-native: '*'
+
+  '@expo/material-symbols@0.1.1':
+    resolution: {integrity: sha512-ruA6hZATOPKxo1qSd1NE3HI9FrmEDwcMDhsvzTAdMkP9AapdHfJ/0tKmBMWFJir85voxs1twYxLVrGW9OLGaOg==}
+    hasBin: true
 
   '@expo/metro-config@57.0.12':
     resolution: {integrity: sha512-S62Lrq35HZqBFD55423pmWb8PjaiR/W02zQC1uECBmw1vTN8WZaFz4TJ0i21EeJzwfebMb9MLxL8JZ102Z6VbA==}
@@ -4941,6 +4984,8 @@ snapshots:
       react: 19.2.3
       react-native: 0.86.2(@react-native/metro-config@0.86.2)(@types/react@19.2.17)(react@19.2.3)
       stacktrace-parser: 0.1.11
+
+  '@expo/material-symbols@0.1.1': {}
 
   '@expo/metro-config@57.0.12(@typescript/typescript6@6.0.2)(expo@57.0.20)':
     dependencies:

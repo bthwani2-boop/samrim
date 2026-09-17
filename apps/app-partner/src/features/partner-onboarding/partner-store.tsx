@@ -1,8 +1,8 @@
 import { Link, type Href } from "expo-router";
 import { useMemo } from "react";
-import { ActivityIndicator, Pressable, Text, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
-import { resolveTheme } from "@bthwani/design-system";
 import { publicationStateLabel } from "@bthwani/dsh";
 
 import { usePartnerStoreContext } from "./partner-store-context";
@@ -11,7 +11,7 @@ import { StoreOfferManagement } from "../store-offer/store-offer";
 import { StoreDeliveryOrigin } from "../location-core/store-delivery-origin";
 
 export function PartnerStore() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { cities, citiesError, state, reload } = usePartnerStoreContext();
 

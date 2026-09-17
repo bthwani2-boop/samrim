@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { ActivityIndicator, Pressable, Text, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
-import { resolveTheme } from "@bthwani/design-system";
 import { joiningCaseStateLabel } from "@bthwani/dsh";
 
 import { JoiningCaseCorrection } from "./joining-case-correction";
@@ -9,7 +9,7 @@ import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 
 export function PartnerOnboarding() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const { cities, citiesError, state, update, reload } = usePartnerStoreContext();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
 

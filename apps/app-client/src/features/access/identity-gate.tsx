@@ -1,6 +1,7 @@
-import { direction as designDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
+import { direction as designDirection, resolveTextAlign, resolveTextInputAlign, toAsciiDigits, type ThemeColors } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
-import { Redirect, type Href } from "expo-router";
+import { Redirect, type Href, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -11,7 +12,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useColorScheme,
   View,
 } from "react-native";
 import {
@@ -31,8 +31,7 @@ import { type IdentityCopy, identityPresentation } from "./identity-presentation
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
 
-function getColors(isDark: boolean) {
-  const theme = resolveTheme(isDark ? "dark" : "light");
+function getColors(theme: ThemeColors) {
   return {
     background: theme.background,
     border: theme.borderColor,
@@ -63,11 +62,18 @@ function isCredentialFailure(value: unknown): boolean {
   return isIdentityClientError(value) && value.kind === "http" && value.status === 401;
 }
 
+function safeReturnTo(value: string | string[] | undefined): Href {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate || candidate.startsWith("//")) return "/home";
+  const admitted = /^\/(?:home|account|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+|cart\/[A-Za-z0-9._~%-]+)$/u;
+  return (admitted.test(candidate) ? candidate : "/home") as Href;
+}
+
 export default function IdentityGate() {
-  const colorScheme = useColorScheme();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const theme = useAppearanceTheme();
   const { copy } = identityPresentation;
-  const isDark = colorScheme === "dark";
-  const colors = useMemo(() => getColors(isDark), [isDark]);
+  const colors = useMemo(() => getColors(theme), [theme]);
   const styles = useMemo(() => createStyles(colors, designDirection.defaultDirection), [colors]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
@@ -108,6 +114,10 @@ export default function IdentityGate() {
     setState(currentIdentityState());
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (state.kind === "signed_out" && returnTo && !authPromptVisible) setAuthPromptVisible(true);
+  }, [authPromptVisible, returnTo, state.kind]);
 
   const selectMode = useCallback((next: AuthMode) => {
     setMode(next);
@@ -224,7 +234,7 @@ export default function IdentityGate() {
   }
 
   if (state.kind === "authenticated") {
-    return <Redirect href={"/home" as Href} />;
+    return <Redirect href={safeReturnTo(returnTo)} />;
   }
 
   if (state.kind === "degraded") {

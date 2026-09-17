@@ -1,8 +1,7 @@
 import { useCallback, useMemo } from "react";
-import { Tabs, useRouter } from "expo-router";
-import { useColorScheme } from "react-native";
+import { Tabs, type Href, usePathname, useRouter } from "expo-router";
 
-import { resolveTheme } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { AuthenticatedMobileBoundary } from "@bthwani/identity/presentation";
 import ServiceCityScope from "../../src/features/service-city/service-city-scope";
 import { createClientTabOptions } from "../../src/shell/client-shell";
@@ -12,9 +11,12 @@ const identity = { restoreIdentitySession, currentIdentityState, subscribe: subs
 
 export default function ClientAppLayout() {
   const router = useRouter();
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const pathname = usePathname();
+  const theme = useAppearanceTheme();
   const tabOptions = useMemo(() => createClientTabOptions(theme), [theme]);
-  const onUnauthenticated = useCallback(() => router.replace("/"), [router]);
+  const onUnauthenticated = useCallback(() => {
+    router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
+  }, [pathname, router]);
   return (
     <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>
       <ServiceCityScope>

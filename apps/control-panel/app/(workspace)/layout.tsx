@@ -3,11 +3,11 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { ActorIdentity } from "@bthwani/identity";
 import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
 import { useSession } from "../../src/session/session-provider";
+import { AppearanceControl } from "../../src/shell/appearance-control";
 
-function WorkspaceHeader({ identity, busy, onLogout }: Readonly<{ identity: ActorIdentity; busy: boolean; onLogout: () => void }>) {
+function WorkspaceHeader({ busy, onLogout }: Readonly<{ busy: boolean; onLogout: () => void }>) {
   return (
     <header className="workspace-header">
       <Link className="brand-lockup brand-link" href="/workspace" aria-label="العودة إلى مساحة العمل">
@@ -18,6 +18,7 @@ function WorkspaceHeader({ identity, busy, onLogout }: Readonly<{ identity: Acto
         <span className="surface-label">مساحة العمل الموثقة</span>
         <span className="actor-context">مشغل لوحة التحكم</span>
       </div>
+      <AppearanceControl />
       <button type="button" className="button button-secondary workspace-logout" disabled={busy} onClick={onLogout}>
         {busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}
       </button>
@@ -55,7 +56,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   if (state.kind === "signed_out") return <LoadingState title="جارٍ الرجوع إلى بوابة الهوية" message="انتهت الجلسة المحلية أو لم تعد متاحة." />;
 
   return (
-    <ControlShell className="workspace-app-shell" header={<WorkspaceHeader identity={state.identity} busy={busy} onLogout={() => void logout()} />}>
+    <ControlShell className="workspace-app-shell" header={<WorkspaceHeader busy={busy} onLogout={() => void logout()} />}>
       <div className="workspace-layout">
         <WorkspaceNavigation pathname={pathname} />
         <main ref={mainRef} id="workspace-main" className="workspace-main" tabIndex={-1}>{children}</main>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as Location from "expo-location";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 import { isOriginHttpError, readStoreDeliveryOrigin, setStoreDeliveryOrigin } from "./store-delivery-origin-client";
@@ -21,7 +22,7 @@ function errorText(error: unknown): string {
 }
 
 export function StoreDeliveryOrigin({ storeId }: { storeId: string }) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OriginState>({ kind: "loading" });
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);

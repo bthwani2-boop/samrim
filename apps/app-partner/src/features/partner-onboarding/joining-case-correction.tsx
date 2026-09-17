@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 
 import { direction, resolveTextAlign, resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
 import type { CommerceVertical, JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
@@ -7,7 +8,7 @@ import { correctAndResubmitOwnJoiningCase, listCatalogVerticals } from "./store-
 
 export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: JoiningCaseResponse; cities: ReadonlyArray<ServiceCity>; onUpdated: (next: JoiningCaseResponse) => void }) {
   const current = value.case;
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [businessName, setBusinessName] = useState(current.businessName);
   const [firstStoreName, setFirstStoreName] = useState(current.firstStoreName);
