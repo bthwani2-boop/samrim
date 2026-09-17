@@ -97,8 +97,17 @@ if (app === "app-client") assert.ok(fs.existsSync(path.join(appDir, "app", "stor
 const shellPath = path.join(appDir, "src", "shell", `${role}-shell.tsx`);
 assert.ok(fs.existsSync(shellPath), `${app}: missing actor-specific application shell`);
 const shellContent = fs.readFileSync(shellPath, "utf8");
-assert.ok(shellContent.includes("<Slot />"), `${app}: application shell must compose route content through Expo Router`);
-assert.ok(shellContent.includes('accessibilityRole="tablist"'), `${app}: application shell navigation must expose its role`);
+assert.ok(!shellContent.includes('accessibilityRole="tablist"'), `${app}: manual bottom navigation must not remain beside the canonical Tabs owner`);
+assert.ok(!shellContent.includes("<Slot />"), `${app}: application shell must not own a parallel Expo Router slot`);
+const layoutContent = fs.readFileSync(path.join(appRouteDir, "_layout.tsx"), "utf8");
+assert.ok(layoutContent.includes("Tabs"), `${app}: authenticated layout must declare stable Expo Router JS Tabs`);
+assert.ok(layoutContent.includes("<Tabs"), `${app}: authenticated layout must compose route content through Expo Router Tabs`);
+const tabRoutes =
+  app === "app-client" ? ["home", "orders", "account", "cart/[storeId]", "orders/[orderId]"] :
+  app === "app-partner" ? ["store", "orders", "account", "onboarding"] :
+  app === "app-captain" ? ["home", "offers", "deliveries", "account"] :
+  ["home", "cases", "account", "new-case"];
+for (const tabRoute of tabRoutes) assert.ok(layoutContent.includes(`name="${tabRoute}"`), `${app}: missing canonical Tabs route ${tabRoute}`);
 const identityGatePath = path.join(appDir, "src", "features", "access", "identity-gate.tsx");
 const identityGateContent = fs.readFileSync(identityGatePath, "utf8");
 if (app === "app-client") {

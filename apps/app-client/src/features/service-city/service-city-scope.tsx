@@ -72,7 +72,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
 
   return StyleSheet.create({
     container: { backgroundColor: theme.background, gap: 12, padding: 16, width: "100%", direction: activeDirection },
-    provider: { backgroundColor: theme.background, width: "100%", direction: activeDirection },
+    provider: { backgroundColor: theme.background, direction: activeDirection, flex: 1, width: "100%" },
     scopeHeader: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, flexDirection: rowDirection, justifyContent: "space-between", margin: 12, paddingHorizontal: 12, paddingVertical: 10 },
     scopeLabel: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
     changeText: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textDecorationLine: "underline" },

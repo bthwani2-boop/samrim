@@ -1,3 +1,3 @@
-import { CaptainOperations } from "../../src/features/captain-operations/captain-operations";
+import { CaptainDeliveries } from "../../src/features/captain-operations/captain-deliveries";
 import { CaptainScrollScreen } from "../../src/shell/captain-shell";
-export default function CaptainDeliveriesRoute() { return <CaptainScrollScreen><CaptainOperations surface="deliveries" /></CaptainScrollScreen>; }
+export default function CaptainDeliveriesRoute() { return <CaptainScrollScreen><CaptainDeliveries /></CaptainScrollScreen>; }

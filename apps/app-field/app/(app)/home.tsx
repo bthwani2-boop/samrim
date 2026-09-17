@@ -1,3 +1,3 @@
-import { FieldOperations } from "../../src/features/field-operations/field-operations";
+import { FieldReadiness } from "../../src/features/field-operations/field-readiness";
 import { FieldScrollScreen } from "../../src/shell/field-shell";
-export default function FieldHomeRoute() { return <FieldScrollScreen><FieldOperations surface="overview" /></FieldScrollScreen>; }
+export default function FieldHomeRoute() { return <FieldScrollScreen><FieldReadiness /></FieldScrollScreen>; }
