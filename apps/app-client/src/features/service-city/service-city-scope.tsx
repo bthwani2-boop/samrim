@@ -1,10 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
-import * as SecureStore from "expo-secure-store";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 import type { ServiceCity } from "@bthwani/dsh";
+import * as SecureStore from "expo-secure-store";
+import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { listActiveServiceCities } from "./service-city-client";
 
 const PREFERENCE_KEY = "samrim.app-client.service-city";
@@ -71,20 +70,20 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const startTextAlign = resolveTextAlign("start", activeDirection);
 
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, gap: 12, padding: 16, width: "100%", direction: activeDirection },
+    container: { backgroundColor: theme.background, gap: spacing[3], padding: spacing[4], width: "100%", direction: activeDirection },
     provider: { backgroundColor: theme.background, direction: activeDirection, flex: 1, width: "100%" },
-    scopeHeader: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, direction: activeDirection, flexDirection: "row", justifyContent: "space-between", margin: 12, paddingHorizontal: 12, paddingVertical: 10 },
-    scopeLabel: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
-    changeText: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textDecorationLine: "underline" },
-    state: { alignItems: "center", backgroundColor: theme.background, gap: 12, justifyContent: "center", minHeight: 220, padding: 20, width: "100%" },
-    cityList: { gap: 10, width: "100%" },
-    cityButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 4, padding: 16 },
-    cityName: { color: theme.color, fontSize: 17, fontWeight: "800", textAlign: startTextAlign },
-    cityMeta: { color: theme.colorMuted, fontSize: 12, textAlign: startTextAlign },
-    eyebrow: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textAlign: startTextAlign },
-    title: { color: theme.color, fontSize: 22, fontWeight: "800", textAlign: "center" },
-    muted: { color: theme.colorMuted, fontSize: 14, lineHeight: 20, textAlign: "center" },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 14, minHeight: 50, justifyContent: "center", paddingHorizontal: 18 },
-    buttonText: { color: theme.onAction, fontSize: 15, fontWeight: "800" },
+    scopeHeader: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, direction: activeDirection, flexDirection: "row", justifyContent: "space-between", margin: spacing[3], paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
+    scopeLabel: { ...typography.label, color: theme.color, textAlign: startTextAlign },
+    changeText: { ...typography.label, color: theme.interactiveText, textDecorationLine: "underline" },
+    state: { alignItems: "center", backgroundColor: theme.background, gap: spacing[3], justifyContent: "center", minHeight: 220, padding: spacing[5], width: "100%" },
+    cityList: { gap: spacing[2], width: "100%" },
+    cityButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[4] },
+    cityName: { ...typography.bodyLg, color: theme.color, textAlign: startTextAlign },
+    cityMeta: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
+    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
+    title: { ...typography.titleLg, color: theme.color, textAlign: "center" },
+    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
+    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, minHeight: sizing.controlLg, justifyContent: "center", paddingHorizontal: spacing[4] },
+    buttonText: { ...typography.bodyStrong, color: theme.onAction },
   });
 }

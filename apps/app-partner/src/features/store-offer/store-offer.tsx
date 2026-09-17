@@ -1,10 +1,9 @@
+import { borders, direction, radius, resolveTextAlign, resolveTextInputAlign, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { type BaseUnit, baseUnitLabel, type CatalogCategory, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
+import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
-import * as Crypto from "expo-crypto";
-
-import { direction, resolveTextAlign, resolveTextInputAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
-import { baseUnitLabel, catalogProductProposalStateLabel, createDshMobileClient, formatMoney, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel, type BaseUnit, type CatalogCategory, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, type MeasurementKind } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 type OfferState = { kind: "loading" } | { kind: "ready"; offers: ReadonlyArray<CatalogStoreOffer>; proposals: ReadonlyArray<CatalogProductProposal> } | { kind: "error" };
@@ -176,44 +175,44 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
 
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 12, marginTop: 16, padding: 14, width: "100%", direction: activeDirection },
-    state: { alignItems: "center", gap: 8 },
-    title: { color: theme.color, fontSize: 17, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },
-    selected: { color: theme.color, fontSize: 14, fontWeight: "700", textAlign: startTextAlign },
-    searchRow: { direction: activeDirection, flexDirection: "row", gap: 8 },
-    clearSearch: { alignItems: "center", justifyContent: "center", minHeight: 44, paddingHorizontal: 6 },
-    clearSearchText: { color: theme.interactiveText, fontSize: 13, fontWeight: "700", textDecorationLine: "underline" },
-    form: { gap: 8 },
-    fieldLabel: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
-    choiceList: { gap: 6 },
-    choiceRow: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    choice: { borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },
-    choiceSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground, borderWidth: 2 },
-    choiceText: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
-    warning: { color: theme.warning, fontSize: 13, lineHeight: 19, textAlign: startTextAlign },
-    managementBlock: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 8, padding: 12 },
-    offerPicker: { gap: 6 },
-    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, flex: 1, minHeight: 44, paddingHorizontal: 10, textAlign: startInputTextAlign, writingDirection: activeDirection },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[4], padding: spacing[3], width: "100%", direction: activeDirection },
+    state: { alignItems: "center", gap: spacing[2] },
+    title: { ...typography.titleSm, color: theme.color, textAlign: startTextAlign },
+    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    selected: { ...typography.bodySm, color: theme.color, textAlign: startTextAlign },
+    searchRow: { direction: activeDirection, flexDirection: "row", gap: spacing[2] },
+    clearSearch: { alignItems: "center", justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[1] },
+    clearSearchText: { ...typography.label, color: theme.interactiveText, textDecorationLine: "underline" },
+    form: { gap: spacing[2] },
+    fieldLabel: { ...typography.label, color: theme.color, textAlign: startTextAlign },
+    choiceList: { gap: spacing[1] },
+    choiceRow: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[1] },
+    choice: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, minHeight: sizing.controlMd, paddingHorizontal: spacing[2], paddingVertical: spacing[2] },
+    choiceSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground, borderWidth: borders.strong },
+    choiceText: { ...typography.label, color: theme.color, textAlign: startTextAlign },
+    warning: { ...typography.bodySm, color: theme.warning, textAlign: startTextAlign },
+    managementBlock: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    offerPicker: { gap: spacing[1] },
+    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, flex: 1, minHeight: sizing.controlMd, paddingHorizontal: spacing[2], textAlign: startInputTextAlign, writingDirection: activeDirection },
     numericInput: { textAlign: resolveTextInputAlign("start", "ltr"), writingDirection: "ltr" },
-    productList: { gap: 8 },
-    product: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 6, padding: 10 },
-    variant: { borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, padding: 8 },
-    productSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground, borderWidth: 2 },
-    offerList: { gap: 10 },
-    item: { alignItems: "center", borderColor: theme.borderColor, borderTopWidth: 1, direction: activeDirection, flexDirection: "row", gap: 10, paddingTop: 12 },
-    itemText: { flex: 1, gap: 3 },
-    itemTitle: { color: theme.color, fontSize: 15, fontWeight: "700", textAlign: startTextAlign },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 10, justifyContent: "center", minHeight: 44, paddingHorizontal: 12 },
-    buttonText: { color: theme.onAction, fontWeight: "800" },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 40, paddingHorizontal: 10 },
-    secondaryButtonText: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: "center" },
+    productList: { gap: spacing[2] },
+    product: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
+    variant: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, minHeight: sizing.controlMd, padding: spacing[2] },
+    productSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground, borderWidth: borders.strong },
+    offerList: { gap: spacing[3] },
+    item: { alignItems: "center", borderColor: theme.borderColor, borderTopWidth: borders.hairline, direction: activeDirection, flexDirection: "row", gap: spacing[3], paddingTop: spacing[3] },
+    itemText: { flex: 1, gap: spacing[1] },
+    itemTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.sm, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    buttonText: { ...typography.bodyStrong, color: theme.onAction },
+    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
+    secondaryButtonText: { ...typography.label, color: theme.color, textAlign: "center" },
     disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
     disabledButtonText: { color: theme.disabledText },
     disabledSecondaryButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
     disabledSecondaryButtonText: { color: theme.disabledText },
     disabledInput: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground, color: theme.disabledText },
-    error: { color: theme.danger, fontSize: 13, textAlign: startTextAlign },
+    error: { ...typography.label, color: theme.danger, textAlign: startTextAlign },
   });
 }
 

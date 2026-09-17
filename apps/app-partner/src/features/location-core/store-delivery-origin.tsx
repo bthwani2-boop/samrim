@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import * as Location from "expo-location";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import * as Location from "expo-location";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { isOriginHttpError, readStoreDeliveryOrigin, setStoreDeliveryOrigin } from "./store-delivery-origin-client";
 
 type Coordinates = Readonly<{ latitude: number; longitude: number }>;
@@ -117,20 +116,20 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const startTextAlign = resolveTextAlign("start", activeDirection);
 
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 16, borderWidth: 1, gap: 10, marginTop: 14, padding: 14, width: "100%", direction: activeDirection },
-    title: { color: theme.color, fontSize: 16, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },
-    state: { alignItems: "center", gap: 8, minHeight: 92, justifyContent: "center" },
-    coordinateBox: { backgroundColor: theme.structureSoft, borderRadius: 12, gap: 4, padding: 12 },
-    coordinateLabel: { color: theme.colorMuted, fontSize: 12, textAlign: startTextAlign },
-    coordinateValue: { color: theme.color, fontSize: 14, fontVariant: ["tabular-nums"], textAlign: startTextAlign },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColorStrong, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 48, paddingHorizontal: 14 },
-    secondaryButtonText: { color: theme.color, fontSize: 14, fontWeight: "800" },
-    primaryButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 12, justifyContent: "center", minHeight: 50, paddingHorizontal: 14 },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[3], padding: spacing[3], width: "100%", direction: activeDirection },
+    title: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    state: { alignItems: "center", gap: spacing[2], minHeight: 92, justifyContent: "center" },
+    coordinateBox: { backgroundColor: theme.structureSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
+    coordinateLabel: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
+    coordinateValue: { ...typography.bodySm, color: theme.color, fontVariant: ["tabular-nums"], textAlign: startTextAlign },
+    secondaryButton: { alignItems: "center", borderColor: theme.borderColorStrong, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    secondaryButtonText: { ...typography.bodyStrong, color: theme.color },
+    primaryButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[3] },
     disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
     disabledButtonText: { color: theme.disabledText },
-    primaryButtonText: { color: theme.onAction, fontSize: 14, fontWeight: "800" },
-    notice: { backgroundColor: theme.successSoft, borderRadius: 10, color: theme.success, fontSize: 13, padding: 10, textAlign: startTextAlign },
-    error: { backgroundColor: theme.dangerSoft, borderRadius: 10, color: theme.danger, fontSize: 13, padding: 10, textAlign: startTextAlign },
+    primaryButtonText: { ...typography.bodyStrong, color: theme.onAction },
+    notice: { backgroundColor: theme.successSoft, borderRadius: radius.sm, color: theme.success, ...typography.label, padding: spacing[2], textAlign: startTextAlign },
+    error: { backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, ...typography.label, padding: spacing[2], textAlign: startTextAlign },
   });
 }

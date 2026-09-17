@@ -1,10 +1,9 @@
+import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { type CaptainAssignment, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, orderStateLabel, type CaptainAssignment, type Order } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function baseUrl(): string {
@@ -86,25 +85,25 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 10, marginTop: 16, padding: 14, width: "100%", direction: activeDirection },
-    title: { color: theme.color, fontSize: 17, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 19, textAlign: startTextAlign },
-    state: { alignItems: "center", gap: 8, paddingVertical: 8 },
-    order: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 5, padding: 10 },
-    lines: { gap: 8, marginTop: 4 },
-    line: { borderColor: theme.borderColor, borderTopWidth: 1, gap: 3, paddingTop: 8 },
-    lineTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
-    handoff: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 7, marginTop: 5, padding: 8 },
-    actionRow: { direction: activeDirection, flexDirection: "row", gap: 8 },
-    orderTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 8, flex: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },
-    buttonText: { color: theme.onAction, fontWeight: "800" },
-    rejectButton: { alignItems: "center", borderColor: theme.danger, borderRadius: 8, borderWidth: 1, flex: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },
-    rejectButtonText: { color: theme.danger, fontWeight: "800" },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, justifyContent: "center", minHeight: 40, paddingHorizontal: 10 },
-    secondaryButtonText: { color: theme.color, fontSize: 13, fontWeight: "700" },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[4], padding: spacing[3], width: "100%", direction: activeDirection },
+    title: { ...typography.titleSm, color: theme.color, textAlign: startTextAlign },
+    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
+    order: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
+    lines: { gap: spacing[2], marginTop: spacing[1] },
+    line: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[2] },
+    lineTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    handoff: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], marginTop: spacing[1], padding: spacing[2] },
+    actionRow: { direction: activeDirection, flexDirection: "row", gap: spacing[2] },
+    orderTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.sm, flex: 1, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    buttonText: { ...typography.bodyStrong, color: theme.onAction },
+    rejectButton: { alignItems: "center", borderColor: theme.danger, borderRadius: radius.sm, borderWidth: borders.hairline, flex: 1, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    rejectButtonText: { ...typography.bodyStrong, color: theme.danger },
+    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
+    secondaryButtonText: { ...typography.label, color: theme.color },
     disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
     disabledButtonText: { color: theme.disabledText },
-    error: { color: theme.danger, fontSize: 13, textAlign: startTextAlign },
+    error: { ...typography.label, color: theme.danger, textAlign: startTextAlign },
   });
 }

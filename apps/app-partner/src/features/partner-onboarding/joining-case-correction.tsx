@@ -1,9 +1,8 @@
+import { borders, direction, radius, resolveTextAlign, resolveTextInputAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
+import type { CommerceVertical, JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { direction, resolveTextAlign, resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
-import type { CommerceVertical, JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
 import { correctAndResubmitOwnJoiningCase, listCatalogVerticals } from "./store-readback-client";
 
 export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: JoiningCaseResponse; cities: ReadonlyArray<ServiceCity>; onUpdated: (next: JoiningCaseResponse) => void }) {
@@ -98,24 +97,24 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
 
   return StyleSheet.create({
-    container: { backgroundColor: theme.warningSoft, borderColor: theme.warning, borderRadius: 14, borderWidth: 1, gap: 8, marginTop: 12, padding: 12, direction: activeDirection },
-    title: { color: theme.warning, fontSize: 15, fontWeight: "800", textAlign: startTextAlign },
-    reason: { color: theme.color, fontSize: 14, lineHeight: 20, textAlign: startTextAlign },
-    phone: { color: theme.colorSecondary, fontSize: 13, textAlign: startTextAlign },
+    container: { backgroundColor: theme.warningSoft, borderColor: theme.warning, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], marginTop: spacing[3], padding: spacing[3], direction: activeDirection },
+    title: { ...typography.bodyStrong, color: theme.warning, textAlign: startTextAlign },
+    reason: { ...typography.bodySm, color: theme.color, textAlign: startTextAlign },
+    phone: { ...typography.label, color: theme.colorSecondary, textAlign: startTextAlign },
     phoneValue: { writingDirection: "ltr" },
-    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, minHeight: 44, paddingHorizontal: 10, textAlign: startInputTextAlign, writingDirection: activeDirection },
-    label: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
-    cityList: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    cityButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },
+    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: sizing.controlMd, paddingHorizontal: spacing[2], textAlign: startInputTextAlign, writingDirection: activeDirection },
+    label: { ...typography.label, color: theme.color, textAlign: startTextAlign },
+    cityList: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    cityButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, paddingHorizontal: spacing[2], paddingVertical: spacing[2] },
     cityButtonSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground },
-    cityText: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 10, justifyContent: "center", minHeight: 44, paddingHorizontal: 12 },
-    buttonText: { color: theme.onAction, fontWeight: "800" },
+    cityText: { ...typography.label, color: theme.color, textAlign: startTextAlign },
+    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.sm, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    buttonText: { ...typography.bodyStrong, color: theme.onAction },
     disabledButton: { backgroundColor: theme.disabledBackground },
-    error: { color: theme.danger, fontSize: 13, textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 19, textAlign: startTextAlign },
-    optionError: { gap: 6 },
-    retryButton: { alignItems: "flex-start", minHeight: 40, justifyContent: "center", paddingHorizontal: 4 },
-    retryText: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textDecorationLine: "underline", textAlign: startTextAlign },
+    error: { ...typography.label, color: theme.danger, textAlign: startTextAlign },
+    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    optionError: { gap: spacing[2] },
+    retryButton: { alignItems: "flex-start", minHeight: sizing.controlMd, justifyContent: "center", paddingHorizontal: spacing[1] },
+    retryText: { ...typography.label, color: theme.interactiveText, textDecorationLine: "underline", textAlign: startTextAlign },
   });
 }

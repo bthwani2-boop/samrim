@@ -1,8 +1,7 @@
+import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { AppearancePicker, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-
-import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { AppearancePicker, useAppearanceTheme } from "@bthwani/design-system/native";
 import { logoutIdentity } from "../../bootstrap/identity";
 import LocationCore from "../location-core/location-core";
 
@@ -47,16 +46,16 @@ export default function ClientAccount() {
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const startTextAlign = resolveTextAlign("start", direction.defaultDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, direction: direction.defaultDirection, flexGrow: 1, gap: 14, padding: 20 },
-    eyebrow: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textAlign: startTextAlign },
-    title: { color: theme.color, fontSize: 28, fontWeight: "800", textAlign: startTextAlign },
-    description: { color: theme.colorMuted, fontSize: 15, lineHeight: 23, textAlign: startTextAlign },
-    card: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 16, borderWidth: 1, gap: 8, padding: 16 },
-    cardTitle: { color: theme.color, fontSize: 16, fontWeight: "800", textAlign: startTextAlign },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 12, justifyContent: "center", minHeight: 48, paddingHorizontal: 16 },
-    buttonText: { color: theme.onAction, fontSize: 15, fontWeight: "800" },
+    container: { backgroundColor: theme.background, direction: direction.defaultDirection, flexGrow: 1, gap: spacing[3], padding: spacing[5] },
+    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
+    title: { ...typography.hero, color: theme.color, textAlign: startTextAlign },
+    description: { ...typography.body, color: theme.colorMuted, textAlign: startTextAlign },
+    card: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
+    cardTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[4] },
+    buttonText: { ...typography.bodyStrong, color: theme.onAction },
     disabledButton: { backgroundColor: theme.disabledBackground },
     disabledButtonText: { color: theme.disabledText },
-    notice: { color: theme.warning, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },
+    notice: { ...typography.bodySm, color: theme.warning, textAlign: startTextAlign },
   });
 }

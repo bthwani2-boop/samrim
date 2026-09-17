@@ -1,12 +1,11 @@
+import { borders, direction, opacity, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
+import type { DeliveryAddress, PublicStoreView, ServiceabilityResponse } from "@bthwani/dsh";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import type { DeliveryAddress, PublicStoreView, ServiceabilityResponse } from "@bthwani/dsh";
-import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
 import { useServiceCityScope } from "../service-city/service-city-scope";
+import { evaluateStoreServiceability, listOwnDeliveryAddresses, readPublishedStore } from "../store-discovery/store-discovery-client";
 import { CartCheckout } from "./cart-checkout";
 
 type CartScreenState =
@@ -100,22 +99,22 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { direction: activeDirection, gap: 10, width: "100%" },
-    state: { alignItems: "center", direction: activeDirection, gap: 10, paddingVertical: 28, width: "100%" },
-    eyebrow: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textAlign: startTextAlign },
-    title: { color: theme.color, fontSize: 20, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },
-    sectionTitle: { color: theme.color, fontSize: 15, fontWeight: "800", textAlign: startTextAlign },
-    addressCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, direction: activeDirection, gap: 8, padding: 12 },
-    address: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, gap: 3, padding: 10 },
+    container: { direction: activeDirection, gap: spacing[3], width: "100%" },
+    state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
+    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
+    title: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
+    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    addressCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[2], padding: spacing[3] },
+    address: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
     addressSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    addressText: { color: theme.color, fontSize: 14, fontWeight: "700", textAlign: startTextAlign },
-    back: { color: theme.interactiveText, fontSize: 14, fontWeight: "700", textAlign: startTextAlign },
-    error: { color: theme.danger, fontSize: 13, textAlign: startTextAlign },
-    disabled: { opacity: 0.65 },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 10, justifyContent: "center", minHeight: 44, paddingHorizontal: 14 },
-    buttonText: { color: theme.onAction, fontWeight: "800" },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 14 },
-    secondaryButtonText: { color: theme.color, fontWeight: "700" },
+    addressText: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    back: { ...typography.body, color: theme.interactiveText, textAlign: startTextAlign },
+    error: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
+    disabled: { opacity: opacity.disabled },
+    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.sm, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    buttonText: { ...typography.bodyStrong, color: theme.onAction },
+    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    secondaryButtonText: { ...typography.bodyStrong, color: theme.color },
   });
 }

@@ -1,11 +1,10 @@
-import { type Href, useRouter } from "expo-router";
+import { borders, direction, opacity, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { createDshMobileClient, formatMoney, formatOrderDate, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { createDshMobileClient, formatMoney, formatOrderDate, orderStateLabel, type Order } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order> } | { kind: "error" };
@@ -61,16 +60,16 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, direction: activeDirection, gap: 10, marginTop: 16, padding: 14, width: "100%" },
-    state: { alignItems: "center", direction: activeDirection, gap: 10, paddingVertical: 28, width: "100%" },
-    eyebrow: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textAlign: startTextAlign },
-    title: { color: theme.color, fontSize: 20, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },
-    list: { gap: 8 },
-    order: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 4, padding: 12 },
-    pressed: { opacity: 0.74 },
-    orderTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 12 },
-    secondaryButtonText: { color: theme.color, fontWeight: "700" },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[3], marginTop: spacing[4], padding: spacing[3], width: "100%" },
+    state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
+    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
+    title: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
+    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    list: { gap: spacing[2] },
+    order: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
+    pressed: { opacity: opacity.subtle },
+    orderTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
+    secondaryButtonText: { ...typography.bodyStrong, color: theme.color },
   });
 }

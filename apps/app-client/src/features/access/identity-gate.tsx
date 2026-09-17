@@ -1,4 +1,4 @@
-import { direction as designDirection, resolveTextAlign, resolveTextInputAlign, type ThemeColors, toAsciiDigits } from "@bthwani/design-system";
+import { borders, direction as designDirection, elevation, radius, resolveTextAlign, resolveTextInputAlign, sizing, spacing, type ThemeColors, toAsciiDigits, typography } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import { resolveInternalReturnPath } from "@bthwani/identity/presentation";
@@ -32,27 +32,6 @@ import { type IdentityCopy, identityPresentation } from "./identity-presentation
 type AuthMode = "login" | "register" | "recover";
 type FieldName = "phone" | "code" | "password" | "passwordConfirmation";
 
-function getColors(theme: ThemeColors) {
-  return {
-    background: theme.background,
-    border: theme.borderColor,
-    focus: theme.focusRing,
-    muted: theme.colorMuted,
-    navy: theme.structure,
-    brandAction: theme.brandAction,
-    actionBackground: theme.actionBackground,
-    interactiveText: theme.interactiveText,
-    surface: theme.surface,
-    disabled: theme.disabledBackground,
-    disabledText: theme.disabledText,
-    dangerBackground: theme.dangerSoft,
-    danger: theme.danger,
-    noticeBackground: theme.actionSoft,
-  };
-}
-
-type GateColors = ReturnType<typeof getColors>;
-
 const modeDetails = {
   login: "loginTitle",
   register: "registerTitle",
@@ -71,8 +50,7 @@ export default function IdentityGate() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
   const theme = useAppearanceTheme();
   const { copy } = identityPresentation;
-  const colors = useMemo(() => getColors(theme), [theme]);
-  const styles = useMemo(() => createStyles(colors, designDirection.defaultDirection), [colors]);
+  const styles = useMemo(() => createStyles(theme, designDirection.defaultDirection), [theme]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [mode, setMode] = useState<AuthMode>("login");
@@ -224,7 +202,7 @@ export default function IdentityGate() {
   if (state.kind === "restoring") {
     return (
       <View style={styles.container}>
-        <ActivityIndicator color={colors.actionBackground} />
+        <ActivityIndicator color={theme.actionBackground} />
         <Text style={styles.muted}>{copy.restoringSession}</Text>
         {publicDiscovery}
       </View>
@@ -298,7 +276,7 @@ export default function IdentityGate() {
                 onChangeText={updatePhone}
                 onFocus={() => setFocusedField("phone")}
                 placeholder={copy.phonePlaceholder}
-                placeholderTextColor={colors.muted}
+                placeholderTextColor={theme.colorMuted}
                 style={[styles.input, styles.numericInput, focusedField === "phone" && styles.inputFocused]}
                 value={phone}
               />
@@ -341,7 +319,7 @@ export default function IdentityGate() {
                         onChangeText={(value) => setCode(toAsciiDigits(value).replace(/\D/g, "").slice(0, 6))}
                         onFocus={() => setFocusedField("code")}
                         placeholder={copy.verificationCodePlaceholder}
-                        placeholderTextColor={colors.muted}
+                        placeholderTextColor={theme.colorMuted}
                         style={[styles.input, styles.numericInput, focusedField === "code" && styles.inputFocused]}
                         value={code}
                       />
@@ -360,7 +338,7 @@ export default function IdentityGate() {
                         onChangeText={updatePassword}
                         onFocus={() => setFocusedField("password")}
                         placeholder={copy.newPasswordPlaceholder}
-                        placeholderTextColor={colors.muted}
+                        placeholderTextColor={theme.colorMuted}
                         secureTextEntry={!showPassword}
                         style={[styles.input, focusedField === "password" && styles.inputFocused]}
                         value={password}
@@ -381,7 +359,7 @@ export default function IdentityGate() {
                         onChangeText={updatePasswordConfirmation}
                         onFocus={() => setFocusedField("passwordConfirmation")}
                         placeholder={copy.passwordConfirmationPlaceholder}
-                        placeholderTextColor={colors.muted}
+                        placeholderTextColor={theme.colorMuted}
                         secureTextEntry={!showPasswordConfirmation}
                         style={[styles.input, focusedField === "passwordConfirmation" && styles.inputFocused]}
                         value={passwordConfirmation}
@@ -405,7 +383,7 @@ export default function IdentityGate() {
                   onChangeText={updatePassword}
                   onFocus={() => setFocusedField("password")}
                   placeholder={copy.loginPasswordPlaceholder}
-                  placeholderTextColor={colors.muted}
+                  placeholderTextColor={theme.colorMuted}
                   secureTextEntry={!showPassword}
                   style={[styles.input, focusedField === "password" && styles.inputFocused]}
                   value={password}
@@ -469,7 +447,7 @@ export default function IdentityGate() {
   );
 }
 
-function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
+function createStyles(theme: ThemeColors, activeDirection: "rtl" | "ltr") {
   const startTextAlign = resolveTextAlign("start", activeDirection);
   const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
   const endCrossAxisAlignment = activeDirection === "rtl" ? "flex-end" : "flex-start";
@@ -481,57 +459,53 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
   const fullWidthLogicalInput = { ...fullWidthLogicalText, textAlign: startInputTextAlign };
 
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background, direction: activeDirection },
-    publicDiscovery: { flexShrink: 0, minHeight: 260, paddingVertical: 16, width: "100%", direction: activeDirection },
-    scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32, direction: activeDirection },
+    container: { flex: 1, backgroundColor: theme.background, direction: activeDirection },
+    publicDiscovery: { direction: activeDirection, flexShrink: 0, minHeight: 260, paddingVertical: spacing[4], width: "100%" },
+    scrollContent: { direction: activeDirection, flexGrow: 1, justifyContent: "center", paddingHorizontal: spacing[5], paddingVertical: spacing[8] },
     authShell: { width: "100%", maxWidth: 480, alignSelf: "center", direction: activeDirection },
-    brandBlock: { alignItems: "center", marginBottom: 24, direction: activeDirection },
-    brand: { color: colors.navy, fontSize: 34, fontWeight: "800", textAlign: "center", writingDirection: activeDirection },
-    brandAccent: { backgroundColor: colors.brandAction, borderRadius: 3, height: 4, marginTop: 8, width: 42 },
-    title: { color: colors.navy, fontSize: 28, fontWeight: "800", textAlign: "center", writingDirection: activeDirection },
+    brandBlock: { alignItems: "center", direction: activeDirection, marginBottom: spacing[6] },
+    brand: { ...typography.display, color: theme.structure, textAlign: "center", writingDirection: activeDirection },
+    brandAccent: { backgroundColor: theme.brandAction, borderRadius: radius.xs, height: borders.strong, marginTop: spacing[2], width: sizing.controlMd },
+    title: { ...typography.hero, color: theme.structure, textAlign: "center", writingDirection: activeDirection },
     authCard: {
       alignItems: "stretch",
-      backgroundColor: colors.surface,
-      borderColor: colors.border,
-      borderRadius: 24,
-      borderWidth: 1,
+      ...elevation.overlay,
+      backgroundColor: theme.surface,
+      borderColor: theme.borderColor,
+      borderRadius: radius.xl,
+      borderWidth: borders.hairline,
       direction: activeDirection,
-      padding: 20,
+      padding: spacing[5],
       width: "100%",
-      shadowColor: colors.navy,
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.08,
-      shadowRadius: 20,
-      elevation: 3,
     },
-    formTitle: { ...fullWidthLogicalText, color: colors.navy, fontSize: 22, fontWeight: "800", marginBottom: 16 },
-    fieldBlock: { alignItems: "stretch", marginBottom: 14, width: "100%" },
-    fieldLabel: { ...fullWidthLogicalText, color: colors.navy, fontSize: 14, fontWeight: "700", marginBottom: 7 },
-    input: { ...fullWidthLogicalInput, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14, borderWidth: 1, color: colors.navy, fontSize: 16, minHeight: 54, paddingHorizontal: 15, paddingVertical: 13 },
+    formTitle: { ...fullWidthLogicalText, ...typography.titleMd, color: theme.structure, marginBottom: spacing[4] },
+    fieldBlock: { alignItems: "stretch", marginBottom: spacing[3], width: "100%" },
+    fieldLabel: { ...fullWidthLogicalText, ...typography.bodyStrong, color: theme.structure, marginBottom: spacing[2] },
+    input: { ...fullWidthLogicalInput, backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.structure, ...typography.bodyLg, minHeight: sizing.controlLg, paddingHorizontal: spacing[3], paddingVertical: spacing[3] },
     numericInput: { alignSelf: "stretch", textAlign: resolveTextInputAlign("start", "ltr"), writingDirection: "ltr" },
-    inputFocused: { borderColor: colors.focus, borderWidth: 2 },
-    revealButton: { alignSelf: endCrossAxisAlignment, minHeight: 40, justifyContent: "center", paddingHorizontal: 4 },
-    revealText: { color: colors.interactiveText, fontSize: 13, fontWeight: "700", textDecorationLine: "underline", writingDirection: activeDirection },
-    codeAction: { alignSelf: endCrossAxisAlignment, paddingBottom: 8, paddingTop: 2 },
-    codeActionText: { color: colors.interactiveText, fontSize: 14, fontWeight: "800" },
-    codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: colors.actionBackground, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
-    codeActionPrimaryText: { color: colors.surface, fontSize: 16 },
-    codeActionDisabled: { backgroundColor: colors.disabled },
-    modeLinks: { alignItems: "center", direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
-    modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline", writingDirection: activeDirection },
-    recoveryButton: { alignItems: "center", borderColor: colors.interactiveText, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
-    recoveryButtonText: { color: colors.interactiveText, fontSize: 15, fontWeight: "800" },
-    disabledText: { color: colors.disabledText },
-    status: { color: colors.navy, fontSize: 17, fontWeight: "600", textAlign: "center", writingDirection: activeDirection },
-    muted: { color: colors.muted, fontSize: 14, textAlign: "center", writingDirection: activeDirection },
-    secondaryButton: { alignItems: "center", borderColor: colors.border, borderRadius: 14, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 16 },
-    secondaryButtonDisabled: { backgroundColor: colors.disabled, borderColor: colors.disabled },
-    secondaryButtonText: { color: colors.navy, fontSize: 15, fontWeight: "700", textAlign: "center" },
-    primaryButton: { alignItems: "center", backgroundColor: colors.actionBackground, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
-    primaryButtonDisabled: { backgroundColor: colors.disabled },
-    primaryButtonText: { color: colors.surface, fontSize: 16, fontWeight: "800" },
-    primaryButtonTextDisabled: { color: colors.disabledText },
-    notice: { ...fullWidthLogicalText, backgroundColor: colors.noticeBackground, borderRadius: 12, color: colors.navy, fontSize: 13, marginTop: 14, padding: 10 },
-    error: { ...fullWidthLogicalText, backgroundColor: colors.dangerBackground, borderRadius: 12, color: colors.danger, fontSize: 13, marginTop: 14, padding: 10 },
+    inputFocused: { borderColor: theme.focusRing, borderWidth: borders.strong },
+    revealButton: { alignSelf: endCrossAxisAlignment, justifyContent: "center", minHeight: sizing.controlSm, paddingHorizontal: spacing[1] },
+    revealText: { ...typography.label, color: theme.interactiveText, textDecorationLine: "underline", writingDirection: activeDirection },
+    codeAction: { alignSelf: endCrossAxisAlignment, paddingBottom: spacing[2], paddingTop: spacing[1] },
+    codeActionText: { ...typography.bodyStrong, color: theme.interactiveText },
+    codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: theme.actionBackground, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[4] },
+    codeActionPrimaryText: { ...typography.bodyStrong, color: theme.onAction },
+    codeActionDisabled: { backgroundColor: theme.disabledBackground },
+    modeLinks: { alignItems: "center", direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[4], justifyContent: "center", marginTop: spacing[4] },
+    modeLinkText: { ...typography.bodyStrong, color: theme.structure, textDecorationLine: "underline", writingDirection: activeDirection },
+    recoveryButton: { alignItems: "center", borderColor: theme.interactiveText, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", marginTop: spacing[3], minHeight: sizing.controlMd, paddingHorizontal: spacing[4] },
+    recoveryButtonText: { ...typography.bodyStrong, color: theme.interactiveText },
+    disabledText: { color: theme.disabledText },
+    status: { ...typography.bodyLg, color: theme.structure, textAlign: "center", writingDirection: activeDirection },
+    muted: { ...typography.body, color: theme.colorMuted, textAlign: "center", writingDirection: activeDirection },
+    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[4] },
+    secondaryButtonDisabled: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
+    secondaryButtonText: { ...typography.bodyStrong, color: theme.structure, textAlign: "center" },
+    primaryButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[4] },
+    primaryButtonDisabled: { backgroundColor: theme.disabledBackground },
+    primaryButtonText: { ...typography.bodyStrong, color: theme.onAction },
+    primaryButtonTextDisabled: { color: theme.disabledText },
+    notice: { ...fullWidthLogicalText, ...typography.bodySm, backgroundColor: theme.actionSoft, borderRadius: radius.sm, color: theme.structure, marginTop: spacing[3], padding: spacing[2] },
+    error: { ...fullWidthLogicalText, ...typography.bodySm, backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, marginTop: spacing[3], padding: spacing[2] },
   });
 }

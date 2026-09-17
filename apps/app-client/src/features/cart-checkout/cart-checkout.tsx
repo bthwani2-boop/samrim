@@ -180,8 +180,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     secondaryButtonText: { ...typography.bodySm, color: theme.color, textAlign: "center" },
     dangerButtonText: { ...typography.bodySm, color: theme.danger, textAlign: "center" },
     orderBox: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
-    success: { ...typography.bodySm, color: theme.success, fontWeight: "800", textAlign: startTextAlign },
-    warning: { ...typography.bodySm, color: theme.warning, fontWeight: "700", textAlign: startTextAlign },
+    success: { ...typography.bodyStrong, color: theme.success, textAlign: startTextAlign },
+    warning: { ...typography.bodyStrong, color: theme.warning, textAlign: startTextAlign },
     error: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
   });
 }
