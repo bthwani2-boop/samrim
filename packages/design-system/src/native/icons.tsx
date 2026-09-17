@@ -1,4 +1,4 @@
-import { Icon } from "@expo/ui";
+import { Host, Icon } from "@expo/ui";
 import type * as React from "react";
 import type { ColorValue } from "react-native";
 
@@ -57,5 +57,9 @@ export function BthwaniIcon({
   const props: React.ComponentProps<typeof Icon> = { name: iconNames[name], size };
   if (color !== undefined) props.color = color;
   if (accessibilityLabel !== undefined) props.accessibilityLabel = accessibilityLabel;
-  return <Icon {...props} />;
+  return (
+    <Host matchContents style={{ width: size, height: size }}>
+      <Icon {...props} />
+    </Host>
+  );
 }
