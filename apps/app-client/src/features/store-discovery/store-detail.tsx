@@ -1,9 +1,9 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { borders, direction, elevation, radius, resolveTextAlign, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { formatMoney, type PublicCatalogResponse, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { addCatalogOfferToCart, readPublicStoreCatalog, readPublishedStore } from "./store-discovery-client";
@@ -23,10 +23,12 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
   const [selectedModifierOptionIds, setSelectedModifierOptionIds] = useState<Record<string, ReadonlyArray<string>>>({});
   const [busyOfferId, setBusyOfferId] = useState("");
   const [addedOfferId, setAddedOfferId] = useState("");
+  const [selectedSectionID, setSelectedSectionID] = useState<string | null>(null);
   const [error, setError] = useState("");
   const mutationBusy = Boolean(busyOfferId);
 
   const load = useCallback(async () => {
+    setSelectedSectionID(null);
     if (!storeId.trim() || !selectedCityID) {
       setState({ kind: "error" });
       return;
@@ -43,13 +45,17 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
   useEffect(() => { void load(); }, [load]);
 
   if (state.kind === "loading") {
-    return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ فتح المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة كتالوج المتجر…</Text></View>;
+    return <View style={styles.state} accessibilityLabel="جارٍ تجهيز المتجر"><BthwaniSkeleton width="30%" height={28} /><BthwaniSkeleton height={92} /><BthwaniSkeleton height={160} /><BthwaniSkeleton height={160} /></View>;
   }
   if (state.kind === "error") {
-    return <View style={styles.state}><Text style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>قد لا يكون المتجر متاحًا في مدينة الخدمة الحالية.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.button}><Text style={styles.buttonText}>إعادة المحاولة</Text></Pressable><Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>العودة</Text></Pressable></View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>قد لا يكون المتجر متاحًا في مدينة الخدمة الحالية.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة" onPress={() => router.back()} variant="secondary" /></View>;
   }
 
   const sectionOfferIds = new Set(state.catalog.sections.flatMap((section) => section.offerIds));
+  const visibleSections = selectedSectionID ? state.catalog.sections.filter((section) => section.id === selectedSectionID) : state.catalog.sections;
+  const visibleOfferCount = selectedSectionID
+    ? visibleSections.reduce((total, section) => total + section.offerIds.filter((offerId) => state.catalog.offers.some((offer) => offer.offerId === offerId)).length, 0)
+    : state.catalog.offers.length;
   function toggleModifier(offer: PublicCatalogResponse["offers"][number], groupId: string, optionId: string, maxSelections: number) {
     if (mutationBusy) return;
     setSelectedModifierOptionIds((current) => {
@@ -103,10 +109,9 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     const busy = busyOfferId === offer.offerId;
     const modifierError = validateModifierSelection(offer, selectedOptions);
     return (
-      <View key={offer.offerId} style={styles.item}>
-        <Text style={styles.itemTitle}>{offer.productName}</Text>
-        <Text style={styles.muted}>{formatMoney(offer.priceMinor, offer.currency)} · {offer.measurementKind === "DISCRETE" ? "بالقطعة" : offer.baseUnit === "GRAM" ? "بالغرام" : "بالمليلتر"}</Text>
-        <Text style={styles.muted}>الكمية: {formatQuantity(offer.baseUnit, offer.quantityMinBaseUnits)}–{formatQuantity(offer.baseUnit, offer.quantityMaxBaseUnits)} بخطوة {formatQuantity(offer.baseUnit, offer.quantityStepBaseUnits)}</Text>
+      <BthwaniSurface key={offer.offerId} tone="base" style={styles.item}>
+        <View style={styles.itemHeader}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{offer.productName}</Text><Text style={styles.muted}>{offer.measurementKind === "DISCRETE" ? "بالقطعة" : offer.baseUnit === "GRAM" ? "بالغرام" : "بالمليلتر"}</Text></View><Text style={styles.itemPrice}>{formatMoney(offer.priceMinor, offer.currency)}</Text></View>
+        <Text style={styles.quantityHint}>الكمية: {formatQuantity(offer.baseUnit, offer.quantityMinBaseUnits)}–{formatQuantity(offer.baseUnit, offer.quantityMaxBaseUnits)} · الخطوة {formatQuantity(offer.baseUnit, offer.quantityStepBaseUnits)}</Text>
         <TextInput accessibilityLabel={`كمية ${offer.productName}`} editable={!mutationBusy} keyboardType="number-pad" onChangeText={(value) => setQuantities((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={quantity} style={[styles.quantityInput, mutationBusy && styles.disabledInput]} />
         {offer.modifierGroups.map((group) => {
           const groupError = modifierGroupError(group, selectedOptions);
@@ -116,7 +121,7 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
               <View style={styles.modifierOptions}>
                 {group.options.filter((option) => option.availability).map((option) => {
                   const selected = selectedOptions.includes(option.id);
-                  return <Pressable key={option.id} accessibilityRole="button" accessibilityState={{ selected, disabled: mutationBusy }} accessibilityHint={groupError || undefined} disabled={mutationBusy} onPress={() => toggleModifier(offer, group.id, option.id, group.maxSelections)} style={[styles.modifierOption, selected && styles.modifierOptionSelected, groupError && styles.invalidModifierOption]}><Text style={[styles.secondaryButtonText, selected && styles.selectedOptionText]}>{option.nameAr}{option.priceDeltaMinor ? ` · +${formatMoney(option.priceDeltaMinor, offer.currency)}` : ""}</Text></Pressable>;
+                  return <Pressable key={option.id} accessibilityRole="button" accessibilityState={{ selected, disabled: mutationBusy }} accessibilityHint={groupError || undefined} disabled={mutationBusy} onPress={() => toggleModifier(offer, group.id, option.id, group.maxSelections)} style={[styles.modifierOption, selected && styles.modifierOptionSelected, groupError && styles.invalidModifierOption]}><Text style={[styles.modifierOptionText, selected && styles.selectedOptionText]}>{option.nameAr}{option.priceDeltaMinor ? ` · +${formatMoney(option.priceDeltaMinor, offer.currency)}` : ""}</Text></Pressable>;
                 })}
               </View>
               {groupError ? <Text accessibilityLiveRegion="polite" style={styles.validationError}>{groupError}</Text> : null}
@@ -124,31 +129,38 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
           );
         })}
         {modifierError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.validationError}>{modifierError}</Text> : null}
-        <Pressable accessibilityRole="button" accessibilityLabel={`إضافة ${offer.productName}`} accessibilityState={{ busy, disabled: mutationBusy || Boolean(modifierError) }} disabled={mutationBusy || Boolean(modifierError)} onPress={() => void add(offer)} style={[styles.button, (mutationBusy || modifierError) && styles.disabledButton]}><Text style={[styles.buttonText, (mutationBusy || modifierError) && styles.disabledButtonText]}>{busy ? "جارٍ الإضافة…" : "إضافة إلى السلة"}</Text></Pressable>
+        <BthwaniButton accessibilityLabel={`إضافة ${offer.productName}`} busy={busy} disabled={mutationBusy || Boolean(modifierError)} label="إضافة إلى السلة" onPress={() => void add(offer)} />
         {addedOfferId === offer.offerId ? <Text accessibilityLiveRegion="polite" style={styles.success}>تمت الإضافة. يمكنك متابعة اختيار المنتجات أو فتح السلة.</Text> : null}
-      </View>
+      </BthwaniSurface>
     );
   };
 
   return (
     <View style={styles.container} accessibilityLabel={`كتالوج ${state.store.name}`}>
-      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتاجر" onPress={() => router.back()}><Text style={styles.back}>المتاجر المتاحة</Text></Pressable>
-      <Text style={styles.eyebrow}>كتالوج المتجر</Text>
-      <Text style={styles.title}>{state.store.name}</Text>
-      <Text style={styles.muted}>مدينة الخدمة: {state.store.serviceCity.displayNameAr}</Text>
-      <Text style={styles.sectionTitle}>المنتجات المتاحة</Text>
-      {state.catalog.sections.map((section) => (
+      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتاجر" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>المتاجر المتاحة</Text></Pressable>
+      <BthwaniSurface tone="raised" style={styles.merchantHero}>
+        <View style={styles.merchantIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>
+        <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متاح للطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{state.store.serviceCity.displayNameAr} · كتالوج منشور</Text></View>
+        <BthwaniIcon name="success" color={theme.success} size={sizing.iconLg} />
+      </BthwaniSurface>
+      <BthwaniSectionHeader title="استكشف المنتجات" subtitle={`${state.catalog.offers.length} منتج متاح`} />
+      <ScrollView horizontal contentContainerStyle={styles.sectionChips} showsHorizontalScrollIndicator={false}>
+        <BthwaniChip label="كل المنتجات" selected={!selectedSectionID} onPress={() => setSelectedSectionID(null)} />
+        {state.catalog.sections.map((section) => <BthwaniChip key={section.id} label={section.nameAr} selected={selectedSectionID === section.id} onPress={() => setSelectedSectionID(section.id)} />)}
+      </ScrollView>
+      {visibleSections.map((section) => (
         <View key={section.id} style={styles.section}>
           <Text style={styles.sectionTitle}>{section.nameAr}</Text>
           {section.offerIds.map((offerId) => state.catalog.offers.find((offer) => offer.offerId === offerId)).filter((offer): offer is PublicCatalogResponse["offers"][number] => Boolean(offer)).map(renderOffer)}
         </View>
       ))}
-      {state.catalog.offers.filter((offer) => !sectionOfferIds.has(offer.offerId)).map(renderOffer)}
-      {state.catalog.offers.length === 0 ? <Text style={styles.muted}>لا توجد منتجات متاحة حاليًا.</Text> : null}
-      <View style={styles.cartCta}>
+      {(!selectedSectionID ? state.catalog.offers.filter((offer) => !sectionOfferIds.has(offer.offerId)) : []).map(renderOffer)}
+      {visibleOfferCount === 0 ? <BthwaniSurface tone="inset" style={styles.emptySection}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /><Text style={styles.sectionTitle}>{selectedSectionID ? "لا توجد منتجات في هذا القسم" : "لا توجد منتجات متاحة حاليًا"}</Text>{selectedSectionID ? <BthwaniButton label="عرض كل المنتجات" onPress={() => setSelectedSectionID(null)} variant="quiet" /> : null}</BthwaniSurface> : null}
+      <BthwaniSurface tone="inset" style={styles.cartCta}>
+        <View style={styles.cartIcon}><BthwaniIcon name="cart" color={theme.interactiveText} size={sizing.iconLg} /></View>
         <Text style={styles.muted}>أضف المنتجات واضبط الخيارات هنا، ثم افتح السلة لاختيار العنوان وإتمام الطلب.</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="فتح السلة" accessibilityState={{ disabled: mutationBusy }} disabled={mutationBusy} onPress={() => router.push(`/cart/${encodeURIComponent(storeId)}` as Href)} style={[styles.button, mutationBusy && styles.disabledButton]}><Text style={[styles.buttonText, mutationBusy && styles.disabledButtonText]}>فتح السلة</Text></Pressable>
-      </View>
+        <BthwaniButton accessibilityLabel="فتح السلة" disabled={mutationBusy} label="فتح السلة" onPress={() => router.push(`/cart/${encodeURIComponent(storeId)}` as Href)} />
+      </BthwaniSurface>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -158,15 +170,24 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[3], padding: spacing[4], width: "100%" },
+    container: { backgroundColor: theme.background, direction: activeDirection, gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
     state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
+    backButton: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
     eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
     title: { ...typography.titleSm, color: theme.color, textAlign: startTextAlign },
     muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 20, textAlign: startTextAlign },
+    merchantHero: { alignItems: "center", borderRadius: radius.xl, direction: activeDirection, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
+    merchantIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
+    merchantCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
+    sectionChips: { direction: activeDirection, gap: spacing[2], paddingVertical: spacing[1] },
     sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
     section: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    item: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[2] },
+    item: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    itemHeader: { alignItems: "flex-start", direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    itemCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
     itemTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    itemPrice: { ...typography.titleSm, color: theme.interactiveText, textAlign: "right" },
+    quantityHint: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
     quantityInput: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: sizing.controlMd, paddingHorizontal: spacing[3], textAlign: "left", writingDirection: "ltr" },
     disabledInput: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground, color: theme.disabledText },
     modifierGroup: { gap: spacing[2], marginTop: spacing[1] },
@@ -175,14 +196,11 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     modifierOptionSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
     invalidModifierOption: { borderColor: theme.danger },
     selectedOptionText: { color: theme.interactiveText },
+    emptySection: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[4] },
     back: { ...typography.body, color: theme.interactiveText, textAlign: startTextAlign },
-    cartCta: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[2], padding: spacing[3] },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.sm, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[4] },
-    buttonText: { ...typography.bodyStrong, color: theme.onAction },
-    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
-    disabledButtonText: { color: theme.disabledText },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[4] },
-    secondaryButtonText: { ...typography.body, color: theme.color },
+    cartCta: { alignItems: "center", borderRadius: radius.xl, gap: spacing[2], padding: spacing[4] },
+    cartIcon: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.round, height: sizing.avatarMd, justifyContent: "center", width: sizing.avatarMd },
+    modifierOptionText: { ...typography.body, color: theme.color, textAlign: startTextAlign },
     success: { ...typography.bodySm, color: theme.success, lineHeight: 19, textAlign: startTextAlign },
     validationError: { ...typography.bodySm, color: theme.danger, lineHeight: 19, textAlign: startTextAlign },
     error: { ...typography.bodySm, color: theme.danger, lineHeight: 19, textAlign: startTextAlign },

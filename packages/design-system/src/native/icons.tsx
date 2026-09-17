@@ -21,7 +21,9 @@ export type MobileIconName =
   | "appearance"
   | "refresh"
   | "warning"
-  | "success";
+  | "success"
+  | "search"
+  | "close";
 
 const iconNames: Record<MobileIconName, ReturnType<typeof Icon.select>> = {
   home: Icon.select({ ios: "house.fill", android: require("@expo/material-symbols/home.xml") }),
@@ -41,6 +43,8 @@ const iconNames: Record<MobileIconName, ReturnType<typeof Icon.select>> = {
   refresh: Icon.select({ ios: "arrow.clockwise", android: require("@expo/material-symbols/refresh.xml") }),
   warning: Icon.select({ ios: "exclamationmark.triangle", android: require("@expo/material-symbols/warning.xml") }),
   success: Icon.select({ ios: "checkmark.circle", android: require("@expo/material-symbols/check_circle.xml") }),
+  search: Icon.select({ ios: "magnifyingglass", android: require("@expo/material-symbols/search.xml") }),
+  close: Icon.select({ ios: "xmark", android: require("@expo/material-symbols/close.xml") }),
 };
 
 export function BthwaniIcon({

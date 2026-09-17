@@ -1,10 +1,10 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { borders, direction, elevation, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function baseUrl(): string {
@@ -19,7 +19,7 @@ export default function ClientOrderDetail() {
   const { orderId: rawOrderId } = useLocalSearchParams<{ orderId?: string | string[] }>();
   const orderId = Array.isArray(rawOrderId) ? rawOrderId[0] ?? "" : rawOrderId ?? "";
   const router = useRouter();
-const theme = useAppearanceTheme();
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; order: Order } | { kind: "error" }>({ kind: "loading" });
 
@@ -37,33 +37,50 @@ const theme = useAppearanceTheme();
 
   useEffect(() => { void load(); }, [load]);
 
-  if (state.kind === "loading") return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة تفاصيل الطلب" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة تفاصيل الطلب…</Text></View>;
-  if (state.kind === "error") return <View style={styles.state}><Text style={styles.title}>تعذر قراءة تفاصيل الطلب</Text><Text style={styles.muted}>قد تكون الجلسة أو الطلب غير متاحين الآن.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.button}><Text style={styles.buttonText}>إعادة المحاولة</Text></Pressable><Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>العودة إلى الطلبات</Text></Pressable></View>;
+  if (state.kind === "loading") return <View style={styles.state} accessibilityLabel="جارٍ تجهيز تفاصيل الطلب"><BthwaniSkeleton width="42%" height={28} /><BthwaniSkeleton height={128} /><BthwaniSkeleton height={180} /></View>;
+  if (state.kind === "error") return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>تعذر قراءة تفاصيل الطلب</Text><Text style={styles.muted}>قد تكون الجلسة أو الطلب غير متاحين الآن.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى الطلبات" onPress={() => router.back()} variant="secondary" /></View>;
 
   const { order } = state;
-  return <View style={styles.container} accessibilityLabel="تفاصيل الطلب"><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={styles.back}>طلباتي</Text></Pressable><Text style={styles.eyebrow}>تفاصيل الطلب</Text><Text style={styles.title}>طلب بتاريخ {formatOrderDate(order.createdAt)}</Text><View style={styles.status}><Text style={styles.statusTitle}>الحالة الحالية</Text><Text style={styles.statusValue}>{orderStateLabel(order.state)}</Text><Text style={styles.muted}>الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text></View><Text style={styles.sectionTitle}>العنوان</Text><Text style={styles.muted}>{order.addressText}</Text><Text style={styles.sectionTitle}>المنتجات</Text><View style={styles.lines}>{order.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName}</Text><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)} · {formatMoney(line.lineAmountMinor, line.currency)}</Text></View>)}</View><Text style={styles.muted}>تُقرأ الحالة الحالية من DSH عند كل فتح؛ أعد المحاولة عند تعذر القراءة.</Text></View>;
+  return (
+    <View style={styles.container} accessibilityLabel="تفاصيل الطلب">
+      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>طلباتي</Text></Pressable>
+      <BthwaniSurface tone="raised" style={styles.summary}>
+        <View style={styles.summaryIcon}><BthwaniIcon name="orders" color={theme.onAction} size={sizing.iconXl} /></View>
+        <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{order.addressText}</Text></View>
+      </BthwaniSurface>
+      <View style={styles.status}><Text style={styles.statusTitle}>الحالة الحالية</Text><Text style={styles.statusValue}>{orderStateLabel(order.state)}</Text><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text></View>
+      <BthwaniSectionHeader title="عنوان التوصيل" />
+      <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
+      <BthwaniSectionHeader title="المنتجات" subtitle={`${order.lines.length} ${order.lines.length === 1 ? "منتج" : "منتجات"}`} />
+      <View style={styles.lines}>{order.lines.map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>
+      <Text style={styles.muted}>تُقرأ حالة الطلب الحالية من الخدمة عند كل فتح.</Text>
+    </View>
+  );
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[3], marginTop: spacing[4], padding: spacing[3], width: "100%" },
-    state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
+    container: { backgroundColor: theme.background, direction: activeDirection, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+    state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
+    backButton: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
+    back: { ...typography.body, color: theme.interactiveText, textAlign: startTextAlign },
+    summary: { alignItems: "center", borderRadius: radius.xl, direction: activeDirection, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
+    summaryIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
+    summaryCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
     eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
     title: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
-    back: { ...typography.bodySm, color: theme.interactiveText, textAlign: startTextAlign },
-    status: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
-    statusTitle: { ...typography.label, color: theme.colorMuted, textAlign: startTextAlign },
+    status: { backgroundColor: theme.actionSoft, borderRadius: radius.lg, direction: activeDirection, gap: spacing[1], padding: spacing[4] },
+    statusTitle: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
     statusValue: { ...typography.titleSm, color: theme.interactiveText, textAlign: startTextAlign },
-    sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    lines: { gap: spacing[2] },
-    line: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[2] },
-    lineTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    buttonText: { ...typography.bodyStrong, color: theme.onAction },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    secondaryButtonText: { ...typography.bodyStrong, color: theme.color },
+    statusTotal: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, direction: activeDirection, flexDirection: "row", gap: spacing[2], padding: spacing[4] },
+    lines: { direction: activeDirection, gap: spacing[3] },
+    line: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
+    lineTop: { alignItems: "flex-start", direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    lineTitle: { ...typography.bodyStrong, color: theme.color, flex: 1, textAlign: startTextAlign },
+    linePrice: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
   });
 }

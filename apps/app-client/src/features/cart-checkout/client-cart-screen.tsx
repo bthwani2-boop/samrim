@@ -1,5 +1,5 @@
 import { borders, direction, opacity, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { DeliveryAddress, PublicStoreView, ServiceabilityResponse } from "@bthwani/dsh";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -61,21 +61,22 @@ export default function ClientCartScreen() {
   }
 
   if (state.kind === "loading") {
-    return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ تجهيز السلة" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة السلة والعناوين…</Text></View>;
+    return <View style={styles.state} accessibilityLabel="جارٍ تجهيز السلة"><BthwaniSkeleton width="35%" height={28} /><BthwaniSkeleton height={88} /><BthwaniSkeleton height={152} /></View>;
   }
   if (state.kind === "error") {
-    return <View style={styles.state}><Text style={styles.title}>تعذر تجهيز السلة</Text><Text style={styles.muted}>تحقق من الاتصال أو أهلية المتجر ثم أعد المحاولة.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.button}><Text style={styles.buttonText}>إعادة المحاولة</Text></Pressable><Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>العودة إلى المتجر</Text></Pressable></View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>تعذر تجهيز السلة</Text><Text style={styles.muted}>تحقق من الاتصال أو أهلية المتجر ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى المتجر" onPress={() => router.back()} variant="secondary" /></View>;
   }
 
   const serviceableAddressId = serviceability.kind === "ready" && serviceability.result.status === "SERVICEABLE" ? serviceability.addressId : undefined;
   return (
     <View style={styles.container} accessibilityLabel={`السلة وإتمام الطلب من ${state.store.name}`}>
-      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)}><Text style={styles.back}>العودة إلى الكتالوج</Text></Pressable>
-      <Text style={styles.eyebrow}>السلة</Text>
-      <Text style={styles.title}>{state.store.name}</Text>
-      <Text style={styles.muted}>اختر عنوانًا مؤهلًا قبل إتمام الطلب. يعيد الخادم التحقق من السعر والأهلية عند الإتمام.</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>العودة إلى الكتالوج</Text></Pressable>
+      <BthwaniSurface tone="raised" style={styles.storeContext}>
+        <View style={styles.storeIcon}><BthwaniIcon name="cart" color={theme.onAction} size={sizing.iconXl} /></View>
+        <View style={styles.storeCopy}><Text style={styles.eyebrow}>سلة الطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>اختر عنوانًا مؤهلًا قبل الإتمام.</Text></View>
+      </BthwaniSurface>
+      <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يعيد الخادم التحقق من الأهلية عند الإتمام." />
       <View style={styles.addressCard}>
-        <Text style={styles.sectionTitle}>عنوان التوصيل</Text>
         {state.addresses.length === 0 ? <Text style={styles.muted}>لا يوجد عنوان محفوظ. أضف عنوانًا من الحساب ثم أعد فتح السلة.</Text> : null}
         {state.addresses.map((address) => {
           const selected = serviceability.kind !== "idle" && serviceability.addressId === address.id;
@@ -99,13 +100,16 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { direction: activeDirection, gap: spacing[3], width: "100%" },
+    container: { direction: activeDirection, gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
     state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
     eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
     title: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
-    sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    addressCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[2], padding: spacing[3] },
+    backButton: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
+    storeContext: { alignItems: "center", borderRadius: radius.xl, direction: activeDirection, flexDirection: "row", gap: spacing[3], padding: spacing[4] },
+    storeIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
+    storeCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
+    addressCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[2], padding: spacing[3] },
     address: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
     addressSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
     addressText: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
