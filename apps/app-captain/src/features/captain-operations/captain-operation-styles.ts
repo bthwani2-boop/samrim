@@ -1,11 +1,10 @@
 import { StyleSheet } from "react-native";
 
-import { direction, resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 
 export function createCaptainOperationStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
-  const rowDirection = resolveRowDirection(activeDirection);
   return StyleSheet.create({
     container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 10, marginTop: 16, padding: 14, width: "100%", direction: activeDirection },
     title: { color: theme.color, fontSize: 18, fontWeight: "800", textAlign: startTextAlign },
@@ -16,7 +15,7 @@ export function createCaptainOperationStyles(theme: ReturnType<typeof resolveThe
     summaryCard: { backgroundColor: theme.actionSoft, borderRadius: 8, gap: 7, padding: 10 },
     cardTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
     task: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 3, padding: 8 },
-    row: { flexDirection: rowDirection, gap: 8 },
+    row: { flexDirection: "row", gap: 8 },
     button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 8, flex: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },
     buttonText: { color: theme.onAction, fontWeight: "800" },
     secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, flex: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },

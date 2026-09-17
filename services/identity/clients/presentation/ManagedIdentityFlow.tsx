@@ -1,4 +1,4 @@
-import { direction, radius, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme, spacing, toAsciiDigits, type ThemeColors } from "@bthwani/design-system";
+import { direction, radius, resolveTextAlign, resolveTextInputAlign, resolveTheme, spacing, toAsciiDigits, type ThemeColors } from "@bthwani/design-system";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -92,7 +92,7 @@ export function AuthenticatedMobileBoundary({ binding, onUnauthenticated, childr
     <View style={styles.boundaryContainer}>
       <BrandHeader styles={styles} />
       <View style={styles.stateCard}>
-        <ActivityIndicator accessibilityLabel="جارٍ التحقق من الجلسة" color={theme.actionBackground} size="large" />
+        {state.kind === "restoring" ? <ActivityIndicator accessibilityLabel="جارٍ التحقق من الجلسة" color={theme.actionBackground} size="large" /> : null}
         <Text style={styles.stateTitle}>
           {state.kind === "degraded" ? "تعذر التحقق من الجلسة" : state.kind === "signed_out" ? "انتهت الجلسة" : "جارٍ تجهيز المساحة"}
         </Text>
@@ -446,7 +446,6 @@ function createStyles(theme: ThemeColors) {
   const startTextAlign = resolveTextAlign("start", activeDirection);
   const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
   const numericTextAlign = resolveTextInputAlign("start", "ltr");
-  const rowDirection = resolveRowDirection(activeDirection);
 
   return StyleSheet.create({
     boundaryContainer: {
@@ -462,19 +461,20 @@ function createStyles(theme: ThemeColors) {
       flexGrow: 1,
       alignItems: "stretch",
       backgroundColor: theme.background,
+      direction: activeDirection,
       gap: spacing[4],
       paddingHorizontal: spacing[4],
       paddingBottom: spacing[12],
     },
     brandRow: {
       alignItems: "center",
-      flexDirection: rowDirection,
+      flexDirection: "row",
       gap: spacing[2],
       justifyContent: "center",
     },
     brandMark: {
       alignItems: "flex-end",
-      flexDirection: rowDirection,
+      flexDirection: "row",
       gap: 3,
       height: 22,
     },
@@ -500,7 +500,7 @@ function createStyles(theme: ThemeColors) {
       alignSelf: "center",
       backgroundColor: theme.structureSoft,
       borderRadius: radius.round,
-      flexDirection: rowDirection,
+      flexDirection: "row",
       gap: spacing[2],
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[2],
@@ -522,6 +522,7 @@ function createStyles(theme: ThemeColors) {
       borderColor: theme.borderColor,
       borderRadius: radius.lg,
       borderWidth: 1,
+      direction: activeDirection,
       gap: spacing[3],
       padding: spacing[6],
     },
@@ -535,6 +536,7 @@ function createStyles(theme: ThemeColors) {
       borderColor: theme.borderColor,
       borderRadius: radius.lg,
       borderWidth: 1,
+      direction: activeDirection,
       gap: spacing[2],
       padding: spacing[5],
     },
@@ -676,14 +678,14 @@ function createStyles(theme: ThemeColors) {
       alignSelf: "flex-end",
       backgroundColor: theme.structureSoft,
       borderRadius: radius.round,
-      flexDirection: rowDirection,
+      flexDirection: "row",
       gap: spacing[2],
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[2],
     },
     authenticatedToolbar: {
       alignItems: "center",
-      flexDirection: rowDirection,
+      flexDirection: "row",
       gap: spacing[2],
       justifyContent: "space-between",
     },
@@ -703,7 +705,7 @@ function createStyles(theme: ThemeColors) {
     },
     accountHeading: {
       alignItems: "center",
-      flexDirection: rowDirection,
+      flexDirection: "row",
       gap: spacing[2],
       justifyContent: "space-between",
     },

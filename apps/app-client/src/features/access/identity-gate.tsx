@@ -1,4 +1,4 @@
-import { direction as designDirection, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
+import { direction as designDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
 import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import { Redirect, type Href } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -509,7 +509,7 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
     codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: colors.actionBackground, borderRadius: 14, justifyContent: "center", minHeight: 54, paddingHorizontal: 16 },
     codeActionPrimaryText: { color: colors.surface, fontSize: 16 },
     codeActionDisabled: { backgroundColor: colors.disabled },
-    modeLinks: { alignItems: "center", flexDirection: resolveRowDirection(activeDirection), flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
+    modeLinks: { alignItems: "center", direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: 18, justifyContent: "center", marginTop: 16 },
     modeLinkText: { color: colors.navy, fontSize: 14, fontWeight: "800", textDecorationLine: "underline", writingDirection: activeDirection },
     recoveryButton: { alignItems: "center", borderColor: colors.interactiveText, borderRadius: 14, borderWidth: 1, justifyContent: "center", marginTop: 14, minHeight: 48, paddingHorizontal: 16 },
     recoveryButtonText: { color: colors.interactiveText, fontSize: 15, fontWeight: "800" },

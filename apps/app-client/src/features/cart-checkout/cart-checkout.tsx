@@ -1,8 +1,9 @@
 import * as Crypto from "expo-crypto";
+import { Link, type Href } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
 
-import { direction, resolveRowDirection, resolveTextAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
+import { direction, resolveTextAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
 import { createDshMobileClient, formatMoney, formatQuantity, orderStateLabel, type CatalogStoreOffer, type Cart, type DeliveryAddress, type Order } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -107,7 +108,7 @@ export function CartCheckout({ storeId, offers, addresses, serviceableAddressId 
         <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy || !serviceableAddressId }} disabled={busy || !serviceableAddressId} onPress={() => void checkout()} style={[styles.button, (busy || !serviceableAddressId) && styles.disabledButton]}><Text style={[styles.buttonText, (busy || !serviceableAddressId) && styles.disabledButtonText]}>{busy ? "جارٍ الإتمام…" : "إتمام الطلب"}</Text></Pressable>
       </> : null}
       {offers.length ? <View style={styles.offerList}>{offers.map((offer) => { const selectedOptions = selectedModifierOptionIds[offer.offerId] ?? []; const quantity = quantities[offer.offerId] ?? String(offer.quantityMinBaseUnits); return <View key={offer.offerId} style={styles.offerCard}><Text style={styles.lineTitle}>{offer.productName} · {formatMoney(offer.priceMinor, offer.currency)}</Text><Text style={styles.muted}>الكمية: {formatQuantity(offer.baseUnit, offer.quantityMinBaseUnits)}–{formatQuantity(offer.baseUnit, offer.quantityMaxBaseUnits)} بخطوة {formatQuantity(offer.baseUnit, offer.quantityStepBaseUnits)}</Text><TextInput accessibilityLabel={`كمية ${offer.productName}`} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setQuantities((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={quantity} style={[styles.quantityInput, busy && styles.disabledInput]} />{offer.modifierGroups.map((group) => <View key={group.id} style={styles.modifierGroup}><Text style={styles.muted}>{group.nameAr}{group.required ? " · مطلوب" : ""}</Text><View style={styles.modifierOptions}>{group.options.filter((option) => option.availability).map((option) => { const selectedOption = selectedOptions.includes(option.id); return <Pressable key={option.id} accessibilityRole="button" accessibilityState={{ selected: selectedOption, disabled: busy }} disabled={busy} onPress={() => toggleModifier(offer, group.id, option.id, group.maxSelections)} style={[styles.modifierOption, selectedOption && styles.modifierOptionSelected, busy && styles.disabledButton]}><Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>{option.nameAr}{option.priceDeltaMinor ? ` · +${formatMoney(option.priceDeltaMinor, offer.currency)}` : ""}</Text></Pressable>; })}</View></View>)}<Pressable accessibilityRole="button" accessibilityLabel={`إضافة ${offer.productName}`} disabled={busy} onPress={() => void add(offer)} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>إضافة إلى السلة</Text></Pressable></View>; })}</View> : null}
-      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text></View> : null}
+      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><Pressable accessibilityRole="button" style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>فتح تفاصيل الطلب</Text></Pressable></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
@@ -117,10 +118,9 @@ export function CartCheckout({ storeId, offers, addresses, serviceableAddressId 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
-  const rowDirection = resolveRowDirection(activeDirection);
 
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 10, marginTop: 16, padding: 14 },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, direction: activeDirection, gap: 10, marginTop: 16, padding: 14 },
     title: { color: theme.color, fontSize: 17, fontWeight: "800", textAlign: startTextAlign },
     muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 19, textAlign: startTextAlign },
     state: { alignItems: "center", gap: 8, paddingVertical: 8 },
@@ -131,7 +131,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     offerList: { gap: 8 },
     offerCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, gap: 8, padding: 10 },
     modifierGroup: { gap: 6 },
-    modifierOptions: { flexDirection: rowDirection, flexWrap: "wrap", gap: 6 },
+    modifierOptions: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
     modifierOption: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 7 },
     modifierOptionSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
     button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 10, justifyContent: "center", minHeight: 44, paddingHorizontal: 12 },

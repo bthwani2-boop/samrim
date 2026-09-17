@@ -88,19 +88,19 @@ if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1
   failures.push("Design System ASCII digit normalization is incomplete");
 }
 const alignmentCases = [
-  { value: "start", activeDirection: "rtl", expected: "right" },
-  { value: "end", activeDirection: "rtl", expected: "left" },
-  { value: "start", activeDirection: "ltr", expected: "left" },
-  { value: "end", activeDirection: "ltr", expected: "right" },
-  { value: "center", activeDirection: "rtl", expected: "center" },
-  { value: "center", activeDirection: "ltr", expected: "center" }
+  { value: "start", activeDirection: "rtl", textExpected: "left", inputExpected: "right" },
+  { value: "end", activeDirection: "rtl", textExpected: "right", inputExpected: "left" },
+  { value: "start", activeDirection: "ltr", textExpected: "left", inputExpected: "left" },
+  { value: "end", activeDirection: "ltr", textExpected: "right", inputExpected: "right" },
+  { value: "center", activeDirection: "rtl", textExpected: "center", inputExpected: "center" },
+  { value: "center", activeDirection: "ltr", textExpected: "center", inputExpected: "center" }
 ];
 
 if (
   alignmentCases.some(
-    ({ value, activeDirection, expected }) =>
-      resolveTextAlign(value, activeDirection) !== expected ||
-      resolveTextInputAlign(value, activeDirection) !== expected
+    ({ value, activeDirection, textExpected, inputExpected }) =>
+      resolveTextAlign(value, activeDirection) !== textExpected ||
+      resolveTextInputAlign(value, activeDirection) !== inputExpected
   )
 ) {
   failures.push("Design System logical text and input alignment contracts are inconsistent");

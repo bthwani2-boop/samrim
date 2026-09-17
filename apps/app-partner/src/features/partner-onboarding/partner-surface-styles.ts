@@ -7,6 +7,7 @@ export function createPartnerSurfaceStyles(theme: ReturnType<typeof resolveTheme
   const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
     container: { direction: activeDirection, gap: 8, width: "100%" },
+    state: { alignItems: "center", direction: activeDirection, gap: 8, paddingVertical: 16, width: "100%" },
     sectionTitle: { color: theme.color, fontSize: 16, fontWeight: "800", textAlign: startTextAlign },
     value: { color: theme.color, fontSize: 15, fontWeight: "700", textAlign: startTextAlign },
     muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },

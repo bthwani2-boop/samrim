@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import * as SecureStore from "expo-secure-store";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
 
-import { direction, resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 import type { ServiceCity } from "@bthwani/dsh";
 import { listActiveServiceCities } from "./service-city-client";
 
@@ -68,12 +68,11 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
-  const rowDirection = resolveRowDirection(activeDirection);
 
   return StyleSheet.create({
     container: { backgroundColor: theme.background, gap: 12, padding: 16, width: "100%", direction: activeDirection },
     provider: { backgroundColor: theme.background, direction: activeDirection, flex: 1, width: "100%" },
-    scopeHeader: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, flexDirection: rowDirection, justifyContent: "space-between", margin: 12, paddingHorizontal: 12, paddingVertical: 10 },
+    scopeHeader: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, direction: activeDirection, flexDirection: "row", justifyContent: "space-between", margin: 12, paddingHorizontal: 12, paddingVertical: 10 },
     scopeLabel: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
     changeText: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textDecorationLine: "underline" },
     state: { alignItems: "center", backgroundColor: theme.background, gap: 12, justifyContent: "center", minHeight: 220, padding: 20, width: "100%" },

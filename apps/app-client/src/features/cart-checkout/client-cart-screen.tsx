@@ -71,7 +71,7 @@ export default function ClientCartScreen() {
   const serviceableAddressId = serviceability.kind === "ready" && serviceability.result.status === "SERVICEABLE" ? serviceability.addressId : undefined;
   return (
     <View style={styles.container} accessibilityLabel={`السلة وإتمام الطلب من ${state.store.name}`}>
-      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)}><Text style={styles.back}>‹ العودة إلى الكتالوج</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)}><Text style={styles.back}>العودة إلى الكتالوج</Text></Pressable>
       <Text style={styles.eyebrow}>السلة</Text>
       <Text style={styles.title}>{state.store.name}</Text>
       <Text style={styles.muted}>اختر عنوانًا مؤهلًا قبل إتمام الطلب. يعيد الخادم التحقق من السعر والأهلية عند الإتمام.</Text>

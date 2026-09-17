@@ -1,4 +1,4 @@
-import { direction, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
+import { direction, resolveTextAlign, resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
 import type { DeliveryAddress } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -161,9 +161,9 @@ export default function LocationCore() {
 
       {formOpen ? <View style={styles.formCard}>
         <Text style={styles.sectionTitle}>{editing ? "تعديل العنوان" : "إضافة عنوان"}</Text>
-        <Text style={styles.fieldLabel}>وصف العنوان</Text>
         <Text style={styles.fieldLabel}>مدينة العنوان</Text>
         <View style={styles.cityList}>{cities.map((city) => <Pressable key={city.id} accessibilityRole="button" accessibilityState={{ selected: addressCityID === city.id }} onPress={() => setAddressCityID(city.id)} style={[styles.cityButton, addressCityID === city.id && styles.cityButtonSelected]}><Text style={styles.cityButtonText}>{city.displayNameAr}</Text></Pressable>)}</View>
+        <Text style={styles.fieldLabel}>وصف العنوان</Text>
         <TextInput
           accessibilityLabel="وصف العنوان"
           editable={!busy}
@@ -206,7 +206,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
   const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
-  const rowDirection = resolveRowDirection(activeDirection);
 
   return StyleSheet.create({
     container: { backgroundColor: theme.background, gap: 12, padding: 16, width: "100%", direction: activeDirection },
@@ -217,7 +216,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     listCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 18, borderWidth: 1, gap: 10, padding: 16 },
     sectionTitle: { color: theme.color, fontSize: 16, fontWeight: "800", textAlign: startTextAlign },
     fieldLabel: { color: theme.color, fontSize: 14, fontWeight: "700", textAlign: startTextAlign },
-    cityList: { flexDirection: rowDirection, flexWrap: "wrap", gap: 8 },
+    cityList: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: 8 },
     cityButton: { borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
     cityButtonSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
     cityButtonText: { color: theme.color, fontSize: 13, fontWeight: "700" },
@@ -227,7 +226,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     coordinateBox: { backgroundColor: theme.structureSoft, borderRadius: 12, gap: 4, padding: 12 },
     coordinateLabel: { color: theme.colorMuted, fontSize: 12, textAlign: startTextAlign },
     coordinateValue: { color: theme.color, fontSize: 14, fontVariant: ["tabular-nums"], textAlign: startTextAlign },
-    actionRow: { flexDirection: rowDirection, gap: 10 },
+    actionRow: { direction: activeDirection, flexDirection: "row", gap: 10 },
     primaryButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 12, flex: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 14 },
     disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
     disabledButtonText: { color: theme.disabledText },

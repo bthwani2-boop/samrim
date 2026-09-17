@@ -99,6 +99,10 @@ assert.ok(fs.existsSync(shellPath), `${app}: missing actor-specific application 
 const shellContent = fs.readFileSync(shellPath, "utf8");
 assert.ok(!shellContent.includes('accessibilityRole="tablist"'), `${app}: manual bottom navigation must not remain beside the canonical Tabs owner`);
 assert.ok(!shellContent.includes("<Slot />"), `${app}: application shell must not own a parallel Expo Router slot`);
+assert.ok(shellContent.includes("direction.defaultDirection"), `${app}: application shell must bind layout to the canonical design direction`);
+assert.ok(shellContent.includes('flexDirection: "row"'), `${app}: application shell must use the native logical row direction`);
+assert.ok(!shellContent.includes("row-reverse"), `${app}: application shell must not double-reverse native RTL rows`);
+assert.ok(shellContent.includes("direction: activeDirection"), `${app}: application shell must apply direction to its rendered surfaces`);
 const layoutContent = fs.readFileSync(path.join(appRouteDir, "_layout.tsx"), "utf8");
 assert.ok(layoutContent.includes("Tabs"), `${app}: authenticated layout must declare stable Expo Router JS Tabs`);
 assert.ok(layoutContent.includes("<Tabs"), `${app}: authenticated layout must compose route content through Expo Router Tabs`);
