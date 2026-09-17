@@ -90,7 +90,7 @@ func (s *ServiceCityServer) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.Create(r.Context(), postgres.ServiceCityRecord{ID: input.ID, DisplayNameAr: input.DisplayNameAr, Active: input.Active}, idempotency, acting, correlation)
+	result, err := s.service.Create(r.Context(), input.DisplayNameAr, input.Active, idempotency, acting, correlation)
 	if err != nil {
 		writeServiceCityError(w, err)
 		return

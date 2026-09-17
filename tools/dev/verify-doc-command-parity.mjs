@@ -71,7 +71,7 @@ function collectMarkdownFiles(root) {
   const files = [];
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     const absolute = path.join(root, entry.name);
-    if (entry.isDirectory()) files.push(...collectMarkdownFiles(absolute));
+    if (entry.isDirectory() && entry.name !== ".kilo") files.push(...collectMarkdownFiles(absolute));
     else if (entry.isFile() && entry.name.endsWith(".md")) files.push(absolute);
   }
   return files;
@@ -101,6 +101,7 @@ const documentationFiles = [
       relative !== "REPOSITORY-STRUCTURE.md" &&
       !relative.startsWith(".cache/") &&
       !relative.startsWith("node_modules/") &&
+      !relative.startsWith(".kilo/") &&
       !relative.startsWith(".nx/") &&
       !relative.startsWith(".tmp/");
   }),

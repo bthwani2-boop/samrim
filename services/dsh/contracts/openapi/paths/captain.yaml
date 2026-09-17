@@ -1,0 +1,656 @@
+paths:
+  /dsh/captains/admissions:
+    post:
+      operationId: admitCaptain
+      summary: Admit a Captain through DSH eligibility and Identity role provisioning
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionRequest"
+      responses:
+        "201":
+          description: Captain admission created and bound to one permanent actor.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "200":
+          description: Idempotent replay or existing admission readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/admissions/{admissionId}:
+    get:
+      operationId: readCaptainAdmission
+      summary: Read one DSH-owned Captain admission
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: admissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200":
+          description: Canonical Captain admission readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/actors/{actorId}/admission:
+    get:
+      operationId: readCaptainAdmissionForOperatorActor
+      summary: Read a Captain admission by actor for an operator
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200":
+          description: Canonical DSH Captain admission readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me:
+    get:
+      operationId: readOwnCaptainAdmission
+      summary: Read the authenticated Captain's DSH admission
+      security:
+        - userBearer: []
+      responses:
+        "200":
+          description: Captain admission readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/availability:
+    post:
+      operationId: setCaptainAvailability
+      summary: Set availability for the authenticated eligible Captain
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAvailabilityRequest"
+      responses:
+        "200":
+          description: Availability readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAdmissionResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/offers:
+    get:
+      operationId: listOwnCaptainOffers
+      summary: List offers addressed to the authenticated Captain
+      security:
+        - userBearer: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Bounded Captain offer list.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainOfferListResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/offers/{offerId}/respond:
+    post:
+      operationId: respondToCaptainOffer
+      summary: Accept or reject one unexpired Captain offer
+      security:
+        - userBearer: []
+      parameters:
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainOfferDecisionRequest"
+      responses:
+        "200":
+          description: Offer and optional assignment readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainOfferResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/assignments:
+    get:
+      operationId: listOwnCaptainAssignments
+      summary: List assignments for the authenticated Captain
+      security:
+        - userBearer: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Bounded Captain assignment list.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAssignmentListResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/assignments/{assignmentId}/delivery-task:
+    get:
+      operationId: readOwnCaptainDeliveryTask
+      summary: Read the bounded delivery task for the current Captain assignment
+      security:
+        - userBearer: []
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Server-composed pickup, destination, and operational task projection.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainDeliveryTaskResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/assignments/{assignmentId}/pickup:
+    post:
+      operationId: completeCaptainPickup
+      summary: Complete store pickup only after Store confirmation
+      security:
+        - userBearer: []
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      responses:
+        "200":
+          description: In-custody assignment readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAssignmentResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/me/assignments/{assignmentId}/complete:
+    post:
+      operationId: completeCaptainAssignment
+      summary: Record a delivered or delivery-failed terminal result
+      security:
+        - userBearer: []
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainCompletionRequest"
+      responses:
+        "200":
+          description: Terminal assignment readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAssignmentResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/assignments/{assignmentId}/recover:
+    post:
+      operationId: recoverCaptainDelivery
+      summary: Recover a failed delivery to the same custody-bearing Captain
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      responses:
+        "200":
+          description: Same assignment recovered to active in-custody state.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAssignmentResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/orders/{orderId}/dispatch:
+    post:
+      operationId: dispatchCaptainOffer
+      summary: Dispatch one READY_FOR_DISPATCH order to an eligible available Captain
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      responses:
+        "201":
+          description: Dispatch offer created.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainOfferResponse"
+        "200":
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainOfferResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/orders/{orderId}/reassign:
+    post:
+      operationId: reassignCaptainOffer
+      summary: Reassign a dispatchable order before Captain custody
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      responses:
+        "201":
+          description: Replacement offer created.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainOfferResponse"
+        "200":
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainOfferResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/stores/{storeId}/orders/{orderId}/handoff:
+    post:
+      operationId: confirmCaptainStoreHandoff
+      summary: Confirm Store handoff readiness for the assigned Captain
+      security:
+        - userBearer: []
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CaptainHandoffRequest"
+      responses:
+        "200":
+          description: Store-confirmed handoff readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAssignmentResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/stores/{storeId}/orders/{orderId}/captain-assignment:
+    get:
+      operationId: readStoreCaptainAssignment
+      summary: Read the current Captain assignment for an owned Store order
+      security:
+        - userBearer: []
+      parameters:
+        - name: storeId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Current Captain assignment readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CaptainAssignmentResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/partners/{actorId}/identity-role:
+    post:
+      operationId: setPartnerManagedRoleEnabled
+      summary: Apply a partner role security mutation after DSH eligibility readback
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/ManagedRoleMutationRequest"
+      responses:
+        "204":
+          description: Managed partner role mutation applied.
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/captains/{actorId}/identity-role:
+    post:
+      operationId: setCaptainManagedRoleEnabled
+      summary: Apply a Captain role security mutation after DSH eligibility readback
+      security:
+        - serviceBearer: []
+      parameters:
+        - name: actorId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/ManagedRoleMutationRequest"
+      responses:
+        "204":
+          description: Managed Captain role mutation applied.
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"

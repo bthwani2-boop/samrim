@@ -8,7 +8,7 @@
   "targets": {
     "test": {
       "executor": "nx:run-commands",
-      "inputs": ["default"],
+      "inputs": ["default", "^default"],
       "options": {
         "command": "go test ./...",
         "cwd": "services/identity/clients/go"
@@ -16,7 +16,7 @@
     },
     "vet": {
       "executor": "nx:run-commands",
-      "inputs": ["default"],
+      "inputs": ["default", "^default"],
       "options": {
         "command": "go vet ./...",
         "cwd": "services/identity/clients/go"

@@ -108,7 +108,7 @@ function cleanupPreparedOperator(operator: PreparedOperator): void {
 function mutateOperatorSessions(actorId: string, mutation: string): void {
   const runtime = readCanonicalRuntime();
   const actorLiteral = actorId.replaceAll("'", "''");
-  execFileSync(
+  const output = execFileSync(
     "docker",
     [
       "compose",
@@ -129,10 +129,11 @@ function mutateOperatorSessions(actorId: string, mutation: string): void {
       "-d",
       runtime.postgresDatabase,
       "-Atc",
-      `UPDATE identity_sessions SET ${mutation} WHERE actor_id='${actorLiteral}';`,
+      `UPDATE identity_sessions SET ${mutation} WHERE actor_id='${actorLiteral}' AND revoked_at IS NULL RETURNING id;`,
     ],
-    { cwd: runtime.repoRoot, encoding: "utf8", stdio: "ignore" },
-  );
+    { cwd: runtime.repoRoot, encoding: "utf8" },
+  ).trim();
+  if (!output) throw new Error(`live Identity fixture mutation matched no active sessions for actor ${actorId}`);
 }
 
 function restartIdentity(): void {
@@ -180,8 +181,9 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
     const bootstrap = await jsonRequest(identityBase, "/internal/bootstrap/operator", bootstrapToken, { phoneE164: phone, role: "operator" });
     expect(bootstrap.response.status, "fresh operator bootstrap must succeed").toBe(201);
     expect(bootstrap.body?.role?.role).toBe("operator");
-    const operator = { actorId: String(bootstrap.body?.actorId), phone, token: String(bootstrap.body?.enrollmentToken?.code), createdByTest: false };
+    const operator = { actorId: String(bootstrap.body?.role?.actorId), phone, token: String(bootstrap.body?.enrollmentToken?.code), createdByTest: false };
     preparedOperatorForCleanup = operator;
+    expect(operator.actorId).toMatch(/^act_/);
     return operator;
   }
 
@@ -231,6 +233,7 @@ test("@live operator passkey registration, authentication and governed recovery 
   await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
   const firstSession = await readBrowserSession(page);
   expect(firstSession.status).toBe(200);
+  expect(firstSession.body.identity.subject).toBe(operator.actorId);
   expect(firstSession.body.identity.role).toBe("operator");
   expect(firstSession.body.identity.surface).toBe("control-panel");
 
@@ -298,6 +301,7 @@ test("@live operator passkey registration, authentication and governed recovery 
   await expect(page).toHaveURL(/\/workspace$/);
   const recoveredSession = await readBrowserSession(page);
   expect(recoveredSession.status).toBe(200);
+  expect(recoveredSession.body.identity.subject).toBe(operator.actorId);
   expect(recoveredSession.body.identity.role).toBe("operator");
   expect(recoveredSession.body.identity.surface).toBe("control-panel");
 

@@ -25,7 +25,7 @@ if (!goVersion) failures.push("go.work missing Go version");
 function findGoMods(dir) {
   const results = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === ".git" || entry.name === ".cache") continue;
+    if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === ".git" || entry.name === ".kilo" || entry.name === ".cache") continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       results.push(...findGoMods(full));

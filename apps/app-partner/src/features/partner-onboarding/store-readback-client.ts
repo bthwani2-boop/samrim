@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import { createDshMobileClient, type JoiningCaseResponse, type ServiceCity } from "@bthwani/dsh";
+import { createDshMobileClient, type CommerceVertical, type JoiningCaseResponse, type ServiceCity } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function dshBaseUrl(): string {
@@ -24,6 +24,10 @@ export async function correctAndResubmitOwnJoiningCase(caseID: string, businessN
 
 export function listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
   return dshClient().listActiveServiceCities();
+}
+
+export function listCatalogVerticals(): Promise<ReadonlyArray<CommerceVertical>> {
+  return dshClient().listCatalogVerticals();
 }
 
 export function isJoiningCaseNotFound(error: unknown): boolean {

@@ -36,9 +36,9 @@ export async function POST(request: Request) {
   const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() ?? "";
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128) return errorResponse("INVALID_INPUT", "Idempotency-Key is required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body || Object.keys(body).some((key) => !["id", "displayNameAr", "active"].includes(key)) || Object.keys(body).length !== 3 || typeof body.id !== "string" || typeof body.displayNameAr !== "string" || typeof body.active !== "boolean") return errorResponse("INVALID_INPUT", "id, displayNameAr and active are required", 400);
+  if (!body || Object.keys(body).some((key) => !["displayNameAr", "active"].includes(key)) || Object.keys(body).length !== 2 || typeof body.displayNameAr !== "string" || typeof body.active !== "boolean") return errorResponse("INVALID_INPUT", "displayNameAr and active are required", 400);
   try {
-    const result = await createServiceCity({ id: body.id.trim(), displayNameAr: body.displayNameAr.trim(), active: body.active }, { operatorActorId: access.identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey });
+    const result = await createServiceCity({ displayNameAr: body.displayNameAr.trim(), active: body.active }, { operatorActorId: access.identity.subject, correlationId: request.headers.get("X-Correlation-ID")?.trim() || randomUUID(), idempotencyKey });
     return NextResponse.json(result.payload, { status: result.status, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "service city creation failed", 500);

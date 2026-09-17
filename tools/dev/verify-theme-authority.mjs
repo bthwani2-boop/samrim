@@ -87,13 +87,23 @@ const { resolveTextAlign, resolveTextInputAlign, toAsciiDigits } = await import(
 if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1234567890") {
   failures.push("Design System ASCII digit normalization is incomplete");
 }
+const alignmentCases = [
+  { value: "start", activeDirection: "rtl", expected: "right" },
+  { value: "end", activeDirection: "rtl", expected: "left" },
+  { value: "start", activeDirection: "ltr", expected: "left" },
+  { value: "end", activeDirection: "ltr", expected: "right" },
+  { value: "center", activeDirection: "rtl", expected: "center" },
+  { value: "center", activeDirection: "ltr", expected: "center" }
+];
+
 if (
-  resolveTextAlign("start", "rtl") !== "left" ||
-  resolveTextAlign("end", "rtl") !== "right" ||
-  resolveTextInputAlign("start", "rtl") !== "right" ||
-  resolveTextInputAlign("end", "rtl") !== "left"
+  alignmentCases.some(
+    ({ value, activeDirection, expected }) =>
+      resolveTextAlign(value, activeDirection) !== expected ||
+      resolveTextInputAlign(value, activeDirection) !== expected
+  )
 ) {
-  failures.push("Design System native RTL alignment contract is inconsistent");
+  failures.push("Design System logical text and input alignment contracts are inconsistent");
 }
 
 const lightKeys = Object.keys(lightThemeColors).sort();

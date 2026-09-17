@@ -191,27 +191,10 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const refreshToken = store.get(refreshCookie)?.value;
   const clientInstanceId = store.get(deviceCookie)?.value;
   if (!accessToken && !refreshToken) return null;
-  const refreshKey = `${refreshToken ?? ""}:${clientInstanceId ?? ""}`;
-  const activeRefresh = refreshInFlight.get(refreshKey);
-  if (activeRefresh) return activeRefresh;
-  const result = readOperatorSessionOnce(store, accessToken, refreshToken, clientInstanceId);
-  refreshInFlight.set(refreshKey, result);
-  try { return await result; } finally { refreshInFlight.delete(refreshKey); }
-}
 
-async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>>, accessToken?: string, refreshToken?: string, clientInstanceId?: string): Promise<ActorIdentity | null> {
   if (accessToken) {
-    try {
-      const identity = await identityClient().session(accessToken);
-      if (!isControlPanelIdentity(identity)) {
-        await clearOperatorCookiesBestEffort();
-        return null;
-      }
-      return identity;
-    } catch (error) {
-      if (!isIdentityClientError(error) || error.kind === "network") throw error;
-      if (error.status !== 401) throw error;
-    }
+    const identity = await readOperatorAccessToken(accessToken);
+    if (identity) return identity;
   }
 
   if (!refreshToken || !clientInstanceId) {
@@ -219,6 +202,30 @@ async function readOperatorSessionOnce(store: Awaited<ReturnType<typeof cookies>
     return null;
   }
 
+  const refreshKey = `${refreshToken ?? ""}:${clientInstanceId ?? ""}`;
+  const activeRefresh = refreshInFlight.get(refreshKey);
+  if (activeRefresh) return activeRefresh;
+  const result = refreshOperatorSession(store, refreshToken, clientInstanceId);
+  refreshInFlight.set(refreshKey, result);
+  try { return await result; } finally { refreshInFlight.delete(refreshKey); }
+}
+
+async function readOperatorAccessToken(accessToken: string): Promise<ActorIdentity | null> {
+  try {
+    const identity = await identityClient().session(accessToken);
+    if (!isControlPanelIdentity(identity)) {
+      await clearOperatorCookiesBestEffort();
+      return null;
+    }
+    return identity;
+  } catch (error) {
+    if (!isIdentityClientError(error) || error.kind === "network") throw error;
+    if (error.status !== 401) throw error;
+    return null;
+  }
+}
+
+async function refreshOperatorSession(store: Awaited<ReturnType<typeof cookies>>, refreshToken: string, clientInstanceId: string): Promise<ActorIdentity | null> {
   let pair: TokenPair;
   const requestId = refreshRequestId(refreshToken, clientInstanceId);
   try {

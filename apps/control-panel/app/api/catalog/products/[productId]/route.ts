@@ -19,12 +19,12 @@ export async function POST(request: Request, context: { params: Promise<{ produc
   const expectedVersion = Number(request.headers.get("X-Expected-Version")?.trim());
   if (idempotencyKey.length < 8 || idempotencyKey.length > 128 || !Number.isInteger(expectedVersion) || expectedVersion < 1) return errorResponse("INVALID_INPUT", "Idempotency-Key and X-Expected-Version are required", 400);
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body || typeof body.canonicalName !== "string" || typeof body.verticalId !== "string" || !["SHARED", "STORE_SCOPED"].includes(String(body.scope)) || typeof body.active !== "boolean") return errorResponse("INVALID_INPUT", "canonicalName, verticalId, scope and active are required", 400);
+  if (!body || typeof body.canonicalName !== "string" || typeof body.verticalId !== "string" || body.scope !== "SHARED" || typeof body.active !== "boolean") return errorResponse("INVALID_INPUT", "canonicalName, verticalId, shared scope and active are required", 400);
   const input: UpdateCatalogProductRequest = {
     canonicalName: body.canonicalName.trim(),
     active: body.active,
     verticalId: body.verticalId.trim(),
-    scope: body.scope as UpdateCatalogProductRequest["scope"],
+    scope: "SHARED",
     ...(typeof body.brand === "string" && body.brand.trim() ? { brand: body.brand.trim() } : {}),
   };
   try {

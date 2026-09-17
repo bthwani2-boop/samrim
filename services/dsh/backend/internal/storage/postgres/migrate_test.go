@@ -21,6 +21,24 @@ const (
 	testOperatorActorID = "act_operator_catalog_v1"
 )
 
+func assertRequiredMigrationOrder(t *testing.T, records []postgres.MigrationRecord, required ...string) {
+	t.Helper()
+	lastIndex := -1
+	for _, name := range required {
+		foundIndex := -1
+		for index, record := range records {
+			if record.Name == name {
+				foundIndex = index
+				break
+			}
+		}
+		if foundIndex <= lastIndex {
+			t.Fatalf("required DSH migration is missing or out of order: %s", name)
+		}
+		lastIndex = foundIndex
+	}
+}
+
 func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("DSH_DATABASE_URL"))
 	if databaseURL == "" {
@@ -41,9 +59,11 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 		if len(records) != postgres.SchemaVersion || len(migrationSQL) != postgres.SchemaVersion {
 			t.Fatalf("unexpected DSH migration graph size: records=%d sql=%d", len(records), len(migrationSQL))
 		}
-		if records[len(records)-1].Name != "014_catalog_proposal_import_closure.sql" {
-			t.Fatalf("cart/checkout/order is not the canonical final migration: %s", records[len(records)-1].Name)
-		}
+		assertRequiredMigrationOrder(t, records,
+			"018_remove_unjustified_captain_terminated_state.sql",
+			"019_captain_delivery_recovery.sql",
+			"020_field_standing_admission_and_joining_scope.sql",
+		)
 		if err := postgres.Migrate(ctx, db, records, migrationSQL); err != nil {
 			t.Fatalf("apply fresh DSH migrations: %v", err)
 		}
@@ -60,18 +80,22 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			}
 		}
 
-		if _, err := postgres.CreateServiceCity(ctx, db, "sanaa", "صنعاء", true, "idem-city-catalog-v1", postgres.HashServiceCityCreateRequest("sanaa", "صنعاء", true), testOperatorActorID, "corr-city-catalog-v1"); err != nil {
+		createdCity, err := postgres.CreateServiceCity(ctx, db, "صنعاء", true, "idem-city-catalog-v1", postgres.HashServiceCityCreateRequest("صنعاء", true), testOperatorActorID, "corr-city-catalog-v1")
+		if err != nil {
 			t.Fatalf("create service city: %v", err)
 		}
-		vertical := postgres.CommerceVerticalRecord{ID: "grocery", NameAr: "بقالة", NameEn: "Grocery", Active: true}
+		vertical := postgres.CommerceVerticalRecord{NameAr: "بقالة", NameEn: "Grocery", Active: true}
 		createdVertical, err := postgres.CreateCommerceVertical(ctx, db, vertical, "idem-vertical-v1", postgres.HashCatalogVerticalCreateRequest(vertical))
-		if err != nil || createdVertical.Vertical.ID != vertical.ID || createdVertical.Vertical.Version != 1 {
+		if err != nil || !strings.HasPrefix(createdVertical.Vertical.ID, "vertical_") || createdVertical.Vertical.Version != 1 {
 			t.Fatalf("create commerce vertical: %+v err=%v", createdVertical, err)
 		}
-		category := postgres.CatalogCategoryRecord{ID: "coffee", VerticalID: vertical.ID, NameAr: "قهوة", NameEn: "Coffee", Active: true}
-		if _, err := postgres.CreateCatalogCategory(ctx, db, category, "idem-category-v1", postgres.HashCatalogCategoryCreateRequest(category)); err != nil {
+		vertical.ID = createdVertical.Vertical.ID
+		category := postgres.CatalogCategoryRecord{VerticalID: vertical.ID, NameAr: "قهوة", NameEn: "Coffee", Active: true}
+		createdCategory, err := postgres.CreateCatalogCategory(ctx, db, category, "idem-category-v1", postgres.HashCatalogCategoryCreateRequest(category))
+		if err != nil || !strings.HasPrefix(createdCategory.ID, "category_") {
 			t.Fatalf("create catalog category: %v", err)
 		}
+		category.ID = createdCategory.ID
 		productInput := postgres.CatalogProductInput{VerticalID: vertical.ID, Scope: "SHARED", CanonicalName: "قهوة عربية", MeasurementKind: "DISCRETE", BaseUnit: "COUNT", VariantTitle: "عبوة 250 غ", CategoryIDs: []string{category.ID}, IdentifierType: "GTIN", IdentifierValue: "6281000000001", ImageURI: "https://example.com/coffee.jpg"}
 		createdProduct, err := postgres.CreateCatalogProduct(ctx, db, productInput, "idem-product-v1", postgres.HashCatalogProductCreateRequest(productInput), testOperatorActorID, "corr-product-v1")
 		if err != nil || createdProduct.Product.ID == "" || createdProduct.Product.Version != 1 {
@@ -91,7 +115,7 @@ func TestFreshCatalogRefoundationIntegrity(t *testing.T) {
 			t.Fatalf("expected duplicate identifier rejection, got %v", err)
 		}
 
-		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,publication_state,publication_changed_at) VALUES('store_catalog_v1',$1,'متجر القهوة','sanaa','grocery','published',clock_timestamp())`, testPartnerActorID); err != nil {
+		if _, err := db.ExecContext(ctx, `INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,publication_state,publication_changed_at) VALUES('store_catalog_v1',$1,'متجر القهوة',$2,$3,'published',clock_timestamp())`, testPartnerActorID, createdCity.City.ID, vertical.ID); err != nil {
 			t.Fatalf("create catalog test store: %v", err)
 		}
 		variantID := product.Variants[0].ID

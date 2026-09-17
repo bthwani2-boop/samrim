@@ -183,6 +183,84 @@ paths:
   /dsh/stores/{storeId}/orders/{orderId}/transition:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1transition"
 
+  /dsh/captains/admissions:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions"
+
+  /dsh/captains/admissions/{admissionId}:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1admissions~1{admissionId}"
+
+  /dsh/captains/actors/{actorId}/admission:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1actors~1{actorId}~1admission"
+
+  /dsh/captains/me:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me"
+
+  /dsh/captains/me/availability:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1availability"
+
+  /dsh/captains/me/offers:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1offers"
+
+  /dsh/captains/me/offers/{offerId}/respond:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1offers~1{offerId}~1respond"
+
+  /dsh/captains/me/assignments:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments"
+
+  /dsh/captains/me/assignments/{assignmentId}/delivery-task:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1delivery-task"
+
+  /dsh/captains/me/assignments/{assignmentId}/pickup:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1pickup"
+
+  /dsh/captains/me/assignments/{assignmentId}/complete:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1complete"
+
+  /dsh/captains/assignments/{assignmentId}/recover:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1assignments~1{assignmentId}~1recover"
+
+  /dsh/orders/{orderId}/dispatch:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1orders~1{orderId}~1dispatch"
+
+  /dsh/orders/{orderId}/reassign:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1orders~1{orderId}~1reassign"
+
+  /dsh/stores/{storeId}/orders/{orderId}/handoff:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1handoff"
+
+  /dsh/stores/{storeId}/orders/{orderId}/captain-assignment:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1stores~1{storeId}~1orders~1{orderId}~1captain-assignment"
+
+  /dsh/partners/{actorId}/identity-role:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1partners~1{actorId}~1identity-role"
+
+  /dsh/captains/{actorId}/identity-role:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1{actorId}~1identity-role"
+
+  /dsh/fields/admissions:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions"
+
+  /dsh/fields/admissions/{admissionId}:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1admissions~1{admissionId}"
+
+  /dsh/fields/actors/{actorId}/admission:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1actors~1{actorId}~1admission"
+
+  /dsh/fields/me:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me"
+
+  /dsh/fields/{actorId}/identity-role:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1{actorId}~1identity-role"
+
+  /dsh/field/joining-cases:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases"
+
+  /dsh/field/joining-cases/{caseId}:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}"
+
+  /dsh/field/joining-cases/{caseId}/submit:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
+
 components:
   securitySchemes:
     serviceBearer:
@@ -1943,11 +2021,12 @@ components:
 
     CreateCommerceVerticalRequest:
       type: object
-      required: [id, nameAr, nameEn, active]
+      required: [nameAr, nameEn, active]
       additionalProperties: false
       properties:
         id:
           type: string
+          description: Optional legacy/import identifier. When omitted, DSH generates and returns an immutable identifier.
         nameAr:
           type: string
         nameEn:
@@ -2004,11 +2083,12 @@ components:
 
     CreateCatalogCategoryRequest:
       type: object
-      required: [id, verticalId, nameAr, nameEn, active]
+      required: [verticalId, nameAr, nameEn, active]
       additionalProperties: false
       properties:
         id:
           type: string
+          description: Optional legacy/import identifier. When omitted, DSH generates and returns an immutable identifier.
         verticalId:
           type: string
         parentCategoryId:
@@ -2144,6 +2224,7 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+          description: اسم عرض عربي قانوني للمدينة؛ يرفض DSH الحروف اللاتينية والمختلطة وقت الكتابة.
         active:
           type: boolean
         version:
@@ -2158,16 +2239,14 @@ components:
 
     CreateServiceCityRequest:
       type: object
-      required: [id, displayNameAr, active]
+      required: [displayNameAr, active]
       additionalProperties: false
       properties:
-        id:
-          type: string
-          pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
         displayNameAr:
           type: string
           minLength: 2
           maxLength: 160
+          description: اسم عرض عربي قانوني للمدينة؛ يرفض DSH الحروف اللاتينية والمختلطة وقت الكتابة.
         active:
           type: boolean
 
@@ -2180,6 +2259,7 @@ components:
           type: string
           minLength: 2
           maxLength: 160
+          description: اسم عرض عربي قانوني للمدينة؛ يرفض DSH الحروف اللاتينية والمختلطة وقت الكتابة.
         active:
           type: boolean
 
@@ -2429,13 +2509,379 @@ components:
           minLength: 1
           maxLength: 128
 
+    CaptainAdmissionRequest:
+      type: object
+      required: [contactPhoneE164]
+      additionalProperties: false
+      properties:
+        contactPhoneE164:
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+
+    CaptainAdmission:
+      type: object
+      required: [id, state, availabilityState, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        actorId:
+          type: string
+          nullable: true
+        state:
+          type: string
+          enum: [pending_identity, eligible, suspended]
+        availabilityState:
+          type: string
+          enum: [available, unavailable]
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CaptainAdmissionResponse:
+      type: object
+      required: [admission, idempotentReplay]
+      additionalProperties: false
+      properties:
+        admission:
+          $ref: "#/components/schemas/CaptainAdmission"
+        idempotentReplay:
+          type: boolean
+
+    FieldAdmissionRequest:
+      type: object
+      required: [contactPhoneE164]
+      additionalProperties: false
+      properties:
+        contactPhoneE164:
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+
+    FieldAdmission:
+      type: object
+      required: [id, state, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        actorId:
+          type: string
+          nullable: true
+        state:
+          type: string
+          enum: [pending_identity, eligible, suspended]
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FieldAdmissionResponse:
+      type: object
+      required: [admission, idempotentReplay]
+      additionalProperties: false
+      properties:
+        admission:
+          $ref: "#/components/schemas/FieldAdmission"
+        idempotentReplay:
+          type: boolean
+
+    CaptainAvailabilityRequest:
+      type: object
+      required: [available]
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+
+    CaptainOffer:
+      type: object
+      required: [id, orderId, captainActorId, state, expiresAt, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        captainActorId:
+          type: string
+        state:
+          type: string
+          enum: [offered, accepted, rejected, expired, superseded]
+        expiresAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CaptainOfferListResponse:
+      type: object
+      required: [offers]
+      additionalProperties: false
+      properties:
+        offers:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptainOffer"
+
+    CaptainOfferDecisionRequest:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [accept, reject]
+
+    CaptainHandoff:
+      type: object
+      required: [assignmentId, orderId, storeId, state, version]
+      additionalProperties: false
+      properties:
+        assignmentId:
+          type: string
+        orderId:
+          type: string
+        storeId:
+          type: string
+        state:
+          type: string
+          enum: [pending, store_confirmed, completed, superseded]
+        version:
+          type: integer
+          minimum: 1
+        storeConfirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        captainPickedUpAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CaptainAssignment:
+      type: object
+      required: [id, orderId, captainActorId, acceptedOfferId, state, version, handoff, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        captainActorId:
+          type: string
+        acceptedOfferId:
+          type: string
+        state:
+          type: string
+          enum: [assigned, in_custody, delivered, delivery_failed, reassigned]
+        version:
+          type: integer
+          minimum: 1
+        custodyStartedAt:
+          type: string
+          format: date-time
+          nullable: true
+        terminalResult:
+          type: string
+          nullable: true
+        terminalAt:
+          type: string
+          format: date-time
+          nullable: true
+        handoff:
+          $ref: "#/components/schemas/CaptainHandoff"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CaptainAssignmentResponse:
+      type: object
+      required: [assignment, idempotentReplay]
+      additionalProperties: false
+      properties:
+        assignment:
+          $ref: "#/components/schemas/CaptainAssignment"
+        idempotentReplay:
+          type: boolean
+
+    CaptainAssignmentListResponse:
+      type: object
+      required: [assignments]
+      additionalProperties: false
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/CaptainAssignment"
+
+    CaptainLocation:
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    CaptainDeliveryTask:
+      type: object
+      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, orderState, handoffState, deliveryState]
+      additionalProperties: false
+      properties:
+        assignmentId:
+          type: string
+        orderReference:
+          type: string
+        storeId:
+          type: string
+        storeName:
+          type: string
+        pickupOrigin:
+          $ref: "#/components/schemas/CaptainLocation"
+        customerAddressText:
+          type: string
+        customerDestination:
+          $ref: "#/components/schemas/CaptainLocation"
+        orderState:
+          $ref: "#/components/schemas/OrderState"
+        handoffState:
+          type: string
+          enum: [pending, store_confirmed, completed, superseded]
+        deliveryState:
+          type: string
+          enum: [assigned, in_custody, delivered, delivery_failed]
+
+    CaptainDeliveryTaskResponse:
+      type: object
+      required: [task]
+      additionalProperties: false
+      properties:
+        task:
+          $ref: "#/components/schemas/CaptainDeliveryTask"
+
+    CaptainOfferResponse:
+      type: object
+      required: [offer, idempotentReplay]
+      additionalProperties: false
+      properties:
+        offer:
+          $ref: "#/components/schemas/CaptainOffer"
+        assignment:
+          $ref: "#/components/schemas/CaptainAssignment"
+          nullable: true
+        idempotentReplay:
+          type: boolean
+
+    CaptainHandoffRequest:
+      type: object
+      required: [assignmentId]
+      additionalProperties: false
+      properties:
+        assignmentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    CaptainCompletionRequest:
+      type: object
+      required: [result]
+      additionalProperties: false
+      properties:
+        result:
+          type: string
+          enum: [delivered, delivery_failed]
+
+    ManagedRoleMutationRequest:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          maxLength: 500
+
     OrderState:
       type: string
-      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, REJECTED]
+      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, CAPTAIN_ASSIGNED, IN_CUSTODY, DELIVERED, DELIVERY_FAILED, REJECTED]
+
+    OrderLineModifierSnapshot:
+      type: object
+      required: [optionId, optionNameAr, priceDeltaMinor]
+      additionalProperties: false
+      properties:
+        optionId:
+          type: string
+        optionNameAr:
+          type: string
+        priceDeltaMinor:
+          type: integer
+          minimum: 0
+
+    OrderLineAttributeSnapshot:
+      type: object
+      required: [attributeId, code, valueKind]
+      additionalProperties: false
+      properties:
+        attributeId:
+          type: string
+        code:
+          type: string
+        valueKind:
+          type: string
+          enum: [TEXT, INTEGER, DECIMAL, BOOLEAN, ENUM, MEASUREMENT, DATE]
+        textValue:
+          type: string
+          nullable: true
+        integerValue:
+          type: integer
+          nullable: true
+        decimalValue:
+          type: string
+          nullable: true
+        booleanValue:
+          type: boolean
+          nullable: true
+        enumValue:
+          type: string
+          nullable: true
+        dateValue:
+          type: string
+          nullable: true
+        measurementUnit:
+          type: string
+          nullable: true
 
     OrderLine:
       type: object
-      required: [id, orderId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, requestedQuantityBaseUnits, finalQuantityBaseUnits, unitPriceMinor, lineAmountMinor, currency, selectedModifierOptionIds, modifierAmountMinor, createdAt]
+      required: [id, orderId, storeOfferId, variantId, productId, productName, variantTitle, measurementKind, baseUnit, pricingBasis, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingUnitBaseUnits, requestedQuantityBaseUnits, finalQuantityBaseUnits, unitPriceMinor, lineAmountMinor, currency, selectedModifierOptionIds, modifierSnapshots, attributeSnapshots, modifierAmountMinor, createdAt]
       additionalProperties: false
       properties:
         id:
@@ -2496,6 +2942,14 @@ components:
           type: array
           items:
             type: string
+        modifierSnapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineModifierSnapshot"
+        attributeSnapshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineAttributeSnapshot"
         createdAt:
           type: string
           format: date-time

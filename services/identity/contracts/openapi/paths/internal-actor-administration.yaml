@@ -4,7 +4,7 @@ paths:
       tags: [internal-actor-roles]
       operationId: provisionActorRole
       security: [{ internalServiceToken: [] }]
-      description: Identity alone creates actor_id and persists role admission. DSH may request only the partner role after its canonical joining-case eligibility transition; the control-panel service may provision an operator through the separate operator invite path. Captain and Field admission are not admitted through a generic DSH role endpoint. First-operator bootstrap is a separate one-time lifecycle.
+      description: Identity alone creates actor_id and persists role admission. DSH may request partner, captain, or field only after the owning DSH eligibility transition; Field admission and lifecycle remain owned by the DSH Field workflow. The control-panel service may provision an operator through the separate operator invite path. First-operator bootstrap is a separate one-time lifecycle.
       parameters:
         - { $ref: "#/components/parameters/CorrelationId" }
         - { $ref: "#/components/parameters/ActingActorId" }

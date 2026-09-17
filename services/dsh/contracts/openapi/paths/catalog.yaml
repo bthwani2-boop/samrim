@@ -2,11 +2,7 @@ paths:
   /dsh/catalog/verticals:
     get:
       operationId: listCatalogVerticals
-      summary: Read the canonical Commerce Vertical registry for an operator
-      security:
-        - serviceBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      summary: Read the active Commerce Vertical registry
       responses:
         "200": { description: Bounded Commerce Vertical registry., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CommerceVerticalListResponse" } } } }
     post:

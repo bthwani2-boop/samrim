@@ -23,11 +23,14 @@ var (
 	ErrCatalogProductImageInvalid      = errors.New("catalog Product image URL is invalid")
 	ErrCatalogProductScopeInvalid      = errors.New("catalog Product scope is invalid")
 	ErrCatalogProductVerticalInvalid   = errors.New("catalog Product vertical is invalid")
+	ErrCatalogVerticalInvalid          = errors.New("commerce vertical facts are invalid")
+	ErrCatalogCategoryInvalid          = errors.New("catalog category facts are invalid")
 	ErrCatalogModifierInvalid          = errors.New("catalog modifier facts are invalid")
 	ErrCatalogSectionInvalid           = errors.New("catalog storefront section facts are invalid")
 )
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+var verticalIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,127}$`)
 
 type Service struct {
 	identity *identityintegration.Client
@@ -67,8 +70,8 @@ func (s *Service) CreateVertical(ctx context.Context, actingActorID string, item
 	item.ID = strings.ToLower(strings.TrimSpace(item.ID))
 	item.NameAr = strings.Join(strings.Fields(strings.TrimSpace(item.NameAr)), " ")
 	item.NameEn = strings.Join(strings.Fields(strings.TrimSpace(item.NameEn)), " ")
-	if item.ID == "" || item.NameAr == "" || item.NameEn == "" {
-		return postgres.CommerceVerticalResult{}, ErrCatalogProductVerticalInvalid
+	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) {
+		return postgres.CommerceVerticalResult{}, ErrCatalogVerticalInvalid
 	}
 	return postgres.CreateCommerceVertical(ctx, s.db, item, strings.TrimSpace(idempotencyKey), postgres.HashCatalogVerticalCreateRequest(item))
 }
@@ -89,8 +92,8 @@ func (s *Service) CreateCategory(ctx context.Context, actingActorID string, item
 	item.ParentCategoryID = strings.TrimSpace(item.ParentCategoryID)
 	item.NameAr = strings.Join(strings.Fields(strings.TrimSpace(item.NameAr)), " ")
 	item.NameEn = strings.Join(strings.Fields(strings.TrimSpace(item.NameEn)), " ")
-	if item.ID == "" || item.VerticalID == "" || item.NameAr == "" || item.NameEn == "" {
-		return postgres.CatalogCategoryRecord{}, postgres.ErrCatalogCategoryNotFound
+	if (item.ID != "" && !verticalIDPattern.MatchString(item.ID)) || !verticalIDPattern.MatchString(item.VerticalID) || (item.ParentCategoryID != "" && !verticalIDPattern.MatchString(item.ParentCategoryID)) || !validRegistryName(item.NameAr) || !validRegistryName(item.NameEn) {
+		return postgres.CatalogCategoryRecord{}, ErrCatalogCategoryInvalid
 	}
 	return postgres.CreateCatalogCategory(ctx, s.db, item, strings.TrimSpace(idempotencyKey), postgres.HashCatalogCategoryCreateRequest(item))
 }
@@ -322,6 +325,9 @@ func normalizeOptionalText(value *string, max int) (*string, error) {
 		return nil, ErrCatalogProductNameInvalid
 	}
 	return &normalized, nil
+}
+func validRegistryName(value string) bool {
+	return utf8.RuneCountInString(value) >= 2 && utf8.RuneCountInString(value) <= 160
 }
 func normalizeSearch(value string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")

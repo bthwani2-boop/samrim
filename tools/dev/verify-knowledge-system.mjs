@@ -35,6 +35,10 @@ for (const forbiddenRoot of ["governance", "docs", "tools/prompting"]) {
   }
 }
 
+if (fs.existsSync(path.join(root, "DESIGN.md"))) {
+  failures.push("retired root DESIGN.md parallel design authority exists");
+}
+
 if (sources.schema !== 2) failures.push("knowledge manifest must use schema 2 immutable binding");
 if (pin.repository !== "bthwani2-boop/governance-and-docs") {
   failures.push(`unexpected knowledge repository: ${pin.repository}`);

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import type { ActorType } from "@bthwani/identity";
+import { dshErrorPayload, dshHttpStatus, isDshClientError, setDshCaptainRoleEnabled, setDshFieldRoleEnabled, setDshPartnerRoleEnabled } from "../../../../src/server/dsh/dsh-bff";
 import { identityErrorPayload, identityHttpStatus, readOperatorSession, setIdentityRoleEnabled, setIdentitySecurityEnabled } from "../../../../src/server/identity/identity-bff";
 import { verifySameOrigin } from "../../../../src/server/security/csrf";
 
@@ -33,15 +34,24 @@ export async function POST(request: Request) {
   if (!Number.isInteger(expectedVersion) || expectedVersion < 1) return jsonError("INVALID_INPUT", "expectedVersion must be a positive integer >= 1", 400);
 
   try {
-    const mutationOptions = { operatorActorId: identity.subject, correlationId: randomUUID(), expectedVersion };
+    const mutationOptions = { operatorActorId: identity.subject, correlationId: randomUUID(), idempotencyKey: randomUUID(), expectedVersion };
     if (action === "disable-role" || action === "enable-role") {
       const enabled = action === "enable-role";
-      await setIdentityRoleEnabled(actorId, role, enabled, reason, mutationOptions);
+      if (role === "partner") {
+        await setDshPartnerRoleEnabled(actorId, { enabled, reason }, mutationOptions);
+      } else if (role === "captain") {
+        await setDshCaptainRoleEnabled(actorId, { enabled, reason }, mutationOptions);
+      } else if (role === "field") {
+        await setDshFieldRoleEnabled(actorId, { enabled, reason }, mutationOptions);
+      } else {
+        await setIdentityRoleEnabled(actorId, role, enabled, reason, mutationOptions);
+      }
     } else {
       await setIdentitySecurityEnabled(actorId, action === "enable-identity", reason, mutationOptions);
     }
     return new NextResponse(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return jsonError(identityErrorPayload(error).code, identityErrorPayload(error).message, identityHttpStatus(error));
+    const payload = isDshClientError(error) ? dshErrorPayload(error) : identityErrorPayload(error);
+    return jsonError(payload.code, payload.message, isDshClientError(error) ? dshHttpStatus(error) : identityHttpStatus(error));
   }
 }

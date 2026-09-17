@@ -31,9 +31,9 @@ const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
 const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
-const clientPhone = "+96778" + crypto.randomInt(1_000_000, 9_999_999);
-const partnerPhone = "+96776" + crypto.randomInt(1_000_000, 9_999_999);
-const foreignPartnerPhone = "+96777" + crypto.randomInt(1_000_000, 9_999_999);
+const clientPhone = `+96778${crypto.randomInt(1_000_000, 9_999_999)}`;
+const partnerPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
+const foreignPartnerPhone = `+96777${crypto.randomInt(1_000_000, 9_999_999)}`;
 const partnerStoreID = `store_location_runtime_${suffix}`;
 const foreignStoreID = `store_location_foreign_${suffix}`;
 const serviceCityID = `location-city-${suffix}`;
@@ -140,15 +140,16 @@ function cleanup() {
 let exitCode = 1;
 try {
   const schema = sql("SELECT count(*) FROM dsh.schema_migrations");
-  if (schema !== "14") throw new Error(`DSH schema history is not v14: ${schema}`);
+  if (schema !== "20") throw new Error(`DSH schema history is not v20: ${schema}`);
   if (sql("SELECT name FROM dsh.schema_migrations WHERE version=10") !== "010_central_catalog_refoundation.sql") throw new Error("Catalog refoundation migration is not canonical");
+  if (sql("SELECT name FROM dsh.schema_migrations WHERE version=20") !== "020_field_standing_admission_and_joining_scope.sql") throw new Error("Field standing admission migration is not canonical");
   for (const [table, column] of [["delivery_address_mutation_idempotency", "result_version"], ["delivery_address_audit", "address_text"], ["delivery_address_audit", "latitude"], ["delivery_address_audit", "longitude"], ["store_origin_mutation_idempotency", "result_version"], ["store_origin_mutation_idempotency", "result_latitude"], ["store_origin_mutation_idempotency", "result_longitude"], ["store_origin_mutation_idempotency", "result_updated_at"], ["store_origin_audit", "latitude"], ["store_origin_audit", "longitude"]]) {
     if (sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND table_name='${table}' AND column_name='${column}'`) !== "0") throw new Error(`Location Core precise/dead column remains: dsh.${table}.${column}`);
   }
 
   let operatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
   if (!operatorID) {
-    const bootstrap = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: "+96775" + crypto.randomInt(1_000_000, 9_999_999), role: "operator" } });
+    const bootstrap = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+96775${crypto.randomInt(1_000_000, 9_999_999)}`, role: "operator" } });
     if (![201, 409].includes(bootstrap.status)) throw new Error(`operator bootstrap failed: ${JSON.stringify(bootstrap.body)}`);
     operatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
   }
@@ -259,7 +260,7 @@ try {
   const addressCount = sql(`SELECT count(*) FROM dsh.delivery_address_audit WHERE client_actor_id='${sqlLiteral(clientActorID)}'`);
   const originCount = sql(`SELECT count(*) FROM dsh.store_origin_audit WHERE store_id='${sqlLiteral(partnerStoreID)}'`);
   if (addressCount !== "55" || originCount !== "3") throw new Error(`audit readback is not one row per successful mutation: addresses=${addressCount} origins=${originCount}`);
-  console.log("DSH_SCHEMA_V14=PASS");
+  console.log("DSH_SCHEMA_V20=PASS");
   console.log("LOCATION_CORE_RUNTIME=PASS");
   console.log("LOCATION_CORE_CLIENT_API=PASS");
   console.log("LOCATION_CORE_PARTNER_API=PASS");

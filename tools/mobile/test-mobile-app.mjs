@@ -85,6 +85,7 @@ import { register } from "node:module";
 import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.join(root, "tools/dev/ts-resolver.mjs")).href, import.meta.url);
 const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "services/identity/clients/session.ts")).href);
+const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
 const expoConfig = defineSamrimExpoApp(app);
@@ -137,6 +138,11 @@ console.log(`MOBILE_AR_RTL_NATIVE_CONFIG=PASS app=${app} locale=ar forcesRTL=tru
   }
 }
 console.log(`MOBILE_PROVIDER_ENV_GATING=PASS app=${app} provider=sentry`);
+
+for (const reason of ["no_local_session", "corrupt_local_session", "terminal_invalidated", "surface_mismatch", "local_proof_invalid", "explicit_logout", "recovery"]) {
+  assert.ok(identitySessionSignOutMessage(reason).length > 0, `${app}: missing sign-out reason message: ${reason}`);
+}
+console.log(`MOBILE_SESSION_REASON_COPY=PASS app=${app}`);
 
 // 3. Behavioral Unit Tests for Mobile Session State Machine
 class MockStorage {

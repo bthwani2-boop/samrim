@@ -1,5 +1,5 @@
 import { validateServiceUrl } from "@bthwani/identity";
-import { type CatalogCategoryListResponse, type CatalogProductListResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CreateCatalogProductRequest, type CreateJoiningCaseRequest, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, dshOperationPaths } from "@bthwani/dsh";
+import { type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ManagedRoleMutationRequest, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -25,6 +25,8 @@ export type DshOperatorReadContext = Readonly<{
   operatorActorId: string;
 }>;
 export type CatalogProductMutationContext = JoiningCaseMutationContext;
+export type CatalogVerticalMutationContext = JoiningCaseMutationContext;
+export type CatalogCategoryMutationContext = JoiningCaseMutationContext;
 
 function dshBaseUrl(): string {
   const explicit = process.env.DSH_API_BASE_URL?.trim();
@@ -101,7 +103,7 @@ async function requestDshJson<T>(method: string, path: string, body: unknown | u
       const parsed = parseErrorPayload(await response.json().catch(() => null));
       throw { kind: "http", status: response.status, code: parsed.code, message: parsed.message } satisfies DshClientError;
     }
-    return { status: response.status, payload: await response.json() as T };
+    return { status: response.status, payload: response.status === 204 ? undefined as T : await response.json() as T };
   } finally {
     clearTimeout(timeout);
   }
@@ -130,7 +132,7 @@ export async function readServiceCity(cityId: string, context: DshOperatorReadCo
 }
 
 export async function createServiceCity(input: CreateServiceCityRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: ServiceCityResponse }>> {
-  if (!input.id.trim() || !input.displayNameAr.trim()) throw new Error("DSH_SERVICE_CITY_INPUT_INVALID");
+  if (!input.displayNameAr.trim()) throw new Error("DSH_SERVICE_CITY_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_SERVICE_CITY_IDEMPOTENCY_INVALID");
   return requestDshJson<ServiceCityResponse>(dshOperationPaths.createServiceCity.method, dshOperationPaths.createServiceCity.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
@@ -162,6 +164,20 @@ export async function listJoiningCases(state: string, limit: number, cursor: str
 export async function listCatalogVerticals(context: DshOperatorReadContext): Promise<CommerceVerticalListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_CATALOG_VERTICAL_READ_INPUT_INVALID");
   return (await requestDshJson<CommerceVerticalListResponse>(dshOperationPaths.listCatalogVerticals.method, dshOperationPaths.listCatalogVerticals.path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function createCatalogVertical(input: CreateCommerceVerticalRequest, context: CatalogVerticalMutationContext): Promise<Readonly<{ status: number; payload: CommerceVerticalResponse }>> {
+  if (!input.nameAr.trim() || !input.nameEn.trim()) throw new Error("DSH_CATALOG_VERTICAL_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_VERTICAL_IDEMPOTENCY_INVALID");
+  return requestDshJson<CommerceVerticalResponse>(dshOperationPaths.createCatalogVertical.method, dshOperationPaths.createCatalogVertical.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function createCatalogCategory(input: CreateCatalogCategoryRequest, context: CatalogCategoryMutationContext): Promise<Readonly<{ status: number; payload: CatalogCategoryResponse }>> {
+  if (!input.verticalId.trim() || !input.nameAr.trim() || !input.nameEn.trim()) throw new Error("DSH_CATALOG_CATEGORY_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_CATEGORY_IDEMPOTENCY_INVALID");
+  return requestDshJson<CatalogCategoryResponse>(dshOperationPaths.createCatalogCategory.method, dshOperationPaths.createCatalogCategory.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function listCatalogCategories(verticalId: string): Promise<CatalogCategoryListResponse> {
@@ -287,4 +303,83 @@ export async function setStorePublication(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+type DshManagedRoleMutationContext = DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>;
+
+async function setDshManagedRoleEnabled(path: string, input: ManagedRoleMutationRequest, context: DshManagedRoleMutationContext): Promise<void> {
+	validateVersionedMutationContext(context);
+	if (!context.idempotencyKey.trim()) throw new Error("DSH_MANAGED_ROLE_IDEMPOTENCY_INVALID");
+	if (input.reason !== undefined && input.reason.trim().length > 500) throw new Error("DSH_MANAGED_ROLE_REASON_INVALID");
+	await requestDshJson<undefined>("POST", path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(), "X-Expected-Version": String(context.expectedVersion) });
+}
+
+export async function setDshPartnerRoleEnabled(actorId: string, input: ManagedRoleMutationRequest, context: DshManagedRoleMutationContext): Promise<void> {
+  const normalized = actorId.trim();
+  if (!normalized) throw new Error("DSH_MANAGED_ROLE_ACTOR_REQUIRED");
+  await setDshManagedRoleEnabled(dshOperationPaths.setPartnerManagedRoleEnabled.path.replace("{actorId}", encodeURIComponent(normalized)), input, context);
+}
+
+export async function setDshCaptainRoleEnabled(actorId: string, input: ManagedRoleMutationRequest, context: DshManagedRoleMutationContext): Promise<void> {
+  const normalized = actorId.trim();
+  if (!normalized) throw new Error("DSH_MANAGED_ROLE_ACTOR_REQUIRED");
+  await setDshManagedRoleEnabled(dshOperationPaths.setCaptainManagedRoleEnabled.path.replace("{actorId}", encodeURIComponent(normalized)), input, context);
+}
+
+export async function setDshFieldRoleEnabled(actorId: string, input: ManagedRoleMutationRequest, context: DshManagedRoleMutationContext): Promise<void> {
+  const normalized = actorId.trim();
+  if (!normalized) throw new Error("DSH_MANAGED_ROLE_ACTOR_REQUIRED");
+  await setDshManagedRoleEnabled(dshOperationPaths.setFieldIdentityRoleEnabled.path.replace("{actorId}", encodeURIComponent(normalized)), input, context);
+}
+
+export async function admitCaptain(input: CaptainAdmissionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CaptainAdmissionResponse }>> {
+  if (!/^\+[1-9][0-9]{7,14}$/.test(input.contactPhoneE164.trim())) throw new Error("DSH_CAPTAIN_PHONE_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CAPTAIN_IDEMPOTENCY_INVALID");
+  return requestDshJson<CaptainAdmissionResponse>(dshOperationPaths.admitCaptain.method, dshOperationPaths.admitCaptain.path, { contactPhoneE164: input.contactPhoneE164.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function readCaptainAdmissionByActor(actorId: string, context: DshOperatorReadContext): Promise<CaptainAdmissionResponse> {
+  const normalized = actorId.trim();
+  if (!normalized || !context.operatorActorId.trim()) throw new Error("DSH_CAPTAIN_ADMISSION_READ_INPUT_INVALID");
+  const path = dshOperationPaths.readCaptainAdmissionForOperatorActor.path.replace("{actorId}", encodeURIComponent(normalized));
+  return (await requestDshJson<CaptainAdmissionResponse>(dshOperationPaths.readCaptainAdmissionForOperatorActor.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function admitField(input: FieldAdmissionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: FieldAdmissionResponse }>> {
+  if (!/^\+[1-9][0-9]{7,14}$/.test(input.contactPhoneE164.trim())) throw new Error("DSH_FIELD_PHONE_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_FIELD_IDEMPOTENCY_INVALID");
+  return requestDshJson<FieldAdmissionResponse>(dshOperationPaths.admitField.method, dshOperationPaths.admitField.path, { contactPhoneE164: input.contactPhoneE164.trim() }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function readFieldAdmissionByActor(actorId: string, context: DshOperatorReadContext): Promise<FieldAdmissionResponse> {
+  const normalized = actorId.trim();
+  if (!normalized || !context.operatorActorId.trim()) throw new Error("DSH_FIELD_ADMISSION_READ_INPUT_INVALID");
+  const path = dshOperationPaths.readFieldAdmissionForOperatorActor.path.replace("{actorId}", encodeURIComponent(normalized));
+  return (await requestDshJson<FieldAdmissionResponse>(dshOperationPaths.readFieldAdmissionForOperatorActor.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function dispatchCaptainOffer(orderId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CaptainOfferResponse }>> {
+  if (!orderId.trim()) throw new Error("DSH_CAPTAIN_ORDER_REQUIRED");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CAPTAIN_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.dispatchCaptainOffer.path.replace("{orderId}", encodeURIComponent(orderId.trim()));
+  return requestDshJson<CaptainOfferResponse>(dshOperationPaths.dispatchCaptainOffer.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function reassignCaptainOffer(orderId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CaptainOfferResponse }>> {
+  if (!orderId.trim()) throw new Error("DSH_CAPTAIN_ORDER_REQUIRED");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CAPTAIN_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.reassignCaptainOffer.path.replace("{orderId}", encodeURIComponent(orderId.trim()));
+  return requestDshJson<CaptainOfferResponse>(dshOperationPaths.reassignCaptainOffer.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function recoverCaptainDelivery(assignmentId: string, context: DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>): Promise<Readonly<{ status: number; payload: CaptainAssignmentResponse }>> {
+  if (!assignmentId.trim()) throw new Error("DSH_CAPTAIN_ASSIGNMENT_REQUIRED");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CAPTAIN_RECOVERY_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.recoverCaptainDelivery.path.replace("{assignmentId}", encodeURIComponent(assignmentId.trim()));
+  return requestDshJson<CaptainAssignmentResponse>(dshOperationPaths.recoverCaptainDelivery.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(), "X-Expected-Version": String(context.expectedVersion) });
 }

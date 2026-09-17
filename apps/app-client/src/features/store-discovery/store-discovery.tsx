@@ -1,9 +1,9 @@
-import { direction, resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { formatMoney, type DeliveryAddress, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
+import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { type DeliveryAddress, formatMoney, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
-import { useServiceCityScope } from "../service-city/service-city-scope";
 import { CartCheckout } from "../cart-checkout/cart-checkout";
+import { useServiceCityScope } from "../service-city/service-city-scope";
 import { evaluateStoreServiceability, listOwnDeliveryAddresses, listPublishedStores, readPublicStoreCatalog, readPublishedStore } from "./store-discovery-client";
 
 type DiscoveryState =
@@ -16,6 +16,7 @@ type AddressState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "ready"; addresses: ReadonlyArray<DeliveryAddress> }
+  | { kind: "unauthenticated" }
   | { kind: "error" };
 
 type ServiceabilityState =
@@ -30,7 +31,7 @@ function serviceabilityMessage(status: ServiceabilityResponse["status"]): string
   return "تعذر تأكيد أهلية العنوان الآن. أعد المحاولة لاحقًا.";
 }
 
-export default function StoreDiscovery() {
+export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined }) {
   const { cities, selectedCityID } = useServiceCityScope();
   const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -65,7 +66,7 @@ export default function StoreDiscovery() {
     setSelected(null);
     setCatalog(null);
     setDetailState("loading");
-    setAddressState({ kind: "loading" });
+    setAddressState(isAuthenticated ? { kind: "loading" } : { kind: "unauthenticated" });
     setServiceabilityState({ kind: "idle" });
     try {
       if (!selectedCityID) return;
@@ -78,6 +79,7 @@ export default function StoreDiscovery() {
       setDetailState("error");
       return;
     }
+    if (!isAuthenticated) return;
     try {
       const result = await listOwnDeliveryAddresses();
       setAddressState({ kind: "ready", addresses: result.addresses });
@@ -100,6 +102,7 @@ export default function StoreDiscovery() {
   }
 
   async function loadAddresses() {
+    if (!isAuthenticated) return;
     setAddressState({ kind: "loading" });
     try {
       const result = await listOwnDeliveryAddresses();
@@ -127,7 +130,7 @@ export default function StoreDiscovery() {
     return <View style={styles.state}><Text style={styles.title}>تعذر اكتشاف المتاجر</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.button}><Text style={styles.buttonText}>إعادة المحاولة</Text></Pressable></View>;
   }
   if (state.kind === "empty") {
-    return <View style={styles.state}><Text style={styles.title}>لا توجد متاجر منشورة</Text><Text style={styles.muted}>ستظهر المتاجر هنا بعد اجتياز النشر الكانوني.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>تحديث</Text></Pressable></View>;
+    return <View style={styles.state}><Text style={styles.title}>لا توجد متاجر متاحة</Text><Text style={styles.muted}>ستظهر المتاجر هنا عندما تصبح متاحة للطلب.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>تحديث</Text></Pressable></View>;
   }
   if (state.kind === "ready" && !selected) {
     return <View style={styles.container}><Text style={styles.eyebrow}>اكتشاف العميل</Text><Text style={styles.title}>المتاجر المتاحة</Text><Text style={styles.muted}>اختر متجرًا لعرض المنتجات وخيارات التوصيل المتاحة في مدينتك.</Text><View style={styles.list}>{state.stores.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`فتح متجر ${item.name}`} onPress={() => void openStore(item)} style={styles.card}><Text style={styles.cardTitle}>{item.name}</Text><Text style={styles.cardMeta}>{item.serviceCity.displayNameAr} · متاح للطلب</Text></Pressable>)}</View></View>;
@@ -155,8 +158,9 @@ export default function StoreDiscovery() {
         {catalog?.offers.filter((offer) => !sectionOfferIDs.has(offer.offerId)).map(renderOffer)}
         {catalog?.offers.length === 0 ? <Text style={styles.muted}>لا توجد منتجات متاحة حاليًا.</Text> : null}
         {catalog?.nextCursor ? <Pressable accessibilityRole="button" accessibilityState={{ busy: catalogLoadingMore, disabled: catalogLoadingMore }} disabled={catalogLoadingMore} onPress={() => void loadMoreCatalog()} style={[styles.secondaryButton, catalogLoadingMore && styles.disabledButton]}><Text style={[styles.secondaryButtonText, catalogLoadingMore && styles.disabledButtonText]}>{catalogLoadingMore ? "جارٍ تحميل المزيد…" : "تحميل المزيد"}</Text></Pressable> : null}
-        <Text style={styles.sectionTitle}>تأكيد أهلية العنوان</Text>
+        <Text style={styles.sectionTitle}>تأكيد التوصيل</Text>
         <Text style={styles.muted}>اختر عنوانًا محفوظًا لتأكيد إمكانية التوصيل من هذا المتجر.</Text>
+        {addressState.kind === "unauthenticated" ? <View style={styles.statusBox}><Text style={styles.muted}>ابدأ الطلب بتسجيل الدخول لإضافة عنوان وإتمامه.</Text>{onRequireAuthentication ? <Pressable accessibilityRole="button" accessibilityLabel="بدء الطلب" onPress={onRequireAuthentication} style={styles.button}><Text style={styles.buttonText}>بدء الطلب</Text></Pressable> : null}</View> : null}
         {addressState.kind === "loading" ? <View style={styles.inlineState}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة عناوينك…</Text></View> : null}
         {addressState.kind === "error" ? <View style={styles.inlineState}><Text style={styles.muted}>تعذر قراءة عناوينك المحفوظة.</Text><Pressable accessibilityRole="button" onPress={() => void loadAddresses()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}
         {addressState.kind === "ready" && addressState.addresses.length === 0 ? <Text style={styles.muted}>لا يوجد عنوان محفوظ بعد. أضف عنوانًا من قسم العناوين ثم أعد فتح المتجر.</Text> : null}
@@ -168,7 +172,7 @@ export default function StoreDiscovery() {
     );
   }
 
-  return <View style={styles.container}><Text style={styles.eyebrow}>اكتشاف العميل</Text><Text style={styles.title}>المتاجر المنشورة</Text><Text style={styles.muted}>هذه القائمة ضمن المدينة المختارة، ولا تعرض إلا المتاجر التي اجتازت شروط النشر الحالية.</Text><View style={styles.list}>{state.stores.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`فتح متجر ${item.name}`} onPress={() => void openStore(item)} style={styles.card}><Text style={styles.cardTitle}>{item.name}</Text><Text style={styles.cardMeta}>{item.serviceCity.displayNameAr} · متجر منشور</Text></Pressable>)}</View></View>;
+  return <View style={styles.container}><Text style={styles.eyebrow}>اكتشاف العميل</Text><Text style={styles.title}>المتاجر المتاحة</Text><Text style={styles.muted}>هذه القائمة ضمن المدينة المختارة، وتعرض المتاجر المتاحة للطلب.</Text><View style={styles.list}>{state.stores.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityLabel={`فتح متجر ${item.name}`} onPress={() => void openStore(item)} style={styles.card}><Text style={styles.cardTitle}>{item.name}</Text><Text style={styles.cardMeta}>{item.serviceCity.displayNameAr} · متاح للطلب</Text></Pressable>)}</View></View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

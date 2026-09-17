@@ -140,7 +140,7 @@ try {
 
     if ($changed.Count -gt 0) {
         Run-Step 'Affected workspace targets' {
-            pnpm exec nx affected -t typecheck,test,build,export-smoke,vet --base=$BaseSha --head=$head --outputStyle=stream
+            pnpm exec nx affected -t typecheck test build export-smoke vet --base=$BaseSha --head=$head --outputStyle=stream
         }
     } else {
         Write-Host 'AFFECTED_WORKSPACE_TARGETS=SKIPPED reason=no_changes'

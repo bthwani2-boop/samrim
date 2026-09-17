@@ -4,7 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View, useColorScheme } from "react
 import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 
 import { isJoiningCaseNotFound, listActiveServiceCities, readOwnJoiningCase } from "./store-readback-client";
-import type { ServiceCity } from "@bthwani/dsh";
+import { joiningCaseStateLabel, publicationStateLabel, type ServiceCity } from "@bthwani/dsh";
 import { JoiningCaseCorrection } from "./joining-case-correction";
 import { StoreOfferManagement } from "../store-offer/store-offer";
 import { OrderManagement } from "../order-management/order-management";
@@ -42,7 +42,7 @@ export function StoreReadback() {
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>حالة انضمام الشريك</Text>
       <Text selectable style={styles.value}>{state.value.case.businessName}</Text>
-      <Text style={styles.muted}>الحالة: {joiningStateLabel(state.value.case.state)}</Text>
+       <Text style={styles.muted}>الحالة: {joiningCaseStateLabel(state.value.case.state)}</Text>
       <Text style={styles.muted}>مدينة المتجر الأول: {cityName}</Text>
       <JoiningCaseCorrection value={state.value} onUpdated={(value) => setState({ kind: "ready", value })} />
       {state.value.case.store ? <><Text selectable style={styles.muted}>المتجر الأول: {state.value.case.store.name}</Text><Text style={styles.muted}>حالة النشر: {publicationStateLabel(state.value.case.store.publicationState)}</Text><Text style={styles.muted}>جاهزية النشر: {state.value.case.store.publicationReadiness.ready ? "جاهز" : "يحتاج إلى استكمال البيانات"}</Text><StoreDeliveryOrigin storeId={state.value.case.store.id} /><StoreOfferManagement storeId={state.value.case.store.id} /><OrderManagement storeId={state.value.case.store.id} /></> : null}
@@ -61,12 +61,4 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },
     error: { backgroundColor: theme.dangerSoft, borderRadius: 10, color: theme.danger, fontSize: 13, padding: 10, textAlign: startTextAlign },
   });
-}
-
-function joiningStateLabel(state: "draft" | "submitted" | "needs_correction" | "approved"): string {
-  return { draft: "مسودة", submitted: "قيد المراجعة", needs_correction: "يحتاج إلى تصحيح", approved: "تمت الموافقة" }[state];
-}
-
-function publicationStateLabel(state: "unpublished" | "published" | "hidden"): string {
-  return { unpublished: "غير منشور", published: "منشور", hidden: "مخفي" }[state];
 }

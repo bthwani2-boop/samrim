@@ -1,4 +1,5 @@
 import { ManagedIdentityFlow } from "@bthwani/identity/presentation";
+import { CaptainOperations } from "../captain-operations/captain-operations";
 import {
   activateManagedIdentity,
   currentIdentityState,
@@ -20,6 +21,7 @@ export default function IdentityGate() {
       surface={surface}
       roleLabel="الكابتن"
       binding={identity}
+      authenticatedContent={<CaptainOperations />}
     />
   );
 }

@@ -115,6 +115,7 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
       try {
         response = await fetch(resolveUrl(baseUrl, pathname), {
           method: options.method,
+          cache: "no-store",
           headers: {
             Accept: "application/json",
             ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),

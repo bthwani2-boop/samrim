@@ -37,14 +37,14 @@ func (s *Service) List(ctx context.Context, includeInactive bool, actingActorID 
 	return postgres.ListActiveServiceCities(ctx, s.db)
 }
 
-func (s *Service) Create(ctx context.Context, input postgres.ServiceCityRecord, idempotencyKey, actingActorID, correlationID string) (postgres.ServiceCityResult, error) {
+func (s *Service) Create(ctx context.Context, displayNameAr string, active bool, idempotencyKey, actingActorID, correlationID string) (postgres.ServiceCityResult, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.ServiceCityResult{}, err
 	}
-	if strings.TrimSpace(input.ID) == "" || strings.TrimSpace(input.DisplayNameAr) == "" {
+	if strings.TrimSpace(displayNameAr) == "" {
 		return postgres.ServiceCityResult{}, ErrInvalidInput
 	}
-	return postgres.CreateServiceCity(ctx, s.db, input.ID, input.DisplayNameAr, input.Active, idempotencyKey, postgres.HashServiceCityCreateRequest(input.ID, input.DisplayNameAr, input.Active), actingActorID, correlationID)
+	return postgres.CreateServiceCity(ctx, s.db, displayNameAr, active, idempotencyKey, postgres.HashServiceCityCreateRequest(displayNameAr, active), actingActorID, correlationID)
 }
 
 func (s *Service) Update(ctx context.Context, cityID, displayNameAr string, active bool, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.ServiceCityResult, error) {

@@ -48,6 +48,37 @@ Current source is evidence of what exists, not automatic proof that the design i
 
 Treat the highest proven causal root. Do not move, wrap, suppress or document around a surviving root defect.
 
+### 1.1 User-facing surface correctness
+
+User-facing presentation is part of correctness, not post-functional polish. A logically working feature is incomplete when its information architecture, application shell, navigation, hierarchy, Arabic/RTL behavior, interaction states, accessibility, visual-system use or real-device behavior is materially weak or incomplete.
+
+For every materially affected user-facing surface:
+
+```text
+ACTOR / USER OUTCOME
+→ APPLICABLE PRODUCT / EXPERIENCE / DESIGN MEANING
+→ INFORMATION ARCHITECTURE
+→ SHELL / NAVIGATION
+→ SCREEN HIERARCHY
+→ INTERACTION / STATE MODEL
+→ FEATURE PRESENTATION
+→ RENDERED + INTERACTION PROOF
+```
+
+Establish the simplest complete canonical shell/navigation model required by the affected actor and capability set before deepening screens that depend on it. Do not force Client, Partner, Captain, Field or Control Panel into the same shell merely for visual consistency, and do not create empty destinations or speculative navigation to make an app appear complete.
+
+Arabic-first RTL is an end-to-end interaction invariant where the admitted surface is Arabic: prove layout/order, reading/alignment, directional icons and navigation, scrolling, forms, mixed-direction values, focus/keyboard behavior and direction-sensitive gesture/animation semantics as applicable. `textAlign: right` is not RTL proof.
+
+Pinned Governance owns durable Product/Experience/Design meaning within its fact-specific authority. If stronger evidence proves durable meaning stale or defective, correct Governance through its canonical path before relying on an implementation exception. `packages/design-system` owns executable reusable visual tokens/themes/primitives/patterns only when reuse is proven. Apps own host-specific IA, shell, navigation and presentation/composition. No repository-local Markdown or app-local visual foundation may become parallel durable Design/Experience authority.
+
+For significant surface establishment or refoundation, inspect relevant donor implementation, current Product evidence, applicable platform guidance and proportional OSS/current practice only when they can change the decision. They are evidence, not copy authority or automatic truth.
+
+Account for every applicable user-visible state and transition, including loading, empty/no-results, forbidden, conflict, offline, error/recovery, busy, validation, disabled/pressed/selected, keyboard/safe-area, long/constrained content, theme and accessibility behavior. Missing applicable states are incomplete implementation.
+
+Static/source checks do not close rendered or interaction claims. Use representative runtime/device/browser evidence appropriate to the affected surface and exercise the material navigation, interaction, RTL, state transitions, clipping/overflow, touch/focus behavior and visual consistency. A green typecheck/test does not override a visibly, structurally or interactively defective surface.
+
+Any known material shell/navigation, IA, RTL/accessibility, visual hierarchy, Design-System divergence, interaction-state, misplaced presentation ownership, duplicate visual authority or unproven rendered claim is a closure failure.
+
 ## 2. Complexity survival law
 
 EVERY EXISTING OR NEW COMPLEXITY MUST RE-EARN EXISTENCE.

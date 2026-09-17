@@ -39,6 +39,7 @@
   "ignoreBinaries": [
     // CI, Nx project targets and developer-host binaries are resolved outside the JS graph.
     "build",
+    "playwright",
     // Expo is the host binary used by the mobile export projection.
     "expo",
     "gofmt",

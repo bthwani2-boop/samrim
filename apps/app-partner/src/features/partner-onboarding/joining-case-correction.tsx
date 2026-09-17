@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
 
 import { direction, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
-import type { JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
-import { correctAndResubmitOwnJoiningCase, listActiveServiceCities } from "./store-readback-client";
+import type { CommerceVertical, JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
+import { correctAndResubmitOwnJoiningCase, listActiveServiceCities, listCatalogVerticals } from "./store-readback-client";
 
 export function JoiningCaseCorrection({ value, onUpdated }: { value: JoiningCaseResponse; onUpdated: (next: JoiningCaseResponse) => void }) {
   const current = value.case;
@@ -12,7 +12,9 @@ export function JoiningCaseCorrection({ value, onUpdated }: { value: JoiningCase
   const [businessName, setBusinessName] = useState(current.businessName);
   const [firstStoreName, setFirstStoreName] = useState(current.firstStoreName);
   const [serviceCityId, setServiceCityId] = useState(current.serviceCityId || "");
+  const [verticalId, setVerticalId] = useState(current.firstStoreVerticalId || "");
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
+  const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -20,10 +22,13 @@ export function JoiningCaseCorrection({ value, onUpdated }: { value: JoiningCase
     setBusinessName(current.businessName);
     setFirstStoreName(current.firstStoreName);
     setServiceCityId(current.serviceCityId || "");
-  }, [current.businessName, current.firstStoreName, current.serviceCityId]);
+    setVerticalId(current.firstStoreVerticalId || "");
+  }, [current.businessName, current.firstStoreName, current.serviceCityId, current.firstStoreVerticalId]);
 
   useEffect(() => {
-    if (current.state === "needs_correction") void listActiveServiceCities().then(setCities, () => setCities([]));
+    if (current.state === "needs_correction") {
+      void Promise.all([listActiveServiceCities(), listCatalogVerticals()]).then(([nextCities, nextVerticals]) => { setCities(nextCities); setVerticals(nextVerticals); }, () => { setCities([]); setVerticals([]); });
+    }
   }, [current.state]);
 
   if (current.state !== "needs_correction") return null;
@@ -31,14 +36,14 @@ export function JoiningCaseCorrection({ value, onUpdated }: { value: JoiningCase
   async function correctAndResubmit() {
     const nextBusinessName = businessName.trim();
     const nextStoreName = firstStoreName.trim();
-    if (nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || !serviceCityId) {
-      setError("أدخل اسم النشاط واسم المتجر بين حرفين و160 حرفًا.");
+    if (nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || !serviceCityId || !verticalId) {
+      setError("أدخل الأسماء واختر مدينة الخدمة والنشاط التجاري.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, current.firstStoreVerticalId || "", current.version);
+      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, verticalId, current.version);
       onUpdated(resubmitted);
     } catch (nextError) {
       if (nextError && typeof nextError === "object" && "status" in nextError && (nextError as { status?: unknown }).status === 409) {
@@ -60,6 +65,8 @@ export function JoiningCaseCorrection({ value, onUpdated }: { value: JoiningCase
       <TextInput accessibilityLabel="تصحيح اسم المتجر الأول" editable={!busy} onChangeText={setFirstStoreName} value={firstStoreName} style={styles.input} />
       <Text style={styles.label}>مدينة المتجر الأول</Text>
       <View style={styles.cityList}>{cities.map((city) => <Pressable key={city.id} accessibilityRole="button" accessibilityState={{ selected: serviceCityId === city.id }} disabled={busy} onPress={() => setServiceCityId(city.id)} style={[styles.cityButton, serviceCityId === city.id && styles.cityButtonSelected]}><Text style={styles.cityText}>{city.displayNameAr}</Text></Pressable>)}</View>
+      <Text style={styles.label}>النشاط التجاري</Text>
+      <View style={styles.cityList}>{verticals.map((vertical) => <Pressable key={vertical.id} accessibilityRole="button" accessibilityState={{ selected: verticalId === vertical.id }} disabled={busy} onPress={() => setVerticalId(vertical.id)} style={[styles.cityButton, verticalId === vertical.id && styles.cityButtonSelected]}><Text style={styles.cityText}>{vertical.nameAr}</Text></Pressable>)}</View>
       <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void correctAndResubmit()} style={[styles.button, busy && styles.disabledButton]}>
         {busy ? <ActivityIndicator color={theme.disabledText} /> : <Text style={styles.buttonText}>حفظ التصحيح وإعادة الإرسال</Text>}
       </Pressable>

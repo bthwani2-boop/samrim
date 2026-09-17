@@ -1,10 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { type ActorType, type OperatorEnrollmentToken } from "@bthwani/identity";
+import type { ActorType, OperatorEnrollmentToken } from "@bthwani/identity";
 import { toAsciiDigits } from "@bthwani/design-system";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "./identity-error-message";
+
+const actorRoleLabels: Record<ActorType, string> = { client: "العميل", partner: "الشريك", captain: "الكابتن", field: "الميداني", operator: "موظف لوحة التحكم" };
+const accountStateLabels: Record<string, string> = { active: "نشط", identity_disabled: "الهوية موقوفة", role_disabled: "الدور موقوف", pending_activation: "بانتظار التفعيل", operational_not_admitted: "غير مؤهل للتشغيل", operational_suspended: "الأهلية التشغيلية موقوفة", active_unavailable: "نشط وغير متاح", not_admitted: "غير مهيأ لهذا الدور" };
+const operationalAdmissionLabels: Record<string, string> = { pending_identity: "بانتظار تثبيت الهوية", eligible: "مؤهل للتشغيل", suspended: "موقوف" };
+const operationalAvailabilityLabels: Record<string, string> = { available: "متاح لاستقبال مهمة", unavailable: "غير متاح حاليًا" };
+
+function displayLabel(labels: Record<string, string>, value: string | undefined, fallback: string): string {
+  return value ? labels[value] ?? fallback : fallback;
+}
+
+function actorRoleLabel(role: ActorType): string { return actorRoleLabels[role]; }
+function accountStateLabel(state: string | undefined): string { return displayLabel(accountStateLabels, state, "الحالة غير متاحة"); }
+function operationalAdmissionLabel(state: string | undefined): string { return displayLabel(operationalAdmissionLabels, state, "الأهلية غير متاحة"); }
+function operationalAvailabilityLabel(state: string | undefined): string { return displayLabel(operationalAvailabilityLabels, state, "التوافر غير متاح"); }
 
 type ManagedAccountStatus = Readonly<{
   exists: boolean;
@@ -16,6 +30,8 @@ type ManagedAccountStatus = Readonly<{
   actorVersion?: number;
   roleVersion?: number;
   state?: string;
+  operationalAdmissionState?: string;
+  operationalAvailabilityState?: string;
   phoneE164?: string;
   admittedRoles?: ReadonlyArray<Readonly<{
     actorId: string;
@@ -39,7 +55,7 @@ export function AccountAccessPanel() {
   const requestId = useRef(0);
 
   async function readCanonicalStatus(): Promise<ManagedAccountStatus> {
-    const response = await identityFetch("/api/access/managed-user/status?" + new URLSearchParams({ phone: phone.trim(), role }));
+    const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: phone.trim(), role })}`);
     if (!response.ok) throw { status: response.status, message: await responseMessage(response) } satisfies { status: number; message: string };
     return await response.json() as ManagedAccountStatus;
   }
@@ -79,7 +95,7 @@ export function AccountAccessPanel() {
     if (value.length < 5) return;
     const timeout = window.setTimeout(() => void (async () => {
       try {
-        const response = await identityFetch("/api/access/managed-user/status?" + new URLSearchParams({ phone: value, role }));
+        const response = await identityFetch(`/api/access/managed-user/status?${new URLSearchParams({ phone: value, role })}`);
         if (id !== requestId.current) return;
         if (!response.ok) {
           setStatus(null);
@@ -170,9 +186,9 @@ export function AccountAccessPanel() {
   }
 
   const canIssueActivation = role === "operator" && status !== null && !status.activated;
-  const canIssueReenrollment = (role === "partner" || role === "captain" || role === "field") && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
+  const canIssueReenrollment = (role === "partner" || role === "captain") && status?.exists === true && status.activated && status.enabled && status.securityEnabled;
   const activationBlocked = status?.exists === true && status.enabled === false;
-  const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true);
+  const statusIsHealthy = status?.exists === false || (status?.enabled === true && status.securityEnabled === true && ((status.role !== "captain" && status.role !== "field") || status.state === "active"));
 
   return (
     <section className="access-card" aria-labelledby="account-access-title">
@@ -180,7 +196,7 @@ export function AccountAccessPanel() {
         <span className="step-chip">حماية الوصول</span>
         <p className="eyebrow">إدارة الحسابات والأدوار</p>
         <h2 id="account-access-title">تهيئة أو إيقاف الحساب</h2>
-        <p className="muted">هذه شاشة إدارية مستقلة: رقم الهاتف للبحث واكتشاف الممثل canonical فقط. اعرض actorId والأدوار المقبولة، ثم نفّذ أي تغيير بالـactorId؛ لا تُنشئ من هنا أدوار الشريك أو الكابتن أو الميداني.</p>
+        <p className="muted">هذه شاشة إدارية مستقلة: رقم الهاتف للبحث واكتشاف الممثل القانوني فقط. تُعرض الحالات بصياغة تشغيلية، وتُنفّذ التغييرات على السجل القانوني داخليًا؛ لا تُنشئ من هنا أدوار الشريك أو الكابتن أو الميداني.</p>
       </div>
       <div className="access-form">
         <label className="field-label" htmlFor="account-role">
@@ -204,16 +220,17 @@ export function AccountAccessPanel() {
         ) : <span className="form-action-placeholder" aria-hidden="true" />}
       </div>
       {status ? (
-        <div className={"managed-status " + (statusIsHealthy ? "managed-status-info" : "managed-status-warning")} role="status">
+        <div className={`managed-status ${statusIsHealthy ? "managed-status-info" : "managed-status-warning"}`} role="status">
           {status.exists ? (
             <>
               <strong>{status.enabled ? "الدور مفعّل" : "الدور موقوف"} · {status.securityEnabled ? "الهوية مسموحة" : "الهوية موقوفة بالكامل"}</strong>
-              <p>actorId: <code>{status.actorId}</code> · الحالة: {status.state}</p>
+              <p>الحالة: {accountStateLabel(status.state)}</p>
+              {status.role === "captain" || status.role === "field" ? <p>الأهلية التشغيلية: {operationalAdmissionLabel(status.operationalAdmissionState)}{status.role === "captain" ? ` · التوافر: ${operationalAvailabilityLabel(status.operationalAvailabilityState)}` : ""}</p> : null}
               <p>{status.activated ? "يوجد تسجيل سابق لهذا الدور." : "الدور مهيأ ولم يكتمل تفعيله بعد."}</p>
               {status.activated && managedRole ? (
                 <div className="managed-status managed-status-warning" role="alert">
                   <strong>تم تفعيل هذا الدور من قبل.</strong>
-                  <p>{canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين."}</p>
+                  <p>{canIssueReenrollment ? "يمكنك إصدار دعوة جديدة لإعادة تسجيل هذا الدور؛ ستُلغى الجلسات ووسائل الدخول السابقة." : "أعد تفعيل الدور والهوية أولًا إذا كانا موقوفين؛ ويخضع الميداني أيضًا لأهلية التشغيل."}</p>
                   {canIssueReenrollment ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void provision(true)}>{busy ? "جارٍ إصدار دعوة إعادة التسجيل…" : "إصدار دعوة إعادة تسجيل الدور"}</button> : null}
                 </div>
               ) : null}
@@ -229,10 +246,10 @@ export function AccountAccessPanel() {
           ) : (
             <>
               <strong>لا يوجد حساب مهيأ لهذا الدور.</strong>
-              <p>{role === "operator" ? "يمكنك تهيئة الموظف وإصدار دعوة عالية الأمان تُستخدم مرة واحدة." : role === "client" ? "تسجيل العميل يتم من تطبيق العميل، ولا يُصدر له رمز من هذه الشاشة." : "لا يمكن إنشاء هذا الدور من شاشة الحسابات؛ يجب أن يأتي القبول من مسار المجال canonical أولًا."}</p>
+              <p>{role === "operator" ? "يمكنك تهيئة الموظف وإصدار دعوة عالية الأمان تُستخدم مرة واحدة." : role === "client" ? "تسجيل العميل يتم من تطبيق العميل، ولا يُصدر له رمز من هذه الشاشة." : "لا يمكن إنشاء هذا الدور من شاشة الحسابات؛ يجب أن يأتي القبول أولًا من مسار المجال المعتمد."}</p>
             </>
           )}
-          {status.admittedRoles?.length ? <div><strong>الأدوار المقبولة لهذا الممثل</strong><ul>{status.admittedRoles.map((admitted) => <li key={admitted.role}>{admitted.role} · {admitted.state} · <code>{admitted.actorId}</code></li>)}</ul></div> : null}
+          {status.admittedRoles?.length ? <div><strong>الأدوار المقبولة لهذا الممثل</strong><ul>{status.admittedRoles.map((admitted) => <li key={admitted.role}>{actorRoleLabel(admitted.role)} · {accountStateLabel(admitted.state)}</li>)}</ul></div> : null}
         </div>
       ) : null}
       {result ? <div className="code-output" role="status"><span className="summary-label">دعوة موظف عالية الأمان</span><code>{result.code}</code><p>تُعرض هذه الدعوة مرة واحدة فقط وتُستخدم لتفعيل موظف لوحة التحكم، وتنتهي في {new Date(result.expiresAt).toLocaleString("ar-YE-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })}.</p></div> : null}

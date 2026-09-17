@@ -1,17 +1,12 @@
 "use client";
 
-import type { JoiningCaseListResponse, JoiningCaseResponse, JoiningCaseState, PublicationState, ServiceCity, StorePublicationResponse } from "@bthwani/dsh";
+import { joiningCaseStateLabel, publicationStateLabel, type CommerceVertical, type JoiningCaseListResponse, type JoiningCaseResponse, type ServiceCity, type StorePublicationResponse } from "@bthwani/dsh";
 import { toAsciiDigits } from "@bthwani/design-system";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
 
 const phoneE164Pattern = /^\+[1-9][0-9]{7,14}$/;
-
-const joiningStateLabels: Record<JoiningCaseState, string> = { draft: "مسودة", submitted: "مرسلة للمراجعة", needs_correction: "بحاجة إلى تصحيح", approved: "معتمدة" };
-const publicationStateLabels: Record<PublicationState, string> = { unpublished: "غير منشور", published: "منشور", hidden: "مخفي" };
-
-function joiningStateLabel(state: JoiningCaseState): string { return joiningStateLabels[state]; }
-function publicationStateLabel(state: PublicationState): string { return publicationStateLabels[state]; }
 
 export function JoiningCasePanel() {
   const [phone, setPhone] = useState("");
@@ -28,6 +23,10 @@ export function JoiningCasePanel() {
   const [queueError, setQueueError] = useState("");
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [serviceCityId, setServiceCityId] = useState("");
+  const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
+  const [verticalId, setVerticalId] = useState("");
+  const [verticalsBusy, setVerticalsBusy] = useState(true);
+  const [verticalsError, setVerticalsError] = useState("");
 
   const loadQueue = useCallback(async () => {
     setQueueBusy(true);
@@ -51,6 +50,25 @@ export function JoiningCasePanel() {
   useEffect(() => {
     void fetch("/api/service-cities", { cache: "no-store" }).then(async (response) => response.ok ? setCities((await response.json() as { cities: ReadonlyArray<ServiceCity> }).cities) : setCities([]), () => setCities([]));
   }, []);
+
+  const loadVerticals = useCallback(async () => {
+    setVerticalsBusy(true);
+    setVerticalsError("");
+    try {
+      const response = await fetch("/api/catalog/verticals", { cache: "no-store" });
+      if (!response.ok) {
+        setVerticalsError(await partnerErrorMessage(response));
+        return;
+      }
+      setVerticals((await response.json() as { verticals: ReadonlyArray<CommerceVertical> }).verticals);
+    } catch {
+      setVerticalsError("تعذر قراءة المجالات التجارية.");
+    } finally {
+      setVerticalsBusy(false);
+    }
+  }, []);
+
+  useEffect(() => { void loadVerticals(); }, [loadVerticals]);
 
   function rememberResult(next: JoiningCaseResponse) {
     setResult(next);
@@ -83,9 +101,9 @@ export function JoiningCasePanel() {
   }
 
   async function createCase() {
-    const input = { contactPhoneE164: phone.replace(/\s+/g, ""), businessName: businessName.trim(), firstStoreName: storeName.trim(), serviceCityId };
-    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2 || !input.serviceCityId) {
-      setError("أدخل رقم هاتف الشريك واسم النشاط واسم المتجر الأول واختر المدينة.");
+    const input = { contactPhoneE164: phone.replace(/\s+/g, ""), businessName: businessName.trim(), firstStoreName: storeName.trim(), serviceCityId, firstStoreVerticalId: verticalId };
+    if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2 || !input.serviceCityId || !input.firstStoreVerticalId) {
+      setError("أدخل هاتف الشريك والاسم القانوني للنشاط واسم المتجر الأول واختر المدينة والمجال التجاري.");
       return;
     }
     setBusy(true);
@@ -209,6 +227,7 @@ export function JoiningCasePanel() {
 
   const current = result?.case;
   const storeId = current?.store?.id;
+  const activeVerticals = verticals.filter((vertical) => vertical.active);
   return (
     <section className="access-card" aria-labelledby="joining-case-title">
       <div className="access-card-heading">
@@ -225,26 +244,30 @@ export function JoiningCasePanel() {
           {queueBusy ? <p>جارٍ تحميل الطابور…</p> : null}
           {queueError ? <p role="alert">{queueError} <button type="button" className="button button-secondary" onClick={() => void loadQueue()}>إعادة المحاولة</button></p> : null}
           {!queueBusy && !queueError && queue.length === 0 ? <p>لا توجد حالات انضمام حاليًا.</p> : null}
-          {queue.length ? <ul>{queue.map((item) => <li key={item.id}><button type="button" className="button button-secondary" disabled={busy} onClick={() => void openCase(item.id)}>{joiningStateLabel(item.state)} · {item.businessName}</button></li>)}</ul> : null}
+          {queue.length ? <ul>{queue.map((item) => <li key={item.id}><button type="button" className="button button-secondary" disabled={busy} onClick={() => void openCase(item.id)}>{joiningCaseStateLabel(item.state)} · {item.businessName}</button></li>)}</ul> : null}
         </div>
+        {verticalsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحميل المجالات التجارية</strong><p>{verticalsError}</p><button type="button" className="button button-secondary" disabled={verticalsBusy || busy} onClick={() => void loadVerticals()}>إعادة قراءة المجالات</button></div> : null}
+        {!verticalsBusy && !verticalsError && activeVerticals.length === 0 ? <div className="managed-status managed-status-warning" role="alert"><strong>لا يمكن إنشاء طلب شريك بعد</strong><p>يجب أن يضيف المشغل مجالًا تجاريًا نشطًا من الكتالوج أولًا، ثم تعود لاختيار المجال هنا.</p><Link className="button button-secondary" href="/catalog">فتح الكتالوج لإضافة مجال</Link></div> : null}
         <div className="access-form">
           <label className="field-label" htmlFor="joining-phone">رقم هاتف الشريك (E.164)<input id="joining-phone" autoComplete="tel" disabled={busy} inputMode="tel" value={phone} onChange={(event) => { setPhone(toAsciiDigits(event.target.value)); clearResult(); }} placeholder="مثال: +96777000100" /></label>
-          <label className="field-label" htmlFor="joining-business">اسم النشاط<input id="joining-business" disabled={busy} value={businessName} onChange={(event) => { setBusinessName(event.target.value); clearResult(); }} /></label>
+          <label className="field-label" htmlFor="joining-business">الاسم القانوني للنشاط<input id="joining-business" disabled={busy} value={businessName} onChange={(event) => { setBusinessName(event.target.value); clearResult(); }} /></label>
           <label className="field-label" htmlFor="joining-store">اسم المتجر الأول<input id="joining-store" disabled={busy} value={storeName} onChange={(event) => { setStoreName(event.target.value); clearResult(); }} /></label>
           <label className="field-label" htmlFor="joining-city">مدينة المتجر الأول<select id="joining-city" disabled={busy} value={serviceCityId} onChange={(event) => { setServiceCityId(event.target.value); clearResult(); }}><option value="">اختر مدينة نشطة</option>{cities.filter((city) => city.active).map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
-          <button type="button" className="button button-primary" disabled={busy} onClick={() => void createCase()}>{busy ? "جارٍ إنشاء الحالة…" : "إنشاء حالة انضمام"}</button>
+          <label className="field-label" htmlFor="joining-vertical">المجال التجاري<select id="joining-vertical" disabled={busy || verticalsBusy || Boolean(verticalsError)} value={verticalId} onChange={(event) => { setVerticalId(event.target.value); clearResult(); }}><option value="">{verticalsBusy ? "جارٍ تحميل المجالات…" : verticalsError ? "تعذر تحميل المجالات" : activeVerticals.length ? "اختر المجال التجاري" : "لا توجد مجالات نشطة"}</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
+          <button type="button" className="button button-primary" disabled={busy || verticalsBusy || Boolean(verticalsError) || activeVerticals.length === 0} onClick={() => void createCase()}>{busy ? "جارٍ إنشاء الحالة…" : "إنشاء حالة انضمام"}</button>
         </div>
         </>
       ) : (
         <div className="managed-status managed-status-info" role="status">
-          <strong>الحالة: {joiningStateLabel(current.state)}</strong>
+          <strong>الحالة: {joiningCaseStateLabel(current.state)}</strong>
           <p>{current.businessName} · {current.firstStoreName}</p>
-          <p>مدينة المتجر الأول: {cities.find((city) => city.id === current.serviceCityId)?.displayNameAr || current.serviceCityId}</p>
+          <p>مدينة المتجر الأول: {cities.find((city) => city.id === current.serviceCityId)?.displayNameAr || "مدينة غير معرّفة"}</p>
+          <p>المجال التجاري: {verticals.find((vertical) => vertical.id === current.firstStoreVerticalId)?.nameAr || current.firstStoreVerticalId}</p>
           {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
           {current.state === "draft" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
           {current.state === "submitted" ? (
             <>
-              <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
+              <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
               <button type="button" className="button button-primary" disabled={busy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر</button>
               <button type="button" className="button button-secondary" disabled={busy} onClick={() => void reviewCase("needs_correction")}>إعادة للتصحيح</button>
             </>

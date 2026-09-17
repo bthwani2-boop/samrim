@@ -383,6 +383,10 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog import facts are invalid")
 	case errors.Is(err, postgres.ErrCatalogOfferInvalidState):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "StoreOffer publication state is invalid")
+	case errors.Is(err, catalog.ErrCatalogVerticalInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "commerce vertical facts are invalid")
+	case errors.Is(err, catalog.ErrCatalogCategoryInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog category facts are invalid")
 	case errors.Is(err, catalog.ErrCatalogProductNameInvalid), errors.Is(err, catalog.ErrCatalogProductIdentifierInvalid), errors.Is(err, catalog.ErrCatalogProductImageInvalid), errors.Is(err, catalog.ErrCatalogProductScopeInvalid), errors.Is(err, catalog.ErrCatalogProductVerticalInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product facts are invalid")
 	case errors.Is(err, catalog.ErrCatalogModifierInvalid), errors.Is(err, catalog.ErrCatalogSectionInvalid):
