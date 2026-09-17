@@ -1,3 +1,3 @@
-import { FieldOperations } from "../../src/features/field-operations/field-operations";
+import { FieldCases } from "../../src/features/field-operations/field-cases";
 import { FieldScrollScreen } from "../../src/shell/field-shell";
-export default function FieldCasesRoute() { return <FieldScrollScreen><FieldOperations surface="cases" /></FieldScrollScreen>; }
+export default function FieldCasesRoute() { return <FieldScrollScreen><FieldCases /></FieldScrollScreen>; }

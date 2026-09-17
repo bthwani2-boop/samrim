@@ -53,7 +53,7 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
 
   return (
     <View style={styles.container} accessibilityLabel={`كتالوج ${state.store.name}`}>
-      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتاجر" onPress={() => router.back()}><Text style={styles.back}>‹ المتاجر المتاحة</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتاجر" onPress={() => router.back()}><Text style={styles.back}>المتاجر المتاحة</Text></Pressable>
       <Text style={styles.eyebrow}>كتالوج المتجر</Text>
       <Text style={styles.title}>{state.store.name}</Text>
       <Text style={styles.muted}>مدينة الخدمة: {state.store.serviceCity.displayNameAr}</Text>

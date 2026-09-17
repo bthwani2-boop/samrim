@@ -2,7 +2,7 @@ import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
 
-import { direction, resolveRowDirection, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
+import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
 import { captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, orderStateLabel, type CaptainAssignment, type Order } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
@@ -84,7 +84,6 @@ function attributeSnapshotValue(attribute: Order["lines"][number]["attributeSnap
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
-  const rowDirection = resolveRowDirection(activeDirection);
   return StyleSheet.create({
     container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 10, marginTop: 16, padding: 14, width: "100%", direction: activeDirection },
     title: { color: theme.color, fontSize: 17, fontWeight: "800", textAlign: startTextAlign },
@@ -95,7 +94,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     line: { borderColor: theme.borderColor, borderTopWidth: 1, gap: 3, paddingTop: 8 },
     lineTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
     handoff: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 7, marginTop: 5, padding: 8 },
-    actionRow: { flexDirection: rowDirection, gap: 8 },
+    actionRow: { direction: activeDirection, flexDirection: "row", gap: 8 },
     orderTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
     button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 8, flex: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },
     buttonText: { color: theme.onAction, fontWeight: "800" },

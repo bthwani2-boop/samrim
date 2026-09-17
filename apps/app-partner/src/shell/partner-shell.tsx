@@ -1,39 +1,8 @@
-import { Link, Slot, usePathname, type Href } from "expo-router";
 import { useMemo, type PropsWithChildren } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, useColorScheme, View } from "react-native";
+import { ScrollView, StyleSheet, Text, useColorScheme, View, type ColorValue } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { direction, radius, resolveRowDirection, resolveTextAlign, resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-
-const navigation = [
-  { href: "/store", label: "المتجر", accessibilityLabel: "إدارة المتجر" },
-  { href: "/orders", label: "الطلبات", accessibilityLabel: "طلبات المتجر" },
-  { href: "/account", label: "الحساب", accessibilityLabel: "حساب الشريك" },
-] as const;
-
-export default function PartnerShell() {
-  const pathname = usePathname();
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
-  const styles = useMemo(() => createStyles(theme), [theme]);
-  return (
-    <SafeAreaView style={styles.shell}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.brand}>بثواني</Text>
-          <Text style={styles.context}>مساحة الشريك · تشغيل المتجر</Text>
-        </View>
-        <View style={styles.headerMark} accessibilityElementsHidden><View style={styles.headerMarkNavy} /><View style={styles.headerMarkOrange} /></View>
-      </View>
-      <View style={styles.content}><Slot /></View>
-      <View style={styles.navigation} accessibilityRole="tablist">
-        {navigation.map((item) => {
-          const selected = pathname === item.href;
-          return <Link key={item.href} href={item.href as Href} asChild><Pressable accessibilityRole="tab" accessibilityLabel={item.accessibilityLabel} accessibilityState={{ selected }} style={({ pressed }) => [styles.navigationItem, selected && styles.navigationItemSelected, pressed && styles.navigationItemPressed]}><Text style={[styles.navigationLabel, selected && styles.navigationLabelSelected]}>{item.label}</Text></Pressable></Link>;
-        })}
-      </View>
-    </SafeAreaView>
-  );
-}
+import { direction, radius, resolveTextAlign, resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 
 export function PartnerScrollScreen({ children }: PropsWithChildren) {
   const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
@@ -41,25 +10,45 @@ export function PartnerScrollScreen({ children }: PropsWithChildren) {
   return <ScrollView contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
 }
 
+export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>) {
+  const styles = createStyles(theme);
+  const icons = { store: "▣", orders: "▤", account: "◉" } as const;
+  return ({ route }: { route: { name: string } }) => ({
+    headerShown: true,
+    header: () => <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><PartnerHeader styles={styles} /></SafeAreaView>,
+    tabBarActiveBackgroundColor: theme.actionSoft,
+    tabBarActiveTintColor: theme.interactiveText,
+    tabBarHideOnKeyboard: true,
+    tabBarInactiveTintColor: theme.colorMuted,
+    tabBarShowIcon: true,
+    tabBarIcon: ({ color }: { color: ColorValue }) => <Text accessible={false} style={[styles.navigationIcon, { color }]}>{icons[route.name as keyof typeof icons] ?? "•"}</Text>,
+    tabBarItemStyle: styles.navigationItem,
+    tabBarLabelStyle: styles.navigationLabel,
+    tabBarStyle: styles.navigation,
+    sceneStyle: styles.scene,
+  });
+}
+
+function PartnerHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
+  return <View style={styles.header}><View><Text style={styles.brand}>بثواني</Text><Text style={styles.context}>مساحة الشريك · تشغيل المتجر</Text></View><View style={styles.headerMark} accessibilityElementsHidden><View style={styles.headerMarkNavy} /><View style={styles.headerMarkOrange} /></View></View>;
+}
+
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
   const activeDirection = direction.defaultDirection;
   const startTextAlign = resolveTextAlign("start", activeDirection);
-  const rowDirection = resolveRowDirection(activeDirection);
   return StyleSheet.create({
-    shell: { backgroundColor: theme.background, direction: activeDirection, flex: 1 },
-    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: 1, flexDirection: rowDirection, justifyContent: "space-between", paddingHorizontal: spacing[5], paddingVertical: spacing[3] },
+    headerSafeArea: { backgroundColor: theme.surface, direction: activeDirection },
+    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: 1, direction: activeDirection, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing[5], paddingVertical: spacing[3] },
     brand: { color: theme.color, fontSize: typography.titleMd.fontSize, fontWeight: "800", lineHeight: typography.titleMd.lineHeight, textAlign: startTextAlign },
     context: { color: theme.colorMuted, fontSize: typography.caption.fontSize, marginTop: spacing[1], textAlign: startTextAlign },
-    headerMark: { alignItems: "flex-end", flexDirection: rowDirection, gap: spacing[1], height: sizing.avatarSm },
+    headerMark: { alignItems: "flex-end", direction: activeDirection, flexDirection: "row", gap: spacing[1], height: sizing.avatarSm },
     headerMarkNavy: { backgroundColor: theme.structure, borderRadius: radius.xs, height: sizing.avatarSm, width: 9 },
     headerMarkOrange: { backgroundColor: theme.brandAction, borderRadius: radius.xs, height: 16, width: 9 },
-    content: { flex: 1 },
-    screenContent: { direction: activeDirection, flexGrow: 1, paddingBottom: 24, paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: 1, flexDirection: rowDirection, gap: spacing[2], justifyContent: "space-around", paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
-    navigationItem: { alignItems: "center", borderRadius: radius.md, flex: 1, justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[2] },
-    navigationItemSelected: { backgroundColor: theme.actionSoft },
-    navigationItemPressed: { opacity: 0.72 },
-    navigationLabel: { color: theme.colorMuted, fontSize: typography.caption.fontSize, fontWeight: "700", textAlign: "center" },
-    navigationLabelSelected: { color: theme.interactiveText },
+    scene: { backgroundColor: theme.background, direction: activeDirection },
+    screenContent: { direction: activeDirection, flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
+    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: 1, direction: activeDirection, flexDirection: "row", paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
+    navigationItem: { borderRadius: radius.md, minHeight: sizing.controlLg, paddingHorizontal: spacing[2] },
+    navigationIcon: { fontSize: 22, fontWeight: "800", lineHeight: 26 },
+    navigationLabel: { fontSize: typography.caption.fontSize, fontWeight: "700" },
   });
 }

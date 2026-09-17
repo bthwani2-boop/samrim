@@ -1,6 +1,6 @@
-import { StoreReadback } from "../../src/features/partner-onboarding/store-readback";
+import { PartnerOrders } from "../../src/features/partner-onboarding/partner-orders";
 import { PartnerScrollScreen } from "../../src/shell/partner-shell";
 
 export default function PartnerOrdersRoute() {
-  return <PartnerScrollScreen><StoreReadback surface="orders" /></PartnerScrollScreen>;
+  return <PartnerScrollScreen><PartnerOrders /></PartnerScrollScreen>;
 }

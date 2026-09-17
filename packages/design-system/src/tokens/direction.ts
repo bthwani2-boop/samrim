@@ -9,20 +9,17 @@ export const direction = {
 
 /**
  * Resolve logical alignment for React Native Text nodes.
- * `textAlign` is a physical left/right value on Android, so the mapping
- * must follow the active layout direction. `writingDirection` is iOS-only
- * and cannot be the source of alignment truth on Android.
+ * React Native Text resolves left/right with the node's writing direction;
+ * therefore logical start/end retain the Text contract while TextInput uses
+ * its own native alignment contract below.
  */
 export function resolveTextAlign(value: "center", activeDirection: Direction): "center";
-export function resolveTextAlign(value: "start", activeDirection: "rtl"): "right";
-export function resolveTextAlign(value: "start", activeDirection: "ltr"): "left";
-export function resolveTextAlign(value: "end", activeDirection: "rtl"): "left";
-export function resolveTextAlign(value: "end", activeDirection: "ltr"): "right";
+export function resolveTextAlign(value: "start", activeDirection: Direction): "left";
+export function resolveTextAlign(value: "end", activeDirection: Direction): "right";
 export function resolveTextAlign(value: LogicalAlignment, activeDirection: Direction): "left" | "center" | "right";
-export function resolveTextAlign(value: LogicalAlignment, activeDirection: Direction): "left" | "center" | "right" {
+export function resolveTextAlign(value: LogicalAlignment, _activeDirection: Direction): "left" | "center" | "right" {
   if (value === "center") return "center";
-  if (value === "start") return activeDirection === "rtl" ? "right" : "left";
-  return activeDirection === "rtl" ? "left" : "right";
+  return value === "start" ? "left" : "right";
 }
 
 /** Resolve logical alignment for React Native TextInput nodes. */
@@ -38,8 +35,12 @@ export function resolveTextInputAlign(value: LogicalAlignment, activeDirection: 
   return activeDirection === "rtl" ? "left" : "right";
 }
 
-export function resolveRowDirection(direction: Direction): "row" | "row-reverse" {
-  return direction === "rtl" ? "row-reverse" : "row";
+/** Resolve the complete logical text contract for Arabic-first native surfaces. */
+export function resolveLogicalTextStyle(activeDirection: Direction) {
+  return {
+    textAlign: resolveTextAlign("start", activeDirection),
+    writingDirection: activeDirection,
+  } as const;
 }
 
 /** Convert Arabic-Indic and Eastern Arabic-Indic numerals to the product's ASCII digit form. */

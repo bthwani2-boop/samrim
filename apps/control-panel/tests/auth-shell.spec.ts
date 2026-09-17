@@ -53,6 +53,27 @@ test("authenticated operator discovers access and partner responsibilities throu
   await expect(page.getByRole("heading", { name: "الحسابات والأدوار" })).toBeVisible();
 });
 
+test("workspace routes keep one main landmark and an actor-specific page hierarchy", async ({ page }) => {
+  test.setTimeout(120_000);
+  await stubAuthenticatedSession(page);
+  const routes = [
+    ["/workspace", "أهلاً بك في مساحة العمل"],
+    ["/access", "الحسابات والأدوار"],
+    ["/partners", "انضمام الشركاء"],
+    ["/captains", "عمليات الكابتن"],
+    ["/fields", "قبول الميدان"],
+    ["/catalog", "كتالوج التجارة"],
+  ] as const;
+
+  for (const [path, heading] of routes) {
+    await page.goto(path, { waitUntil: "commit" });
+    await expect(page.locator("#workspace-main")).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator("#workspace-main > main")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("link", { name: heading === "أهلاً بك في مساحة العمل" ? "نظرة الهوية" : path === "/access" ? "الحسابات والأدوار" : path === "/partners" ? "تهيئة الشركاء" : path === "/captains" ? "عمليات الكابتن" : path === "/fields" ? "قبول الميدان" : "المنتجات المركزية" })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
+  }
+});
+
 test("operator direct navigation to access exposes the canonical access capability", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.goto("/access");
