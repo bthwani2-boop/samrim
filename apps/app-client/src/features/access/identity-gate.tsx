@@ -1,5 +1,6 @@
 import { direction as designDirection, resolveRowDirection, resolveTextAlign, resolveTextInputAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
 import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
+import { Redirect, type Href } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,7 +17,6 @@ import {
 import {
   currentIdentityState,
   loginClient,
-  logoutIdentity,
   recoverClient,
   registerClient,
   requestClientRecovery,
@@ -24,8 +24,6 @@ import {
   restoreIdentitySession,
   subscribeIdentitySession,
 } from "../../bootstrap/identity";
-import LocationCore from "../location-core/location-core";
-import ClientOrders from "../orders/orders";
 import ServiceCityScope from "../service-city/service-city-scope";
 import StoreDiscovery from "../store-discovery/store-discovery";
 import { type IdentityCopy, identityPresentation } from "./identity-presentation";
@@ -215,24 +213,6 @@ export default function IdentityGate() {
     }
   }
 
-  async function logout() {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    let remoteRevocationConfirmed = true;
-    try {
-      await logoutIdentity();
-    } catch {
-      remoteRevocationConfirmed = false;
-    } finally {
-      setState(currentIdentityState());
-      resetSignedOutAuthState();
-      setAuthPromptVisible(false);
-      if (!remoteRevocationConfirmed) setNotice(copy.remoteLogoutFailure);
-      setBusy(false);
-    }
-  }
-
   if (state.kind === "restoring") {
     return (
       <View style={styles.container}>
@@ -244,28 +224,7 @@ export default function IdentityGate() {
   }
 
   if (state.kind === "authenticated") {
-    return (
-      <ScrollView contentContainerStyle={styles.authenticatedScrollContent} keyboardShouldPersistTaps="handled" nestedScrollEnabled style={styles.container}>
-          <Text style={styles.title}>{copy.brand}</Text>
-          <Text style={styles.status}>{copy.authenticatedStatus}</Text>
-          <ServiceCityScope>
-            <StoreDiscovery isAuthenticated />
-            <LocationCore />
-          </ServiceCityScope>
-          <ClientOrders />
-          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={copy.logout}
-            accessibilityState={{ busy, disabled: busy }}
-            disabled={busy}
-            onPress={logout}
-            style={[styles.primaryButton, busy && styles.primaryButtonDisabled]}
-          >
-            <Text style={[styles.primaryButtonText, busy && styles.primaryButtonTextDisabled]}>{busy ? copy.busyAction : copy.logout}</Text>
-          </Pressable>
-      </ScrollView>
-    );
+    return <Redirect href={"/home" as Href} />;
   }
 
   if (state.kind === "degraded") {
@@ -516,7 +475,6 @@ function createStyles(colors: GateColors, activeDirection: "rtl" | "ltr") {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background, direction: activeDirection },
     publicDiscovery: { flexShrink: 0, minHeight: 260, paddingVertical: 16, width: "100%", direction: activeDirection },
-    authenticatedScrollContent: { alignItems: "stretch", flexGrow: 1, gap: 16, paddingBottom: 160, paddingHorizontal: 20, paddingTop: 32, width: "100%", direction: activeDirection },
     scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: 20, paddingVertical: 32, direction: activeDirection },
     authShell: { width: "100%", maxWidth: 480, alignSelf: "center", direction: activeDirection },
     brandBlock: { alignItems: "center", marginBottom: 24, direction: activeDirection },

@@ -12,10 +12,27 @@ export interface ManagedIdentityBinding {
   restoreIdentitySession: () => Promise<IdentitySessionState>;
   currentIdentityState: () => IdentitySessionState;
   subscribe: (listener: (state: IdentitySessionState) => void) => () => void;
-  logoutIdentity: () => Promise<void>;
   requestManagedActivation: (phone: string) => Promise<unknown>;
   activateManagedIdentity: (phone: string, verificationCode: string, password: string) => Promise<IdentitySessionState>;
   loginManagedIdentity: (phone: string, password: string) => Promise<IdentitySessionState>;
+}
+
+/**
+ * Session-only binding for an authenticated route tree.
+ *
+ * Routing belongs to the host app; identity only decides whether the route
+ * tree may render and notifies the host when the session leaves the boundary.
+ */
+export interface MobileIdentitySessionBinding {
+  restoreIdentitySession: () => Promise<IdentitySessionState>;
+  currentIdentityState: () => IdentitySessionState;
+  subscribe: (listener: (state: IdentitySessionState) => void) => () => void;
+}
+
+export interface AuthenticatedMobileBoundaryProps {
+  binding: MobileIdentitySessionBinding;
+  onUnauthenticated: () => void;
+  children: ReactNode;
 }
 
 export interface ManagedIdentityFlowProps {
@@ -34,6 +51,67 @@ function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
         <View style={styles.brandMarkOrange} />
       </View>
       <Text style={styles.brandName}>بثواني</Text>
+    </View>
+  );
+}
+
+export function AuthenticatedMobileBoundary({ binding, onUnauthenticated, children }: AuthenticatedMobileBoundaryProps) {
+  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
+  const [busy, setBusy] = useState(false);
+
+  const restoreSession = useCallback(async () => {
+    setBusy(true);
+    try {
+      setState(await binding.restoreIdentitySession());
+    } catch {
+      setState({ kind: "degraded", reason: "unknown" });
+    } finally {
+      setBusy(false);
+    }
+  }, [binding]);
+
+  useEffect(() => {
+    void restoreSession();
+  }, [restoreSession]);
+
+  useEffect(() => {
+    const unsubscribe = binding.subscribe(setState);
+    setState(binding.currentIdentityState());
+    return unsubscribe;
+  }, [binding]);
+
+  useEffect(() => {
+    if (state.kind === "signed_out") onUnauthenticated();
+  }, [onUnauthenticated, state.kind]);
+
+  if (state.kind === "authenticated") return <>{children}</>;
+
+  return (
+    <View style={styles.boundaryContainer}>
+      <BrandHeader styles={styles} />
+      <View style={styles.stateCard}>
+        <ActivityIndicator accessibilityLabel="جارٍ التحقق من الجلسة" color={theme.actionBackground} size="large" />
+        <Text style={styles.stateTitle}>
+          {state.kind === "degraded" ? "تعذر التحقق من الجلسة" : state.kind === "signed_out" ? "انتهت الجلسة" : "جارٍ تجهيز المساحة"}
+        </Text>
+        <Text style={styles.muted}>
+          {state.kind === "degraded" ? "تحقق من الاتصال ثم أعد المحاولة." : state.kind === "signed_out" ? "نعيدك إلى بوابة تسجيل الدخول." : "نتحقق من الوصول قبل عرض بيانات التشغيل."}
+        </Text>
+        {state.kind === "degraded" ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="إعادة التحقق"
+            accessibilityState={{ busy, disabled: busy }}
+            disabled={busy}
+            onPress={() => void restoreSession()}
+            style={[styles.primaryButton, busy && styles.disabledButton]}
+          >
+            <Text style={[styles.primaryButtonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ التحقق…" : "إعادة التحقق"}</Text>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -59,7 +137,6 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
-  const [showAccount, setShowAccount] = useState(false);
   const [challengeRequested, setChallengeRequested] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -89,7 +166,6 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   }, [binding]);
 
   function resetToLogin() {
-    setShowAccount(false);
     setStep("login");
     setVerificationCode("");
     setPassword("");
@@ -154,22 +230,6 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
     }
   }
 
-  async function logoutDevice() {
-    setBusy(true);
-    setError("");
-    let remoteRevocationConfirmed = true;
-    try {
-      await binding.logoutIdentity();
-    } catch {
-      remoteRevocationConfirmed = false;
-    } finally {
-      resetToLogin();
-      setState(binding.currentIdentityState());
-      if (!remoteRevocationConfirmed) setNotice("تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم.");
-      setBusy(false);
-    }
-  }
-
   const shell = (content: ReactNode) => (
     <ScrollView
       contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + spacing[12], spacing[12]), paddingTop: Math.max(insets.top + spacing[4], spacing[8]) }]}
@@ -196,66 +256,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   }
 
   if (state.kind === "authenticated") {
-    if (showAccount) {
-      return shell(
-        <View style={styles.card}>
-          <View style={styles.accountHeading}>
-            <Text style={styles.eyebrow}>إدارة الحساب</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="العودة إلى المساحة"
-              onPress={() => setShowAccount(false)}
-              style={styles.linkButton}
-            >
-              <Text style={styles.linkText}>العودة إلى المساحة</Text>
-            </Pressable>
-          </View>
-          <Text style={styles.title}>الحساب</Text>
-          <Text style={styles.description}>راجع حالة جلسة هذا الجهاز وأنهِ الوصول منه عند الحاجة.</Text>
-          <View style={styles.accountStatus}>
-            <View style={styles.successBadge}>
-              <View style={styles.successDot} />
-              <Text style={styles.successBadgeText}>الجهاز جاهز للعمل</Text>
-            </View>
-            <Text style={styles.description}>الدور: {roleLabel}</Text>
-            <Text style={styles.description}>جلسة هذا الجهاز نشطة ومحفوظة محليًا.</Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="تسجيل الخروج من هذا الجهاز"
-            accessibilityState={{ busy, disabled: busy }}
-            disabled={busy}
-            onPress={logoutDevice}
-            style={({ pressed }: { pressed: boolean }) => [styles.secondaryButton, pressed && styles.secondaryButtonPressed, busy && styles.disabledButton]}
-          >
-            <Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج من هذا الجهاز"}</Text>
-          </Pressable>
-        </View>
-      );
-    }
-
-    return shell(
-      <View style={styles.card}>
-        <View style={styles.authenticatedToolbar}>
-          <View style={styles.successBadge}>
-            <View style={styles.successDot} />
-            <Text style={styles.successBadgeText}>الجهاز جاهز للعمل</Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="الحساب"
-            onPress={() => setShowAccount(true)}
-            style={({ pressed }: { pressed: boolean }) => [styles.accountButton, pressed && styles.secondaryButtonPressed]}
-          >
-            <Text style={styles.accountButtonText}>الحساب</Text>
-          </Pressable>
-        </View>
-        <Text style={styles.title}>مرحباً بك في مساحة {roleLabel}</Text>
-        <Text style={styles.description}>تم تفعيل جلسة هذا الجهاز بنجاح.</Text>
-        {authenticatedContent}
-        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      </View>
-    );
+    return authenticatedContent ? <>{authenticatedContent}</> : null;
   }
 
   if (state.kind === "degraded") {
@@ -448,6 +449,15 @@ function createStyles(theme: ThemeColors) {
   const rowDirection = resolveRowDirection(activeDirection);
 
   return StyleSheet.create({
+    boundaryContainer: {
+      alignItems: "stretch",
+      backgroundColor: theme.background,
+      direction: activeDirection,
+      flex: 1,
+      gap: spacing[4],
+      justifyContent: "center",
+      paddingHorizontal: spacing[4],
+    },
     content: {
       flexGrow: 1,
       alignItems: "stretch",

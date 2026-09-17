@@ -3,8 +3,6 @@ import type { IdentityErrorMessages } from "@bthwani/identity";
 export type IdentityCopy = {
   brand: string;
   restoringSession: string;
-  authenticatedStatus: string;
-  logout: string;
   busyAction: string;
   serviceUnavailable: string;
   retryVerification: string;
@@ -37,15 +35,12 @@ export type IdentityCopy = {
   signInLink: string;
   newAccountLink: string;
   continueBrowsing: string;
-  remoteLogoutFailure: string;
   errors: IdentityErrorMessages;
 };
 
 const identityCopy: IdentityCopy = {
   brand: "بثواني",
   restoringSession: "جارٍ التحقق من بيانات الدخول…",
-  authenticatedStatus: "تم تسجيل الدخول",
-  logout: "تسجيل الخروج",
   busyAction: "جارٍ التنفيذ…",
   serviceUnavailable: "خدمة الهوية غير متاحة",
   retryVerification: "إعادة التحقق",
@@ -78,7 +73,6 @@ const identityCopy: IdentityCopy = {
   signInLink: "دخول",
   newAccountLink: "حساب جديد",
   continueBrowsing: "متابعة التصفح",
-  remoteLogoutFailure: "تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم.",
   errors: {
     generic: "تعذر إكمال العملية. تحقق من البيانات ثم حاول مرة أخرى.",
     network: "تعذر الاتصال بخدمة الهوية. تحقق من الاتصال ثم أعد المحاولة.",

@@ -81,6 +81,34 @@ assert.ok(identityContent.includes(`const surface = "${surface}"`), `${app}: wro
 const entryPath = path.join(appDir, "app", "index.tsx");
 assert.ok(fs.existsSync(entryPath), `${app}: missing app/index.tsx`);
 
+// The authenticated application must be a real route tree. The identity
+// surface remains the unauthenticated entry point; it must not own the
+// authenticated workflow body or act as a navigation substitute.
+const routePaths =
+  app === "app-client" ? ["home.tsx", "orders.tsx", "orders/[orderId].tsx", "cart/[storeId].tsx", "account.tsx"] :
+  app === "app-partner" ? ["store.tsx", "orders.tsx", "onboarding.tsx", "account.tsx"] :
+  app === "app-captain" ? ["home.tsx", "offers.tsx", "deliveries.tsx", "account.tsx"] :
+  ["home.tsx", "cases.tsx", "new-case.tsx", "account.tsx"];
+const appRouteDir = path.join(appDir, "app", "(app)");
+assert.ok(fs.existsSync(path.join(appRouteDir, "_layout.tsx")), `${app}: missing authenticated route layout`);
+assert.ok(fs.readFileSync(path.join(appRouteDir, "_layout.tsx"), "utf8").includes("AuthenticatedMobileBoundary"), `${app}: authenticated routes must be session guarded`);
+for (const routePath of routePaths) assert.ok(fs.existsSync(path.join(appRouteDir, routePath)), `${app}: missing route ${routePath}`);
+if (app === "app-client") assert.ok(fs.existsSync(path.join(appDir, "app", "store", "[storeId].tsx")), `${app}: missing public store catalog route`);
+const shellPath = path.join(appDir, "src", "shell", `${role}-shell.tsx`);
+assert.ok(fs.existsSync(shellPath), `${app}: missing actor-specific application shell`);
+const shellContent = fs.readFileSync(shellPath, "utf8");
+assert.ok(shellContent.includes("<Slot />"), `${app}: application shell must compose route content through Expo Router`);
+assert.ok(shellContent.includes('accessibilityRole="tablist"'), `${app}: application shell navigation must expose its role`);
+const identityGatePath = path.join(appDir, "src", "features", "access", "identity-gate.tsx");
+const identityGateContent = fs.readFileSync(identityGatePath, "utf8");
+if (app === "app-client") {
+  assert.ok(!identityGateContent.includes("LocationCore"), `${app}: identity gate must not own the account workflow`);
+  assert.ok(!identityGateContent.includes("ClientOrders"), `${app}: identity gate must not own the orders workflow`);
+} else {
+  assert.ok(identityGateContent.includes("authenticatedContent={<Redirect"), `${app}: managed identity gate must redirect into the authenticated route tree`);
+}
+console.log(`MOBILE_ROUTE_TREE=PASS app=${app} routes=${routePaths.join(",")}`);
+
 import { register } from "node:module";
 import { pathToFileURL } from "node:url";
 register(pathToFileURL(path.join(root, "tools/dev/ts-resolver.mjs")).href, import.meta.url);

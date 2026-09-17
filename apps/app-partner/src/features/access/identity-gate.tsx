@@ -1,18 +1,17 @@
 import { ManagedIdentityFlow } from "@bthwani/identity/presentation";
+import { Redirect, type Href } from "expo-router";
 import {
   activateManagedIdentity,
   currentIdentityState,
   loginManagedIdentity,
-  logoutIdentity,
   requestManagedActivation,
   restoreIdentitySession,
   subscribeIdentitySession,
   role,
   surface,
 } from "../../bootstrap/identity";
-import { StoreReadback } from "../partner-onboarding/store-readback";
 
-const identity = { role, surface, restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession, logoutIdentity, requestManagedActivation, activateManagedIdentity, loginManagedIdentity };
+const identity = { role, surface, restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession, requestManagedActivation, activateManagedIdentity, loginManagedIdentity };
 
 export default function IdentityGate() {
   return (
@@ -21,7 +20,7 @@ export default function IdentityGate() {
       surface={surface}
       roleLabel="الشريك"
       binding={identity}
-      authenticatedContent={<StoreReadback />}
+    authenticatedContent={<Redirect href={"/store" as Href} />}
     />
   );
 }
