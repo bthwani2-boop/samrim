@@ -1,4 +1,5 @@
 import * as Crypto from "expo-crypto";
+import { Link, type Href } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
 
@@ -12,7 +13,9 @@ function client() {
   return createDshMobileClient(raw, { cryptoRandomUUID: () => Crypto.randomUUID() });
 }
 
-export function FieldOperations() {
+export type FieldSurface = "overview" | "cases" | "new-case";
+
+export function FieldOperations({ surface = "overview" }: { surface?: FieldSurface }) {
   const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [admission, setAdmission] = useState<FieldAdmission | null>(null);
@@ -31,20 +34,28 @@ export function FieldOperations() {
     try {
       const token = await getUsableIdentityAccessToken();
       const api = client();
-      const [admissionResponse, caseResponse] = await Promise.all([api.readOwnFieldAdmission(token), api.listOwnFieldJoiningCases(token)]);
-      setAdmission(admissionResponse.admission);
-      setCases(caseResponse.cases);
+      if (surface === "overview" || surface === "new-case") {
+        const admissionResponse = await api.readOwnFieldAdmission(token);
+        setAdmission(admissionResponse.admission);
+      } else {
+        const caseResponse = await api.listOwnFieldJoiningCases(token);
+        setCases(caseResponse.cases);
+      }
     } catch (cause) {
       console.error("DSH Field readback failed", cause);
       setError("تعذر قراءة قبول الميدان وملفاته. أعد المحاولة.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [surface]);
 
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
+    if (surface !== "new-case") {
+      setOptionsLoading(false);
+      return;
+    }
     let active = true;
     setOptionsLoading(true);
     void Promise.all([client().listActiveServiceCities(), client().listCatalogVerticals()]).then(
@@ -61,7 +72,7 @@ export function FieldOperations() {
       if (active) setOptionsLoading(false);
     });
     return () => { active = false; };
-  }, []);
+  }, [surface]);
 
   async function createCase() {
     if (busy || !input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId) {
@@ -103,9 +114,10 @@ export function FieldOperations() {
       <Text style={styles.title}>عمليات الميدان</Text>
       <Text style={styles.muted}>القبول وملفات الانضمام مملوكة لـ DSH، ولا يملك الميدان نشر المتجر أو مراجعته.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
-      {!loading && admission ? <View style={styles.card}><Text style={styles.cardTitle}>قبول الميدان</Text><Text style={styles.muted}>الحالة: {fieldAdmissionStateLabel(admission.state)}</Text></View> : null}
-      {!loading && !admission ? <View style={styles.card} accessibilityLiveRegion="polite"><Text style={styles.cardTitle}>لا توجد أهلية تشغيلية</Text><Text style={styles.muted}>لم تصل أهلية الميدان من DSH. أعد المحاولة أو تواصل مع المشغل.</Text></View> : null}
-      {!loading && admission?.state === "eligible" ? (
+      {surface === "overview" && !loading && admission ? <View style={styles.card}><Text style={styles.cardTitle}>قبول الميدان</Text><Text style={styles.muted}>الحالة: {fieldAdmissionStateLabel(admission.state)}</Text></View> : null}
+      {surface === "overview" && !loading && !admission ? <View style={styles.card} accessibilityLiveRegion="polite"><Text style={styles.cardTitle}>لا توجد أهلية تشغيلية</Text><Text style={styles.muted}>لم تصل أهلية الميدان من DSH. أعد المحاولة أو تواصل مع المشغل.</Text></View> : null}
+      {surface === "overview" && !loading && admission?.state === "eligible" ? <View style={styles.summaryCard}><Text style={styles.muted}>يمكنك فتح ملف انضمام جديد من المسار المخصص.</Text><Link href={"/new-case" as Href} asChild><Pressable accessibilityRole="button" style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>فتح ملف جديد</Text></Pressable></Link></View> : null}
+      {surface === "new-case" && !loading && admission?.state === "eligible" ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>ملف انضمام جديد</Text>
           <Text style={styles.label}>هاتف صاحب النشاط</Text>
@@ -125,9 +137,9 @@ export function FieldOperations() {
           <Pressable accessibilityRole="button" accessibilityState={{ busy: busy === "create", disabled: Boolean(busy) || optionsLoading }} disabled={Boolean(busy) || optionsLoading} onPress={() => void createCase()} style={[styles.button, (busy || optionsLoading) && styles.disabledButton]}><Text style={styles.buttonText}>{busy === "create" ? "جارٍ الحفظ…" : "حفظ الملف"}</Text></Pressable>
         </View>
       ) : null}
-      {!loading ? <Text style={styles.sectionTitle}>ملفات الانضمام ({cases.length})</Text> : null}
-      {!loading && cases.length === 0 ? <Text style={styles.muted}>لا توجد ملفات من هذا الميدان.</Text> : null}
-      {cases.map((item) => <View key={item.id} style={styles.card}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><Text style={styles.muted}>الحالة: {joiningCaseStateLabel(item.state)}</Text>{item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}{item.state === "draft" ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void submitCase(item)} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === item.id ? "جارٍ الإرسال…" : "إرسال للمراجعة"}</Text></Pressable> : null}</View>)}
+      {surface === "cases" && !loading ? <Text style={styles.sectionTitle}>ملفات الانضمام ({cases.length})</Text> : null}
+      {surface === "cases" && !loading && cases.length === 0 ? <Text style={styles.muted}>لا توجد ملفات من هذا الميدان.</Text> : null}
+      {surface === "cases" ? cases.map((item) => <View key={item.id} style={styles.card}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><Text style={styles.muted}>الحالة: {joiningCaseStateLabel(item.state)}</Text>{item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}{item.state === "draft" ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void submitCase(item)} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === item.id ? "جارٍ الإرسال…" : "إرسال للمراجعة"}</Text></Pressable> : null}</View>) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void load()} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>تحديث الحالة</Text></Pressable>
     </View>
@@ -145,6 +157,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 19, textAlign: startTextAlign },
     state: { alignItems: "center", gap: 8, paddingVertical: 8 },
     card: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 7, padding: 10 },
+    summaryCard: { backgroundColor: theme.actionSoft, borderRadius: 8, gap: 7, padding: 10 },
     cardTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
     label: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
     input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, color: theme.color, minHeight: 44, paddingHorizontal: 12, textAlign: startTextAlign },

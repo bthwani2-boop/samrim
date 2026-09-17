@@ -1,10 +1,9 @@
 import { ManagedIdentityFlow } from "@bthwani/identity/presentation";
-import { FieldOperations } from "../field-operations/field-operations";
+import { Redirect, type Href } from "expo-router";
 import {
   activateManagedIdentity,
   currentIdentityState,
   loginManagedIdentity,
-  logoutIdentity,
   requestManagedActivation,
   restoreIdentitySession,
   subscribeIdentitySession,
@@ -12,7 +11,7 @@ import {
   surface,
 } from "../../bootstrap/identity";
 
-const identity = { role, surface, restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession, logoutIdentity, requestManagedActivation, activateManagedIdentity, loginManagedIdentity };
+const identity = { role, surface, restoreIdentitySession, currentIdentityState, subscribe: subscribeIdentitySession, requestManagedActivation, activateManagedIdentity, loginManagedIdentity };
 
 export default function IdentityGate() {
   return (
@@ -21,7 +20,7 @@ export default function IdentityGate() {
       surface={surface}
       roleLabel="الميدان"
       binding={identity}
-      authenticatedContent={<FieldOperations />}
+    authenticatedContent={<Redirect href={"/home" as Href} />}
     />
   );
 }
