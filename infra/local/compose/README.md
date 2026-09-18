@@ -45,6 +45,8 @@ The four root app commands remain optional claim-specific openers:
 
 They require the relevant Docker-owned backend and Metro service to already be ready. They perform read-only runtime validation, reuse the canonical device policy, and open the selected installed development client when a real-device interaction is required. They do not start/reconcile Docker or materialize JavaScript dependencies. Normal source-edit feedback comes from Fast Refresh and does not require re-running an app command.
 
+Current mobile LOCAL_INTEGRATION proof is Android-only. iOS export/runtime proof is deferred until iOS becomes an admitted development target; do not pay that cost in the current Android workflow.
+
 `pnpm control` likewise validates the already-running Docker-owned Control Panel and reports its URL; it does not start/reconcile Docker.
 
 `pnpm scr` is the canonical device/scrcpy owner. It uses USB as the primary device identity, prepares a bounded Wi-Fi fallback, reuses valid ADB reverse mappings, and runs a resource-bounded development mirror; it does not own Docker runtime lifecycle.
