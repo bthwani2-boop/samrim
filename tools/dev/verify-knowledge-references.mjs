@@ -25,7 +25,7 @@ function logicalRelative(file) {
 }
 
 function rootForLogicalPath(ref) {
-  return ref.startsWith("governance/") || ref.startsWith("docs/")
+  return ref === "GOVERNANCE-STANDARDS.md" || ref.startsWith("governance/") || ref.startsWith("docs/")
     ? knowledgeRoot
     : repoRoot;
 }
@@ -59,6 +59,7 @@ function resolveKnowledgeRef(sourceFile, raw) {
   ];
   const rootFiles = new Set([
     "AGENTS.md",
+    "GOVERNANCE-STANDARDS.md",
     "CLAUDE.md",
     "GEMINI.md",
     "README.md",
@@ -88,9 +89,10 @@ function resolveKnowledgeRef(sourceFile, raw) {
 }
 
 const sources = [
+  path.join(knowledgeRoot, "GOVERNANCE-STANDARDS.md"),
   ...collectMarkdown(path.join(knowledgeRoot, "governance")),
   ...collectMarkdown(path.join(knowledgeRoot, "docs")),
-];
+].filter((file) => fs.existsSync(file) && fs.statSync(file).isFile());
 
 for (const rootFile of ["AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "CONTRIBUTING.md"]) {
   const absolute = path.join(repoRoot, rootFile);
