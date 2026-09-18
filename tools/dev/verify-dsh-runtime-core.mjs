@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
@@ -28,8 +29,8 @@ const identityBase = required(env, "IDENTITY_API_BASE_URL").replace(/\/+$/, "");
 const dshToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
 const identityDshToken = required(env, "IDENTITY_DSH_SERVICE_TOKEN");
 const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
-const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
-if (dshToken.length < 24 || bootstrapToken.length < 24 || challengeSecret.length < 32) fail("canonical internal secrets are too weak");
+const mailpitPort = required(env, "SAMRIM_MAILPIT_WEB_PORT");
+if (dshToken.length < 24 || bootstrapToken.length < 24) fail("canonical internal secrets are too weak");
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
@@ -215,32 +216,51 @@ function partnerHeaders(key, expectedVersion) { return { "X-Correlation-ID": cry
 function discreteOffer(priceMinor, publicationState, availability = true) { return { priceMinor, availability, publicationState, quantityPolicy: "DISCRETE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 1000, quantityStepBaseUnits: 1, pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1 }; }
 function discreteCreateOffer(variantId, priceMinor) { return { variantId, priceMinor, quantityPolicy: "DISCRETE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 1000, quantityStepBaseUnits: 1, pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1 }; }
 function variableCreateOffer(variantId, priceMinor) { return { variantId, priceMinor, quantityPolicy: "VARIABLE_MEASURE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 10000, quantityStepBaseUnits: 1, pricingBasis: "PER_MEASURE", pricingUnitBaseUnits: 1 }; }
-function hmacChallengeCode(challengeID, purpose) { const digest = crypto.createHmac("sha256", challengeSecret).update(challengeID).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest(); return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, "0"); }
+async function collectCursorPages(base, pathname, options, itemKey) {
+  const items = [];
+  const seenCursors = new Set();
+  let cursor = "";
+  for (;;) {
+    const separator = pathname.includes("?") ? "&" : "?";
+    const response = await request(base, "GET", `${pathname}${cursor ? `${separator}cursor=${encodeURIComponent(cursor)}` : ""}`, options);
+    if (response.status !== 200) return response;
+    items.push(...(Array.isArray(response.body?.[itemKey]) ? response.body[itemKey] : []));
+    const nextCursor = response.body?.nextCursor ? String(response.body.nextCursor) : "";
+    if (!nextCursor) return { ...response, body: { ...response.body, [itemKey]: items, nextCursor: "" } };
+    if (seenCursors.has(nextCursor)) fail("catalog cursor pagination repeated", JSON.stringify({ pathname, nextCursor }));
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+}
 async function activatePartner(phone, password) {
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "partner" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Partner activation challenge failed", JSON.stringify(challenge));
-  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "partner", verificationCode: hmacChallengeCode(challenge.body.challengeId, "managed_activate"), password, clientInstanceId: `dsh-runtime-${suffix}` } });
+  const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate" });
+  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "partner", verificationCode, password, clientInstanceId: `dsh-runtime-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "partner") fail("Partner activation failed", JSON.stringify(activation));
   return String(activation.body.accessToken);
 }
 async function activateCaptain(phone, password) {
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "captain" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Captain activation challenge failed", JSON.stringify(challenge));
-  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "captain", verificationCode: hmacChallengeCode(challenge.body.challengeId, "managed_activate"), password, clientInstanceId: `dsh-captain-${suffix}` } });
+  const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate" });
+  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "captain", verificationCode, password, clientInstanceId: `dsh-captain-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "captain" || activation.body?.identity?.surface !== "app-captain") fail("Captain activation failed", JSON.stringify(activation));
   return String(activation.body.accessToken);
 }
 async function activateField(phone, password) {
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "field" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Field activation challenge failed", JSON.stringify(challenge));
-  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "field", verificationCode: hmacChallengeCode(challenge.body.challengeId, "managed_activate"), password, clientInstanceId: `dsh-field-${suffix}` } });
+  const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate" });
+  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "field", verificationCode, password, clientInstanceId: `dsh-field-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "field" || activation.body?.identity?.surface !== "app-field") fail("Field activation failed", JSON.stringify(activation));
   return String(activation.body.accessToken);
 }
 async function createClientSession(phone) {
   const challenge = await request(identityBase, "POST", "/auth/client/registration/request", { body: { phone } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Client registration challenge failed", JSON.stringify(challenge));
-  const registration = await request(identityBase, "POST", "/auth/client/register", { body: { phone, code: hmacChallengeCode(challenge.body.challengeId, "client_register"), password: `Clie${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: `dsh-client-${suffix}` } });
+  const code = await readMailpitCode({ port: mailpitPort, phone, purpose: "client_register" });
+  const registration = await request(identityBase, "POST", "/auth/client/register", { body: { phone, code, password: `Clie${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: `dsh-client-${suffix}` } });
   if (registration.status !== 201 || typeof registration.body?.accessToken !== "string" || registration.body?.identity?.role !== "client") fail("Client registration failed", JSON.stringify(registration));
   actorIDs.add(String(registration.body.identity.subject));
   return { accessToken: String(registration.body.accessToken), actorID: String(registration.body.identity.subject) };
@@ -480,7 +500,7 @@ const offerAID = String(offerCreate.body.offer.offerId); offerIDs.add(offerAID);
 const missingRequiredAttributePublish = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`offer-missing-attribute-${suffix}`, 1), body: discreteOffer(1250, "published") });
 const invalidEnumValue = await request(dshBase, "PUT", `/dsh/catalog/variants/${variantID}/attributes/${enumAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "ENUM", enumValue: "Light" } });
 const validEnumValue = await request(dshBase, "PUT", `/dsh/catalog/variants/${variantID}/attributes/${enumAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "ENUM", enumValue: "Dark" } });
-const variantAttributeRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const variantAttributeRead = await collectCursorPages(dshBase, `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=1`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "products");
 if (missingRequiredAttributePublish.status !== 409 || missingRequiredAttributePublish.body?.error?.code !== "PRODUCT_NOT_ELIGIBLE" || invalidEnumValue.status !== 404 || validEnumValue.status !== 200 || !variantAttributeRead.body?.products?.[0]?.variants?.some((variant) => variant.id === variantID && variant.attributes?.some((item) => item.attributeId === enumAttributeID && item.enumValue === "Dark"))) fail("required/typed Variant Attribute enforcement failed", JSON.stringify({ missingRequiredAttributePublish, invalidEnumValue, validEnumValue, variantAttributeRead }));
 const offerReplay = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken, headers: partnerHeaders(offerKey), body: discreteCreateOffer(variantID, 1250) });
 if (offerReplay.status !== 200 || offerReplay.body?.idempotentReplay !== true) fail("StoreOffer replay failed", JSON.stringify(offerReplay));
@@ -508,7 +528,7 @@ const proposalBody = { id: proposalID, verticalId: verticalID, categoryId: child
 const proposalCreate = await request(dshBase, "POST", "/dsh/catalog/product-proposals", { token: first.accessToken, headers: partnerHeaders(`proposal-create-${suffix}`), body: proposalBody });
 if (proposalCreate.status !== 201 || proposalCreate.body?.proposal?.state !== "draft" || proposalCreate.body.proposal.version !== 1) fail("Product proposal creation failed", JSON.stringify(proposalCreate));
 proposalIDs.add(proposalID);
-const proposalOwnList = await request(dshBase, "GET", "/dsh/catalog/product-proposals?limit=10", { token: first.accessToken });
+const proposalOwnList = await collectCursorPages(dshBase, "/dsh/catalog/product-proposals?limit=1", { token: first.accessToken }, "proposals");
 const proposalSubmit = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/submit`, { token: first.accessToken, headers: partnerHeaders(`proposal-submit-${suffix}`, 1) });
 const proposalCorrection = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `proposal-correction-${suffix}`, crypto.randomUUID(), 2), body: { state: "needs_correction", reason: "صحح البيانات" } });
 const proposalUpdateBody = { verticalId: proposalBody.verticalId, categoryId: proposalBody.categoryId, proposedName: `Runtime Proposal Corrected ${suffix}`, proposedBrand: proposalBody.proposedBrand, proposedVariantTitle: proposalBody.proposedVariantTitle, proposedMeasurementKind: proposalBody.proposedMeasurementKind, proposedBaseUnit: proposalBody.proposedBaseUnit, proposedIdentifierType: proposalBody.proposedIdentifierType, proposedIdentifierValue: proposalBody.proposedIdentifierValue, proposedImageUri: proposalBody.proposedImageUri };
@@ -517,8 +537,8 @@ const proposalResubmit = await request(dshBase, "POST", `/dsh/catalog/product-pr
 const proposalApprove = await request(dshBase, "POST", `/dsh/catalog/product-proposals/${proposalID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `proposal-approve-${suffix}`, crypto.randomUUID(), 5), body: { state: "approved", reason: "" } });
 const proposalProductID = `proposal_product_${proposalID}`;
 productIDs.add(proposalProductID);
-const proposalProductRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(proposalUpdateBody.proposedName)}&verticalId=${encodeURIComponent(verticalID)}&limit=10`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
-const proposalReviewQueue = await request(dshBase, "GET", "/dsh/catalog/product-proposals/review-queue?state=approved&limit=10", { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const proposalProductRead = await collectCursorPages(dshBase, `/dsh/catalog/products?q=${encodeURIComponent(proposalUpdateBody.proposedName)}&verticalId=${encodeURIComponent(verticalID)}&limit=1`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "products");
+const proposalReviewQueue = await collectCursorPages(dshBase, "/dsh/catalog/product-proposals/review-queue?state=approved&limit=1", { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } }, "proposals");
 if (proposalOwnList.status !== 200 || !proposalOwnList.body?.proposals?.some((item) => item.id === proposalID) || proposalSubmit.status !== 200 || proposalSubmit.body?.proposal?.state !== "submitted" || proposalCorrection.status !== 200 || proposalCorrection.body?.proposal?.state !== "needs_correction" || proposalUpdate.status !== 200 || proposalUpdate.body?.proposal?.state !== "draft" || proposalUpdate.body.proposal.version !== 4 || proposalResubmit.status !== 200 || proposalResubmit.body?.proposal?.state !== "submitted" || proposalApprove.status !== 200 || proposalApprove.body?.proposal?.state !== "approved" || proposalApprove.body.proposal.version !== 6 || proposalProductRead.status !== 200 || !proposalProductRead.body?.products?.some((item) => item.id === proposalProductID && item.canonicalName === proposalUpdateBody.proposedName) || proposalReviewQueue.status !== 200 || !proposalReviewQueue.body?.proposals?.some((item) => item.id === proposalID && item.state === "approved")) fail("Product proposal lifecycle and canonical adoption failed", JSON.stringify({ proposalOwnList, proposalSubmit, proposalCorrection, proposalUpdate, proposalResubmit, proposalApprove, proposalProductRead, proposalReviewQueue }));
 const importRunID = `import-${suffix}`;
 const importedName = `Runtime Imported ${suffix}`;

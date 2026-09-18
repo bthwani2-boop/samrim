@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env-file="))?.slice("--env-file=".length);
@@ -12,7 +13,7 @@ const env = Object.fromEntries(fs.readFileSync(envFile, "utf8").split(/\r?\n/).f
   return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
 }));
 const baseUrl = `http://${runtimeHost}:${env.SAMRIM_IDENTITY_PORT}`;
-const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
+const mailpitPort = env.SAMRIM_MAILPIT_WEB_PORT;
 const dshToken = env.IDENTITY_DSH_SERVICE_TOKEN;
 const bootstrapToken = env.OPERATOR_BOOTSTRAP_SECRET;
 const controlToken = env.CONTROL_PANEL_SERVICE_TOKEN;
@@ -58,11 +59,11 @@ const expect = async (method, pathname, status, options = {}) => {
 const service = (token, extra = {}) => ({ Authorization: "Bearer " + token, ...extra });
 const phone = () => "+9677" + String(crypto.randomInt(10_000_000, 99_999_999));
 const password = (label) => label.slice(0, 4).padEnd(4, "x") + crypto.randomBytes(2).toString("hex");
-const codeFor = (challengeId, purpose) => String(crypto.createHmac("sha256", challengeSecret).update(challengeId).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest().readUInt32BE(0) % 1_000_000).padStart(6, "0");
 const issue = async (pathname, body, purpose, role = "client") => {
   const challenge = await expect("POST", pathname, 201, { body });
   assert(typeof challenge.challengeId === "string", purpose + " challenge id missing");
-  return { ...challenge, code: codeFor(challenge.challengeId, purpose), role };
+  assert(typeof mailpitPort === "string" && mailpitPort.trim(), "canonical Mailpit web port missing");
+  return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose }), role };
 };
 const session = (pair, role, surface, subject) => {
   assert(typeof pair?.accessToken === "string" && typeof pair?.refreshToken === "string", "token pair missing");

@@ -49,6 +49,13 @@ assert(!world.includes("local-world-unactivated-bootstrap-cleanup"), "historical
 assert(!world.includes("psql"), "world owner must not use direct database setup or readback");
 assert(!/\b(?:insert|update|delete|truncate|drop|alter)\s+/i.test(world), "world owner must not contain SQL/business-state mutation verbs");
 assert(!world.includes("identity_actor_roles"), "world owner must not read or write Identity tables directly");
+assert(!world.includes("IDENTITY_CHALLENGE_HMAC_SECRET"), "world owner must not depend on Identity challenge secrets");
+assert(!world.includes("challengeCode("), "world owner must not recreate Identity challenge-code derivation");
+assert(!world.includes("createHmac("), "world owner must not carry a private Identity HMAC algorithm");
+assert(world.includes("waitForMailpitCode"), "world owner must consume the actual challenge from the controlled Mailpit sink");
+assert(world.includes("limit=100") && world.includes("limit=50"), "world discovery must use bounded cursor-complete collection pages");
+assert(world.includes("nextCursor") && world.includes("repeated for"), "world discovery must fail closed on repeated cursors");
+assert(!world.includes("/dsh/joining-cases?limit=25"), "world partner discovery must not inspect only the first joining-case page");
 
 assert(world.includes("BTHWANI_SECRETS_ROOT"), "world locator must remain under the existing machine-local secrets root");
 assert(!world.includes("path.join(root, \"world.json\")"), "world locator must not be repository-local");

@@ -208,36 +208,73 @@ function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target) {
     foreach ($port in @($Ports | Where-Object { $_.Service -in @('mailpit','identity','dsh',$Target) })) { Assert-Port $EnvMap $port.Service $port.Key }
 }
 
-function Stop-Workspace-Services {
-    # Existing JS services can restart while js-deps rewrites their shared node_modules volumes.
-    # Stop them first so Compose's completed js-deps dependency gates their next start.
-    Compose (@('stop') + $WorkspaceServices)
+function Get-Running-Workspace-Services {
+    $running = @(& docker ps --filter "label=com.docker.compose.project=$Project" --filter 'status=running' --format '{{.Label "com.docker.compose.service"}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -in $WorkspaceServices } | Sort-Object -Unique)
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect running workspace services.' }
+    return $running
 }
 
-function Start-Full-Runtime {
+function Test-Js-Dependencies-Ready {
+    try {
+        # --check is read-only: it validates the fingerprint and required modules without
+        # running pnpm install or rewriting the shared node_modules volumes.
+        Compose @('run','--rm','js-deps','node','tools/dev/js-deps.mjs','--check') -Quiet
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Start-Requested-Runtime([string[]]$RequestedServices, [switch]$Full) {
     $envMap = Ensure-Environment
     Ensure-Docker
     Assert-No-Parallel-Runtime
     Assert-No-Native-Backend
     Compose @('config','--quiet') -Quiet
-    Stop-Workspace-Services
-    # Full-stack up starts every Docker-owned component without making image rebuild a startup tax.
-    Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
-    Assert-Full-Runtime $envMap
+
+    $runningBefore = @(Get-Running-Workspace-Services)
+    $dependenciesReady = Test-Js-Dependencies-Ready
+    if ($dependenciesReady) {
+        Write-Host "JS_DEPS_GATE=READY action=no-stop requested=$($RequestedServices -join ',')"
+    }
+    else {
+        Write-Host "JS_DEPS_GATE=STALE action=stop-materialize-restore requested=$($RequestedServices -join ',')"
+        # Existing JS services can restart while js-deps rewrites their shared node_modules
+        # volumes. Stop exactly the services that were running before materialization.
+        if ($runningBefore.Count -gt 0) { Compose (@('stop') + $runningBefore) }
+    }
+
+    if ($Full) {
+        # Full-stack up starts every Docker-owned component without making image rebuild a startup tax.
+        Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
+    }
+    else {
+        # Target startup starts causal dependencies while preserving unrelated services.
+        Compose (@('up','-d','--wait','--wait-timeout','300','--remove-orphans') + $RequestedServices)
+    }
+
+    if (-not $dependenciesReady -and -not $Full) {
+        $restore = @($runningBefore | Where-Object { $_ -notin $RequestedServices })
+        if ($restore.Count -gt 0) {
+            Write-Host "JS_DEPS_GATE=RESTORE services=$($restore -join ',')"
+            Compose (@('up','-d','--wait','--wait-timeout','300','--remove-orphans') + $restore)
+        }
+    }
+
+    if ($Full) { Assert-Full-Runtime $envMap } else { Assert-Target-Runtime $envMap $RequestedServices[0] }
+    return $envMap
+}
+
+function Start-Full-Runtime {
+    $null = Start-Requested-Runtime $WorkspaceServices -Full
     Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=full'
     Write-Host 'DOCKER_RUNTIME=PASS'
     Write-Host 'DOCKER_OWNS=postgres,mailpit,identity-migrate,identity,dsh-migrate,dsh,js-deps,control,metro-client,metro-partner,metro-captain,metro-field'
 }
 
 function Ensure-Target-Runtime([string]$Target) {
-    $envMap = Ensure-Environment
-    Ensure-Docker
-    Assert-No-Parallel-Runtime
-    Assert-No-Native-Backend
-    Compose @('config','--quiet') -Quiet
-    # Compose starts causal dependencies. Already-running unrelated surfaces are left untouched.
-    Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans',$Target)
-    Assert-Target-Runtime $envMap $Target
+    $envMap = Start-Requested-Runtime @($Target)
     Write-Host "CANONICAL_LOCAL_RUNTIME=PASS mode=target target=$Target"
     return $envMap
 }

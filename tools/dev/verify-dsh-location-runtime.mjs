@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
@@ -28,7 +29,7 @@ const identityBase = required(env, "IDENTITY_API_BASE_URL").replace(/\/+$/, "");
 const identityDshToken = required(env, "IDENTITY_DSH_SERVICE_TOKEN");
 const controlPanelToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
 const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
-const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
+const mailpitPort = required(env, "SAMRIM_MAILPIT_WEB_PORT");
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const clientPhone = `+96778${crypto.randomInt(1_000_000, 9_999_999)}`;
@@ -75,14 +76,10 @@ async function expect(base, method, pathname, status, options = {}) {
   return result.body;
 }
 
-function codeFor(challengeID, purpose) {
-  return String(crypto.createHmac("sha256", challengeSecret).update(challengeID).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest().readUInt32BE(0) % 1_000_000).padStart(6, "0");
-}
-
 async function issueChallenge(pathname, body, purpose) {
   const challenge = await expect(identityBase, "POST", pathname, 201, { body });
   if (typeof challenge?.challengeId !== "string") throw new Error(`${pathname}: challenge id missing`);
-  return { ...challenge, code: codeFor(challenge.challengeId, purpose) };
+  return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose }) };
 }
 
 function userHeaders(key, expectedVersion) {

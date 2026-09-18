@@ -98,11 +98,19 @@ assert(
   "runtime:up must not rebuild the full stack by default",
 );
 
-assert(runtime.includes("function Stop-Workspace-Services"), "full runtime must gate existing workspace services during dependency materialization");
-assert(runtime.includes("Stop-Workspace-Services\n    # Full-stack up"), "full runtime must stop workspace services before Compose dependency startup");
+assert(runtime.includes("function Get-Running-Workspace-Services"), "runtime must read the running workspace services before dependency materialization");
+assert(runtime.includes("function Test-Js-Dependencies-Ready"), "runtime must have one read-only dependency readiness check");
+assert(runtime.includes("function Start-Requested-Runtime"), "full and target startup must share one dependency gate");
+assert(runtime.includes("$dependenciesReady = Test-Js-Dependencies-Ready"), "runtime startup must branch on the dependency fingerprint before stopping services");
+assert(runtime.includes("JS_DEPS_GATE=READY action=no-stop"), "a ready dependency fingerprint must not stop workspace services");
+assert(runtime.includes("JS_DEPS_GATE=STALE action=stop-materialize-restore"), "a stale dependency fingerprint must expose the stop/materialize/restore transition");
+assert(runtime.includes("if ($runningBefore.Count -gt 0) { Compose (@('stop') + $runningBefore) }"), "stale dependency materialization must stop only the workspace services that were running");
+assert(runtime.includes("JS_DEPS_GATE=RESTORE services="), "target startup must restore previously running unrelated workspace services after materialization");
+assert(runtime.includes("Start-Requested-Runtime $WorkspaceServices -Full"), "full startup must use the shared dependency gate");
+assert(runtime.includes("Start-Requested-Runtime @($Target)"), "target startup must use the shared dependency gate");
 assert(!runtime.includes("Stop-OtherOptionalServices"), "target startup must not stop unrelated running surfaces");
 assert(
-  runtime.includes("Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans',$Target)"),
+  runtime.includes("Compose (@('up','-d','--wait','--wait-timeout','300','--remove-orphans') + $RequestedServices)"),
   "target startup must use Compose dependency resolution without rebuilding the whole stack",
 );
 assert(runtime.includes("$WorkspaceServices = @('control','metro-client','metro-partner','metro-captain','metro-field')"), "workspace-bound JavaScript services must have one canonical runtime set");

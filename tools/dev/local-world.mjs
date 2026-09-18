@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const action = process.argv[2] ?? "--status";
@@ -70,12 +71,11 @@ const controlOrigin = localUrl(required(env, "CONTROL_PANEL_PUBLIC_ORIGIN"), "CO
 const dshToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
 const identityDshToken = required(env, "IDENTITY_DSH_SERVICE_TOKEN");
 const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
-const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
 const mailpitPort = required(env, "SAMRIM_MAILPIT_WEB_PORT");
 if (env.BTHWANI_ENV !== "development") fail("BTHWANI_ENV must be development");
 if (env.IDENTITY_CHALLENGE_DELIVERY_MODE !== "mailpit") fail("challenge delivery is not the controlled local Mailpit sink");
 if (!String(env.IDENTITY_WEBAUTHN_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).includes(controlOrigin)) fail("WebAuthn allowed origin does not match the local Control Panel origin");
-if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.length < 24 || challengeSecret.length < 32) fail("canonical local secrets are too weak");
+if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.length < 24) fail("canonical local secrets are too weak");
 
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", composePath];
 const requiredRunningServices = ["postgres", "mailpit", "identity", "dsh", "control", "metro-client", "metro-partner", "metro-captain", "metro-field"];
@@ -130,12 +130,9 @@ function userHeaders(key, expectedVersion) {
   return { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": key, ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) };
 }
 
-function challengeCode(challengeID, purpose) {
-  return String(crypto.createHmac("sha256", challengeSecret).update(challengeID).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest().readUInt32BE(0) % 1_000_000).padStart(6, "0");
-}
-
 function passwordFor(role) {
-  return `W${crypto.createHmac("sha256", challengeSecret).update(`world:${role}`).digest("hex").slice(0, 6)}!`;
+  const seed = "samrim-local-world-password-v1";
+  return `W${crypto.createHash("sha256").update(`${seed}:${role}`).digest("hex").slice(0, 6)}!`;
 }
 
 function loadState() {
@@ -164,9 +161,35 @@ function saveState(state) {
   }
 }
 
+async function collectCursorPages(loadPage, itemKey, description) {
+  const items = [];
+  const seenCursors = new Set();
+  let cursor = "";
+  for (;;) {
+    const page = await loadPage(cursor);
+    items.push(...(Array.isArray(page?.[itemKey]) ? page[itemKey] : []));
+    const nextCursor = page?.nextCursor ? String(page.nextCursor) : "";
+    if (!nextCursor) return items;
+    if (seenCursors.has(nextCursor)) fail(`cursor pagination repeated for ${description}`);
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+}
+
 async function searchRoles(role, phone = "", token = role === "client" ? dshToken : identityDshToken) {
-  const body = await expect(identityBase, "GET", `/internal/actor-roles/search?role=${encodeURIComponent(role)}${phone ? `&q=${encodeURIComponent(phone)}` : ""}&limit=25`, 200, { token });
-  return body.items ?? [];
+  return collectCursorPages(
+    (cursor) => expect(identityBase, "GET", `/internal/actor-roles/search?role=${encodeURIComponent(role)}${phone ? `&q=${encodeURIComponent(phone)}` : ""}&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, 200, { token }),
+    "items",
+    `Identity role search role=${role}`,
+  );
+}
+
+async function listJoiningCases(token, operatorID) {
+  return collectCursorPages(
+    (cursor) => expect(dshBase, "GET", `/dsh/joining-cases?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`, 200, { token, headers: { "X-Acting-Actor-ID": operatorID } }),
+    "cases",
+    "DSH joining-case search",
+  );
 }
 
 async function readRole(role, actorID, token = role === "client" ? dshToken : identityDshToken) {
@@ -179,23 +202,11 @@ function uniqueOrFail(items, description) {
 }
 
 async function waitForMailpitCode(phone, purpose) {
-  const base = `http://127.0.0.1:${mailpitPort}`;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    try {
-      const response = await fetch(`${base}/view/latest.txt`, { signal: AbortSignal.timeout(2_000) });
-      if (response.ok) {
-        const message = await response.text();
-        if (message.includes(`Phone: ${phone}`) && message.includes(`Purpose: ${purpose}`)) {
-          const match = message.match(/Code:\s*(\d{6})/);
-          if (match?.[1]) return match[1];
-        }
-      }
-    } catch {
-      // Mailpit delivery is asynchronous; continue through the bounded proof window.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
+  try {
+    return await readMailpitCode({ port: mailpitPort, phone, purpose });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
   }
-  fail(`${purpose} challenge was not delivered to controlled local Mailpit`);
 }
 
 async function activateOperatorWithPasskey(phone, enrollmentToken, actorID) {
@@ -267,8 +278,8 @@ async function activateOrLogin(role, phone, actorID, operatorID) {
     const reenroll = await request(identityBase, "POST", `/internal/actors/${encodeURIComponent(actorID)}/roles/${role}/reenrollment`, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": crypto.randomUUID() } });
     if (reenroll.status !== 204) fail(`${role} reenrollment was not authorized`, JSON.stringify(reenroll.body));
   }
-  const challenge = await expect(identityBase, "POST", "/auth/managed/activation/request", 201, { body: { phone, role } });
-  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role, verificationCode: challengeCode(challenge.challengeId, "managed_activate"), password, clientInstanceId: `local-world-${role}` } });
+  await expect(identityBase, "POST", "/auth/managed/activation/request", 201, { body: { phone, role } });
+  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role, verificationCode: await waitForMailpitCode(phone, "managed_activate"), password, clientInstanceId: `local-world-${role}` } });
   if (activation.status !== 200) fail(`${role} activation failed`, JSON.stringify(activation.body));
   return activation.body;
 }
@@ -305,8 +316,8 @@ async function ensureCategory(operatorID, state) {
 
 async function ensurePartner(operatorID, state) {
   let role = uniqueOrFail(await searchRoles("partner", WORLD.partnerPhone), "partner actor");
-  const cases = await expect(dshBase, "GET", "/dsh/joining-cases?limit=25", 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
-  const summaries = (cases.cases ?? []).filter((item) => item.contactPhoneE164 === WORLD.partnerPhone);
+  const cases = await listJoiningCases(dshToken, operatorID);
+  const summaries = cases.filter((item) => item.contactPhoneE164 === WORLD.partnerPhone);
   let summary = uniqueOrFail(summaries, "partner joining case");
   let view = summary ? await expect(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(summary.id)}`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }) : null;
   if (view?.case) summary = view.case;
@@ -375,14 +386,14 @@ async function ensureClient(state) {
   const role = uniqueOrFail(await searchRoles("client", WORLD.clientPhone), "client actor");
   let client;
   if (!role) {
-    const challenge = await expect(identityBase, "POST", "/auth/client/registration/request", 201, { body: { phone: WORLD.clientPhone } });
-    client = await expect(identityBase, "POST", "/auth/client/register", 201, { body: { phone: WORLD.clientPhone, code: challengeCode(challenge.challengeId, "client_register"), password: passwordFor("client"), clientInstanceId: "local-world-client" } });
+    await expect(identityBase, "POST", "/auth/client/registration/request", 201, { body: { phone: WORLD.clientPhone } });
+    client = await expect(identityBase, "POST", "/auth/client/register", 201, { body: { phone: WORLD.clientPhone, code: await waitForMailpitCode(WORLD.clientPhone, "client_register"), password: passwordFor("client"), clientInstanceId: "local-world-client" } });
   } else {
     const logged = await request(identityBase, "POST", "/auth/client/login", { body: { phone: WORLD.clientPhone, password: passwordFor("client"), clientInstanceId: "local-world-client" } });
     client = logged.body;
     if (logged.status !== 200) {
-      const challenge = await expect(identityBase, "POST", "/auth/client/recovery/request", 201, { body: { phone: WORLD.clientPhone } });
-      await expect(identityBase, "POST", "/auth/client/recover", 200, { body: { phone: WORLD.clientPhone, code: challengeCode(challenge.challengeId, "client_recover"), password: passwordFor("client") } });
+      await expect(identityBase, "POST", "/auth/client/recovery/request", 201, { body: { phone: WORLD.clientPhone } });
+      await expect(identityBase, "POST", "/auth/client/recover", 200, { body: { phone: WORLD.clientPhone, code: await waitForMailpitCode(WORLD.clientPhone, "client_recover"), password: passwordFor("client") } });
       client = await expect(identityBase, "POST", "/auth/client/login", 200, { body: { phone: WORLD.clientPhone, password: passwordFor("client"), clientInstanceId: "local-world-client" } });
     }
   }
