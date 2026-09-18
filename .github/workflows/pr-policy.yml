@@ -76,7 +76,16 @@ jobs:
               echo "::error::Pinned Governance SHA is not in canonical governance-and-docs/main history: ${pinned}"
               exit 1
             }
+
+            base_manifest="$(git show "${PR_BASE_SHA}:knowledge.sources.json")"
+            previous_pinned="$(node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(value.governance.commit)' <<<"${base_manifest}")"
+            git -C "${gov_checkout}" merge-base --is-ancestor "${previous_pinned}" "${pinned}" || {
+              echo "::error::Governance pin rollback is forbidden: previous=${previous_pinned} candidate=${pinned}"
+              exit 1
+            }
+
             echo "GOVERNANCE_CANONICAL_MAIN=PASS sha=${pinned}"
+            echo "GOVERNANCE_PIN_MONOTONIC=PASS previous=${previous_pinned} candidate=${pinned}"
           fi
 
           if [[ "${impact}" == "UPDATE_REQUIRED" || "${impact}" == "DEFECT_FOUND" ]]; then
