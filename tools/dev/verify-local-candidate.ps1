@@ -98,7 +98,7 @@ try {
         Run-Step 'Docs configuration parity' { node tools/dev/verify-doc-config-parity.mjs }
     }
 
-    if (Changed-Matches '^(infra/local/compose/|tools/dev/runtime\.ps1|tools/dev/open-mobile-apps\.ps1|package\.json$)') {
+    if (Changed-Matches '^(infra/local/compose/|tools/dev/(runtime|open-mobile-apps|scrcpy)\.ps1|package\.json$)') {
         Run-Step 'Runtime ownership' { node tools/dev/verify-local-runtime-ownership.mjs }
         Run-Step 'Canonical compose config' {
             docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml config --quiet

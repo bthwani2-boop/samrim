@@ -52,10 +52,11 @@ services:
       - samrim-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 20
-      start_period: 10s
+      retries: 3
+      start_period: 20s
+      start_interval: 2s
 
   mailpit:
     image: axllent/mailpit:v1.27.8
@@ -128,10 +129,11 @@ services:
       - "127.0.0.1:${SAMRIM_IDENTITY_PORT:-18082}:8082"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8082/identity/health"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 30
-      start_period: 10s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
 
   dsh-migrate:
     image: samrim-local-dsh-migrate:dev
@@ -182,10 +184,11 @@ services:
       - "127.0.0.1:${SAMRIM_DSH_PORT:-18080}:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/dsh/health"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 30
-      start_period: 10s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
 
   js-deps:
     image: samrim-local-js-runtime:dev
@@ -231,10 +234,11 @@ services:
       - "127.0.0.1:${SAMRIM_CONTROL_PORT:-13000}:13000"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:13000/').then(r=>{if(r.status>=500)process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 60
-      start_period: 20s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
 
   metro-client:
     <<: *js-runtime
@@ -255,10 +259,11 @@ services:
       - "127.0.0.1:${SAMRIM_APP_CLIENT_METRO_PORT:-18101}:18101"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18101/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 60
-      start_period: 20s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
 
   metro-partner:
     <<: *js-runtime
@@ -279,10 +284,11 @@ services:
       - "127.0.0.1:${SAMRIM_APP_PARTNER_METRO_PORT:-18102}:18102"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18102/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 60
-      start_period: 20s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
 
   metro-captain:
     <<: *js-runtime
@@ -303,10 +309,11 @@ services:
       - "127.0.0.1:${SAMRIM_APP_CAPTAIN_METRO_PORT:-18103}:18103"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18103/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 60
-      start_period: 20s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
 
   metro-field:
     <<: *js-runtime
@@ -327,10 +334,11 @@ services:
       - "127.0.0.1:${SAMRIM_APP_FIELD_METRO_PORT:-18104}:18104"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18104/status').then(r=>r.text()).then(t=>{if(!t.includes('packager-status:running'))process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 5s
+      interval: 30s
       timeout: 5s
-      retries: 60
-      start_period: 20s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
 
 volumes:
   samrim-postgres-data:

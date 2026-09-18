@@ -10,6 +10,7 @@ const pkg = JSON.parse(read("package.json"));
 const scripts = pkg.scripts ?? {};
 const runtime = read("tools/dev/runtime.ps1");
 const opener = read("tools/dev/open-mobile-apps.ps1");
+const scrcpy = read("tools/dev/scrcpy.ps1");
 const candidate = read("tools/dev/verify-local-candidate.ps1");
 const compose = read("infra/local/compose/compose.yaml");
 
@@ -98,6 +99,12 @@ assert(
   "runtime:up must not rebuild the full stack by default",
 );
 
+assert(runtime.includes("function Get-CanonicalRuntimeSnapshot"), "runtime readback must have one canonical per-invocation Docker snapshot owner");
+assert(!runtime.includes("function Container-Ids"), "per-service Docker ps readback must not survive the canonical snapshot cutover");
+assert((runtime.match(/& docker ps/g) ?? []).length === 1, "runtime.ps1 must issue docker ps only through the canonical snapshot owner");
+assert((runtime.match(/& docker inspect/g) ?? []).length === 1, "runtime.ps1 must batch docker inspect through the canonical snapshot owner");
+assert(runtime.includes("LOCAL_RUNTIME_ENV=READY action=reuse"), "runtime startup must expose no-write environment reuse");
+assert(runtime.includes("$existingText -cne $desired"), "runtime startup must not rewrite an unchanged local environment");
 assert(runtime.includes("function Get-Running-Workspace-Services"), "runtime:up must read running workspace services before dependency materialization");
 assert(runtime.includes("function Test-Js-Dependencies-Ready"), "runtime:up must retain one read-only dependency readiness check");
 assert(runtime.includes("function Start-Full-Runtime"), "runtime must have one canonical full-stack startup owner");
@@ -140,6 +147,13 @@ for (const forbidden of [
 assert(candidate.includes("nx affected"), "candidate verifier must use affected project execution");
 assert(!scripts["runtime:surface"], "surface lifecycle must remain internal instead of adding a public command");
 assert(!scripts["runtime:mobile-lan"], "retired mobile LAN runtime command must not return");
+
+assert((compose.match(/interval: 30s/g) ?? []).length === 8, "canonical runtime healthchecks must use the quiet steady-state interval");
+assert((compose.match(/start_interval: 2s/g) ?? []).length === 8, "canonical runtime healthchecks must retain fast startup probing");
+assert(!compose.includes("interval: 5s"), "five-second steady-state healthcheck churn must not return");
+for (const token of ["--max-size=1280", "--max-fps=30", "--video-bit-rate=4M", "--no-audio"]) {
+  assert(scrcpy.includes(token), `scrcpy must retain the resource-bounded local-development option: ${token}`);
+}
 
 if (failures.length) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");

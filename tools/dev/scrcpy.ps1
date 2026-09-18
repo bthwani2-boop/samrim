@@ -17,7 +17,7 @@ Import-Module -Name $DevicePolicyPath -Force -WarningAction SilentlyContinue
 
 function Start-Scrcpy([string]$Serial, [string]$Transport) {
     Write-Host "SCRCPY=START transport=$Transport serial=$Serial"
-    & scrcpy -s $Serial
+    & scrcpy -s $Serial --max-size=1280 --max-fps=30 --video-bit-rate=4M --no-audio
     $code = $LASTEXITCODE
     Write-Host "SCRCPY=EXIT transport=$Transport serial=$Serial code=$code"
     return $code

@@ -47,7 +47,7 @@ They require the relevant Docker-owned backend and Metro service to already be r
 
 `pnpm control` likewise validates the already-running Docker-owned Control Panel and reports its URL; it does not start/reconcile Docker.
 
-`pnpm scr` is the canonical device/scrcpy owner. It uses USB as the primary device identity, prepares a bounded Wi-Fi fallback, and reuses valid ADB reverse mappings; it does not own Docker runtime lifecycle.
+`pnpm scr` is the canonical device/scrcpy owner. It uses USB as the primary device identity, prepares a bounded Wi-Fi fallback, reuses valid ADB reverse mappings, and runs a resource-bounded development mirror; it does not own Docker runtime lifecycle.
 
 ## Local configuration
 

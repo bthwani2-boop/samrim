@@ -272,6 +272,8 @@ Use subagents for genuinely independent material evidence, implementation, revie
 
 When two or more such lanes exist and delegation materially reduces context interference or execution cost without increasing integration risk, delegate proactively rather than serializing all work. There is no required subagent count and no delegation for ceremony.
 
+On resource-constrained LOCAL_INTEGRATION hosts, parallelize independent read/reasoning lanes but serialize heavyweight local builds, exports, Docker/runtime proof, device/browser journeys and similar CPU/RAM-intensive work unless measured evidence proves concurrency reduces total cost without contention.
+
 Every delegated lane must have an exact input state, one material question or deliverable, a bounded read/write scope and required evidence. Parallel mutation lanes require disjoint write sets.
 
 The lead retains the objective, affected-cone and ownership decisions, cross-lane conflict resolution, final integration, Governance classification, consequential mutations, commit/push and closure census.

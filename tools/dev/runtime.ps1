@@ -84,7 +84,15 @@ function Ensure-Environment {
         $output.Add("${name}=${value}")
     }
 
-    [IO.File]::WriteAllText($EnvPath, (($output -join [Environment]::NewLine).TrimEnd() + [Environment]::NewLine), [Text.UTF8Encoding]::new($false))
+    $desired = (($output -join [Environment]::NewLine).TrimEnd() + [Environment]::NewLine)
+    $existingText = if (Test-Path -LiteralPath $EnvPath -PathType Leaf) { [IO.File]::ReadAllText($EnvPath) } else { '' }
+    if ($existingText -cne $desired) {
+        [IO.File]::WriteAllText($EnvPath, $desired, [Text.UTF8Encoding]::new($false))
+        Write-Host 'LOCAL_RUNTIME_ENV=READY action=write'
+    }
+    else {
+        Write-Host 'LOCAL_RUNTIME_ENV=READY action=reuse'
+    }
     return Read-CanonicalEnvironment
 }
 
@@ -109,17 +117,60 @@ function Compose([string[]]$Arguments, [switch]$Quiet) {
     if ($LASTEXITCODE -ne 0) { Fail "Docker Compose failed: $($Arguments -join ' ')" }
 }
 
-function Container-Ids([string]$ServiceName) {
-    $ids = @(& docker ps -a --filter "label=com.docker.compose.project=$Project" --filter "label=com.docker.compose.service=$ServiceName" --format '{{.ID}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    if ($LASTEXITCODE -ne 0) { Fail "Unable to inspect $Project/$ServiceName." }
-    return $ids
+function Get-CanonicalRuntimeSnapshot {
+    $rows = @(& docker ps -a --no-trunc --format '{{.ID}}|{{.State}}|{{.Ports}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}' 2>&1)
+    if ($LASTEXITCODE -ne 0) { Fail 'Unable to read Docker runtime state.' }
+
+    $containers = [System.Collections.Generic.List[object]]::new()
+    foreach ($row in $rows) {
+        $parts = @(([string]$row) -split '\|', 5)
+        if ($parts.Count -ne 5 -or [string]::IsNullOrWhiteSpace($parts[0])) { continue }
+        $containers.Add([pscustomobject]@{
+            Id = $parts[0].Trim()
+            State = $parts[1].Trim()
+            Ports = $parts[2].Trim()
+            Project = $parts[3].Trim()
+            Service = $parts[4].Trim()
+            Health = 'none'
+            ExitCode = $null
+            Mounts = @()
+        })
+    }
+
+    $samrimIds = @($containers | Where-Object { $_.Project -like 'samrim-*' } | Select-Object -ExpandProperty Id -Unique)
+    if ($samrimIds.Count -gt 0) {
+        $inspectJson = (& docker inspect @samrimIds 2>&1 | Out-String)
+        if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect Samrim runtime containers.' }
+        $details = @($inspectJson | ConvertFrom-Json)
+        foreach ($detail in $details) {
+            $matches = @($containers | Where-Object { $_.Id -eq [string]$detail.Id })
+            if ($matches.Count -ne 1) { Fail "DOCKER_SNAPSHOT=FAIL id=$($detail.Id) matches=$($matches.Count)" }
+            $entry = $matches[0]
+            $entry.State = [string]$detail.State.Status
+            $entry.ExitCode = [int]$detail.State.ExitCode
+            $entry.Health = if ($null -ne $detail.State.Health) { [string]$detail.State.Health.Status } else { 'none' }
+            $entry.Mounts = @($detail.Mounts | ForEach-Object {
+                [pscustomobject]@{
+                    Type = [string]$_.Type
+                    Source = [string]$_.Source
+                    Destination = [string]$_.Destination
+                }
+            })
+        }
+    }
+
+    return [pscustomobject]@{ Containers = @($containers | ForEach-Object { $_ }) }
 }
 
-function Assert-No-Parallel-Runtime {
-    $projects = @(& docker ps -a --format '{{.Label "com.docker.compose.project"}}' | Where-Object { $_ -like 'samrim-*' -and $_ -ne $Project } | Sort-Object -Unique)
-    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect Docker project ownership.' }
-    if ($projects.Count -gt 0) { Fail "PARALLEL_RUNTIME_RESIDUE=FAIL projects=$($projects -join ',')" }
-    $unexpected = @(& docker ps -a --filter "label=com.docker.compose.project=$Project" --format '{{.Label "com.docker.compose.service"}}' | Where-Object { $_ -and $_ -notin $CanonicalServices } | Sort-Object -Unique)
+function Get-ServiceContainers($Snapshot, [string]$ServiceName) {
+    return @($Snapshot.Containers | Where-Object { $_.Project -eq $Project -and $_.Service -eq $ServiceName })
+}
+
+function Assert-No-Parallel-Runtime($Snapshot) {
+    $projects = @($Snapshot.Containers | Where-Object { $_.Project -like 'samrim-*' } | Select-Object -ExpandProperty Project -Unique)
+    $parallel = @($projects | Where-Object { $_ -ne $Project })
+    if ($parallel.Count -gt 0) { Fail "PARALLEL_RUNTIME_RESIDUE=FAIL projects=$($parallel -join ',')" }
+    $unexpected = @($Snapshot.Containers | Where-Object { $_.Project -eq $Project -and $_.Service -and $_.Service -notin $CanonicalServices } | Select-Object -ExpandProperty Service -Unique)
     if ($unexpected.Count -gt 0) { Fail "CANONICAL_RUNTIME_RESIDUE=FAIL services=$($unexpected -join ',')" }
 }
 
@@ -143,75 +194,75 @@ function Normalize-Workspace-Source([string]$Source) {
     return [IO.Path]::GetFullPath($value).TrimEnd('\\')
 }
 
-function Assert-WorkspaceMounts([string[]]$Services = $WorkspaceServices) {
+function Assert-WorkspaceMounts($Snapshot, [string[]]$Services = $WorkspaceServices) {
     $expected = Normalize-Workspace-Source $RepoRoot
     foreach ($serviceName in $Services) {
-        $ids = @(Container-Ids $serviceName)
-        if ($ids.Count -ne 1) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName containers=$($ids.Count)" }
-        $rows = @(& docker inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Type}}|{{.Source}}{{end}}{{end}}' $ids[0] | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-        if ($LASTEXITCODE -ne 0 -or $rows.Count -ne 1) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace mounts=$($rows.Count)" }
-        $parts = $rows[0].Split('|', 2)
-        if ($parts.Count -ne 2 -or $parts[0] -ne 'bind') { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace type=$($parts[0])" }
-        try { $actual = Normalize-Workspace-Source $parts[1] } catch { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName source=$($parts[1])" }
+        $containers = @(Get-ServiceContainers $Snapshot $serviceName)
+        if ($containers.Count -ne 1) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName containers=$($containers.Count)" }
+        $mounts = @($containers[0].Mounts | Where-Object { $_.Destination -eq '/workspace' })
+        if ($mounts.Count -ne 1) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace mounts=$($mounts.Count)" }
+        if ($mounts[0].Type -ne 'bind') { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace type=$($mounts[0].Type)" }
+        try { $actual = Normalize-Workspace-Source $mounts[0].Source } catch { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName source=$($mounts[0].Source)" }
         if (-not [StringComparer]::OrdinalIgnoreCase.Equals($actual, $expected)) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName expected=$expected actual=$actual" }
     }
 }
 
-function Assert-Service([string]$ServiceName, [switch]$Healthy) {
-    $ids = @(Container-Ids $ServiceName)
-    if ($ids.Count -ne 1) { Fail "SERVICE_STATE=FAIL service=$ServiceName containers=$($ids.Count)" }
-    $status = (& docker inspect --format '{{.State.Status}}' $ids[0]).Trim()
-    if ($status -ne 'running') { Fail "SERVICE_STATE=FAIL service=$ServiceName status=$status" }
-    if ($Healthy) {
-        $health = (& docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}missing{{end}}' $ids[0]).Trim()
-        if ($health -ne 'healthy') { Fail "SERVICE_HEALTH=FAIL service=$ServiceName health=$health" }
-    }
+function Assert-Service($Snapshot, [string]$ServiceName, [switch]$Healthy) {
+    $containers = @(Get-ServiceContainers $Snapshot $ServiceName)
+    if ($containers.Count -ne 1) { Fail "SERVICE_STATE=FAIL service=$ServiceName containers=$($containers.Count)" }
+    $entry = $containers[0]
+    if ($entry.State -ne 'running') { Fail "SERVICE_STATE=FAIL service=$ServiceName status=$($entry.State)" }
+    if ($Healthy -and $entry.Health -ne 'healthy') { Fail "SERVICE_HEALTH=FAIL service=$ServiceName health=$($entry.Health)" }
 }
 
-function Assert-OneShot([string]$ServiceName) {
-    $ids = @(Container-Ids $ServiceName)
-    if ($ids.Count -ne 1) { Fail "ONE_SHOT_SERVICE=FAIL service=$ServiceName containers=$($ids.Count)" }
-    $state = (& docker inspect --format '{{.State.Status}}|{{.State.ExitCode}}' $ids[0]).Trim()
-    if ($state -ne 'exited|0') { Fail "ONE_SHOT_SERVICE=FAIL service=$ServiceName state=$state" }
+function Assert-OneShot($Snapshot, [string]$ServiceName) {
+    $containers = @(Get-ServiceContainers $Snapshot $ServiceName)
+    if ($containers.Count -ne 1) { Fail "ONE_SHOT_SERVICE=FAIL service=$ServiceName containers=$($containers.Count)" }
+    $entry = $containers[0]
+    if ($entry.State -ne 'exited' -or $entry.ExitCode -ne 0) { Fail "ONE_SHOT_SERVICE=FAIL service=$ServiceName state=$($entry.State)|$($entry.ExitCode)" }
 }
 
-function Assert-Port([hashtable]$EnvMap, [string]$ServiceName, [string]$Key) {
+function Assert-Port($Snapshot, [hashtable]$EnvMap, [string]$ServiceName, [string]$Key) {
     $port = Require-Port $EnvMap $Key
     $needle = ":${port}->"
-    $rows = @(& docker ps --format '{{.Ports}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}' | Where-Object { $_ -and $_.Contains($needle) })
-    $expected = @($rows | Where-Object { $_ -match "\|$Project\|$([regex]::Escape($ServiceName))$" })
-    if ($rows.Count -ne 1 -or $expected.Count -ne 1 -or $rows[0] -notmatch '^127\.0\.0\.1:') { Fail "PORT_OWNERSHIP=FAIL port=$port service=$ServiceName observed=$($rows -join ';')" }
+    $owners = @($Snapshot.Containers | Where-Object { $_.State -eq 'running' -and $_.Ports -and $_.Ports.Contains($needle) })
+    $expected = @($owners | Where-Object { $_.Project -eq $Project -and $_.Service -eq $ServiceName })
+    if ($owners.Count -ne 1 -or $expected.Count -ne 1 -or $owners[0].Ports -notmatch "(^|, )127\.0\.0\.1:${port}->") {
+        $observed = @($owners | ForEach-Object { "$($_.Ports)|$($_.Project)|$($_.Service)" })
+        Fail "PORT_OWNERSHIP=FAIL port=$port service=$ServiceName observed=$($observed -join ';')"
+    }
 }
 
-function Assert-Full-Runtime([hashtable]$EnvMap) {
-    Assert-No-Parallel-Runtime
+function Assert-Full-Runtime([hashtable]$EnvMap, $Snapshot) {
+    Assert-No-Parallel-Runtime $Snapshot
     Assert-No-Native-Backend
-    Assert-WorkspaceMounts
-    foreach ($serviceName in $OneShotServices) { Assert-OneShot $serviceName }
+    Assert-WorkspaceMounts $Snapshot
+    foreach ($serviceName in $OneShotServices) { Assert-OneShot $Snapshot $serviceName }
     foreach ($serviceName in $RunningServices) {
         $healthy = $serviceName -notin @('mailpit')
-        Assert-Service $serviceName -Healthy:$healthy
+        Assert-Service $Snapshot $serviceName -Healthy:$healthy
     }
-    foreach ($port in $Ports) { Assert-Port $EnvMap $port.Service $port.Key }
+    foreach ($port in $Ports) { Assert-Port $Snapshot $EnvMap $port.Service $port.Key }
 }
 
-function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target) {
-    Assert-No-Parallel-Runtime
+function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target, $Snapshot) {
+    Assert-No-Parallel-Runtime $Snapshot
     Assert-No-Native-Backend
-    if ($Target -in $WorkspaceServices) { Assert-WorkspaceMounts @($Target) }
-    foreach ($serviceName in @('identity-migrate','dsh-migrate','js-deps')) { Assert-OneShot $serviceName }
+    if ($Target -in $WorkspaceServices) { Assert-WorkspaceMounts $Snapshot @($Target) }
+    foreach ($serviceName in @('identity-migrate','dsh-migrate','js-deps')) { Assert-OneShot $Snapshot $serviceName }
     $targets = @('postgres','mailpit','identity','dsh',$Target) | Select-Object -Unique
     foreach ($serviceName in $targets) {
         $healthy = $serviceName -ne 'mailpit'
-        Assert-Service $serviceName -Healthy:$healthy
+        Assert-Service $Snapshot $serviceName -Healthy:$healthy
     }
-    foreach ($port in @($Ports | Where-Object { $_.Service -in @('mailpit','identity','dsh',$Target) })) { Assert-Port $EnvMap $port.Service $port.Key }
+    foreach ($port in @($Ports | Where-Object { $_.Service -in @('mailpit','identity','dsh',$Target) })) { Assert-Port $Snapshot $EnvMap $port.Service $port.Key }
 }
 
-function Get-Running-Workspace-Services {
-    $running = @(& docker ps --filter "label=com.docker.compose.project=$Project" --filter 'status=running' --format '{{.Label "com.docker.compose.service"}}' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -in $WorkspaceServices } | Sort-Object -Unique)
-    if ($LASTEXITCODE -ne 0) { Fail 'Unable to inspect running workspace services.' }
-    return $running
+function Get-Running-Workspace-Services($Snapshot) {
+    return @($Snapshot.Containers |
+        Where-Object { $_.Project -eq $Project -and $_.State -eq 'running' -and $_.Service -in $WorkspaceServices } |
+        Select-Object -ExpandProperty Service -Unique |
+        Sort-Object)
 }
 
 function Test-Js-Dependencies-Ready {
@@ -229,14 +280,15 @@ function Test-Js-Dependencies-Ready {
 function Start-Full-Runtime {
     $envMap = Ensure-Environment
     Ensure-Docker
-    Assert-No-Parallel-Runtime
+    $before = Get-CanonicalRuntimeSnapshot
+    Assert-No-Parallel-Runtime $before
     Assert-No-Native-Backend
     Compose @('config','--quiet') -Quiet
 
     # Dependency materialization belongs to explicit full startup/restart only.
     # Existing workspace services are stopped only when their shared node_modules
     # volumes are proven stale, preventing Metro/Next from observing partial rewrites.
-    $runningBefore = @(Get-Running-Workspace-Services)
+    $runningBefore = @(Get-Running-Workspace-Services $before)
     $dependenciesReady = Test-Js-Dependencies-Ready
     if ($dependenciesReady) {
         Write-Host 'JS_DEPS_GATE=READY action=no-stop scope=full'
@@ -247,7 +299,8 @@ function Start-Full-Runtime {
     }
 
     Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
-    Assert-Full-Runtime $envMap
+    $after = Get-CanonicalRuntimeSnapshot
+    Assert-Full-Runtime $envMap $after
     Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=full'
     Write-Host 'DOCKER_RUNTIME=PASS'
     Write-Host 'DOCKER_OWNS=postgres,mailpit,identity-migrate,identity,dsh-migrate,dsh,js-deps,control,metro-client,metro-partner,metro-captain,metro-field'
@@ -255,17 +308,17 @@ function Start-Full-Runtime {
 
 function Show-Status {
     Write-Host "RUNTIME_STATUS=READ_ONLY scope=full-canonical-compose"
-    $envMap = $null
-    try { $envMap = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)" }
+    try { $null = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)" }
     Ensure-Docker
+    $snapshot = Get-CanonicalRuntimeSnapshot
     foreach ($serviceName in $CanonicalServices) {
-        $ids = @(Container-Ids $serviceName)
-        if ($ids.Count -eq 0) { Write-Host "DOCKER_SERVICE=$serviceName state=missing"; continue }
-        if ($ids.Count -ne 1) { Write-Host "DOCKER_SERVICE=$serviceName state=duplicate count=$($ids.Count)"; continue }
-        $state = (& docker inspect --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.State.ExitCode}}' $ids[0]).Trim()
-        Write-Host "DOCKER_SERVICE=$serviceName state=$state"
+        $containers = @(Get-ServiceContainers $snapshot $serviceName)
+        if ($containers.Count -eq 0) { Write-Host "DOCKER_SERVICE=$serviceName state=missing"; continue }
+        if ($containers.Count -ne 1) { Write-Host "DOCKER_SERVICE=$serviceName state=duplicate count=$($containers.Count)"; continue }
+        $entry = $containers[0]
+        Write-Host "DOCKER_SERVICE=$serviceName state=$($entry.State)|$($entry.Health)|$($entry.ExitCode)"
     }
-    try { Assert-WorkspaceMounts; Write-Host 'DOCKER_WORKSPACE_MOUNTS=PASS source=repository-root target=/workspace' }
+    try { Assert-WorkspaceMounts $snapshot; Write-Host 'DOCKER_WORKSPACE_MOUNTS=PASS source=repository-root target=/workspace' }
     catch { Write-Host "DOCKER_WORKSPACE_MOUNTS=NOT_READY reason=$($_.Exception.Message)" }
 }
 
@@ -273,9 +326,19 @@ function Doctor {
     $failures = @()
     $envMap = $null
     try { $envMap = Read-CanonicalEnvironment } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)"; $failures += 'environment' }
-    try { Ensure-Docker; Assert-No-Parallel-Runtime; Assert-No-Native-Backend } catch { Write-Host "DOCKER_RUNTIME=NOT_READY reason=$($_.Exception.Message)"; $failures += 'docker' }
-    if ($null -ne $envMap -and $failures.Count -eq 0) {
-        try { Assert-Full-Runtime $envMap; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose' }
+    $snapshot = $null
+    try {
+        Ensure-Docker
+        $snapshot = Get-CanonicalRuntimeSnapshot
+        Assert-No-Parallel-Runtime $snapshot
+        Assert-No-Native-Backend
+    }
+    catch {
+        Write-Host "DOCKER_RUNTIME=NOT_READY reason=$($_.Exception.Message)"
+        $failures += 'docker'
+    }
+    if ($null -ne $envMap -and $null -ne $snapshot -and $failures.Count -eq 0) {
+        try { Assert-Full-Runtime $envMap $snapshot; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose' }
         catch { Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"; $failures += 'runtime' }
     }
     Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'
@@ -293,7 +356,8 @@ function Rebuild-Service {
     $target = Require-Service
     $null = Ensure-Environment
     Ensure-Docker
-    Assert-No-Parallel-Runtime
+    $snapshot = Get-CanonicalRuntimeSnapshot
+    Assert-No-Parallel-Runtime $snapshot
     Assert-No-Native-Backend
     if ($target -eq 'identity') {
         Compose @('build','identity-migrate','identity')
@@ -341,7 +405,8 @@ try {
         'Control' {
             $envMap = Read-CanonicalEnvironment
             Ensure-Docker
-            Assert-Target-Runtime $envMap 'control'
+            $snapshot = Get-CanonicalRuntimeSnapshot
+            Assert-Target-Runtime $envMap 'control' $snapshot
             $port = Require-Port $envMap 'SAMRIM_CONTROL_PORT'
             Write-Host "CONTROL_PANEL_READY=PASS mode=read-only url=http://127.0.0.1:$port"
         }
@@ -350,7 +415,8 @@ try {
             $target = "metro-$Surface"
             $envMap = Read-CanonicalEnvironment
             Ensure-Docker
-            Assert-Target-Runtime $envMap $target
+            $snapshot = Get-CanonicalRuntimeSnapshot
+            Assert-Target-Runtime $envMap $target $snapshot
             Write-Host "MOBILE_SURFACE_RUNTIME=PASS mode=read-only surface=$Surface service=$target"
         }
         'Rebuild' { Rebuild-Service }
