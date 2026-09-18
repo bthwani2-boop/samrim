@@ -13,6 +13,12 @@ const opener = read("tools/dev/open-mobile-apps.ps1");
 const candidate = read("tools/dev/verify-local-candidate.ps1");
 const compose = read("infra/local/compose/compose.yaml");
 
+const destructiveGuard = "if ($Action -in @('Reset','Purge') -and -not $AllowDataLoss)";
+assert(runtime.includes("[switch]$AllowDataLoss"), "destructive runtime actions must require an explicit same-invocation authorization switch");
+assert(runtime.includes(destructiveGuard), "destructive runtime actions must fail closed without authorization");
+assert(runtime.includes("rerun_same_invocation_with=-AllowDataLoss"), "destructive runtime refusal must name the explicit authorization interface");
+assert(runtime.indexOf(destructiveGuard) < runtime.indexOf("switch ($Action)"), "destructive authorization must be checked before any runtime action dispatch");
+
 for (const [name, action] of [
   ["runtime:up", "Up"],
   ["runtime:doctor", "Doctor"],

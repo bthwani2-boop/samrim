@@ -6,7 +6,8 @@ param(
     [string]$Action,
     [string]$Service = '',
     [ValidateSet('client','partner','captain','field')]
-    [string]$Surface = ''
+    [string]$Surface = '',
+    [switch]$AllowDataLoss
 )
 
 Set-StrictMode -Version Latest
@@ -266,6 +267,10 @@ function Restart-Service {
     Ensure-Docker
     Compose @('restart',$target)
     Write-Host "RUNTIME_SERVICE_RESTART=PASS service=$target"
+}
+
+if ($Action -in @('Reset','Purge') -and -not $AllowDataLoss) {
+    Fail "DATA_LOSS_AUTHORIZATION_REQUIRED action=$Action rerun_same_invocation_with=-AllowDataLoss"
 }
 
 Push-Location $RepoRoot

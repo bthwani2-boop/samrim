@@ -175,6 +175,8 @@ A task-specific runtime proof may exercise only the services/surfaces causally r
 
 Setup is not verification. Dependency installation/materialization belongs to bootstrap/setup and must not be repeated inside normal candidate proof when inputs are already ready.
 
+Valid LOCAL_INTEGRATION operational state is reusable: normal verification must not destroy it, business proof state is created through canonical owners rather than direct SQL/seed bypass, and destructive reset/purge requires explicit same-invocation data-loss authorization.
+
 ## 4. Fast proportional verification
 
 Normal development has one principle, not a matrix of modes:
