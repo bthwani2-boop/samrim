@@ -1,7 +1,8 @@
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const action = process.argv[2] ?? "--status";
@@ -11,7 +12,7 @@ const secretRoot = process.env.BTHWANI_SECRETS_ROOT?.trim() || "C:\\BTHWANI-Secr
 const locatorPath = path.join(secretRoot, "local-world", "world.json");
 
 const WORLD = Object.freeze({
-  abandonedOperatorPhone: "+967755500001",
+  operatorPhone: "+967755500006",
   clientPhone: "+967755500002",
   partnerPhone: "+967755500003",
   captainPhone: "+967755500004",
@@ -25,9 +26,6 @@ const WORLD = Object.freeze({
   storeName: "متجر العالم المحلي",
   productName: "أرز العالم المحلي",
   productVariantTitle: "عبوة 1 كجم",
-  addressText: "شارع العالم المحلي، صنعاء",
-  latitude: 15.3694457,
-  longitude: 44.1910064,
 });
 
 function fail(message, detail = "") {
@@ -56,7 +54,11 @@ function required(env, name) {
 
 function localUrl(raw, name) {
   let url;
-  try { url = new URL(raw); } catch { fail(`${name} is not a URL`); }
+  try {
+    url = new URL(raw);
+  } catch {
+    fail(`${name} is not a URL`);
+  }
   if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname)) fail(`${name} is not a local HTTP target`);
   return raw.replace(/\/+$/, "");
 }
@@ -67,22 +69,16 @@ const dshBase = localUrl(required(env, "DSH_API_BASE_URL"), "DSH_API_BASE_URL");
 const controlOrigin = localUrl(required(env, "CONTROL_PANEL_PUBLIC_ORIGIN"), "CONTROL_PANEL_PUBLIC_ORIGIN");
 const dshToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
 const identityDshToken = required(env, "IDENTITY_DSH_SERVICE_TOKEN");
+const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
 const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
+const mailpitPort = required(env, "SAMRIM_MAILPIT_WEB_PORT");
 if (env.BTHWANI_ENV !== "development") fail("BTHWANI_ENV must be development");
 if (env.IDENTITY_CHALLENGE_DELIVERY_MODE !== "mailpit") fail("challenge delivery is not the controlled local Mailpit sink");
-if (dshToken.length < 24 || identityDshToken.length < 24 || challengeSecret.length < 32) fail("canonical local secrets are too weak");
+if (!String(env.IDENTITY_WEBAUTHN_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).includes(controlOrigin)) fail("WebAuthn allowed origin does not match the local Control Panel origin");
+if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.length < 24 || challengeSecret.length < 32) fail("canonical local secrets are too weak");
 
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", composePath];
 const requiredRunningServices = ["postgres", "mailpit", "identity", "dsh", "control", "metro-client", "metro-partner", "metro-captain", "metro-field"];
-
-function sqlRead(query) {
-  if (!/^\s*select\b/i.test(query) || /\b(insert|update|delete|truncate|drop|alter|create)\b/i.test(query)) fail("world readback attempted a non-read SQL statement");
-  try {
-    return execFileSync("docker", [...composeArgs, "exec", "-T", "postgres", "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-  } catch (error) {
-    fail("canonical database readback failed", error instanceof Error ? error.message : String(error));
-  }
-}
 
 function runtimeGuard() {
   let running;
@@ -93,9 +89,7 @@ function runtimeGuard() {
   }
   const missing = requiredRunningServices.filter((service) => !running.includes(service));
   if (missing.length) fail("canonical Docker runtime is incomplete", missing.join(","));
-  if (action === "--status") return;
-  if (controlOrigin.includes("staging") || identityBase.includes("staging") || dshBase.includes("staging")) fail("production or staging target detected");
-  console.log("LOCAL_WORLD_SAFETY_GUARD=PASS environment=development runtime=canonical-local database=canonical-local delivery=mailpit external_effects=blocked");
+  console.log(`LOCAL_WORLD_SAFETY_GUARD=PASS mode=${action === "--status" ? "read-only" : "mutation"} environment=development runtime=canonical-local database=canonical-local delivery=mailpit external_effects=blocked`);
 }
 
 async function request(base, method, pathname, options = {}) {
@@ -105,14 +99,20 @@ async function request(base, method, pathname, options = {}) {
       method,
       headers: { Accept: "application/json", ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}), ...(options.headers ?? {}), ...(options.body === undefined ? {} : { "Content-Type": "application/json" }) },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-      signal: AbortSignal.timeout(options.timeoutMs ?? 8_000),
+      signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
     });
   } catch (error) {
     fail("canonical local HTTP request failed", error instanceof Error ? error.message : String(error));
   }
   const raw = await response.text();
   let body = null;
-  if (raw) { try { body = JSON.parse(raw); } catch { body = raw; } }
+  if (raw) {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      body = raw;
+    }
+  }
   return { status: response.status, body };
 }
 
@@ -125,44 +125,137 @@ async function expect(base, method, pathname, status, options = {}) {
 function mutationHeaders(actingActorID, expectedVersion) {
   return { "X-Acting-Actor-ID": actingActorID, "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID(), ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) };
 }
+
 function userHeaders(key, expectedVersion) {
   return { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": key, ...(expectedVersion === undefined ? {} : { "X-Expected-Version": String(expectedVersion) }) };
 }
+
 function challengeCode(challengeID, purpose) {
   return String(crypto.createHmac("sha256", challengeSecret).update(challengeID).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest().readUInt32BE(0) % 1_000_000).padStart(6, "0");
 }
+
 function passwordFor(role) {
   return `W${crypto.createHmac("sha256", challengeSecret).update(`world:${role}`).digest("hex").slice(0, 6)}!`;
 }
 
 function loadState() {
-  if (!fs.existsSync(locatorPath)) return { version: 1, actors: {}, entities: {} };
-  try { return JSON.parse(fs.readFileSync(locatorPath, "utf8")); } catch { fail("external world locator is unreadable; discard/rebuild it explicitly"); }
-}
-function saveState(state) {
-  fs.mkdirSync(path.dirname(locatorPath), { recursive: true });
-  fs.writeFileSync(locatorPath, JSON.stringify(state, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  if (!fs.existsSync(locatorPath)) return { version: 2, actors: {}, entities: {} };
+  let state;
+  try {
+    state = JSON.parse(fs.readFileSync(locatorPath, "utf8"));
+  } catch {
+    fail("external world locator is unreadable; discard/rebuild it explicitly");
+  }
+  if (!state || typeof state !== "object" || Array.isArray(state)) fail("external world locator has an invalid shape");
+  const serialized = JSON.stringify(state);
+  if (/(accessToken|refreshToken|password|otp|recoveryCredential|credential|serviceToken|databaseCredential)/i.test(serialized)) fail("external world locator contains forbidden credential material");
+  return state;
 }
 
-async function searchRole(role, phone) {
-  const token = role === "client" ? dshToken : identityDshToken;
-  const body = await expect(identityBase, "GET", `/internal/actor-roles/search?role=${encodeURIComponent(role)}&q=${encodeURIComponent(phone)}&limit=25`, 200, { token });
-  return body.items?.[0] ?? null;
+function saveState(state) {
+  fs.mkdirSync(path.dirname(locatorPath), { recursive: true });
+  const tempPath = `${locatorPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(tempPath, `${JSON.stringify({ ...state, version: 2 }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  try {
+    fs.renameSync(tempPath, locatorPath);
+  } catch (error) {
+    try { fs.rmSync(tempPath, { force: true }); } catch { /* preserve the original failure */ }
+    fail("external world locator could not be atomically updated", error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function searchRoles(role, phone = "", token = role === "client" ? dshToken : identityDshToken) {
+  const body = await expect(identityBase, "GET", `/internal/actor-roles/search?role=${encodeURIComponent(role)}${phone ? `&q=${encodeURIComponent(phone)}` : ""}&limit=25`, 200, { token });
+  return body.items ?? [];
+}
+
+async function readRole(role, actorID, token = role === "client" ? dshToken : identityDshToken) {
+  return request(identityBase, "GET", `/internal/actors/${encodeURIComponent(actorID)}/roles/${encodeURIComponent(role)}`, { token });
+}
+
+function uniqueOrFail(items, description) {
+  if (items.length > 1) fail(`ambiguous canonical baseline component: ${description}`);
+  return items[0] ?? null;
+}
+
+async function waitForMailpitCode(phone, purpose) {
+  const base = `http://127.0.0.1:${mailpitPort}`;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    try {
+      const response = await fetch(`${base}/view/latest.txt`, { signal: AbortSignal.timeout(2_000) });
+      if (response.ok) {
+        const message = await response.text();
+        if (message.includes(`Phone: ${phone}`) && message.includes(`Purpose: ${purpose}`)) {
+          const match = message.match(/Code:\s*(\d{6})/);
+          if (match?.[1]) return match[1];
+        }
+      }
+    } catch {
+      // Mailpit delivery is asynchronous; continue through the bounded proof window.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  fail(`${purpose} challenge was not delivered to controlled local Mailpit`);
+}
+
+async function activateOperatorWithPasskey(phone, enrollmentToken, actorID) {
+  let chromium;
+  try {
+    ({ chromium } = createRequire(path.join(root, "apps/control-panel/package.json"))("@playwright/test"));
+  } catch (error) {
+    fail("canonical Control Panel Playwright dependency is unavailable", error instanceof Error ? error.message : String(error));
+  }
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ locale: "ar-YE" });
+  const page = await context.newPage();
+  try {
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("WebAuthn.enable");
+    await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+    await page.goto(controlOrigin, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "تفعيل حساب موظف" }).click();
+    await page.getByLabel("رقم الهاتف").fill(phone);
+    await page.getByLabel("دعوة التفعيل عالية الأمان").fill(enrollmentToken);
+    await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
+    const code = await waitForMailpitCode(phone, "operator_enroll");
+    await page.getByLabel("رمز إثبات الهاتف").fill(code);
+    await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح المرور" }).click();
+    await page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
+    await page.waitForURL(/\/workspace$/, { timeout: 15_000 });
+    const session = await page.evaluate(async () => {
+      const response = await fetch("/api/auth/session", { cache: "no-store" });
+      return { status: response.status, body: await response.json().catch(() => null) };
+    });
+    if (session.status !== 200 || session.body?.identity?.subject !== actorID || session.body?.identity?.role !== "operator" || session.body?.identity?.surface !== "control-panel") fail("canonical first-operator passkey session readback failed");
+  } finally {
+    await context.close();
+    await browser.close();
+  }
 }
 
 async function bootstrapOperator(state) {
-  const actorID = sqlRead("SELECT actor_id FROM identity_actor_roles WHERE role='operator' AND enabled AND activated_at IS NOT NULL ORDER BY activated_at DESC, actor_id LIMIT 1");
-  if (!actorID) fail("no active canonical control operator baseline; refusing to create an unactivated operator");
-
-  const residue = await searchRole("operator", WORLD.abandonedOperatorPhone);
-  if (residue?.actorId && residue.actorId !== actorID) {
-    const role = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(residue.actorId)}/roles/operator`, { token: dshToken });
-    if (role.status === 200 && role.body?.enabled !== false && !role.body?.activatedAt) {
-      const disabled = await request(identityBase, "POST", `/internal/actors/${encodeURIComponent(residue.actorId)}/roles/operator/disable`, { token: dshToken, headers: { ...mutationHeaders(actorID, role.body.version), "X-Reason": "local-world-unactivated-bootstrap-cleanup" } });
-      if (disabled.status !== 204) fail("canonical cleanup of unactivated synthetic operator residue failed", JSON.stringify(disabled.body));
-    }
+  const operators = await searchRoles("operator", "");
+  const existing = operators.find((item) => item.enabled && item.securityEnabled && item.activatedAt) ?? operators[0] ?? null;
+  let actorID = existing?.actorId ?? "";
+  let phone = existing?.phoneE164 ?? WORLD.operatorPhone;
+  let enrollmentToken = "";
+  if (!existing) {
+    const bootstrapped = await expect(identityBase, "POST", "/internal/bootstrap/operator", 201, { token: bootstrapToken, body: { phoneE164: WORLD.operatorPhone, role: "operator" } });
+    actorID = String(bootstrapped.role?.actorId ?? "");
+    phone = WORLD.operatorPhone;
+    enrollmentToken = String(bootstrapped.enrollmentToken?.code ?? "");
+  } else if (!existing.enabled || !existing.securityEnabled) {
+    fail("canonical operator baseline is disabled or security-disabled; refusing to bypass its owner");
+  } else if (!existing.activatedAt) {
+    const token = await expect(identityBase, "POST", "/internal/operator-enrollment-tokens", 201, { token: bootstrapToken, body: { phoneE164: phone, role: "operator" } });
+    enrollmentToken = String(token.code ?? "");
   }
-  state.actors.operator = { actorId: actorID, reused: true };
+  if (!actorID || !phone) fail("canonical operator bootstrap did not return an actor identity");
+  if (enrollmentToken) await activateOperatorWithPasskey(phone, enrollmentToken, actorID);
+  const activated = await expect(identityBase, "GET", `/internal/actors/${encodeURIComponent(actorID)}/roles/operator`, 200, { token: identityDshToken });
+  if (!activated.enabled || !activated.securityEnabled || !activated.activatedAt) fail("operator is not fully activated through the canonical passkey path");
+  state.actors.operator = { actorId: actorID, phone };
   return actorID;
 }
 
@@ -182,7 +275,8 @@ async function activateOrLogin(role, phone, actorID, operatorID) {
 
 async function ensureCity(operatorID, state) {
   const list = await expect(dshBase, "GET", "/dsh/service-cities?includeInactive=true", 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
-  let city = list.cities?.find((item) => item.displayNameAr === WORLD.cityNameAr);
+  const matches = (list.cities ?? []).filter((item) => item.displayNameAr === WORLD.cityNameAr);
+  let city = uniqueOrFail(matches, "service city");
   if (!city) city = (await expect(dshBase, "POST", "/dsh/service-cities", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { displayNameAr: WORLD.cityNameAr, active: true } })).city;
   else if (!city.active) city = (await expect(dshBase, "PATCH", `/dsh/service-cities/${encodeURIComponent(city.id)}`, 200, { token: dshToken, headers: mutationHeaders(operatorID, city.version), body: { displayNameAr: city.displayNameAr, active: true } })).city;
   state.entities.cityId = city.id;
@@ -191,44 +285,51 @@ async function ensureCity(operatorID, state) {
 
 async function ensureVertical(operatorID, state) {
   const list = await expect(dshBase, "GET", "/dsh/catalog/verticals", 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
-  let vertical = list.verticals?.find((item) => item.nameAr === WORLD.verticalNameAr);
+  const matches = (list.verticals ?? []).filter((item) => item.nameAr === WORLD.verticalNameAr);
+  let vertical = uniqueOrFail(matches, "commerce vertical");
   if (!vertical) vertical = (await expect(dshBase, "POST", "/dsh/catalog/verticals", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { nameAr: WORLD.verticalNameAr, nameEn: WORLD.verticalNameEn, active: true } })).vertical;
+  if (!vertical.active) fail("canonical commerce vertical is inactive");
   state.entities.verticalId = vertical.id;
   return vertical.id;
 }
 
 async function ensureCategory(operatorID, state) {
   const list = await expect(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(state.entities.verticalId)}`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
-  let category = list.categories?.find((item) => item.nameAr === WORLD.categoryNameAr);
+  const matches = (list.categories ?? []).filter((item) => item.nameAr === WORLD.categoryNameAr);
+  let category = uniqueOrFail(matches, "catalog category");
   if (!category) category = (await expect(dshBase, "POST", "/dsh/catalog/categories", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { verticalId: state.entities.verticalId, nameAr: WORLD.categoryNameAr, nameEn: WORLD.categoryNameEn, active: true } })).category;
+  if (!category.active || category.verticalId !== state.entities.verticalId) fail("canonical catalog category is not valid for the selected vertical");
   state.entities.categoryId = category.id;
   return category.id;
 }
 
 async function ensurePartner(operatorID, state) {
-  let role = await searchRole("partner", WORLD.partnerPhone);
-  let actorID = role?.actorId ?? "";
-  let cases = await expect(dshBase, "GET", "/dsh/joining-cases?limit=25", 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
-  let summary = cases.cases?.find((item) => item.contactPhoneE164 === WORLD.partnerPhone);
+  let role = uniqueOrFail(await searchRoles("partner", WORLD.partnerPhone), "partner actor");
+  const cases = await expect(dshBase, "GET", "/dsh/joining-cases?limit=25", 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
+  const summaries = (cases.cases ?? []).filter((item) => item.contactPhoneE164 === WORLD.partnerPhone);
+  let summary = uniqueOrFail(summaries, "partner joining case");
   let view = summary ? await expect(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(summary.id)}`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }) : null;
-  if (!view?.case || view.case.state !== "approved") {
-    if (!actorID) {
-      const provisioned = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: identityDshToken, headers: { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": crypto.randomUUID() }, body: { phoneE164: WORLD.partnerPhone, role: "partner" } });
-      if (![200, 201, 409].includes(provisioned.status)) fail("partner role provisioning failed", JSON.stringify(provisioned.body));
-      actorID = String(provisioned.body?.actorId || (await searchRole("partner", WORLD.partnerPhone))?.actorId || "");
-    }
-    if (!summary) {
-      const created = await expect(dshBase, "POST", "/dsh/joining-cases", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { contactPhoneE164: WORLD.partnerPhone, businessName: WORLD.businessName, firstStoreName: WORLD.storeName, serviceCityId: state.entities.cityId, firstStoreVerticalId: state.entities.verticalId } });
-      summary = created.case;
-    }
-    if (summary.state === "draft") summary = (await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(summary.id)}/submit`, 200, { token: dshToken, headers: mutationHeaders(operatorID, 1) })).case;
-    const activated = await activateOrLogin("partner", WORLD.partnerPhone, actorID, operatorID);
-    actorID = activated.identity.subject;
-    const expected = summary.version;
-    view = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(summary.id)}/review`, 200, { token: dshToken, headers: mutationHeaders(operatorID, expected), body: { decision: "approved" } });
+  if (!summary) {
+    summary = (await expect(dshBase, "POST", "/dsh/joining-cases", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { contactPhoneE164: WORLD.partnerPhone, businessName: WORLD.businessName, firstStoreName: WORLD.storeName, serviceCityId: state.entities.cityId, firstStoreVerticalId: state.entities.verticalId } })).case;
+    view = { case: summary };
+  }
+  if (summary.serviceCityId !== state.entities.cityId || summary.firstStoreVerticalId !== state.entities.verticalId) fail("canonical partner joining case points at a different baseline");
+  if (summary.state === "draft") {
+    summary = (await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(summary.id)}/submit`, 200, { token: dshToken, headers: mutationHeaders(operatorID, summary.version) })).case;
+    view = { case: summary };
+  }
+  if (!summary.partnerActorId) fail("joining case owner did not provision the partner role");
+  role = role ?? await expect(identityBase, "GET", `/internal/actors/${encodeURIComponent(summary.partnerActorId)}/roles/partner`, 200, { token: identityDshToken });
+  if (role.actorId !== summary.partnerActorId) fail("joining case partner binding does not match Identity");
+  const partner = await activateOrLogin("partner", WORLD.partnerPhone, summary.partnerActorId, operatorID);
+  if (summary.state === "submitted") {
+    summary = (await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(summary.id)}/review`, 200, { token: dshToken, headers: mutationHeaders(operatorID, summary.version), body: { decision: "approved" } })).case;
+    view = { case: summary };
+  } else if (summary.state !== "approved") {
+    fail(`partner joining case is not convergable from state=${summary.state}`);
   }
   if (!view?.case?.store?.id) view = await expect(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(summary.id)}`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
-  const partner = await activateOrLogin("partner", WORLD.partnerPhone, actorID || view.case.partnerActorId, operatorID);
+  if (!view.case.store || view.case.store.partnerActorId !== partner.identity.subject) fail("approved joining case has no canonical partner-owned store");
   state.actors.partner = { actorId: partner.identity.subject, phone: WORLD.partnerPhone };
   state.entities.joiningCaseId = view.case.id;
   state.entities.storeId = view.case.store.id;
@@ -236,28 +337,32 @@ async function ensurePartner(operatorID, state) {
 }
 
 async function ensureCaptain(operatorID, state) {
-  let role = await searchRole("captain", WORLD.captainPhone);
+  const role = uniqueOrFail(await searchRoles("captain", WORLD.captainPhone), "captain actor");
   let actorID = role?.actorId ?? "";
   if (!actorID) {
     const admission = await expect(dshBase, "POST", "/dsh/captains/admissions", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { contactPhoneE164: WORLD.captainPhone } });
     actorID = admission.admission.actorId;
     state.entities.captainAdmissionId = admission.admission.id;
+  } else {
+    const admission = await expect(dshBase, "GET", `/dsh/captains/actors/${encodeURIComponent(actorID)}/admission`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
+    state.entities.captainAdmissionId = admission.admission.id;
   }
   const captain = await activateOrLogin("captain", WORLD.captainPhone, actorID, operatorID);
   state.actors.captain = { actorId: captain.identity.subject, phone: WORLD.captainPhone };
   const own = await expect(dshBase, "GET", "/dsh/captains/me", 200, { token: captain.accessToken });
-  // Keep the reusable baseline role valid but not dispatch-reserved. Scenario
-  // verifiers create and own their fresh transactional Captain availability.
   if (own.admission?.availabilityState !== "unavailable") await expect(dshBase, "POST", "/dsh/captains/me/availability", 200, { token: captain.accessToken, headers: userHeaders("local-world-captain-availability", own.admission.version), body: { available: false } });
   return captain;
 }
 
 async function ensureField(operatorID, state) {
-  let role = await searchRole("field", WORLD.fieldPhone);
+  const role = uniqueOrFail(await searchRoles("field", WORLD.fieldPhone), "field actor");
   let actorID = role?.actorId ?? "";
   if (!actorID) {
     const admission = await expect(dshBase, "POST", "/dsh/fields/admissions", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { contactPhoneE164: WORLD.fieldPhone } });
     actorID = admission.admission.actorId;
+    state.entities.fieldAdmissionId = admission.admission.id;
+  } else {
+    const admission = await expect(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(actorID)}/admission`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
     state.entities.fieldAdmissionId = admission.admission.id;
   }
   const field = await activateOrLogin("field", WORLD.fieldPhone, actorID, operatorID);
@@ -266,7 +371,7 @@ async function ensureField(operatorID, state) {
 }
 
 async function ensureClient(state) {
-  let role = await searchRole("client", WORLD.clientPhone);
+  const role = uniqueOrFail(await searchRoles("client", WORLD.clientPhone), "client actor");
   let client;
   if (!role) {
     const challenge = await expect(identityBase, "POST", "/auth/client/registration/request", 201, { body: { phone: WORLD.clientPhone } });
@@ -286,60 +391,91 @@ async function ensureClient(state) {
 
 async function ensureProduct(operatorID, partner, state) {
   const products = await expect(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(WORLD.productName)}&verticalId=${encodeURIComponent(state.entities.verticalId)}&limit=50`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
-  let product = products.products?.find((item) => item.canonicalName === WORLD.productName);
+  const matches = (products.products ?? []).filter((item) => item.canonicalName === WORLD.productName);
+  let product = uniqueOrFail(matches, "catalog product");
   if (!product) product = (await expect(dshBase, "POST", "/dsh/catalog/products", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { canonicalName: WORLD.productName, verticalId: state.entities.verticalId, scope: "SHARED", variantTitle: WORLD.productVariantTitle, measurementKind: "DISCRETE", baseUnit: "COUNT", categoryIds: [state.entities.categoryId], identifierType: "SKU", identifierValue: "LOCAL-WORLD-RICE-1KG", imageUri: "https://localhost.invalid/local-world-rice.jpg" } })).product;
   const variant = product.variants?.[0];
-  if (!variant?.id) fail("product canonical readback has no variant");
+  if (!variant?.id || product.verticalId !== state.entities.verticalId) fail("product canonical readback is not bound to the selected vertical");
   state.entities.productId = product.id;
   state.entities.variantId = variant.id;
   const offers = await expect(dshBase, "GET", `/dsh/stores/${encodeURIComponent(state.entities.storeId)}/offers`, 200, { token: partner.accessToken });
-  let offer = offers.offers?.find((item) => item.variantId === variant.id);
+  const offerMatches = (offers.offers ?? []).filter((item) => item.variantId === variant.id);
+  let offer = uniqueOrFail(offerMatches, "store offer");
   if (!offer) offer = (await expect(dshBase, "POST", `/dsh/stores/${encodeURIComponent(state.entities.storeId)}/offers`, 201, { token: partner.accessToken, headers: userHeaders("local-world-offer-create"), body: { variantId: variant.id, priceMinor: 1250, quantityPolicy: "DISCRETE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 1000, quantityStepBaseUnits: 1, pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1 } })).offer;
-  if (offer.publicationState !== "published") offer = (await expect(dshBase, "PATCH", `/dsh/stores/${encodeURIComponent(state.entities.storeId)}/offers/${encodeURIComponent(offer.offerId)}`, 200, { token: partner.accessToken, headers: userHeaders("local-world-offer-publish", offer.version), body: { priceMinor: 1250, availability: true, publicationState: "published", quantityPolicy: "DISCRETE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 1000, quantityStepBaseUnits: 1, pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1 } })).offer;
+  if (offer.publicationState !== "published" || !offer.availability) offer = (await expect(dshBase, "PATCH", `/dsh/stores/${encodeURIComponent(state.entities.storeId)}/offers/${encodeURIComponent(offer.offerId)}`, 200, { token: partner.accessToken, headers: userHeaders("local-world-offer-publish", offer.version), body: { priceMinor: 1250, availability: true, publicationState: "published", quantityPolicy: "DISCRETE", quantityMinBaseUnits: 1, quantityMaxBaseUnits: 1000, quantityStepBaseUnits: 1, pricingBasis: "PER_UNIT", pricingUnitBaseUnits: 1 } })).offer;
   state.entities.offerId = offer.offerId;
 }
 
-async function ensureLocationAndPublication(operatorID, client, partner, state) {
-  const origin = await expect(dshBase, "GET", `/dsh/stores/${encodeURIComponent(state.entities.storeId)}/delivery-origin`, 200, { token: partner.accessToken });
-  if (origin.origin === null) await expect(dshBase, "POST", `/dsh/stores/${encodeURIComponent(state.entities.storeId)}/delivery-origin`, 200, { token: partner.accessToken, headers: userHeaders("local-world-origin", 0), body: { latitude: WORLD.latitude, longitude: WORLD.longitude } });
-  const addresses = await expect(dshBase, "GET", "/dsh/addresses?limit=50", 200, { token: client.accessToken });
-  let address = addresses.addresses?.find((item) => item.addressText === WORLD.addressText && item.serviceCityId === state.entities.cityId);
-  if (!address) address = (await expect(dshBase, "POST", "/dsh/addresses", 201, { token: client.accessToken, headers: userHeaders("local-world-address"), body: { addressText: WORLD.addressText, latitude: WORLD.latitude, longitude: WORLD.longitude, serviceCityId: state.entities.cityId } })).address;
-  state.entities.addressId = address.id;
+async function ensureStorePublication(operatorID, state) {
   const publication = await expect(dshBase, "GET", `/dsh/stores/${encodeURIComponent(state.entities.storeId)}/publication`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } });
   if (publication.store?.publicationState !== "published") await expect(dshBase, "POST", `/dsh/stores/${encodeURIComponent(state.entities.storeId)}/publication`, 200, { token: dshToken, headers: { ...mutationHeaders(operatorID, publication.store.version), "X-Expected-Version": String(publication.store.version) }, body: { state: "published" } });
 }
 
 async function readStatus(state) {
-  if (!state.entities?.cityId || !state.entities?.storeId || !state.actors?.operator?.actorId) return { ready: false, reason: "locator-incomplete" };
+  if (!state?.actors?.operator?.actorId || !state?.actors?.client?.actorId || !state?.actors?.partner?.actorId || !state?.actors?.captain?.actorId || !state?.actors?.field?.actorId || !state?.entities?.cityId || !state?.entities?.verticalId || !state?.entities?.categoryId || !state?.entities?.joiningCaseId || !state?.entities?.storeId || !state?.entities?.captainAdmissionId || !state?.entities?.fieldAdmissionId || !state?.entities?.productId || !state?.entities?.variantId || !state?.entities?.offerId) return { ready: false, reason: "locator-incomplete" };
   const operatorID = state.actors.operator.actorId;
-  const role = await request(identityBase, "GET", `/internal/actors/${encodeURIComponent(operatorID)}/roles/operator`, { token: dshToken });
-  const cities = await request(dshBase, "GET", "/dsh/public/service-cities", {});
-  const verticals = await request(dshBase, "GET", "/dsh/catalog/verticals", {});
-  const stores = await request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(state.entities.cityId)}`, {});
-  const catalog = await request(dshBase, "GET", `/dsh/public/stores/${encodeURIComponent(state.entities.storeId)}/catalog?serviceCityId=${encodeURIComponent(state.entities.cityId)}`, {});
-  const ready = role.status === 200 && role.body?.enabled !== false && cities.status === 200 && cities.body?.cities?.some((item) => item.id === state.entities.cityId && item.active && item.displayNameAr === WORLD.cityNameAr) && verticals.status === 200 && verticals.body?.verticals?.some((item) => item.id === state.entities.verticalId && item.active && item.nameAr === WORLD.verticalNameAr) && stores.status === 200 && stores.body?.stores?.some((item) => item.id === state.entities.storeId) && catalog.status === 200;
-  return { ready, reason: ready ? "canonical-readback" : "baseline-not-proven" };
+  const [operatorRole, clientRole, partnerRole, captainRole, fieldRole, cities, verticals, categories, joining, publication, captainAdmission, fieldAdmission, stores, catalog] = await Promise.all([
+    readRole("operator", operatorID),
+    readRole("client", state.actors.client.actorId),
+    readRole("partner", state.actors.partner.actorId),
+    readRole("captain", state.actors.captain.actorId),
+    readRole("field", state.actors.field.actorId),
+    request(dshBase, "GET", "/dsh/service-cities?includeInactive=true", { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }),
+    request(dshBase, "GET", "/dsh/catalog/verticals", { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }),
+    request(dshBase, "GET", `/dsh/catalog/categories?verticalId=${encodeURIComponent(state.entities.verticalId)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }),
+    request(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(state.entities.joiningCaseId)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }),
+    request(dshBase, "GET", `/dsh/stores/${encodeURIComponent(state.entities.storeId)}/publication`, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }),
+    request(dshBase, "GET", `/dsh/captains/actors/${encodeURIComponent(state.actors.captain.actorId)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }),
+    request(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(state.actors.field.actorId)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }),
+    request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(state.entities.cityId)}`),
+    request(dshBase, "GET", `/dsh/public/stores/${encodeURIComponent(state.entities.storeId)}/catalog?serviceCityId=${encodeURIComponent(state.entities.cityId)}`),
+  ]);
+  const roleReady = (result, role, actorID) => result.status === 200 && result.body?.role === role && result.body.actorId === actorID && result.body.enabled && result.body.securityEnabled && Boolean(result.body.activatedAt);
+  const city = cities.body?.cities?.find((item) => item.id === state.entities.cityId);
+  const vertical = verticals.body?.verticals?.find((item) => item.id === state.entities.verticalId);
+  const category = categories.body?.categories?.find((item) => item.id === state.entities.categoryId);
+  const joiningCase = joining.body?.case;
+  const store = publication.body?.store;
+  const captain = captainAdmission.body?.admission;
+  const field = fieldAdmission.body?.admission;
+  const publicStore = stores.body?.stores?.find((item) => item.id === state.entities.storeId);
+  const offer = (catalog.body?.offers ?? []).find((item) => item.offerId === state.entities.offerId);
+  const ready = roleReady(operatorRole, "operator", operatorID) &&
+    roleReady(clientRole, "client", state.actors.client.actorId) &&
+    roleReady(partnerRole, "partner", state.actors.partner.actorId) &&
+    roleReady(captainRole, "captain", state.actors.captain.actorId) &&
+    roleReady(fieldRole, "field", state.actors.field.actorId) &&
+    cities.status === 200 && city?.active && city.displayNameAr === WORLD.cityNameAr &&
+    verticals.status === 200 && vertical?.active && vertical.nameAr === WORLD.verticalNameAr &&
+    categories.status === 200 && category?.active && category.verticalId === state.entities.verticalId &&
+    joining.status === 200 && joiningCase?.state === "approved" && joiningCase.partnerActorId === state.actors.partner.actorId && joiningCase.serviceCityId === state.entities.cityId && joiningCase.firstStoreVerticalId === state.entities.verticalId && joiningCase.store?.id === state.entities.storeId && joiningCase.store.partnerActorId === state.actors.partner.actorId &&
+    publication.status === 200 && store?.id === state.entities.storeId && store.partnerActorId === state.actors.partner.actorId && store.serviceCityId === state.entities.cityId && store.primaryVerticalId === state.entities.verticalId && store.publicationState === "published" && store.publicationReadiness?.ready &&
+    captainAdmission.status === 200 && captain?.actorId === state.actors.captain.actorId && captain.state === "eligible" && captain.availabilityState === "unavailable" &&
+    fieldAdmission.status === 200 && field?.actorId === state.actors.field.actorId && field.state === "eligible" &&
+    stores.status === 200 && publicStore?.id === state.entities.storeId && publicStore.primaryVerticalId === state.entities.verticalId &&
+    catalog.status === 200 && catalog.body?.storeId === state.entities.storeId && catalog.body?.verticalId === state.entities.verticalId && offer?.offerId === state.entities.offerId && offer.variantId === state.entities.variantId && offer.productId === state.entities.productId && offer.productActive && offer.variantActive && offer.availability && offer.publicationState === "published";
+  return { ready: Boolean(ready), reason: ready ? "complete-canonical-readback" : "baseline-not-proven" };
 }
 
 async function main() {
-  if (!['--ensure', '--status'].includes(action)) fail("unsupported action; use --ensure or --status");
+  if (!["--ensure", "--status"].includes(action)) fail("unsupported action; use --ensure or --status");
   runtimeGuard();
   for (const endpoint of ["/identity/health", "/identity/readiness"]) if ((await request(identityBase, "GET", endpoint)).status !== 200) fail("Identity is not ready");
   for (const endpoint of ["/dsh/health", "/dsh/readiness"]) if ((await request(dshBase, "GET", endpoint)).status !== 200) fail("DSH is not ready");
   const state = loadState();
   const current = await readStatus(state);
   if (action === "--status") {
-    if (!current.ready) { console.log(`WORLD_STATUS=NOT_READY reason=${current.reason} read_only=1`); process.exitCode = 1; return; }
-    console.log("WORLD_STATUS=PASS read_only=1 synthetic=1 canonical_readback=1");
+    if (!current.ready) {
+      console.log(`WORLD_STATUS=NOT_READY reason=${current.reason} read_only=1 complete_baseline=1`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log("WORLD_STATUS=PASS read_only=1 complete_baseline=1 synthetic=1 canonical_readback=1");
     return;
   }
   if (current.ready) {
-    const operatorID = state.actors.operator.actorId;
-    await ensureCaptain(operatorID, state);
-    saveState(state);
-    console.log("WORLD_ENSURE=REUSE baseline=clean-proven-canonical");
-    console.log("WORLD_STATUS=PASS read_only=1 synthetic=1 canonical_readback=1");
+    console.log("WORLD_ENSURE=REUSE baseline=complete-clean-proven-canonical");
+    console.log("WORLD_STATUS=PASS read_only=1 complete_baseline=1 synthetic=1 canonical_readback=1");
     return;
   }
   const operatorID = await bootstrapOperator(state);
@@ -347,17 +483,16 @@ async function main() {
   state.entities.verticalId = await ensureVertical(operatorID, state);
   state.entities.categoryId = await ensureCategory(operatorID, state);
   const partner = await ensurePartner(operatorID, state);
-  const captain = await ensureCaptain(operatorID, state);
+  await ensureCaptain(operatorID, state);
   await ensureField(operatorID, state);
-  const client = await ensureClient(state);
+  await ensureClient(state);
   await ensureProduct(operatorID, partner, state);
-  await ensureLocationAndPublication(operatorID, client, partner, state);
-  saveState(state);
+  await ensureStorePublication(operatorID, state);
   const final = await readStatus(state);
-  if (!final.ready) fail("world owner completed mutations but canonical final readback is not ready");
-  void captain;
+  if (!final.ready) fail("world owner completed canonical mutations but complete final readback is not ready");
+  saveState(state);
   console.log("WORLD_ENSURE=PASS created_or_reused=canonical-owner-paths");
-  console.log("WORLD_STATUS=PASS read_only=1 synthetic=1 canonical_readback=1");
+  console.log("WORLD_STATUS=PASS read_only=1 complete_baseline=1 synthetic=1 canonical_readback=1");
 }
 
 await main();

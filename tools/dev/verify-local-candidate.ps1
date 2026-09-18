@@ -105,6 +105,10 @@ try {
         }
     }
 
+    if (Changed-Matches '^(package\.json|tools/dev/(local-world\.mjs|verify-local-world\.mjs|verify-local-candidate\.ps1)|services/dsh/backend/internal/joiningcase/service\.go)$') {
+        Run-Step 'Local world contract' { node tools/dev/verify-local-world.mjs }
+    }
+
     if (Changed-Matches '^apps/app-(client|partner|captain|field)/(mobile\.config\.json|app\.config\.ts|eas\.json|fingerprint\.config\.js|package\.json)$|^tools/mobile/verify-mobile-config\.mjs$') {
         Run-Step 'Mobile deployable identities' { pnpm run mobile:verify-config }
     }
