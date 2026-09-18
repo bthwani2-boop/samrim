@@ -125,11 +125,8 @@ try {
     }
     Write-Host "GOOGLE_SERVICES_REMOTE_BUILD=PASS app=$App variable=GOOGLE_SERVICES_JSON type=File"
 
-    $CredentialReadback = Invoke-EasText @("credentials", "--platform", "android", "--non-interactive")
-    if ($CredentialReadback -notmatch "(?i)FCM|service.account|google.*key") {
-        Fail "FCM V1 service-account credential was not proven by EAS credentials readback for $App."
-    }
-    Write-Host "FCM_V1_CREDENTIAL=PASS app=$App"
+    Write-Host "FCM_V1_AUTOMATED_READBACK=NOT_SUPPORTED_BY_EAS_CREDENTIALS_COMMAND"
+    Write-Host "FCM_V1_BUILD_GATE=NO"
 
     $Fingerprint = Invoke-EasJson @("fingerprint:generate", "--platform", "android", "--build-profile", "development", "--json", "--non-interactive")
     $Hash = [string]$Fingerprint.hash
