@@ -86,6 +86,13 @@ assert(
 );
 
 const apps = children("apps");
+const structureBody = set.has(structurePath) ? fs.readFileSync(path.join(root, structurePath), "utf8") : "";
+for (const app of apps) {
+  assert(
+    !structureBody.includes(`apps/${app}/`),
+    `${structurePath} duplicates current app inventory: apps/${app}/`,
+  );
+}
 for (const app of apps) {
   const value = project("apps", app, "type:app");
   if (!value) continue;
@@ -146,6 +153,12 @@ for (const app of apps) {
 }
 
 const services = children("services");
+for (const service of services) {
+  assert(
+    !structureBody.includes(`services/${service}/`),
+    `${structurePath} duplicates current service inventory: services/${service}/`,
+  );
+}
 const appSet = new Set(apps);
 for (const service of services) {
   const value = project("services", service, "type:service");
@@ -226,6 +239,12 @@ for (const item of tracked.filter((value) => value.startsWith("contracts/"))) {
 }
 
 const packages = children("packages");
+for (const name of packages) {
+  assert(
+    !structureBody.includes(`packages/${name}/`),
+    `${structurePath} duplicates current package inventory: packages/${name}/`,
+  );
+}
 for (const name of packages) {
   assert(
     !["shared", "common", "core", "utils", "domain", "business-rules"].includes(name),
