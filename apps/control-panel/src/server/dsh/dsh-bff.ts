@@ -1,5 +1,5 @@
 import { validateServiceUrl } from "@bthwani/identity";
-import { type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogImportCommitResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type ReviewCatalogProductProposalRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ManagedRoleMutationRequest, type OperatorOperationsResponse, dshOperationPaths } from "@bthwani/dsh";
+import { type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogImportCommitResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type ReviewCatalogProductProposalRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ManagedRoleMutationRequest, type OperatorOperationResponse, type OperatorOperationsResponse, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -152,14 +152,21 @@ export async function readJoiningCase(caseId: string, context: DshOperatorReadCo
   return (await requestDshJson<JoiningCaseResponse>(dshOperationPaths.readJoiningCase.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listOperatorOperations(state: string, limit: number, context: DshOperatorReadContext): Promise<OperatorOperationsResponse> {
-  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100) {
-    throw new Error("DSH_OPERATOR_OPERATIONS_INPUT_INVALID");
-  }
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (state.trim()) params.set("state", state.trim());
-  const path = `${dshOperationPaths.listOperatorOperations.path}?${params.toString()}`;
-  return (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+export async function listOperatorOperations(state: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<OperatorOperationsResponse> {
+	if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100 || cursor.trim().length > 512) {
+		throw new Error("DSH_OPERATOR_OPERATIONS_INPUT_INVALID");
+	}
+	const params = new URLSearchParams({ limit: String(limit) });
+	if (state.trim()) params.set("state", state.trim());
+	if (cursor.trim()) params.set("cursor", cursor.trim());
+	const path = `${dshOperationPaths.listOperatorOperations.path}?${params.toString()}`;
+	return (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function readOperatorOperation(orderId: string, context: DshOperatorReadContext): Promise<OperatorOperationResponse> {
+	if (!orderId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_OPERATOR_OPERATION_READ_INPUT_INVALID");
+	const path = dshOperationPaths.readOperatorOperation.path.replace("{orderId}", encodeURIComponent(orderId.trim()));
+	return (await requestDshJson<OperatorOperationResponse>(dshOperationPaths.readOperatorOperation.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
 export async function listJoiningCases(state: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<JoiningCaseListResponse> {

@@ -1,6 +1,8 @@
 "use client";
 
 import { type ReactNode } from "react";
+import "./public-shell.module.css";
+import "./responsive-shell.module.css";
 
 function BrandHeader() {
   return (

@@ -36,6 +36,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders", s.listClient)
 	mux.HandleFunc("GET /dsh/orders/{orderId}", s.read)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
+	mux.HandleFunc("GET /dsh/operator/operations/{orderId}", s.readOperatorOperation)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
@@ -60,31 +61,55 @@ func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "state is invalid")
 		return
 	}
-	operations, err := s.service.ListForOperator(r.Context(), state, actingActorID, limit)
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 512 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
+		return
+	}
+	operations, err := s.service.ListForOperator(r.Context(), state, actingActorID, limit, cursor)
 	if err != nil {
 		writeOrderError(w, err)
 		return
 	}
-	items := make([]contract.OperatorOperation, 0, len(operations))
-	for _, operation := range operations {
-		var assignment *contract.OperatorAssignmentSummary
-		if operation.Assignment != nil {
-			assignment = &contract.OperatorAssignmentSummary{
-				ID:             operation.Assignment.ID,
-				OrderID:        operation.Assignment.OrderID,
-				CaptainActorID: operation.Assignment.CaptainActorID,
-				State:          operation.Assignment.State,
-				Version:        operation.Assignment.Version,
-				HandoffState:   operation.Assignment.Handoff.State,
-			}
-		}
-		items = append(items, contract.OperatorOperation{
-			Order:      toOrder(operation.Order),
-			StoreName:  operation.StoreName,
-			Assignment: assignment,
-		})
+	items := make([]contract.OperatorOperation, 0, len(operations.Operations))
+	for _, operation := range operations.Operations {
+		items = append(items, toOperatorOperation(operation))
 	}
-	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items})
+	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items, NextCursor: operations.NextCursor})
+}
+
+func (s *OrderServer) readOperatorOperation(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	orderID := strings.TrimSpace(r.PathValue("orderId"))
+	if actingActorID == "" || len(actingActorID) > 128 || orderID == "" || len(orderID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "operator actor and orderId are required")
+		return
+	}
+	operation, err := s.service.ReadForOperator(r.Context(), orderID, actingActorID)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.OperatorOperationResponse{Operation: toOperatorOperation(operation)})
+}
+
+func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.OperatorOperation {
+	var assignment *contract.OperatorAssignmentSummary
+	if operation.Assignment != nil {
+		assignment = &contract.OperatorAssignmentSummary{
+			ID:             operation.Assignment.ID,
+			OrderID:        operation.Assignment.OrderID,
+			CaptainActorID: operation.Assignment.CaptainActorID,
+			State:          operation.Assignment.State,
+			Version:        operation.Assignment.Version,
+			HandoffState:   operation.Assignment.Handoff.State,
+		}
+	}
+	return contract.OperatorOperation{Order: toOrder(operation.Order), StoreName: operation.StoreName, Assignment: assignment}
 }
 
 func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
@@ -262,6 +287,8 @@ func snapshotBoolValue(value *bool) bool {
 
 func writeOrderError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, postgres.ErrOperatorOperationInvalidCursor), errors.Is(err, postgres.ErrOperatorOperationInvalidLimit):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "operator operations pagination is invalid")
 	case errors.Is(err, orderdomain.ErrClientSessionForbidden), errors.Is(err, orderdomain.ErrPartnerSessionForbidden), errors.Is(err, orderdomain.ErrStoreOwnershipForbidden), errors.Is(err, orderdomain.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session is not permitted for this Order")
 	case errors.Is(err, postgres.ErrOrderNotFound):

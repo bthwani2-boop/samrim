@@ -19,10 +19,8 @@ function applyPreference(preference: ThemePreference) {
   const root = document.documentElement;
   if (preference === "system") {
     root.removeAttribute("data-theme");
-    root.style.removeProperty("color-scheme");
   } else {
     root.dataset.theme = preference;
-    root.style.colorScheme = preference;
   }
 }
 

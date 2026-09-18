@@ -14,10 +14,12 @@ export async function GET(request: Request) {
 
   const params = new URL(request.url).searchParams;
   const rawLimit = params.get("limit") ?? "50";
+  const cursor = params.get("cursor") ?? "";
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) return errorResponse("INVALID_INPUT", "limit must be between 1 and 100", 400);
+  if (cursor.trim().length > 512) return errorResponse("INVALID_INPUT", "cursor is too long", 400);
   try {
-    const result = await listOperatorOperations(params.get("state") ?? "", limit, { operatorActorId: identity.subject });
+    const result = await listOperatorOperations(params.get("state") ?? "", limit, cursor, { operatorActorId: identity.subject });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "operator operations read failed", 500);

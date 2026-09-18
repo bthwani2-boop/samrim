@@ -76,11 +76,18 @@ func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID strin
 	return postgres.ListOrdersForStore(ctx, s.db, strings.TrimSpace(storeID), "", limit)
 }
 
-func (s *Service) ListForOperator(ctx context.Context, state, actingActorID string, limit int) ([]postgres.OperatorOperationRecord, error) {
+func (s *Service) ListForOperator(ctx context.Context, state, actingActorID string, limit int, cursor string) (postgres.OperatorOperationsResult, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
-		return nil, err
+		return postgres.OperatorOperationsResult{}, err
 	}
-	return postgres.ListOrdersForOperator(ctx, s.db, state, limit)
+	return postgres.ListOrdersForOperator(ctx, s.db, state, limit, cursor)
+}
+
+func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID string) (postgres.OperatorOperationRecord, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.OperatorOperationRecord{}, err
+	}
+	return postgres.ReadOperatorOperation(ctx, s.db, orderID)
 }
 
 func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID, orderID, state string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {

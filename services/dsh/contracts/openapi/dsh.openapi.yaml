@@ -177,6 +177,9 @@ paths:
   /dsh/operator/operations:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations"
 
+  /dsh/operator/operations/{orderId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}"
+
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
 
@@ -3101,6 +3104,17 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OperatorOperation"
+        nextCursor:
+          type: string
+          maxLength: 512
+
+    OperatorOperationResponse:
+      type: object
+      required: [operation]
+      additionalProperties: false
+      properties:
+        operation:
+          $ref: "#/components/schemas/OperatorOperation"
 
     OrderTransitionRequest:
       type: object

@@ -78,10 +78,13 @@ if (!themeIndexTs.includes("export function generateThemeCss")) {
 if (!themeIndexTs.includes("export function themeToCssVariables")) {
   failures.push("packages/design-system/src/theme/index.ts missing themeToCssVariables");
 }
+if (!themeIndexTs.includes("export function webFoundationToCssVariables")) {
+  failures.push("packages/design-system/src/theme/index.ts missing webFoundationToCssVariables");
+}
 
 // 2. Parity check on light and dark keys
 const { lightThemeColors, darkThemeColors } = await import("../../packages/design-system/src/tokens/colors.ts");
-const { generateThemeCss, isThemePreference, resolveThemeName, themePreferences } = await import("../../packages/design-system/src/theme/index.ts");
+const { generateThemeCss, isThemePreference, resolveThemeName, themePreferences, webFoundationToCssVariables } = await import("../../packages/design-system/src/theme/index.ts");
 const { resolveTextAlign, resolveTextInputAlign, toAsciiDigits } = await import("../../packages/design-system/src/tokens/direction.ts");
 
 if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1234567890") {
@@ -164,6 +167,12 @@ checkContrast("dark", "infoText", darkThemeColors.infoText, "surface", darkTheme
 const dsThemeCss = read("packages/design-system/theme.css");
 const expectedHeader = `/* Auto-generated from @bthwani/design-system. Do not edit manually. */\n`;
 const expectedCss = expectedHeader + generateThemeCss();
+
+for (const [name, value] of Object.entries(webFoundationToCssVariables())) {
+  if (!dsThemeCss.includes(`${name}: ${value};`)) {
+    failures.push(`theme.css is missing canonical web token ${name}`);
+  }
+}
 
 if (dsThemeCss !== expectedCss) {
   failures.push("packages/design-system/theme.css has drifted from canonical generateThemeCss()");

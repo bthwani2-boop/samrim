@@ -11,7 +11,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
-        <Script id="appearance-init" nonce={nonce} strategy="beforeInteractive">{`(() => { try { const value = window.localStorage.getItem("bthwani.control-panel.appearance"); if (value === "light" || value === "dark") { document.documentElement.dataset.theme = value; document.documentElement.style.colorScheme = value; } } catch {} })();`}</Script>
+        <Script id="appearance-init" nonce={nonce} strategy="beforeInteractive">{`(() => { try { const value = window.localStorage.getItem("bthwani.control-panel.appearance"); if (value === "light" || value === "dark") document.documentElement.dataset.theme = value; } catch {} })();`}</Script>
       </head>
       <body><SessionProvider>{children}</SessionProvider></body>
     </html>

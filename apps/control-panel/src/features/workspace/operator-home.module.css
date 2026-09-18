@@ -1,0 +1,15 @@
+/* Owner-scoped presentation for this control-panel area. */
+:global(.home-work-areas) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+:global(.home-work-area) { display: grid; align-content: start; gap: 14px; }
+:global(.home-work-area .access-card-heading) { min-height: 126px; }
+:global(.home-list) { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+:global(.home-list li a) { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--color-primary); text-decoration: none; }
+:global(.home-list li a:hover) { border-color: var(--focus-ring); background: var(--brand-structure-soft); }
+:global(.home-list li a span) { display: grid; gap: 4px; min-width: 0; }
+:global(.home-list li a span bdi) { direction: ltr; font-size: 12px; }
+:global(.home-list li a small) { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+:global(.home-list li a strong) { flex: 0 0 auto; color: var(--interactive-text); font-size: 12px; }
+:global(.home-area-link) { width: auto; margin-top: auto; }
+:global(.admission-form) { grid-template-columns: minmax(0, 1fr) auto; }
+:global(.admission-form .button) { width: auto; min-width: 170px; }
+:global(.visually-hidden) { position: absolute !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip: rect(0 0 0 0) !important; white-space: nowrap !important; }

@@ -1,0 +1,19 @@
+/* Owner-scoped presentation for this control-panel area. */
+:global(.access-card) { width: min(760px, 100%); padding: clamp(24px, 4vw, 38px); border: 1px solid var(--border-subtle); border-radius: 18px; background: var(--surface-base); box-shadow: none; }
+:global(.access-card-heading h2) { margin: 0; color: var(--color-primary); font-size: 22px; font-weight: 850; letter-spacing: -.03em; }
+:global(.access-form) { display: grid; grid-template-columns: 1fr 1.35fr auto; align-items: end; gap: 14px; margin-top: 24px; }
+:global(.access-form .field-label) { margin-bottom: 0; }
+:global(.field-label select) { width: 100%; min-height: 56px; border: 1px solid var(--border-strong); border-radius: 15px; outline: none; background: var(--surface-base); color: var(--color-primary); padding: 0 16px; font-size: 16px; }
+:global(.field-label select:focus) { border-color: var(--focus-ring); box-shadow: 0 0 0 4px var(--action-soft); }
+:global(.access-form .button) { min-width: 170px; }
+:global(.form-action-placeholder) { min-height: 56px; }
+:global(.code-output) { display: grid; gap: 8px; margin-top: 20px; padding: 18px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--success-soft); text-align: right; }
+:global(.code-output code) { direction: ltr; color: var(--color-primary); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: clamp(16px, 3vw, 22px); font-weight: 850; letter-spacing: .08em; text-align: center; }
+:global(.code-output p) { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.7; }
+:global(.success-inline) { margin: 16px 0 0; padding: 12px 14px; border-radius: 12px; background: var(--success-soft); color: var(--success); font-size: 13px; line-height: 1.7; }
+:global(.managed-status) { display: grid; gap: 6px; margin-top: 18px; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 15px; font-size: 13px; line-height: 1.75; }
+:global(.managed-status p) { margin: 0; color: var(--text-muted); }
+:global(.managed-status-info) { background: var(--brand-structure-soft); color: var(--color-primary); }
+:global(.managed-status-warning) { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+:global(.managed-status-actions) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-top: 8px; }
+:global(.managed-status-actions .button) { min-width: 250px; }

@@ -4,8 +4,8 @@ import { orderStateLabel, formatMoney, formatOrderDate, type OperatorOperation }
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
-
-type OperationAction = "dispatch" | "reassign" | "recover";
+import { operationActionLabel, resolveOperatorAction, type OperatorAction } from "./operator-actions";
+import "./operations-workspace.module.css";
 
 const filterOptions: ReadonlyArray<Readonly<{ value: string; label: string }>> = [
   { value: "", label: "كل الأعمال" },
@@ -15,50 +15,66 @@ const filterOptions: ReadonlyArray<Readonly<{ value: string; label: string }>> =
   { value: "DELIVERY_FAILED", label: "يحتاج استعادة" },
 ];
 
-function operationActionLabel(action: OperationAction): string {
-  if (action === "dispatch") return "إرسال للتوزيع";
-  if (action === "reassign") return "إعادة التوزيع";
-  return "استعادة التسليم";
-}
-
-function canRun(item: OperatorOperation, action: OperationAction): boolean {
-  if (action === "dispatch") return item.order.state === "READY_FOR_DISPATCH";
-  if (action === "reassign") return item.order.state === "CAPTAIN_ASSIGNED" && item.assignment?.state === "assigned";
-  return item.order.state === "DELIVERY_FAILED" && item.assignment?.state === "delivery_failed";
-}
-
 export function OperationsWorkspace() {
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperation>>([]);
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [details, setDetails] = useState<Readonly<Record<string, OperatorOperation>>>({});
+  const [detailBusy, setDetailBusy] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (cursor = "", append = false) => {
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     setError("");
     try {
       const query = new URLSearchParams({ limit: "50" });
       if (filter) query.set("state", filter);
+      if (cursor) query.set("cursor", cursor);
       const response = await fetch("/api/operations?" + query.toString(), { cache: "no-store" });
       if (!response.ok) {
         setError(await responseMessage(response));
         return;
       }
-      const body = await response.json() as { operations?: ReadonlyArray<OperatorOperation> };
-      setOperations(body.operations ?? []);
+      const body = await response.json() as { operations?: ReadonlyArray<OperatorOperation>; nextCursor?: string };
+      setOperations((current) => append ? [...current, ...(body.operations ?? [])] : (body.operations ?? []));
+      setNextCursor(body.nextCursor ?? "");
+      if (!append) setDetails({});
     } catch (cause) {
       setError(isRequestFailure(cause) ? cause.message : "تعذر قراءة مركز العمليات.");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [filter]);
 
   useEffect(() => { void load(); }, [load]);
 
-  async function runAction(action: OperationAction, item: OperatorOperation) {
-    if (!canRun(item, action)) return;
+  async function readDetail(orderId: string) {
+    if (details[orderId] || detailBusy === orderId) return;
+    setDetailBusy(orderId);
+    setError("");
+    try {
+      const response = await fetch("/api/operations/" + encodeURIComponent(orderId), { cache: "no-store" });
+      if (!response.ok) {
+        setError(await responseMessage(response));
+        return;
+      }
+      const body = await response.json() as { operation?: OperatorOperation };
+      if (body.operation) setDetails((current) => ({ ...current, [orderId]: body.operation as OperatorOperation }));
+    } catch (cause) {
+      setError(isRequestFailure(cause) ? cause.message : "تعذر إعادة قراءة تفاصيل العملية.");
+    } finally {
+      setDetailBusy("");
+    }
+  }
+
+  async function runAction(action: OperatorAction, item: OperatorOperation) {
+    if (resolveOperatorAction(item) !== action) return;
     const assignment = item.assignment;
     setBusy(action + ":" + item.order.id);
     setError("");
@@ -88,7 +104,7 @@ export function OperationsWorkspace() {
   }
 
   const actionableCount = useMemo(
-    () => operations.filter((item) => item.order.state === "READY_FOR_DISPATCH" || item.order.state === "DELIVERY_FAILED").length,
+    () => operations.filter((item) => resolveOperatorAction(item) !== null).length,
     [operations],
   );
 
@@ -122,16 +138,24 @@ export function OperationsWorkspace() {
             <tbody>
               {operations.map((item) => {
                 const order = item.order;
-                const action = order.state === "READY_FOR_DISPATCH" ? "dispatch" : order.state === "DELIVERY_FAILED" ? "recover" : order.state === "CAPTAIN_ASSIGNED" && item.assignment?.state === "assigned" ? "reassign" : null;
+                const action = resolveOperatorAction(item);
+                const detail = details[order.id] ?? item;
                 const actionBusy = action ? busy === action + ":" + order.id : false;
                 return (
                   <tr key={order.id}>
                     <th scope="row">
-                      <details className="operation-details">
+                      <details className="operation-details" onToggle={(event) => { if (event.currentTarget.open) void readDetail(order.id); }}>
                         <summary><bdi dir="ltr">{order.id}</bdi></summary>
                         <div className="operation-detail-body">
-                          <span>{order.lines.length} عناصر · {formatMoney(order.totalAmountMinor, order.currency)}</span>
-                          {item.assignment ? <span>التكليف: <bdi dir="ltr">{item.assignment.id}</bdi></span> : null}
+                          {detailBusy === order.id ? <span role="status">جارٍ إعادة قراءة التفاصيل…</span> : null}
+                          <span>{detail.order.lines.length} عناصر · {formatMoney(detail.order.totalAmountMinor, detail.order.currency)}</span>
+                          <span>العنوان: {detail.order.addressText}</span>
+                          <span>مدينة الخدمة: <bdi dir="ltr">{detail.order.serviceCityId}</bdi> · قابلية الخدمة: {detail.order.serviceabilityStatus}</span>
+                          <ul>
+                            {detail.order.lines.map((line) => <li key={line.id}>{line.productName}{line.variantTitle ? ` · ${line.variantTitle}` : ""} · {line.finalQuantityBaseUnits} · {formatMoney(line.lineAmountMinor, line.currency)}</li>)}
+                          </ul>
+                          {detail.assignment ? <span>التكليف: <bdi dir="ltr">{detail.assignment.id}</bdi> · {detail.assignment.state} · {detail.assignment.handoffState} · الإصدار {detail.assignment.version}</span> : <span>لا يوجد تكليف كابتن حالي.</span>}
+                          <span>إصدار الطلب {detail.order.version} · آخر تحديث <time dateTime={detail.order.updatedAt}>{formatOrderDate(detail.order.updatedAt)}</time></span>
                         </div>
                       </details>
                     </th>
@@ -140,7 +164,7 @@ export function OperationsWorkspace() {
                     <td><time dateTime={order.updatedAt}>{formatOrderDate(order.updatedAt)}</time></td>
                     <td>
                       {action ? (
-                        <button type="button" className={"button " + (action === "recover" ? "button-secondary" : "button-primary") + " table-action"} onClick={() => void runAction(action, item)} disabled={Boolean(busy) || !canRun(item, action)}>
+                        <button type="button" className={"button " + (action === "recover" ? "button-secondary" : "button-primary") + " table-action"} onClick={() => void runAction(action, item)} disabled={Boolean(busy)}>
                           {actionBusy ? "جارٍ التنفيذ…" : operationActionLabel(action)}
                         </button>
                       ) : <span className="muted">لا إجراء مشغل مطلوب</span>}
@@ -152,6 +176,7 @@ export function OperationsWorkspace() {
           </table>
         </div>
       ) : null}
+      {nextCursor ? <div className="workspace-toolbar"><button type="button" className="button button-secondary" onClick={() => void load(nextCursor, true)} disabled={loading || loadingMore || Boolean(busy)}>{loadingMore ? "جارٍ قراءة المزيد…" : "قراءة الصفحة التالية"}</button></div> : null}
     </section>
   );
 }

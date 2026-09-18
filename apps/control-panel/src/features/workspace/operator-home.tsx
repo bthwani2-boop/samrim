@@ -4,6 +4,7 @@ import { joiningCaseStateLabel, orderStateLabel, type JoiningCaseSummary, type O
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { responseMessage } from "../access/identity-error-message";
+import "./operator-home.module.css";
 
 export function OperatorHome() {
   const [operations, setOperations] = useState<ReadonlyArray<OperatorOperation>>([]);

@@ -1,7 +1,20 @@
 import {
+  borders,
+  breakpoints,
   darkThemeColors,
+  direction,
+  elevation,
+  fontFamilies,
+  fontWeights,
   lightThemeColors,
-  type ThemeColors
+  motion,
+  opacity,
+  radius,
+  sizing,
+  spacing,
+  typography,
+  type ThemeColors,
+  zIndex
 } from "../tokens/index";
 
 export const themes = {
@@ -75,16 +88,73 @@ export function themeToCssVariables(themeColors: ThemeColors): Record<string, st
   };
 }
 
+function px(value: number): string {
+  return `${value}px`;
+}
+
+function cssTokenEntries<T extends Record<string, number>>(prefix: string, values: T, unit = "px") {
+  return Object.fromEntries(Object.entries(values).map(([name, value]) => [`--${prefix}-${name}`, `${value}${unit}`]));
+}
+
+/**
+ * The canonical browser projection of the shared token kernel.
+ * React Native continues to consume the numeric source tokens directly;
+ * browser consumers use this generated, unit-bearing CSS projection.
+ */
+export function webFoundationToCssVariables(): Record<string, string> {
+  const variables: Record<string, string> = {
+    ...cssTokenEntries("space", spacing),
+    ...cssTokenEntries("radius", radius),
+    ...cssTokenEntries("size", sizing),
+    ...cssTokenEntries("breakpoint", breakpoints),
+    ...cssTokenEntries("border", borders),
+    ...cssTokenEntries("opacity", opacity, ""),
+    ...cssTokenEntries("z", zIndex, ""),
+    "--duration-reduced": px(motion.reducedMotionDuration),
+    "--direction-default": direction.defaultDirection,
+    "--direction-logical-properties": String(direction.useLogicalProperties),
+    "--direction-mirror-icons": String(direction.mirrorDirectionalIcons)
+  };
+
+  for (const [name, value] of Object.entries(motion.duration)) {
+    variables[`--duration-${name}`] = px(value);
+  }
+  for (const [name, value] of Object.entries(motion.easing)) {
+    variables[`--easing-${name}`] = value;
+  }
+  for (const [name, value] of Object.entries(fontFamilies)) {
+    variables[`--font-family-${name}`] = value;
+  }
+  for (const [name, value] of Object.entries(fontWeights)) {
+    variables[`--font-weight-${name}`] = value;
+  }
+  for (const [name, value] of Object.entries(typography)) {
+    variables[`--font-size-${name}`] = px(value.fontSize);
+    variables[`--line-height-${name}`] = px(value.lineHeight);
+    variables[`--font-weight-${name}`] = value.fontWeight;
+    variables[`--letter-spacing-${name}`] = px(value.letterSpacing);
+  }
+  for (const [name, value] of Object.entries(elevation)) {
+    variables[`--elevation-${name}`] = `${px(value.shadowOffset.width)} ${px(value.shadowOffset.height)} ${px(value.shadowRadius)} ${value.shadowColor}`;
+  }
+
+  return variables;
+}
+
+function formatCssVariables(variables: Record<string, string>): string {
+  return Object.entries(variables)
+    .map(([key, value]) => `  ${key}: ${value};`)
+    .join("\n");
+}
+
 export function generateThemeCss(): string {
-  const lightVars = Object.entries(themeToCssVariables(lightThemeColors))
-    .map(([k, v]) => `  ${k}: ${v};`)
-    .join("\n");
-  const darkVars = Object.entries(themeToCssVariables(darkThemeColors))
-    .map(([k, v]) => `  ${k}: ${v};`)
-    .join("\n");
+  const foundationVars = formatCssVariables(webFoundationToCssVariables());
+  const lightVars = formatCssVariables(themeToCssVariables(lightThemeColors));
+  const darkVars = formatCssVariables(themeToCssVariables(darkThemeColors));
 
   return `:root {
   color-scheme: light dark;
+${foundationVars}
 ${lightVars}
 }
 
