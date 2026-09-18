@@ -1,4 +1,4 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { direction, radius, resolveTextAlign, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { StyleSheet } from "react-native";
 
 export function createPartnerSurfaceStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -11,7 +11,5 @@ export function createPartnerSurfaceStyles(theme: ReturnType<typeof resolveTheme
     value: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
     error: { ...typography.label, backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, padding: spacing[2], textAlign: startTextAlign },
-    linkButton: { alignItems: "center", borderColor: theme.interactiveText, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    linkText: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "center" },
   });
 }

@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export function PartnerScrollScreen({ children }: PropsWithChildren) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  return <ScrollView contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
 }
 
 export function createPartnerTabOptions(theme: ReturnType<typeof resolveTheme>) {

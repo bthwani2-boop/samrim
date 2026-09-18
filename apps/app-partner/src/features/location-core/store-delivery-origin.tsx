@@ -1,8 +1,8 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { borders, direction, radius, resolveTextAlign, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { isOriginHttpError, readStoreDeliveryOrigin, setStoreDeliveryOrigin } from "./store-delivery-origin-client";
 
 type Coordinates = Readonly<{ latitude: number; longitude: number }>;
@@ -21,7 +21,7 @@ function errorText(error: unknown): string {
 }
 
 export function StoreDeliveryOrigin({ storeId }: { storeId: string }) {
-const theme = useAppearanceTheme();
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OriginState>({ kind: "loading" });
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
@@ -99,11 +99,11 @@ const theme = useAppearanceTheme();
       <Text style={styles.title}>موقع أصل المتجر</Text>
       <Text selectable style={styles.muted}>يلتقط التطبيق موقعًا أماميًا عند طلبك فقط. لا ينتج هذا السطح حكمًا على إمكانية التوصيل.</Text>
       {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة موقع الأصل…</Text></View> : null}
-      {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" selectable style={styles.error}>{error}</Text><Pressable accessibilityRole="button" accessibilityLabel="إعادة قراءة موقع الأصل" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}
+      {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" selectable style={styles.error}>{error}</Text><BthwaniButton accessibilityLabel="إعادة قراءة موقع الأصل" label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
       {state.kind === "ready" ? <>
         <View style={styles.coordinateBox}><Text style={styles.coordinateLabel}>حالة موقع الأصل</Text><Text selectable style={styles.coordinateValue}>{state.origin ? "تم حفظ موقع أصل المتجر" : "لم يُحفظ موقع أصل بعد"}</Text></View>
-        <Pressable accessibilityRole="button" accessibilityLabel="التقاط موقع أصل المتجر" accessibilityState={{ busy: locationBusy, disabled: busy || locationBusy }} disabled={busy || locationBusy} onPress={() => void captureLocation()} style={[styles.secondaryButton, (busy || locationBusy) && styles.disabledButton]}><Text style={[styles.secondaryButtonText, (busy || locationBusy) && styles.disabledButtonText]}>{locationBusy ? "جارٍ التقاط الموقع…" : "التقاط موقع الأصل"}</Text></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="حفظ موقع أصل المتجر" accessibilityState={{ busy, disabled: busy || !coordinates }} disabled={busy || !coordinates} onPress={() => void save()} style={[styles.primaryButton, (busy || !coordinates) && styles.disabledButton]}><Text style={[styles.primaryButtonText, (busy || !coordinates) && styles.disabledButtonText]}>{busy ? "جارٍ الحفظ…" : "حفظ موقع الأصل"}</Text></Pressable>
+        <BthwaniButton accessibilityLabel="التقاط موقع أصل المتجر" busy={locationBusy} disabled={busy} label="التقاط موقع الأصل" onPress={() => void captureLocation()} variant="secondary" />
+        <BthwaniButton accessibilityLabel="حفظ موقع أصل المتجر" busy={busy} disabled={!coordinates} label="حفظ موقع الأصل" onPress={() => void save()} />
         {notice ? <Text accessibilityLiveRegion="polite" selectable style={styles.notice}>{notice}</Text> : null}
         {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" selectable style={styles.error}>{error}</Text> : null}
       </> : null}
@@ -123,12 +123,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     coordinateBox: { backgroundColor: theme.structureSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
     coordinateLabel: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
     coordinateValue: { ...typography.bodySm, color: theme.color, fontVariant: ["tabular-nums"], textAlign: startTextAlign },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColorStrong, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    secondaryButtonText: { ...typography.bodyStrong, color: theme.color },
-    primaryButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[3] },
-    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
-    disabledButtonText: { color: theme.disabledText },
-    primaryButtonText: { ...typography.bodyStrong, color: theme.onAction },
     notice: { backgroundColor: theme.successSoft, borderRadius: radius.sm, color: theme.success, ...typography.label, padding: spacing[2], textAlign: startTextAlign },
     error: { backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, ...typography.label, padding: spacing[2], textAlign: startTextAlign },
   });

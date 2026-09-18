@@ -1,10 +1,10 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, direction, radius, resolveTextAlign, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Cart, createDshMobileClient, type DeliveryAddress, formatMoney, formatQuantity, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
@@ -139,9 +139,9 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
             {line.selectedModifiers.length ? <Text style={styles.modifiers}>{line.selectedModifiers.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}
             <Text style={styles.muted}>{formatMoney(line.lineAmountMinor, line.currency)} · الكمية {formatQuantity(line.baseUnit, line.quantityBaseUnits)}</Text>
             <View style={styles.lineActions}>
-              <Pressable accessibilityRole="button" accessibilityLabel={`إنقاص كمية ${line.productName}`} accessibilityState={{ busy: lineBusy, disabled: mutationBusy || !canDecrease }} disabled={mutationBusy || !canDecrease} onPress={() => void updateLine(line, -1)} style={[styles.secondaryButton, (mutationBusy || !canDecrease) && styles.disabledButton]}><Text style={styles.secondaryButtonText}>إنقاص</Text></Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`زيادة كمية ${line.productName}`} accessibilityState={{ busy: lineBusy, disabled: mutationBusy || !canIncrease }} disabled={mutationBusy || !canIncrease} onPress={() => void updateLine(line, 1)} style={[styles.secondaryButton, (mutationBusy || !canIncrease) && styles.disabledButton]}><Text style={styles.secondaryButtonText}>زيادة</Text></Pressable>
-              <Pressable accessibilityRole="button" accessibilityLabel={`إزالة ${line.productName} من السلة`} accessibilityState={{ busy: lineBusy, disabled: mutationBusy }} disabled={mutationBusy} onPress={() => void removeLine(line)} style={[styles.secondaryButton, mutationBusy && styles.disabledButton]}><Text style={styles.dangerButtonText}>{lineBusy ? "جارٍ التحديث…" : "إزالة"}</Text></Pressable>
+              <BthwaniButton accessibilityLabel={`إنقاص كمية ${line.productName}`} disabled={mutationBusy || !canDecrease} label="إنقاص" onPress={() => void updateLine(line, -1)} variant="secondary" />
+              <BthwaniButton accessibilityLabel={`زيادة كمية ${line.productName}`} disabled={mutationBusy || !canIncrease} label="زيادة" onPress={() => void updateLine(line, 1)} variant="secondary" />
+              <BthwaniButton accessibilityLabel={`إزالة ${line.productName} من السلة`} busy={lineBusy} disabled={mutationBusy} label="إزالة" onPress={() => void removeLine(line)} variant="danger" />
             </View>
           </View>;
         })}</View>
@@ -149,7 +149,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
         {serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : <Text style={styles.warning}>اختر عنوانًا مؤهلًا من قسم الأهلية قبل الإتمام.</Text>}
         <BthwaniButton accessibilityLabel="إتمام الطلب" busy={busy} disabled={mutationBusy || !serviceableAddressId} label="إتمام الطلب" onPress={() => void checkout()} />
       </> : null}
-      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><Pressable accessibilityRole="button" style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>فتح تفاصيل الطلب</Text></Pressable></Link></View> : null}
+      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
       {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}
     </View>
@@ -172,10 +172,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     modifiers: { ...typography.bodySm, color: theme.interactiveText, textAlign: startTextAlign },
     lineActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2], marginTop: spacing[2] },
     total: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    secondaryButtonText: { ...typography.bodySm, color: theme.color, textAlign: "center" },
-    dangerButtonText: { ...typography.bodySm, color: theme.danger, textAlign: "center" },
     orderBox: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
     success: { ...typography.bodyStrong, color: theme.success, textAlign: startTextAlign },
     warning: { ...typography.bodyStrong, color: theme.warning, textAlign: startTextAlign },

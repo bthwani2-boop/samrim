@@ -3,27 +3,9 @@ import type * as React from "react";
 import type { ColorValue } from "react-native";
 
 import { sizing } from "../tokens/index";
+import type { MobileIconName } from "./icon-types";
 
-export type MobileIconName =
-  | "home"
-  | "orders"
-  | "account"
-  | "store"
-  | "offers"
-  | "deliveries"
-  | "cases"
-  | "cart"
-  | "back"
-  | "forward"
-  | "add"
-  | "edit"
-  | "location"
-  | "appearance"
-  | "refresh"
-  | "warning"
-  | "success"
-  | "search"
-  | "close";
+export type { MobileIconName } from "./icon-types";
 
 const iconNames: Record<MobileIconName, ReturnType<typeof Icon.select>> = {
   home: Icon.select({ ios: "house.fill", android: require("@expo/material-symbols/home.xml") }),

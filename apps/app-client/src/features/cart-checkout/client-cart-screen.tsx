@@ -1,7 +1,7 @@
 import { borders, direction, opacity, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { DeliveryAddress, PublicStoreView, ServiceabilityResponse } from "@bthwani/dsh";
-import { type Href, useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
@@ -77,7 +77,7 @@ export default function ClientCartScreen() {
       </BthwaniSurface>
       <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يعيد الخادم التحقق من الأهلية عند الإتمام." />
       <View style={styles.addressCard}>
-        {state.addresses.length === 0 ? <Text style={styles.muted}>لا يوجد عنوان محفوظ. أضف عنوانًا من الحساب ثم أعد فتح السلة.</Text> : null}
+        {state.addresses.length === 0 ? <><Text style={styles.muted}>لا يوجد عنوان محفوظ. أضف عنوانًا من الحساب ثم أعد فتح السلة.</Text><Link href="/account" asChild><BthwaniButton accessibilityLabel="إدارة العناوين من الحساب" label="إدارة العناوين" variant="secondary" /></Link></> : null}
         {state.addresses.map((address) => {
           const selected = serviceability.kind !== "idle" && serviceability.addressId === address.id;
           const busy = serviceability.kind === "loading" && selected;
@@ -116,9 +116,5 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     back: { ...typography.body, color: theme.interactiveText, textAlign: startTextAlign },
     error: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
     disabled: { opacity: opacity.disabled },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.sm, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    buttonText: { ...typography.bodyStrong, color: theme.onAction },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    secondaryButtonText: { ...typography.bodyStrong, color: theme.color },
   });
 }

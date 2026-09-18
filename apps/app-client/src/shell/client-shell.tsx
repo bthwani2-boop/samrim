@@ -9,10 +9,17 @@ export function ClientPublicShell({ children }: PropsWithChildren) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
     <SafeAreaView edges={["top"]} style={styles.shell}>
-      <ClientHeader context="اكتشاف المتاجر" styles={styles} />
+      <ClientPublicHeader safeArea={false} />
       <View style={styles.content}>{children}</View>
     </SafeAreaView>
   );
+}
+
+export function ClientPublicHeader({ safeArea = true }: { safeArea?: boolean }) {
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const header = <ClientHeader context="اكتشاف المتاجر" styles={styles} />;
+  return safeArea ? <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>{header}</SafeAreaView> : header;
 }
 
 function ClientHeader({ context, styles }: { context: string; styles: ReturnType<typeof createStyles> }) {
@@ -34,7 +41,7 @@ export function ClientScrollScreen({ children }: PropsWithChildren) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   return (
-    <ScrollView contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
       {children}
     </ScrollView>
   );

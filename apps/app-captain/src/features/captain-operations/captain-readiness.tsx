@@ -1,9 +1,8 @@
-import { Link, type Href } from "expo-router";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type CaptainAdmission, captainAdmissionStateLabel, captainAvailabilityStateLabel } from "@bthwani/dsh";
+import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { captainAdmissionStateLabel, captainAvailabilityStateLabel, type CaptainAdmission } from "@bthwani/dsh";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
@@ -59,13 +58,13 @@ const theme = useAppearanceTheme();
         <Text style={styles.cardTitle}>الحالة التشغيلية</Text>
         <Text style={styles.muted}>القبول: {captainAdmissionStateLabel(admission.state)} · التوفر: {captainAvailabilityStateLabel(admission.availabilityState)}</Text>
         <View style={styles.row}>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || admission.state !== "eligible" }} disabled={busy || admission.state !== "eligible"} onPress={() => void setAvailability(true)} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy ? "جارٍ الحفظ…" : "متاح"}</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy || admission.state !== "eligible" }} disabled={busy || admission.state !== "eligible"} onPress={() => void setAvailability(false)} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>غير متاح</Text></Pressable>
+          <BthwaniButton busy={busy} disabled={admission.state !== "eligible"} label="متاح" onPress={() => void setAvailability(true)} style={styles.actionButton} />
+          <BthwaniButton busy={busy} disabled={admission.state !== "eligible"} label="غير متاح" onPress={() => void setAvailability(false)} style={styles.actionButton} variant="secondary" />
         </View>
       </View> : null}
-      {!loading ? <View style={styles.summaryCard}><Text style={styles.sectionTitle}>الخطوة التالية</Text><Text style={styles.muted}>افتح العروض أو التوصيلات لمعالجة المهام الحالية.</Text><View style={styles.row}><Link href={"/offers" as Href} asChild><Pressable accessibilityRole="button" style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>فتح العروض</Text></Pressable></Link><Link href={"/deliveries" as Href} asChild><Pressable accessibilityRole="button" style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>فتح التوصيلات</Text></Pressable></Link></View></View> : null}
+      {!loading ? <View style={styles.summaryCard}><Text style={styles.sectionTitle}>الخطوة التالية</Text><Text style={styles.muted}>افتح العروض أو التوصيلات لمعالجة المهام الحالية.</Text><View style={styles.row}><Link href={"/offers" as Href} asChild><BthwaniButton label="فتح العروض" style={styles.actionButton} variant="secondary" /></Link><Link href={"/deliveries" as Href} asChild><BthwaniButton label="فتح التوصيلات" style={styles.actionButton} variant="secondary" /></Link></View></View> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => void load()} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>تحديث الحالة</Text></Pressable>
+      <BthwaniButton busy={busy} disabled={busy} label="تحديث الحالة" onPress={() => void load()} variant="secondary" />
     </View>
   );
 }

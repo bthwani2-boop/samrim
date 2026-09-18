@@ -1,9 +1,8 @@
-import { Link, type Href } from "expo-router";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type FieldAdmission, fieldAdmissionStateLabel } from "@bthwani/dsh";
+import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { fieldAdmissionStateLabel, type FieldAdmission } from "@bthwani/dsh";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
@@ -40,9 +39,9 @@ const theme = useAppearanceTheme();
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading && admission ? <View style={styles.card}><Text style={styles.cardTitle}>قبول الميدان</Text><Text style={styles.muted}>الحالة: {fieldAdmissionStateLabel(admission.state)}</Text></View> : null}
       {!loading && !admission ? <View style={styles.card} accessibilityLiveRegion="polite"><Text style={styles.cardTitle}>لا توجد أهلية تشغيلية</Text><Text style={styles.muted}>لم تصل أهلية الميدان من DSH. أعد المحاولة أو تواصل مع المشغل.</Text></View> : null}
-      {!loading && admission?.state === "eligible" ? <View style={styles.summaryCard}><Text style={styles.muted}>يمكنك فتح ملف انضمام جديد من المسار المخصص.</Text><Link href={"/new-case" as Href} asChild><Pressable accessibilityRole="button" style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>فتح ملف جديد</Text></Pressable></Link></View> : null}
+      {!loading && admission?.state === "eligible" ? <View style={styles.summaryCard}><Text style={styles.muted}>يمكنك فتح ملف انضمام جديد من المسار المخصص.</Text><Link href={"/new-case" as Href} asChild><BthwaniButton label="فتح ملف جديد" variant="secondary" /></Link></View> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>تحديث الحالة</Text></Pressable>
+      <BthwaniButton label="تحديث الحالة" onPress={() => void load()} variant="secondary" />
     </View>
   );
 }

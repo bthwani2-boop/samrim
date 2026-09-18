@@ -22,16 +22,23 @@ export default function ClientOrderDetail() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; order: Order } | { kind: "error" }>({ kind: "loading" });
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preserveCurrent = false) => {
     if (!orderId.trim()) { setState({ kind: "error" }); return; }
-    setState({ kind: "loading" });
+    if (preserveCurrent) setRefreshing(true);
+    else setState({ kind: "loading" });
+    setRefreshError("");
     try {
       const token = await getUsableIdentityAccessToken();
       setState({ kind: "ready", order: (await client().readOrder(token, orderId)).order });
     } catch (error) {
       console.error("DSH client order detail read failed", error);
-      setState({ kind: "error" });
+      if (preserveCurrent) setRefreshError("تعذر تحديث الحالة. ما زالت التفاصيل الحالية معروضة.");
+      else setState({ kind: "error" });
+    } finally {
+      setRefreshing(false);
     }
   }, [orderId]);
 
@@ -48,7 +55,8 @@ export default function ClientOrderDetail() {
         <View style={styles.summaryIcon}><BthwaniIcon name="orders" color={theme.onAction} size={sizing.iconXl} /></View>
         <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{order.addressText}</Text></View>
       </BthwaniSurface>
-      <View style={styles.status}><Text style={styles.statusTitle}>الحالة الحالية</Text><Text style={styles.statusValue}>{orderStateLabel(order.state)}</Text><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text></View>
+      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><Text style={styles.statusValue}>{orderStateLabel(order.state)}</Text><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text></View><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" /></View>
+      {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
       <BthwaniSectionHeader title="عنوان التوصيل" />
       <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
       <BthwaniSectionHeader title="المنتجات" subtitle={`${order.lines.length} ${order.lines.length === 1 ? "منتج" : "منتجات"}`} />
@@ -73,6 +81,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     title: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
     status: { backgroundColor: theme.actionSoft, borderRadius: radius.lg, direction: activeDirection, gap: spacing[1], padding: spacing[4] },
+    statusCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
     statusTitle: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
     statusValue: { ...typography.titleSm, color: theme.interactiveText, textAlign: startTextAlign },
     statusTotal: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
@@ -82,5 +91,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     lineTop: { alignItems: "flex-start", direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
     lineTitle: { ...typography.bodyStrong, color: theme.color, flex: 1, textAlign: startTextAlign },
     linePrice: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
+    refreshError: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
   });
 }

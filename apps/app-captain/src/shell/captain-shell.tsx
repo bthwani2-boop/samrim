@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export function CaptainScrollScreen({ children }: PropsWithChildren) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  return <ScrollView contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
 }
 
 export function createCaptainTabOptions(theme: ReturnType<typeof resolveTheme>) {

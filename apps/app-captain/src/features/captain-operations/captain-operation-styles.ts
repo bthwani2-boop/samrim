@@ -1,4 +1,4 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, direction, radius, resolveTextAlign, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { StyleSheet } from "react-native";
 
 export function createCaptainOperationStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -15,11 +15,7 @@ export function createCaptainOperationStyles(theme: ReturnType<typeof resolveThe
     cardTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
     task: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
     row: { direction: activeDirection, flexDirection: "row", gap: spacing[2] },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.sm, flex: 1, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    buttonText: { ...typography.bodyStrong, color: theme.onAction },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, flex: 1, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    secondaryButtonText: { ...typography.bodyStrong, color: theme.color },
-    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
+    actionButton: { flex: 1 },
     error: { ...typography.label, color: theme.danger, textAlign: startTextAlign },
     progress: { ...typography.bodySm, color: theme.info, textAlign: startTextAlign },
     warning: { ...typography.bodyStrong, color: theme.warning, textAlign: startTextAlign },

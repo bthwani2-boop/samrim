@@ -1,5 +1,5 @@
 import { borders, direction as designDirection, elevation, radius, resolveTextAlign, resolveTextInputAlign, sizing, spacing, type ThemeColors, toAsciiDigits, typography } from "@bthwani/design-system";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import { resolveInternalReturnPath } from "@bthwani/identity/presentation";
 import { type Href, Redirect, useLocalSearchParams } from "expo-router";
@@ -25,6 +25,7 @@ import {
   restoreIdentitySession,
   subscribeIdentitySession,
 } from "../../bootstrap/identity";
+import { ClientPublicHeader } from "../../shell/client-shell";
 import ServiceCityScope from "../service-city/service-city-scope";
 import StoreDiscovery from "../store-discovery/store-discovery";
 import { type IdentityCopy, identityPresentation } from "./identity-presentation";
@@ -114,7 +115,7 @@ export default function IdentityGate() {
     setAuthPromptVisible(true);
   }, [selectMode]);
 
-  const publicDiscovery = <View style={styles.publicDiscovery}><ServiceCityScope><StoreDiscovery isAuthenticated={state.kind === "authenticated"} onRequireAuthentication={state.kind === "signed_out" ? requestAuthentication : undefined} /></ServiceCityScope></View>;
+  const publicDiscovery = <View style={styles.publicDiscovery}><ClientPublicHeader /><View style={styles.publicDiscoveryContent}><ServiceCityScope><StoreDiscovery isAuthenticated={state.kind === "authenticated"} onRequireAuthentication={state.kind === "signed_out" ? requestAuthentication : undefined} /></ServiceCityScope></View></View>;
 
   function resetSignedOutAuthState() {
     setMode("login");
@@ -220,16 +221,14 @@ export default function IdentityGate() {
         <Text style={styles.title}>{copy.brand}</Text>
         <Text style={styles.status}>{conflict ? copy.refreshingSession : copy.serviceUnavailable}</Text>
         {conflict ? <Text style={styles.muted}>{copy.refreshConflict}</Text> : null}
-        <Pressable
-          accessibilityRole="button"
+        <BthwaniButton
           accessibilityLabel={conflict ? copy.syncSession : copy.retryVerification}
-          accessibilityState={{ busy, disabled: busy }}
+          busy={busy}
           disabled={busy}
-          onPress={restore}
-          style={[styles.secondaryButton, busy && styles.secondaryButtonDisabled]}
-        >
-          <Text style={[styles.secondaryButtonText, busy && styles.disabledText]}>{busy ? copy.syncing : conflict ? copy.syncSession : copy.retryVerification}</Text>
-        </Pressable>
+          label={conflict ? copy.syncSession : copy.retryVerification}
+          onPress={() => void restore()}
+          variant="secondary"
+        />
         {publicDiscovery}
       </View>
     );
@@ -252,6 +251,7 @@ export default function IdentityGate() {
       style={styles.container}
     >
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
@@ -284,28 +284,15 @@ export default function IdentityGate() {
 
             {needsProof ? (
               <>
-                <Pressable
-                  accessibilityRole="button"
+                <BthwaniButton
                   accessibilityLabel={proofRequested ? copy.resendCode : copy.sendCode}
-                  accessibilityState={{ busy, disabled: busy || !phone.trim() }}
+                  busy={busy}
                   disabled={busy || !phone.trim()}
-                  onPress={requestProof}
-                  style={[
-                    styles.codeAction,
-                    !proofRequested && styles.codeActionPrimary,
-                    !proofRequested && (busy || !phone.trim()) && styles.codeActionDisabled,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.codeActionText,
-                      !proofRequested && styles.codeActionPrimaryText,
-                      (busy || !phone.trim()) && styles.disabledText,
-                    ]}
-                  >
-                    {proofRequested ? copy.resendCode : copy.sendCode}
-                  </Text>
-                </Pressable>
+                  label={proofRequested ? copy.resendCode : copy.sendCode}
+                  onPress={() => void requestProof()}
+                  style={proofRequested ? styles.codeAction : undefined}
+                  variant={proofRequested ? "quiet" : "primary"}
+                />
 
                 {proofRequested ? (
                   <>
@@ -395,34 +382,20 @@ export default function IdentityGate() {
             )}
 
             {(!needsProof || proofRequested) ? (
-              <Pressable
-                accessibilityRole="button"
+              <BthwaniButton
                 accessibilityLabel={copy[modeDetails[mode]]}
-                accessibilityState={{ busy, disabled: busy || !canSubmit }}
-                disabled={busy || !canSubmit}
-                onPress={submit}
-                style={[styles.primaryButton, (busy || !canSubmit) && styles.primaryButtonDisabled]}
-              >
-                <Text style={[styles.primaryButtonText, (busy || !canSubmit) && styles.primaryButtonTextDisabled]}>
-                  {busy ? copy.busyAction : mode === "login" ? copy.loginButton : mode === "register" ? copy.registerButton : copy.recoverButton}
-                </Text>
-              </Pressable>
+                busy={busy}
+                disabled={!canSubmit}
+                label={mode === "login" ? copy.loginButton : mode === "register" ? copy.registerButton : copy.recoverButton}
+                onPress={() => void submit()}
+              />
             ) : null}
 
             {notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}
             {error ? <Text accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
 
             {mode === "login" && loginFailed ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={copy.forgotPassword}
-                  accessibilityState={{ busy, disabled: busy }}
-                  disabled={busy}
-                  onPress={() => selectMode("recover")}
-                  style={[styles.recoveryButton, busy && styles.secondaryButtonDisabled]}
-                >
-                <Text style={[styles.recoveryButtonText, busy && styles.disabledText]}>{copy.forgotPassword}</Text>
-              </Pressable>
+                <BthwaniButton disabled={busy} label={copy.forgotPassword} onPress={() => selectMode("recover")} style={styles.recoveryAction} variant="secondary" />
             ) : null}
           </View>
 
@@ -460,7 +433,8 @@ function createStyles(theme: ThemeColors, activeDirection: "rtl" | "ltr") {
 
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: theme.background, direction: activeDirection },
-    publicDiscovery: { direction: activeDirection, flexShrink: 0, minHeight: 260, paddingVertical: spacing[4], width: "100%" },
+    publicDiscovery: { direction: activeDirection, flexShrink: 0, minHeight: 260, width: "100%" },
+    publicDiscoveryContent: { direction: activeDirection, paddingVertical: spacing[4], width: "100%" },
     scrollContent: { direction: activeDirection, flexGrow: 1, justifyContent: "center", paddingHorizontal: spacing[5], paddingVertical: spacing[8] },
     authShell: { width: "100%", maxWidth: 480, alignSelf: "center", direction: activeDirection },
     brandBlock: { alignItems: "center", direction: activeDirection, marginBottom: spacing[6] },
@@ -486,25 +460,12 @@ function createStyles(theme: ThemeColors, activeDirection: "rtl" | "ltr") {
     inputFocused: { borderColor: theme.focusRing, borderWidth: borders.strong },
     revealButton: { alignSelf: endCrossAxisAlignment, justifyContent: "center", minHeight: sizing.controlSm, paddingHorizontal: spacing[1] },
     revealText: { ...typography.label, color: theme.interactiveText, textDecorationLine: "underline", writingDirection: activeDirection },
-    codeAction: { alignSelf: endCrossAxisAlignment, paddingBottom: spacing[2], paddingTop: spacing[1] },
-    codeActionText: { ...typography.bodyStrong, color: theme.interactiveText },
-    codeActionPrimary: { alignItems: "center", alignSelf: "stretch", backgroundColor: theme.actionBackground, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[4] },
-    codeActionPrimaryText: { ...typography.bodyStrong, color: theme.onAction },
-    codeActionDisabled: { backgroundColor: theme.disabledBackground },
+    codeAction: { alignSelf: endCrossAxisAlignment, minHeight: sizing.controlSm, paddingHorizontal: spacing[2] },
     modeLinks: { alignItems: "center", direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[4], justifyContent: "center", marginTop: spacing[4] },
     modeLinkText: { ...typography.bodyStrong, color: theme.structure, textDecorationLine: "underline", writingDirection: activeDirection },
-    recoveryButton: { alignItems: "center", borderColor: theme.interactiveText, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", marginTop: spacing[3], minHeight: sizing.controlMd, paddingHorizontal: spacing[4] },
-    recoveryButtonText: { ...typography.bodyStrong, color: theme.interactiveText },
-    disabledText: { color: theme.disabledText },
+    recoveryAction: { marginTop: spacing[3] },
     status: { ...typography.bodyLg, color: theme.structure, textAlign: "center", writingDirection: activeDirection },
     muted: { ...typography.body, color: theme.colorMuted, textAlign: "center", writingDirection: activeDirection },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[4] },
-    secondaryButtonDisabled: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
-    secondaryButtonText: { ...typography.bodyStrong, color: theme.structure, textAlign: "center" },
-    primaryButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.md, justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[4] },
-    primaryButtonDisabled: { backgroundColor: theme.disabledBackground },
-    primaryButtonText: { ...typography.bodyStrong, color: theme.onAction },
-    primaryButtonTextDisabled: { color: theme.disabledText },
     notice: { ...fullWidthLogicalText, ...typography.bodySm, backgroundColor: theme.actionSoft, borderRadius: radius.sm, color: theme.structure, marginTop: spacing[3], padding: spacing[2] },
     error: { ...fullWidthLogicalText, ...typography.bodySm, backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, marginTop: spacing[3], padding: spacing[2] },
   });

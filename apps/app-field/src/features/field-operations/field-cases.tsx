@@ -1,8 +1,7 @@
+import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type JoiningCaseSummary, joiningCaseStateLabel } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { useAppearanceTheme } from "@bthwani/design-system/native";
-
-import { joiningCaseStateLabel, type JoiningCaseSummary } from "@bthwani/dsh";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
@@ -56,9 +55,9 @@ const theme = useAppearanceTheme();
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading ? <Text style={styles.sectionTitle}>الملفات ({cases.length})</Text> : null}
       {!loading && cases.length === 0 ? <Text style={styles.muted}>لا توجد ملفات من هذا الميدان.</Text> : null}
-      {!loading ? cases.map((item) => <View key={item.id} style={styles.card}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><Text style={styles.muted}>الحالة: {joiningCaseStateLabel(item.state)}</Text>{item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}{item.state === "draft" ? <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void submitCase(item)} style={[styles.button, busy && styles.disabledButton]}><Text style={styles.buttonText}>{busy === item.id ? "جارٍ الإرسال…" : "إرسال للمراجعة"}</Text></Pressable> : null}</View>) : null}
+      {!loading ? cases.map((item) => <View key={item.id} style={styles.card}><Text style={styles.cardTitle}>{item.businessName} · {item.firstStoreName}</Text><Text style={styles.muted}>الحالة: {joiningCaseStateLabel(item.state)}</Text>{item.correctionReason ? <Text style={styles.error}>التصحيح المطلوب: {item.correctionReason}</Text> : null}{item.state === "draft" ? <BthwaniButton busy={busy === item.id} disabled={Boolean(busy)} label="إرسال للمراجعة" onPress={() => void submitCase(item)} /> : null}</View>) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void load()} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>تحديث الملفات</Text></Pressable>
+      <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحديث الملفات" onPress={() => void load()} variant="secondary" />
     </View>
   );
 }

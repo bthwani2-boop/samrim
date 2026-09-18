@@ -14,20 +14,22 @@ export function BthwaniSurface({ tone = "base", children, style, ...props }: Vie
   return <View {...props} style={[styles.surface, toneStyle, style]}>{children}</View>;
 }
 
-export function BthwaniButton({ label, variant = "primary", busy = false, disabled = false, style, ...props }: Omit<PressableProps, "children"> & { label: string; variant?: "primary" | "secondary" | "quiet"; busy?: boolean }) {
+export function BthwaniButton({ label, variant = "primary", busy = false, disabled = false, style, ...props }: Omit<PressableProps, "children"> & { label: string; variant?: "primary" | "secondary" | "quiet" | "danger"; busy?: boolean }) {
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   const blocked = disabled || busy;
-  const variantStyle = variant === "secondary" ? styles.buttonSecondary : variant === "quiet" ? styles.buttonQuiet : styles.buttonPrimary;
-  const textVariantStyle = variant === "secondary" ? styles.buttonTextSecondary : variant === "quiet" ? styles.buttonTextQuiet : styles.buttonTextPrimary;
+  const variantStyle = variant === "secondary" ? styles.buttonSecondary : variant === "quiet" ? styles.buttonQuiet : variant === "danger" ? styles.buttonDanger : styles.buttonPrimary;
+  const textVariantStyle = variant === "secondary" ? styles.buttonTextSecondary : variant === "quiet" ? styles.buttonTextQuiet : variant === "danger" ? styles.buttonTextDanger : styles.buttonTextPrimary;
+  const busyColor = variant === "primary" ? theme.onAction : variant === "danger" ? theme.danger : theme.interactiveText;
   return (
     <Pressable
       {...props}
+      accessibilityRole={props.accessibilityRole ?? "button"}
       accessibilityState={{ ...props.accessibilityState, busy, disabled: blocked }}
       disabled={blocked}
       style={(state) => [styles.button, variantStyle, blocked && styles.buttonDisabled, state.pressed && !blocked && styles.buttonPressed, resolvePressableStyle(style, state)]}
     >
-      {busy ? <ActivityIndicator color={variant === "primary" ? theme.onAction : theme.interactiveText} /> : <Text style={[styles.buttonText, textVariantStyle, blocked && styles.buttonTextDisabled]}>{label}</Text>}
+      {busy ? <ActivityIndicator color={busyColor} /> : <Text style={[styles.buttonText, textVariantStyle, blocked && styles.buttonTextDisabled]}>{label}</Text>}
     </Pressable>
   );
 }
@@ -48,7 +50,7 @@ export function BthwaniChip({ label, selected = false, icon, style, ...props }: 
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   return (
-    <Pressable {...props} accessibilityState={{ ...props.accessibilityState, selected }} style={(state) => [styles.chip, selected && styles.chipSelected, state.pressed && styles.buttonPressed, resolvePressableStyle(style, state)]}>
+    <Pressable {...props} accessibilityRole={props.accessibilityRole ?? "button"} accessibilityState={{ ...props.accessibilityState, selected }} style={(state) => [styles.chip, selected && styles.chipSelected, state.pressed && styles.buttonPressed, resolvePressableStyle(style, state)]}>
       {icon ? <BthwaniIcon name={icon} color={selected ? theme.interactiveText : theme.colorMuted} size={sizing.iconSm} /> : null}
       <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{label}</Text>
     </Pressable>
@@ -105,12 +107,14 @@ function createPrimitiveStyles(theme: ThemeColors) {
     buttonPrimary: { backgroundColor: theme.actionBackground },
     buttonSecondary: { backgroundColor: theme.surface, borderColor: theme.borderColorStrong, borderWidth: borders.hairline },
     buttonQuiet: { backgroundColor: theme.actionSoft },
+    buttonDanger: { backgroundColor: theme.dangerSoft, borderColor: theme.danger, borderWidth: borders.hairline },
     buttonDisabled: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
     buttonPressed: { opacity: opacity.subtle },
     buttonText: { ...typography.bodyStrong, textAlign: "center" },
     buttonTextPrimary: { color: theme.onAction },
     buttonTextSecondary: { color: theme.color },
     buttonTextQuiet: { color: theme.interactiveText },
+    buttonTextDanger: { color: theme.danger },
     buttonTextDisabled: { color: theme.disabledText },
     iconButton: { alignItems: "center", borderRadius: radius.round, direction: activeDirection, justifyContent: "center" },
     iconButtonSurface: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: borders.hairline },

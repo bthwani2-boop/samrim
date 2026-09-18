@@ -1,5 +1,5 @@
 import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { ServiceCity } from "@bthwani/dsh";
 import * as SecureStore from "expo-secure-store";
 import { createContext, type PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from "react";
@@ -62,7 +62,7 @@ export default function ServiceCityScope({ children }: PropsWithChildren) {
   if (!selectedCityID) return <View style={styles.container}><Text style={styles.eyebrow}>نطاق الخدمة</Text><Text style={styles.title}>اختر مدينتك للمتابعة</Text><Text style={styles.muted}>يُستخدم الاختيار لتحديد المتاجر الظاهرة فقط، ويمكن حفظ عناوين في مدن متعددة.</Text><View style={styles.cityList}>{cities.map((city) => <Pressable key={city.id} accessibilityRole="button" accessibilityLabel={`اختيار مدينة ${city.displayNameAr}`} onPress={() => void selectCity(city.id)} style={styles.cityButton}><Text style={styles.cityButtonName}>{city.displayNameAr}</Text><Text style={styles.cityMeta}>مدينة نشطة</Text></Pressable>)}</View></View>;
 
   const selectedCity = cities.find((city) => city.id === selectedCityID);
-  return <ScopeContext.Provider value={value}><View style={styles.provider}><View style={styles.scopeHeader}><View style={styles.scopeInfo}><View style={styles.locationIcon}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /></View><View style={styles.scopeCopy}><Text style={styles.scopeLabel}>التوصيل إلى</Text><Text style={styles.cityName}>{selectedCity?.displayNameAr}</Text></View></View><Pressable accessibilityRole="button" accessibilityLabel="تغيير مدينة الخدمة" onPress={() => setSelectedCityID(null)} style={styles.changeButton}><Text style={styles.changeText}>تغيير</Text><BthwaniIcon name="forward" color={theme.interactiveText} size={sizing.iconSm} /></Pressable></View>{children}</View></ScopeContext.Provider>;
+  return <ScopeContext.Provider value={value}><View style={styles.provider}><View style={styles.scopeHeader}><View style={styles.scopeInfo}><View style={styles.locationIcon}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /></View><View style={styles.scopeCopy}><Text style={styles.scopeLabel}>التوصيل إلى</Text><Text style={styles.cityName}>{selectedCity?.displayNameAr}</Text></View></View><BthwaniChip accessibilityLabel="تغيير مدينة الخدمة" icon="forward" label="تغيير" onPress={() => setSelectedCityID(null)} style={styles.changeButton} /></View>{children}</View></ScopeContext.Provider>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

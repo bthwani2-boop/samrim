@@ -18,17 +18,9 @@ export function createFieldOperationStyles(theme: ReturnType<typeof resolveTheme
     input: { ...logicalInput, backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
     phoneInput: { textAlign: resolveTextInputAlign("start", "ltr"), writingDirection: "ltr" },
     optionList: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    optionButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, minHeight: sizing.controlMd, paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
-    optionButtonSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground },
-    optionText: { ...logicalText, ...typography.label, color: theme.color },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.sm, flexDirection: "row", justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    buttonText: { ...typography.bodyStrong, color: theme.onAction },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
-    secondaryButtonText: { ...typography.bodyStrong, color: theme.color },
     successCard: { backgroundColor: theme.successSoft, borderColor: theme.success, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
     successText: { ...logicalText, ...typography.bodyStrong, color: theme.success },
     optionsError: { gap: spacing[2] },
-    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
     error: { ...logicalText, ...typography.label, color: theme.danger },
   });
 }

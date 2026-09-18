@@ -22,15 +22,22 @@ export default function ClientOrders() {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OrdersState>({ kind: "loading" });
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
 
-  const load = useCallback(async () => {
-    setState({ kind: "loading" });
+  const load = useCallback(async (preserveCurrent = false) => {
+    if (preserveCurrent) setRefreshing(true);
+    else setState({ kind: "loading" });
+    setRefreshError("");
     try {
       const token = await getUsableIdentityAccessToken();
       setState({ kind: "ready", orders: (await client().listClientOrders(token, 50)).orders });
     } catch (error) {
       console.error("DSH client orders read failed", error);
-      setState({ kind: "error" });
+      if (preserveCurrent) setRefreshError("تعذر تحديث الطلبات. ما زالت القائمة الحالية معروضة.");
+      else setState({ kind: "error" });
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
@@ -46,8 +53,11 @@ export default function ClientOrders() {
   return (
     <View style={styles.container} accessibilityLabel="طلبات العميل">
       <Text style={styles.eyebrow}>متابعة رحلتك</Text>
-      <Text style={styles.title}>طلباتي</Text>
-      <Text style={styles.muted}>تابع حالة طلباتك وافتح أي طلب لمراجعة التفاصيل الحالية.</Text>
+      <View style={styles.headingRow}>
+        <View style={styles.headingCopy}><Text style={styles.title}>طلباتي</Text><Text style={styles.muted}>تابع حالة طلباتك وافتح أي طلب لمراجعة التفاصيل الحالية.</Text></View>
+        <BthwaniButton accessibilityLabel="تحديث قائمة الطلبات" busy={refreshing} label="تحديث" onPress={() => void load(true)} variant="secondary" />
+      </View>
+      {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{refreshError}</Text> : null}
       {state.orders.length === 0 ? (
         <BthwaniSurface tone="inset" style={styles.emptyState}>
           <View style={styles.emptyIcon}><BthwaniIcon name="orders" color={theme.interactiveText} size={sizing.iconXl} /></View>
@@ -75,6 +85,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
     title: { ...typography.hero, color: theme.color, textAlign: startTextAlign },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    headingRow: { alignItems: "flex-start", direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    headingCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
+    error: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
     state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
     emptyState: { alignItems: "center", borderRadius: radius.xl, gap: spacing[3], padding: spacing[5] },
     emptyIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
