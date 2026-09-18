@@ -74,7 +74,7 @@ jobs:
           node tools/dev/verify-identity-migrations.mjs --env-file=infra/local/compose/.env.example
           node tools/dev/verify-dsh-baseline.mjs --env-file=infra/local/compose/.env.example
           node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env.example
-          node tools/dev/verify-dsh-runtime.mjs --env-file=infra/local/compose/.env.example
+          node tools/dev/verify-dsh-runtime-core.mjs --env-file=infra/local/compose/.env.example
 
       - name: Verify backend proof is non-mutating
         if: steps.scope.outputs.run == 'true'

@@ -60,7 +60,7 @@ const checks = [
   ["Identity migration upgrade", process.execPath, ["tools/dev/verify-identity-migrations.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH fresh baseline integrity", process.execPath, ["tools/dev/verify-dsh-baseline.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["Identity runtime semantics", process.execPath, ["tools/dev/verify-identity-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
-  ["DSH domain and publication runtime", process.execPath, ["tools/dev/verify-dsh-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
+  ["DSH domain and publication runtime", process.execPath, ["tools/dev/verify-dsh-runtime-core.mjs", `--env-file=${envFile}`], runtimeEnv],
   ["DSH Location Core runtime", process.execPath, ["tools/dev/verify-dsh-location-runtime.mjs", `--env-file=${envFile}`], runtimeEnv],
 ];
 

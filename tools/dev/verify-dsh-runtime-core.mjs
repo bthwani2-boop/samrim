@@ -46,6 +46,9 @@ const clientPhone = `+96778${crypto.randomInt(1_000_000, 9_999_999)}`;
 
 function compose(...args) { return execFileSync("docker", [...composeArgs, ...args], { cwd: root, encoding: "utf8" }); }
 function sqlLiteral(value) { return String(value).replaceAll("'", "''"); }
+// SQL is limited to schema/readback assertions, bounded cleanup of IDs captured
+// by this run, and the one database-time fault injection below. Business fixtures
+// are created through canonical HTTP owners; this is not a SQL setup path.
 function sql(query) {
   try { return execFileSync("docker", [...composeArgs, "exec", "-T", "postgres", "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim(); }
   catch (error) { fail("database proof failed", String(error?.stderr || error?.message || error)); }
@@ -53,6 +56,8 @@ function sql(query) {
 function expectSQL(query, expected, message) { const observed = sql(query); if (observed !== expected) fail(message, `expected=${expected} observed=${observed}`); }
 
 function cleanup() {
+  // Disposable cleanup is intentionally ID-scoped to this verifier's fresh state;
+  // it must never delete the reusable local baseline or synthetic world locators.
   for (const importRunID of importRunIDs) {
     const value = sqlLiteral(importRunID);
     sql(`DELETE FROM dsh.catalog_import_audit WHERE run_id='${value}'`);
@@ -88,6 +93,11 @@ function cleanup() {
   }
   for (const orderID of orderIDs) {
     const value = sqlLiteral(orderID);
+    sql(`DELETE FROM dsh.captain_audit WHERE order_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_operation_idempotency WHERE order_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_handoffs WHERE order_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_assignments WHERE order_id='${value}'`);
+    sql(`DELETE FROM dsh.captain_dispatch_offers WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_order_audit WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_order_transition_idempotency WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_order_checkout_idempotency WHERE order_id='${value}'`);
@@ -731,7 +741,8 @@ for (const [next, expectedVersion] of [["PARTNER_ACCEPTED", 1], ["PREPARING", 2]
 const expiryDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(expiryOrderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-expiry-dispatch-${suffix}`) });
 if (expiryDispatch.status !== 201 || expiryDispatch.body?.offer?.state !== "offered") fail("Captain expiry offer fixture failed", JSON.stringify(expiryDispatch));
 const expiryOfferID = String(expiryDispatch.body.offer.id); captainOfferIDs.add(expiryOfferID);
-sql(`UPDATE dsh.captain_dispatch_offers SET expires_at=clock_timestamp()-interval '1 second' WHERE id='${sqlLiteral(expiryOfferID)}'`);
+ // Claim-specific database-time fault injection; not business-state setup.
+ sql(`UPDATE dsh.captain_dispatch_offers SET expires_at=clock_timestamp()-interval '1 second' WHERE id='${sqlLiteral(expiryOfferID)}'`);
 const [expiredOfferRead, captainAfterExpiry, concurrentExpiryRead] = await Promise.all([
   request(dshBase, "GET", "/dsh/captains/me/offers", { token: captainAccessToken }),
   request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken }),

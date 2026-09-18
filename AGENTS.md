@@ -179,6 +179,36 @@ Valid LOCAL_INTEGRATION operational state is reusable: normal verification must 
 
 Actor-facing LOCAL_INTEGRATION claims require the affected actor's real surface and role-scoped session; API/database readback verifies canonical truth but does not substitute for real interaction. Reuse valid actors and resources, create fresh transactional state only when the current claim requires it, and preserve valid state during normal verification.
 
+### 3.1 Synthetic local proof state law
+
+This law applies to every synthetic/local-development state: actors, roles, sessions, stores, catalog, business data, credentials, locators, scenarios and proof tooling.
+
+```text
+CLEAN + CANONICAL + PROVEN → REUSE
+
+TRANSACTIONAL / SCENARIO NOISE ONLY
+→ PRESERVE VALID BASELINE
+→ CREATE FRESH TRANSACTIONAL STATE
+
+SMALLEST AFFECTED SYNTHETIC STATE IS UNTRUSTED
+→ STOP USING IT
+→ DISCARD / REBUILD THROUGH CANONICAL OWNERS WHEN A SAFE OWNER BOUNDARY EXISTS
+
+BASELINE INTEGRITY CANNOT BE PROVEN
+→ STOP USING THE WORLD
+→ USE THE EXISTING EXPLICITLY AUTHORIZED LOCAL RESET/PURGE BOUNDARY
+→ PROVE CLEAN STATE
+→ REBUILD THROUGH CANONICAL OWNERS
+
+PRODUCT / SCHEMA / CONFIG / TOOLING IS POLLUTED
+→ FIX HIGHEST ROOT
+→ REMOVE RESIDUE
+→ PROVE NEGATIVE SPACE
+→ ONLY THEN REBUILD SYNTHETIC STATE
+```
+
+Baseline actors and resources are reusable proof anchors, not exclusive test accounts. Additional synthetic clients, partners, stores, captains, fields or scenario resources are permitted only when claim-justified, local, canonical-owner-created, isolated and free of uncontrolled external effects. Synthetic proof state is never Product truth, migration/bootstrap data or authority, and it never authorizes direct SQL business setup or test-only Product/schema branches.
+
 ## 4. Fast proportional verification
 
 Normal development has one principle, not a matrix of modes:
