@@ -131,17 +131,19 @@ function WorkspaceHeader({
 
 function WorkspaceNavigation({
   firstLinkRef,
+  navRef,
   onClose,
   open,
   pathname
 }: Readonly<{
   firstLinkRef: RefObject<HTMLAnchorElement | null>;
+  navRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   open: boolean;
   pathname: string;
 }>) {
   return (
-    <nav id="workspace-navigation" className="workspace-nav" data-open={open} aria-label="تنقل مساحة المشغل">
+    <nav ref={navRef} id="workspace-navigation" className="workspace-nav" data-open={open} aria-label="تنقل مساحة المشغل">
       <div className="workspace-nav-header">
         <p className="workspace-nav-label">مساحة المشغل</p>
         <button type="button" className="workspace-nav-close" onClick={onClose} aria-label="إغلاق مسارات العمل">×</button>
@@ -172,6 +174,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
   const router = useRouter();
   const pathname = usePathname();
   const mainRef = useRef<HTMLElement>(null);
+  const navRef = useRef<HTMLElement>(null);
   const navTriggerRef = useRef<HTMLButtonElement>(null);
   const navFirstLinkRef = useRef<HTMLAnchorElement>(null);
   const [localSignOut, setLocalSignOut] = useState(false);
@@ -188,6 +191,46 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
     return () => {
       window.cancelAnimationFrame(frame);
       document.body.classList.remove("workspace-nav-open");
+    };
+  }, [navigationOpen]);
+  useEffect(() => {
+    if (!navigationOpen) return;
+    const handleTab = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const nav = navRef.current;
+      if (!nav) return;
+      const focusable = Array.from(nav.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !nav.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !nav.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleTab);
+    return () => document.removeEventListener("keydown", handleTab);
+  }, [navigationOpen]);
+  useEffect(() => {
+    const background = [mainRef.current, document.querySelector<HTMLElement>(".workspace-header")].filter((element): element is HTMLElement => element !== null);
+    for (const element of background) {
+      element.inert = navigationOpen;
+      if (navigationOpen) element.setAttribute("aria-hidden", "true");
+      else element.removeAttribute("aria-hidden");
+    }
+    return () => {
+      for (const element of background) {
+        element.inert = false;
+        element.removeAttribute("aria-hidden");
+      }
     };
   }, [navigationOpen]);
   useEffect(() => {
@@ -217,7 +260,7 @@ export default function WorkspaceLayout({ children }: Readonly<{ children: React
       <a className="skip-link" href="#workspace-main">تخطي إلى المحتوى الرئيسي</a>
       <div className="workspace-layout">
         {navigationOpen ? <button type="button" className="workspace-nav-backdrop" aria-label="إغلاق مسارات العمل" onClick={closeNavigation} /> : null}
-        <WorkspaceNavigation firstLinkRef={navFirstLinkRef} onClose={closeNavigation} open={navigationOpen} pathname={pathname} />
+        <WorkspaceNavigation firstLinkRef={navFirstLinkRef} navRef={navRef} onClose={closeNavigation} open={navigationOpen} pathname={pathname} />
         <main ref={mainRef} id="workspace-main" className="workspace-main" tabIndex={-1}>{children}</main>
       </div>
     </ControlShell>

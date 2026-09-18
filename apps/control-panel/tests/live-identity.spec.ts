@@ -230,7 +230,7 @@ test("@live operator passkey registration, authentication and governed recovery 
   expect(firstRecoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
   await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
   await expect(page).toHaveURL(/\/workspace$/);
-  await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   const firstSession = await readBrowserSession(page);
   expect(firstSession.status).toBe(200);
   expect(firstSession.body.identity.subject).toBe(operator.actorId);
@@ -279,12 +279,14 @@ test("@live operator passkey registration, authentication and governed recovery 
     restartIdentity();
   }
 
+  await page.getByText("حساب المشغل", { exact: true }).click();
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await page.getByRole("button", { name: "الدخول بمفتاح المرور" }).click();
   await expect(page).toHaveURL(/\/workspace$/);
-  await expect(page.getByText("المشغل", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("حساب المشغل", { exact: true })).toBeVisible();
 
+  await page.getByText("حساب المشغل", { exact: true }).click();
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
   await page.getByRole("button", { name: "استرداد الوصول" }).click();
   await page.getByLabel("رقم الهاتف").fill(operator.phone);

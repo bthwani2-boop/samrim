@@ -4,7 +4,7 @@
   :global(.workspace-app-shell .control-frame) { width: min(100% - 32px, 900px); }
   :global(.workspace-layout) { display: block !important; }
   :global(.workspace-nav-toggle) { display: inline-flex !important; }
-  :global(.workspace-nav) { position: fixed !important; z-index: var(--z-overlay); inset-block: 0; inset-inline-end: 0; width: min(86vw, 320px); min-height: 100vh; overflow-y: auto; padding: var(--space-5); border-inline-end: 0; border-inline-start: 1px solid var(--border-strong); background: var(--surface-base); box-shadow: var(--shadow-card); transform: translateX(110%); transition: transform var(--duration-calm) var(--easing-standard); }
+  :global(.workspace-nav) { position: fixed !important; z-index: var(--z-overlay); inset-block: 0; inset-inline-start: 0; width: min(86vw, 320px); min-height: 100vh; overflow-y: auto; padding: var(--space-5); border-inline-start: 0; border-inline-end: 1px solid var(--border-strong); background: var(--surface-base); box-shadow: var(--shadow-card); transform: translateX(110%); transition: transform var(--duration-calm) var(--easing-standard); }
   :global(.workspace-nav[data-open="true"]) { transform: translateX(0); }
   :global(.workspace-nav-backdrop) { position: fixed; z-index: calc(var(--z-overlay) - 1); inset: 0; display: block !important; width: 100%; height: 100%; border: 0; background: var(--surface-muted); opacity: var(--opacity-backdrop); }
   :global(.workspace-nav-close) { display: inline-flex !important; }
