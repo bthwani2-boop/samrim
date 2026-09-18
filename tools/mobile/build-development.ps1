@@ -96,18 +96,31 @@ try {
     $null = Invoke-EasText @("whoami", "--non-interactive")
     Write-Host "EAS_AUTH=PASS"
 
-    $ProjectInfo = Invoke-EasJson @("project:info", "--json", "--non-interactive")
-    $RemoteProjectId = [string]$ProjectInfo.id
-    if ([string]::IsNullOrWhiteSpace($RemoteProjectId)) { $RemoteProjectId = [string]$ProjectInfo.project.id }
+    $ProjectInfoText = Invoke-EasText @("project:info")
+    $ProjectIdMatch = [regex]::Match(
+        $ProjectInfoText,
+        "(?m)^ID\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$"
+    )
+    if (-not $ProjectIdMatch.Success) { Fail "EAS project info did not contain a project ID for $App." }
+    $RemoteProjectId = $ProjectIdMatch.Groups[1].Value
     if ($RemoteProjectId -ne $ProjectId) { Fail "EAS project binding mismatch for $App." }
     Write-Host "EAS_PROJECT_BINDING=PASS app=$App projectId=$ProjectId"
 
-    $EnvResponse = Invoke-EasJson @("env:list", "--environment", "development", "--json", "--non-interactive")
-    $EnvItems = @($EnvResponse.envVars)
-    if ($EnvItems.Count -eq 0) { $EnvItems = @($EnvResponse) }
-    $GoogleEnv = $EnvItems | Where-Object { [string]$_.name -eq "GOOGLE_SERVICES_JSON" } | Select-Object -First 1
-    if ($null -eq $GoogleEnv) { Fail "EAS development File environment variable GOOGLE_SERVICES_JSON is missing for $App." }
-    if ($GoogleEnv.type -and ([string]$GoogleEnv.type).ToLowerInvariant() -ne "file") {
+    $EnvText = Invoke-EasText @("env:list", "development", "--format", "long", "--scope", "project")
+    $GoogleEnvBlocks = @(
+        $EnvText -split '(?m)(?=^ID\s{2,})' |
+            Where-Object {
+                $_ -match '(?m)^Name\s{2,}GOOGLE_SERVICES_JSON\s*$'
+            }
+    )
+    if ($GoogleEnvBlocks.Count -ne 1) {
+        Fail "EAS development GOOGLE_SERVICES_JSON variable count was $($GoogleEnvBlocks.Count) for $App."
+    }
+    $GoogleEnvType = [regex]::Match(
+        $GoogleEnvBlocks[0],
+        '(?m)^type\s{2,}(\S+)\s*$'
+    )
+    if (-not $GoogleEnvType.Success -or $GoogleEnvType.Groups[1].Value.ToLowerInvariant() -ne "file") {
         Fail "EAS GOOGLE_SERVICES_JSON is not a File environment variable for $App."
     }
     Write-Host "GOOGLE_SERVICES_REMOTE_BUILD=PASS app=$App variable=GOOGLE_SERVICES_JSON type=File"
