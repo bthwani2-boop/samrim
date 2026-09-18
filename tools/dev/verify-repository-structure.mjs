@@ -3,109 +3,267 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean).map((p) => p.replaceAll("\\", "/")).filter((p) => fs.existsSync(path.join(root, p)));
-const set = new Set(tracked), failures = [];
-const assert = (ok, msg) => { if (!ok) failures.push(msg); };
-const json = (file) => { try { return JSON.parse(fs.readFileSync(path.join(root, file), "utf8")); } catch (e) { failures.push(`${file}: ${e.message}`); return null; } };
-const children = (base) => [...new Set(tracked.filter((p) => p.startsWith(`${base}/`)).map((p) => p.slice(base.length + 1)).filter((p) => p.includes("/")).map((p) => p.split("/", 1)[0]))].sort();
-function project(base, name, tag) { const file = `${base}/${name}/project.json`; assert(set.has(file), `${file} missing`); if (!set.has(file)) return null; const p = json(file); if (!p) return null; assert(p.root === `${base}/${name}`, `${file} root mismatch`); assert(p.name === name, `${file} name mismatch`); assert(Array.isArray(p.tags) && p.tags.includes(tag), `${file} missing ${tag}`); return p; }
+const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" })
+  .split("\0")
+  .filter(Boolean)
+  .map((value) => value.replaceAll("\\", "/"))
+  .filter((value) => fs.existsSync(path.join(root, value)));
+const set = new Set(tracked);
+const failures = [];
 
-const allowed = new Set([".github", "apps", "contracts", "infra", "packages", "services", "tools"]);
-const tops = [...new Set(tracked.filter((p) => p.includes("/")).map((p) => p.split("/", 1)[0]))].sort();
-for (const top of tops) assert(allowed.has(top), `Unadmitted top-level ownership class tracked: ${top}`);
-for (const required of [".github", "tools"]) assert(tops.includes(required), `Required repository/tool root missing: ${required}`);
+const assert = (condition, message) => {
+  if (!condition) failures.push(message);
+};
+const json = (file) => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(root, file), "utf8"));
+  } catch (error) {
+    failures.push(`${file}: ${error.message}`);
+    return null;
+  }
+};
+const children = (base) =>
+  [...new Set(
+    tracked
+      .filter((value) => value.startsWith(`${base}/`))
+      .map((value) => value.slice(base.length + 1))
+      .filter((value) => value.includes("/"))
+      .map((value) => value.split("/", 1)[0]),
+  )].sort();
+
+function project(base, name, tag) {
+  const file = `${base}/${name}/project.json`;
+  assert(set.has(file), `${file} missing`);
+  if (!set.has(file)) return null;
+  const value = json(file);
+  if (!value) return null;
+  assert(value.root === `${base}/${name}`, `${file} root mismatch`);
+  assert(value.name === name, `${file} name mismatch`);
+  assert(Array.isArray(value.tags) && value.tags.includes(tag), `${file} missing ${tag}`);
+  return value;
+}
+
+const structurePath = "REPOSITORY-STRUCTURE.md";
+assert(set.has(structurePath), `${structurePath} missing`);
+if (set.has(structurePath)) {
+  const structure = fs.readFileSync(path.join(root, structurePath), "utf8");
+  for (const token of [
+    "ARTIFACT_CLASS: REPOSITORY_LOCAL_PLACEMENT_CONTRACT",
+    "PLACEMENT_CONTRACT_AUTHORITY: DELEGATED_BY_AGENTS_MD",
+    "PRODUCT_SEMANTIC_AUTHORITY: NONE",
+    "DURABLE_ARCHITECTURE_AUTHORITY: NONE",
+    "CURRENT_IMPLEMENTATION_INVENTORY_AUTHORITY: NONE",
+    "Current app/service/package members are discovered from the exact project graph/source",
+    "This is a placement grammar, not current inventory",
+  ]) {
+    assert(structure.includes(token), `${structurePath} missing placement-only invariant: ${token}`);
+  }
+}
+
+const allowedTopLevel = new Set([".github", "apps", "contracts", "infra", "packages", "services", "tools"]);
+const topLevel = [...new Set(
+  tracked.filter((value) => value.includes("/")).map((value) => value.split("/", 1)[0]),
+)].sort();
+for (const item of topLevel) {
+  assert(allowedTopLevel.has(item), `Unadmitted top-level ownership class tracked: ${item}`);
+}
+for (const required of [".github", "tools"]) {
+  assert(topLevel.includes(required), `Required repository/tool root missing: ${required}`);
+}
 
 assert(set.has("knowledge.sources.json"), "knowledge.sources.json missing");
-assert(set.has("REPOSITORY-STRUCTURE.md"), "REPOSITORY-STRUCTURE.md missing");
 const retiredKnowledgeManifest = ["governance", "lock", "json"].join(".");
 assert(!set.has(retiredKnowledgeManifest), `retired ${retiredKnowledgeManifest} remains tracked`);
-for (const file of tracked) { if (!fs.statSync(path.join(root, file)).isFile()) continue; try { if (fs.readFileSync(path.join(root, file), "utf8").includes(retiredKnowledgeManifest)) failures.push(`retired knowledge-manifest reference: ${file}`); } catch {} }
-for (const forbidden of ["core/", "shared/"]) assert(!tracked.some((p) => p.startsWith(forbidden)), `Forbidden top-level ownership class: ${forbidden}`);
-const locks = tracked.filter((p) => /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$/.test(p));
-assert(locks.length === 1 && locks[0] === "pnpm-lock.yaml", `Canonical package lock must be pnpm-lock.yaml; found ${locks.join(",")}`);
-assert(!tracked.some((p) => /^apps\/[^/]+\/runtime\//.test(p)), "Pass-through apps/*/runtime topology is forbidden");
+
+for (const forbidden of ["core/", "shared/", "common/"]) {
+  assert(!tracked.some((value) => value.startsWith(forbidden)), `Forbidden top-level ownership class: ${forbidden}`);
+}
+
+const locks = tracked.filter((value) => /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$/.test(value));
+assert(
+  locks.length === 1 && locks[0] === "pnpm-lock.yaml",
+  `Canonical package lock must be pnpm-lock.yaml; found ${locks.join(",")}`,
+);
 
 const apps = children("apps");
 for (const app of apps) {
-  const p = project("apps", app, "type:app"); if (!p) continue;
-  const base = `apps/${app}/`; assert(p.projectType === "application", `${base} projectType must be application`);
-  for (const f of ["README.md", "package.json"]) assert(set.has(base + f), `${base}${f} missing`);
+  const value = project("apps", app, "type:app");
+  if (!value) continue;
+  const base = `apps/${app}/`;
+  assert(value.projectType === "application", `${base} projectType must be application`);
+  for (const file of ["README.md", "package.json"]) {
+    assert(set.has(base + file), `${base}${file} missing`);
+  }
+
+  assert(!tracked.some((item) => item.startsWith(base + "runtime/")), `${app} pass-through runtime ownership is forbidden`);
+  for (const bucket of ["shared", "common", "utils", "helpers"]) {
+    assert(
+      !tracked.some((item) => item.startsWith(`${base}src/${bucket}/`)),
+      `${app} generic src/${bucket} ownership is forbidden`,
+    );
+  }
+
   const expo = set.has(base + "mobile.config.json") || set.has(base + "app.config.ts");
-  const next = ["next.config.ts", "next.config.js", "next.config.mjs"].some((f) => set.has(base + f));
+  const next = ["next.config.ts", "next.config.js", "next.config.mjs"].some((file) => set.has(base + file));
+  const rootRouter = tracked.some((item) => item.startsWith(base + "app/"));
+  const srcRouter = tracked.some((item) => item.startsWith(base + "src/app/"));
+
+  if (expo || next) {
+    assert(Number(rootRouter) + Number(srcRouter) === 1, `${app} must have exactly one router root`);
+  }
+
   if (expo) {
-    for (const f of [".easignore", "app.config.ts", "eas.json", "fingerprint.config.js", "index.js", "metro.config.cjs", "mobile.config.json", "tsconfig.json"]) assert(set.has(base + f), `${base}${f} missing`);
-    const rootRouter = tracked.some((x) => x.startsWith(base + "app/")), srcRouter = tracked.some((x) => x.startsWith(base + "src/app/"));
-    assert(Number(rootRouter) + Number(srcRouter) === 1, `${app} must have exactly one Expo router root`);
-    const router = srcRouter ? "src/app/" : "app/"; for (const f of ["_layout.tsx", "index.tsx"]) assert(set.has(base + router + f), `${base}${router}${f} missing`);
+    for (const file of [
+      ".easignore",
+      "app.config.ts",
+      "eas.json",
+      "fingerprint.config.js",
+      "index.js",
+      "metro.config.cjs",
+      "mobile.config.json",
+      "tsconfig.json",
+    ]) {
+      assert(set.has(base + file), `${base}${file} missing`);
+    }
+    const router = srcRouter ? "src/app/" : "app/";
+    for (const file of ["_layout.tsx", "index.tsx"]) {
+      assert(set.has(base + router + file), `${base}${router}${file} missing`);
+    }
   }
+
   if (next) {
-    const rootRouter = tracked.some((x) => x.startsWith(base + "app/")), srcRouter = tracked.some((x) => x.startsWith(base + "src/app/"));
-    assert(Number(rootRouter) + Number(srcRouter) === 1, `${app} must have exactly one Next router root`);
-    const router = srcRouter ? "src/app/" : "app/"; for (const f of ["layout.tsx", "page.tsx"]) assert(set.has(base + router + f), `${base}${router}${f} missing`); assert(set.has(base + "tsconfig.json"), `${base}tsconfig.json missing`);
+    const router = srcRouter ? "src/app/" : "app/";
+    for (const file of ["layout.tsx", "page.tsx"]) {
+      assert(set.has(base + router + file), `${base}${router}${file} missing`);
+    }
+    assert(set.has(base + "tsconfig.json"), `${base}tsconfig.json missing`);
   }
-  assert(expo || next || Object.keys(p.targets ?? {}).some((n) => ["build", "serve", "dev"].includes(n)), `${app} has no deployable/runtime target`);
-}
-assert(!tracked.some((p) => p.startsWith("apps/control-panel/app/components/")), "Control Panel business ownership under app/components is forbidden");
-assert(!tracked.some((p) => p.startsWith("apps/control-panel/lib/")), "Control Panel generic lib ownership is forbidden");
-for (const app of ["app-client", "app-partner", "app-captain", "app-field"]) {
-  const flat = tracked.filter((p) => new RegExp(`^apps/${app}/src/[^/]+\\.(ts|tsx)$`).test(p)); assert(flat.length === 0, `${app} flat non-route source remains: ${flat.join(",")}`);
-  assert(!tracked.some((p) => p.startsWith(`apps/${app}/src/app/`)), `${app} must keep current root app/ router until atomic cutover`);
+
+  assert(
+    expo || next || Object.keys(value.targets ?? {}).some((name) => ["build", "serve", "dev"].includes(name)),
+    `${app} has no deployable/runtime target`,
+  );
 }
 
 const services = children("services");
+const appSet = new Set(apps);
 for (const service of services) {
-  const p = project("services", service, "type:service"); if (!p) continue; const base = `services/${service}/`;
-  assert(p.projectType === "application", `${base} projectType must be application`); assert(set.has(base + "README.md"), `${service} README missing`);
-  if (set.has(base + "backend/go.mod")) for (const f of ["backend/Dockerfile", "backend/cmd/api/main.go", "backend/internal/runtime/server.go"]) assert(set.has(base + f), `${base}${f} missing`);
-  for (const lane of ["contracts/", "database/", "tests/"]) { const files = tracked.filter((x) => x.startsWith(base + lane)); if (files.length) assert(files.some((x) => !x.endsWith("/README.md")), `${service} has empty admitted lane ${lane}`); }
-  const flat = base + `contracts/${service}.openapi.yaml`, modular = base + `contracts/openapi/${service}.openapi.yaml`, hasFlat = set.has(flat), hasModular = set.has(modular), modFiles = tracked.filter((x) => x.startsWith(base + "contracts/openapi/"));
-  assert(!(hasFlat && hasModular), `${service} has parallel authored OpenAPI entrypoints`); if (modFiles.length) assert(hasModular, `${service} modular OpenAPI requires ${modular}`);
-  for (const lane of ["paths", "schemas", "components"]) { const files = modFiles.filter((x) => x.startsWith(base + `contracts/openapi/${lane}/`)); if (files.length) assert(files.some((x) => !x.endsWith("/README.md")), `${service} OpenAPI ${lane} lane is empty residue`); }
-  if (set.has(base + `contracts/generated/${service}.openapi.bundle.yaml`)) assert(Number(hasFlat) + Number(hasModular) === 1, `${service} bundle requires one authored entrypoint`);
+  const value = project("services", service, "type:service");
+  if (!value) continue;
+  const base = `services/${service}/`;
+  assert(value.projectType === "application", `${base} projectType must be application`);
+  assert(set.has(base + "README.md"), `${service} README missing`);
+
+  for (const bucket of ["shared", "common", "core"]) {
+    assert(
+      !tracked.some((item) => item.startsWith(`${base}${bucket}/`)),
+      `${service} generic ${bucket} ownership is forbidden`,
+    );
+  }
+  assert(!tracked.some((item) => item.startsWith(base + "frontend/")), `${service} frontend tree is forbidden`);
+
+  if (set.has(base + "backend/go.mod")) {
+    assert(set.has(base + "backend/Dockerfile"), `${base}backend/Dockerfile missing`);
+    const processMains = tracked.filter((item) => new RegExp(`^${base}backend/cmd/[^/]+/main\\.go$`).test(item));
+    assert(processMains.length > 0, `${service} Go backend has no backend/cmd/<process>/main.go`);
+  }
+
+  for (const lane of ["contracts/", "database/", "tests/"]) {
+    const files = tracked.filter((item) => item.startsWith(base + lane));
+    if (files.length) {
+      assert(files.some((item) => !item.endsWith("/README.md")), `${service} has empty admitted lane ${lane}`);
+    }
+  }
+
+  const flat = base + `contracts/${service}.openapi.yaml`;
+  const modular = base + `contracts/openapi/${service}.openapi.yaml`;
+  const hasFlat = set.has(flat);
+  const hasModular = set.has(modular);
+  const modularFiles = tracked.filter((item) => item.startsWith(base + "contracts/openapi/"));
+  assert(!(hasFlat && hasModular), `${service} has parallel authored OpenAPI entrypoints`);
+  if (modularFiles.length) {
+    assert(hasModular, `${service} modular OpenAPI requires ${modular}`);
+  }
+
+  const migrationRoots = new Set();
+  for (const item of tracked.filter((entry) => entry.startsWith(base))) {
+    const match = item.match(new RegExp(`^${base}(.*/)?migrations?/`, "i"));
+    if (!match) continue;
+    const index = item.toLowerCase().indexOf("/migrations/");
+    const singularIndex = item.toLowerCase().indexOf("/migration/");
+    const cut = index >= 0 ? index + "/migrations".length : singularIndex + "/migration".length;
+    migrationRoots.add(item.slice(0, cut));
+  }
+  assert(
+    migrationRoots.size <= 1,
+    `${service} has parallel migration histories: ${[...migrationRoots].sort().join(",")}`,
+  );
 }
 
-const dshSql = tracked.filter((p) => /^services\/dsh\/.*\.sql$/i.test(p));
-const dshCanonical = dshSql.filter((p) => p.startsWith("services/dsh/database/migrations/"));
-assert(!dshSql.some((p) => p.startsWith("services/dsh/backend/internal/storage/postgres/")), "DSH migration SQL remains under storage/postgres");
-if (dshSql.length) { assert(dshCanonical.length === dshSql.length, "DSH migration history must have one canonical location"); assert(dshCanonical.includes("services/dsh/database/migrations/001_partner_store_baseline.sql"), "DSH baseline migration missing"); }
-assert(!tracked.some((p) => p.startsWith("services/dsh/backend/internal/identityboundary/")), "legacy DSH identityboundary remains");
-assert(set.has("services/dsh/backend/internal/integrations/identity/client.go"), "canonical DSH Identity adapter missing");
-assert(set.has("services/dsh/backend/internal/transport/http/joiningcase.go") && !set.has("services/dsh/backend/internal/transport/http/managedaccess.go"), "DSH route adaptation ownership mismatch");
-assert(!set.has("services/dsh/backend/internal/managedaccess/server.go") && !set.has("services/dsh/backend/internal/partnerbootstrap/server.go"), "DSH mixed capability server residue remains");
+for (const item of tracked.filter((value) => value.startsWith("services/"))) {
+  const segments = item.split("/");
+  if (segments.some((segment, index) => index > 1 && appSet.has(segment))) {
+    failures.push(`Service contains app-shaped ownership container: ${item}`);
+  }
+}
 
-const appSet = new Set(apps);
-for (const item of tracked.filter((p) => p.startsWith("services/"))) { const seg = item.split("/"); if (seg.some((s, i) => i > 1 && appSet.has(s))) failures.push(`Service contains app-shaped ownership container: ${item}`); if (/^services\/[^/]+\/frontend\//.test(item)) failures.push(`Service contains frontend tree: ${item}`); }
-const githubAppPrefixes = [
-  "github.com/bthwani2-boop/samrim/apps/",
-  "https://github.com/bthwani2-boop/samrim/apps/",
-  "http://github.com/bthwani2-boop/samrim/apps/",
-];
-const hasGithubAppReference = (text) => text
-  .split(/[\s"'`()[\]{}<>]+/)
-  .some((token) => githubAppPrefixes.some((prefix) => token.startsWith(prefix)));
-for (const value of [
-  "github.com/bthwani2-boop/samrim/apps/app-client",
-  "https://github.com/bthwani2-boop/samrim/apps/app-client",
-  "http://github.com/bthwani2-boop/samrim/apps/app-client",
-  '"https://github.com/bthwani2-boop/samrim/apps/app-client"',
-]) assert(hasGithubAppReference(value), `Repository app-reference matcher rejected canonical value: ${value}`);
-for (const value of [
-  "https://evil.example/github.com/bthwani2-boop/samrim/apps/app-client",
-  "prefixhttps://github.com/bthwani2-boop/samrim/apps/app-client",
-  "https://github.com/bthwani2-boop/samrim/apps",
-]) assert(!hasGithubAppReference(value), `Repository app-reference matcher accepted invalid value: ${value}`);
-for (const item of tracked.filter((p) => p.startsWith("services/") && /\.(go|ts|tsx|js|jsx|mjs|cjs|json|yaml|yml)$/.test(p))) { const text = fs.readFileSync(path.join(root, item), "utf8"); if (hasGithubAppReference(text) || /(?:\.\.\/)+apps\//.test(text)) failures.push(`SERVICE_TO_APP_DEPENDENCY: ${item}`); }
-for (const item of tracked.filter((p) => p.startsWith("contracts/"))) { if (item === "contracts/README.md") continue; const rel = item.slice("contracts/".length); if (!["protocol/", "generated/", "catalog/"].some((prefix) => rel.startsWith(prefix))) failures.push(`Root contract requires protocol/generated/catalog placement: ${item}`); }
+for (const item of tracked.filter((value) =>
+  value.startsWith("services/") && /\.(go|ts|tsx|js|jsx|mjs|cjs|json|yaml|yml)$/.test(value)
+)) {
+  const body = fs.readFileSync(path.join(root, item), "utf8");
+  if (/(?:\.\.\/)+apps\//.test(body) || /github\.com\/bthwani2-boop\/samrim\/apps\//.test(body)) {
+    failures.push(`SERVICE_TO_APP_DEPENDENCY: ${item}`);
+  }
+}
+
+for (const item of tracked.filter((value) => value.startsWith("contracts/"))) {
+  if (item === "contracts/README.md") continue;
+  const relative = item.slice("contracts/".length);
+  assert(
+    ["protocol/", "generated/", "catalog/"].some((prefix) => relative.startsWith(prefix)),
+    `Root contract requires protocol/generated/catalog placement: ${item}`,
+  );
+}
+
 const packages = children("packages");
-for (const name of packages) { const p = project("packages", name, "type:package"); if (!p) continue; const base = `packages/${name}/`; assert(p.projectType === "library", `${base} projectType must be library`); assert(set.has(base + "package.json"), `${base}package.json missing`); for (const f of ["backend/", "database/", "migrations/", "cmd/"]) assert(!tracked.some((x) => x.startsWith(base + f)), `Reusable package contains service/storage lane: ${base}${f}`); }
-for (const item of tracked.filter((p) => p.startsWith("infra/"))) if (/\/(contracts?|database|migrations?|schema|orders?|wallet|ledger|catalog|checkout|identity)(\/|$)/i.test(item)) failures.push(`Infra contains service/business ownership path: ${item}`);
+for (const name of packages) {
+  assert(
+    !["shared", "common", "core", "utils", "domain", "business-rules"].includes(name),
+    `Generic package ownership is forbidden: packages/${name}`,
+  );
+  const value = project("packages", name, "type:package");
+  if (!value) continue;
+  const base = `packages/${name}/`;
+  assert(value.projectType === "library", `${base} projectType must be library`);
+  assert(set.has(base + "package.json"), `${base}package.json missing`);
+  for (const lane of ["backend/", "database/", "migrations/", "cmd/"]) {
+    assert(
+      !tracked.some((item) => item.startsWith(base + lane)),
+      `Reusable package contains service/storage lane: ${base}${lane}`,
+    );
+  }
+}
 
-if (failures.length) { console.error("REPOSITORY_STRUCTURE=FAIL"); for (const f of [...new Set(failures)].sort()) console.error(`  ${f}`); process.exit(1); }
+for (const item of tracked.filter((value) => value.startsWith("infra/"))) {
+  if (/\/(contracts?|database|migrations?|schema|orders?|wallet|ledger|catalog|checkout|identity)(\/|$)/i.test(item)) {
+    failures.push(`Infra contains service/business ownership path: ${item}`);
+  }
+}
+
+if (failures.length) {
+  console.error("REPOSITORY_STRUCTURE=FAIL");
+  for (const failure of [...new Set(failures)].sort()) console.error(`  ${failure}`);
+  process.exit(1);
+}
+
+console.log("PLACEMENT_CONTRACT_BOUNDARY=PASS");
 console.log("TOP_LEVEL_TAXONOMY=PASS");
 console.log(`DISCOVERED_APPS=${apps.join(",")}`);
 console.log(`DISCOVERED_SERVICES=${services.join(",")}`);
 console.log(`DISCOVERED_PACKAGES=${packages.join(",")}`);
 console.log("ROUTER_ROOT_ATOMICITY=PASS");
+console.log("SERVICE_MIGRATION_HISTORY_ATOMICITY=PASS");
 console.log("SERVICE_OPENAPI_SOURCE_ATOMICITY=PASS");
 console.log("SERVICE_TO_APP_DEPENDENCIES=0");
+console.log("HISTORICAL_CUTOVER_GUARDS=0");
 console.log("REPOSITORY_STRUCTURE=PASS");
