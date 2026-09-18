@@ -208,12 +208,19 @@ function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target) {
     foreach ($port in @($Ports | Where-Object { $_.Service -in @('mailpit','identity','dsh',$Target) })) { Assert-Port $EnvMap $port.Service $port.Key }
 }
 
+function Stop-Workspace-Services {
+    # Existing JS services can restart while js-deps rewrites their shared node_modules volumes.
+    # Stop them first so Compose's completed js-deps dependency gates their next start.
+    Compose (@('stop') + $WorkspaceServices)
+}
+
 function Start-Full-Runtime {
     $envMap = Ensure-Environment
     Ensure-Docker
     Assert-No-Parallel-Runtime
     Assert-No-Native-Backend
     Compose @('config','--quiet') -Quiet
+    Stop-Workspace-Services
     # Full-stack up starts every Docker-owned component without making image rebuild a startup tax.
     Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
     Assert-Full-Runtime $envMap

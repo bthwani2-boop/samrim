@@ -98,6 +98,8 @@ assert(
   "runtime:up must not rebuild the full stack by default",
 );
 
+assert(runtime.includes("function Stop-Workspace-Services"), "full runtime must gate existing workspace services during dependency materialization");
+assert(runtime.includes("Stop-Workspace-Services\n    # Full-stack up"), "full runtime must stop workspace services before Compose dependency startup");
 assert(!runtime.includes("Stop-OtherOptionalServices"), "target startup must not stop unrelated running surfaces");
 assert(
   runtime.includes("Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans',$Target)"),
