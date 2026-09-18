@@ -118,6 +118,8 @@ requireTokens(".github/workflows/pr-policy.yml", [
   "Governance pin changed but GOVERNANCE_IMPACT=NONE",
   "merge-base --is-ancestor",
   "governance-and-docs.git",
+  "Governance pin rollback is forbidden",
+  "GOVERNANCE_PIN_MONOTONIC=PASS",
 ]);
 
 const adapterCandidates = [
