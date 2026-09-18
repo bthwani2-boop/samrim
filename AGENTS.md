@@ -48,7 +48,28 @@ Current source is evidence of what exists, not automatic proof that the design i
 
 Treat the highest proven causal root. Do not move, wrap, suppress or document around a surviving root defect.
 
-### 1.1 User-facing surface correctness
+### 1.1 Governance impact and evidence
+
+Every material task must classify exactly one:
+
+```text
+GOVERNANCE_IMPACT=NONE
+GOVERNANCE_IMPACT=REVALIDATE_ONLY
+GOVERNANCE_IMPACT=UPDATE_REQUIRED
+GOVERNANCE_IMPACT=DEFECT_FOUND
+```
+
+Use the exact pinned Governance as the durable baseline and actively challenge the owners that the affected cone can change. `NONE` means durable meaning cannot materially be affected; `REVALIDATE_ONLY` means the relevant meaning was examined and remains correct; `UPDATE_REQUIRED` means the authorized outcome changes durable meaning; `DEFECT_FOUND` means the pinned durable meaning is stale, wrong, incomplete or duplicated.
+
+If `UPDATE_REQUIRED` or `DEFECT_FOUND`, correct and merge `governance-and-docs` through its canonical lane first, then deliberately repin `knowledge.sources.json` to the required merged immutable SHA and rerun affected proof. A change to the Governance pin can never be classified `NONE`.
+
+The pinned `GOVERNANCE-STANDARDS.md` defines Governance/agent integrity but owns no BThwani Product/System/Policy meaning.
+
+Use donor/history, relevant OSS/product exemplars, Yemen-market/competitor evidence, current primary technology sources, assurance/experience sources and ecosystem discovery only when a lane can materially change the current need, owner, boundary, risk, solution or proof. Revalidate mutable external facts at use. A newer tool/version is a candidate, not an automatic upgrade; apply the pinned Knowledge/Integration maturity and adoption gates.
+
+Do not create a second local Governance tree, standards registry, evidence ledger, technology-radar database or semantic guard. The pinned Governance plus the existing repository knowledge materialization/query/verification path is the canonical knowledge system.
+
+### 1.2 User-facing surface correctness
 
 User-facing presentation is part of correctness, not post-functional polish. A logically working feature is incomplete when its information architecture, application shell, navigation, hierarchy, Arabic/RTL behavior, interaction states, accessibility, visual-system use or real-device behavior is materially weak or incomplete.
 
@@ -108,7 +129,7 @@ Minimum means smallest complete current model, never partial behavior or lost me
 
 ## 3. Repository and runtime execution
 
-Docker is the sole LOCAL_INTEGRATION runtime owner for PostgreSQL, Mailpit, Identity, DSH, Control Panel and all four Metro servers. Host-native or parallel launch paths for those components are forbidden. Android application execution and device tooling remain device/host owned as appropriate.
+LOCAL_INTEGRATION has exactly one canonical runtime owner for every admitted process/state. The current process/service/container inventory and environment composition are discovered from executable runtime configuration and readback; this agent constitution does not duplicate that mutable inventory. Parallel host/container ownership for the same responsibility is forbidden. Device/host tooling remains where the executable runtime contract assigns it.
 
 The human full-stack lifecycle is intentionally simple:
 
@@ -204,6 +225,8 @@ KNOWN PARTIAL CUTOVERS = 0
 KNOWN PARALLEL/SHADOW TRUTH = 0
 KNOWN UNJUSTIFIED COMPLEXITY/RESIDUE = 0
 INVALIDATED REQUIRED EVIDENCE = 0
+GOVERNANCE_IMPACT = RESOLVED
+PINNED_GOVERNANCE = EXACT_WHEN_MATERIALLY_REQUIRED
 ```
 
 For a coherent verified unit:

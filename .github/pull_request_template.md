@@ -1,15 +1,21 @@
 ## Summary
 
-<!-- What outcome does this PR produce? -->
+<!-- What exact outcome does this PR produce? -->
 
 ## Scope
 
-<!-- What is materially affected, what is intentionally unaffected, and what canonical owner/boundary changed? State the root cause when this is a fix/refactor. -->
+<!-- Material affected cone, canonical owner/root cause, and what is intentionally outside the cone. -->
+
+## Governance impact
+
+<!-- Final value: GOVERNANCE_IMPACT=<NONE | REVALIDATE_ONLY | UPDATE_REQUIRED | DEFECT_FOUND> -->
+
+<!-- For UPDATE_REQUIRED or DEFECT_FOUND also record the merged canonical Governance commit as: GOVERNANCE_CANONICAL_SHA=<40-char SHA> -->
 
 ## Verification
 
-<!-- List only the evidence actually executed for this exact candidate, including runtime/journey proof when behavior requires it. -->
+<!-- Claim-specific evidence actually executed for this exact candidate. A green check proves only what it exercised. -->
 
 ## Remaining limits
 
-<!-- State any real unproven limit/blocker. Write "None" when there is none. -->
+<!-- State any real unproven authority/environment blocker. Write "None" when there is none. -->
