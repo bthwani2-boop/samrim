@@ -1,6 +1,6 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");

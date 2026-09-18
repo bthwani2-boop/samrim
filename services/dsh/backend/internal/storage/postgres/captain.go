@@ -1370,21 +1370,29 @@ func ListCaptainAssignments(ctx context.Context, db *sql.DB, actorID string, lim
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	items := make([]CaptainAssignment, 0)
+	ids := make([]string, 0)
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	items := make([]CaptainAssignment, 0, len(ids))
+	for _, id := range ids {
 		item, err := readCaptainAssignmentTx(ctx, tx, "id=$1", id)
 		if err != nil {
 			return nil, err
 		}
 		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err

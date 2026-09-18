@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import path from "node:path";
 import { createRequire } from "node:module";
+import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const action = process.argv[2] ?? "--status";
@@ -309,6 +309,7 @@ async function ensurePartner(operatorID, state) {
   const summaries = (cases.cases ?? []).filter((item) => item.contactPhoneE164 === WORLD.partnerPhone);
   let summary = uniqueOrFail(summaries, "partner joining case");
   let view = summary ? await expect(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(summary.id)}`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }) : null;
+  if (view?.case) summary = view.case;
   if (!summary) {
     summary = (await expect(dshBase, "POST", "/dsh/joining-cases", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { contactPhoneE164: WORLD.partnerPhone, businessName: WORLD.businessName, firstStoreName: WORLD.storeName, serviceCityId: state.entities.cityId, firstStoreVerticalId: state.entities.verticalId } })).case;
     view = { case: summary };
@@ -430,7 +431,7 @@ async function readStatus(state) {
     request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(state.entities.cityId)}`),
     request(dshBase, "GET", `/dsh/public/stores/${encodeURIComponent(state.entities.storeId)}/catalog?serviceCityId=${encodeURIComponent(state.entities.cityId)}`),
   ]);
-  const roleReady = (result, role, actorID) => result.status === 200 && result.body?.role === role && result.body.actorId === actorID && result.body.enabled && result.body.securityEnabled && Boolean(result.body.activatedAt);
+  const roleReady = (result, role, actorID) => result.status === 200 && result.body?.role === role && result.body.actorId === actorID && result.body.enabled && result.body.securityEnabled && (role === "client" ? result.body.credentialVersion > 0 : Boolean(result.body.activatedAt));
   const city = cities.body?.cities?.find((item) => item.id === state.entities.cityId);
   const vertical = verticals.body?.verticals?.find((item) => item.id === state.entities.verticalId);
   const category = categories.body?.categories?.find((item) => item.id === state.entities.categoryId);
@@ -440,21 +441,24 @@ async function readStatus(state) {
   const field = fieldAdmission.body?.admission;
   const publicStore = stores.body?.stores?.find((item) => item.id === state.entities.storeId);
   const offer = (catalog.body?.offers ?? []).find((item) => item.offerId === state.entities.offerId);
-  const ready = roleReady(operatorRole, "operator", operatorID) &&
-    roleReady(clientRole, "client", state.actors.client.actorId) &&
-    roleReady(partnerRole, "partner", state.actors.partner.actorId) &&
-    roleReady(captainRole, "captain", state.actors.captain.actorId) &&
-    roleReady(fieldRole, "field", state.actors.field.actorId) &&
-    cities.status === 200 && city?.active && city.displayNameAr === WORLD.cityNameAr &&
-    verticals.status === 200 && vertical?.active && vertical.nameAr === WORLD.verticalNameAr &&
-    categories.status === 200 && category?.active && category.verticalId === state.entities.verticalId &&
-    joining.status === 200 && joiningCase?.state === "approved" && joiningCase.partnerActorId === state.actors.partner.actorId && joiningCase.serviceCityId === state.entities.cityId && joiningCase.firstStoreVerticalId === state.entities.verticalId && joiningCase.store?.id === state.entities.storeId && joiningCase.store.partnerActorId === state.actors.partner.actorId &&
-    publication.status === 200 && store?.id === state.entities.storeId && store.partnerActorId === state.actors.partner.actorId && store.serviceCityId === state.entities.cityId && store.primaryVerticalId === state.entities.verticalId && store.publicationState === "published" && store.publicationReadiness?.ready &&
-    captainAdmission.status === 200 && captain?.actorId === state.actors.captain.actorId && captain.state === "eligible" && captain.availabilityState === "unavailable" &&
-    fieldAdmission.status === 200 && field?.actorId === state.actors.field.actorId && field.state === "eligible" &&
-    stores.status === 200 && publicStore?.id === state.entities.storeId && publicStore.primaryVerticalId === state.entities.verticalId &&
-    catalog.status === 200 && catalog.body?.storeId === state.entities.storeId && catalog.body?.verticalId === state.entities.verticalId && offer?.offerId === state.entities.offerId && offer.variantId === state.entities.variantId && offer.productId === state.entities.productId && offer.productActive && offer.variantActive && offer.availability && offer.publicationState === "published";
-  return { ready: Boolean(ready), reason: ready ? "complete-canonical-readback" : "baseline-not-proven" };
+  const checks = {
+    operatorRole: roleReady(operatorRole, "operator", operatorID),
+    clientRole: roleReady(clientRole, "client", state.actors.client.actorId),
+    partnerRole: roleReady(partnerRole, "partner", state.actors.partner.actorId),
+    captainRole: roleReady(captainRole, "captain", state.actors.captain.actorId),
+    fieldRole: roleReady(fieldRole, "field", state.actors.field.actorId),
+    city: cities.status === 200 && city?.active && city.displayNameAr === WORLD.cityNameAr,
+    vertical: verticals.status === 200 && vertical?.active && vertical.nameAr === WORLD.verticalNameAr,
+    category: categories.status === 200 && category?.active && category.verticalId === state.entities.verticalId,
+    joiningCase: joining.status === 200 && joiningCase?.state === "approved" && joiningCase.partnerActorId === state.actors.partner.actorId && joiningCase.serviceCityId === state.entities.cityId && joiningCase.firstStoreVerticalId === state.entities.verticalId && joiningCase.store?.id === state.entities.storeId && joiningCase.store.partnerActorId === state.actors.partner.actorId,
+    publication: publication.status === 200 && store?.id === state.entities.storeId && store.partnerActorId === state.actors.partner.actorId && store.serviceCityId === state.entities.cityId && store.primaryVerticalId === state.entities.verticalId && store.publicationState === "published" && store.publicationReadiness?.ready,
+    captainAdmission: captainAdmission.status === 200 && captain?.actorId === state.actors.captain.actorId && captain.state === "eligible" && captain.availabilityState === "unavailable",
+    fieldAdmission: fieldAdmission.status === 200 && field?.actorId === state.actors.field.actorId && field.state === "eligible",
+    publicStore: stores.status === 200 && publicStore?.id === state.entities.storeId && publicStore.primaryVerticalId === state.entities.verticalId,
+    catalog: catalog.status === 200 && catalog.body?.storeId === state.entities.storeId && catalog.body?.verticalId === state.entities.verticalId && offer?.offerId === state.entities.offerId && offer.variantId === state.entities.variantId && offer.productId === state.entities.productId && offer.productActive && offer.variantActive && offer.availability && offer.publicationState === "published",
+  };
+  const failedChecks = Object.entries(checks).filter(([, passed]) => !passed).map(([name]) => name);
+  return { ready: failedChecks.length === 0, reason: failedChecks.length === 0 ? "complete-canonical-readback" : `baseline-not-proven:${failedChecks.join(",")}` };
 }
 
 async function main() {
@@ -489,7 +493,7 @@ async function main() {
   await ensureProduct(operatorID, partner, state);
   await ensureStorePublication(operatorID, state);
   const final = await readStatus(state);
-  if (!final.ready) fail("world owner completed canonical mutations but complete final readback is not ready");
+  if (!final.ready) fail("world owner completed canonical mutations but complete final readback is not ready", final.reason);
   saveState(state);
   console.log("WORLD_ENSURE=PASS created_or_reused=canonical-owner-paths");
   console.log("WORLD_STATUS=PASS read_only=1 complete_baseline=1 synthetic=1 canonical_readback=1");
