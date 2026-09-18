@@ -177,6 +177,8 @@ Setup is not verification. Dependency installation/materialization belongs to bo
 
 Valid LOCAL_INTEGRATION operational state is reusable: normal verification must not destroy it, business proof state is created through canonical owners rather than direct SQL/seed bypass, and destructive reset/purge requires explicit same-invocation data-loss authorization.
 
+Actor-facing LOCAL_INTEGRATION claims require the affected actor's real surface and role-scoped session; API/database readback verifies canonical truth but does not substitute for real interaction. Reuse valid actors and resources, create fresh transactional state only when the current claim requires it, and preserve valid state during normal verification.
+
 ## 4. Fast proportional verification
 
 Normal development has one principle, not a matrix of modes:
@@ -200,6 +202,8 @@ During implementation use direct/affected checks as needed. Do not run a separat
 `pnpm safe:push` owns the single final local candidate verification for the exact branch delta, then performs fast-forward/first push safety and confirms the exact remote SHA. If the exact SHA is already remote, it is a no-op and must not repeat heavy proof.
 
 CI is independent integration/promotion assurance. It may be broader when the integration claim is broader, but it must not duplicate setup or run unrelated heavyweight jobs by default.
+
+Use subagents only for independent material evidence, implementation or proof lanes. The lead retains the objective, affected-cone and ownership decisions, conflict resolution, final integration, Governance classification, commit/push and closure census. Give parallel coding lanes disjoint write sets; subagents must not push, merge, reset/purge, repin Governance, expose secrets or declare closure. Treat returned evidence as exact-state evidence and invalidate it when its inputs change.
 
 ## 5. Canonical change and cutover
 
