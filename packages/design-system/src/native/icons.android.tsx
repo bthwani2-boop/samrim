@@ -1,5 +1,5 @@
 import { Host, Icon } from "@expo/ui/jetpack-compose";
-import type { ColorValue, ImageSourcePropType } from "react-native";
+import { type ColorValue, type ImageSourcePropType, View } from "react-native";
 
 import { sizing } from "../tokens/index";
 import type { MobileIconName } from "./icon-types";
@@ -47,9 +47,5 @@ export function BthwaniIcon({
     ...(accessibilityLabel !== undefined ? { contentDescription: accessibilityLabel } : {}),
   };
 
-  return (
-    <Host matchContents style={{ width: size, height: size }}>
-      <Icon {...iconProps} />
-    </Host>
-  );
+  return <View pointerEvents="none" style={{ width: size, height: size }}><Host matchContents style={{ width: size, height: size }}><Icon {...iconProps} /></Host></View>;
 }

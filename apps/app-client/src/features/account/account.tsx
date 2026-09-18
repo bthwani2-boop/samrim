@@ -33,15 +33,6 @@ export default function ClientAccount() {
       <Text style={styles.title}>إدارة حسابك</Text>
       <Text style={styles.description}>كل ما تحتاجه لإدارة التوصيل، العناوين، ومظهر تطبيق بثواني.</Text>
 
-      <BthwaniSurface tone="raised" style={styles.profileCard}>
-        <View style={styles.profileIcon}><BthwaniIcon name="account" color={theme.onAction} size={sizing.iconXl} /></View>
-        <View style={styles.profileCopy}><Text style={styles.profileTitle}>حساب العميل</Text><Text style={[styles.profileStatus, !isAuthenticated && styles.profileStatusGuest]}>{isAuthenticated ? "مسجل الدخول وجاهز للطلب" : "تصفّح كمستخدم ضيف"}</Text></View>
-        <BthwaniIcon name={isAuthenticated ? "success" : "account"} color={isAuthenticated ? theme.success : theme.interactiveText} size={sizing.iconLg} />
-      </BthwaniSurface>
-
-      <BthwaniSectionHeader title="التوصيل" subtitle="احفظ عناوينك لتسهيل الطلب القادم." />
-      {isAuthenticated ? <LocationCore /> : <BthwaniSurface tone="inset" style={styles.guestAccess}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconLg} /><Text style={styles.guestText}>سجّل الدخول لإدارة عناوين التوصيل وإتمام الطلبات.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/account" as Href)} /></BthwaniSurface>}
-
       <BthwaniSectionHeader title="مظهر التطبيق" subtitle="غيّر المظهر في أي وقت؛ ويُحفظ اختيارك على هذا الجهاز." />
       <BthwaniSurface tone="raised" style={styles.appearancePanel}>
         <View style={styles.appearanceHeading}>
@@ -50,6 +41,9 @@ export default function ClientAccount() {
         </View>
         <AppearancePicker title="مظهر التطبيق" helper="يُطبَّق التغيير مباشرة على كل شاشات التطبيق." />
       </BthwaniSurface>
+
+      <BthwaniSectionHeader title="التوصيل" subtitle="احفظ عناوينك لتسهيل الطلب القادم." />
+      {isAuthenticated ? <LocationCore /> : <BthwaniSurface tone="inset" style={styles.guestAccess}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconLg} /><Text style={styles.guestText}>سجّل الدخول لإدارة عناوين التوصيل وإتمام الطلبات.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/account" as Href)} /></BthwaniSurface>}
 
       <BthwaniButton label={busy ? "جارٍ تسجيل الخروج…" : "تسجيل الخروج"} busy={busy} disabled={busy} onPress={() => void logout()} variant="secondary" />
       {notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}
@@ -65,12 +59,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
     title: { ...typography.hero, color: theme.color, textAlign: startTextAlign },
     description: { ...typography.body, color: theme.colorMuted, textAlign: startTextAlign },
-    profileCard: { alignItems: "center", borderRadius: radius.xl, direction: activeDirection, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
-    profileIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
-    profileCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
-    profileTitle: { ...typography.titleSm, color: theme.color, textAlign: startTextAlign },
-    profileStatus: { ...typography.bodySm, color: theme.success, textAlign: startTextAlign },
-    profileStatusGuest: { color: theme.colorMuted },
     guestAccess: { alignItems: "center", borderRadius: radius.lg, gap: spacing[3], padding: spacing[4] },
     guestText: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
     appearancePanel: { borderRadius: radius.xl, gap: spacing[3], padding: spacing[4], ...elevation.raised },

@@ -21,6 +21,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
   const [query, setQuery] = useState("");
   const searchInputRef = useRef<TextInput>(null);
+  const shouldAutoFocusSearch = autoFocusSearch && state.kind !== "loading";
 
   const cityName = cities.find((city) => city.id === selectedCityID)?.displayNameAr ?? "مدينتك";
 
@@ -41,10 +42,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    if (!autoFocusSearch) return;
+    if (!shouldAutoFocusSearch) return;
     const focusTimer = setTimeout(() => searchInputRef.current?.focus(), 50);
     return () => clearTimeout(focusTimer);
-  }, [autoFocusSearch]);
+  }, [shouldAutoFocusSearch]);
 
   const filteredStores = useMemo(() => {
     if (state.kind !== "ready") return [];
@@ -52,6 +53,8 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
     if (!normalizedQuery) return state.stores;
     return state.stores.filter((store) => store.name.toLocaleLowerCase().includes(normalizedQuery));
   }, [query, state]);
+
+  const searchField = <BthwaniSearchField accessibilityLabel="البحث في المتاجر" inputRef={searchInputRef} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="ابحث باسم المتجر" value={query} />;
 
   if (state.kind === "loading") {
     return (
@@ -65,11 +68,11 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }
 
   if (state.kind === "error") {
-    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>تعذر تجهيز الاكتشاف</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} variant="secondary" /> : null}</View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>تعذر تجهيز الاكتشاف</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text>{searchField}<BthwaniButton label="إعادة المحاولة" onPress={() => void load()} />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} variant="secondary" /> : null}</View>;
   }
 
   if (state.kind === "empty") {
-    return <View style={styles.state}><View style={styles.emptyIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconXl} /></View><Text style={styles.title}>{selectedCityID ? "لا توجد متاجر متاحة بعد" : "اختر مدينة للبدء"}</Text><Text style={styles.muted}>{selectedCityID ? `لا توجد متاجر منشورة للطلب في ${cityName} حاليًا.` : "تظهر المتاجر بحسب مدينة الخدمة التي تختارها."}</Text><BthwaniButton label="تحديث المتاجر" onPress={() => void load()} variant="secondary" />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} /> : null}</View>;
+    return <View style={styles.state}><View style={styles.emptyIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconXl} /></View><Text style={styles.title}>{selectedCityID ? "لا توجد متاجر متاحة بعد" : "اختر مدينة للبدء"}</Text><Text style={styles.muted}>{selectedCityID ? `لا توجد متاجر منشورة للطلب في ${cityName} حاليًا.` : "تظهر المتاجر بحسب مدينة الخدمة التي تختارها."}</Text>{searchField}<BthwaniButton label="تحديث المتاجر" onPress={() => void load()} variant="secondary" />{!isAuthenticated && onRequireAuthentication ? <BthwaniButton label="تسجيل الدخول للطلب" onPress={onRequireAuthentication} /> : null}</View>;
   }
 
   return (
@@ -83,7 +86,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </View>
       </BthwaniSurface>
 
-      <BthwaniSearchField accessibilityLabel="البحث في المتاجر" inputRef={searchInputRef} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="ابحث باسم المتجر" value={query} />
+      {searchField}
 
       <BthwaniSectionHeader title={`متاجر في ${cityName}`} subtitle={`${filteredStores.length} متجر متاح للطلب`} />
       {filteredStores.length === 0 ? (

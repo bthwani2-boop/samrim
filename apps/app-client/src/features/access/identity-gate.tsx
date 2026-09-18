@@ -115,7 +115,7 @@ export default function IdentityGate() {
     setAuthPromptVisible(true);
   }, [selectMode]);
 
-  const publicDiscovery = <View style={styles.publicDiscovery}><ClientPublicHeader /><View style={styles.publicDiscoveryContent}><ServiceCityScope><StoreDiscovery autoFocusSearch={focus === "search"} isAuthenticated={state.kind === "authenticated"} onRequireAuthentication={state.kind === "signed_out" ? requestAuthentication : undefined} /></ServiceCityScope></View></View>;
+  const publicDiscovery = <ServiceCityScope><View style={styles.publicDiscovery}><ClientPublicHeader /><View style={styles.publicDiscoveryContent}><StoreDiscovery autoFocusSearch={focus === "search"} isAuthenticated={state.kind === "authenticated"} onRequireAuthentication={state.kind === "signed_out" ? requestAuthentication : undefined} /></View></View></ServiceCityScope>;
 
   function resetSignedOutAuthState() {
     setMode("login");

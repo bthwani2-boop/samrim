@@ -1,9 +1,10 @@
 import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniChip, BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Href, useRouter } from "expo-router";
 import { type PropsWithChildren, useMemo } from "react";
 import { Alert, type ColorValue, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useServiceCityScope } from "../features/service-city/service-city-scope";
 
 export function ClientPublicShell({ children }: PropsWithChildren) {
   const theme = useAppearanceTheme();
@@ -25,12 +26,17 @@ export function ClientPublicHeader({ safeArea = true }: { safeArea?: boolean }) 
 
 function ClientHeader({ context, searchHref, styles }: { context: string; searchHref: Href; styles: ReturnType<typeof createStyles> }) {
   const router = useRouter();
+  const { cities, clearSelectedCity, selectedCityID } = useServiceCityScope();
+  const cityName = cities.find((city) => city.id === selectedCityID)?.displayNameAr ?? "اختر المدينة";
 
   return (
     <View style={styles.header}>
       <View style={styles.headerIdentity}>
         <Text style={styles.brand}>بثواني</Text>
-        <Text style={styles.context}>{context}</Text>
+        <View style={styles.headerMeta}>
+          <Text style={styles.context}>{context}</Text>
+          <BthwaniChip accessibilityLabel="تغيير مدينة الخدمة" icon="location" label={cityName} onPress={() => void clearSelectedCity()} style={styles.headerCity} />
+        </View>
       </View>
       <View style={styles.headerActions}>
         <BthwaniIconButton icon="search" label="البحث عن متجر" onPress={() => router.push(searchHref)} size={sizing.controlSm} tone="soft" />
@@ -77,9 +83,11 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     shell: { backgroundColor: theme.background, direction: activeDirection, flex: 1 },
     headerSafeArea: { backgroundColor: theme.surface, direction: activeDirection },
     header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", minHeight: 76, paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
-    headerIdentity: { direction: activeDirection, flex: 1, minWidth: 0 },
+    headerIdentity: { alignItems: "flex-end", direction: activeDirection, flex: 1, gap: spacing[1], minWidth: 0 },
     brand: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
     context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1], textAlign: startTextAlign },
+    headerMeta: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[2], maxWidth: "100%" },
+    headerCity: { backgroundColor: theme.actionSoft, borderColor: theme.borderColorStrong, flexShrink: 1, minHeight: sizing.controlSm, paddingHorizontal: spacing[2] },
     headerActions: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[2] },
     content: { direction: activeDirection, flex: 1 },
     scene: { backgroundColor: theme.background, direction: activeDirection },
