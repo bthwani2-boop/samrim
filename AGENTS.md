@@ -127,6 +127,36 @@ No speculative scaffolding. No compatibility just in case. No new execution mode
 
 Minimum means smallest complete current model, never partial behavior or lost meaning.
 
+### 2.1 Material artifact survival
+
+Within the proven affected cone, every material file, module, component, hook, route, handler, service, package, type/DTO, schema, migration, contract, config/env key, script, dependency, state/cache/registry, test and generated artifact must re-earn existence through:
+
+```text
+EXISTENCE
+→ OWNERSHIP
+→ PLACEMENT
+→ PROVENANCE
+→ CURRENT CONSUMER
+→ SIMPLEST COMPLETE FORM
+```
+
+If current need, canonical ownership, correct placement/provenance, a real consumer or the simplest complete form cannot be proved, delete, merge, rehome or refound it within the affected cone. Existing code has no preservation right merely because it already exists.
+
+Any treatment that increases one-off exceptions, copied truth, manual synchronization or suppressions instead of strengthening/simplifying the canonical model is rejected; revisit the design rather than normalizing patch culture.
+
+### 2.2 Equal correctness across material dimensions
+
+Every plausibly material engineering dimension is held to the same correctness standard. Use the pinned Quality taxonomy to discover applicable Product, ownership, data/migration, contract/API/event, security/authorization, privacy/location, finance, reliability/recovery, performance, observability/audit, UX/IA/content, accessibility/RTL/localization, visual-system, platform/device, runtime/config/infra, dependency/supply-chain, release/deployable-identity, verification/evidence and governance/residue concerns.
+
+```text
+PLAUSIBLY MATERIAL DIMENSION
+→ CORRECT OWNER / BOUNDARY
+→ FAILURE + RECOVERY SEMANTICS AS APPLICABLE
+→ CLAIM-SPECIFIC PROOF
+```
+
+No language, framework, service, UI or tooling layer gets a lower correctness standard merely because another layer is the visible focus.
+
 ## 3. Repository and runtime execution
 
 LOCAL_INTEGRATION has exactly one canonical runtime owner for every admitted process/state. The current process/service/container inventory and environment composition are discovered from executable runtime configuration and readback; this agent constitution does not duplicate that mutable inventory. Parallel host/container ownership for the same responsibility is forbidden. Device/host tooling remains where the executable runtime contract assigns it.
@@ -177,11 +207,17 @@ When replacing a mechanism:
 
 ```text
 ESTABLISH WINNER
-→ MIGRATE REQUIRED CALLERS/CONSUMERS
+→ MIGRATE MATERIAL PRODUCERS + CONSUMERS
+→ MIGRATE AFFECTED CONTRACTS / TYPES / ROUTES / STATE
+→ MIGRATE AFFECTED DATABASE / MIGRATIONS / CONFIG / RUNTIME
+→ MIGRATE AFFECTED TESTS / GENERATED ARTIFACTS / CURRENT IMPLEMENTATION DOCS
 → DISABLE LOSING PATH
-→ DELETE LOSING PATH/ALIASES/RESIDUE
+→ DELETE LOSING PATH / ALIASES / RESIDUE
 → VERIFY WINNER
+→ PROVE LOSER ABSENT
 ```
+
+A cutover is incomplete while any materially affected producer, consumer, contract, persistence path, runtime/config path, generated artifact, test or current implementation description still depends on the losing model.
 
 Do not leave old/new paths in parallel. Do not keep unused scripts, wrappers, allowlists, suppressions, guards, aliases or compatibility layers for comfort.
 
@@ -190,6 +226,10 @@ Repository placement follows `REPOSITORY-STRUCTURE.md`. A structural split/rehom
 Do not force-push, blind-merge/cherry-pick, bypass interlocks, manufacture green by suppressing failures, or retry an ambiguous consequential mutation without reconciliation.
 
 ## 6. Claim-specific evidence
+
+EVIDENCE IS VALID ONLY FOR THE EXACT STATE IT PROVES.
+
+A material change to the candidate, semantic owner, contract/schema, persistence/runtime composition, Governance binding or mutable external fact invalidates the affected proof. Re-run only the proof made stale; never carry evidence forward by assumption.
 
 Use the smallest adequate evidence producer:
 
@@ -219,7 +259,11 @@ AUTHORIZED OBJECTIVE = PROVEN
 MATERIAL AFFECTED CONE = ACCOUNTED
 EXPECTED OWNER/WRITER/READBACK = PROVEN
 REQUIRED DATA/CONTRACT/RUNTIME/JOURNEYS = PROVEN
+KNOWN MATERIAL DEFECTS = 0
+KNOWN MATERIAL WEAKNESSES = 0
 KNOWN MATERIAL REGRESSIONS = 0
+KNOWN DUPLICATE OWNERSHIP = 0
+UNPROVEN MATERIAL CLAIMS = 0
 DECISION-CRITICAL UNKNOWNS = 0
 KNOWN PARTIAL CUTOVERS = 0
 KNOWN PARALLEL/SHADOW TRUTH = 0
