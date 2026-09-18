@@ -226,57 +226,31 @@ function Test-Js-Dependencies-Ready {
     }
 }
 
-function Start-Requested-Runtime([string[]]$RequestedServices, [switch]$Full) {
+function Start-Full-Runtime {
     $envMap = Ensure-Environment
     Ensure-Docker
     Assert-No-Parallel-Runtime
     Assert-No-Native-Backend
     Compose @('config','--quiet') -Quiet
 
+    # Dependency materialization belongs to explicit full startup/restart only.
+    # Existing workspace services are stopped only when their shared node_modules
+    # volumes are proven stale, preventing Metro/Next from observing partial rewrites.
     $runningBefore = @(Get-Running-Workspace-Services)
     $dependenciesReady = Test-Js-Dependencies-Ready
     if ($dependenciesReady) {
-        Write-Host "JS_DEPS_GATE=READY action=no-stop requested=$($RequestedServices -join ',')"
+        Write-Host 'JS_DEPS_GATE=READY action=no-stop scope=full'
     }
     else {
-        Write-Host "JS_DEPS_GATE=STALE action=stop-materialize-restore requested=$($RequestedServices -join ',')"
-        # Existing JS services can restart while js-deps rewrites their shared node_modules
-        # volumes. Stop exactly the services that were running before materialization.
+        Write-Host 'JS_DEPS_GATE=STALE action=stop-materialize scope=full'
         if ($runningBefore.Count -gt 0) { Compose (@('stop') + $runningBefore) }
     }
 
-    if ($Full) {
-        # Full-stack up starts every Docker-owned component without making image rebuild a startup tax.
-        Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
-    }
-    else {
-        # Target startup starts causal dependencies while preserving unrelated services.
-        Compose (@('up','-d','--wait','--wait-timeout','300','--remove-orphans') + $RequestedServices)
-    }
-
-    if (-not $dependenciesReady -and -not $Full) {
-        $restore = @($runningBefore | Where-Object { $_ -notin $RequestedServices })
-        if ($restore.Count -gt 0) {
-            Write-Host "JS_DEPS_GATE=RESTORE services=$($restore -join ',')"
-            Compose (@('up','-d','--wait','--wait-timeout','300','--remove-orphans') + $restore)
-        }
-    }
-
-    if ($Full) { Assert-Full-Runtime $envMap } else { Assert-Target-Runtime $envMap $RequestedServices[0] }
-    return $envMap
-}
-
-function Start-Full-Runtime {
-    $null = Start-Requested-Runtime $WorkspaceServices -Full
+    Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
+    Assert-Full-Runtime $envMap
     Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=full'
     Write-Host 'DOCKER_RUNTIME=PASS'
     Write-Host 'DOCKER_OWNS=postgres,mailpit,identity-migrate,identity,dsh-migrate,dsh,js-deps,control,metro-client,metro-partner,metro-captain,metro-field'
-}
-
-function Ensure-Target-Runtime([string]$Target) {
-    $envMap = Start-Requested-Runtime @($Target)
-    Write-Host "CANONICAL_LOCAL_RUNTIME=PASS mode=target target=$Target"
-    return $envMap
 }
 
 function Show-Status {
@@ -365,15 +339,19 @@ try {
         }
         'Purge' { Ensure-Docker; Compose @('down','--volumes','--remove-orphans'); Write-Host 'RUNTIME_PURGE=PASS final_state=DOWN secrets=preserved' }
         'Control' {
-            $envMap = Ensure-Target-Runtime 'control'
+            $envMap = Read-CanonicalEnvironment
+            Ensure-Docker
+            Assert-Target-Runtime $envMap 'control'
             $port = Require-Port $envMap 'SAMRIM_CONTROL_PORT'
-            Write-Host "CONTROL_PANEL_READY=PASS url=http://127.0.0.1:$port"
+            Write-Host "CONTROL_PANEL_READY=PASS mode=read-only url=http://127.0.0.1:$port"
         }
         'Surface' {
             if (-not $Surface) { Fail 'SURFACE_REQUIRED allowed=client,partner,captain,field' }
             $target = "metro-$Surface"
-            $null = Ensure-Target-Runtime $target
-            Write-Host "MOBILE_SURFACE_RUNTIME=PASS surface=$Surface service=$target"
+            $envMap = Read-CanonicalEnvironment
+            Ensure-Docker
+            Assert-Target-Runtime $envMap $target
+            Write-Host "MOBILE_SURFACE_RUNTIME=PASS mode=read-only surface=$Surface service=$target"
         }
         'Rebuild' { Rebuild-Service }
         'RestartService' { Restart-Service }

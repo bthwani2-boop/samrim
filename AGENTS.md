@@ -169,6 +169,8 @@ pnpm runtime:doctor  → read/validate the complete canonical Docker stack
 pnpm runtime:status  → read the complete canonical Docker stack
 ```
 
+Normal daily LOCAL_INTEGRATION establishes device/runtime state once, then reuses it. The human daily startup interface is `pnpm scr` (long-running device/scrcpy owner, normally in its own terminal) plus `pnpm runtime:up`, `pnpm runtime:doctor`, and `pnpm runtime:status`. After that, source-only edits reuse the valid Docker runtime, device state and sessions; Expo Fast Refresh / Next HMR is the inner development loop. App-specific openers, runtime proof, authentication and cross-role journeys are claim-specific operations, not micro-edit setup, and must not restart/reconcile Docker or repeat valid login/device setup merely because source changed.
+
 These commands remain full-stack commands. `runtime:up` starts and reconciles the complete stack without rebuilding existing images by default; on a fresh machine Compose may build a missing image. When baked backend source changes, use explicit service rebuild before the runtime proof that needs the new binary. Task-specific surface/service paths must not rebuild unrelated images.
 
 A task-specific runtime proof may exercise only the services/surfaces causally required by its claim. Verification must not start, stop, rebuild or restore the complete runtime merely to manufacture a generic green result.

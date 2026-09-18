@@ -76,7 +76,7 @@ function Open-DevelopmentClient([string]$Serial, [string]$AppName, $Config, [int
 
 $surface = $App.Substring(4)
 & pwsh -NoProfile -ExecutionPolicy Bypass -File $RuntimePath -Action Surface -Surface $surface
-if ($LASTEXITCODE -ne 0) { Fail "RUNTIME_NOT_READY reason=surface_start_failed app=$App" }
+if ($LASTEXITCODE -ne 0) { Fail "RUNTIME_NOT_READY reason=surface_readback_failed app=$App" }
 
 $envMap = Read-EnvMap -Path $EnvPath
 $config = Read-AppConfig -AppName $App

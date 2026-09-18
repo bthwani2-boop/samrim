@@ -153,18 +153,28 @@ function Ensure-CanonicalAdbReverse([string]$Serial, [int[]]$Ports) {
     if ($uniquePorts.Count -eq 0 -or @($uniquePorts | Where-Object { $_ -lt 1 -or $_ -gt 65535 }).Count -gt 0) {
         Fail 'ADB_REVERSE_NOT_READY reason=invalid_port_set'
     }
-    foreach ($port in $uniquePorts) {
-        & adb -s $Serial reverse "tcp:$port" "tcp:$port" *> $null
-        if ($LASTEXITCODE -ne 0) { Fail "ADB_REVERSE_NOT_READY reason=prepare_failed serial=$Serial port=$port" }
-    }
+
     $rows = @(& adb -s $Serial reverse --list 2>&1)
     if ($LASTEXITCODE -ne 0) { Fail "ADB_REVERSE_NOT_READY reason=readback_failed serial=$Serial" }
+    $repaired = 0
+    foreach ($port in $uniquePorts) {
+        $exact = @($rows | Where-Object { $_ -match "(^|\s)tcp:$port\s+tcp:$port($|\s)" })
+        if ($exact.Count -eq 1) { continue }
+        & adb -s $Serial reverse "tcp:$port" "tcp:$port" *> $null
+        if ($LASTEXITCODE -ne 0) { Fail "ADB_REVERSE_NOT_READY reason=prepare_failed serial=$Serial port=$port" }
+        $repaired++
+    }
+
+    if ($repaired -gt 0) {
+        $rows = @(& adb -s $Serial reverse --list 2>&1)
+        if ($LASTEXITCODE -ne 0) { Fail "ADB_REVERSE_NOT_READY reason=readback_failed serial=$Serial" }
+    }
     foreach ($port in $uniquePorts) {
         if (@($rows | Where-Object { $_ -match "(^|\s)tcp:$port\s+tcp:$port($|\s)" }).Count -ne 1) {
             Fail "ADB_REVERSE_NOT_READY reason=missing_port serial=$Serial port=$port"
         }
     }
-    Write-Host "ADB_REVERSE=PASS serial=$Serial ports=$($uniquePorts -join ',')"
+    Write-Host "ADB_REVERSE=PASS serial=$Serial repaired=$repaired ports=$($uniquePorts -join ',')"
 }
 
 function Prepare-CanonicalAdbDevice {

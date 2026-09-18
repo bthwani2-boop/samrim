@@ -98,31 +98,35 @@ assert(
   "runtime:up must not rebuild the full stack by default",
 );
 
-assert(runtime.includes("function Get-Running-Workspace-Services"), "runtime must read the running workspace services before dependency materialization");
-assert(runtime.includes("function Test-Js-Dependencies-Ready"), "runtime must have one read-only dependency readiness check");
-assert(runtime.includes("function Start-Requested-Runtime"), "full and target startup must share one dependency gate");
-assert(runtime.includes("$dependenciesReady = Test-Js-Dependencies-Ready"), "runtime startup must branch on the dependency fingerprint before stopping services");
-assert(runtime.includes("JS_DEPS_GATE=READY action=no-stop"), "a ready dependency fingerprint must not stop workspace services");
-assert(runtime.includes("JS_DEPS_GATE=STALE action=stop-materialize-restore"), "a stale dependency fingerprint must expose the stop/materialize/restore transition");
-assert(runtime.includes("if ($runningBefore.Count -gt 0) { Compose (@('stop') + $runningBefore) }"), "stale dependency materialization must stop only the workspace services that were running");
-assert(runtime.includes("JS_DEPS_GATE=RESTORE services="), "target startup must restore previously running unrelated workspace services after materialization");
-assert(runtime.includes("Start-Requested-Runtime $WorkspaceServices -Full"), "full startup must use the shared dependency gate");
-assert(runtime.includes("Start-Requested-Runtime @($Target)"), "target startup must use the shared dependency gate");
-assert(!runtime.includes("Stop-OtherOptionalServices"), "target startup must not stop unrelated running surfaces");
-assert(
-  runtime.includes("Compose (@('up','-d','--wait','--wait-timeout','300','--remove-orphans') + $RequestedServices)"),
-  "target startup must use Compose dependency resolution without rebuilding the whole stack",
-);
+assert(runtime.includes("function Get-Running-Workspace-Services"), "runtime:up must read running workspace services before dependency materialization");
+assert(runtime.includes("function Test-Js-Dependencies-Ready"), "runtime:up must retain one read-only dependency readiness check");
+assert(runtime.includes("function Start-Full-Runtime"), "runtime must have one canonical full-stack startup owner");
+assert(!runtime.includes("function Start-Requested-Runtime"), "target runtime startup orchestration must not survive the daily full-stack cutover");
+assert(!runtime.includes("function Ensure-Target-Runtime"), "app/control helpers must not own target runtime startup");
+assert(runtime.includes("$dependenciesReady = Test-Js-Dependencies-Ready"), "full startup must gate shared dependency materialization");
+assert(runtime.includes("JS_DEPS_GATE=READY action=no-stop scope=full"), "ready dependencies must preserve running workspace services");
+assert(runtime.includes("JS_DEPS_GATE=STALE action=stop-materialize scope=full"), "stale dependencies must expose the full-start materialization boundary");
+assert(runtime.includes("if ($runningBefore.Count -gt 0) { Compose (@('stop') + $runningBefore) }"), "stale dependency materialization must stop only currently running workspace services");
+assert(!runtime.includes("JS_DEPS_GATE=RESTORE"), "retired target-start restore orchestration must not survive");
 assert(runtime.includes("$WorkspaceServices = @('control','metro-client','metro-partner','metro-captain','metro-field')"), "workspace-bound JavaScript services must have one canonical runtime set");
 assert(runtime.includes("Assert-WorkspaceMounts"), "runtime readback must verify the repository bind mount for every workspace-bound service");
 assert(runtime.includes("target=/workspace"), "runtime workspace readback must identify the canonical /workspace target");
 assert(runtime.includes("DOCKER_WORKSPACE_MOUNTS=PASS source=repository-root target=/workspace"), "runtime status must expose workspace bind readback");
 assert(
   opener.includes("-Action Surface -Surface $surface"),
-  "mobile opener must delegate target runtime ownership to runtime.ps1",
+  "mobile opener must use the canonical read-only surface assertion",
 );
+assert(!opener.includes("docker compose") && !opener.includes("Compose @("), "mobile opener must not own Docker lifecycle");
 
-for (const forbidden of [
+const controlCase = runtime.match(/'Control'\s*\{([\s\S]*?)\n\s*\}\n\s*'Surface'/)?.[1] ?? "";
+const surfaceCase = runtime.match(/'Surface'\s*\{([\s\S]*?)\n\s*\}\n\s*'Rebuild'/)?.[1] ?? "";
+assert(controlCase.includes("Read-CanonicalEnvironment") && controlCase.includes("Assert-Target-Runtime"), "control helper must read/validate the existing runtime");
+assert(surfaceCase.includes("Read-CanonicalEnvironment") && surfaceCase.includes("Assert-Target-Runtime"), "surface helper must read/validate the existing runtime");
+assert(!controlCase.includes("Compose @(") && !surfaceCase.includes("Compose @("), "control/surface helpers must not mutate Compose lifecycle");
+assert(runtime.includes("CONTROL_PANEL_READY=PASS mode=read-only"), "control helper must expose read-only semantics");
+assert(runtime.includes("MOBILE_SURFACE_RUNTIME=PASS mode=read-only"), "surface helper must expose read-only semantics");
+
+for (const forbidden of [for (const forbidden of [
   "runtime:up",
   "runtime:doctor",
   "runtime:status",
