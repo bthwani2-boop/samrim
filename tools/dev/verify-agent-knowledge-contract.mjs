@@ -32,6 +32,14 @@ const agent = requireTokens("AGENTS.md", [
   "GOVERNANCE_IMPACT=UPDATE_REQUIRED",
   "GOVERNANCE_IMPACT=DEFECT_FOUND",
   "GOVERNANCE-STANDARDS.md",
+  "## 2.1 Material artifact survival",
+  "## 2.2 Equal correctness across material dimensions",
+  "EVIDENCE IS VALID ONLY FOR THE EXACT STATE IT PROVES.",
+  "PROVE LOSER ABSENT",
+  "KNOWN MATERIAL DEFECTS = 0",
+  "KNOWN MATERIAL WEAKNESSES = 0",
+  "KNOWN DUPLICATE OWNERSHIP = 0",
+  "UNPROVEN MATERIAL CLAIMS = 0",
   "`pnpm verify`",
   "`pnpm safe:push`",
   "pnpm runtime:up",
@@ -45,6 +53,15 @@ if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agent)) {
 if (/Docker is the sole LOCAL_INTEGRATION runtime owner|all four Metro servers/i.test(agent)) {
   failures.push("AGENTS.md retains mutable LOCAL_INTEGRATION participant inventory");
 }
+
+requireTokens("REPOSITORY-STRUCTURE.md", [
+  "ARTIFACT_CLASS: REPOSITORY_LOCAL_PLACEMENT_CONTRACT",
+  "PLACEMENT_CONTRACT_AUTHORITY: DELEGATED_BY_AGENTS_MD",
+  "PRODUCT_SEMANTIC_AUTHORITY: NONE",
+  "DURABLE_ARCHITECTURE_AUTHORITY: NONE",
+  "CURRENT_IMPLEMENTATION_INVENTORY_AUTHORITY: NONE",
+  "`pnpm verify` is the stable public local verification entrypoint.",
+]);
 
 const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "BaseSha",
