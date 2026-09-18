@@ -67,6 +67,18 @@ jobs:
             exit 1
           fi
 
+          if [[ "${pin_changed}" -eq 1 ]]; then
+            pinned="$(node -p "JSON.parse(require('fs').readFileSync('knowledge.sources.json','utf8')).governance.commit")"
+            gov_checkout="${RUNNER_TEMP}/bthwani-governance-canonical"
+            rm -rf "${gov_checkout}"
+            git clone --quiet --filter=blob:none --no-checkout https://github.com/bthwani2-boop/governance-and-docs.git "${gov_checkout}"
+            git -C "${gov_checkout}" merge-base --is-ancestor "${pinned}" origin/main || {
+              echo "::error::Pinned Governance SHA is not in canonical governance-and-docs/main history: ${pinned}"
+              exit 1
+            }
+            echo "GOVERNANCE_CANONICAL_MAIN=PASS sha=${pinned}"
+          fi
+
           if [[ "${impact}" == "UPDATE_REQUIRED" || "${impact}" == "DEFECT_FOUND" ]]; then
             [[ "${pin_changed}" -eq 1 ]] || { echo "::error::${impact} requires deliberate knowledge.sources.json repin"; exit 1; }
             mapfile -t canonical_shas < <(grep -Eo 'GOVERNANCE_CANONICAL_SHA=[0-9a-f]{40}' <<<"${body}" || true)

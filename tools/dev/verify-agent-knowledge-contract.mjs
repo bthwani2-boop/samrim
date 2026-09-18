@@ -116,6 +116,8 @@ requireTokens(".github/workflows/pr-policy.yml", [
   "knowledge.sources.json",
   "GOVERNANCE_CANONICAL_SHA=",
   "Governance pin changed but GOVERNANCE_IMPACT=NONE",
+  "merge-base --is-ancestor",
+  "governance-and-docs.git",
 ]);
 
 const adapterCandidates = [

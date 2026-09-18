@@ -76,26 +76,6 @@ for (const forbidden of ["branch", "branch_url"]) {
   }
 }
 
-try {
-  const unshallow = fs.existsSync(path.join(knowledgeRoot, ".git", "shallow"));
-  execFileSync(
-    "git",
-    unshallow
-      ? ["fetch", "--quiet", "--unshallow", "origin", "main"]
-      : ["fetch", "--quiet", "origin", "main"],
-    { cwd: knowledgeRoot, stdio: "ignore" },
-  );
-  const canonicalMain = execFileSync("git", ["rev-parse", "FETCH_HEAD"], {
-    cwd: knowledgeRoot,
-    encoding: "utf8",
-  }).trim();
-  execFileSync("git", ["merge-base", "--is-ancestor", pin.commit, canonicalMain], {
-    cwd: knowledgeRoot,
-    stdio: "ignore",
-  });
-} catch {
-  failures.push("pinned Governance SHA is not proven reachable from canonical governance-and-docs/main");
-}
 
 for (const required of [
   "AGENTS.md",
@@ -145,4 +125,3 @@ console.log(`KNOWLEDGE_COMMIT=${pin.commit}`);
 console.log("AGENT_LAW_OWNER=AGENTS.md");
 console.log("LOCAL_PROMPT_PACKAGE_ROOT=0");
 console.log("PINNED_GOVERNANCE_META_STANDARD=PASS");
-console.log("PINNED_GOVERNANCE_CANONICAL_MAIN=PASS");
