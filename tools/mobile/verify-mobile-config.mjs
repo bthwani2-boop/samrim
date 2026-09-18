@@ -152,8 +152,37 @@ for (const app of apps) {
       failed = true;
     }
   }
-  if (!Array.isArray(config.nativeCapabilities)) {
-    console.error(`${app}: nativeCapabilities must be an array`);
+  if (Object.prototype.hasOwnProperty.call(config, "nativeCapabilities")) {
+    console.error(`${app}: nativeCapabilities shadow registry must be absent`);
+    failed = true;
+  }
+
+  const requiredNativePackages = [
+    "expo-network",
+    "expo-image",
+    "expo-notifications",
+    "expo-file-system",
+    "expo-haptics",
+    "expo-image-picker",
+    "expo-image-manipulator",
+    "expo-font",
+    "react-native-keyboard-controller",
+    "react-native-maps",
+    "expo-location",
+  ];
+  const dependencies = { ...pkg.dependencies, ...pkg.devDependencies };
+  for (const packageName of requiredNativePackages) {
+    if (!dependencies[packageName]) {
+      console.error(`${app}: required native-ready dependency missing: ${packageName}`);
+      failed = true;
+    }
+  }
+  if ((app === "app-partner" || app === "app-field") && !dependencies["expo-document-picker"]) {
+    console.error(`${app}: document-picker is required for the admitted partner/field native path`);
+    failed = true;
+  }
+  if (app === "app-captain" && (!dependencies["expo-task-manager"] || !dependencies["expo-keep-awake"])) {
+    console.error("app-captain: task-manager and keep-awake are required for the admitted operational native path");
     failed = true;
   }
 

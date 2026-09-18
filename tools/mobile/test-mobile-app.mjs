@@ -28,17 +28,7 @@ const surface = app;
 const configPath = path.join(appDir, "mobile.config.json");
 assert.ok(fs.existsSync(configPath), `${app}: missing mobile.config.json`);
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-const expectedCapabilities = [
-  "router",
-  "updates",
-  "constants",
-  "crypto",
-  "splashScreen",
-  "secureStore",
-  "localization",
-];
-if (app === "app-client" || app === "app-partner") expectedCapabilities.push("location");
-assert.deepEqual(config.nativeCapabilities, expectedCapabilities, `${app}: nativeCapabilities drifted`);
+assert.equal(Object.prototype.hasOwnProperty.call(config, "nativeCapabilities"), false, `${app}: nativeCapabilities shadow registry survived`);
 
 // 2. Targeted dependency regression verification.
 // This is intentionally not a complete unused-package census; dependency
@@ -49,28 +39,51 @@ const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 assert.equal(allDeps["expo-localization"], "~57.0.2", `${app}: static RTL requires expo-localization`);
 
+const requiredNativeReadyDependencies = [
+  "expo-network",
+  "expo-image",
+  "expo-notifications",
+  "expo-file-system",
+  "expo-haptics",
+  "expo-image-picker",
+  "expo-image-manipulator",
+  "expo-font",
+  "react-native-keyboard-controller",
+  "react-native-maps",
+  "expo-location",
+];
+for (const required of requiredNativeReadyDependencies) {
+  assert.ok(allDeps[required], `${app}: missing admitted native-ready dependency: ${required}`);
+}
+if (app === "app-partner" || app === "app-field") {
+  assert.ok(allDeps["expo-document-picker"], `${app}: missing document-picker`);
+}
+if (app === "app-captain") {
+  assert.ok(allDeps["expo-task-manager"], "app-captain: missing task-manager");
+  assert.ok(allDeps["expo-keep-awake"], "app-captain: missing keep-awake");
+}
+
 const forbiddenDependencyRegressions = [
   "@react-native-community/netinfo",
   "@sentry/react-native",
-  "expo-document-picker",
-  "expo-file-system",
-  "expo-haptics",
-  "expo-image",
-  "expo-notifications",
+  "@react-native-firebase/messaging",
+  "expo-audio",
+  "expo-background-task",
+  "expo-battery",
+  "expo-camera",
+  "expo-local-authentication",
+  "expo-maps",
+  "expo-sqlite",
   "expo-sharing",
   "expo-video",
   "expo-web-browser",
-  "react-native-maps",
+  "react-native-gifted-chat",
 ];
 
 for (const forbidden of forbiddenDependencyRegressions) {
   assert.ok(!allDeps[forbidden], `${app}: contains unused dependency: ${forbidden}`);
 }
-if (app === "app-client" || app === "app-partner") {
-  assert.equal(allDeps["expo-location"], "~57.0.18", `${app}: location core requires the Expo 57 location module`);
-} else {
-  assert.ok(!allDeps["expo-location"], `${app}: location dependency must remain scoped to Location Core hosts`);
-}
+assert.equal(allDeps["expo-location"], "~57.0.19", `${app}: admitted location readiness requires the Expo 57 location module`);
 
   const identityPath = path.join(appDir, "src", "bootstrap", "identity.ts");
   assert.ok(fs.existsSync(identityPath), `${app}: missing src/bootstrap/identity.ts`);
@@ -137,7 +150,11 @@ const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "s
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
-const expoConfig = defineSamrimExpoApp(app);
+const expoConfig = defineSamrimExpoApp(app, app === "app-captain" ? { locationMode: "background" } : {});
+assert.equal(expoConfig.extra.nativeCapabilities, undefined, `${app}: Expo config must not expose native capability shadow truth`);
+assert.equal(expoConfig.android.blockedPermissions, undefined, `${app}: manual RECORD_AUDIO workaround must be absent`);
+assert.equal(expoConfig.android.config, undefined, `${app}: manual Android provider config must be absent`);
+assert.equal(expoConfig.ios.config, undefined, `${app}: manual iOS provider config must be absent`);
 const localizationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-localization");
 assert.deepEqual(localizationPlugin, [
   "expo-localization",
@@ -148,45 +165,38 @@ assert.deepEqual(localizationPlugin, [
   },
 ], `${app}: native localization config must be Arabic-only and statically RTL`);
 const locationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-location");
-if (app === "app-client" || app === "app-partner") {
+assert.ok(locationPlugin, `${app}: location readiness requires expo-location config`);
+if (app === "app-captain") {
+  assert.deepEqual(locationPlugin, [
+    "expo-location",
+    {
+      locationWhenInUsePermission: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر.",
+      locationAlwaysAndWhenInUsePermission: "نحتاج الوصول إلى الموقع في الخلفية لتتبع مسار المهمة النشطة.",
+      isAndroidBackgroundLocationEnabled: true,
+      isAndroidForegroundServiceEnabled: true,
+      isIosBackgroundLocationEnabled: true,
+    },
+  ], `${app}: background location must be owned by expo-location`);
+} else {
   assert.deepEqual(locationPlugin, [
     "expo-location",
     { locationWhenInUsePermission: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر." },
-  ], `${app}: Location Core must use foreground-only location permission`);
-} else {
-  assert.equal(locationPlugin, undefined, `${app}: location plugin must remain scoped to Location Core hosts`);
+  ], `${app}: foreground location must be owned by expo-location`);
 }
+const imagePickerPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-image-picker");
+assert.deepEqual(imagePickerPlugin, [
+  "expo-image-picker",
+  {
+    photosPermission: "نحتاج الوصول إلى معرض الصور لاختيار الصور ومشاركتها.",
+    cameraPermission: "نحتاج الوصول إلى الكاميرا لالتقاط الصور الثابتة عند الحاجة.",
+    microphonePermission: false,
+  },
+], `${app}: image-picker must own still-photo permissions without microphone access`);
+const mapsPlugin = expoConfig.plugins.find((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "react-native-maps");
+assert.ok(mapsPlugin, `${app}: react-native-maps plugin must be present`);
+const notificationsPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-notifications");
+assert.ok(notificationsPlugin, `${app}: expo-notifications plugin must be present`);
 console.log(`MOBILE_AR_RTL_NATIVE_CONFIG=PASS app=${app} locale=ar forcesRTL=true`);
-
-// Remote EAS environments may retain provider variables after a native dependency
-// has been intentionally removed. Provider variables alone must not re-admit a
-// native config plugin that is absent from the current app dependency graph.
-{
-  const sentryKeys = ["SENTRY_ORG", "SENTRY_PROJECT", "EXPO_PUBLIC_SENTRY_DSN"];
-  const previous = Object.fromEntries(sentryKeys.map((key) => [key, process.env[key]]));
-  try {
-    process.env.SENTRY_ORG = "test-org";
-    process.env.SENTRY_PROJECT = "test-project";
-    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://public@example.invalid/1";
-
-    const providerConfiguredExpo = defineSamrimExpoApp(app);
-    const sentryPlugin = providerConfiguredExpo.plugins.find(
-      (plugin) =>
-        (Array.isArray(plugin) ? plugin[0] : plugin) === "@sentry/react-native/expo",
-    );
-
-    assert.equal(sentryPlugin, undefined, `${app}: stale EAS Sentry variables must not admit a missing native dependency`);
-    assert.equal(providerConfiguredExpo.extra.sentry.enabled, false, `${app}: Sentry must remain disabled without its dependency`);
-    assert.equal(providerConfiguredExpo.extra.sentry.nativeConfigured, false, `${app}: Sentry native config must remain disabled without its dependency`);
-    assert.equal(providerConfiguredExpo.extra.sentry.nativeDependencyInstalled, false, `${app}: Sentry dependency census drifted`);
-  } finally {
-    for (const key of sentryKeys) {
-      if (previous[key] === undefined) delete process.env[key];
-      else process.env[key] = previous[key];
-    }
-  }
-}
-console.log(`MOBILE_PROVIDER_ENV_GATING=PASS app=${app} provider=sentry`);
 
 for (const reason of ["no_local_session", "corrupt_local_session", "terminal_invalidated", "surface_mismatch", "local_proof_invalid", "explicit_logout", "recovery"]) {
   assert.ok(identitySessionSignOutMessage(reason).length > 0, `${app}: missing sign-out reason message: ${reason}`);

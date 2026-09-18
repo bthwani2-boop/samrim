@@ -32,8 +32,6 @@
     "tools/mobile/with-android-development-client.d.cts"
   ],
   "ignoreDependencies": [
-    // Metro probes these optional host integrations with require.resolve and falls back safely.
-    "@sentry/react-native",
     "expo"
   ],
   "ignoreBinaries": [

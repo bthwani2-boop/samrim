@@ -10,6 +10,5 @@
 **/coverage
 **/.nx
 **/*.log
-secrets.local.mobile.json
 .bthwani-local/
 .diagnostics/
