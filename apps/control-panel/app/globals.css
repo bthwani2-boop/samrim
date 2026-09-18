@@ -1,7 +1,7 @@
 @import "@bthwani/design-system/theme.css";
 
 * { box-sizing: border-box; }
-html { min-height: 100%; background: var(--surface-warm); direction: var(--direction-default); }
+html { min-height: 100%; background: var(--surface-warm); direction: rtl; }
 body { min-height: 100vh; margin: 0; background: var(--surface-warm); color: var(--color-primary); font-family: var(--font-family-arabic); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }

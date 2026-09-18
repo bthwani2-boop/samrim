@@ -1,4 +1,4 @@
-import { borders, direction, elevation, radius, resolveTextAlign, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
+import { borders, elevation, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { formatMoney, type PublicCatalogResponse, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
@@ -80,7 +80,7 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     return <View style={styles.state} accessibilityLabel="جارٍ تجهيز المتجر"><BthwaniSkeleton width="30%" height={28} /><BthwaniSkeleton height={92} /><BthwaniSkeleton height={160} /><BthwaniSkeleton height={160} /></View>;
   }
   if (state.kind === "error") {
-    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>قد لا يكون المتجر متاحًا في مدينة الخدمة الحالية.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة" onPress={() => router.back()} variant="secondary" /></View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة المتجر</Text><Text style={styles.muted}>قد لا يكون المتجر متاحًا في مدينة الخدمة الحالية.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة" onPress={() => router.back()} variant="secondary" /></View>;
   }
 
   const activeSections = state.catalog.sections.filter((section) => section.active);
@@ -242,43 +242,41 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, direction: activeDirection, gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
-    state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
-    backButton: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
-    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
-    title: { ...typography.titleSm, color: theme.color, textAlign: startTextAlign },
-    muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 20, textAlign: startTextAlign },
-    merchantHero: { alignItems: "center", borderRadius: radius.xl, direction: activeDirection, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
+    container: { backgroundColor: theme.background, gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
+    state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
+    backButton: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.titleSm, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 20 },
+    merchantHero: { alignItems: "center", borderRadius: radius.xl, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
     merchantIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
-    merchantCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
-    sectionChips: { direction: activeDirection, gap: spacing[2], paddingVertical: spacing[1] },
+    merchantCopy: { flex: 1, gap: spacing[1] },
+    sectionChips: { gap: spacing[2], paddingVertical: spacing[1] },
     searchField: { width: "100%" },
-    searchActions: { direction: activeDirection, flexDirection: "row", gap: spacing[2] },
+    searchActions: { flexDirection: "row", gap: spacing[2] },
     searchButton: { flex: 1 },
-    filterLabel: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    filterLabel: { ...typography.bodyStrong, color: theme.color },
+    sectionTitle: { ...typography.bodyStrong, color: theme.color },
     section: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     item: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    itemHeader: { alignItems: "flex-start", direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
-    itemCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
-    itemTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    itemPrice: { ...typography.titleSm, color: theme.interactiveText, textAlign: "right" },
-    quantityHint: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
+    itemHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    itemCopy: { flex: 1, gap: spacing[1] },
+    itemTitle: { ...typography.bodyStrong, color: theme.color },
+    itemPrice: { ...typography.titleSm, color: theme.interactiveText },
+    quantityHint: { ...typography.caption, color: theme.colorMuted },
     quantityInput: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: sizing.controlMd, paddingHorizontal: spacing[3], textAlign: "left", writingDirection: "ltr" },
     disabledInput: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground, color: theme.disabledText },
     modifierGroup: { gap: spacing[2], marginTop: spacing[1] },
     modifierOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
     invalidModifierOption: { borderColor: theme.danger },
     emptySection: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[4] },
-    back: { ...typography.body, color: theme.interactiveText, textAlign: startTextAlign },
+    back: { ...typography.body, color: theme.interactiveText },
     cartCta: { alignItems: "center", borderRadius: radius.xl, gap: spacing[2], padding: spacing[4] },
     cartIcon: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.round, height: sizing.avatarMd, justifyContent: "center", width: sizing.avatarMd },
-    success: { ...typography.bodySm, color: theme.success, lineHeight: 19, textAlign: startTextAlign },
-    validationError: { ...typography.bodySm, color: theme.danger, lineHeight: 19, textAlign: startTextAlign },
-    error: { ...typography.bodySm, color: theme.danger, lineHeight: 19, textAlign: startTextAlign },
+    success: { ...typography.bodySm, color: theme.success, lineHeight: 19 },
+    validationError: { ...typography.bodySm, color: theme.danger, lineHeight: 19 },
+    error: { ...typography.bodySm, color: theme.danger, lineHeight: 19 },
     loadMoreButton: { width: "100%" },
   });
 }

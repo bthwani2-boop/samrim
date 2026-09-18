@@ -1,4 +1,4 @@
-import { borders, direction, radius, resolveTextAlign, resolveTextInputAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { DeliveryAddress } from "@bthwani/dsh";
 import * as Location from "expo-location";
@@ -173,7 +173,6 @@ export default function LocationCore() {
           placeholder="مثال: شارع الزبيري، جوار المبنى الأبيض"
           placeholderTextColor={theme.colorMuted}
           style={styles.input}
-          textAlign={resolveTextInputAlign("start", direction.defaultDirection)}
           value={addressText}
         />
         <BthwaniButton accessibilityLabel="التقاط الموقع الحالي" busy={locationBusy} disabled={busy} label="التقاط الموقع الحالي" onPress={() => void captureLocation()} variant="secondary" />
@@ -200,33 +199,29 @@ export default function LocationCore() {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
-
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, direction: activeDirection, gap: spacing[3], padding: spacing[4], width: "100%" },
-    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
-    title: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
-    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    container: { backgroundColor: theme.background, gap: spacing[3], padding: spacing[4], width: "100%" },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.titleMd, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
     formCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
     listCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
-    sectionTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    fieldLabel: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    cityList: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    sectionTitle: { ...typography.bodyStrong, color: theme.color },
+    fieldLabel: { ...typography.bodyStrong, color: theme.color },
+    cityList: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
     actionButton: { flex: 1 },
-    input: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 84, paddingHorizontal: spacing[3], paddingVertical: spacing[3], textAlign: startInputTextAlign, textAlignVertical: "top", writingDirection: activeDirection },
+    input: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 84, paddingHorizontal: spacing[3], paddingVertical: spacing[3], textAlignVertical: "top" },
     coordinateBox: { backgroundColor: theme.structureSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
-    coordinateLabel: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
-    coordinateValue: { ...typography.bodySm, color: theme.color, fontVariant: ["tabular-nums"], textAlign: startTextAlign },
-    actionRow: { direction: activeDirection, flexDirection: "row", gap: spacing[3] },
-    notice: { ...typography.bodySm, backgroundColor: theme.successSoft, borderRadius: radius.sm, color: theme.success, padding: spacing[2], textAlign: startTextAlign },
-    error: { ...typography.bodySm, backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, padding: spacing[2], textAlign: startTextAlign },
+    coordinateLabel: { ...typography.caption, color: theme.colorMuted },
+    coordinateValue: { ...typography.bodySm, color: theme.color, fontVariant: ["tabular-nums"] },
+    actionRow: { flexDirection: "row", gap: spacing[3] },
+    notice: { ...typography.bodySm, backgroundColor: theme.successSoft, borderRadius: radius.sm, color: theme.success, padding: spacing[2] },
+    error: { ...typography.bodySm, backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, padding: spacing[2] },
     state: { alignItems: "center", gap: spacing[2], justifyContent: "center", paddingVertical: spacing[8] },
     addressList: { gap: spacing[3] },
     addressItem: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
-    addressText: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    addressMeta: { ...typography.caption, color: theme.colorMuted, fontVariant: ["tabular-nums"], textAlign: startTextAlign },
+    addressText: { ...typography.bodyStrong, color: theme.color },
+    addressMeta: { ...typography.caption, color: theme.colorMuted, fontVariant: ["tabular-nums"] },
     editButton: { alignSelf: "flex-start", minHeight: sizing.controlMd, justifyContent: "center", paddingHorizontal: spacing[1] },
     editButtonText: { ...typography.label, color: theme.interactiveText, textDecorationLine: "underline" },
   });

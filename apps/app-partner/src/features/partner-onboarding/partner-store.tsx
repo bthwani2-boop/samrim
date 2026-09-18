@@ -1,4 +1,4 @@
-import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { publicationStateLabel } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
 import { useMemo } from "react";
@@ -9,7 +9,7 @@ import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
 
 export function PartnerStore() {
-const theme = useAppearanceTheme();
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createPartnerSurfaceStyles(theme), [theme]);
   const { cities, citiesError, state, reload } = usePartnerStoreContext();
 
@@ -20,9 +20,8 @@ const theme = useAppearanceTheme();
   const cityName = cities.find((city) => city.id === joiningCase.case.serviceCityId)?.displayNameAr || "مدينة غير محددة";
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>إدارة المتجر</Text>
-      <Text selectable style={styles.value}>{joiningCase.case.businessName}</Text>
-      <Text style={styles.muted}>مدينة المتجر الأول: {cityName}</Text>
+      <View style={styles.headerRow}><View style={styles.headerCopy}><Text style={styles.sectionTitle}>إدارة المتجر</Text><Text selectable style={styles.value}>{joiningCase.case.businessName}</Text></View><BthwaniStatusBadge icon={joiningCase.case.store?.publicationState === "published" ? "success" : "warning"} label={joiningCase.case.store?.publicationState === "published" ? "منشور" : "يحتاج إجراء"} tone={joiningCase.case.store?.publicationState === "published" ? "success" : "warning"} /></View>
+      <View style={styles.card}><View style={styles.metaGrid}><View style={styles.metaItem}><Text style={styles.metaLabel}>مدينة الخدمة</Text><Text style={styles.value}>{cityName}</Text></View><View style={styles.metaItem}><Text style={styles.metaLabel}>حالة الملف</Text><Text style={styles.value}>{joiningCase.case.state === "needs_correction" ? "يحتاج تصحيحًا" : "قيد المتابعة"}</Text></View></View></View>
       {citiesError ? <View style={styles.state}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة مدن الخدمة، لذلك قد لا يظهر اسم المدينة.</Text><BthwaniButton label="إعادة قراءة المدن" onPress={() => void reload()} variant="secondary" /></View> : null}
       {joiningCase.case.store ? <>
         <Text selectable style={styles.muted}>المتجر الأول: {joiningCase.case.store.name}</Text>

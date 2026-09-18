@@ -1,4 +1,4 @@
-import { borders, direction, radius, resolveTextAlign, resolveTextInputAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { CommerceVertical, JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -90,21 +90,17 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
-
   return StyleSheet.create({
-    container: { backgroundColor: theme.warningSoft, borderColor: theme.warning, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], marginTop: spacing[3], padding: spacing[3], direction: activeDirection },
-    title: { ...typography.bodyStrong, color: theme.warning, textAlign: startTextAlign },
-    reason: { ...typography.bodySm, color: theme.color, textAlign: startTextAlign },
-    phone: { ...typography.label, color: theme.colorSecondary, textAlign: startTextAlign },
+    container: { backgroundColor: theme.warningSoft, borderColor: theme.warning, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], marginTop: spacing[3], padding: spacing[3] },
+    title: { ...typography.bodyStrong, color: theme.warning },
+    reason: { ...typography.bodySm, color: theme.color },
+    phone: { ...typography.label, color: theme.colorSecondary },
     phoneValue: { writingDirection: "ltr" },
-    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: sizing.controlMd, paddingHorizontal: spacing[2], textAlign: startInputTextAlign, writingDirection: activeDirection },
-    label: { ...typography.label, color: theme.color, textAlign: startTextAlign },
-    cityList: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
-    error: { ...typography.label, color: theme.danger, textAlign: startTextAlign },
-    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
+    label: { ...typography.label, color: theme.color },
+    cityList: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    error: { ...typography.label, color: theme.danger },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
     optionError: { gap: spacing[2] },
   });
 }

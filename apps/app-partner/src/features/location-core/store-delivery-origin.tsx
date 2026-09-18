@@ -1,4 +1,4 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -112,18 +112,15 @@ export function StoreDeliveryOrigin({ storeId }: { storeId: string }) {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[3], padding: spacing[3], width: "100%", direction: activeDirection },
-    title: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[3], padding: spacing[3], width: "100%" },
+    title: { ...typography.bodyStrong, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
     state: { alignItems: "center", gap: spacing[2], minHeight: 92, justifyContent: "center" },
     coordinateBox: { backgroundColor: theme.structureSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
-    coordinateLabel: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
-    coordinateValue: { ...typography.bodySm, color: theme.color, fontVariant: ["tabular-nums"], textAlign: startTextAlign },
-    notice: { backgroundColor: theme.successSoft, borderRadius: radius.sm, color: theme.success, ...typography.label, padding: spacing[2], textAlign: startTextAlign },
-    error: { backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, ...typography.label, padding: spacing[2], textAlign: startTextAlign },
+    coordinateLabel: { ...typography.caption, color: theme.colorMuted },
+    coordinateValue: { ...typography.bodySm, color: theme.color, fontVariant: ["tabular-nums"] },
+    notice: { backgroundColor: theme.successSoft, borderRadius: radius.sm, color: theme.success, ...typography.label, padding: spacing[2] },
+    error: { backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, ...typography.label, padding: spacing[2] },
   });
 }

@@ -1,6 +1,7 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type PropsWithChildren, useMemo } from "react";
+import { useMemo } from "react";
+import { type PropsWithChildren } from "react";
 import { type ColorValue, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -30,24 +31,22 @@ export function createFieldTabOptions(theme: ReturnType<typeof resolveTheme>) {
 }
 
 function FieldHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
-  return <View style={styles.header}><View><Text style={styles.brand}>بثواني</Text><Text style={styles.context}>مساحة الميدان · ملفات الانضمام</Text></View><View style={styles.headerMark} accessibilityElementsHidden><View style={styles.headerMarkNavy} /><View style={styles.headerMarkOrange} /></View></View>;
+  return <View style={styles.header}><View><Text style={styles.brand}>بثواني · الميدان</Text><Text style={styles.context}>الأهلية وملفات الانضمام</Text></View><View style={styles.headerMark} accessibilityElementsHidden><View style={styles.headerMarkNavy} /><View style={styles.headerMarkOrange} /></View></View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    headerSafeArea: { backgroundColor: theme.surface, direction: activeDirection },
-    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, direction: activeDirection, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing[5], paddingVertical: spacing[3] },
-    brand: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
-    context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1], textAlign: startTextAlign },
-    headerMark: { alignItems: "flex-end", direction: activeDirection, flexDirection: "row", gap: spacing[1], height: sizing.avatarSm },
+    headerSafeArea: { backgroundColor: theme.surface },
+    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing[5], paddingVertical: spacing[3] },
+    brand: { ...typography.titleMd, color: theme.color },
+    context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1] },
+    headerMark: { alignItems: "flex-end", flexDirection: "row", gap: spacing[1], height: sizing.avatarSm },
     headerMarkNavy: { backgroundColor: theme.structure, borderRadius: radius.xs, height: sizing.avatarSm, width: 9 },
     headerMarkOrange: { backgroundColor: theme.brandAction, borderRadius: radius.xs, height: 16, width: 9 },
-    scene: { backgroundColor: theme.background, direction: activeDirection },
-    screenContent: { direction: activeDirection, flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, direction: activeDirection, flexDirection: "row", paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
-    navigationItem: { borderRadius: radius.md, minHeight: sizing.controlLg, paddingHorizontal: spacing[2] },
+    scene: { backgroundColor: theme.background },
+    screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
+    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[3], paddingTop: spacing[2] },
+    navigationItem: { alignItems: "center", borderRadius: radius.md, flex: 1, gap: spacing[1], justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[2] },
     navigationLabel: { ...typography.caption },
   });
 }

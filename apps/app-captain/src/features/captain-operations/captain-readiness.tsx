@@ -1,4 +1,4 @@
-import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAdmission, captainAdmissionStateLabel, captainAvailabilityStateLabel } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -52,11 +52,10 @@ const theme = useAppearanceTheme();
   return (
     <View style={styles.container} accessibilityLabel="جاهزية الكابتن">
       <Text style={styles.title}>جاهزية الكابتن</Text>
-      <Text style={styles.muted}>حالة القبول والتوفر تُقرأ من DSH بعد تحقق جلسة الكابتن.</Text>
+      <Text style={styles.muted}>تحقق من جاهزيتك، حدّد توفرك، ثم انتقل مباشرة إلى المهمة التالية.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading && admission ? <View style={styles.card}>
-        <Text style={styles.cardTitle}>الحالة التشغيلية</Text>
-        <Text style={styles.muted}>القبول: {captainAdmissionStateLabel(admission.state)} · التوفر: {captainAvailabilityStateLabel(admission.availabilityState)}</Text>
+        <View style={styles.row}><View style={styles.task}><Text style={styles.cardTitle}>قبولك</Text><Text style={styles.muted}>{captainAdmissionStateLabel(admission.state)}</Text></View><View style={styles.task}><Text style={styles.cardTitle}>التوفر</Text><BthwaniStatusBadge icon={admission.availabilityState === "available" ? "success" : "appearance"} label={captainAvailabilityStateLabel(admission.availabilityState)} tone={admission.availabilityState === "available" ? "success" : "neutral"} /></View></View>
         <View style={styles.row}>
           <BthwaniButton busy={busy} disabled={admission.state !== "eligible"} label="متاح" onPress={() => void setAvailability(true)} style={styles.actionButton} />
           <BthwaniButton busy={busy} disabled={admission.state !== "eligible"} label="غير متاح" onPress={() => void setAvailability(false)} style={styles.actionButton} variant="secondary" />

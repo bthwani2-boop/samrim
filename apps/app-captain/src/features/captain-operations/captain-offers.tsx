@@ -1,4 +1,4 @@
-import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainOffer, captainOfferStateLabel } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
@@ -51,11 +51,11 @@ const theme = useAppearanceTheme();
   return (
     <View style={styles.container} accessibilityLabel="عروض التوصيل">
       <Text style={styles.title}>عروض التوصيل</Text>
-      <Text style={styles.muted}>العروض الحالية تُقرأ من DSH ويمكن حسمها مرة واحدة بالنسخة الحالية.</Text>
+      <Text style={styles.muted}>راجع العرض، ثم احسمه مرة واحدة قبل انتهاء صلاحيته.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading ? <Text style={styles.sectionTitle}>العروض ({offers.length})</Text> : null}
       {!loading && !offers.length ? <Text style={styles.muted}>لا توجد عروض حالية.</Text> : null}
-      {!loading ? offers.map((offer) => <View key={offer.id} style={styles.card}><Text style={styles.cardTitle}>عرض توصيل</Text><Text style={styles.muted}>الحالة: {captainOfferStateLabel(offer.state)} · ينتهي: {new Date(offer.expiresAt).toLocaleString("ar-YE")}</Text>{offer.state === "offered" ? <View style={styles.row}><BthwaniButton busy={busy === offer.id} disabled={Boolean(busy)} label="قبول العرض" onPress={() => void respond(offer, "accept")} style={styles.actionButton} /><BthwaniButton disabled={Boolean(busy)} label="رفض العرض" onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="danger" /></View> : null}</View>) : null}
+      {!loading ? offers.map((offer) => <View key={offer.id} style={styles.card}><View style={styles.orderHeader}><Text style={styles.cardTitle}>عرض توصيل</Text><BthwaniStatusBadge icon={offer.state === "offered" ? "deliveries" : "orders"} label={captainOfferStateLabel(offer.state)} tone={offer.state === "offered" ? "info" : "neutral"} /></View><Text style={styles.muted}>ينتهي في {new Date(offer.expiresAt).toLocaleString("ar-YE")}</Text>{offer.state === "offered" ? <View style={styles.row}><BthwaniButton busy={busy === offer.id} disabled={Boolean(busy)} label="قبول العرض" onPress={() => void respond(offer, "accept")} style={styles.actionButton} /><BthwaniButton disabled={Boolean(busy)} label="رفض العرض" onPress={() => void respond(offer, "reject")} style={styles.actionButton} variant="danger" /></View> : null}</View>) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحديث العروض" onPress={() => void load()} variant="secondary" />
     </View>

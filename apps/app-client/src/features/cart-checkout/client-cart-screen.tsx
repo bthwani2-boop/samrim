@@ -1,4 +1,4 @@
-import { borders, direction, opacity, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { DeliveryAddress, PublicStoreView, ServiceabilityResponse } from "@bthwani/dsh";
 import { type Href, Link, useLocalSearchParams, useRouter } from "expo-router";
@@ -64,7 +64,7 @@ export default function ClientCartScreen() {
     return <View style={styles.state} accessibilityLabel="جارٍ تجهيز السلة"><BthwaniSkeleton width="35%" height={28} /><BthwaniSkeleton height={88} /><BthwaniSkeleton height={152} /></View>;
   }
   if (state.kind === "error") {
-    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>تعذر تجهيز السلة</Text><Text style={styles.muted}>تحقق من الاتصال أو أهلية المتجر ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى المتجر" onPress={() => router.back()} variant="secondary" /></View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر تجهيز السلة</Text><Text style={styles.muted}>تحقق من الاتصال أو أهلية المتجر ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى المتجر" onPress={() => router.back()} variant="secondary" /></View>;
   }
 
   const serviceableAddressId = serviceability.kind === "ready" && serviceability.result.status === "SERVICEABLE" ? serviceability.addressId : undefined;
@@ -97,24 +97,22 @@ function serviceabilityMessage(status: ServiceabilityResponse["status"]): string
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { direction: activeDirection, gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
-    state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
-    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
-    title: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
-    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
-    backButton: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
-    storeContext: { alignItems: "center", borderRadius: radius.xl, direction: activeDirection, flexDirection: "row", gap: spacing[3], padding: spacing[4] },
+    container: { gap: spacing[4], paddingBottom: spacing[4], width: "100%" },
+    state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[8], width: "100%" },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.titleMd, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    backButton: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
+    storeContext: { alignItems: "center", borderRadius: radius.xl, flexDirection: "row", gap: spacing[3], padding: spacing[4] },
     storeIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
-    storeCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
-    addressCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[2], padding: spacing[3] },
+    storeCopy: { flex: 1, gap: spacing[1] },
+    addressCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     address: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
     addressSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    addressText: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    back: { ...typography.body, color: theme.interactiveText, textAlign: startTextAlign },
-    error: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
+    addressText: { ...typography.bodyStrong, color: theme.color },
+    back: { ...typography.body, color: theme.interactiveText },
+    error: { ...typography.bodySm, color: theme.danger },
     disabled: { opacity: opacity.disabled },
   });
 }

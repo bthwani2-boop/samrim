@@ -16,5 +16,6 @@ export default function PartnerAppLayout() {
   const onUnauthenticated = useCallback(() => {
     router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
   }, [pathname, router]);
-  return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}><Tabs screenOptions={tabOptions}><Tabs.Screen name="store" options={{ title: "المتجر", tabBarAccessibilityLabel: "إدارة المتجر" }} /><Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "طلبات المتجر" }} /><Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "حساب الشريك" }} /><Tabs.Screen name="onboarding" options={{ href: null }} /></Tabs></AuthenticatedMobileBoundary>;
+  const tabs = <Tabs screenOptions={tabOptions}><Tabs.Screen name="store" options={{ title: "المتجر", tabBarAccessibilityLabel: "إدارة المتجر" }} /><Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "طلبات المتجر" }} /><Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "حساب الشريك" }} /><Tabs.Screen name="onboarding" options={{ href: null }} /></Tabs>;
+  return <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>{tabs}</AuthenticatedMobileBoundary>;
 }

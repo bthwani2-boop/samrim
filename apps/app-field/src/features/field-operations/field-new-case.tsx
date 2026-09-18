@@ -81,7 +81,7 @@ const theme = useAppearanceTheme();
   return (
     <View style={styles.container} accessibilityLabel="ملف انضمام جديد">
       <Text style={styles.title}>ملف انضمام جديد</Text>
-      <Text style={styles.muted}>يُنشئ الميدان الملف في DSH فقط؛ المراجعة والنشر مسؤولية المسارات المختصة.</Text>
+      <Text style={styles.muted}>اجمع بيانات النشاط والمتجر في ملف واحد، ثم أرسله للمراجعة عند اكتماله.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحقق من الأهلية…</Text></View> : null}
       {!loading && admission?.state !== "eligible" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إنشاء ملف الآن</Text><Text style={styles.muted}>أهلية الميدان الحالية لا تسمح بإنشاء ملف جديد.</Text></View> : null}
       {!loading && admission?.state === "eligible" ? <View style={styles.card}>

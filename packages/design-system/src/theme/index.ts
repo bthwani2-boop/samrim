@@ -2,7 +2,6 @@ import {
   borders,
   breakpoints,
   darkThemeColors,
-  direction,
   elevation,
   fontFamilies,
   fontWeights,
@@ -111,9 +110,6 @@ export function webFoundationToCssVariables(): Record<string, string> {
     ...cssTokenEntries("opacity", opacity, ""),
     ...cssTokenEntries("z", zIndex, ""),
     "--duration-reduced": px(motion.reducedMotionDuration),
-    "--direction-default": direction.defaultDirection,
-    "--direction-logical-properties": String(direction.useLogicalProperties),
-    "--direction-mirror-icons": String(direction.mirrorDirectionalIcons)
   };
 
   for (const [name, value] of Object.entries(motion.duration)) {

@@ -1,4 +1,4 @@
-import { direction, radius, resolveTextAlign, resolveTextInputAlign, spacing, type ThemeColors, toAsciiDigits } from "@bthwani/design-system";
+import { radius, spacing, type ThemeColors, toAsciiDigits } from "@bthwani/design-system";
 import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -451,16 +451,10 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
 }
 
 function createStyles(theme: ThemeColors) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
-  const numericTextAlign = resolveTextInputAlign("start", "ltr");
-
   return StyleSheet.create({
     boundaryContainer: {
       alignItems: "stretch",
       backgroundColor: theme.background,
-      direction: activeDirection,
       flex: 1,
       gap: spacing[4],
       justifyContent: "center",
@@ -470,7 +464,6 @@ function createStyles(theme: ThemeColors) {
       flexGrow: 1,
       alignItems: "stretch",
       backgroundColor: theme.background,
-      direction: activeDirection,
       gap: spacing[4],
       paddingHorizontal: spacing[4],
       paddingBottom: spacing[12],
@@ -531,7 +524,6 @@ function createStyles(theme: ThemeColors) {
       borderColor: theme.borderColor,
       borderRadius: radius.lg,
       borderWidth: 1,
-      direction: activeDirection,
       gap: spacing[3],
       padding: spacing[6],
     },
@@ -545,7 +537,6 @@ function createStyles(theme: ThemeColors) {
       borderColor: theme.borderColor,
       borderRadius: radius.lg,
       borderWidth: 1,
-      direction: activeDirection,
       gap: spacing[2],
       padding: spacing[5],
     },
@@ -553,26 +544,22 @@ function createStyles(theme: ThemeColors) {
       color: theme.interactiveText,
       fontSize: 13,
       fontWeight: "800",
-      textAlign: startTextAlign,
     },
     title: {
       color: theme.color,
       fontSize: 23,
       fontWeight: "800",
-      textAlign: startTextAlign,
     },
     description: {
       color: theme.colorSecondary,
       fontSize: 14,
       lineHeight: 23,
-      textAlign: startTextAlign,
     },
     fieldLabel: {
       color: theme.color,
       fontSize: 14,
       fontWeight: "700",
       marginTop: spacing[2],
-      textAlign: startTextAlign,
     },
     input: {
       backgroundColor: theme.surface,
@@ -584,15 +571,13 @@ function createStyles(theme: ThemeColors) {
       minHeight: 52,
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[2],
-      textAlign: startInputTextAlign,
-      writingDirection: activeDirection,
     },
     numericInput: {
-      textAlign: numericTextAlign,
+      textAlign: "left",
       writingDirection: "ltr",
     },
     revealButton: { alignSelf: "flex-end", minHeight: 40, justifyContent: "center", paddingHorizontal: spacing[1] },
-    revealText: { color: theme.interactiveText, fontSize: 13, fontWeight: "700", textDecorationLine: "underline", writingDirection: activeDirection },
+    revealText: { color: theme.interactiveText, fontSize: 13, fontWeight: "700", textDecorationLine: "underline" },
     summaryPhone: {
       backgroundColor: theme.structureSoft,
       borderRadius: radius.sm,
@@ -666,7 +651,6 @@ function createStyles(theme: ThemeColors) {
       fontSize: 13,
       marginTop: spacing[2],
       padding: spacing[2],
-      textAlign: startTextAlign,
     },
     error: {
       backgroundColor: theme.dangerSoft,
@@ -675,7 +659,6 @@ function createStyles(theme: ThemeColors) {
       fontSize: 13,
       marginTop: spacing[2],
       padding: spacing[2],
-      textAlign: startTextAlign,
     },
     muted: {
       color: theme.colorMuted,

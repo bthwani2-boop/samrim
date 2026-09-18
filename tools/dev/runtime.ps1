@@ -23,6 +23,7 @@ $AllowedServices = @('identity','dsh','control','metro-client','metro-partner','
 $CanonicalServices = @('postgres','mailpit','identity-migrate','identity','dsh-migrate','dsh','js-deps','control','metro-client','metro-partner','metro-captain','metro-field')
 $RunningServices = @('postgres','mailpit','identity','dsh','control','metro-client','metro-partner','metro-captain','metro-field')
 $OneShotServices = @('identity-migrate','dsh-migrate','js-deps')
+$WorkspaceServices = @('control','metro-client','metro-partner','metro-captain','metro-field')
 $Ports = @(
     @{ Key='SAMRIM_MAILPIT_WEB_PORT'; Service='mailpit' },
     @{ Key='SAMRIM_IDENTITY_PORT'; Service='identity' },
@@ -131,6 +132,31 @@ function Assert-No-Native-Backend {
     if ($matches.Count -gt 0) { Fail "NATIVE_RUNTIME_RESIDUE=FAIL pids=$($matches.ProcessId -join ',')" }
 }
 
+function Normalize-Workspace-Source([string]$Source) {
+    $raw = $Source.Trim()
+    $dockerDesktopPath = [regex]::Match($raw, '^/+run/desktop/mnt/host/([a-zA-Z])/(.+)$')
+    if ($dockerDesktopPath.Success) {
+        $value = '{0}:\\{1}' -f $dockerDesktopPath.Groups[1].Value.ToUpperInvariant(), $dockerDesktopPath.Groups[2].Value
+    } else {
+        $value = $raw.Replace('/', '\\')
+    }
+    return [IO.Path]::GetFullPath($value).TrimEnd('\\')
+}
+
+function Assert-WorkspaceMounts([string[]]$Services = $WorkspaceServices) {
+    $expected = Normalize-Workspace-Source $RepoRoot
+    foreach ($serviceName in $Services) {
+        $ids = @(Container-Ids $serviceName)
+        if ($ids.Count -ne 1) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName containers=$($ids.Count)" }
+        $rows = @(& docker inspect --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Type}}|{{.Source}}{{end}}{{end}}' $ids[0] | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ($LASTEXITCODE -ne 0 -or $rows.Count -ne 1) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace mounts=$($rows.Count)" }
+        $parts = $rows[0].Split('|', 2)
+        if ($parts.Count -ne 2 -or $parts[0] -ne 'bind') { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace type=$($parts[0])" }
+        try { $actual = Normalize-Workspace-Source $parts[1] } catch { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName source=$($parts[1])" }
+        if (-not [StringComparer]::OrdinalIgnoreCase.Equals($actual, $expected)) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName expected=$expected actual=$actual" }
+    }
+}
+
 function Assert-Service([string]$ServiceName, [switch]$Healthy) {
     $ids = @(Container-Ids $ServiceName)
     if ($ids.Count -ne 1) { Fail "SERVICE_STATE=FAIL service=$ServiceName containers=$($ids.Count)" }
@@ -160,6 +186,7 @@ function Assert-Port([hashtable]$EnvMap, [string]$ServiceName, [string]$Key) {
 function Assert-Full-Runtime([hashtable]$EnvMap) {
     Assert-No-Parallel-Runtime
     Assert-No-Native-Backend
+    Assert-WorkspaceMounts
     foreach ($serviceName in $OneShotServices) { Assert-OneShot $serviceName }
     foreach ($serviceName in $RunningServices) {
         $healthy = $serviceName -notin @('mailpit')
@@ -171,6 +198,7 @@ function Assert-Full-Runtime([hashtable]$EnvMap) {
 function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target) {
     Assert-No-Parallel-Runtime
     Assert-No-Native-Backend
+    if ($Target -in $WorkspaceServices) { Assert-WorkspaceMounts @($Target) }
     foreach ($serviceName in @('identity-migrate','dsh-migrate','js-deps')) { Assert-OneShot $serviceName }
     $targets = @('postgres','mailpit','identity','dsh',$Target) | Select-Object -Unique
     foreach ($serviceName in $targets) {
@@ -219,6 +247,8 @@ function Show-Status {
         $state = (& docker inspect --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.State.ExitCode}}' $ids[0]).Trim()
         Write-Host "DOCKER_SERVICE=$serviceName state=$state"
     }
+    try { Assert-WorkspaceMounts; Write-Host 'DOCKER_WORKSPACE_MOUNTS=PASS source=repository-root target=/workspace' }
+    catch { Write-Host "DOCKER_WORKSPACE_MOUNTS=NOT_READY reason=$($_.Exception.Message)" }
 }
 
 function Doctor {

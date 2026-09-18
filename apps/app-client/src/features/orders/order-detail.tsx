@@ -1,5 +1,5 @@
-import { borders, direction, elevation, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -55,7 +55,7 @@ export default function ClientOrderDetail() {
         <View style={styles.summaryIcon}><BthwaniIcon name="orders" color={theme.onAction} size={sizing.iconXl} /></View>
         <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{order.addressText}</Text></View>
       </BthwaniSurface>
-      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><Text style={styles.statusValue}>{orderStateLabel(order.state)}</Text><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text></View><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" /></View>
+      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "warning" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "danger" : "info"} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text></View><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" /></View>
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
       <BthwaniSectionHeader title="عنوان التوصيل" />
       <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
@@ -67,30 +67,28 @@ export default function ClientOrderDetail() {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, direction: activeDirection, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
-    state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
-    backButton: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
-    back: { ...typography.body, color: theme.interactiveText, textAlign: startTextAlign },
-    summary: { alignItems: "center", borderRadius: radius.xl, direction: activeDirection, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
+    container: { backgroundColor: theme.background, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+    state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
+    backButton: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
+    back: { ...typography.body, color: theme.interactiveText },
+    summary: { alignItems: "center", borderRadius: radius.xl, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
     summaryIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
-    summaryCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
-    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
-    title: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
-    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
-    status: { backgroundColor: theme.actionSoft, borderRadius: radius.lg, direction: activeDirection, gap: spacing[1], padding: spacing[4] },
-    statusCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
-    statusTitle: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
-    statusValue: { ...typography.titleSm, color: theme.interactiveText, textAlign: startTextAlign },
-    statusTotal: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, direction: activeDirection, flexDirection: "row", gap: spacing[2], padding: spacing[4] },
-    lines: { direction: activeDirection, gap: spacing[3] },
+    summaryCopy: { flex: 1, gap: spacing[1] },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.titleMd, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    status: { backgroundColor: theme.actionSoft, borderRadius: radius.lg, gap: spacing[1], padding: spacing[4] },
+    statusCopy: { flex: 1, gap: spacing[1] },
+    statusTitle: { ...typography.caption, color: theme.colorMuted },
+    statusValue: { ...typography.titleSm, color: theme.interactiveText },
+    statusTotal: { ...typography.bodyStrong, color: theme.color },
+    address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[4] },
+    lines: { gap: spacing[3] },
     line: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
-    lineTop: { alignItems: "flex-start", direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
-    lineTitle: { ...typography.bodyStrong, color: theme.color, flex: 1, textAlign: startTextAlign },
-    linePrice: { ...typography.bodyStrong, color: theme.interactiveText, textAlign: "right" },
-    refreshError: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
+    lineTop: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    lineTitle: { ...typography.bodyStrong, color: theme.color, flex: 1 },
+    linePrice: { ...typography.bodyStrong, color: theme.interactiveText },
+    refreshError: { ...typography.bodySm, color: theme.danger },
   });
 }

@@ -1,4 +1,4 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniChip, BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Href, useRouter } from "expo-router";
 import { type PropsWithChildren, useMemo } from "react";
@@ -77,22 +77,20 @@ export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    shell: { backgroundColor: theme.background, direction: activeDirection, flex: 1 },
-    headerSafeArea: { backgroundColor: theme.surface, direction: activeDirection },
-    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", minHeight: 76, paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
-    headerIdentity: { alignItems: "flex-end", direction: activeDirection, flex: 1, gap: spacing[1], minWidth: 0 },
-    brand: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
-    context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1], textAlign: startTextAlign },
-    headerMeta: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[2], maxWidth: "100%" },
+    shell: { backgroundColor: theme.background, flex: 1 },
+    headerSafeArea: { backgroundColor: theme.surface },
+    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", minHeight: 76, paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
+    headerIdentity: { alignItems: "flex-end", flex: 1, gap: spacing[1], minWidth: 0 },
+    brand: { ...typography.titleMd, color: theme.color },
+    context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1] },
+    headerMeta: { alignItems: "center", flexDirection: "row", gap: spacing[2], maxWidth: "100%" },
     headerCity: { backgroundColor: theme.actionSoft, borderColor: theme.borderColorStrong, flexShrink: 1, minHeight: sizing.controlSm, paddingHorizontal: spacing[2] },
-    headerActions: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[2] },
-    content: { direction: activeDirection, flex: 1 },
-    scene: { backgroundColor: theme.background, direction: activeDirection },
-    screenContent: { direction: activeDirection, flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surfaceRaised, borderTopColor: theme.borderColorStrong, borderTopWidth: borders.hairline, direction: activeDirection, flexDirection: "row", minHeight: 84, paddingHorizontal: spacing[3], paddingTop: spacing[2], paddingBottom: spacing[3] },
+    headerActions: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
+    content: { flex: 1 },
+    scene: { backgroundColor: theme.background },
+    screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
+    navigation: { backgroundColor: theme.surfaceRaised, borderTopColor: theme.borderColorStrong, borderTopWidth: borders.hairline, minHeight: 84, paddingHorizontal: spacing[3], paddingTop: spacing[2] },
     navigationItem: { borderRadius: radius.lg, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
     navigationLabel: { ...typography.label, marginTop: spacing[1] },
   });

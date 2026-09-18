@@ -99,10 +99,12 @@ assert.ok(fs.existsSync(shellPath), `${app}: missing actor-specific application 
 const shellContent = fs.readFileSync(shellPath, "utf8");
 assert.ok(!shellContent.includes('accessibilityRole="tablist"'), `${app}: manual bottom navigation must not remain beside the canonical Tabs owner`);
 assert.ok(!shellContent.includes("<Slot />"), `${app}: application shell must not own a parallel Expo Router slot`);
-assert.ok(shellContent.includes("direction.defaultDirection"), `${app}: application shell must bind layout to the canonical design direction`);
-assert.ok(shellContent.includes('flexDirection: "row"'), `${app}: application shell must use the native logical row direction`);
-assert.ok(!shellContent.includes("row-reverse"), `${app}: application shell must not double-reverse native RTL rows`);
-assert.ok(shellContent.includes("direction: activeDirection"), `${app}: application shell must apply direction to its rendered surfaces`);
+  assert.ok(shellContent.includes('flexDirection: "row"'), `${app}: application shell must use the native logical row direction`);
+  assert.ok(!shellContent.includes("direction:"), `${app}: application shell must not duplicate Expo RTL direction ownership`);
+  assert.ok(!shellContent.includes("textAlign:"), `${app}: application shell must not duplicate text alignment ownership`);
+  const navigationStyle = shellContent.match(/navigation:\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.ok(!navigationStyle.includes("direction:") && !navigationStyle.includes("flexDirection:") && !navigationStyle.includes("row-reverse"), `${app}: native tab bar must use Expo Router route order, not a manual direction override`);
+  assert.ok(!navigationStyle.includes("paddingBottom:") && !navigationStyle.includes("paddingVertical:"), `${app}: native tab bar must own the bottom safe-area inset; do not override it in tabBarStyle`);
 const layoutContent = fs.readFileSync(path.join(appRouteDir, "_layout.tsx"), "utf8");
 assert.ok(layoutContent.includes("Tabs"), `${app}: authenticated layout must declare stable Expo Router JS Tabs`);
 assert.ok(layoutContent.includes("<Tabs"), `${app}: authenticated layout must compose route content through Expo Router Tabs`);
@@ -111,7 +113,13 @@ const tabRoutes =
   app === "app-partner" ? ["store", "orders", "account", "onboarding"] :
   app === "app-captain" ? ["home", "offers", "deliveries", "account"] :
   ["home", "cases", "account", "new-case"];
-for (const tabRoute of tabRoutes) assert.ok(layoutContent.includes(`name="${tabRoute}"`), `${app}: missing canonical Tabs route ${tabRoute}`);
+ let previousTabRouteIndex = -1;
+ for (const tabRoute of tabRoutes) {
+   const tabRouteIndex = layoutContent.indexOf(`<Tabs.Screen name="${tabRoute}"`);
+   assert.ok(tabRouteIndex >= 0, `${app}: missing canonical Tabs route ${tabRoute}`);
+   assert.ok(tabRouteIndex > previousTabRouteIndex, `${app}: canonical Tabs route order drifted at ${tabRoute}`);
+   previousTabRouteIndex = tabRouteIndex;
+ }
 const identityGatePath = path.join(appDir, "src", "features", "access", "identity-gate.tsx");
 const identityGateContent = fs.readFileSync(identityGatePath, "utf8");
 if (app === "app-client") {

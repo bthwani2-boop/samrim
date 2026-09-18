@@ -1,4 +1,4 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Cart, createDshMobileClient, type DeliveryAddress, formatMoney, formatQuantity, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
@@ -126,7 +126,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
       <Text style={styles.title}>السلة وإتمام الطلب</Text>
       <Text style={styles.muted}>تُعاد قراءة السعر والأهلية عند فتح السلة وعند الإتمام.</Text>
       {state.kind === "loading" ? <View style={styles.state} accessibilityLabel="جارٍ قراءة السلة"><BthwaniSkeleton height={72} /><BthwaniSkeleton height={72} /></View> : null}
-      {state.kind === "error" ? <View style={styles.state}><Text style={styles.error}>تعذر قراءة السلة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
+      {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>تعذر قراءة السلة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
       {state.kind === "empty" ? <BthwaniSurface tone="inset" style={styles.emptyState}><Text style={styles.lineTitle}>{order ? "تم إنشاء الطلب والسلة الآن فارغة." : "السلة فارغة."}</Text><Text style={styles.muted}>{order ? "يمكنك متابعة التسوق من كتالوج المتجر." : "اختر منتجات من كتالوج المتجر ثم عد إلى السلة لإتمام الطلب."}</Text><Link href={`/store/${encodeURIComponent(storeId)}` as Href} asChild><BthwaniButton label="العودة إلى كتالوج المتجر" variant="secondary" /></Link></BthwaniSurface> : null}
       {state.kind === "ready" ? <>
         <View style={styles.lineList}>{state.cart.lines.map((line) => {
@@ -157,24 +157,21 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[3], marginTop: spacing[4], padding: spacing[4] },
-    title: { ...typography.titleSm, color: theme.color, textAlign: startTextAlign },
-    muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 19, textAlign: startTextAlign },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[4], padding: spacing[4] },
+    title: { ...typography.titleSm, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 19 },
     state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
     emptyState: { alignItems: "stretch", backgroundColor: theme.surfaceRaised, borderRadius: radius.sm, gap: spacing[2], padding: spacing[3] },
     lineList: { gap: spacing[2] },
     line: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
-    lineTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    modifiers: { ...typography.bodySm, color: theme.interactiveText, textAlign: startTextAlign },
+    lineTitle: { ...typography.bodyStrong, color: theme.color },
+    modifiers: { ...typography.bodySm, color: theme.interactiveText },
     lineActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2], marginTop: spacing[2] },
-    total: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    total: { ...typography.bodyStrong, color: theme.color },
     orderBox: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
-    success: { ...typography.bodyStrong, color: theme.success, textAlign: startTextAlign },
-    warning: { ...typography.bodyStrong, color: theme.warning, textAlign: startTextAlign },
-    error: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
+    success: { ...typography.bodyStrong, color: theme.success },
+    warning: { ...typography.bodyStrong, color: theme.warning },
+    error: { ...typography.bodySm, color: theme.danger },
   });
 }

@@ -1,4 +1,4 @@
-import { borders, direction, radius, resolveTextAlign, resolveTextInputAlign, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type BaseUnit, baseUnitLabel, type CatalogCategory, type CatalogProduct, type CatalogProductProposal, type CatalogStoreOffer, type CatalogVariant, type CommerceVertical, catalogProductProposalStateLabel, createDshMobileClient, formatMoney, type MeasurementKind, measurementKindLabel as sharedMeasurementKindLabel, pricingBasisLabel as sharedPricingBasisLabel, quantityPolicyLabel as sharedQuantityPolicyLabel, storeOfferPublicationStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
@@ -170,35 +170,31 @@ const theme = useAppearanceTheme();
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
-
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[4], padding: spacing[3], width: "100%", direction: activeDirection },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[4], padding: spacing[3], width: "100%" },
     state: { alignItems: "center", gap: spacing[2] },
-    title: { ...typography.titleSm, color: theme.color, textAlign: startTextAlign },
-    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
-    selected: { ...typography.bodySm, color: theme.color, textAlign: startTextAlign },
-    searchRow: { direction: activeDirection, flexDirection: "row", gap: spacing[2] },
+    title: { ...typography.titleSm, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    selected: { ...typography.bodySm, color: theme.color },
+    searchRow: { flexDirection: "row", gap: spacing[2] },
     clearSearch: { alignItems: "center", justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[1] },
     form: { gap: spacing[2] },
-    fieldLabel: { ...typography.label, color: theme.color, textAlign: startTextAlign },
+    fieldLabel: { ...typography.label, color: theme.color },
     choiceList: { gap: spacing[1] },
-    choiceRow: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[1] },
-    warning: { ...typography.bodySm, color: theme.warning, textAlign: startTextAlign },
+    choiceRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[1] },
+    warning: { ...typography.bodySm, color: theme.warning },
     managementBlock: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     offerPicker: { gap: spacing[1] },
-    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, flex: 1, minHeight: sizing.controlMd, paddingHorizontal: spacing[2], textAlign: startInputTextAlign, writingDirection: activeDirection },
-    numericInput: { textAlign: resolveTextInputAlign("start", "ltr"), writingDirection: "ltr" },
+    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, flex: 1, minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
+    numericInput: { textAlign: "left", writingDirection: "ltr" },
     productList: { gap: spacing[2] },
     product: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
     offerList: { gap: spacing[3] },
-    item: { alignItems: "center", borderColor: theme.borderColor, borderTopWidth: borders.hairline, direction: activeDirection, flexDirection: "row", gap: spacing[3], paddingTop: spacing[3] },
+    item: { alignItems: "center", borderColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[3], paddingTop: spacing[3] },
     itemText: { flex: 1, gap: spacing[1] },
-    itemTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
+    itemTitle: { ...typography.bodyStrong, color: theme.color },
     disabledInput: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground, color: theme.disabledText },
-    error: { ...typography.label, color: theme.danger, textAlign: startTextAlign },
+    error: { ...typography.label, color: theme.danger },
   });
 }
 

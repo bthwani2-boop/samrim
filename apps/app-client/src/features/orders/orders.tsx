@@ -1,4 +1,4 @@
-import { borders, direction, elevation, opacity, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { createDshMobileClient, formatMoney, formatOrderDate, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
@@ -47,7 +47,7 @@ export default function ClientOrders() {
     return <View style={styles.state} accessibilityLabel="جارٍ تجهيز الطلبات"><BthwaniSkeleton width="42%" height={28} /><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View>;
   }
   if (state.kind === "error") {
-    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>تعذر قراءة الطلبات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة الطلبات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>;
   }
 
   return (
@@ -78,31 +78,29 @@ export default function ClientOrders() {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, direction: activeDirection, flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
-    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
-    title: { ...typography.hero, color: theme.color, textAlign: startTextAlign },
-    muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
-    headingRow: { alignItems: "flex-start", direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
-    headingCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
-    error: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
-    state: { alignItems: "center", direction: activeDirection, gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
+    container: { backgroundColor: theme.background, flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.hero, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    headingRow: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    headingCopy: { flex: 1, gap: spacing[1] },
+    error: { ...typography.bodySm, color: theme.danger },
+    state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
     emptyState: { alignItems: "center", borderRadius: radius.xl, gap: spacing[3], padding: spacing[5] },
     emptyIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
     cardTitle: { ...typography.titleSm, color: theme.color, textAlign: "center" },
-    list: { direction: activeDirection, gap: spacing[3] },
-    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[3], padding: spacing[4], ...elevation.raised },
-    orderTop: { alignItems: "flex-start", direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
-    orderTitleBlock: { direction: activeDirection, flex: 1, gap: spacing[1] },
-    orderTitle: { ...typography.titleSm, color: theme.color, textAlign: startTextAlign },
-    orderAddress: { ...typography.caption, color: theme.colorMuted, textAlign: startTextAlign },
+    list: { gap: spacing[3] },
+    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4], ...elevation.raised },
+    orderTop: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    orderTitleBlock: { flex: 1, gap: spacing[1] },
+    orderTitle: { ...typography.titleSm, color: theme.color },
+    orderAddress: { ...typography.caption, color: theme.colorMuted },
     statusPill: { backgroundColor: theme.actionSoft, borderRadius: radius.round, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
     statusText: { ...typography.caption, color: theme.interactiveText, textAlign: "center" },
-    orderBottom: { alignItems: "center", borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, direction: activeDirection, flexDirection: "row", gap: spacing[2], paddingTop: spacing[3] },
-    orderMeta: { ...typography.bodySm, color: theme.colorMuted, flex: 1, textAlign: startTextAlign },
-    orderTotal: { ...typography.bodyStrong, color: theme.color, textAlign: "right" },
+    orderBottom: { alignItems: "center", borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[2], paddingTop: spacing[3] },
+    orderMeta: { ...typography.bodySm, color: theme.colorMuted, flex: 1 },
+    orderTotal: { ...typography.bodyStrong, color: theme.color },
     pressed: { opacity: opacity.subtle },
   });
 }

@@ -78,6 +78,7 @@ for (const service of services) {
 }
 
 assert(/^name:\s*samrim-local\s*$/m.test(compose), "Compose project must be samrim-local");
+assert(compose.includes("- ../../..:/workspace"), "Compose JavaScript services must bind the repository root to /workspace");
 assert(!compose.includes("profiles:"), "parallel Compose profiles are forbidden");
 assert(!/js-deps:\s*[\s\S]*?pull_policy:\s*build/.test(compose), "js-deps must not force image builds during routine runtime startup");
 assert(!/\bgo\s+run\b/i.test(runtime), "runtime.ps1 must not create host-native Go runtime paths");
@@ -102,6 +103,10 @@ assert(
   runtime.includes("Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans',$Target)"),
   "target startup must use Compose dependency resolution without rebuilding the whole stack",
 );
+assert(runtime.includes("$WorkspaceServices = @('control','metro-client','metro-partner','metro-captain','metro-field')"), "workspace-bound JavaScript services must have one canonical runtime set");
+assert(runtime.includes("Assert-WorkspaceMounts"), "runtime readback must verify the repository bind mount for every workspace-bound service");
+assert(runtime.includes("target=/workspace"), "runtime workspace readback must identify the canonical /workspace target");
+assert(runtime.includes("DOCKER_WORKSPACE_MOUNTS=PASS source=repository-root target=/workspace"), "runtime status must expose workspace bind readback");
 assert(
   opener.includes("-Action Surface -Surface $surface"),
   "mobile opener must delegate target runtime ownership to runtime.ps1",

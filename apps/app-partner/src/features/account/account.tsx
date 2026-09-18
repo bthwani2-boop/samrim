@@ -1,4 +1,4 @@
-import { borders, direction, radius, resolveTextAlign, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { AppearancePicker, BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -19,14 +19,13 @@ export default function PartnerAccount() {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const startTextAlign = resolveTextAlign("start", direction.defaultDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, direction: direction.defaultDirection, flexGrow: 1, gap: spacing[3], padding: spacing[5] },
-    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
-    title: { ...typography.hero, color: theme.color, textAlign: startTextAlign },
-    description: { ...typography.body, color: theme.colorMuted, textAlign: startTextAlign },
+    container: { backgroundColor: theme.background, flexGrow: 1, gap: spacing[3], padding: spacing[5] },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.hero, color: theme.color },
+    description: { ...typography.body, color: theme.colorMuted },
     card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
-    cardTitle: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    notice: { ...typography.bodySm, color: theme.warning, textAlign: startTextAlign },
+    cardTitle: { ...typography.bodyStrong, color: theme.color },
+    notice: { ...typography.bodySm, color: theme.warning },
   });
 }

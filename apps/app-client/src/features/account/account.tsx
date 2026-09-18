@@ -1,4 +1,4 @@
-import { direction, elevation, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { AppearancePicker, BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Href, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
@@ -52,21 +52,19 @@ export default function ClientAccount() {
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, direction: activeDirection, flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
-    eyebrow: { ...typography.label, color: theme.interactiveText, textAlign: startTextAlign },
-    title: { ...typography.hero, color: theme.color, textAlign: startTextAlign },
-    description: { ...typography.body, color: theme.colorMuted, textAlign: startTextAlign },
+    container: { backgroundColor: theme.background, flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.hero, color: theme.color },
+    description: { ...typography.body, color: theme.colorMuted },
     guestAccess: { alignItems: "center", borderRadius: radius.lg, gap: spacing[3], padding: spacing[4] },
     guestText: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
     appearancePanel: { borderRadius: radius.xl, gap: spacing[3], padding: spacing[4], ...elevation.raised },
-    appearanceHeading: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[3] },
+    appearanceHeading: { alignItems: "center", flexDirection: "row", gap: spacing[3] },
     appearanceIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarMd, justifyContent: "center", width: sizing.avatarMd },
-    appearanceCopy: { direction: activeDirection, flex: 1, gap: spacing[1] },
-    appearanceTitle: { ...typography.titleSm, color: theme.color, textAlign: startTextAlign },
-    appearanceHelper: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
-    notice: { ...typography.bodySm, color: theme.warning, textAlign: startTextAlign },
+    appearanceCopy: { flex: 1, gap: spacing[1] },
+    appearanceTitle: { ...typography.titleSm, color: theme.color },
+    appearanceHelper: { ...typography.bodySm, color: theme.colorMuted },
+    notice: { ...typography.bodySm, color: theme.warning },
   });
 }

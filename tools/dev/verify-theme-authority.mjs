@@ -85,30 +85,11 @@ if (!themeIndexTs.includes("export function webFoundationToCssVariables")) {
 // 2. Parity check on light and dark keys
 const { lightThemeColors, darkThemeColors } = await import("../../packages/design-system/src/tokens/colors.ts");
 const { generateThemeCss, isThemePreference, resolveThemeName, themePreferences, webFoundationToCssVariables } = await import("../../packages/design-system/src/theme/index.ts");
-const { resolveTextAlign, resolveTextInputAlign, toAsciiDigits } = await import("../../packages/design-system/src/tokens/direction.ts");
+const { toAsciiDigits } = await import("../../packages/design-system/src/tokens/formatting.ts");
 
 if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1234567890") {
   failures.push("Design System ASCII digit normalization is incomplete");
 }
-const alignmentCases = [
-  { value: "start", activeDirection: "rtl", textExpected: "left", inputExpected: "right" },
-  { value: "end", activeDirection: "rtl", textExpected: "right", inputExpected: "left" },
-  { value: "start", activeDirection: "ltr", textExpected: "left", inputExpected: "left" },
-  { value: "end", activeDirection: "ltr", textExpected: "right", inputExpected: "right" },
-  { value: "center", activeDirection: "rtl", textExpected: "center", inputExpected: "center" },
-  { value: "center", activeDirection: "ltr", textExpected: "center", inputExpected: "center" }
-];
-
-if (
-  alignmentCases.some(
-    ({ value, activeDirection, textExpected, inputExpected }) =>
-      resolveTextAlign(value, activeDirection) !== textExpected ||
-      resolveTextInputAlign(value, activeDirection) !== inputExpected
-  )
-) {
-  failures.push("Design System logical text and input alignment contracts are inconsistent");
-}
-
 const lightKeys = Object.keys(lightThemeColors).sort();
 const darkKeys = Object.keys(darkThemeColors).sort();
 

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Appearance, Pressable, StyleSheet, Text, View } from "react-native";
 import { isThemePreference, resolveTheme, resolveThemeName, type ThemeName, type ThemePreference } from "../theme/index";
-import { borders, direction, opacity, radius, resolveTextAlign, sizing, spacing, type ThemeColors, typography } from "../tokens/index";
+import { borders, opacity, radius, sizing, spacing, type ThemeColors, typography } from "../tokens/index";
 
 type AppearanceStorage = {
   getItem: (key: string) => Promise<string | null>;
@@ -183,18 +183,16 @@ export function AppearancePicker({ title = "المظهر", helper = "اختر م
 }
 
 function createAppearanceStyles(theme: ThemeColors) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, direction: activeDirection, gap: spacing[2], padding: spacing[3] },
-    title: { ...typography.bodyStrong, color: theme.color, textAlign: startTextAlign },
-    helper: { ...typography.bodySm, color: theme.colorMuted, textAlign: startTextAlign },
-    options: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    title: { ...typography.bodyStrong, color: theme.color },
+    helper: { ...typography.bodySm, color: theme.colorMuted },
+    options: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
     option: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, justifyContent: "center", minHeight: sizing.controlMd, paddingHorizontal: spacing[3] },
     selectedOption: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
     disabledOption: { opacity: opacity.disabled },
     optionText: { ...typography.bodySm, color: theme.color, textAlign: "center" },
     selectedOptionText: { color: theme.interactiveText },
-    error: { ...typography.bodySm, color: theme.danger, textAlign: startTextAlign },
+    error: { ...typography.bodySm, color: theme.danger },
   });
 }

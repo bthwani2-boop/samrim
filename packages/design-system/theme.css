@@ -62,9 +62,6 @@
   --z-modal: 400;
   --z-toast: 500;
   --duration-reduced: 0px;
-  --direction-default: rtl;
-  --direction-logical-properties: true;
-  --direction-mirror-icons: true;
   --duration-instant: 0px;
   --duration-quick: 120px;
   --duration-standard: 180px;

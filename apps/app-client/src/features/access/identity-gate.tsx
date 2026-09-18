@@ -1,4 +1,4 @@
-import { borders, direction as designDirection, elevation, radius, resolveTextAlign, resolveTextInputAlign, sizing, spacing, type ThemeColors, toAsciiDigits, typography } from "@bthwani/design-system";
+import { borders, elevation, radius, sizing, spacing, type ThemeColors, toAsciiDigits, typography } from "@bthwani/design-system";
 import { BthwaniButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type IdentitySessionState, identityErrorMessage, identitySessionSignOutMessage, isIdentityClientError, limitPasswordInput, validatePasswordInputShape } from "@bthwani/identity";
 import { resolveInternalReturnPath } from "@bthwani/identity/presentation";
@@ -51,7 +51,7 @@ export default function IdentityGate() {
   const { focus, returnTo } = useLocalSearchParams<{ focus?: string | string[]; returnTo?: string | string[] }>();
   const theme = useAppearanceTheme();
   const { copy } = identityPresentation;
-  const styles = useMemo(() => createStyles(theme, designDirection.defaultDirection), [theme]);
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [mode, setMode] = useState<AuthMode>("login");
@@ -424,27 +424,18 @@ export default function IdentityGate() {
   );
 }
 
-function createStyles(theme: ThemeColors, activeDirection: "rtl" | "ltr") {
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
-  const endCrossAxisAlignment = activeDirection === "rtl" ? "flex-end" : "flex-start";
-  const logicalText = {
-    textAlign: startTextAlign,
-    writingDirection: activeDirection,
-  };
-  const fullWidthLogicalText = { ...logicalText, width: "100%" as const };
-  const fullWidthLogicalInput = { ...fullWidthLogicalText, textAlign: startInputTextAlign };
-
+function createStyles(theme: ThemeColors) {
+  const fullWidthText = { width: "100%" as const };
   return StyleSheet.create({
-    container: { flex: 1, backgroundColor: theme.background, direction: activeDirection },
-    publicDiscovery: { direction: activeDirection, flexShrink: 0, minHeight: 260, width: "100%" },
-    publicDiscoveryContent: { direction: activeDirection, paddingVertical: spacing[4], width: "100%" },
-    scrollContent: { direction: activeDirection, flexGrow: 1, justifyContent: "center", paddingHorizontal: spacing[5], paddingVertical: spacing[8] },
-    authShell: { width: "100%", maxWidth: 480, alignSelf: "center", direction: activeDirection },
-    brandBlock: { alignItems: "center", direction: activeDirection, marginBottom: spacing[6] },
-    brand: { ...typography.display, color: theme.structure, textAlign: "center", writingDirection: activeDirection },
+    container: { flex: 1, backgroundColor: theme.background },
+    publicDiscovery: { flexShrink: 0, minHeight: 260, width: "100%" },
+    publicDiscoveryContent: { paddingVertical: spacing[4], width: "100%" },
+    scrollContent: { flexGrow: 1, justifyContent: "center", paddingHorizontal: spacing[5], paddingVertical: spacing[8] },
+    authShell: { width: "100%", maxWidth: 480, alignSelf: "center" },
+    brandBlock: { alignItems: "center", marginBottom: spacing[6] },
+    brand: { ...typography.display, color: theme.structure, textAlign: "center" },
     brandAccent: { backgroundColor: theme.brandAction, borderRadius: radius.xs, height: borders.strong, marginTop: spacing[2], width: sizing.controlMd },
-    title: { ...typography.hero, color: theme.structure, textAlign: "center", writingDirection: activeDirection },
+    title: { ...typography.hero, color: theme.structure, textAlign: "center" },
     authCard: {
       alignItems: "stretch",
       ...elevation.overlay,
@@ -452,25 +443,24 @@ function createStyles(theme: ThemeColors, activeDirection: "rtl" | "ltr") {
       borderColor: theme.borderColor,
       borderRadius: radius.xl,
       borderWidth: borders.hairline,
-      direction: activeDirection,
       padding: spacing[5],
       width: "100%",
     },
-    formTitle: { ...fullWidthLogicalText, ...typography.titleMd, color: theme.structure, marginBottom: spacing[4] },
+    formTitle: { ...fullWidthText, ...typography.titleMd, color: theme.structure, marginBottom: spacing[4] },
     fieldBlock: { alignItems: "stretch", marginBottom: spacing[3], width: "100%" },
-    fieldLabel: { ...fullWidthLogicalText, ...typography.bodyStrong, color: theme.structure, marginBottom: spacing[2] },
-    input: { ...fullWidthLogicalInput, backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.structure, ...typography.bodyLg, minHeight: sizing.controlLg, paddingHorizontal: spacing[3], paddingVertical: spacing[3] },
-    numericInput: { alignSelf: "stretch", textAlign: resolveTextInputAlign("start", "ltr"), writingDirection: "ltr" },
+    fieldLabel: { ...fullWidthText, ...typography.bodyStrong, color: theme.structure, marginBottom: spacing[2] },
+    input: { ...fullWidthText, backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.structure, ...typography.bodyLg, minHeight: sizing.controlLg, paddingHorizontal: spacing[3], paddingVertical: spacing[3] },
+    numericInput: { alignSelf: "stretch", textAlign: "left", writingDirection: "ltr" },
     inputFocused: { borderColor: theme.focusRing, borderWidth: borders.strong },
-    revealButton: { alignSelf: endCrossAxisAlignment, justifyContent: "center", minHeight: sizing.controlSm, paddingHorizontal: spacing[1] },
-    revealText: { ...typography.label, color: theme.interactiveText, textDecorationLine: "underline", writingDirection: activeDirection },
-    codeAction: { alignSelf: endCrossAxisAlignment, minHeight: sizing.controlSm, paddingHorizontal: spacing[2] },
-    modeLinks: { alignItems: "center", direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: spacing[4], justifyContent: "center", marginTop: spacing[4] },
-    modeLinkText: { ...typography.bodyStrong, color: theme.structure, textDecorationLine: "underline", writingDirection: activeDirection },
+    revealButton: { alignSelf: "flex-end", justifyContent: "center", minHeight: sizing.controlSm, paddingHorizontal: spacing[1] },
+    revealText: { ...typography.label, color: theme.interactiveText, textDecorationLine: "underline" },
+    codeAction: { alignSelf: "flex-end", minHeight: sizing.controlSm, paddingHorizontal: spacing[2] },
+    modeLinks: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing[4], justifyContent: "center", marginTop: spacing[4] },
+    modeLinkText: { ...typography.bodyStrong, color: theme.structure, textDecorationLine: "underline" },
     recoveryAction: { marginTop: spacing[3] },
-    status: { ...typography.bodyLg, color: theme.structure, textAlign: "center", writingDirection: activeDirection },
-    muted: { ...typography.body, color: theme.colorMuted, textAlign: "center", writingDirection: activeDirection },
-    notice: { ...fullWidthLogicalText, ...typography.bodySm, backgroundColor: theme.actionSoft, borderRadius: radius.sm, color: theme.structure, marginTop: spacing[3], padding: spacing[2] },
-    error: { ...fullWidthLogicalText, ...typography.bodySm, backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, marginTop: spacing[3], padding: spacing[2] },
+    status: { ...typography.bodyLg, color: theme.structure, textAlign: "center" },
+    muted: { ...typography.body, color: theme.colorMuted, textAlign: "center" },
+    notice: { ...fullWidthText, ...typography.bodySm, backgroundColor: theme.actionSoft, borderRadius: radius.sm, color: theme.structure, marginTop: spacing[3], padding: spacing[2] },
+    error: { ...fullWidthText, ...typography.bodySm, backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, marginTop: spacing[3], padding: spacing[2] },
   });
 }
