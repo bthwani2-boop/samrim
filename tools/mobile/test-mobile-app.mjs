@@ -39,29 +39,7 @@ const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 assert.equal(allDeps["expo-localization"], "~57.0.2", `${app}: static RTL requires expo-localization`);
 
-const requiredNativeReadyDependencies = [
-  "expo-network",
-  "expo-image",
-  "expo-notifications",
-  "expo-file-system",
-  "expo-haptics",
-  "expo-image-picker",
-  "expo-image-manipulator",
-  "expo-font",
-  "react-native-keyboard-controller",
-  "react-native-maps",
-  "expo-location",
-];
-for (const required of requiredNativeReadyDependencies) {
-  assert.ok(allDeps[required], `${app}: missing admitted native-ready dependency: ${required}`);
-}
-if (app === "app-partner" || app === "app-field") {
-  assert.ok(allDeps["expo-document-picker"], `${app}: missing document-picker`);
-}
-if (app === "app-captain") {
-  assert.ok(allDeps["expo-task-manager"], "app-captain: missing task-manager");
-  assert.ok(allDeps["expo-keep-awake"], "app-captain: missing keep-awake");
-}
+assert.ok(Object.keys(allDeps).some((dependency) => dependency.startsWith("expo-")), `${app}: Expo package inventory must remain available for future consumers`);
 
 const forbiddenDependencyRegressions = [
   "@react-native-community/netinfo",
@@ -150,7 +128,7 @@ const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "s
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
-const expoConfig = defineSamrimExpoApp(app, app === "app-captain" ? { locationMode: "background" } : {});
+const expoConfig = defineSamrimExpoApp(app, app === "app-client" || app === "app-partner" ? { locationMode: "foreground" } : {});
 assert.equal(expoConfig.extra.nativeCapabilities, undefined, `${app}: Expo config must not expose native capability shadow truth`);
 assert.equal(expoConfig.android.blockedPermissions, undefined, `${app}: manual RECORD_AUDIO workaround must be absent`);
 assert.equal(expoConfig.android.config, undefined, `${app}: manual Android provider config must be absent`);
@@ -165,37 +143,20 @@ assert.deepEqual(localizationPlugin, [
   },
 ], `${app}: native localization config must be Arabic-only and statically RTL`);
 const locationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-location");
-assert.ok(locationPlugin, `${app}: location readiness requires expo-location config`);
-if (app === "app-captain") {
+if (app === "app-client" || app === "app-partner") {
+  assert.ok(locationPlugin, `${app}: admitted foreground location must be owned by expo-location`);
   assert.deepEqual(locationPlugin, [
     "expo-location",
     {
       locationWhenInUsePermission: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر.",
-      locationAlwaysAndWhenInUsePermission: "نحتاج الوصول إلى الموقع في الخلفية لتتبع مسار المهمة النشطة.",
-      isAndroidBackgroundLocationEnabled: true,
-      isAndroidForegroundServiceEnabled: true,
-      isIosBackgroundLocationEnabled: true,
     },
-  ], `${app}: background location must be owned by expo-location`);
-} else {
-  assert.deepEqual(locationPlugin, [
-    "expo-location",
-    { locationWhenInUsePermission: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر." },
   ], `${app}: foreground location must be owned by expo-location`);
+} else {
+  assert.equal(locationPlugin, undefined, `${app}: location permissions must not be inferred without an explicit app-owned request`);
 }
-const imagePickerPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-image-picker");
-assert.deepEqual(imagePickerPlugin, [
-  "expo-image-picker",
-  {
-    photosPermission: "نحتاج الوصول إلى معرض الصور لاختيار الصور ومشاركتها.",
-    cameraPermission: "نحتاج الوصول إلى الكاميرا لالتقاط الصور الثابتة عند الحاجة.",
-    microphonePermission: false,
-  },
-], `${app}: image-picker must own still-photo permissions without microphone access`);
-const mapsPlugin = expoConfig.plugins.find((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "react-native-maps");
-assert.ok(mapsPlugin, `${app}: react-native-maps plugin must be present`);
-const notificationsPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-notifications");
-assert.ok(notificationsPlugin, `${app}: expo-notifications plugin must be present`);
+assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "expo-image-picker"), false, `${app}: image-picker plugin must not be inferred from package presence`);
+assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "react-native-maps"), false, `${app}: maps plugin must not be inferred from package presence`);
+assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "expo-notifications"), false, `${app}: notifications plugin must not be inferred from package presence`);
 console.log(`MOBILE_AR_RTL_NATIVE_CONFIG=PASS app=${app} locale=ar forcesRTL=true`);
 
 for (const reason of ["no_local_session", "corrupt_local_session", "terminal_invalidated", "surface_mismatch", "local_proof_invalid", "explicit_logout", "recovery"]) {

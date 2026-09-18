@@ -13,11 +13,11 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $AppRoot = Join-Path $RepoRoot ("apps\" + $App)
 $SecretsRoot = if ($env:BTHWANI_SECRETS_ROOT) { $env:BTHWANI_SECRETS_ROOT } else { "C:\BTHWANI-Secrets\samrim" }
-$EasCliVersion = "24.7.0"
+$EasConfig = Get-Content -LiteralPath (Join-Path $AppRoot "eas.json") -Raw | ConvertFrom-Json
+$EasCliVersion = [string]$EasConfig.cli.version
+if ([string]::IsNullOrWhiteSpace($EasCliVersion)) { throw "Missing CLI version in app-owned eas.json for $App." }
 $Config = Get-Content -LiteralPath (Join-Path $AppRoot "mobile.config.json") -Raw | ConvertFrom-Json
-$PackageName = [string]$Config.androidPackage
 $ProjectId = [string]$Config.projectId
-$FirebasePath = Join-Path $SecretsRoot ("firebase\" + $App + "\google-services.json")
 $CredentialVaultPath = Join-Path $SecretsRoot ("expo\" + $App + "\credentials.json")
 $KeystoreVaultPath = Join-Path $SecretsRoot ("eas\android\" + $App + "\development.jks")
 $MaterializedCredentialPath = Join-Path $AppRoot "credentials.json"
@@ -65,25 +65,32 @@ function Write-JsonNoSecrets([string] $Path, $Value) {
     [IO.File]::WriteAllText($Path, $Json + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
 }
 
+function Get-BuildSourceSha($Build) {
+    if ($null -eq $Build) { return "UNKNOWN" }
+    foreach ($Property in @("gitCommitHash", "gitCommit", "sourceCommit", "commitHash")) {
+        $Value = [string]$Build.$Property
+        if (-not [string]::IsNullOrWhiteSpace($Value)) { return $Value }
+    }
+    return "UNKNOWN"
+}
+
 $StatusBefore = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
 if ($StatusBefore.Count -gt 0) { Fail "Candidate must be clean before remote build." }
-$Branch = (& git -C $RepoRoot branch --show-current).Trim()
-if ($Branch -ne "r") { Fail "Remote build is authorized only from branch r." }
+$Branch = (& git -C $RepoRoot symbolic-ref --quiet --short HEAD 2> $null).Trim()
+if ([string]::IsNullOrWhiteSpace($Branch)) { Fail "Remote build requires a non-detached branch." }
+$UpstreamRef = (& git -C $RepoRoot rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2> $null).Trim()
+if ([string]::IsNullOrWhiteSpace($UpstreamRef) -or $UpstreamRef -notmatch '^[^/]+/.+$') { Fail "Remote build requires an upstream branch for $Branch." }
+$RemoteName = ($UpstreamRef -split "/", 2)[0]
+& git -C $RepoRoot fetch $RemoteName --prune *> $null
+if ($LASTEXITCODE -ne 0) { Fail "Unable to fetch live upstream $UpstreamRef." }
 $LocalSha = (& git -C $RepoRoot rev-parse HEAD).Trim()
-$RemoteLine = @(& git -C $RepoRoot ls-remote --heads origin refs/heads/r)
-if ($LASTEXITCODE -ne 0 -or $RemoteLine.Count -ne 1) { Fail "Unable to read live origin/r." }
-$RemoteSha = ($RemoteLine[0] -split "\s+")[0].Trim()
-if ($LocalSha -ne $RemoteSha) { Fail "Local candidate is not the live remote r SHA." }
+$RemoteSha = (& git -C $RepoRoot rev-parse $UpstreamRef).Trim()
+if ($LocalSha -ne $RemoteSha) { Fail "Local candidate is not the live upstream SHA for $UpstreamRef." }
 
-foreach ($Required in @($FirebasePath, $CredentialVaultPath, $KeystoreVaultPath)) {
+foreach ($Required in @($CredentialVaultPath, $KeystoreVaultPath)) {
     if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) { Fail "Missing target build input: $Required" }
 }
 
-$Firebase = Get-Content -LiteralPath $FirebasePath -Raw | ConvertFrom-Json
-$FirebasePackages = @($Firebase.client | ForEach-Object { $_.client_info.android_client_info.package_name })
-if ($PackageName -notin $FirebasePackages) { Fail "Firebase registration does not match $PackageName." }
-
-$env:GOOGLE_SERVICES_JSON = $FirebasePath
 $Credential = Get-Content -LiteralPath $CredentialVaultPath -Raw | ConvertFrom-Json
 $Credential.android.keystore.keystorePath = "development.jks"
 
@@ -106,28 +113,6 @@ try {
     if ($RemoteProjectId -ne $ProjectId) { Fail "EAS project binding mismatch for $App." }
     Write-Host "EAS_PROJECT_BINDING=PASS app=$App projectId=$ProjectId"
 
-    $EnvText = Invoke-EasText @("env:list", "development", "--format", "long", "--scope", "project")
-    $GoogleEnvBlocks = @(
-        $EnvText -split '(?m)(?=^ID\s{2,})' |
-            Where-Object {
-                $_ -match '(?m)^Name\s{2,}GOOGLE_SERVICES_JSON\s*$'
-            }
-    )
-    if ($GoogleEnvBlocks.Count -ne 1) {
-        Fail "EAS development GOOGLE_SERVICES_JSON variable count was $($GoogleEnvBlocks.Count) for $App."
-    }
-    $GoogleEnvType = [regex]::Match(
-        $GoogleEnvBlocks[0],
-        '(?m)^type\s{2,}(\S+)\s*$'
-    )
-    if (-not $GoogleEnvType.Success -or $GoogleEnvType.Groups[1].Value.ToLowerInvariant() -ne "file") {
-        Fail "EAS GOOGLE_SERVICES_JSON is not a File environment variable for $App."
-    }
-    Write-Host "GOOGLE_SERVICES_REMOTE_BUILD=PASS app=$App variable=GOOGLE_SERVICES_JSON type=File"
-
-    Write-Host "FCM_V1_AUTOMATED_READBACK=NOT_SUPPORTED_BY_EAS_CREDENTIALS_COMMAND"
-    Write-Host "FCM_V1_BUILD_GATE=NO"
-
     $Fingerprint = Invoke-EasJson @("fingerprint:generate", "--platform", "android", "--build-profile", "development", "--json", "--non-interactive")
     $Hash = [string]$Fingerprint.hash
     if ([string]::IsNullOrWhiteSpace($Hash)) { Fail "Unable to resolve Android fingerprint for $App." }
@@ -138,10 +123,12 @@ try {
     $Pending = $Builds | Where-Object { ([string]$_.status).ToUpperInvariant() -in @("IN_PROGRESS", "IN_QUEUE", "NEW") } | Sort-Object { [DateTimeOffset]::Parse([string]$_.createdAt) } -Descending | Select-Object -First 1
 
     if ($null -ne $Finished) {
-        Write-Host "BUILD_DECISION=REUSED app=$App buildId=$($Finished.id) fingerprint=$Hash sourceSha=$LocalSha"
+        $ActualSourceSha = Get-BuildSourceSha $Finished
+        Write-Host "BUILD_DECISION=REUSED app=$App currentCandidateSha=$LocalSha nativeFingerprint=$Hash reusedBuildId=$($Finished.id) reusedBuildActualSourceSha=$ActualSourceSha compatibilityReason=fingerprint"
     }
     elseif ($null -ne $Pending) {
-        Write-Host "BUILD_DECISION=REUSED_PENDING app=$App buildId=$($Pending.id) fingerprint=$Hash sourceSha=$LocalSha"
+        $ActualSourceSha = Get-BuildSourceSha $Pending
+        Write-Host "BUILD_DECISION=REUSED_PENDING app=$App currentCandidateSha=$LocalSha nativeFingerprint=$Hash reusedBuildId=$($Pending.id) reusedBuildActualSourceSha=$ActualSourceSha compatibilityReason=fingerprint"
     }
     else {
         $BuildArgs = @("build", "--platform", "android", "--profile", "development", "--non-interactive", "--json")
@@ -150,7 +137,7 @@ try {
         $BuildId = [string]$Submitted.id
         if ([string]::IsNullOrWhiteSpace($BuildId)) { $BuildId = [string]$Submitted.build.id }
         if ([string]::IsNullOrWhiteSpace($BuildId)) { Fail "EAS submission returned no build ID." }
-        Write-Host "BUILD_DECISION=SUBMITTED app=$App buildId=$BuildId fingerprint=$Hash sourceSha=$LocalSha"
+        Write-Host "BUILD_DECISION=SUBMITTED app=$App currentCandidateSha=$LocalSha nativeFingerprint=$Hash submittedBuildId=$BuildId compatibilityReason=new-build"
     }
 }
 finally {
@@ -165,4 +152,4 @@ finally {
     }
 }
 
-Write-Host "MOBILE_BUILD=PASS app=$App sourceSha=$LocalSha"
+Write-Host "MOBILE_BUILD=PASS app=$App currentCandidateSha=$LocalSha"

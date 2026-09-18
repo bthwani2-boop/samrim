@@ -15,8 +15,8 @@ Before claiming an existing Development Build remains compatible after a cutover
 
 ## Local development preparation
 
-`pnpm mobile:prepare -- --app app-client` validates only the selected app's external Firebase and local signing inputs. It does not require EAS authentication, remote build inventory, or a connected phone. Firebase is passed through the canonical `GOOGLE_SERVICES_JSON` environment binding; no repository-local mapping file is created.
+`pnpm mobile:prepare -- --app app-client` validates only the selected app's external local signing inputs. It does not require EAS authentication, remote build inventory, a provider file, or a connected phone.
 
 Use `pnpm mobile:prepare -- --app app-client -Mode Eas` for authenticated target-scoped EAS fingerprint/build compatibility discovery. Use `-Mode InstallMatchingBuilds` only when downloading and installing a matching existing development build is the explicit device operation.
 
-Use `pnpm mobile:build -- --app app-captain` as the single remote Android development-build owner. It verifies the exact pushed candidate, EAS project binding, development File environment variable, fingerprint, and matching finished/pending builds before any submission. The installed EAS CLI exposes Android credentials only through an interactive command, so automated FCM V1 credential readback is explicitly reported as unsupported and remains a push-delivery concern rather than a build gate. Local signing material is materialized temporarily and removed in a finally block.
+Use `pnpm mobile:build -- --app app-captain` as the single remote Android development-build owner. It verifies the exact upstream candidate, app-owned EAS CLI/project binding, native fingerprint, and matching finished/pending builds before any submission. Reused-build output reports the current candidate separately from the reused build's actual source SHA. Local signing material is materialized temporarily and removed in a finally block.

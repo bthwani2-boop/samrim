@@ -2,6 +2,6 @@ import { defineSamrimExpoApp } from "../../tools/mobile/define-samrim-expo-app.c
 import { withCanonicalAndroidDevelopmentClient } from "../../tools/mobile/with-android-development-client.cjs";
 
 export default withCanonicalAndroidDevelopmentClient(
-  defineSamrimExpoApp("app-captain", { locationMode: "background" }),
+  defineSamrimExpoApp("app-captain"),
   "app-captain",
 );

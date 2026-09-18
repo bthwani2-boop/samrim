@@ -13,8 +13,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$EasCliVersion = "24.7.0"
 $AppRoot = Join-Path $RepoRoot ("apps\" + $App)
+$EasConfig = Get-Content -LiteralPath (Join-Path $AppRoot "eas.json") -Raw | ConvertFrom-Json
+$EasCliVersion = [string]$EasConfig.cli.version
+if ([string]::IsNullOrWhiteSpace($EasCliVersion)) { throw "Missing CLI version in app-owned eas.json for $App." }
 $ConfigPath = Join-Path $AppRoot "mobile.config.json"
 $StatusBefore = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
 
@@ -51,21 +53,10 @@ $Config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $PackageName = [string]$Config.androidPackage
 if ([string]::IsNullOrWhiteSpace($PackageName)) { Fail "Missing Android identity for $App" }
 
-$FirebasePath = Join-Path $SecretsRoot ("firebase\" + $App + "\google-services.json")
 $CredentialPath = Join-Path $SecretsRoot ("expo\" + $App + "\credentials.json")
 $KeystorePath = Join-Path $SecretsRoot ("eas\android\" + $App + "\development.jks")
-foreach ($Required in @($FirebasePath, $CredentialPath, $KeystorePath)) {
+foreach ($Required in @($CredentialPath, $KeystorePath)) {
     if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) { Fail "Missing target input for \${App}: $Required" }
-}
-
-$Firebase = Get-Content -LiteralPath $FirebasePath -Raw | ConvertFrom-Json
-$FirebasePackages = @(
-    $Firebase.client |
-        ForEach-Object { $_.client_info.android_client_info.package_name } |
-        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
-)
-if ($PackageName -notin $FirebasePackages) {
-    Fail "Firebase Android registration does not match $App identity $PackageName"
 }
 
 $Credential = Get-Content -LiteralPath $CredentialPath -Raw | ConvertFrom-Json
@@ -77,11 +68,8 @@ if (
     Fail "Incomplete local Android credential descriptor for $App"
 }
 
-$env:GOOGLE_SERVICES_JSON = $FirebasePath
 Write-Host "TARGET_APP=$App"
 Write-Host "TARGET_ANDROID_PACKAGE=$PackageName"
-Write-Host "FIREBASE_LOCAL_INPUT=PASS"
-Write-Host "LOCAL_GOOGLE_SERVICES_ENV=GOOGLE_SERVICES_JSON"
 Write-Host "LOCAL_CREDENTIAL_INPUT=PASS"
 Write-Host "EAS_CLI_VERSION=$EasCliVersion"
 

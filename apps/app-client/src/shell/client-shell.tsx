@@ -2,7 +2,7 @@ import { borders, radius, type resolveTheme, sizing, spacing, typography } from 
 import { BthwaniChip, BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type Href, useRouter } from "expo-router";
 import { type PropsWithChildren, useMemo } from "react";
-import { Alert, type ColorValue, ScrollView, StyleSheet, Text, View } from "react-native";
+import { type ColorValue, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useServiceCityScope } from "../features/service-city/service-city-scope";
 
@@ -40,7 +40,6 @@ function ClientHeader({ context, searchHref, styles }: { context: string; search
       </View>
       <View style={styles.headerActions}>
         <BthwaniIconButton icon="search" label="البحث عن متجر" onPress={() => router.push(searchHref)} size={sizing.controlSm} tone="soft" />
-        <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => Alert.alert("الإشعارات", "لا توجد إشعارات جديدة.")} size={sizing.controlSm} tone="soft" />
         <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" />
       </View>
     </View>
