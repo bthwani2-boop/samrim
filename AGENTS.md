@@ -61,7 +61,7 @@ GOVERNANCE_IMPACT=DEFECT_FOUND
 
 Use the exact pinned Governance as the durable baseline and actively challenge the owners that the affected cone can change. `NONE` means durable meaning cannot materially be affected; `REVALIDATE_ONLY` means the relevant meaning was examined and remains correct; `UPDATE_REQUIRED` means the authorized outcome changes durable meaning; `DEFECT_FOUND` means the pinned durable meaning is stale, wrong, incomplete or duplicated.
 
-If `UPDATE_REQUIRED` or `DEFECT_FOUND`, correct and merge `governance-and-docs` through its canonical lane first, then deliberately repin `knowledge.sources.json` to the required merged immutable SHA and rerun affected proof. A change to the Governance pin can never be classified `NONE`.
+If `UPDATE_REQUIRED` or `DEFECT_FOUND`, correct and merge `governance-and-docs` through its canonical lane first, then deliberately repin `knowledge.sources.json` to the required merged immutable SHA and rerun affected proof. A change to the Governance pin can never be classified `NONE`. Normal promotion never moves the Governance pin backward; a newer pin must descend from the previously bound canonical Governance state.
 
 The pinned `GOVERNANCE-STANDARDS.md` defines Governance/agent integrity but owns no BThwani Product/System/Policy meaning.
 
