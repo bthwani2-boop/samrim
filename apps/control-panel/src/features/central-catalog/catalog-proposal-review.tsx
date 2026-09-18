@@ -34,6 +34,7 @@ export function CatalogProposalReview() {
   const [selectedId, setSelectedId] = useState("");
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState("");
   const [busy, setBusy] = useState<ProposalDecision | "">("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -43,15 +44,18 @@ export function CatalogProposalReview() {
   const vertical = selected ? verticals.find((item) => item.id === selected.verticalId) : undefined;
   const category = selected ? categories.find((item) => item.id === selected.categoryId) : undefined;
 
-  const loadQueue = useCallback(async () => {
+  const loadQueue = useCallback(async (cursor = "", append = false) => {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/catalog/proposals?state=submitted&limit=50", { cache: "no-store" });
-      const payload = await readJson<{ proposals?: ReadonlyArray<CatalogProductProposal> }>(response);
+      const params = new URLSearchParams({ state: "submitted", limit: "50" });
+      if (cursor) params.set("cursor", cursor);
+      const response = await fetch(`/api/catalog/proposals?${params.toString()}`, { cache: "no-store" });
+      const payload = await readJson<{ proposals?: ReadonlyArray<CatalogProductProposal>; nextCursor?: string }>(response);
       const nextProposals = payload.proposals ?? [];
-      setProposals(nextProposals);
-      setSelectedId((current) => current && nextProposals.some((proposal) => proposal.id === current) ? current : nextProposals[0]?.id ?? "");
+      setProposals((current) => append ? [...current, ...nextProposals] : nextProposals);
+      setNextCursor(payload.nextCursor ?? "");
+      if (!append) setSelectedId((current) => current && nextProposals.some((proposal) => proposal.id === current) ? current : nextProposals[0]?.id ?? "");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "تعذر قراءة طابور مقترحات المنتجات.");
     } finally {
@@ -135,6 +139,7 @@ export function CatalogProposalReview() {
           </ul>
         )}
         <button type="button" className="button button-secondary" disabled={loading} onClick={() => void loadQueue()}>إعادة قراءة الطابور</button>
+        {nextCursor ? <button type="button" className="button button-secondary" disabled={loading} onClick={() => void loadQueue(nextCursor, true)}>تحميل المزيد</button> : null}
       </section>
 
       <article className="access-card central-catalog-editor" aria-labelledby="catalog-proposal-detail-title">

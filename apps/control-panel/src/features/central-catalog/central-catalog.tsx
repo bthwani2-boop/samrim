@@ -39,6 +39,7 @@ export function CentralCatalog() {
   const [verticalFilter, setVerticalFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -56,16 +57,18 @@ export function CentralCatalog() {
     setCategories(payload.categories);
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (cursor = "", append = false) => {
     setLoading(true);
     setError("");
     try {
       const suffix = new URLSearchParams({ limit: "50" });
       if (query.trim()) suffix.set("q", query.trim());
       if (verticalFilter) suffix.set("verticalId", verticalFilter);
+      if (cursor) suffix.set("cursor", cursor);
       const response = await fetch(`/api/catalog/products?${suffix.toString()}`, { cache: "no-store" });
-      const payload = await parseResponse<{ products: ReadonlyArray<CatalogProduct> }>(response);
-      setProducts(payload.products);
+      const payload = await parseResponse<{ products: ReadonlyArray<CatalogProduct>; nextCursor?: string }>(response);
+      setProducts((current) => append ? [...current, ...payload.products] : payload.products);
+      setNextCursor(payload.nextCursor ?? "");
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الكتالوج.");
     } finally {
@@ -106,7 +109,7 @@ export function CentralCatalog() {
         <div className="access-card-heading"><span className="step-chip">إدارة المنتجات</span><p className="eyebrow">سجل المنتجات</p><h2 id="central-catalog-list-title">المنتجات والنسخ</h2><p className="muted">المنتج يملك الهوية؛ وكل متجر يملك عرضه التجاري المنفصل.</p></div>
         <div className="catalog-search"><input aria-label="البحث في الكتالوج" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void load(); }} placeholder="ابحث باسم المنتج" /><select aria-label="تصفية حسب المجال" value={verticalFilter} onChange={(event) => setVerticalFilter(event.target.value)}><option value="">كل المجالات</option>{verticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>بحث</button></div>
         <button type="button" className="button button-primary" disabled={busy || verticals.length === 0} onClick={startCreate}>منتج جديد</button>
-        {loading ? <p className="muted">جارٍ قراءة الكتالوج…</p> : products.length === 0 ? <p className="muted">لا توجد منتجات مطابقة.</p> : <div className="central-product-list">{products.map((product) => <button type="button" className={`central-product-row${selected?.id === product.id ? " selected" : ""}`} key={product.id} onClick={() => selectProduct(product)}><span><strong>{product.canonicalName}</strong><small>{product.scope === "SHARED" ? "مشترك" : "خاص بالمتجر"} · {product.variants.length} نسخ</small></span><em className={product.active ? "active" : "inactive"}>{product.active ? "نشط" : "معطل"}</em></button>)}</div>}
+        {loading ? <p className="muted">جارٍ قراءة الكتالوج…</p> : products.length === 0 ? <p className="muted">لا توجد منتجات مطابقة.</p> : <><div className="central-product-list">{products.map((product) => <button type="button" className={`central-product-row${selected?.id === product.id ? " selected" : ""}`} key={product.id} onClick={() => selectProduct(product)}><span><strong>{product.canonicalName}</strong><small>{product.scope === "SHARED" ? "مشترك" : "خاص بالمتجر"} · {product.variants.length} نسخ</small></span><em className={product.active ? "active" : "inactive"}>{product.active ? "نشط" : "معطل"}</em></button>)}</div>{nextCursor ? <button type="button" className="button button-secondary" disabled={loading} onClick={() => void load(nextCursor, true)}>تحميل المزيد</button> : null}</>}
       </section>
       <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
         <div className="access-card-heading"><p className="eyebrow">تحرير المنتج والنسخة</p><h2 id="central-catalog-editor-title">{selected ? "تعديل المنتج" : "إنشاء منتج"}</h2><p className="muted">تُحفظ الهوية والتصنيف والنسخة الافتراضية في سجل المنتجات.</p></div>

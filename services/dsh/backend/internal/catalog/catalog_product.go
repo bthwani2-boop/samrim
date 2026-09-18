@@ -44,19 +44,19 @@ func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
 	return &Service{identity: identity, db: db}, nil
 }
 
-func (s *Service) ListProductsForPartner(ctx context.Context, accessToken, query, verticalID string, limit int) ([]postgres.CatalogProductRecord, error) {
+func (s *Service) ListProductsForPartner(ctx context.Context, accessToken, query, verticalID string, limit int, cursor string) (postgres.CatalogProductPage, error) {
 	identity, err := s.requirePartnerIdentity(ctx, accessToken)
 	if err != nil {
-		return nil, err
+		return postgres.CatalogProductPage{}, err
 	}
-	return postgres.ListCatalogProductsForPartner(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), identity.Subject, limit)
+	return postgres.ListCatalogProductsForPartner(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), identity.Subject, limit, strings.TrimSpace(cursor))
 }
 
-func (s *Service) ListProductsForOperator(ctx context.Context, actingActorID, query, verticalID string, limit int) ([]postgres.CatalogProductRecord, error) {
+func (s *Service) ListProductsForOperator(ctx context.Context, actingActorID, query, verticalID string, limit int, cursor string) (postgres.CatalogProductPage, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
-		return nil, err
+		return postgres.CatalogProductPage{}, err
 	}
-	return postgres.ListCatalogProducts(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), false, limit)
+	return postgres.ListCatalogProducts(ctx, s.db, normalizeSearch(query), strings.TrimSpace(verticalID), false, limit, strings.TrimSpace(cursor))
 }
 
 func (s *Service) ListVerticals(ctx context.Context, activeOnly bool) ([]postgres.CommerceVerticalRecord, error) {

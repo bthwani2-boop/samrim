@@ -162,6 +162,7 @@ paths:
         - { name: q, in: query, required: false, schema: { type: string, maxLength: 160 } }
         - $ref: "../dsh.openapi.yaml#/components/parameters/VerticalId"
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
       responses:
         "200": { description: Bounded canonical Product lookup., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductListResponse" } } } }
     post:
@@ -319,6 +320,7 @@ paths:
       parameters:
         - { name: state, in: query, required: false, schema: { type: string, enum: [draft, submitted, needs_correction, approved, rejected] } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
       responses:
         "200": { description: Bounded Product proposal list., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalListResponse" } } } }
     post:
@@ -379,6 +381,7 @@ paths:
         - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
         - { name: state, in: query, required: false, schema: { type: string, enum: [submitted, approved, needs_correction, rejected] } }
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, maxLength: 2048 } }
       responses:
         "200": { description: Bounded review queue., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductProposalListResponse" } } } }
 

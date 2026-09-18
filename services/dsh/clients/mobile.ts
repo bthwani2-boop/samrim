@@ -116,15 +116,16 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.correctAndResubmitJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
       return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
-    async listCatalogProducts(accessToken: string, query = "", verticalID = "", limit = 100): Promise<ReadonlyArray<CatalogProduct>> {
+    async listCatalogProducts(accessToken: string, query = "", verticalID = "", limit = 100, cursor = ""): Promise<CatalogProductListResponse> {
       if (limit < 1 || limit > 100) throw new Error("DSH_PRODUCT_LIMIT_INVALID");
       const params = new URLSearchParams();
       if (query.trim()) params.set("q", query.trim());
       if (verticalID.trim()) params.set("verticalId", verticalID.trim());
+      if (cursor.trim()) params.set("cursor", cursor.trim());
       params.set("limit", String(limit));
       const suffix = params.toString();
       const path = `${dshOperationPaths.listCatalogProducts.path}${suffix ? `?${suffix}` : ""}`;
-      return (await userRequest<CatalogProductListResponse>(accessToken, path, dshOperationPaths.listCatalogProducts.method)).products;
+      return userRequest<CatalogProductListResponse>(accessToken, path, dshOperationPaths.listCatalogProducts.method);
     },
     async createStoreScopedProduct(accessToken: string, storeID: string, input: CreateCatalogProductRequest): Promise<{ product: CatalogProduct; idempotentReplay: boolean }> {
       const normalizedStore = storeID.trim();
@@ -153,10 +154,11 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.updateStoreVariant.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{variantId}", encodeURIComponent(normalizedVariant));
       return userRequest<CatalogVariantResponse>(accessToken, path, dshOperationPaths.updateStoreVariant.method, input, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
-    async listOwnCatalogProductProposals(accessToken: string, state = "", limit = 50): Promise<CatalogProductProposalListResponse> {
+    async listOwnCatalogProductProposals(accessToken: string, state = "", limit = 50, cursor = ""): Promise<CatalogProductProposalListResponse> {
       if (limit < 1 || limit > 100) throw new Error("DSH_PROPOSAL_LIMIT_INVALID");
       const params = new URLSearchParams({ limit: String(limit) });
       if (state.trim()) params.set("state", state.trim());
+      if (cursor.trim()) params.set("cursor", cursor.trim());
       return userRequest<CatalogProductProposalListResponse>(accessToken, `${dshOperationPaths.listOwnCatalogProductProposals.path}?${params.toString()}`, dshOperationPaths.listOwnCatalogProductProposals.method);
     },
     async createCatalogProductProposal(accessToken: string, input: CreateCatalogProductProposalRequest): Promise<CatalogProductProposalResponse> {

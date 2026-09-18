@@ -1317,6 +1317,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CatalogProduct"
+        nextCursor:
+          type: string
+          maxLength: 2048
 
     CreateCatalogVariantRequest:
       type: object
@@ -1700,6 +1703,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CatalogProductProposal"
+        nextCursor:
+          type: string
+          maxLength: 2048
 
     StoreOfferPublicationState:
       type: string

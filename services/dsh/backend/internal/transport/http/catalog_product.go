@@ -148,11 +148,16 @@ func (s *CatalogServer) createCategory(w http.ResponseWriter, r *http.Request) {
 func (s *CatalogServer) listProducts(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	verticalID := strings.TrimSpace(r.URL.Query().Get("verticalId"))
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 2048 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
+		return
+	}
 	limit, ok := catalogLimit(w, r)
 	if !ok {
 		return
 	}
-	var products []postgres.CatalogProductRecord
+	var page postgres.CatalogProductPage
 	var err error
 	if s.auth.Authorized(r) {
 		actorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
@@ -160,23 +165,23 @@ func (s *CatalogServer) listProducts(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
 			return
 		}
-		products, err = s.service.ListProductsForOperator(r.Context(), actorID, query, verticalID, limit)
+		page, err = s.service.ListProductsForOperator(r.Context(), actorID, query, verticalID, limit, cursor)
 	} else {
 		if bearerToken(r) == "" {
 			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "a partner session is required")
 			return
 		}
-		products, err = s.service.ListProductsForPartner(r.Context(), bearerToken(r), query, verticalID, limit)
+		page, err = s.service.ListProductsForPartner(r.Context(), bearerToken(r), query, verticalID, limit, cursor)
 	}
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
-	values := make([]contract.CatalogProduct, 0, len(products))
-	for _, product := range products {
+	values := make([]contract.CatalogProduct, 0, len(page.Products))
+	for _, product := range page.Products {
 		values = append(values, toCatalogProduct(product))
 	}
-	writeJSON(w, http.StatusOK, contract.CatalogProductListResponse{Products: values})
+	writeJSON(w, http.StatusOK, contract.CatalogProductListResponse{Products: values, NextCursor: page.NextCursor})
 }
 
 func (s *CatalogServer) createProduct(w http.ResponseWriter, r *http.Request) {

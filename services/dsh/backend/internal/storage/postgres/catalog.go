@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -29,6 +31,7 @@ var (
 	ErrCatalogOfferStoreNotFound    = errors.New("catalog Store was not found")
 	ErrCatalogProductScopeForbidden = errors.New("Partner cannot directly create or mutate a Shared Product")
 	ErrCatalogProductOwnership      = errors.New("Store-scoped Product ownership is invalid")
+	ErrCatalogProductInvalidCursor  = errors.New("catalog Product cursor is invalid")
 )
 
 type CommerceVerticalRecord struct {
@@ -364,6 +367,70 @@ func ListCatalogCategories(ctx context.Context, db *sql.DB, verticalID string, a
 const catalogProductSelect = `SELECT p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at FROM dsh.catalog_products p`
 const catalogOfferSelect = `SELECT o.id,o.store_id,o.variant_id,o.price_minor,o.currency,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.availability,o.publication_state,o.version,o.created_at,o.updated_at,v.id,v.product_id,v.title,v.measurement_kind,v.base_unit,v.active,v.version,v.created_at,v.updated_at,p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id JOIN dsh.stores s ON s.id=o.store_id`
 
+type CatalogProductPage struct {
+	Products   []CatalogProductRecord
+	NextCursor string
+}
+
+type catalogProductCursor struct {
+	Version        int    `json:"v"`
+	Query          string `json:"q"`
+	VerticalID     string `json:"verticalId"`
+	ActiveOnly     bool   `json:"activeOnly"`
+	PartnerActorID string `json:"partnerActorId,omitempty"`
+	CanonicalName  string `json:"canonicalName"`
+	ProductID      string `json:"productId"`
+}
+
+func encodeCatalogProductCursor(cursor catalogProductCursor) (string, error) {
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeCatalogProductCursor(raw, query, verticalID, partnerActorID string, activeOnly bool) (*catalogProductCursor, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, ErrCatalogProductInvalidCursor
+	}
+	var cursor catalogProductCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 || cursor.CanonicalName == "" || cursor.ProductID == "" || cursor.Query != query || cursor.VerticalID != verticalID || cursor.ActiveOnly != activeOnly || cursor.PartnerActorID != partnerActorID {
+		return nil, ErrCatalogProductInvalidCursor
+	}
+	return &cursor, nil
+}
+
+func finishCatalogProductPage(ctx context.Context, db *sql.DB, items []CatalogProductRecord, limit int, cursor catalogProductCursor) (CatalogProductPage, error) {
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
+	}
+	for i := range items {
+		var err error
+		items[i], err = hydrateCatalogProduct(ctx, db, items[i])
+		if err != nil {
+			return CatalogProductPage{}, err
+		}
+	}
+	page := CatalogProductPage{Products: items}
+	if hasMore && len(items) > 0 {
+		last := items[len(items)-1]
+		cursor.CanonicalName = strings.ToLower(last.CanonicalName)
+		cursor.ProductID = last.ID
+		var err error
+		page.NextCursor, err = encodeCatalogProductCursor(cursor)
+		if err != nil {
+			return CatalogProductPage{}, err
+		}
+	}
+	return page, nil
+}
+
 func ReadCatalogProduct(ctx context.Context, db *sql.DB, productID string) (CatalogProductRecord, error) {
 	item, err := readCatalogProductRow(db.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1", strings.TrimSpace(productID)))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -391,91 +458,102 @@ func ReadCatalogVariant(ctx context.Context, db *sql.DB, variantID string) (Cata
 	variant.Attributes, err = listVariantAttributes(ctx, db, variant.ID)
 	return variant, err
 }
-func ListCatalogProducts(ctx context.Context, db *sql.DB, query, verticalID string, activeOnly bool, limit int) ([]CatalogProductRecord, error) {
+func ListCatalogProducts(ctx context.Context, db *sql.DB, query, verticalID string, activeOnly bool, limit int, rawCursor string) (CatalogProductPage, error) {
 	if limit < 1 || limit > 100 {
-		return nil, errors.New("catalog Product limit is invalid")
+		return CatalogProductPage{}, errors.New("catalog Product limit is invalid")
+	}
+	query = strings.TrimSpace(query)
+	verticalID = strings.TrimSpace(verticalID)
+	cursor, err := decodeCatalogProductCursor(rawCursor, query, verticalID, "", activeOnly)
+	if err != nil {
+		return CatalogProductPage{}, err
 	}
 	args := []any{}
 	where := []string{}
 	if activeOnly {
 		where = append(where, "p.active=true")
 	}
-	if verticalID = strings.TrimSpace(verticalID); verticalID != "" {
+	if verticalID != "" {
 		args = append(args, verticalID)
 		where = append(where, fmt.Sprintf("p.vertical_id=$%d", len(args)))
 	}
-	if query = strings.TrimSpace(query); query != "" {
+	if query != "" {
 		args = append(args, query+"%")
 		where = append(where, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d)", len(args)))
+	}
+	if cursor != nil {
+		args = append(args, cursor.CanonicalName, cursor.ProductID)
+		where = append(where, fmt.Sprintf("(lower(p.canonical_name)>$%d OR (lower(p.canonical_name)=$%d AND p.id>$%d))", len(args)-1, len(args)-1, len(args)))
 	}
 	clause := ""
 	if len(where) > 0 {
 		clause = " WHERE " + strings.Join(where, " AND ")
 	}
-	args = append(args, limit)
+	args = append(args, limit+1)
 	rows, err := db.QueryContext(ctx, catalogProductSelect+clause+fmt.Sprintf(" ORDER BY lower(p.canonical_name),p.id LIMIT $%d", len(args)), args...)
 	if err != nil {
-		return nil, err
+		return CatalogProductPage{}, err
 	}
 	defer rows.Close()
 	items := []CatalogProductRecord{}
 	for rows.Next() {
 		item, err := readCatalogProductRow(rows)
 		if err != nil {
-			return nil, err
+			return CatalogProductPage{}, err
 		}
 		items = append(items, item)
 	}
 	if err = rows.Err(); err != nil {
-		return nil, err
+		return CatalogProductPage{}, err
 	}
-	for i := range items {
-		items[i], err = hydrateCatalogProduct(ctx, db, items[i])
-		if err != nil {
-			return nil, err
-		}
-	}
-	return items, nil
+	pageCursor := catalogProductCursor{Version: 1, Query: query, VerticalID: verticalID, ActiveOnly: activeOnly}
+	return finishCatalogProductPage(ctx, db, items, limit, pageCursor)
 }
 
-func ListCatalogProductsForPartner(ctx context.Context, db *sql.DB, query, verticalID, partnerActorID string, limit int) ([]CatalogProductRecord, error) {
+func ListCatalogProductsForPartner(ctx context.Context, db *sql.DB, query, verticalID, partnerActorID string, limit int, rawCursor string) (CatalogProductPage, error) {
 	if limit < 1 || limit > 100 || strings.TrimSpace(partnerActorID) == "" {
-		return nil, errors.New("catalog Product partner listing facts are invalid")
+		return CatalogProductPage{}, errors.New("catalog Product partner listing facts are invalid")
 	}
-	args := []any{strings.TrimSpace(partnerActorID)}
+	query = strings.TrimSpace(query)
+	verticalID = strings.TrimSpace(verticalID)
+	partnerActorID = strings.TrimSpace(partnerActorID)
+	cursor, err := decodeCatalogProductCursor(rawCursor, query, verticalID, partnerActorID, false)
+	if err != nil {
+		return CatalogProductPage{}, err
+	}
+	args := []any{partnerActorID}
 	where := []string{"(p.scope='SHARED' OR (p.scope='STORE_SCOPED' AND EXISTS (SELECT 1 FROM dsh.stores owned_store WHERE owned_store.id=p.store_id AND owned_store.partner_actor_id=$1)))"}
-	if verticalID = strings.TrimSpace(verticalID); verticalID != "" {
+	if verticalID != "" {
 		args = append(args, verticalID)
 		where = append(where, fmt.Sprintf("p.vertical_id=$%d", len(args)))
 	}
-	if query = strings.TrimSpace(query); query != "" {
+	if query != "" {
 		args = append(args, query+"%")
 		where = append(where, fmt.Sprintf("lower(p.canonical_name) LIKE lower($%d)", len(args)))
 	}
-	args = append(args, limit)
+	if cursor != nil {
+		args = append(args, cursor.CanonicalName, cursor.ProductID)
+		where = append(where, fmt.Sprintf("(lower(p.canonical_name)>$%d OR (lower(p.canonical_name)=$%d AND p.id>$%d))", len(args)-1, len(args)-1, len(args)))
+	}
+	args = append(args, limit+1)
 	rows, err := db.QueryContext(ctx, catalogProductSelect+" WHERE "+strings.Join(where, " AND ")+fmt.Sprintf(" ORDER BY lower(p.canonical_name),p.id LIMIT $%d", len(args)), args...)
 	if err != nil {
-		return nil, err
+		return CatalogProductPage{}, err
 	}
 	defer rows.Close()
 	items := make([]CatalogProductRecord, 0)
 	for rows.Next() {
 		item, scanErr := readCatalogProductRow(rows)
 		if scanErr != nil {
-			return nil, scanErr
+			return CatalogProductPage{}, scanErr
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return CatalogProductPage{}, err
 	}
-	for i := range items {
-		items[i], err = hydrateCatalogProduct(ctx, db, items[i])
-		if err != nil {
-			return nil, err
-		}
-	}
-	return items, nil
+	pageCursor := catalogProductCursor{Version: 1, Query: query, VerticalID: verticalID, PartnerActorID: partnerActorID}
+	return finishCatalogProductPage(ctx, db, items, limit, pageCursor)
 }
 
 func validateCatalogProductFactsTx(ctx context.Context, tx *sql.Tx, input CatalogProductInput) error {

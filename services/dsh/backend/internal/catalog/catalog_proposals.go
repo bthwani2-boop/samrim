@@ -21,19 +21,19 @@ func (s *Service) CreateProductProposal(ctx context.Context, accessToken string,
 	return postgres.CreateCatalogProductProposal(ctx, s.db, normalized, strings.TrimSpace(idempotencyKey), postgres.HashCatalogProductProposalCreateRequest(normalized), identity.Subject, strings.TrimSpace(correlationID))
 }
 
-func (s *Service) ListProductProposalsForPartner(ctx context.Context, accessToken, state string, limit int) ([]postgres.CatalogProductProposalRecord, error) {
+func (s *Service) ListProductProposalsForPartner(ctx context.Context, accessToken, state string, limit int, cursor string) (postgres.CatalogProductProposalPage, error) {
 	identity, err := s.requirePartnerIdentity(ctx, accessToken)
 	if err != nil {
-		return nil, err
+		return postgres.CatalogProductProposalPage{}, err
 	}
-	return postgres.ListCatalogProductProposalsForPartner(ctx, s.db, identity.Subject, strings.TrimSpace(state), limit)
+	return postgres.ListCatalogProductProposalsForPartner(ctx, s.db, identity.Subject, strings.TrimSpace(state), limit, strings.TrimSpace(cursor))
 }
 
-func (s *Service) ListProductProposalsForReview(ctx context.Context, actingActorID, state string, limit int) ([]postgres.CatalogProductProposalRecord, error) {
+func (s *Service) ListProductProposalsForReview(ctx context.Context, actingActorID, state string, limit int, cursor string) (postgres.CatalogProductProposalPage, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
-		return nil, err
+		return postgres.CatalogProductProposalPage{}, err
 	}
-	return postgres.ListCatalogProductProposalsForReview(ctx, s.db, strings.TrimSpace(state), limit)
+	return postgres.ListCatalogProductProposalsForReview(ctx, s.db, strings.TrimSpace(state), limit, strings.TrimSpace(cursor))
 }
 
 func (s *Service) SubmitProductProposal(ctx context.Context, accessToken, proposalID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductProposalResult, error) {

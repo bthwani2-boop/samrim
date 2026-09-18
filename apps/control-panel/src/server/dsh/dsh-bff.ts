@@ -203,19 +203,21 @@ export async function listCatalogCategories(verticalId: string): Promise<Catalog
   return (await requestDshJson<CatalogCategoryListResponse>(dshOperationPaths.listCatalogCategories.method, path, undefined, {})).payload;
 }
 
-export async function listCatalogProducts(query: string, verticalId: string, context: DshOperatorReadContext): Promise<CatalogProductListResponse> {
+export async function listCatalogProducts(query: string, verticalId: string, cursor: string, context: DshOperatorReadContext): Promise<CatalogProductListResponse> {
   if (!context.operatorActorId.trim()) throw new Error("DSH_PRODUCT_READ_INPUT_INVALID");
   const params = new URLSearchParams({ limit: "50" });
   if (query.trim()) params.set("q", query.trim());
   if (verticalId.trim()) params.set("verticalId", verticalId.trim());
+  if (cursor.trim()) params.set("cursor", cursor.trim());
   const path = `${dshOperationPaths.listCatalogProducts.path}?${params.toString()}`;
   return (await requestDshJson<CatalogProductListResponse>(dshOperationPaths.listCatalogProducts.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function listCatalogProposalReviewQueue(state: string, limit: number, context: DshOperatorReadContext): Promise<CatalogProductProposalListResponse> {
+export async function listCatalogProposalReviewQueue(state: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<CatalogProductProposalListResponse> {
   if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("DSH_CATALOG_PROPOSAL_QUEUE_INPUT_INVALID");
   const params = new URLSearchParams({ limit: String(limit) });
   if (state.trim()) params.set("state", state.trim());
+  if (cursor.trim()) params.set("cursor", cursor.trim());
   const path = dshOperationPaths.listCatalogProductProposalReviewQueue.path + "?" + params.toString();
   return (await requestDshJson<CatalogProductProposalListResponse>(dshOperationPaths.listCatalogProductProposalReviewQueue.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
