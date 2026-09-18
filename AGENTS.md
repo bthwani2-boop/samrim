@@ -86,7 +86,7 @@ ACTOR / USER OUTCOME
 → RENDERED + INTERACTION PROOF
 ```
 
-Establish the simplest complete canonical shell/navigation model required by the affected actor and capability set before deepening screens that depend on it. Do not force Client, Partner, Captain, Field or Control Panel into the same shell merely for visual consistency, and do not create empty destinations or speculative navigation to make an app appear complete.
+Establish the simplest complete canonical shell/navigation model required by the affected actor and capability set before deepening screens that depend on it. Do not force distinct actor-facing surfaces into the same shell merely for visual consistency, and do not create empty destinations or speculative navigation to make a surface appear complete.
 
 Arabic-first RTL is an end-to-end interaction invariant where the admitted surface is Arabic: prove layout/order, reading/alignment, directional icons and navigation, scrolling, forms, mixed-direction values, focus/keyboard behavior and direction-sensitive gesture/animation semantics as applicable. `textAlign: right` is not RTL proof.
 

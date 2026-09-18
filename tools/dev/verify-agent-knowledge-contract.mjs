@@ -118,15 +118,23 @@ requireTokens(".github/workflows/pr-policy.yml", [
   "Governance pin changed but GOVERNANCE_IMPACT=NONE",
 ]);
 
-const adapters = [
-  ".github/copilot-instructions.md",
-  "CLAUDE.md",
-  "GEMINI.md",
+const adapterCandidates = [
+  ...fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => entry.name),
+  ...fs.readdirSync(path.join(root, ".github"), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+    .map((entry) => ".github/" + entry.name),
 ];
+const adapters = adapterCandidates.filter((file) =>
+  read(file).includes("ADAPTER_CLASS: DERIVED_AGENT_ROUTING"),
+);
 for (const file of adapters) {
   requireTokens(file, [
+    "ADAPTER_CLASS: DERIVED_AGENT_ROUTING",
     "SEMANTIC_AUTHORITY: NONE",
     "EXECUTION_AUTHORITY: NONE",
+    "CLOSURE_AUTHORITY: NONE",
     "AGENTS.md",
   ]);
 }
