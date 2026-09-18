@@ -25,6 +25,7 @@ const iconSources: Record<MobileIconName, ImageSourcePropType> = {
   warning: require("@expo/material-symbols/warning.xml"),
   success: require("@expo/material-symbols/check_circle.xml"),
   search: require("@expo/material-symbols/search.xml"),
+  notifications: require("@expo/material-symbols/notifications_active.xml"),
   close: require("@expo/material-symbols/close.xml"),
 };
 

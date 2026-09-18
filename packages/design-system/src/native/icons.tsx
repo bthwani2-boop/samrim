@@ -26,6 +26,7 @@ const iconNames: Record<MobileIconName, ReturnType<typeof Icon.select>> = {
   warning: Icon.select({ ios: "exclamationmark.triangle", android: require("@expo/material-symbols/warning.xml") }),
   success: Icon.select({ ios: "checkmark.circle", android: require("@expo/material-symbols/check_circle.xml") }),
   search: Icon.select({ ios: "magnifyingglass", android: require("@expo/material-symbols/search.xml") }),
+  notifications: Icon.select({ ios: "bell.fill", android: require("@expo/material-symbols/notifications_active.xml") }),
   close: Icon.select({ ios: "xmark", android: require("@expo/material-symbols/close.xml") }),
 };
 

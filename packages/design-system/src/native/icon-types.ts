@@ -17,4 +17,5 @@ export type MobileIconName =
   | "warning"
   | "success"
   | "search"
+  | "notifications"
   | "close";

@@ -2,8 +2,8 @@ import { borders, direction, elevation, opacity, radius, resolveTextAlign, type 
 import { BthwaniButton, BthwaniIcon, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, type TextInput, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { listPublishedStores } from "./store-discovery-client";
 
@@ -13,13 +13,14 @@ type DiscoveryState =
   | { kind: "empty" }
   | { kind: "error" };
 
-export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined }) {
+export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthentication, autoFocusSearch = false }: { isAuthenticated?: boolean; onRequireAuthentication?: (() => void) | undefined; autoFocusSearch?: boolean }) {
   const router = useRouter();
   const { cities, selectedCityID } = useServiceCityScope();
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
   const [query, setQuery] = useState("");
+  const searchInputRef = useRef<TextInput>(null);
 
   const cityName = cities.find((city) => city.id === selectedCityID)?.displayNameAr ?? "مدينتك";
 
@@ -38,6 +39,12 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }, [selectedCityID]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!autoFocusSearch) return;
+    const focusTimer = setTimeout(() => searchInputRef.current?.focus(), 50);
+    return () => clearTimeout(focusTimer);
+  }, [autoFocusSearch]);
 
   const filteredStores = useMemo(() => {
     if (state.kind !== "ready") return [];
@@ -76,7 +83,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </View>
       </BthwaniSurface>
 
-      <BthwaniSearchField accessibilityLabel="البحث في المتاجر" onChangeText={setQuery} onClear={() => setQuery("")} placeholder="ابحث باسم المتجر" value={query} />
+      <BthwaniSearchField accessibilityLabel="البحث في المتاجر" inputRef={searchInputRef} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="ابحث باسم المتجر" value={query} />
 
       <BthwaniSectionHeader title={`متاجر في ${cityName}`} subtitle={`${filteredStores.length} متجر متاح للطلب`} />
       {filteredStores.length === 0 ? (

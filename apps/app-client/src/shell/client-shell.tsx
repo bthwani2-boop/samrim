@@ -1,7 +1,8 @@
 import { borders, direction, radius, resolveTextAlign, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniIcon, BthwaniIconButton, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type Href, useRouter } from "expo-router";
 import { type PropsWithChildren, useMemo } from "react";
-import { type ColorValue, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, type ColorValue, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export function ClientPublicShell({ children }: PropsWithChildren) {
@@ -18,20 +19,23 @@ export function ClientPublicShell({ children }: PropsWithChildren) {
 export function ClientPublicHeader({ safeArea = true }: { safeArea?: boolean }) {
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const header = <ClientHeader context="اكتشاف المتاجر" styles={styles} />;
+  const header = <ClientHeader context="اكتشاف المتاجر" searchHref={"/?focus=search" as Href} styles={styles} />;
   return safeArea ? <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>{header}</SafeAreaView> : header;
 }
 
-function ClientHeader({ context, styles }: { context: string; styles: ReturnType<typeof createStyles> }) {
+function ClientHeader({ context, searchHref, styles }: { context: string; searchHref: Href; styles: ReturnType<typeof createStyles> }) {
+  const router = useRouter();
+
   return (
     <View style={styles.header}>
-      <View>
+      <View style={styles.headerIdentity}>
         <Text style={styles.brand}>بثواني</Text>
         <Text style={styles.context}>{context}</Text>
       </View>
-      <View style={styles.headerMark} accessibilityElementsHidden>
-        <View style={styles.headerMarkNavy} />
-        <View style={styles.headerMarkOrange} />
+      <View style={styles.headerActions}>
+        <BthwaniIconButton icon="search" label="البحث عن متجر" onPress={() => router.push(searchHref)} size={sizing.controlSm} tone="soft" />
+        <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => Alert.alert("الإشعارات", "لا توجد إشعارات جديدة.")} size={sizing.controlSm} tone="soft" />
+        <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" />
       </View>
     </View>
   );
@@ -52,7 +56,7 @@ export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
   const icons = { home: "home", orders: "orders", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
-    header: () => <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><ClientHeader context="مساحة العميل" styles={styles} /></SafeAreaView>,
+    header: () => <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><ClientHeader context="مساحة العميل" searchHref={"/home?focus=search" as Href} styles={styles} /></SafeAreaView>,
     tabBarActiveBackgroundColor: theme.actionSoft,
     tabBarActiveTintColor: theme.interactiveText,
     tabBarHideOnKeyboard: true,
@@ -72,17 +76,16 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   return StyleSheet.create({
     shell: { backgroundColor: theme.background, direction: activeDirection, flex: 1 },
     headerSafeArea: { backgroundColor: theme.surface, direction: activeDirection },
-    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, direction: activeDirection, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing[5], paddingVertical: spacing[3] },
+    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, direction: activeDirection, flexDirection: "row", gap: spacing[3], justifyContent: "space-between", minHeight: 76, paddingHorizontal: spacing[4], paddingVertical: spacing[3] },
+    headerIdentity: { direction: activeDirection, flex: 1, minWidth: 0 },
     brand: { ...typography.titleMd, color: theme.color, textAlign: startTextAlign },
     context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1], textAlign: startTextAlign },
-    headerMark: { alignItems: "flex-end", direction: activeDirection, flexDirection: "row", gap: spacing[1], height: sizing.avatarSm },
-    headerMarkNavy: { backgroundColor: theme.structure, borderRadius: radius.xs, height: sizing.avatarSm, width: 9 },
-    headerMarkOrange: { backgroundColor: theme.brandAction, borderRadius: radius.xs, height: 16, width: 9 },
+    headerActions: { alignItems: "center", direction: activeDirection, flexDirection: "row", gap: spacing[2] },
     content: { direction: activeDirection, flex: 1 },
     scene: { backgroundColor: theme.background, direction: activeDirection },
     screenContent: { direction: activeDirection, flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, direction: activeDirection, flexDirection: "row", paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
-    navigationItem: { borderRadius: radius.md, minHeight: sizing.controlLg, paddingHorizontal: spacing[2] },
-    navigationLabel: { ...typography.caption },
+    navigation: { backgroundColor: theme.surfaceRaised, borderTopColor: theme.borderColorStrong, borderTopWidth: borders.hairline, direction: activeDirection, flexDirection: "row", minHeight: 84, paddingHorizontal: spacing[3], paddingTop: spacing[2], paddingBottom: spacing[3] },
+    navigationItem: { borderRadius: radius.lg, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
+    navigationLabel: { ...typography.label, marginTop: spacing[1] },
   });
 }

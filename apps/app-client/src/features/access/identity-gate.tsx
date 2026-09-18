@@ -48,7 +48,7 @@ function safeReturnTo(value: string | string[] | undefined): Href {
 }
 
 export default function IdentityGate() {
-  const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const { focus, returnTo } = useLocalSearchParams<{ focus?: string | string[]; returnTo?: string | string[] }>();
   const theme = useAppearanceTheme();
   const { copy } = identityPresentation;
   const styles = useMemo(() => createStyles(theme, designDirection.defaultDirection), [theme]);
@@ -115,7 +115,7 @@ export default function IdentityGate() {
     setAuthPromptVisible(true);
   }, [selectMode]);
 
-  const publicDiscovery = <View style={styles.publicDiscovery}><ClientPublicHeader /><View style={styles.publicDiscoveryContent}><ServiceCityScope><StoreDiscovery isAuthenticated={state.kind === "authenticated"} onRequireAuthentication={state.kind === "signed_out" ? requestAuthentication : undefined} /></ServiceCityScope></View></View>;
+  const publicDiscovery = <View style={styles.publicDiscovery}><ClientPublicHeader /><View style={styles.publicDiscoveryContent}><ServiceCityScope><StoreDiscovery autoFocusSearch={focus === "search"} isAuthenticated={state.kind === "authenticated"} onRequireAuthentication={state.kind === "signed_out" ? requestAuthentication : undefined} /></ServiceCityScope></View></View>;
 
   function resetSignedOutAuthState() {
     setMode("login");
@@ -212,6 +212,10 @@ export default function IdentityGate() {
 
   if (state.kind === "authenticated") {
     return <Redirect href={safeReturnTo(returnTo)} />;
+  }
+
+  if (state.kind === "signed_out" && !returnTo && !authPromptVisible) {
+    return <Redirect href="/home" />;
   }
 
   if (state.kind === "degraded") {

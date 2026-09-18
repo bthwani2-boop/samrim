@@ -57,14 +57,14 @@ export function BthwaniChip({ label, selected = false, icon, style, ...props }: 
   );
 }
 
-export function BthwaniSearchField({ value, onChangeText, placeholder, accessibilityLabel, onClear, containerStyle, ...props }: Omit<TextInputProps, "style"> & { containerStyle?: StyleProp<ViewStyle>; onClear?: (() => void) | undefined }) {
+export function BthwaniSearchField({ value, onChangeText, placeholder, accessibilityLabel, onClear, containerStyle, inputRef, ...props }: Omit<TextInputProps, "style"> & { containerStyle?: StyleProp<ViewStyle>; inputRef?: React.Ref<TextInput>; onClear?: (() => void) | undefined }) {
   const theme = useAppearanceTheme();
   const styles = React.useMemo(() => createPrimitiveStyles(theme), [theme]);
   const hasValue = Boolean(value);
   return (
     <View style={[styles.searchField, containerStyle]}>
       <BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconMd} />
-      <TextInput {...props} accessibilityLabel={accessibilityLabel} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={theme.colorMuted} style={styles.searchInput} value={value} />
+      <TextInput {...props} ref={inputRef} accessibilityLabel={accessibilityLabel} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={theme.colorMuted} style={styles.searchInput} value={value} />
       {hasValue && onClear ? <BthwaniIconButton icon="close" label="مسح البحث" onPress={onClear} size={sizing.controlSm} tone="soft" /> : null}
     </View>
   );
