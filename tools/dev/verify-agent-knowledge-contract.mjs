@@ -23,21 +23,27 @@ function requireTokens(file, tokens) {
 
 
 const agent = requireTokens("AGENTS.md", [
+  "ARTIFACT_CLASS: REPOSITORY_AGENT_OPERATING_CONSTITUTION",
   "REPOSITORY_AGENT_LAW_AUTHORITY: CANONICAL",
-  "RIGOR SCALES WITH CONSEQUENCE + UNCERTAINTY + AFFECTED CONE + IRREVERSIBILITY.",
-  "EVERY EXISTING OR NEW COMPLEXITY MUST RE-EARN EXISTENCE.",
-  "NO PROVEN CURRENT MATERIAL BENEFIT → DELETE",
-  "Use the repository's real project/dependency graph.",
-  "`pnpm verify` is non-mutating exact-candidate static/workspace proof.",
-  "`pnpm safe:push` owns the single final local candidate verification",
+  "PRODUCT_SEMANTIC_AUTHORITY: NONE",
+  "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
+  "GOVERNANCE_IMPACT=NONE",
+  "GOVERNANCE_IMPACT=REVALIDATE_ONLY",
+  "GOVERNANCE_IMPACT=UPDATE_REQUIRED",
+  "GOVERNANCE_IMPACT=DEFECT_FOUND",
+  "GOVERNANCE-STANDARDS.md",
+  "`pnpm verify`",
+  "`pnpm safe:push`",
   "pnpm runtime:up",
   "pnpm runtime:doctor",
   "pnpm runtime:status",
-  "KNOWN UNJUSTIFIED COMPLEXITY/RESIDUE = 0",
 ]);
 
 if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agent)) {
   failures.push("AGENTS.md must not hard-code mutable local runtime ports");
+}
+if (/Docker is the sole LOCAL_INTEGRATION runtime owner|all four Metro servers/i.test(agent)) {
+  failures.push("AGENTS.md retains mutable LOCAL_INTEGRATION participant inventory");
 }
 
 const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
@@ -96,6 +102,22 @@ for (const required of ["runtime:up", "runtime:doctor", "runtime:status"]) {
   if (!pkg?.scripts?.[required]) failures.push(`package.json missing required full-runtime command: ${required}`);
 }
 
+const prTemplate = requireTokens(".github/pull_request_template.md", [
+  "## Governance impact",
+  "GOVERNANCE_IMPACT=<NONE | REVALIDATE_ONLY | UPDATE_REQUIRED | DEFECT_FOUND>",
+  "GOVERNANCE_CANONICAL_SHA=<40-char SHA>",
+]);
+if (prTemplate.includes("GOVERNANCE_IMPACT=NONE\n")) {
+  failures.push("PR template must not preselect a Governance impact value");
+}
+
+requireTokens(".github/workflows/pr-policy.yml", [
+  "GOVERNANCE_IMPACT=(NONE|REVALIDATE_ONLY|UPDATE_REQUIRED|DEFECT_FOUND)",
+  "knowledge.sources.json",
+  "GOVERNANCE_CANONICAL_SHA=",
+  "Governance pin changed but GOVERNANCE_IMPACT=NONE",
+]);
+
 const adapters = [
   ".github/copilot-instructions.md",
   "CLAUDE.md",
@@ -120,4 +142,5 @@ console.log("EXECUTION_MODEL=AFFECTED_STATIC_PLUS_CLAIM_SPECIFIC_RUNTIME_PLUS_SI
 console.log("CUSTOM_AFFECTED_ENGINE=0");
 console.log("STATEFUL_PROOF_LEDGER=0");
 console.log("RUNTIME_VERIFY_COUPLING=0");
+console.log("GOVERNANCE_IMPACT_INTERLOCK=PASS");
 console.log("AGENT_KNOWLEDGE_CONTRACT=PASS");
