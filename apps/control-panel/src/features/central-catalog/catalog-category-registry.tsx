@@ -68,7 +68,7 @@ export function CatalogCategoryRegistry() {
     try {
       const response = await fetch("/api/catalog/categories", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ verticalId, parentCategoryId: null, nameAr: normalizedNameAr, nameEn: normalizedNameEn, active }) });
       const payload = await parseResponse<{ category: CatalogCategory }>(response);
-      setNotice(`تم حفظ التصنيف: ${payload.category.nameAr}. المعرف التلقائي: ${payload.category.id}`);
+      setNotice(`تم حفظ التصنيف: ${payload.category.nameAr}.`);
       setNameAr("");
       setNameEn("");
       await loadCategories(verticalId);
@@ -99,7 +99,7 @@ export function CatalogCategoryRegistry() {
       {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void loadVerticals()}>إعادة المحاولة</button></p> : null}
       <div className="managed-status managed-status-info">
         <strong>تصنيفات المجال المحدد</strong>
-        {loading ? <p>جارٍ قراءة السجل…</p> : !verticalId ? <p>أضف مجالًا تجاريًا ثم أعد قراءة المجالات.</p> : categories.length === 0 ? <p>لا توجد تصنيفات لهذا المجال بعد.</p> : <ul>{categories.map((category) => <li key={category.id}><span>{category.nameAr} · {category.nameEn} · {category.id}</span></li>)}</ul>}
+        {loading ? <p>جارٍ قراءة السجل…</p> : !verticalId ? <p>أضف مجالًا تجاريًا ثم أعد قراءة المجالات.</p> : categories.length === 0 ? <p>لا توجد تصنيفات لهذا المجال بعد.</p> : <ul>{categories.map((category) => <li key={category.id}><span>{category.nameAr} · {category.nameEn}</span></li>)}</ul>}
       </div>
     </section>
   );

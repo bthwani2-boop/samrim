@@ -27,6 +27,7 @@ export function JoiningCasePanel() {
   const [verticalId, setVerticalId] = useState("");
   const [verticalsBusy, setVerticalsBusy] = useState(true);
   const [verticalsError, setVerticalsError] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const loadQueue = useCallback(async () => {
     setQueueBusy(true);
@@ -246,6 +247,8 @@ export function JoiningCasePanel() {
           {!queueBusy && !queueError && queue.length === 0 ? <p>لا توجد حالات انضمام حاليًا.</p> : null}
           {queue.length ? <ul>{queue.map((item) => <li key={item.id}><button type="button" className="button button-secondary" disabled={busy} onClick={() => void openCase(item.id)}>{joiningCaseStateLabel(item.state)} · {item.businessName}</button></li>)}</ul> : null}
         </div>
+        {!creating ? <div className="managed-status managed-status-info"><strong>ابدأ من الطابور</strong><p>اختر حالة قائمة لاستئنافها، أو افتح إنشاء حالة مستقلة عند توفر بيانات الشريك الأولية.</p><button type="button" className="button button-primary" onClick={() => setCreating(true)}>إنشاء حالة انضمام جديدة</button></div> : null}
+        {creating ? <>
         {verticalsError ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر تحميل المجالات التجارية</strong><p>{verticalsError}</p><button type="button" className="button button-secondary" disabled={verticalsBusy || busy} onClick={() => void loadVerticals()}>إعادة قراءة المجالات</button></div> : null}
         {!verticalsBusy && !verticalsError && activeVerticals.length === 0 ? <div className="managed-status managed-status-warning" role="alert"><strong>لا يمكن إنشاء طلب شريك بعد</strong><p>يجب أن يضيف المشغل مجالًا تجاريًا نشطًا من الكتالوج أولًا، ثم تعود لاختيار المجال هنا.</p><Link className="button button-secondary" href="/catalog">فتح الكتالوج لإضافة مجال</Link></div> : null}
         <div className="access-form">
@@ -256,13 +259,15 @@ export function JoiningCasePanel() {
           <label className="field-label" htmlFor="joining-vertical">المجال التجاري<select id="joining-vertical" disabled={busy || verticalsBusy || Boolean(verticalsError)} value={verticalId} onChange={(event) => { setVerticalId(event.target.value); clearResult(); }}><option value="">{verticalsBusy ? "جارٍ تحميل المجالات…" : verticalsError ? "تعذر تحميل المجالات" : activeVerticals.length ? "اختر المجال التجاري" : "لا توجد مجالات نشطة"}</option>{activeVerticals.map((vertical) => <option key={vertical.id} value={vertical.id}>{vertical.nameAr}</option>)}</select></label>
           <button type="button" className="button button-primary" disabled={busy || verticalsBusy || Boolean(verticalsError) || activeVerticals.length === 0} onClick={() => void createCase()}>{busy ? "جارٍ إنشاء الحالة…" : "إنشاء حالة انضمام"}</button>
         </div>
+        <button type="button" className="button button-secondary" disabled={busy} onClick={() => setCreating(false)}>إلغاء الإنشاء</button>
+        </> : null}
         </>
       ) : (
         <div className="managed-status managed-status-info" role="status">
           <strong>الحالة: {joiningCaseStateLabel(current.state)}</strong>
           <p>{current.businessName} · {current.firstStoreName}</p>
           <p>مدينة المتجر الأول: {cities.find((city) => city.id === current.serviceCityId)?.displayNameAr || "مدينة غير معرّفة"}</p>
-          <p>المجال التجاري: {verticals.find((vertical) => vertical.id === current.firstStoreVerticalId)?.nameAr || current.firstStoreVerticalId}</p>
+          <p>المجال التجاري: {verticals.find((vertical) => vertical.id === current.firstStoreVerticalId)?.nameAr || "مجال غير معرّف"}</p>
           {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
           {current.state === "draft" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
           {current.state === "submitted" ? (
@@ -275,7 +280,7 @@ export function JoiningCasePanel() {
           {storeId ? <p>المتجر: {current.store?.name}</p> : null}
           {storeId && !publication ? <button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة قراءة النشر</button> : null}
           {publication ? <div className="managed-status managed-status-info"><strong>حالة النشر: {publicationStateLabel(publication.store.publicationState)}</strong><p>الجاهزية: {publication.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</p><button type="button" className="button button-primary" disabled={publicationBusy || (!publication.store.publicationReadiness.ready && publication.store.publicationState !== "published")} onClick={() => void changePublication()}>{publicationBusy ? "جارٍ التحديث…" : publication.store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button><button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة القراءة</button></div> : null}
-          <button type="button" className="button button-secondary" disabled={busy || publicationBusy} onClick={clearResult}>حالة انضمام جديدة</button>
+          <button type="button" className="button button-secondary" disabled={busy || publicationBusy} onClick={() => { clearResult(); setCreating(false); }}>العودة إلى طابور الحالات</button>
         </div>
       )}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}

@@ -13,7 +13,7 @@ export default function PartnersPage() {
         <div className="state-card" role="alert">
           <span className="state-icon state-icon-warning" aria-hidden="true">!</span>
           <p className="eyebrow">صلاحية غير متاحة</p>
-          <h1 id="partners-restricted-title">تهيئة الشركاء مقصورة على مشغلي لوحة التحكم</h1>
+        <h1 id="partners-restricted-title">الشركاء والمتاجر مقصورة على مشغلي لوحة التحكم</h1>
           <p className="muted">هذه المساحة لا تمنح صلاحيات إضافية خارج دور Identity الموثق.</p>
         </div>
       </section>

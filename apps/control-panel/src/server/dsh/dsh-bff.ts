@@ -1,5 +1,5 @@
 import { validateServiceUrl } from "@bthwani/identity";
-import { type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ManagedRoleMutationRequest, dshOperationPaths } from "@bthwani/dsh";
+import { type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogImportCommitResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type ReviewCatalogProductProposalRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ManagedRoleMutationRequest, type OperatorOperationsResponse, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -152,6 +152,16 @@ export async function readJoiningCase(caseId: string, context: DshOperatorReadCo
   return (await requestDshJson<JoiningCaseResponse>(dshOperationPaths.readJoiningCase.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
+export async function listOperatorOperations(state: string, limit: number, context: DshOperatorReadContext): Promise<OperatorOperationsResponse> {
+  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("DSH_OPERATOR_OPERATIONS_INPUT_INVALID");
+  }
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (state.trim()) params.set("state", state.trim());
+  const path = `${dshOperationPaths.listOperatorOperations.path}?${params.toString()}`;
+  return (await requestDshJson<OperatorOperationsResponse>(dshOperationPaths.listOperatorOperations.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
 export async function listJoiningCases(state: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<JoiningCaseListResponse> {
   if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("DSH_JOINING_CASE_QUEUE_INPUT_INVALID");
   const params = new URLSearchParams({ limit: String(limit) });
@@ -193,6 +203,43 @@ export async function listCatalogProducts(query: string, verticalId: string, con
   if (verticalId.trim()) params.set("verticalId", verticalId.trim());
   const path = `${dshOperationPaths.listCatalogProducts.path}?${params.toString()}`;
   return (await requestDshJson<CatalogProductListResponse>(dshOperationPaths.listCatalogProducts.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function listCatalogProposalReviewQueue(state: string, limit: number, context: DshOperatorReadContext): Promise<CatalogProductProposalListResponse> {
+  if (!context.operatorActorId.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("DSH_CATALOG_PROPOSAL_QUEUE_INPUT_INVALID");
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (state.trim()) params.set("state", state.trim());
+  const path = dshOperationPaths.listCatalogProductProposalReviewQueue.path + "?" + params.toString();
+  return (await requestDshJson<CatalogProductProposalListResponse>(dshOperationPaths.listCatalogProductProposalReviewQueue.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function reviewCatalogProposal(proposalId: string, input: ReviewCatalogProductProposalRequest, context: DshVersionedMutationContext & Readonly<{ idempotencyKey: string }>): Promise<Readonly<{ status: number; payload: CatalogProductProposalResponse }>> {
+  if (!proposalId.trim() || !input.state) throw new Error("DSH_CATALOG_PROPOSAL_REVIEW_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_PROPOSAL_REVIEW_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.reviewCatalogProductProposal.path.replace("{proposalId}", encodeURIComponent(proposalId.trim()));
+  return requestDshJson<CatalogProductProposalResponse>(dshOperationPaths.reviewCatalogProductProposal.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function previewCatalogImport(input: CatalogImportPreviewRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CatalogImportPreviewResponse }>> {
+  if (!input.runId.trim() || !input.sourceSha256.trim() || input.rows.length < 1 || input.rows.length > 1000) throw new Error("DSH_CATALOG_IMPORT_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_IMPORT_IDEMPOTENCY_INVALID");
+  return requestDshJson<CatalogImportPreviewResponse>(dshOperationPaths.previewCatalogImport.method, dshOperationPaths.previewCatalogImport.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function readCatalogImportRun(runId: string, context: DshOperatorReadContext): Promise<CatalogImportRunResponse> {
+  if (!runId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_CATALOG_IMPORT_READ_INPUT_INVALID");
+  const path = dshOperationPaths.readCatalogImportRun.path.replace("{runId}", encodeURIComponent(runId.trim()));
+  return (await requestDshJson<CatalogImportRunResponse>(dshOperationPaths.readCatalogImportRun.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function commitCatalogImport(runId: string, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: CatalogImportCommitResponse }>> {
+  if (!runId.trim()) throw new Error("DSH_CATALOG_IMPORT_COMMIT_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_CATALOG_IMPORT_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.commitCatalogImport.path.replace("{runId}", encodeURIComponent(runId.trim()));
+  return requestDshJson<CatalogImportCommitResponse>(dshOperationPaths.commitCatalogImport.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function createCatalogProduct(input: CreateCatalogProductRequest, context: CatalogProductMutationContext): Promise<Readonly<{ status: number; payload: CatalogProductResponse }>> {

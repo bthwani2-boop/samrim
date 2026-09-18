@@ -14,6 +14,7 @@ var (
 	ErrClientSessionForbidden  = errors.New("an active app-client session is required")
 	ErrPartnerSessionForbidden = errors.New("an active app-partner session is required")
 	ErrStoreOwnershipForbidden = errors.New("partner does not own this Store")
+	ErrOperatorNotActive       = errors.New("operator is not active")
 )
 
 type Service struct {
@@ -75,6 +76,13 @@ func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID strin
 	return postgres.ListOrdersForStore(ctx, s.db, strings.TrimSpace(storeID), "", limit)
 }
 
+func (s *Service) ListForOperator(ctx context.Context, state, actingActorID string, limit int) ([]postgres.OperatorOperationRecord, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return nil, err
+	}
+	return postgres.ListOrdersForOperator(ctx, s.db, state, limit)
+}
+
 func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID, orderID, state string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
 	if err != nil {
@@ -113,4 +121,15 @@ func (s *Service) requireOwnedStore(ctx context.Context, partnerActorID, storeID
 		return ErrStoreOwnershipForbidden
 	}
 	return err
+}
+
+func (s *Service) requireOperator(ctx context.Context, actorID string) error {
+	operator, err := s.identity.ReadActorRole(ctx, strings.TrimSpace(actorID), "operator")
+	if err != nil {
+		return err
+	}
+	if operator.Role != "operator" || !operator.Enabled || !operator.SecurityEnabled || operator.ActivatedAt == nil {
+		return ErrOperatorNotActive
+	}
+	return nil
 }

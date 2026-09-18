@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	orderdomain "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/order"
@@ -14,22 +15,76 @@ import (
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
 
-type OrderServer struct{ service *orderdomain.Service }
+type OrderServer struct {
+	auth    *auth.ServiceToken
+	service *orderdomain.Service
+}
 
-func NewOrder(identityClient *identityintegration.Client, db *sql.DB) (*OrderServer, error) {
+func NewOrder(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*OrderServer, error) {
+	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
+	if err != nil {
+		return nil, err
+	}
 	service, err := orderdomain.New(identityClient, db)
 	if err != nil {
 		return nil, err
 	}
-	return &OrderServer{service: service}, nil
+	return &OrderServer{auth: authorizer, service: service}, nil
 }
 
 func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders", s.listClient)
 	mux.HandleFunc("GET /dsh/orders/{orderId}", s.read)
+	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
+}
+
+func (s *OrderServer) listOperatorOperations(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actingActorID == "" || len(actingActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	limit, ok := orderLimit(w, r)
+	if !ok {
+		return
+	}
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	if state != "" && !validOperatorOrderState(state) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "state is invalid")
+		return
+	}
+	operations, err := s.service.ListForOperator(r.Context(), state, actingActorID, limit)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	items := make([]contract.OperatorOperation, 0, len(operations))
+	for _, operation := range operations {
+		var assignment *contract.OperatorAssignmentSummary
+		if operation.Assignment != nil {
+			assignment = &contract.OperatorAssignmentSummary{
+				ID:             operation.Assignment.ID,
+				OrderID:        operation.Assignment.OrderID,
+				CaptainActorID: operation.Assignment.CaptainActorID,
+				State:          operation.Assignment.State,
+				Version:        operation.Assignment.Version,
+				HandoffState:   operation.Assignment.Handoff.State,
+			}
+		}
+		items = append(items, contract.OperatorOperation{
+			Order:      toOrder(operation.Order),
+			StoreName:  operation.StoreName,
+			Assignment: assignment,
+		})
+	}
+	writeJSON(w, http.StatusOK, contract.OperatorOperationsResponse{Operations: items})
 }
 
 func (s *OrderServer) listClient(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +202,15 @@ func orderLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 	return limit, true
 }
 
+func validOperatorOrderState(state string) bool {
+	switch state {
+	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED":
+		return true
+	default:
+		return false
+	}
+}
+
 func toOrders(items []postgres.OrderRecord) []contract.Order {
 	values := make([]contract.Order, 0, len(items))
 	for _, item := range items {
@@ -198,7 +262,7 @@ func snapshotBoolValue(value *bool) bool {
 
 func writeOrderError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, orderdomain.ErrClientSessionForbidden), errors.Is(err, orderdomain.ErrPartnerSessionForbidden), errors.Is(err, orderdomain.ErrStoreOwnershipForbidden):
+	case errors.Is(err, orderdomain.ErrClientSessionForbidden), errors.Is(err, orderdomain.ErrPartnerSessionForbidden), errors.Is(err, orderdomain.ErrStoreOwnershipForbidden), errors.Is(err, orderdomain.ErrOperatorNotActive):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session is not permitted for this Order")
 	case errors.Is(err, postgres.ErrOrderNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order was not found")

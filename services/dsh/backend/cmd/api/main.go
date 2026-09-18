@@ -70,7 +70,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	orderServer, err := transporthttp.NewOrder(identityClient, database)
+	orderServer, err := transporthttp.NewOrder(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
 	}

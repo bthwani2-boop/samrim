@@ -37,9 +37,9 @@ test("authenticated operator discovers access and partner responsibilities throu
   await page.goto("/");
 
   await expect(page).toHaveURL(/\/workspace$/);
-  await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   await expect(page.getByText("المشغل", { exact: true }).first()).toBeVisible();
-  const accessLink = page.getByRole("link", { name: "الحسابات والأدوار" });
+  const accessLink = page.getByRole("link", { name: "الوصول والأمان" });
   await expect(accessLink).toBeVisible();
   await accessLink.click();
   await expect(page).toHaveURL(/\/access$/);
@@ -57,20 +57,21 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
   test.setTimeout(120_000);
   await stubAuthenticatedSession(page);
   const routes = [
-    ["/workspace", "أهلاً بك في مساحة العمل"],
+    ["/workspace", "الرئيسية"],
     ["/access", "الحسابات والأدوار"],
     ["/partners", "انضمام الشركاء"],
-    ["/captains", "عمليات الكابتن"],
+    ["/operations", "العمليات"],
+    ["/captains", "قبول الكباتن"],
     ["/fields", "قبول الميدان"],
-    ["/catalog", "كتالوج التجارة"],
+    ["/catalog", "الكتالوج"],
   ] as const;
 
   for (const [path, heading] of routes) {
     await page.goto(path, { waitUntil: "commit" });
     await expect(page.locator("#workspace-main")).toHaveCount(1, { timeout: 30_000 });
     await expect(page.locator("#workspace-main > main")).toHaveCount(0, { timeout: 30_000 });
-    await expect(page.getByRole("heading", { name: heading })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("link", { name: heading === "أهلاً بك في مساحة العمل" ? "نظرة الهوية" : path === "/access" ? "الحسابات والأدوار" : path === "/partners" ? "تهيئة الشركاء" : path === "/captains" ? "عمليات الكابتن" : path === "/fields" ? "قبول الميدان" : "المنتجات المركزية" })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("link", { name: heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "الوصول والأمان" : path === "/partners" ? "الشركاء والمتاجر" : path === "/operations" ? "العمليات" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج" })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
   }
 });
 
@@ -172,9 +173,38 @@ test("operator captain operations present Arabic state without backend identifie
   await page.goto("/captains");
   await page.getByLabel("هاتف الكابتن المراد قبوله").fill("+96777000105");
   await page.getByRole("button", { name: "قبول الكابتن" }).click();
-  await expect(page.getByText("حالة القبول: مؤهل للتشغيل · التوفر: غير متاح حاليًا")).toBeVisible();
+  await expect(page.getByText("الحالة: مؤهل للتشغيل · التوفر: غير متاح حاليًا")).toBeVisible();
   await expect(page.getByText("act_captain_test")).toHaveCount(0);
   await expect(page.getByText(/الإصدار/)).toHaveCount(0);
+});
+
+test("operator operations uses the DSH read model and resource actions", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let mutationBody: Record<string, unknown> | undefined;
+  await page.route("**/api/operations?limit=50", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        operations: [{
+          order: { id: "order_ready", state: "READY_FOR_DISPATCH", totalAmountMinor: 1800, currency: "YER", version: 3, updatedAt: "2026-09-18T06:00:00.000Z", lines: [] },
+          storeName: "متجر الاختبار",
+          assignment: null,
+        }],
+      }),
+    });
+  });
+  await page.route("**/api/captains", async (route) => {
+    mutationBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ operation: "dispatch", idempotentReplay: false }) });
+  });
+  await page.goto("/operations");
+  await expect(page.getByRole("heading", { name: "العمليات" })).toBeVisible();
+  await expect(page.getByText("order_ready")).toBeVisible();
+  await expect(page.getByRole("button", { name: "إرسال للتوزيع" })).toBeVisible();
+  await page.getByRole("button", { name: "إرسال للتوزيع" }).click();
+  expect(mutationBody).toMatchObject({ action: "dispatch", orderId: "order_ready" });
+  await expect(page.getByRole("textbox")).toHaveCount(0);
 });
 
 test("operator admits a Field actor through the DSH-owned Field surface", async ({ page }) => {
@@ -220,6 +250,7 @@ test("operator creates a DSH-owned joining case from prospective partner facts",
   await page.goto("/partners");
   await expect(page.getByRole("heading", { name: "انضمام الشركاء" })).toBeVisible();
   await expect(page.getByLabel("معرّف Actor الشريك")).toHaveCount(0);
+  await page.getByRole("button", { name: "إنشاء حالة انضمام جديدة" }).click();
   await expect(page.getByLabel("رقم هاتف الشريك")).toBeVisible();
 
   await page.getByLabel("رقم هاتف الشريك").fill("+967 77000100");
@@ -245,6 +276,7 @@ test("operator gets an actionable empty state when no active commerce vertical e
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cases: [] }) });
   });
   await page.goto("/partners");
+  await page.getByRole("button", { name: "إنشاء حالة انضمام جديدة" }).click();
   await expect(page.getByText("لا يمكن إنشاء طلب شريك بعد", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "فتح الكتالوج لإضافة مجال" })).toHaveAttribute("href", "/catalog");
   await expect(page.getByRole("button", { name: "إنشاء حالة انضمام" })).toBeDisabled();
@@ -270,7 +302,9 @@ test("operator city creation delegates the stable id to DSH", async ({ page }) =
   await page.getByLabel("الاسم العربي").fill("صنعاء");
   await page.getByRole("button", { name: "إضافة مدينة" }).click();
 
-  await expect(page.getByText("المعرف التلقائي: city_0123456789abcdef0123456789abcdef")).toBeVisible();
+  const cityNotice = page.getByRole("status").filter({ hasText: "تم حفظ المدينة الكانونية" });
+  await expect(cityNotice).toContainText("تم حفظ المدينة الكانونية.");
+  await expect(cityNotice).not.toContainText("city_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ displayNameAr: "صنعاء", active: true });
 });
 
@@ -315,7 +349,8 @@ test("operator creates a canonical commerce vertical before onboarding partners"
   await page.getByLabel("الاسم العربي", { exact: true }).fill("مطاعم");
   await page.getByLabel("الاسم الإنجليزي", { exact: true }).fill("Restaurants");
   await page.getByRole("button", { name: "إضافة مجال تجاري" }).click();
-  await expect(page.getByRole("status")).toContainText("المعرف التلقائي: vertical_0123456789abcdef0123456789abcdef");
+  await expect(page.getByRole("status")).toContainText("تم حفظ المجال التجاري: مطاعم.");
+  await expect(page.getByRole("status")).not.toContainText("vertical_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ nameAr: "مطاعم", nameEn: "Restaurants", active: true });
 });
 
@@ -342,7 +377,8 @@ test("operator creates a product category under its commerce vertical", async ({
   await page.getByLabel("الاسم العربي للتصنيف").fill("قهوة");
   await page.getByLabel("الاسم الإنجليزي للتصنيف").fill("Coffee");
   await page.getByRole("button", { name: "إضافة تصنيف" }).click();
-  await expect(page.getByRole("status")).toContainText("المعرف التلقائي: category_0123456789abcdef0123456789abcdef");
+  await expect(page.getByRole("status")).toContainText("تم حفظ التصنيف: قهوة.");
+  await expect(page.getByRole("status")).not.toContainText("category_0123456789abcdef0123456789abcdef");
   expect(requestBody).toEqual({ verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true });
 });
 
@@ -393,6 +429,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", serviceCityId: "sanaa", primaryVerticalId: "grocery", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, offers: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
   });
   await page.goto("/partners");
+  await page.getByRole("button", { name: "إنشاء حالة انضمام جديدة" }).click();
   await page.getByLabel("رقم هاتف الشريك").fill("+96777000100");
   await page.getByLabel("الاسم القانوني للنشاط").fill("نشاط الاختبار");
   await page.getByLabel("اسم المتجر الأول").fill("متجر الاختبار");
@@ -410,14 +447,14 @@ test("authenticated workspace keeps navigation meaning across light and dark the
   await page.goto("/workspace");
 
   const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  await expect(page.getByRole("link", { name: "الحسابات والأدوار" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "الوصول والأمان" })).toBeVisible();
   await expect(page.getByRole("main")).toHaveAttribute("id", "workspace-main");
 
   await page.emulateMedia({ colorScheme: "dark" });
   await page.reload();
   const darkBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(darkBackground).not.toBe(lightBackground);
-  await expect(page.getByRole("link", { name: "الحسابات والأدوار" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "الوصول والأمان" })).toBeVisible();
 });
 
 test("operator access exposes passkey-first sign-in and no human-role selector", async ({ page }) => {
@@ -465,7 +502,7 @@ test("remote logout failure keeps local sign-out and remains observable", async 
   });
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "أهلاً بك في مساحة العمل" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("تعذر تأكيد إبطال الجلسة");

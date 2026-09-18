@@ -114,6 +114,12 @@ type OrderRecord struct {
 	UpdatedAt                    time.Time
 }
 
+type OperatorOperationRecord struct {
+	Order      OrderRecord
+	StoreName  string
+	Assignment *CaptainAssignment
+}
+
 func HashCheckoutRequest(input CheckoutInput) string {
 	return hashFacts(strings.TrimSpace(input.ClientActorID), strings.TrimSpace(input.CartID), strings.TrimSpace(input.StoreID), strings.TrimSpace(input.AddressID), strconv.Itoa(input.ExpectedCartVersion), input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, strconv.Itoa(input.Evidence.StoreVersion), strconv.Itoa(input.Evidence.AddressVersion))
 }
@@ -136,6 +142,59 @@ func ListOrdersForClient(ctx context.Context, db *sql.DB, clientActorID, state s
 
 func ListOrdersForStore(ctx context.Context, db *sql.DB, storeID, state string, limit int) ([]OrderRecord, error) {
 	return listOrders(ctx, db, "store_id=$1", []any{strings.TrimSpace(storeID)}, state, limit)
+}
+
+func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, limit int) ([]OperatorOperationRecord, error) {
+	if db == nil || limit < 1 || limit > 100 {
+		return nil, errors.New("operator operation limit is invalid")
+	}
+	args := []any{}
+	where := "TRUE"
+	if normalizedState := strings.TrimSpace(state); normalizedState != "" {
+		args = append(args, normalizedState)
+		where += " AND state=$" + strconv.Itoa(len(args))
+	}
+	args = append(args, limit)
+	rows, err := db.QueryContext(ctx, "SELECT id FROM dsh.commerce_orders WHERE "+where+" ORDER BY updated_at DESC,id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	orderIDs := make([]string, 0, limit)
+	for rows.Next() {
+		var orderID string
+		if err := rows.Scan(&orderID); err != nil {
+			return nil, err
+		}
+		orderIDs = append(orderIDs, orderID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	operations := make([]OperatorOperationRecord, 0, len(orderIDs))
+	for _, orderID := range orderIDs {
+		order, err := ReadOrder(ctx, db, orderID)
+		if err != nil {
+			return nil, err
+		}
+		var storeName string
+		if err := db.QueryRowContext(ctx, "SELECT name FROM dsh.stores WHERE id=$1", order.StoreID).Scan(&storeName); err != nil {
+			return nil, err
+		}
+		operation := OperatorOperationRecord{Order: order, StoreName: storeName}
+		assignment, assignmentErr := ReadCaptainAssignmentForOrder(ctx, db, order.ID)
+		if assignmentErr == nil {
+			operation.Assignment = &assignment
+		} else if !errors.Is(assignmentErr, ErrCaptainAssignmentNotFound) {
+			return nil, assignmentErr
+		}
+		operations = append(operations, operation)
+	}
+	return operations, nil
 }
 
 func readOrder(ctx context.Context, source rowQueryer, where string, args ...any) (OrderRecord, error) {

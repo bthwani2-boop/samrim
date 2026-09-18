@@ -174,6 +174,9 @@ paths:
   /dsh/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}"
 
+  /dsh/operator/operations:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations"
+
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
 
@@ -3054,6 +3057,50 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Order"
+
+    OperatorAssignmentSummary:
+      type: object
+      required: [id, orderId, captainActorId, state, version, handoffState]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        captainActorId:
+          type: string
+        state:
+          type: string
+          enum: [assigned, in_custody, delivered, delivery_failed, reassigned]
+        version:
+          type: integer
+          minimum: 1
+        handoffState:
+          type: string
+          enum: [pending, store_confirmed, completed, superseded]
+
+    OperatorOperation:
+      type: object
+      required: [order, storeName, assignment]
+      additionalProperties: false
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        storeName:
+          type: string
+        assignment:
+          $ref: "#/components/schemas/OperatorAssignmentSummary"
+          nullable: true
+
+    OperatorOperationsResponse:
+      type: object
+      required: [operations]
+      additionalProperties: false
+      properties:
+        operations:
+          type: array
+          items:
+            $ref: "#/components/schemas/OperatorOperation"
 
     OrderTransitionRequest:
       type: object
