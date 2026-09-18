@@ -1,7 +1,6 @@
 import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
-import { useMemo } from "react";
-import { type PropsWithChildren } from "react";
+import { type PropsWithChildren, useMemo } from "react";
 import { type ColorValue, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -45,7 +44,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     headerMarkOrange: { backgroundColor: theme.brandAction, borderRadius: radius.xs, height: 16, width: 9 },
     scene: { backgroundColor: theme.background },
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[3], paddingTop: spacing[2] },
+    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, elevation: 8, paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 8 },
     navigationItem: { alignItems: "center", borderRadius: radius.md, flex: 1, gap: spacing[1], justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[2] },
     navigationLabel: { ...typography.caption },
   });

@@ -17,7 +17,7 @@ export default function ClientAppLayout() {
     router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
   }, [pathname, router]);
   const tabs = (
-    <Tabs screenOptions={tabOptions}>
+    <Tabs screenOptions={tabOptions} screenListeners={({ route }) => ({ tabPress: (event) => { const path = route.name === "home" ? "/(app)/home" : route.name === "orders" ? "/(app)/orders" : route.name === "account" ? "/(app)/account" : null; if (!path) return; event.preventDefault(); router.replace(path as Href); } })}>
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الرئيسية" }} />
       <Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
       <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "الحساب" }} />

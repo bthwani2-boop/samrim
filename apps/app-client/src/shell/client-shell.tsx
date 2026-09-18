@@ -89,7 +89,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     content: { flex: 1 },
     scene: { backgroundColor: theme.background },
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surfaceRaised, borderTopColor: theme.borderColorStrong, borderTopWidth: borders.hairline, minHeight: 84, paddingHorizontal: spacing[3], paddingTop: spacing[2] },
+    navigation: { backgroundColor: theme.surfaceRaised, borderTopColor: theme.borderColorStrong, borderTopWidth: borders.hairline, elevation: 8, minHeight: 84, paddingHorizontal: spacing[3], paddingTop: spacing[2], zIndex: 8 },
     navigationItem: { borderRadius: radius.lg, flex: 1, minHeight: sizing.controlLg, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
     navigationLabel: { ...typography.label, marginTop: spacing[1] },
   });

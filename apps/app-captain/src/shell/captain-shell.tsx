@@ -44,8 +44,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     headerMarkOrange: { backgroundColor: theme.brandAction, borderRadius: radius.xs, height: 16, width: 9 },
     scene: { backgroundColor: theme.background },
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, paddingHorizontal: spacing[2], paddingTop: spacing[2] },
-    navigationItem: { alignItems: "center", borderRadius: radius.md, flex: 1, gap: spacing[1], justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[1] },
+    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, elevation: 8, paddingHorizontal: spacing[2], paddingTop: spacing[2], zIndex: 8 },
+    navigationItem: { alignItems: "center", borderRadius: radius.md, gap: spacing[1], justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[1] },
     navigationLabel: { ...typography.caption },
   });
 }
