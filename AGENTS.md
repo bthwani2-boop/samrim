@@ -209,6 +209,37 @@ PRODUCT / SCHEMA / CONFIG / TOOLING IS POLLUTED
 
 Baseline actors and resources are reusable proof anchors, not exclusive test accounts. Additional synthetic clients, partners, stores, captains, fields or scenario resources are permitted only when claim-justified, local, canonical-owner-created, isolated and free of uncontrolled external effects. Synthetic proof state is never Product truth, migration/bootstrap data or authority, and it never authorizes direct SQL business setup or test-only Product/schema branches.
 
+### 3.2 Closed-loop multi-role journey proof
+
+When a material claim crosses actor-facing surfaces, shared mutable business state or cross-boundary behavior, validate it as a closed runtime repair loop across every causally participating real surface discovered from the exact current state.
+
+```text
+REAL ACTOR ACTION
+→ CANONICAL BUSINESS TRANSITION
+→ AFFECTED ACTOR/SURFACE OBSERVATION OR ACTION
+→ CLAIM-APPROPRIATE CANONICAL READBACK
+```
+
+Use the canonical LOCAL_INTEGRATION runtime and synthetic baseline through their existing owners. Reuse clean proven baseline state and create fresh transactional state only through canonical writers. Do not manufacture a green journey through direct SQL, manual synchronization, hidden test-only Product paths or persistence bypass.
+
+A user-facing claim requires the real affected surface; API/database readback corroborates canonical truth but does not substitute for the interaction.
+
+On any material failure:
+
+```text
+CAPTURE EXACT FAILURE + STATE
+→ TRACE HIGHEST PROVEN CAUSAL ROOT
+→ REPAIR ROOT + COMPLETE REQUIRED CUTOVER
+→ INVALIDATE AFFECTED EVIDENCE
+→ REMOVE MATERIAL RESIDUE
+→ REBUILD ONLY REQUIRED TRANSACTIONAL STATE THROUGH CANONICAL WRITERS
+→ REPLAY FROM THE EARLIEST TRUSTWORTHY POINT
+```
+
+If the treatment changes a shared identity, contract, persistence shape, state-machine, routing or runtime assumption used earlier in the journey, replay from the earliest point whose evidence became stale; replay the complete journey when no trustworthy earlier checkpoint remains.
+
+Continue until all materially participating surfaces observe the same canonical truth, required failure/recovery behavior is proven, affected evidence is current and no known material cross-role defect or residue remains.
+
 ## 4. Fast proportional verification
 
 Normal development has one principle, not a matrix of modes:
@@ -233,7 +264,19 @@ During implementation use direct/affected checks as needed. Do not run a separat
 
 CI is independent integration/promotion assurance. It may be broader when the integration claim is broader, but it must not duplicate setup or run unrelated heavyweight jobs by default.
 
-Use subagents only for independent material evidence, implementation or proof lanes. The lead retains the objective, affected-cone and ownership decisions, conflict resolution, final integration, Governance classification, commit/push and closure census. Give parallel coding lanes disjoint write sets; subagents must not push, merge, reset/purge, repin Governance, expose secrets or declare closure. Treat returned evidence as exact-state evidence and invalidate it when its inputs change.
+### 4.1 Independent subagent orchestration
+
+Use subagents for genuinely independent material evidence, implementation, review or proof lanes.
+
+When two or more such lanes exist and delegation materially reduces context interference or execution cost without increasing integration risk, delegate proactively rather than serializing all work. There is no required subagent count and no delegation for ceremony.
+
+Every delegated lane must have an exact input state, one material question or deliverable, a bounded read/write scope and required evidence. Parallel mutation lanes require disjoint write sets.
+
+The lead retains the objective, affected-cone and ownership decisions, cross-lane conflict resolution, final integration, Governance classification, consequential mutations, commit/push and closure census.
+
+Subagents must not independently push, merge, repin Governance, reset/purge persistent state, expose secrets or declare closure.
+
+Returned evidence is exact-state evidence. If its material inputs change before integration, invalidate and revalidate the affected result.
 
 ## 5. Canonical change and cutover
 
