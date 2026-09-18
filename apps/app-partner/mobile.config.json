@@ -1,7 +1,7 @@
 {
   "name": "بثواني الشريك",
   "slug": "app-partner-next",
-  "scheme": "bthwani-partner-next",
+  "scheme": "partner",
   "owner": "bthwani1",
   "version": "0.3.0",
   "androidPackage": "com.bthwani.partner.next",

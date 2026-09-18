@@ -1,7 +1,7 @@
 {
   "name": "بثواني الميدان",
   "slug": "app-field-next",
-  "scheme": "bthwani-field-next",
+  "scheme": "field",
   "owner": "bthwani1",
   "version": "0.3.0",
   "androidPackage": "com.bthwani.field.next",

@@ -1,7 +1,7 @@
 {
   "name": "بثواني الكابتن",
   "slug": "app-captain-next",
-  "scheme": "bthwani-captain-next",
+  "scheme": "captain",
   "owner": "bthwani1",
   "version": "0.3.0",
   "androidPackage": "com.bthwani.captain.next",
