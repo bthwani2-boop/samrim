@@ -30,8 +30,6 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_HEAD: ${{ github.event.pull_request.head.ref }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
@@ -45,12 +43,6 @@ jobs:
 
           if [[ "${PR_DRAFT}" == "true" ]]; then
             echo "PR_POLICY_DRAFT=DEFERRED_UNTIL_READY"
-            exit 0
-          fi
-
-          if [[ "${PR_AUTHOR}" == "dependabot[bot]" ]]; then
-            [[ "${PR_HEAD}" == dependabot/* ]] || { echo "::error::Unexpected Dependabot branch"; exit 1; }
-            echo "PR_POLICY_DEPENDABOT=PASS"
             exit 0
           fi
 

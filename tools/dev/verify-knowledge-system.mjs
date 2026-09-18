@@ -76,6 +76,27 @@ for (const forbidden of ["branch", "branch_url"]) {
   }
 }
 
+try {
+  const unshallow = fs.existsSync(path.join(knowledgeRoot, ".git", "shallow"));
+  execFileSync(
+    "git",
+    unshallow
+      ? ["fetch", "--quiet", "--unshallow", "origin", "main"]
+      : ["fetch", "--quiet", "origin", "main"],
+    { cwd: knowledgeRoot, stdio: "ignore" },
+  );
+  const canonicalMain = execFileSync("git", ["rev-parse", "FETCH_HEAD"], {
+    cwd: knowledgeRoot,
+    encoding: "utf8",
+  }).trim();
+  execFileSync("git", ["merge-base", "--is-ancestor", pin.commit, canonicalMain], {
+    cwd: knowledgeRoot,
+    stdio: "ignore",
+  });
+} catch {
+  failures.push("pinned Governance SHA is not proven reachable from canonical governance-and-docs/main");
+}
+
 for (const required of [
   "AGENTS.md",
   "knowledge.sources.json",
@@ -92,17 +113,24 @@ for (const required of [
   requireFile(required);
 }
 
-const queryTool = fs.readFileSync(path.join(root, "tools/dev/query-knowledge.mjs"), "utf8");
-for (const token of [
-  "ensureKnowledgeRoot",
-  "GOVERNANCE-STANDARDS.md",
-  "governance/product/capabilities",
-  "governance/product/JOURNEYS.md",
-  "governance/policy",
-  "governance/policy/QUALITY.md",
-  "docs/reference",
+const queryToolPath = path.join(root, "tools/dev/query-knowledge.mjs");
+for (const args of [
+  ["meta-standard"],
+  ["list", "owners"],
+  ["list", "policies"],
+  ["list", "capabilities"],
+  ["list", "journeys"],
+  ["list", "references"],
+  ["list", "quality-dimensions"],
 ]) {
-  if (!queryTool.includes(token)) failures.push(`knowledge query tool missing source-derived behavior: ${token}`);
+  try {
+    execFileSync(process.execPath, [queryToolPath, ...args], {
+      cwd: root,
+      stdio: "ignore",
+    });
+  } catch {
+    failures.push(`knowledge query behavior failed: ${args.join(" ")}`);
+  }
 }
 
 if (failures.length) {
@@ -117,3 +145,4 @@ console.log(`KNOWLEDGE_COMMIT=${pin.commit}`);
 console.log("AGENT_LAW_OWNER=AGENTS.md");
 console.log("LOCAL_PROMPT_PACKAGE_ROOT=0");
 console.log("PINNED_GOVERNANCE_META_STANDARD=PASS");
+console.log("PINNED_GOVERNANCE_CANONICAL_MAIN=PASS");
