@@ -49,7 +49,7 @@ They require the relevant Docker-owned backend and Metro service to already be r
 
 `pnpm scr` is the canonical device/scrcpy owner. It uses USB as the primary device identity, prepares a bounded Wi-Fi fallback, and reuses valid ADB reverse mappings; it does not own Docker runtime lifecycle.
 
-## Local configuration## Local configuration
+## Local configuration
 
 `infra/local/compose/.env.example` is the tracked canonical source for local runtime keys and non-secret values. The ignored `.env` is an exact projection reconciled by `tools/dev/runtime.ps1` during startup only.
 

@@ -126,7 +126,7 @@ assert(!controlCase.includes("Compose @(") && !surfaceCase.includes("Compose @("
 assert(runtime.includes("CONTROL_PANEL_READY=PASS mode=read-only"), "control helper must expose read-only semantics");
 assert(runtime.includes("MOBILE_SURFACE_RUNTIME=PASS mode=read-only"), "surface helper must expose read-only semantics");
 
-for (const forbidden of [for (const forbidden of [
+for (const forbidden of [
   "runtime:up",
   "runtime:doctor",
   "runtime:status",
