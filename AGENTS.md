@@ -26,6 +26,8 @@ A CHANGE UNIT is one coherent authorized outcome. Intermediate edits are impleme
 
 One material meaning has one semantic owner; one mutable fact has one canonical writer; one cross-boundary contract has one executable provenance. Current code proves what exists, not that the design is correct. Treat the highest proven causal root; do not wrap, suppress, document around or preserve a surviving root defect.
 
+For every plausibly material quality dimension, resolve it as affected, proven unaffected, or not applicable with reason using the pinned Quality taxonomy. Do not silently omit a plausibly material dimension or apply a lower correctness standard because another layer is the visible focus.
+
 ## 2. Durable meaning and Governance
 
 Every material task classifies exactly one:
@@ -35,9 +37,11 @@ GOVERNANCE_IMPACT=REVALIDATE_ONLY
 GOVERNANCE_IMPACT=UPDATE_REQUIRED
 GOVERNANCE_IMPACT=DEFECT_FOUND
 
+NONE means durable meaning cannot materially change; REVALIDATE_ONLY means the relevant durable meaning was challenged and remains correct; UPDATE_REQUIRED means the authorized outcome changes durable meaning; DEFECT_FOUND means the pinned durable meaning is stale, wrong, incomplete or duplicated.
+
 Use the pinned Governance only when durable meaning can materially affect the current decision. Relevant durable owners include GOVERNANCE-STANDARDS.md for governance/agent integrity, governance/policy/QUALITY.md for material quality/proof, governance/policy/EXPERIENCE.md for IA/navigation/interaction/RTL/accessibility/recovery, and governance/policy/DESIGN.md for durable visual identity/design language. Load other Product/System/Policy owners only when material.
 
-If UPDATE_REQUIRED or DEFECT_FOUND, correct and merge the canonical Governance owner first, then deliberately repin knowledge.sources.json to the resulting immutable SHA and re-prove the affected implementation cone. A Governance pin change can never be NONE. Do not duplicate durable Governance meaning into this file or another repository-local Markdown authority.
+If UPDATE_REQUIRED or DEFECT_FOUND, correct and merge the canonical Governance owner first, then deliberately repin knowledge.sources.json to the resulting immutable SHA and re-prove the affected implementation cone. A Governance pin change can never be NONE, and normal promotion must not move the pin backward from its previously bound canonical ancestry. Do not duplicate durable Governance meaning into this file or another repository-local Markdown authority.
 
 Donor/history, OSS/product exemplars, Yemen-market evidence, primary technology sources and assurance/experience sources are evidence only. Inspect them only when they can change the current decision, and revalidate mutable external facts at use.
 
@@ -57,6 +61,8 @@ Within the affected cone, every material file/module/route/service/package/type/
 
 A replacement is complete only after all material producers, consumers, contracts, persistence/config/runtime paths, tests and current implementation descriptions use the winner; then delete the loser and prove it absent. No old/new shadow truth or partial cutover.
 
+For high-cost-to-reverse identities, persistent data shapes, ownership boundaries or public contracts, prove semantic sufficiency and a defensible evolution/cutover path before committing the design; do not build speculative future machinery.
+
 ## 4. Local development and runtime
 
 The stable local interface is intentionally small:
@@ -75,7 +81,7 @@ Executable package/config/runtime code owns ports, process inventory and mutable
 
 LOCAL_INTEGRATION has one canonical owner per admitted process/state. Do not run parallel host/container owners for the same responsibility. Reuse valid warm backend, Metro/Next, session, actor and business state. Verification must not bootstrap dependencies, rebuild/restart the whole runtime or re-login merely to manufacture a generic green result. Rebuild/restart only what the affected claim requires.
 
-Normal local Product state is reusable. Proof-only state exists only when a claim requires it; create the minimum through canonical writers and clean only disposable state created by that proof. Do not use direct SQL/seed bypass to manufacture business success. Destructive local data loss requires explicit same-invocation authorization.
+Normal local Product state is reusable. Proof-only state exists only when a claim requires it; create the minimum through canonical writers and clean only disposable state created by that proof. Do not use direct SQL/seed bypass to manufacture business success. Proof tooling must not reset developer credentials, authorize re-enrollment, revoke unrelated sessions, mutate an established actor merely to regain access, or destroy reusable business state for convenience. Destructive local data loss requires explicit same-invocation authorization.
 
 ## 5. Runtime and user-facing proof
 
@@ -104,7 +110,7 @@ Cache is evidence only when its inputs cover every material computation input. P
 
 Evidence is valid only for the exact state and claim it proves. Use the smallest adequate producer: source/config for source claims, schema/query/readback for persistence, Playwright for web journeys, device/Expo/ADB for mobile interaction, Compose/process/network readback for runtime ownership, measurement for performance, and current primary sources for mutable external rules.
 
-Use subagents only for genuinely independent bounded lanes. Parallelize independent read/reasoning where useful; on a resource-constrained local host avoid concurrent heavyweight builds/exports/runtime/browser/device proof unless measurement shows it reduces total cost without contention. The lead owns final integration, Governance classification, consequential mutations, commit/push and closure.
+Use subagents only for genuinely independent bounded lanes with exact input state, one material deliverable, bounded scope and required evidence. Parallel mutation lanes require disjoint write sets. Parallelize independent read/reasoning where useful; on a resource-constrained local host avoid concurrent heavyweight builds/exports/runtime/browser/device proof unless measurement shows it reduces total cost without contention. The lead owns final integration, Governance classification, consequential mutations, commit/push and closure. Subagents must not independently push, merge, repin Governance, reset/purge persistent state, expose secrets or declare closure; invalidate their returned evidence if its material inputs change before integration.
 
 ## 7. Safety and closure
 
@@ -129,4 +135,6 @@ For one coherent verified unit:
 
 REVIEW DIFF → COMMIT → REPOSITORY-OWNED SAFE PUSH → CONFIRM EXACT REMOTE SHA
 
-Stop when current material closure is proven. Do not continue searching for unrelated improvements merely because they exist.
+Commit/push does not authorize merge, promotion, release or other external consequential effects.
+
+Do not ask for "next" when the next safe action is derivable and inside current authority. Stop only for a real authority/scope boundary, missing Product decision, unreconciled target movement, unavailable required credential/environment, material safety/irreversibility risk, or a decision-critical unknown that cannot presently be resolved. Otherwise continue only until current material closure is proven, then stop; do not search for unrelated improvements merely because they exist.
