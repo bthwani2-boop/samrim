@@ -8,13 +8,19 @@ const read=(p)=>fs.readFileSync(path.join(root,p),"utf8");
 const pkg=JSON.parse(read("package.json"));
 const dev=read("tools/dev/dev.ps1");
 const launcher=read("tools/dev/start-surface.mjs");
+const mobilePrepare=read("tools/mobile/prepare-local-development.ps1");
+const mobileBuild=read("tools/mobile/build-development.ps1");
+const liveRunner=read("tools/dev/run-playwright-live.mjs");
+const identityRuntimeProof=read("tools/dev/verify-identity-runtime.mjs");
 const check=(ok,msg)=>{if(!ok)fail.push(msg)};
 
 const ps=spawnSync("pwsh",["-NoProfile","-Command",
   "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/dev.ps1'),[ref]$t,[ref]$e)|Out-Null;if($e.Count){exit 1}"
 ],{cwd:root,encoding:"utf8"});
 check(ps.status===0,"dev.ps1 PowerShell syntax must parse cleanly");
-check(spawnSync(process.execPath,["--check","tools/dev/start-surface.mjs"],{cwd:root}).status===0,"start-surface.mjs syntax must parse cleanly");
+for(const script of ["tools/dev/start-surface.mjs","tools/dev/run-playwright-live.mjs","tools/dev/verify-identity-runtime.mjs"]){
+  check(spawnSync(process.execPath,["--check",script],{cwd:root}).status===0,`${script} syntax must parse cleanly`);
+}
 
 const run="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1";
 for(const [name,target] of Object.entries({dev:"daily","runtime:up":"up","runtime:down":"down","runtime:status":"status",scr:"scr"})){
@@ -47,6 +53,16 @@ check(launcher.includes("process.cwd()"),"surface launcher must preserve package
 check(launcher.includes('EXPO_NO_METRO_WORKSPACE_ROOT="1"'),"mobile launcher must keep app-scoped Metro root");
 check(launcher.includes('"--dev-client","--localhost","--port"'),"mobile launcher must directly start Expo");
 check(launcher.includes('"dev","-H","127.0.0.1","-p"'),"control launcher must directly start Next");
+check(launcher.includes("url=http://localhost:${port}"),"control launcher must expose localhost as the canonical developer browser origin");
+
+const persistentLocalTooling=[dev,launcher,mobilePrepare,mobileBuild].join("\n");
+check(!/\badb(?:\.exe)?\b[^\r\n]*\buninstall\b/i.test(persistentLocalTooling),"persistent local tooling must not uninstall Android apps");
+check(!/\bpm\s+clear\b/i.test(persistentLocalTooling),"persistent local tooling must not clear Android app data");
+check(!/\bdocker\s+volume\s+rm\b/i.test(persistentLocalTooling),"persistent local tooling must not remove Docker volumes");
+check(!/\bdown\b[^\r\n]*(?:--volumes|\s-v(?:\s|$))/i.test(dev),"daily runtime shutdown must not delete Compose volumes");
+for(const [name,source] of [["live Identity browser runner",liveRunner],["Identity runtime proof",identityRuntimeProof]]){
+  check(source.includes('process.env.CI === "true"')&&source.includes('BTHWANI_IDENTITY_PROOF_SCOPE')&&source.includes('"disposable-ci"'),`${name} must fail closed outside explicitly disposable CI state`);
+}
 
 if(fail.length){
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");

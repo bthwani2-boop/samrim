@@ -17,14 +17,15 @@ type Service struct {
 	db            *sql.DB
 	now           func() time.Time
 	refreshSecret []byte
+	development   bool
 }
 
 const refreshRaceGrace = 5 * time.Second
 
 const minimumAccessLifetime = time.Second
 
-func New(db *sql.DB, refreshSecret []byte) *Service {
-	return &Service{db: db, now: time.Now, refreshSecret: append([]byte(nil), refreshSecret...)}
+func New(db *sql.DB, refreshSecret []byte, development bool) *Service {
+	return &Service{db: db, now: time.Now, refreshSecret: append([]byte(nil), refreshSecret...), development: development}
 }
 
 func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, clientInstanceId string) (domain.TokenPair, error) {
@@ -56,8 +57,8 @@ func (s *Service) createTx(ctx context.Context, tx *sql.Tx, actorID, role, devic
 		return domain.TokenPair{}, err
 	}
 	now := s.now().UTC()
-	absoluteExpiry := now.Add(sessionAbsoluteLifetime(role))
-	accessExpiry, refreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry)
+	absoluteExpiry := now.Add(sessionAbsoluteLifetime(role, s.development))
+	accessExpiry, refreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry, s.development)
 	if !ok {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
@@ -179,7 +180,7 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	now = s.now().UTC()
-	nextAccessExpiry, nextRefreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry)
+	nextAccessExpiry, nextRefreshExpiry, ok := calculateSessionExpiries(role, now, absoluteExpiry, s.development)
 	if !ok {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
@@ -306,15 +307,18 @@ func (s *Service) derivedRefreshPair(sessionID, actorID, role, deviceHash string
 	refresh := identitysecurity.HMAC256Hex(s.refreshSecret, "identity-session-refresh-v1", sessionID, versionValue, deviceHash)
 	return domain.TokenPair{AccessToken: access, RefreshToken: sessionID + "." + refresh, AccessExpiry: accessExpiry, Identity: identityOf(actorID, sessionID, role, accessExpiry)}
 }
-func sessionAbsoluteLifetime(role string) time.Duration {
+func sessionAbsoluteLifetime(role string, development bool) time.Duration {
+	if development {
+		return 365 * 24 * time.Hour
+	}
 	if role == "operator" {
 		return 24 * time.Hour
 	}
 	return 365 * 24 * time.Hour
 }
-func calculateRefreshExpiry(role string, now, absolute time.Time) time.Time {
+func calculateRefreshExpiry(role string, now, absolute time.Time, development bool) time.Time {
 	candidate := now.Add(30 * 24 * time.Hour)
-	if role == "operator" {
+	if role == "operator" && !development {
 		candidate = now.Add(time.Hour)
 	}
 	limit := absolute.Add(-time.Second)
@@ -324,8 +328,8 @@ func calculateRefreshExpiry(role string, now, absolute time.Time) time.Time {
 	return candidate
 }
 
-func calculateSessionExpiries(role string, now, absolute time.Time) (access, refresh time.Time, ok bool) {
-	refresh = calculateRefreshExpiry(role, now, absolute)
+func calculateSessionExpiries(role string, now, absolute time.Time, development bool) (access, refresh time.Time, ok bool) {
+	refresh = calculateRefreshExpiry(role, now, absolute, development)
 	if !refresh.After(now.Add(minimumAccessLifetime)) || !absolute.After(refresh) {
 		return time.Time{}, time.Time{}, false
 	}

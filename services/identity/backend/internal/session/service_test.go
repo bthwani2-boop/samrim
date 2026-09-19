@@ -9,7 +9,7 @@ import (
 func TestCalculateSessionExpiriesKeepStrictOrderingNearAbsoluteExpiry(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
 	absolute := now.Add(10 * time.Minute)
-	access, refresh, ok := calculateSessionExpiries("client", now, absolute)
+	access, refresh, ok := calculateSessionExpiries("client", now, absolute, false)
 	if !ok {
 		t.Fatal("session expiry calculation unexpectedly failed with a usable absolute lifetime")
 	}
@@ -23,7 +23,7 @@ func TestCalculateSessionExpiriesKeepStrictOrderingNearAbsoluteExpiry(t *testing
 
 func TestCalculateSessionExpiriesUseConfiguredLifetimesWhenSafe(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
-	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(365*24*time.Hour))
+	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(365*24*time.Hour), false)
 	if !ok || access != now.Add(15*time.Minute) || refresh != now.Add(30*24*time.Hour) {
 		t.Fatalf("safe session expiries = %s/%s/%t, want 15m/30d/true", access, refresh, ok)
 	}
@@ -31,7 +31,7 @@ func TestCalculateSessionExpiriesUseConfiguredLifetimesWhenSafe(t *testing.T) {
 
 func TestCalculateSessionExpiriesFailClosedWithoutUsableAccessInterval(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
-	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(1500*time.Millisecond))
+	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(1500*time.Millisecond), false)
 	if ok || !access.IsZero() || !refresh.IsZero() {
 		t.Fatalf("near-exhausted session lifetime was not rejected: access=%s refresh=%s ok=%t", access, refresh, ok)
 	}
@@ -39,26 +39,33 @@ func TestCalculateSessionExpiriesFailClosedWithoutUsableAccessInterval(t *testin
 
 func TestMobileSessionLifetimesAreRoleAware(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
-	mobileAbsolute := now.Add(sessionAbsoluteLifetime("client"))
+	mobileAbsolute := now.Add(sessionAbsoluteLifetime("client", false))
 	if mobileAbsolute != now.Add(365*24*time.Hour) {
 		t.Fatalf("mobile absolute lifetime = %s, want 365 days", mobileAbsolute.Sub(now))
 	}
-	if got := calculateRefreshExpiry("client", now, mobileAbsolute); got != now.Add(30*24*time.Hour) {
+	if got := calculateRefreshExpiry("client", now, mobileAbsolute, false); got != now.Add(30*24*time.Hour) {
 		t.Fatalf("mobile refresh lifetime = %s, want 30 days", got.Sub(now))
 	}
-	operatorAbsolute := now.Add(sessionAbsoluteLifetime("operator"))
+	operatorAbsolute := now.Add(sessionAbsoluteLifetime("operator", false))
 	if operatorAbsolute != now.Add(24*time.Hour) {
 		t.Fatalf("operator absolute lifetime = %s, want 24 hours", operatorAbsolute.Sub(now))
 	}
-	if got := calculateRefreshExpiry("operator", now, operatorAbsolute); got != now.Add(time.Hour) {
+	if got := calculateRefreshExpiry("operator", now, operatorAbsolute, false); got != now.Add(time.Hour) {
 		t.Fatalf("operator refresh lifetime = %s, want 1 hour", got.Sub(now))
+	}
+	developmentOperatorAbsolute := now.Add(sessionAbsoluteLifetime("operator", true))
+	if developmentOperatorAbsolute != now.Add(365*24*time.Hour) {
+		t.Fatalf("development operator absolute lifetime = %s, want 365 days", developmentOperatorAbsolute.Sub(now))
+	}
+	if got := calculateRefreshExpiry("operator", now, developmentOperatorAbsolute, true); got != now.Add(30*24*time.Hour) {
+		t.Fatalf("development operator refresh lifetime = %s, want 30 days", got.Sub(now))
 	}
 }
 
 func TestRefreshExpiryIsStrictlyBeforeAbsoluteExpiry(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
 	abs := now.Add(10 * time.Minute)
-	got := calculateRefreshExpiry("client", now, abs)
+	got := calculateRefreshExpiry("client", now, abs, false)
 	if got != abs.Add(-time.Second) || !got.Before(abs) {
 		t.Fatalf("refresh expiry = %s, want one second before absolute expiry %s", got, abs.Add(-time.Second))
 	}

@@ -48,6 +48,12 @@ function cookieOptions() {
   return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, path: "/" };
 }
 
+function refreshCookieMaxAge(): number {
+  return process.env.BTHWANI_ENV === "development" || process.env.BTHWANI_ENV === "test"
+    ? 30 * 24 * 60 * 60
+    : 60 * 60;
+}
+
 async function operatorClientInstanceId(): Promise<string> {
   const store = await cookies();
   const existing = store.get(deviceCookie)?.value?.trim();
@@ -65,7 +71,7 @@ async function writeTokens(pair: TokenPair, clientInstanceId: string): Promise<v
   if (!isControlPanelIdentity(pair.identity)) throw new Error("CONTROL_PANEL_SESSION_SURFACE_MISMATCH");
   const store = await cookies();
   store.set(accessCookie, pair.accessToken, { ...cookieOptions(), expires: new Date(pair.accessExpiresAt) });
-  store.set(refreshCookie, pair.refreshToken, { ...cookieOptions(), maxAge: 7 * 24 * 60 * 60 });
+  store.set(refreshCookie, pair.refreshToken, { ...cookieOptions(), maxAge: refreshCookieMaxAge() });
   store.set(deviceCookie, clientInstanceId, { ...cookieOptions(), maxAge: 365 * 24 * 60 * 60 });
 }
 

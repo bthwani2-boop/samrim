@@ -129,6 +129,8 @@ jobs:
 
       - name: Establish active Operator through canonical Passkey flow
         if: steps.scope.outputs.run == 'true'
+        env:
+          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         shell: bash
         run: |
           set -euo pipefail
@@ -145,6 +147,8 @@ jobs:
 
       - name: Verify backend runtime semantics
         if: steps.scope.outputs.run == 'true'
+        env:
+          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         shell: bash
         run: |
           set -euo pipefail

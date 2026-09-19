@@ -4,6 +4,12 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
+const destructiveProofAuthorized = process.env.CI === "true" && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci";
+if (!destructiveProofAuthorized) {
+  console.error("IDENTITY_PROOF_REFUSED scope=developer-state reason=disposable-ci-required");
+  process.exit(1);
+}
+
 const root = path.resolve(import.meta.dirname, "../..");
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env-file="))?.slice("--env-file=".length);
 const envFile = path.resolve(root, requestedEnv || "infra/local/.env");

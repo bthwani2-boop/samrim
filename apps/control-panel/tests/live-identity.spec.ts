@@ -13,6 +13,12 @@ type PreparedOperator = {
 
 let preparedOperatorForCleanup: PreparedOperator | undefined;
 
+test.beforeAll(() => {
+  if (process.env.CI !== "true" || process.env.BTHWANI_IDENTITY_PROOF_SCOPE !== "disposable-ci") {
+    throw new Error("live Identity proof requires explicitly disposable CI state");
+  }
+});
+
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(name + " is required for live Identity browser proof");

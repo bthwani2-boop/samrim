@@ -83,9 +83,8 @@ func (s *Service) loginPassword(ctx context.Context, rawPhone, password, role, r
 		_, _ = s.recordPasswordFailure(ctx, phone, role, ipHash, reservationID)
 		return domain.TokenPair{}, lookupErr
 	}
-	// Always perform the cryptographic comparison before applying the current
-	// admission policy. This preserves the existing anti-enumeration work while
-	// preventing a legacy valid-but-too-long credential from creating a session.
+	// Existing credentials authenticate by their stored verifier. New-password
+	// admission policy belongs to enrollment/change/recovery, not later login.
 	if !passwordAcceptedForLogin(hash, password) {
 		limited, recordErr := s.recordPasswordFailure(ctx, phone, role, ipHash, reservationID)
 		if recordErr != nil {
@@ -114,7 +113,7 @@ WHERE c.actor_id=$1 AND c.role=$2 FOR UPDATE OF c,r,a`, a.ID, role).Scan(&curren
 		s.releaseReservation(ctx, reservationID)
 		return domain.TokenPair{}, err
 	}
-	if identitysecurity.NeedsPasswordRehash(currentHash) {
+	if identitysecurity.NeedsPasswordRehash(currentHash) && identitysecurity.PasswordAllowed(password) {
 		upgradedHash, hashErr := identitysecurity.HashPassword(password)
 		if hashErr != nil {
 			return domain.TokenPair{}, hashErr
@@ -141,7 +140,7 @@ WHERE c.actor_id=$1 AND c.role=$2 FOR UPDATE OF c,r,a`, a.ID, role).Scan(&curren
 }
 
 func passwordAcceptedForLogin(hash, password string) bool {
-	return identitysecurity.VerifyPassword(hash, password) && identitysecurity.PasswordAllowed(password)
+	return identitysecurity.VerifyPassword(hash, password)
 }
 
 func (s *Service) recordPasswordFailure(ctx context.Context, phone, role, ipHash string, reservationID int64) (bool, error) {

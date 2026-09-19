@@ -96,7 +96,7 @@ func Run(_, _, defaultPort string) error {
 		}
 	}
 	actors := actor.New(db)
-	sessions := session.New(db, cfg.challengeSecret)
+	sessions := session.New(db, cfg.challengeSecret, cfg.runtimeEnvironment == "development" || cfg.runtimeEnvironment == "test")
 	challenges := challenge.New(db, actors, sessions, cfg.challengeSecret, cfg.delivery, cfg.providerBudget)
 	authenticationService := authentication.New(db, actors, sessions)
 	passkeys, err := passkey.New(db, sessions, challenges, passkey.Config{RPID: cfg.webauthnRPID, Origins: cfg.webauthnOrigins, RPName: "بثواني"})

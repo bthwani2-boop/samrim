@@ -132,6 +132,8 @@ jobs:
         run: pnpm exec nx run control-panel:e2e --outputStyle=stream
 
       - name: Run live Identity browser proof
+        env:
+          BTHWANI_IDENTITY_PROOF_SCOPE: disposable-ci
         shell: bash
         run: |
           set -euo pipefail

@@ -58,7 +58,7 @@ if(/^app-(client|partner|captain|field)$/.test(surface)){
   process.env.NEXT_TELEMETRY_DISABLED="1";
   cli=path.join(surfaceRoot,"node_modules","next","dist","bin","next");
   args=[cli,"dev","-H","127.0.0.1","-p",port];
-  console.log(`CONTROL_LIVE port=${port} hmr=on cwd=${surfaceRoot}`);
+  console.log(`CONTROL_LIVE url=http://localhost:${port} listen=127.0.0.1:${port} hmr=on cwd=${surfaceRoot}`);
 }else{
   fail(`UNSUPPORTED_LOCAL_SURFACE surface=${surface}`);
 }
