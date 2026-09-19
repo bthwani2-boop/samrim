@@ -26,6 +26,8 @@ const WORLD = Object.freeze({
   categoryNameEn: "Grocery Essentials",
   businessName: "متجر العالم المحلي",
   storeName: "متجر العالم المحلي",
+  firstStoreLatitude: 15.369445,
+  firstStoreLongitude: 44.191006,
   productName: "أرز العالم المحلي",
   productVariantTitle: "عبوة 1 كجم",
 });
@@ -396,7 +398,7 @@ async function ensurePartner(operatorID, state) {
   let view = summary ? await expect(dshBase, "GET", `/dsh/joining-cases/${encodeURIComponent(summary.id)}`, 200, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID } }) : null;
   if (view?.case) summary = view.case;
   if (!summary) {
-    summary = (await expect(dshBase, "POST", "/dsh/joining-cases", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { contactPhoneE164: WORLD.partnerPhone, businessName: WORLD.businessName, firstStoreName: WORLD.storeName, serviceCityId: state.entities.cityId, firstStoreVerticalId: state.entities.verticalId } })).case;
+    summary = (await expect(dshBase, "POST", "/dsh/joining-cases", 201, { token: dshToken, headers: mutationHeaders(operatorID), body: { contactPhoneE164: WORLD.partnerPhone, businessName: WORLD.businessName, firstStoreName: WORLD.storeName, serviceCityId: state.entities.cityId, firstStoreVerticalId: state.entities.verticalId, firstStoreLatitude: WORLD.firstStoreLatitude, firstStoreLongitude: WORLD.firstStoreLongitude } })).case;
     view = { case: summary };
   }
   if (summary.serviceCityId !== state.entities.cityId || summary.firstStoreVerticalId !== state.entities.verticalId) fail("canonical partner joining case points at a different baseline");
@@ -546,7 +548,7 @@ async function readStatus(state) {
     city: cities.status === 200 && city?.active && city.displayNameAr === WORLD.cityNameAr,
     vertical: verticals.status === 200 && vertical?.active && vertical.nameAr === WORLD.verticalNameAr,
     category: categories.status === 200 && category?.active && category.verticalId === state.entities.verticalId,
-    joiningCase: joining.status === 200 && joiningCase?.state === "approved" && joiningCase.partnerActorId === state.actors.partner.actorId && joiningCase.serviceCityId === state.entities.cityId && joiningCase.firstStoreVerticalId === state.entities.verticalId && joiningCase.store?.id === state.entities.storeId && joiningCase.store.partnerActorId === state.actors.partner.actorId,
+    joiningCase: joining.status === 200 && joiningCase?.state === "approved" && joiningCase.partnerActorId === state.actors.partner.actorId && joiningCase.serviceCityId === state.entities.cityId && joiningCase.firstStoreVerticalId === state.entities.verticalId && joiningCase.firstStoreLatitude === WORLD.firstStoreLatitude && joiningCase.firstStoreLongitude === WORLD.firstStoreLongitude && joiningCase.store?.id === state.entities.storeId && joiningCase.store.partnerActorId === state.actors.partner.actorId && joiningCase.store.deliveryOrigin?.latitude === WORLD.firstStoreLatitude && joiningCase.store.deliveryOrigin?.longitude === WORLD.firstStoreLongitude,
     publication: publication.status === 200 && store?.id === state.entities.storeId && store.partnerActorId === state.actors.partner.actorId && store.serviceCityId === state.entities.cityId && store.primaryVerticalId === state.entities.verticalId && store.publicationState === "published" && store.publicationReadiness?.ready,
     captainAdmission: captainAdmission.status === 200 && captain?.actorId === state.actors.captain.actorId && captain.state === "eligible" && captain.availabilityState === "unavailable",
     fieldAdmission: fieldAdmission.status === 200 && field?.actorId === state.actors.field.actorId && field.state === "eligible",

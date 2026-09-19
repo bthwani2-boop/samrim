@@ -1,7 +1,7 @@
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -41,9 +41,8 @@ let serviceCityID = "";
 const actorIDs = new Set();
 const caseIDs = new Set();
 let clientActorID = "";
-let partnerActorID = "";
-let foreignPartnerActorID = "";
 let verticalID = "";
+const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 };
 
 function sqlLiteral(value) {
   return String(value).replaceAll("'", "''");
@@ -117,9 +116,9 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
   const created = await expect(dshBase, "POST", "/dsh/joining-cases", 201, {
     token: controlPanelToken,
     headers: serviceHeaders(operatorID),
-    body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: verticalID },
+    body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: verticalID, ...firstStoreOrigin },
   });
-  if (created?.case?.state !== "draft" || created.case.firstStoreVerticalId !== verticalID) throw new Error("location joining case create readback failed");
+  if (created?.case?.state !== "draft" || created.case.firstStoreVerticalId !== verticalID || created.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case create readback failed");
   const caseID = String(created.case.id);
   caseIDs.add(caseID);
   const submitted = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/submit`, 200, {
@@ -134,7 +133,7 @@ async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
     headers: { ...serviceHeaders(operatorID), "X-Expected-Version": "2" },
     body: { decision: "approved" },
   });
-  if (approved?.case?.state !== "approved" || !approved.case.store?.id) throw new Error("location joining case approval readback failed");
+  if (approved?.case?.state !== "approved" || !approved.case.store?.id || approved.case.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || approved.case.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude || approved.case.store.deliveryOrigin?.latitude !== firstStoreOrigin.firstStoreLatitude || approved.case.store.deliveryOrigin?.longitude !== firstStoreOrigin.firstStoreLongitude) throw new Error("location joining case approval readback failed");
   return { ...fixture, caseID, storeID: String(approved.case.store.id) };
 }
 
@@ -184,9 +183,10 @@ function cleanup() {
 let exitCode = 1;
 try {
   const schema = sql("SELECT count(*) FROM dsh.schema_migrations");
-  if (schema !== "20") throw new Error(`DSH schema history is not v20: ${schema}`);
+  if (schema !== "21") throw new Error(`DSH schema history is not v21: ${schema}`);
   if (sql("SELECT name FROM dsh.schema_migrations WHERE version=10") !== "010_central_catalog_refoundation.sql") throw new Error("Catalog refoundation migration is not canonical");
   if (sql("SELECT name FROM dsh.schema_migrations WHERE version=20") !== "020_field_standing_admission_and_joining_scope.sql") throw new Error("Field standing admission migration is not canonical");
+  if (sql("SELECT name FROM dsh.schema_migrations WHERE version=21") !== "021_joining_case_store_origin.sql") throw new Error("Joining-case store-origin migration is not canonical");
   for (const [table, column] of [["delivery_address_mutation_idempotency", "result_version"], ["delivery_address_audit", "address_text"], ["delivery_address_audit", "latitude"], ["delivery_address_audit", "longitude"], ["store_origin_mutation_idempotency", "result_version"], ["store_origin_mutation_idempotency", "result_latitude"], ["store_origin_mutation_idempotency", "result_longitude"], ["store_origin_mutation_idempotency", "result_updated_at"], ["store_origin_audit", "latitude"], ["store_origin_audit", "longitude"]]) {
     if (sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND table_name='${table}' AND column_name='${column}'`) !== "0") throw new Error(`Location Core precise/dead column remains: dsh.${table}.${column}`);
   }
@@ -218,9 +218,7 @@ try {
   const client = await createClientSession(clientPhone, `location-client-${suffix}`);
   const partnerFixture = await createApprovedPartner(operatorID, partnerPhone, "Location Runtime", serviceCityID);
   const foreignPartnerFixture = await createApprovedPartner(operatorID, foreignPartnerPhone, "Foreign Location Runtime", serviceCityID);
-  partnerActorID = partnerFixture.actorID;
-  foreignPartnerActorID = foreignPartnerFixture.actorID;
-  partnerStoreID = partnerFixture.storeID;
+    partnerStoreID = partnerFixture.storeID;
   foreignStoreID = foreignPartnerFixture.storeID;
 
   const empty = await expect(dshBase, "GET", "/dsh/addresses?limit=10", 200, { token: client.accessToken });
@@ -248,30 +246,15 @@ try {
   const addressConcurrent = await Promise.all([0, 1].map((index) => request(dshBase, "POST", `/dsh/addresses/${encodeURIComponent(addressID)}`, { token: client.accessToken, headers: userHeaders(`location-address-concurrent-${suffix}-${index}`, 3), body: { addressText: `عنوان concurrent ${index}`, latitude: 15.5 + index / 100, longitude: 44.3 + index / 100, serviceCityId: serviceCityID } })));
   if (addressConcurrent.filter((result) => result.status === 200).length !== 1 || addressConcurrent.filter((result) => result.status === 409 && result.body?.error?.code === "VERSION_CONFLICT").length !== 1) throw new Error(`client address concurrency was not serialized: ${JSON.stringify(addressConcurrent)}`);
 
-  const emptyOrigin = await expect(dshBase, "GET", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, 200, { token: partnerFixture.pair.accessToken });
-  if (emptyOrigin.origin !== null || emptyOrigin.originVersion !== 0 || Object.hasOwn(emptyOrigin, "storeVersion")) throw new Error(`partner origin empty readback failed: ${JSON.stringify(emptyOrigin)}`);
-  const originBody = { latitude: 15.369446, longitude: 44.191006 };
-  const originKey = `location-origin-set-${suffix}`;
-  const origin = await expect(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, 200, { token: partnerFixture.pair.accessToken, headers: userHeaders(originKey, 0), body: originBody });
-  if (origin.origin?.latitude !== 15.369446 || origin.originVersion !== 1) throw new Error(`partner origin write readback failed: ${JSON.stringify(origin)}`);
+  const origin = await expect(dshBase, "GET", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, 200, { token: partnerFixture.pair.accessToken });
+  if (origin.origin?.latitude !== firstStoreOrigin.firstStoreLatitude || origin.origin?.longitude !== firstStoreOrigin.firstStoreLongitude || origin.originVersion !== 1 || Object.hasOwn(origin, "storeVersion")) throw new Error(`partner origin canonical readback failed: ${JSON.stringify(origin)}`);
   let storeReadback = sql(`SELECT version || '|' || delivery_origin_version FROM dsh.stores WHERE id='${sqlLiteral(partnerStoreID)}'`);
-  if (storeReadback !== "1|1") throw new Error(`origin write changed Store version: ${storeReadback}`);
-  const originReplay = await expect(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, 200, { token: partnerFixture.pair.accessToken, headers: userHeaders(originKey, 0), body: originBody });
-  if (originReplay.idempotentReplay !== true || originReplay.originVersion !== 1) throw new Error("partner origin idempotency replay failed");
-  const originSecond = await expect(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, 200, { token: partnerFixture.pair.accessToken, headers: userHeaders(`location-origin-update-${suffix}`, 1), body: { latitude: 15.4, longitude: 44.2 } });
-  const delayedOriginReplay = await expect(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, 200, { token: partnerFixture.pair.accessToken, headers: userHeaders(originKey, 0), body: originBody });
-  if (originSecond.originVersion !== 2 || delayedOriginReplay.originVersion !== 2 || delayedOriginReplay.origin.latitude !== originSecond.origin.latitude) throw new Error("delayed origin replay did not reread current origin");
-  const originStale = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, { token: partnerFixture.pair.accessToken, headers: userHeaders(`location-origin-stale-${suffix}`, 1), body: { latitude: 15.4, longitude: 44.2 } });
-  if (originStale.status !== 409 || originStale.body?.error?.code !== "VERSION_CONFLICT") throw new Error(`partner origin stale write was accepted: ${JSON.stringify(originStale)}`);
-  const originConcurrent = await Promise.all([0, 1].map((index) => request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/delivery-origin`, { token: partnerFixture.pair.accessToken, headers: userHeaders(`location-origin-concurrent-${suffix}-${index}`, 2), body: { latitude: 15.6 + index / 100, longitude: 44.4 + index / 100 } })));
-  if (originConcurrent.filter((result) => result.status === 200).length !== 1 || originConcurrent.filter((result) => result.status === 409 && result.body?.error?.code === "VERSION_CONFLICT").length !== 1) throw new Error(`origin concurrency was not serialized: ${JSON.stringify(originConcurrent)}`);
-  storeReadback = sql(`SELECT version || '|' || delivery_origin_version FROM dsh.stores WHERE id='${sqlLiteral(partnerStoreID)}'`);
-  if (!storeReadback.startsWith("1|3")) throw new Error(`origin DB readback is not independent from Store publication version: ${storeReadback}`);
+  if (storeReadback !== "1|1") throw new Error(`canonical joining approval changed Store version unexpectedly: ${storeReadback}`);
 
   const publicationAttempt = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/publication`, { token: controlPanelToken, headers: { ...userHeaders(`location-publication-${suffix}`, 1), ...serviceHeaders(operatorID) }, body: { state: "published" } });
   if (publicationAttempt.status !== 409 || publicationAttempt.body?.error?.code !== "READINESS_BLOCKED") throw new Error(`publication readiness gate did not fail closed: ${JSON.stringify(publicationAttempt)}`);
   storeReadback = sql(`SELECT version || '|' || delivery_origin_version FROM dsh.stores WHERE id='${sqlLiteral(partnerStoreID)}'`);
-  if (storeReadback !== "1|3") throw new Error(`blocked publication changed Store or origin version: ${storeReadback}`);
+  if (storeReadback !== "1|1") throw new Error(`blocked publication changed Store or origin version: ${storeReadback}`);
   console.log("LOCATION_CORE_PUBLICATION_READINESS_GATE=PASS");
 
   const wrongRoleAddress = await request(dshBase, "GET", `/dsh/addresses/${encodeURIComponent(addressID)}`, { token: partnerFixture.pair.accessToken });
@@ -287,9 +270,6 @@ try {
   const foreignOrigin = await request(dshBase, "GET", `/dsh/stores/${encodeURIComponent(foreignStoreID)}/delivery-origin`, { token: partnerFixture.pair.accessToken });
   const unknownOrigin = await request(dshBase, "GET", "/dsh/stores/unknown-location-store/delivery-origin", { token: partnerFixture.pair.accessToken });
   if (foreignOrigin.status !== 404 || unknownOrigin.status !== 404 || foreignOrigin.body?.error?.code !== unknownOrigin.body?.error?.code) throw new Error(`foreign and unknown Store origin reads are distinguishable: foreign=${JSON.stringify(foreignOrigin)} unknown=${JSON.stringify(unknownOrigin)}`);
-  const foreignWrite = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(foreignStoreID)}/delivery-origin`, { token: partnerFixture.pair.accessToken, headers: userHeaders(`location-foreign-write-${suffix}`, 0), body: originBody });
-  const unknownWrite = await request(dshBase, "POST", "/dsh/stores/unknown-location-store/delivery-origin", { token: partnerFixture.pair.accessToken, headers: userHeaders(`location-unknown-write-${suffix}`, 0), body: originBody });
-  if (foreignWrite.status !== 404 || unknownWrite.status !== 404 || foreignWrite.body?.error?.code !== unknownWrite.body?.error?.code) throw new Error("foreign and unknown Store origin writes are distinguishable");
 
   for (let index = 0; index < 51; index += 1) {
     const body = { addressText: `عنوان runtime pagination ${index}، صنعاء`, latitude: 15 + index / 1000, longitude: 44 + index / 1000, serviceCityId: serviceCityID };
@@ -317,8 +297,8 @@ try {
 
   const addressCount = sql(`SELECT count(*) FROM dsh.delivery_address_audit WHERE client_actor_id='${sqlLiteral(clientActorID)}'`);
   const originCount = sql(`SELECT count(*) FROM dsh.store_origin_audit WHERE store_id='${sqlLiteral(partnerStoreID)}'`);
-  if (addressCount !== "55" || originCount !== "3") throw new Error(`audit readback is not one row per successful mutation: addresses=${addressCount} origins=${originCount}`);
-  console.log("DSH_SCHEMA_V20=PASS");
+  if (addressCount !== "55" || originCount !== "0") throw new Error(`audit readback contains losing Store-origin writer residue: addresses=${addressCount} origins=${originCount}`);
+  console.log("DSH_SCHEMA_V21=PASS");
   console.log("LOCATION_CORE_RUNTIME=PASS");
   console.log("LOCATION_CORE_CLIENT_API=PASS");
   console.log("LOCATION_CORE_PARTNER_API=PASS");
