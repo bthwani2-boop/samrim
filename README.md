@@ -47,7 +47,7 @@ pnpm runtime:status
 pnpm runtime:down
 ```
 
-From outside the repository, use `pnpm --dir D:\\samrim <command>`. A child process cannot change the parent PowerShell working directory.
+From outside the repository, use `pnpm --dir D:\samrim <command>`. A child process cannot change the parent PowerShell working directory.
 
 ## Verification
 

@@ -193,7 +193,7 @@ A task-specific runtime proof may exercise only the services/surfaces causally r
 
 Setup is not verification. Dependency installation/materialization belongs to bootstrap/setup and must not be repeated inside normal candidate proof when inputs are already ready.
 
-Valid LOCAL_INTEGRATION operational state is reusable: normal verification must not destroy it, business proof state is created through canonical owners rather than direct SQL/seed bypass, and destructive reset/purge requires explicit same-invocation data-loss authorization.
+Valid LOCAL_INTEGRATION operational state is reusable: normal verification must not destroy it, business proof state is created through canonical owners rather than direct SQL/seed bypass, and any materially necessary destructive local data loss requires explicit same-invocation authorization.
 
 Actor-facing LOCAL_INTEGRATION claims require the affected actor's real surface and role-scoped session; API/database readback verifies canonical truth but does not substitute for real interaction. Reuse valid actors and resources, create fresh transactional state only when the current claim requires it, and preserve valid state during normal verification.
 
@@ -213,7 +213,7 @@ CLAIM REQUIRES ADDITIONAL STATE
 AFFECTED LOCAL STATE IS UNTRUSTED
 → STOP USING IT
 → RECREATE ONLY THE REQUIRED STATE THROUGH CANONICAL OWNERS
-→ USE DESTRUCTIVE RESET/PURGE ONLY WITH EXPLICIT SAME-INVOCATION DATA-LOSS AUTHORIZATION
+→ IF DESTRUCTIVE LOCAL DATA LOSS IS MATERIAL, REQUIRE EXPLICIT SAME-INVOCATION AUTHORIZATION
 ```
 
 Proof tooling must not reset a developer credential, authorize re-enrollment, revoke unrelated sessions, change an established actor merely to regain tooling access, or manufacture reusable global state. Existing valid actors/resources may be reused when that does not weaken isolation or make evidence ambiguous. Business proof state is created through canonical owners rather than direct SQL/seed bypass.
