@@ -22,6 +22,7 @@ $CredentialVaultPath = Join-Path $SecretsRoot ("expo\" + $App + "\credentials.js
 $KeystoreVaultPath = Join-Path $SecretsRoot ("eas\android\" + $App + "\development.jks")
 $MaterializedCredentialPath = Join-Path $AppRoot "credentials.json"
 $MaterializedKeystorePath = Join-Path $AppRoot "development.jks"
+Import-Module -Name (Join-Path $PSScriptRoot "eas-credential-materialization.psm1") -Force
 
 function Fail([string] $Message) { throw $Message }
 
@@ -60,11 +61,6 @@ function Invoke-EasText([string[]] $Arguments) {
     return $Output
 }
 
-function Write-JsonNoSecrets([string] $Path, $Value) {
-    $Json = $Value | ConvertTo-Json -Depth 20
-    [IO.File]::WriteAllText($Path, $Json + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
-}
-
 function Get-BuildSourceSha($Build) {
     if ($null -eq $Build) { return "UNKNOWN" }
     foreach ($Property in @("gitCommitHash", "gitCommit", "sourceCommit", "commitHash")) {
@@ -94,11 +90,13 @@ foreach ($Required in @($CredentialVaultPath, $KeystoreVaultPath)) {
 $Credential = Get-Content -LiteralPath $CredentialVaultPath -Raw | ConvertFrom-Json
 $Credential.android.keystore.keystorePath = "development.jks"
 
-$CleanupNeeded = $false
+$Materialization = $null
 try {
-    Copy-Item -LiteralPath $KeystoreVaultPath -Destination $MaterializedKeystorePath -Force
-    Write-JsonNoSecrets -Path $MaterializedCredentialPath -Value $Credential
-    $CleanupNeeded = $true
+    $Materialization = New-EasCredentialMaterialization `
+        -KeystoreVaultPath $KeystoreVaultPath `
+        -MaterializedCredentialPath $MaterializedCredentialPath `
+        -MaterializedKeystorePath $MaterializedKeystorePath `
+        -Credential $Credential
 
     $null = Invoke-EasText @("whoami", "--non-interactive")
     Write-Host "EAS_AUTH=PASS"
@@ -141,10 +139,8 @@ try {
     }
 }
 finally {
-    if ($CleanupNeeded) {
-        foreach ($Path in @($MaterializedCredentialPath, $MaterializedKeystorePath)) {
-            if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force }
-        }
+    if ($null -ne $Materialization) {
+        Remove-EasCredentialMaterialization -Materialization $Materialization
     }
     $StatusAfter = @(& git -C $RepoRoot status --porcelain --untracked-files=all)
     if (($StatusBefore -join [Environment]::NewLine) -ne ($StatusAfter -join [Environment]::NewLine)) {

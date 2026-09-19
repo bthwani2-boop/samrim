@@ -15,6 +15,7 @@
     "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/scrcpy.ps1",
     "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
     "mobile:build": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/build-development.ps1",
+    "mobile:test-credential-atomicity": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/test-build-development.ps1",
     "brand:check": "node tools/mobile/verify-brand-assets.mjs",
     "control": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Control",
     "identity:blocklist:generate": "node services/identity/tools/generate-password-blocklist.mjs",
