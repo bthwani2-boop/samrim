@@ -473,6 +473,12 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
 
 test("partner Store publication exposes the canonical readiness block", async ({ page }) => {
   await stubAuthenticatedSession(page);
+  const publicationReasons = [
+    { code: "PARTNER_IDENTITY_NOT_ELIGIBLE", label: "هوية الشريك أو صلاحية دوره غير جاهزة للنشر" },
+    { code: "SERVICE_CITY_NOT_ELIGIBLE", label: "مدينة خدمة المتجر غير مؤهلة للنشر" },
+    { code: "CATALOG_NOT_READY", label: "لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا" },
+  ] as const;
+  let blockedReason: (typeof publicationReasons)[number]["code"] = publicationReasons[0].code;
   await page.route("**/api/service-cities**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
   });
@@ -500,7 +506,7 @@ test("partner Store publication exposes the canonical readiness block", async ({
     });
   });
   await page.route("**/api/stores/store_test/publication", async (route) => {
-     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", serviceCityId: "sanaa", primaryVerticalId: "grocery", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason: "PARTNER_IDENTITY_NOT_ELIGIBLE" }, offers: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
+     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ store: { id: "store_test", partnerActorId: "act_generated", name: "متجر الاختبار", serviceCityId: "sanaa", primaryVerticalId: "grocery", version: 1, publicationState: "unpublished", publicationReadiness: { ready: false, blockedReason }, offers: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
   });
   await page.goto("/partners/new");
   await page.getByLabel("رقم هاتف الشريك").fill("+96777000100");
@@ -510,7 +516,11 @@ test("partner Store publication exposes the canonical readiness block", async ({
   await page.getByLabel("المجال التجاري").selectOption("grocery");
   await page.getByRole("button", { name: "إنشاء حالة انضمام" }).click();
   await page.getByRole("button", { name: "إعادة قراءة النشر" }).click();
-  await expect(page.getByText("الجاهزية: محجوب", { exact: true })).toBeVisible();
+  for (const reason of publicationReasons) {
+    blockedReason = reason.code;
+    await page.getByRole("button", { name: "إعادة القراءة" }).click();
+    await expect(page.getByText(`الجاهزية: ${reason.label}`, { exact: true })).toBeVisible();
+  }
   await expect(page.getByRole("button", { name: "نشر المتجر" })).toBeDisabled();
 });
 

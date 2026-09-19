@@ -11,6 +11,7 @@ import type {
   JoiningCaseState,
   MeasurementKind,
   PublicationState,
+  StorePublicationReadiness,
   StoreOfferPublicationState,
 } from "../generated/dsh-types";
 
@@ -25,6 +26,14 @@ const publicationLabels: Record<PublicationState, string> = {
   unpublished: "غير منشور",
   published: "منشور",
   hidden: "مخفي",
+};
+
+type StorePublicationBlockedReason = Exclude<StorePublicationReadiness["blockedReason"], undefined>;
+
+const publicationReadinessBlockedReasonLabels: Record<StorePublicationBlockedReason, string> = {
+  PARTNER_IDENTITY_NOT_ELIGIBLE: "هوية الشريك أو صلاحية دوره غير جاهزة للنشر",
+  SERVICE_CITY_NOT_ELIGIBLE: "مدينة خدمة المتجر غير مؤهلة للنشر",
+  CATALOG_NOT_READY: "لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا",
 };
 
 const storeOfferPublicationLabels: Record<StoreOfferPublicationState, string> = {
@@ -110,6 +119,11 @@ export function joiningCaseStateLabel(state: JoiningCaseState): string {
 
 export function publicationStateLabel(state: PublicationState): string {
   return publicationLabels[state];
+}
+
+export function publicationReadinessBlockedReasonLabel(reason: StorePublicationReadiness["blockedReason"]): string {
+  if (!reason) return "سبب حجب النشر غير متاح حاليًا.";
+  return publicationReadinessBlockedReasonLabels[reason];
 }
 
 export function storeOfferPublicationStateLabel(state: StoreOfferPublicationState): string {

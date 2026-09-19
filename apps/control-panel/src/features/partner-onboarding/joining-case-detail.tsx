@@ -1,6 +1,6 @@
 "use client";
 
-import { type CommerceVertical, type JoiningCaseResponse, joiningCaseStateLabel, publicationStateLabel, type ServiceCity, type StorePublicationResponse } from "@bthwani/dsh";
+import { type CommerceVertical, type JoiningCaseResponse, joiningCaseStateLabel, publicationReadinessBlockedReasonLabel, publicationStateLabel, type ServiceCity, type StorePublicationResponse } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
@@ -130,7 +130,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
     if (!publication) return;
     const state = publication.store.publicationState === "published" ? "hidden" : "published";
     if (state === "published" && !publication.store.publicationReadiness.ready) {
-      setError("لا يمكن نشر المتجر قبل اجتياز بوابة هوية الشريك.");
+      setError(`لا يمكن نشر المتجر: ${publicationReadinessBlockedReasonLabel(publication.store.publicationReadiness.blockedReason)}`);
       return;
     }
     setPublicationBusy(true);
@@ -196,7 +196,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             {current.state === "needs_correction" ? <p>الحالة بانتظار تصحيح بيانات الشريك عبر المسار القانوني المتاح.</p> : null}
             {current.state === "approved" ? <p>تم اعتماد الحالة. انتقل إلى قراءة النشر إن كان المتجر متاحًا.</p> : null}
           </div>
-          {storeId ? <div className="managed-status managed-status-info"><strong>نشر المتجر</strong><p>{publication ? `الحالة الحالية: ${publicationStateLabel(publication.store.publicationState)}` : "لم تُقرأ حالة النشر بعد."}</p>{!publication ? <button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة قراءة النشر</button> : <><p>الجاهزية: {publication.store.publicationReadiness.ready ? "جاهز" : "محجوب"}</p><button type="button" className="button button-primary" disabled={publicationBusy || (!publication.store.publicationReadiness.ready && publication.store.publicationState !== "published")} onClick={() => void changePublication()}>{publicationBusy ? "جارٍ التحديث…" : publication.store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button><button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة القراءة</button></>}</div> : null}
+          {storeId ? <div className="managed-status managed-status-info"><strong>نشر المتجر</strong><p>{publication ? `الحالة الحالية: ${publicationStateLabel(publication.store.publicationState)}` : "لم تُقرأ حالة النشر بعد."}</p>{!publication ? <button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة قراءة النشر</button> : <><p>الجاهزية: {publication.store.publicationReadiness.ready ? "جاهز" : publicationReadinessBlockedReasonLabel(publication.store.publicationReadiness.blockedReason)}</p><button type="button" className="button button-primary" disabled={publicationBusy || (!publication.store.publicationReadiness.ready && publication.store.publicationState !== "published")} onClick={() => void changePublication()}>{publicationBusy ? "جارٍ التحديث…" : publication.store.publicationState === "published" ? "إخفاء المتجر" : "نشر المتجر"}</button><button type="button" className="button button-secondary" disabled={publicationBusy} onClick={() => void readPublication()}>إعادة القراءة</button></>}</div> : null}
         </>
       )}
       {error ? <p className="identity-error" role="alert">{error}</p> : null}
