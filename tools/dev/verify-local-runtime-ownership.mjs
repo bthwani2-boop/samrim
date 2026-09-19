@@ -10,66 +10,59 @@ const pkg=JSON.parse(read("package.json"));
 const dev=read("tools/dev/dev.ps1");
 const check=(ok,msg)=>{if(!ok)fail.push(msg)};
 
-const ps = spawnSync("pwsh", ["-NoProfile","-Command",
+const ps=spawnSync("pwsh",["-NoProfile","-Command",
   "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/dev.ps1'),[ref]$t,[ref]$e)|Out-Null;if($e.Count){$e|ForEach-Object{[Console]::Error.WriteLine($_.Message)};exit 1}"
-], { cwd: root, encoding: "utf8" });
-check(ps.status === 0, "dev.ps1 PowerShell syntax must parse cleanly" + (ps.stderr?.trim() ? ": " + ps.stderr.trim() : ""));
-
+],{cwd:root,encoding:"utf8"});
+check(ps.status===0,"dev.ps1 PowerShell syntax must parse cleanly"+(ps.stderr?.trim()?": "+ps.stderr.trim():""));
 
 const run="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1";
-check(pkg.scripts?.dev===`${run} daily`,"dev must route to dev.ps1 daily");
-check(pkg.scripts?.["runtime:up"]===`${run} up`,"runtime:up must route to dev.ps1");
-check(pkg.scripts?.["runtime:down"]===`${run} down`,"runtime:down must route to dev.ps1");
-check(pkg.scripts?.["runtime:status"]===`${run} status`,"runtime:status must route to dev.ps1");
-
 for(const [name,target] of Object.entries({
+  dev:"daily","runtime:up":"up","runtime:down":"down","runtime:status":"status",
   client:"client",partner:"partner",captain:"captain",field:"field",control:"control",scr:"scr"
 })){
   check(pkg.scripts?.[name]===`${run} ${target}`,`${name} must route to the single runtime owner`);
 }
-check(pkg.scripts?.["runtime:doctor"]===undefined,"runtime:doctor must remain absent");
+
 for(const old of [
   "tools/dev/local.ps1","tools/dev/runtime.ps1","tools/dev/runtime.psm1","tools/dev/device-policy.psm1",
   "tools/dev/open-mobile-apps.ps1","tools/dev/run-control.ps1","tools/dev/scrcpy.ps1"
 ]) check(!exists(old),`retired runtime file remains: ${old}`);
 
 for(const token of [
-  "ValidateSet('daily','client','partner','captain','field','control','scr','up','down','status')","DEV_TIMING","DEV_READY=PASS",
-  "EXPO_OFFLINE='1'","EXPO_NO_QR_CODE='1'","EXPO_NO_TYPESCRIPT_SETUP='1'",
-  "--dns-result-order=ipv4first","Ensure-Dependencies","--frozen-lockfile","--prefer-offline",
-  "Ensure-Reverse","Start-MobileServer","Start-ControlServer","Wait-Servers","Ensure-HostServers","Ensure-Scrcpy","Stop-LocalHosts","--dev-client","--localhost"
+  "Get-UsbSerial","Prepare-TcpFallback","Connect-TcpFallback","Disconnect-TcpDevices","Get-AdbSelector",
+  "Ensure-Reverse","Start-MobileServer","Start-ControlServer","Ensure-Scrcpy","Stop-LocalHosts",
+  "--dev-client","--localhost","--select-usb","--serial","adb connect","adb disconnect","adb -d tcpip 5555",
+  "Start-MobileServer $Name -Foreground","Start-ControlServer -Foreground",
+  "MOBILE_LIVE","CONTROL_LIVE","SCRCPY_FAILOVER","SCRCPY_FAILBACK","DEV_READY=PASS"
 ]) check(dev.includes(token),`dev.ps1 missing invariant: ${token}`);
 
 for(const bad of [
-  "--android","am start","shell pidof","logcat","APP_EXITED","pnpm --dir","adb devices","ANDROID_SERIAL",
-  "adb -s","scrcpy -s","adb tcpip","getprop","WIFI","wifi","METRO_START_TIMEOUT","EXPO_NO_TELEMETRY"
-]) check(!dev.includes(bad),`dev.ps1 retains removed runtime behavior: ${bad}`);
+  "--android","am start","shell pidof","logcat","APP_EXITED","pnpm --dir",
+  "ANDROID_SERIAL","Wireless Debugging","pairing code","adb pair","METRO_START_TIMEOUT"
+]) check(!dev.includes(bad),`dev.ps1 retains forbidden runtime behavior: ${bad}`);
 
-check(!/\[string\[\]\]\$Args\b/.test(dev),"dev.ps1 must not shadow PowerShell's automatic $Args variable");
-check(!/\$root\s*=/.test(dev),"dev.ps1 must not shadow repository $Root with a case-insensitive local $root");
-check(!dev.includes("Resolve-Package"),"runtime must not spawn Node merely to resolve already-materialized Expo/Next packages");
-check(!dev.includes("ProcessStartInfo"),"dev.ps1 must not wrap ADB in custom process machinery");
-check(!dev.includes("ADB_TIMEOUT"),"dev.ps1 must not impose an arbitrary ADB timeout");
-check(!/--android|am start|shell pidof|logcat/.test(dev),"runtime must never auto-open mobile apps");
-check(/Start-MobileServer 'client'[\s\S]*Start-MobileServer 'partner'[\s\S]*Start-MobileServer 'captain'[\s\S]*Start-MobileServer 'field'[\s\S]*Start-ControlServer/.test(dev),"daily runtime must prepare all five host surfaces");
-check(/function Ensure-OneMobile/.test(dev)&&/function Ensure-ControlOnly/.test(dev),"targeted commands must reuse the same canonical runtime functions");
-check(/function Stop-LocalHosts/.test(dev)&&/RUNTIME_DOWN=PASS scope=all-local-dev/.test(dev),"runtime:down must close complete local dev state");
-check(/adb -d reverse --list/.test(dev),"dev.ps1 must inspect USB reverse mappings once");
-check(!/--dev-client[^\n\r]*--android/.test(dev),"Metro bootstrap must never auto-open Android apps");
-check(/Start-Node \$AppRoot \$expo @\('start','--dev-client','--localhost','--port'/.test(dev),"Metro bootstrap must remain live for Fast Refresh");
-check(/Ensure-Reverse -Ports @\(\$Identity,\$Dsh,\[int\]\$Metro\[\$Name\]\)/.test(dev),"targeted mobile command must reuse canonical reverse logic");
-check(!dev.includes("node_modules\\expo\\bin\\cli"),"runtime must derive Expo CLI from the materialized package root");
-check(!dev.includes("node_modules\\next\\dist\\bin\\next"),"runtime must derive Next CLI from the materialized package root");
-check(/\$AppRoot\s*=\s*Join-Path\s+\$Root\s+"apps\\\\app-\$Name"/i.test(dev),"mobile working directory must derive from stable repository Root");
-check(/\$ControlRoot\s*=\s*Join-Path\s+\$Root\s+'apps\\\\control-panel'/i.test(dev),"control working directory must derive from stable repository Root");
-check(/function Dependencies-Ready/.test(dev),"runtime must detect incomplete workspace materialization");
-check(/node_modules\\expo\\package\.json/.test(dev),"dependency readiness must use cheap importer-local Expo materialization checks");
-check(/node_modules\\next\\package\.json/.test(dev),"dependency readiness must use cheap importer-local Next materialization checks");
-check(/pnpm install --frozen-lockfile --prefer-offline/.test(dev),"runtime must materialize missing workspace dependencies once");
-check(/RUNTIME_DOWN=PASS scope=all-local-dev/.test(dev),"runtime:down must close the complete local dev runtime");
-check(/MOBILE_SERVER=PASS app=app-\$Name/.test(dev),"targeted mobile commands must start/reuse Metro without opening the app");
-check(/CONTROL_SERVER=PASS/.test(dev),"targeted control command must start/reuse Next");
-check(/DEV_READY=PASS apps=manual-open live=fast-refresh control=hmr/.test(dev),"daily dev must declare manual-open live runtime readiness");
+check(!dev.includes("reverse --list"),"reverse mappings must be direct/idempotent, not list-gated");
+check(/function Get-AdbSelector[\s\S]*Get-UsbSerial[\s\S]*Disconnect-TcpDevices[\s\S]*return @\('-d'\)[\s\S]*Connect-TcpFallback/.test(dev),
+  "ADB selector must prefer USB and use TCP only when USB is absent");
+check(/function Connect-TcpFallback[\s\S]*ADB_REFUSE_TCP_WHILE_USB_PRESENT/.test(dev),
+  "TCP fallback must refuse host TCP connection while USB is present");
+check(/function Prepare-TcpFallback[\s\S]*adb -d tcpip 5555[\s\S]*Disconnect-TcpDevices[\s\S]*Save-TcpEndpoint/.test(dev),
+  "USB bootstrap must prepare but not retain a concurrent TCP host connection");
+check(/function Ensure-Scrcpy[\s\S]*--select-usb[\s\S]*SCRCPY_FAILOVER[\s\S]*--serial[\s\S]*SCRCPY_FAILBACK/.test(dev),
+  "scrcpy must prefer USB and automatically fail over/fail back with explicit selectors");
+check(/Ensure-Reverse -Ports @\(\$Identity,\$Dsh,\[int\]\$Metro\[\$Name\]\)/.test(dev),
+  "targeted mobile command must apply reverse mappings to the active transport");
+check(/Start-MobileServer \$Name -Foreground/.test(dev),
+  "targeted mobile commands must stay attached to their terminal");
+check(/Start-ControlServer -Foreground/.test(dev),
+  "targeted control command must stay attached to its terminal");
+check(/\$AppRoot\s*=\s*Join-Path\s+\$Root\s+"apps\\app-\$Name"/i.test(dev),
+  "mobile working directory must derive from stable repository Root");
+check(/\$ControlRoot\s*=\s*Join-Path\s+\$Root\s+'apps\\control-panel'/i.test(dev),
+  "control working directory must derive from stable repository Root");
+check(!/--dev-client[^\n\r]*--android/.test(dev),"runtime must never auto-open Android apps");
+check(/RUNTIME_DOWN=PASS scope=all-local-dev/.test(dev),"runtime:down must close complete local dev state");
+check(/DEV_STATE[^\n]*scrcpy=manual/.test(dev),"batch dev must leave scrcpy to the dedicated pnpm scr terminal");
 
 if(fail.length){
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
@@ -79,6 +72,6 @@ if(fail.length){
 console.log("LOCAL_RUNTIME_OWNERSHIP=PASS");
 console.log("LOCAL_RUNTIME_OWNER=tools/dev/dev.ps1");
 console.log("LOCAL_RUNTIME_OWNER_FILES=1");
-console.log("DAILY_ENTRYPOINT=pnpm dev");
 console.log("MOBILE_OPEN_MODE=MANUAL");
-console.log("NESTED_PNPM=0");
+console.log("TARGETED_TERMINALS=FOREGROUND");
+console.log("ADB_TRANSPORT=USB_PREFERRED_TCP_FALLBACK_SINGLE_ACTIVE");

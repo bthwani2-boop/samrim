@@ -172,16 +172,20 @@ LOCAL_INTEGRATION has exactly one canonical runtime owner for every admitted pro
 The human LOCAL_INTEGRATION lifecycle has one daily bootstrap owned by `tools/dev/dev.ps1`:
 
 ```text
-pnpm dev            → reuse/prepare backend, USB reverse mappings, all mobile Metro servers, Control and scrcpy
+pnpm dev            → reuse/prepare backend plus all mobile Metro servers and Control; scrcpy remains a dedicated command
 pnpm runtime:up     → ensure backend/state only
 pnpm runtime:status → display backend/state
-pnpm client|partner|captain|field → ensure only that Metro server; manual app open
-pnpm control         → ensure only Control
-pnpm scr             → ensure only scrcpy
+pnpm client|partner|captain|field → run only that Metro server in the invoking terminal; manual app open
+pnpm control         → run only Control in the invoking terminal
+pnpm scr             → run scrcpy in its invoking terminal with USB-preferred automatic TCP fallback
 pnpm runtime:down    → stop complete local dev runtime
 ```
 
-The daily bootstrap materializes missing workspace dependencies once when required, starts only missing processes, reuses healthy ones and never opens actor applications. The developer opens Client, Partner, Captain or Field manually from the device; Expo development-client reconnects to its most recent project and Metro Fast Refresh remains the inner mobile loop. Next HMR remains the Control inner loop. Docker reconciliation is skipped while backend endpoints are already live, and Metro startup must not trigger native rebuilds or eager application bundling.
+The targeted mobile and Control commands are the preferred interactive development loop: each stays attached to its own terminal so Metro/Next logs, compilation failures, Fast Refresh and HMR remain visible where the command was launched. The developer opens Client, Partner, Captain or Field manually from the device; targeted commands never auto-open actor applications.
+
+Device transport is single-active by design. USB is preferred whenever present. While USB is active, TCP/IP may be prepared on the device for failover but the host must not retain a concurrent TCP ADB connection. If USB disappears, `pnpm scr` connects the cached TCP endpoint, reapplies the required reverse mappings to that transport and relaunches scrcpy automatically; if USB returns, it disconnects TCP and returns to USB. No pairing flow, manual IP entry or dual active host transport is part of the canonical runtime.
+
+The batch `pnpm dev` path materializes missing workspace dependencies once when required, starts only missing backend/Metro/Control processes, reuses healthy ones and leaves scrcpy to the dedicated `pnpm scr` terminal. Docker reconciliation is skipped while backend endpoints are already live, and Metro startup must not trigger native rebuilds or eager application bundling.
 
 `runtime:up` reconciles backend/state without rebuilding existing images by default; on a fresh machine Compose may build a missing image. One-shot migrations must not be rerun merely because `pnpm dev` was invoked while the backend is already live. When baked backend source changes, use explicit targeted service rebuild before the runtime proof that needs the new binary. Application-source changes do not rebuild Docker.
 
