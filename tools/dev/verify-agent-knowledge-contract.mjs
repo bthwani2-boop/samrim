@@ -104,7 +104,10 @@ requireTokens("tools/dev/runtime.ps1", [
   "Invoke-SamrimRuntime @PSBoundParameters",
 ]);
 const runtime = requireTokens("tools/dev/runtime.psm1", [
-  "CANONICAL_LOCAL_RUNTIME=PASS mode=full",
+  "function Write-Full-Runtime-Pass",
+  "CANONICAL_LOCAL_RUNTIME=PASS mode=$Mode",
+  "Write-Full-Runtime-Pass 'full'",
+  "Write-Full-Runtime-Pass 'warm-reconcile'",
   "RUNTIME_STATUS=READ_ONLY scope=service-state-display",
   "CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose",
   "MOBILE_SURFACE_RUNTIME=PASS",

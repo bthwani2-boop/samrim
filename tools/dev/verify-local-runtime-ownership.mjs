@@ -133,13 +133,16 @@ assert(!/\bgo\s+run\b/i.test(runtime), "runtime.ps1 must not create host-native 
 assert(!/\b(?:next\s+dev|expo\s+start)\b/i.test(runtime), "runtime.ps1 must not create host-native JS runtime paths");
 
 for (const token of [
-  "CANONICAL_LOCAL_RUNTIME=PASS mode=full",
   "RUNTIME_STATUS=READ_ONLY scope=service-state-display",
   "CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose",
   "Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')",
 ]) {
   assert(runtime.includes(token), `full runtime contract missing: ${token}`);
 }
+assert(runtime.includes('function Write-Full-Runtime-Pass([string]$Mode)'), "runtime must have one canonical success writer");
+assert(runtime.includes('Write-Host "CANONICAL_LOCAL_RUNTIME=PASS mode=$Mode"'), "canonical success writer must expose the selected runtime mode");
+assert(startupCase.includes("Write-Full-Runtime-Pass 'full'"), "full runtime path must report success through the canonical writer");
+assert(startupCase.includes("Write-Full-Runtime-Pass 'warm-reconcile'"), "warm runtime path must report success through the canonical writer");
 
 assert(
   !runtime.includes("Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')"),
@@ -164,7 +167,8 @@ assert(runtime.includes("$dependenciesReady = Test-Js-Dependencies-Ready"), "ful
 assert(!startupCase.includes("Compose @('config','--quiet')"), "runtime:up must not duplicate Compose parsing before the actual reconciliation command");
 assert(runtime.includes("JS_DEPS_GATE=READY action=no-stop scope=full"), "ready dependencies must preserve running workspace services");
 assert(runtime.includes("JS_DEPS_GATE=STALE action=stop-materialize scope=full"), "stale dependencies must expose the full-start materialization boundary");
-assert(runtime.includes("if ($runningBefore.Count -gt 0) { Compose (@('stop') + $runningBefore) }"), "stale dependency materialization must stop only currently running workspace services");
+assert(startupCase.includes("$runningWorkspace = @(Get-Running-Workspace-Services $before)"), "stale dependency materialization must discover running workspace services only when dependencies are stale");
+assert(startupCase.includes("if ($runningWorkspace.Count -gt 0) { Compose (@('stop') + $runningWorkspace) }"), "stale dependency materialization must stop only currently running workspace services");
 assert(!runtime.includes("JS_DEPS_GATE=RESTORE"), "retired target-start restore orchestration must not survive");
 assert(runtime.includes("$WorkspaceServices = @('control','metro-client','metro-partner','metro-captain','metro-field')"), "workspace-bound JavaScript services must have one canonical runtime set");
 assert(runtime.includes("Assert-WorkspaceMounts"), "runtime readback must verify the repository bind mount for every workspace-bound service");
@@ -187,7 +191,7 @@ assert((startupCase.match(/Assert-No-Native-Backend/g) ?? []).length === 1, "run
 assert(!runtime.includes("Get-Native-Backend-Residue"), "split native-backend read/assert ownership must not return");
 assert(startupCase.includes("RUNTIME_RECONCILE=READY action=running-services-only"), "runtime:up must expose the exact-ready warm reconciliation path");
 assert(startupCase.includes("--no-deps"), "warm reconciliation must not rerun completed one-shot dependencies");
-assert(startupCase.includes("CANONICAL_LOCAL_RUNTIME=PASS mode=warm-reconcile"), "warm reconciliation must have an explicit success marker");
+assert(startupCase.includes("Write-Full-Runtime-Pass 'warm-reconcile'"), "warm reconciliation must use the canonical success writer");
 assert(startupCase.includes("RUNTIME_RECONCILE=RETRY mode=full"), "failed warm reconciliation must return to the canonical full repair path");
 assert(startupCase.indexOf("Test-Full-RuntimeReady") < startupCase.indexOf("--no-deps"), "warm reconciliation must be gated by full runtime readiness");
 assert(startupCase.indexOf("$dependenciesReady = Test-Js-Dependencies-Ready") < startupCase.indexOf("--no-deps"), "warm reconciliation must be gated by current dependency fingerprint readiness");
