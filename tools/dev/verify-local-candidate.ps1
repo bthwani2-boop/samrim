@@ -155,13 +155,12 @@ try {
         Write-Host 'AFFECTED_WORKSPACE_TARGETS=SKIPPED reason=no_changes'
     }
 
-    $mobileExportRelevant = Changed-Matches '^(nx\.json|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tools/mobile/(?:define-samrim-expo-app\.cjs|export-mobile-smoke\.mjs)|packages/design-system/theme\.css|apps/app-(?:client|partner|captain|field)/(?:app\.config\.ts|metro\.config\.(?:js|cjs|mjs)|babel\.config\.(?:js|cjs|mjs)|index\.js|mobile\.config\.json|package\.json|project\.json|tsconfig\.json|fingerprint\.config\.js|eas\.json))$'
-    if ($mobileExportRelevant) {
+    if ($changed.Count -gt 0) {
         Run-Step 'Affected mobile export smoke' {
             pnpm exec nx affected -t export-smoke --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
         }
     } else {
-        Write-Host 'AFFECTED_MOBILE_EXPORT_SMOKE=SKIPPED reason=no_deployability_or_bundling_config_change'
+        Write-Host 'AFFECTED_MOBILE_EXPORT_SMOKE=SKIPPED reason=no_changes'
     }
 
     $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()

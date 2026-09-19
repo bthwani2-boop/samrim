@@ -40,6 +40,11 @@ const agent = requireTokens("AGENTS.md", [
   "pnpm dev",
   "pnpm runtime:up",
   "pnpm runtime:status",
+  "SMALLEST DIFF != SIMPLEST SYSTEM",
+  "Proof tooling must not reset developer credentials",
+  "Subagents must not independently push",
+  "REQUIRED FAILURE/RECOVERY BEHAVIOR = PROVEN WHEN APPLICABLE",
+  "PINNED GOVERNANCE = EXACT WHEN MATERIALLY REQUIRED",
   "KNOWN MATERIAL DEFECTS = 0",
 ]);
 
@@ -64,7 +69,8 @@ const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "EXACT_LOCAL_CANDIDATE_SHA",
   "nx affected",
   "Affected workspace targets",
-  "AFFECTED_MOBILE_EXPORT_SMOKE",
+  "AFFECTED_MOBILE_EXPORT_SMOKE=SKIPPED reason=no_changes",
+  "nx affected -t export-smoke",
   "VERIFY_STEP_MS",
   "VERIFY_TOTAL_MS",
   "VERIFY=PASS",

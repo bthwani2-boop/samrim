@@ -65,11 +65,7 @@ When the change crosses projects or its cone is unclear, keep local feedback to 
 pnpm exec nx affected -t typecheck test build vet --base=HEAD --outputStyle=dynamic-legacy
 ```
 
-Mobile export is a heavier deployability/bundling proof, not a default edit-loop check. Run it explicitly when mobile bundling/configuration is affected or deployability is the claim:
-
-```text
-pnpm exec nx affected -t export-smoke --base=HEAD --outputStyle=stream
-```
+Mobile export is a heavier bundling/deployability proof, so it is not part of the fast dirty-tree edit loop. The final exact-candidate verifier still runs export-smoke for affected Mobile projects after cheaper checks pass, preserving bundling/module-resolution proof without paying that cost on every intermediate edit.
 
 Use pnpm verify only after the candidate is coherent and clean. Do not run a separate final pnpm verify immediately before pnpm safe:push; safe:push owns the single final exact-candidate verification and remote SHA confirmation. Runtime and user-facing behavior are proved separately only when the claim requires them. CI performs independent integration/promotion assurance.
 

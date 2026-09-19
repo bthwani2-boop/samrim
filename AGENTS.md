@@ -55,9 +55,9 @@ No proven current material benefit → delete.
 Same outcome with fewer states/commands/layers → choose the simpler model.
 Future possibility or "just in case" → not justification.
 
-Preference: DELETE → DIRECT USE → EXTEND EXISTING OWNER → REFACTOR EXISTING OWNER → ONLY THEN ADD A NEW MECHANISM.
+Preference: DELETE → DIRECT USE → EXTEND EXISTING OWNER → REFACTOR EXISTING OWNER → ONLY THEN ADD A NEW MECHANISM. SMALLEST DIFF != SIMPLEST SYSTEM.
 
-Within the affected cone, every material file/module/route/service/package/type/schema/config/script/dependency/state/test must have a current owner, consumer and simplest complete form. Do not create a second affected engine, proof registry, cache protocol, state machine, semantic guard or compatibility path when an existing owner can satisfy the requirement.
+Within the affected cone, every material file/module/component/hook/route/handler/service/package/type/DTO/schema/migration/contract/config/env key/script/dependency/state/cache/registry/test/generated artifact must have a current owner, provenance, real consumer and simplest complete form. Do not create a second affected engine, proof registry, cache protocol, state machine, semantic guard or compatibility path when an existing owner can satisfy the requirement.
 
 A replacement is complete only after all material producers, consumers, contracts, persistence/config/runtime paths, tests and current implementation descriptions use the winner; then delete the loser and prove it absent. No old/new shadow truth or partial cutover.
 
@@ -108,7 +108,7 @@ The local verifier remains affected-aware and non-runtime-owning. Heavy mobile e
 
 Cache is evidence only when its inputs cover every material computation input. Prefer Nx's canonical cache/project graph; do not build a parallel cache or dependency engine.
 
-Evidence is valid only for the exact state and claim it proves. Use the smallest adequate producer: source/config for source claims, schema/query/readback for persistence, Playwright for web journeys, device/Expo/ADB for mobile interaction, Compose/process/network readback for runtime ownership, measurement for performance, and current primary sources for mutable external rules.
+Evidence is valid only for the exact state and claim it proves. If the candidate, semantic owner, contract/schema, persistence/runtime composition, Governance binding or mutable external fact materially changes, invalidate and rerun only the proof made stale; never carry evidence forward by assumption. Use the smallest adequate producer: source/config for source claims, schema/query/readback for persistence, Playwright for web journeys, device/Expo/ADB for mobile interaction, Compose/process/network readback for runtime ownership, measurement for performance, and current primary sources for mutable external rules.
 
 Use subagents only for genuinely independent bounded lanes with exact input state, one material deliverable, bounded scope and required evidence. Parallel mutation lanes require disjoint write sets. Parallelize independent read/reasoning where useful; on a resource-constrained local host avoid concurrent heavyweight builds/exports/runtime/browser/device proof unless measurement shows it reduces total cost without contention. The lead owns final integration, Governance classification, consequential mutations, commit/push and closure. Subagents must not independently push, merge, repin Governance, reset/purge persistent state, expose secrets or declare closure; invalidate their returned evidence if its material inputs change before integration.
 
@@ -122,6 +122,8 @@ AUTHORIZED OBJECTIVE = PROVEN
 MATERIAL AFFECTED CONE = ACCOUNTED
 CANONICAL OWNER/WRITER/READBACK = PROVEN
 REQUIRED DATA/CONTRACT/RUNTIME/USER-FACING CLAIMS = PROVEN
+REQUIRED FAILURE/RECOVERY BEHAVIOR = PROVEN WHEN APPLICABLE
+PINNED GOVERNANCE = EXACT WHEN MATERIALLY REQUIRED
 KNOWN MATERIAL DEFECTS = 0
 KNOWN MATERIAL WEAKNESSES/REGRESSIONS = 0
 KNOWN DUPLICATE/SHADOW OWNERSHIP = 0
