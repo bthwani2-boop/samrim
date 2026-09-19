@@ -115,7 +115,10 @@ function Get-CanonicalRuntimeSnapshot {
             $entry = @($containers | Where-Object { $_.Id -eq [string]$detail.Id })[0]
             $entry.State = [string]$detail.State.Status
             $entry.ExitCode = [int]$detail.State.ExitCode
-            if ($null -ne $detail.State.Health) { $entry.Health = [string]$detail.State.Health.Status }
+            $healthProperty = $detail.State.PSObject.Properties['Health']
+            if ($null -ne $healthProperty -and $null -ne $healthProperty.Value) {
+                $entry.Health = [string]$healthProperty.Value.Status
+            }
         }
     }
     return [pscustomobject]@{ Containers=@($containers) }
