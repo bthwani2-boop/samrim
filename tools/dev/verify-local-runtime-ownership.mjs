@@ -25,9 +25,14 @@ for(const old of [
 for(const token of [
   "ValidateSet('Up','Down','Status','Doctor','Control','Client','Partner','Captain','Field','Scrcpy')",
   "function Mobile","APP_REUSE=PASS","expo start --dev-client --localhost --android --scheme",
-  "--dns-result-order=ipv4first","EXPO_NO_TYPESCRIPT_SETUP='1'",
+  "--dns-result-order=ipv4first",
   "CONTROL_REUSE=PASS","next dev -H 127.0.0.1","function Usb","function Reverse"
 ]) check(local.includes(token),`local.ps1 missing invariant: ${token}`);
+
+check(
+  /\$env:EXPO_NO_TYPESCRIPT_SETUP\s*=\s*['"]1['"]/.test(local),
+  "local.ps1 must disable Expo TypeScript auto-setup",
+);
 
 for(const bad of ["adb tcpip","getprop","WIFI","wifi","Start-Process","METRO_START_TIMEOUT","runtime.psm1"]){
   check(!local.includes(bad),`local.ps1 retains removed complexity: ${bad}`);
