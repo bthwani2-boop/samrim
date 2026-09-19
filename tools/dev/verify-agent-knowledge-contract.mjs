@@ -139,7 +139,7 @@ if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tool
 if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") {
   failures.push("package.json safe:push must own push safety");
 }
-for (const required of ["dev", "runtime:up", "runtime:status", "runtime:down"]) {
+for (const required of ["dev", "client", "partner", "captain", "field", "control", "scr", "runtime:up", "runtime:status", "runtime:down"]) {
   if (!pkg?.scripts?.[required]) failures.push(`package.json missing required full-runtime command: ${required}`);
 }
 
