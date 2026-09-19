@@ -41,6 +41,8 @@ Each command enters the owning app package and keeps Expo Metro or Next attached
 
 In local development, Identity first restores the persisted real session. If that reusable session is absent or terminally invalid, the development-only Identity route issues a fresh real session for an existing enabled actor/role; it never creates actors or roles and is not registered outside `BTHWANI_ENV=development`. OTP, activation, Passkey and recovery remain product/security journeys, not prerequisites for ordinary screen and feature iteration.
 
+For an explicit real activation/authentication journey proof, start the affected surface with `EXPO_PUBLIC_BTHWANI_AUTH_JOURNEY_PROOF=1` for Mobile or `BTHWANI_AUTH_JOURNEY_PROOF=1` for Control. That flag disables only the development-session fallback; normal local development remains unchanged, and the canonical activation/login/recovery implementation remains the path under proof.
+
 Backend lifecycle remains explicit:
 
 ```text

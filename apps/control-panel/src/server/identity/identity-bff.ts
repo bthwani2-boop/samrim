@@ -55,7 +55,7 @@ function refreshCookieMaxAge(): number {
 }
 
 function developmentSessionEnabled(): boolean {
-  return process.env.BTHWANI_ENV === "development";
+  return process.env.BTHWANI_ENV === "development" && process.env.BTHWANI_AUTH_JOURNEY_PROOF !== "1";
 }
 
 async function operatorClientInstanceId(): Promise<string> {
