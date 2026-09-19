@@ -79,6 +79,33 @@ function Ensure-Backend{
     return 'started'
 }
 
+function Resolve-Package([string]$Package,[string]$From){
+    $script="process.stdout.write(require.resolve('$Package/package.json',{paths:[process.argv[1]]}))"
+    $resolved=& node -e $script $From 2>$null
+    if($LASTEXITCODE-ne0){return $null}
+    return ([string]$resolved).Trim()
+}
+
+function Dependencies-Ready{
+    foreach($name in @('client','partner','captain','field')){
+        $package=Join-Path $Root "apps\app-$name\node_modules\expo\package.json"
+        if(-not(Test-Path -LiteralPath $package -PathType Leaf)){return $false}
+    }
+
+    $nextPackage=Join-Path $Root 'apps\control-panel\node_modules\next\package.json'
+    return Test-Path -LiteralPath $nextPackage -PathType Leaf
+}
+
+function Ensure-Dependencies{
+    if(Dependencies-Ready){return 'reused'}
+
+    & pnpm install --frozen-lockfile --prefer-offline
+    if($LASTEXITCODE-ne0){Fail "PNPM_INSTALL_FAILED exit=$LASTEXITCODE"}
+
+    if(-not(Dependencies-Ready)){Fail 'DEPENDENCIES_NOT_MATERIALIZED_AFTER_INSTALL'}
+    return 'materialized'
+}
+
 function Set-Host-Environment{
     $env:BTHWANI_ENV='development'
     $env:EXPO_OFFLINE='1'
@@ -147,8 +174,9 @@ function Ensure-HostServers{
         if(Has-Port $port){Fail "PORT_IN_USE surface=$name port=$port"}
 
         $root=Join-Path $Root "apps\app-$name"
-        $expo=Join-Path $root 'node_modules\expo\bin\cli'
-        if(-not(Test-Path -LiteralPath $expo -PathType Leaf)){Fail "EXPO_NOT_INSTALLED app=app-$name run=pnpm_install"}
+        $expoPackage=Resolve-Package 'expo' $root
+        if([string]::IsNullOrWhiteSpace($expoPackage)){Fail "EXPO_NOT_RESOLVABLE app=app-$name"}
+        $expo=Join-Path (Split-Path -Parent $expoPackage) 'bin\cli'
 
         $started[$name]=Start-Node $root $expo @('start','--dev-client','--localhost','--port',"$port")
         $state[$name]='started'
@@ -158,8 +186,9 @@ function Ensure-HostServers{
         $state.control='reused'
     }else{
         $root=Join-Path $Root 'apps\control-panel'
-        $next=Join-Path $root 'node_modules\next\dist\bin\next'
-        if(-not(Test-Path -LiteralPath $next -PathType Leaf)){Fail 'NEXT_NOT_INSTALLED run=pnpm_install'}
+        $nextPackage=Resolve-Package 'next' $root
+        if([string]::IsNullOrWhiteSpace($nextPackage)){Fail 'NEXT_NOT_RESOLVABLE'}
+        $next=Join-Path (Split-Path -Parent $nextPackage) 'dist\bin\next'
 
         $started.control=Start-Node $root $next @('dev','-H','127.0.0.1','-p',"$Control")
         $state.control='started'
@@ -237,6 +266,10 @@ if($Target-eq'status'){
 $total=[Diagnostics.Stopwatch]::StartNew()
 
 $phase=[Diagnostics.Stopwatch]::StartNew()
+$dependencyState=Ensure-Dependencies
+$dependencyMs=$phase.ElapsedMilliseconds
+
+$phase.Restart()
 $backendState=Ensure-Backend
 $backendMs=$phase.ElapsedMilliseconds
 
@@ -259,6 +292,6 @@ $total.Stop()
 $started=@($hostState.GetEnumerator()|Where-Object Value -eq'started'|ForEach-Object Key|Sort-Object)
 $reused=@($hostState.GetEnumerator()|Where-Object Value -eq'reused'|ForEach-Object Key|Sort-Object)
 
-Write-Host "DEV_TIMING backend_ms=$backendMs adb_ms=$adbMs hosts_ms=$hostMs scrcpy_ms=$scrcpyMs total_ms=$($total.ElapsedMilliseconds)"
-Write-Host "DEV_STATE backend=$backendState scrcpy=$scrcpyState started=$($started-join',') reused=$($reused-join',')"
+Write-Host "DEV_TIMING deps_ms=$dependencyMs backend_ms=$backendMs adb_ms=$adbMs hosts_ms=$hostMs scrcpy_ms=$scrcpyMs total_ms=$($total.ElapsedMilliseconds)"
+Write-Host "DEV_STATE deps=$dependencyState backend=$backendState scrcpy=$scrcpyState started=$($started-join',') reused=$($reused-join',')"
 Write-Host "DEV_READY=PASS apps=manual-open live=fast-refresh control=hmr root=$Root"

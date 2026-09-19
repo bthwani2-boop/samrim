@@ -178,7 +178,7 @@ pnpm runtime:status → display backend/state
 pnpm runtime:down   → stop backend/state
 ```
 
-The daily bootstrap starts only missing processes, reuses healthy ones and never opens actor applications. The developer opens Client, Partner, Captain or Field manually from the device; Expo development-client reconnects to its most recent project and Metro Fast Refresh remains the inner mobile loop. Next HMR remains the Control inner loop. Docker reconciliation is skipped while backend endpoints are already live, and Metro startup must not trigger native rebuilds or eager application bundling.
+The daily bootstrap materializes missing workspace dependencies once when required, starts only missing processes, reuses healthy ones and never opens actor applications. The developer opens Client, Partner, Captain or Field manually from the device; Expo development-client reconnects to its most recent project and Metro Fast Refresh remains the inner mobile loop. Next HMR remains the Control inner loop. Docker reconciliation is skipped while backend endpoints are already live, and Metro startup must not trigger native rebuilds or eager application bundling.
 
 `runtime:up` reconciles backend/state without rebuilding existing images by default; on a fresh machine Compose may build a missing image. One-shot migrations must not be rerun merely because `pnpm dev` was invoked while the backend is already live. When baked backend source changes, use explicit targeted service rebuild before the runtime proof that needs the new binary. Application-source changes do not rebuild Docker.
 

@@ -25,7 +25,7 @@ Daily local development:
 pnpm dev
 ```
 
-That single command reuses or prepares the complete local development environment: Docker backend/state, USB ADB reverse mappings, all four Metro servers, Control Panel and scrcpy. It does not open the mobile applications. Open Client, Partner, Captain or Field manually on the device; the development client reconnects to its most recent project and Fast Refresh remains live. Control uses Next HMR. The canonical runtime file is `tools/dev/dev.ps1`.
+That single command reuses or prepares the complete local development environment: workspace dependencies when missing, Docker backend/state, USB ADB reverse mappings, all four Metro servers, Control Panel and scrcpy. It does not open the mobile applications. Open Client, Partner, Captain or Field manually on the device; the development client reconnects to its most recent project and Fast Refresh remains live. Control uses Next HMR. The canonical runtime file is `tools/dev/dev.ps1`.
 
 Maintenance commands:
 

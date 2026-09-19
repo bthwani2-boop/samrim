@@ -33,7 +33,7 @@ for(const old of [
 for(const token of [
   "ValidateSet('daily','up','down','status')","DEV_TIMING","DEV_READY=PASS",
   "EXPO_OFFLINE='1'","EXPO_NO_QR_CODE='1'","EXPO_NO_TYPESCRIPT_SETUP='1'",
-  "--dns-result-order=ipv4first","node_modules\\expo\\bin\\cli","node_modules\\next\\dist\\bin\\next",
+  "--dns-result-order=ipv4first","Resolve-Package","Ensure-Dependencies","--frozen-lockfile","--prefer-offline",
   "Ensure-Reverse","Ensure-HostServers","Ensure-Scrcpy","Stop-LocalHosts","--dev-client","--localhost"
 ]) check(dev.includes(token),`dev.ps1 missing invariant: ${token}`);
 
@@ -48,6 +48,12 @@ check(!dev.includes("ADB_TIMEOUT"),"dev.ps1 must not impose an arbitrary ADB tim
 check(/adb -d reverse --list/.test(dev),"dev.ps1 must inspect USB reverse mappings once");
 check(!/--dev-client[^\n\r]*--android/.test(dev),"Metro bootstrap must never auto-open Android apps");
 check(/Start-Node \$root \$expo @\('start','--dev-client','--localhost','--port'/.test(dev),"Metro bootstrap must remain live for Fast Refresh");
+check(!dev.includes("node_modules\\expo\\bin\\cli"),"runtime must not hard-code isolated pnpm Expo paths");
+check(!dev.includes("node_modules\\next\\dist\\bin\\next"),"runtime must not hard-code isolated pnpm Next paths");
+check(/function Dependencies-Ready/.test(dev),"runtime must detect incomplete workspace materialization");
+check(/node_modules\\expo\\package\.json/.test(dev),"dependency readiness must use cheap importer-local Expo materialization checks");
+check(/node_modules\\next\\package\.json/.test(dev),"dependency readiness must use cheap importer-local Next materialization checks");
+check(/pnpm install --frozen-lockfile --prefer-offline/.test(dev),"runtime must materialize missing workspace dependencies once");
 check(/RUNTIME_DOWN=PASS scope=all-local-dev/.test(dev),"runtime:down must close the complete local dev runtime");
 
 if(fail.length){
