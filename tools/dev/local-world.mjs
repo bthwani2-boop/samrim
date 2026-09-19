@@ -11,6 +11,7 @@ const envPath = path.join(root, "infra/local/compose/.env");
 const composePath = path.join(root, "infra/local/compose/compose.yaml");
 const secretRoot = process.env.BTHWANI_SECRETS_ROOT?.trim() || "C:\\BTHWANI-Secrets\\samrim";
 const locatorPath = path.join(secretRoot, "local-world", "world.json");
+const controlSessionStatePath = path.join(secretRoot, "control-playwright", "storage-state.json");
 
 const WORLD = Object.freeze({
   operatorPhone: "+967755500006",
@@ -161,6 +162,24 @@ function saveState(state) {
   }
 }
 
+function saveControlSessionState(state) {
+  fs.mkdirSync(path.dirname(controlSessionStatePath), { recursive: true });
+  const tempPath = `${controlSessionStatePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  const serialized = `${JSON.stringify(state)}\n`;
+  fs.writeFileSync(tempPath, serialized, { encoding: "utf8", mode: 0o600 });
+  try {
+    fs.renameSync(tempPath, controlSessionStatePath);
+  } catch (error) {
+    try { fs.rmSync(tempPath, { force: true }); } catch { /* preserve the original failure */ }
+    fail("reusable Control session state could not be atomically updated", error instanceof Error ? error.message : String(error));
+  }
+  try {
+    if (fs.readFileSync(controlSessionStatePath, "utf8") !== serialized) throw new Error("readback mismatch");
+  } catch (error) {
+    fail("reusable Control session state readback failed", error instanceof Error ? error.message : String(error));
+  }
+}
+
 async function collectCursorPages(loadPage, itemKey, description) {
   const items = [];
   const seenCursors = new Set();
@@ -239,6 +258,7 @@ async function activateOperatorWithPasskey(phone, enrollmentToken, actorID) {
       return { status: response.status, body: await response.json().catch(() => null) };
     });
     if (session.status !== 200 || session.body?.identity?.subject !== actorID || session.body?.identity?.role !== "operator" || session.body?.identity?.surface !== "control-panel") fail("canonical first-operator passkey session readback failed");
+    saveControlSessionState(await context.storageState());
   } finally {
     await context.close();
     await browser.close();
@@ -274,7 +294,20 @@ async function activateOrLogin(role, phone, actorID, operatorID) {
   const password = passwordFor(role);
   const logged = await request(identityBase, "POST", "/auth/managed/login", { body: { phone, role, password, clientInstanceId: `local-world-${role}` } });
   if (logged.status === 200) return logged.body;
-  if (actorID && role !== "field") {
+  if (logged.status === 429 || logged.status >= 500) fail(`${role} login failed with a transient Identity response; refusing activation or reenrollment`, JSON.stringify(logged.body));
+  if (logged.status !== 401) fail(`${role} login failed with an unclassified Identity response; refusing activation or reenrollment`, JSON.stringify(logged.body));
+  if (!actorID) fail(`${role} login failed without a canonical actor; refusing activation or reenrollment`);
+
+  const current = await readRole(role, actorID);
+  if (current.status !== 200 || !current.body) fail(`${role} login failure could not be classified from canonical Identity state`, JSON.stringify(current.body));
+  const roleView = current.body;
+  if (!roleView.enabled || !roleView.securityEnabled) fail(`${role} login failed because the canonical role or Identity security is disabled; refusing bypass`, JSON.stringify(roleView));
+
+  if (roleView.activatedAt && role === "field") {
+    fail(`${role} login failed for an activated role; Field credential recovery is owned by the DSH workflow`, JSON.stringify(roleView));
+  }
+
+  if (roleView.activatedAt && role !== "field") {
     const reenroll = await request(identityBase, "POST", `/internal/actors/${encodeURIComponent(actorID)}/roles/${role}/reenrollment`, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": crypto.randomUUID() } });
     if (reenroll.status !== 204) fail(`${role} reenrollment was not authorized`, JSON.stringify(reenroll.body));
   }
@@ -391,11 +424,21 @@ async function ensureClient(state) {
   } else {
     const logged = await request(identityBase, "POST", "/auth/client/login", { body: { phone: WORLD.clientPhone, password: passwordFor("client"), clientInstanceId: "local-world-client" } });
     client = logged.body;
-    if (logged.status !== 200) {
-      await expect(identityBase, "POST", "/auth/client/recovery/request", 201, { body: { phone: WORLD.clientPhone } });
-      await expect(identityBase, "POST", "/auth/client/recover", 200, { body: { phone: WORLD.clientPhone, code: await waitForMailpitCode(WORLD.clientPhone, "client_recover"), password: passwordFor("client") } });
-      client = await expect(identityBase, "POST", "/auth/client/login", 200, { body: { phone: WORLD.clientPhone, password: passwordFor("client"), clientInstanceId: "local-world-client" } });
+    if (logged.status === 200) {
+      state.actors.client = { actorId: client.identity.subject, phone: WORLD.clientPhone };
+      return client;
     }
+    if (logged.status === 429 || logged.status >= 500) fail("client login failed with a transient Identity response; refusing recovery", JSON.stringify(logged.body));
+    if (logged.status !== 401) fail("client login failed with an unclassified Identity response; refusing recovery", JSON.stringify(logged.body));
+
+    const current = await readRole("client", role.actorId);
+    if (current.status !== 200 || !current.body) fail("client login failure could not be classified from canonical Identity state", JSON.stringify(current.body));
+    if (!current.body.enabled || !current.body.securityEnabled) fail("client login failed because the canonical role or Identity security is disabled; refusing recovery", JSON.stringify(current.body));
+    if (!current.body.credentialVersion) fail("client login failed without a canonical credential state that authorizes recovery", JSON.stringify(current.body));
+
+    await expect(identityBase, "POST", "/auth/client/recovery/request", 201, { body: { phone: WORLD.clientPhone } });
+    await expect(identityBase, "POST", "/auth/client/recover", 200, { body: { phone: WORLD.clientPhone, code: await waitForMailpitCode(WORLD.clientPhone, "client_recover"), password: passwordFor("client") } });
+    client = await expect(identityBase, "POST", "/auth/client/login", 200, { body: { phone: WORLD.clientPhone, password: passwordFor("client"), clientInstanceId: "local-world-client" } });
   }
   state.actors.client = { actorId: client.identity.subject, phone: WORLD.clientPhone };
   return client;

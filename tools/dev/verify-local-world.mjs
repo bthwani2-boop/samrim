@@ -11,7 +11,10 @@ const assert = (condition, message) => {
 
 const world = read("tools/dev/local-world.mjs");
 const runtime = read("tools/dev/runtime.ps1");
+const runtimeModule = read("tools/dev/runtime.psm1");
 const candidate = read("tools/dev/verify-local-candidate.ps1");
+const playwrightConfig = read("apps/control-panel/playwright.config.ts");
+const playwrightSetup = read("apps/control-panel/playwright.global-setup.ts");
 const pkg = JSON.parse(read("package.json"));
 const scripts = pkg.scripts ?? {};
 
@@ -41,6 +44,17 @@ assert(world.includes("WebAuthn.addVirtualAuthenticator"), "operator activation 
 assert(world.includes("hasResidentKey: true") && world.includes("hasUserVerification: true"), "operator activation must require resident key and user verification");
 assert(world.includes("/api/auth/activation/start") || world.includes("تفعيل حساب موظف"), "operator activation must exercise the canonical Control Panel enrollment surface");
 assert(world.includes("/api/auth/session"), "operator activation must prove the resulting canonical session");
+assert(world.includes("control-playwright") && world.includes("storage-state.json"), "operator activation must persist reusable Control proof state under the external secrets root");
+assert(world.includes("saveControlSessionState") && world.includes("context.storageState()"), "reusable Control proof state must have one atomic persistence owner");
+assert(world.includes("transient Identity response; refusing activation or reenrollment"), "managed login transient failures must not trigger activation or reenrollment");
+assert(world.includes("unclassified Identity response; refusing activation or reenrollment"), "managed login unknown failures must fail closed");
+assert(world.includes("activated role; Field credential recovery is owned by the DSH workflow"), "Field login failures must not bypass the DSH-owned credential lifecycle");
+assert(world.includes("transient Identity response; refusing recovery"), "client login transient failures must not trigger recovery");
+assert(world.includes("unclassified Identity response; refusing recovery"), "client login unknown failures must fail closed");
+assert(world.includes("canonical credential state that authorizes recovery"), "client recovery must require canonical credential-state proof");
+assert(playwrightConfig.includes("storageState") && playwrightConfig.includes("control-playwright") && playwrightConfig.includes("storage-state.json"), "normal Control Playwright proof must use the canonical external storage state");
+assert(playwrightConfig.includes("!liveIdentityProof"), "destructive live Identity proof must not load the normal reusable Control state");
+assert(playwrightSetup.includes("refreshReusableControlSession") && playwrightSetup.includes("context.storageState()"), "Playwright setup must restore and persist canonical Control session refreshes");
 
 assert(!world.includes("/internal/actor-roles/provision"), "world owner must not bypass DSH joining-case partner provisioning");
 assert(read("services/dsh/backend/internal/joiningcase/service.go").includes("ProvisionPartnerWithContext"), "DSH joining-case service must remain the partner provisioning owner");
@@ -63,14 +77,15 @@ assert(world.includes("fs.renameSync(tempPath, locatorPath)"), "world locator wr
 assert(world.includes("recoveryCredential") && world.includes("forbidden credential material"), "world locator must reject credential-shaped material");
 assert(world.includes("fs.writeFileSync(tempPath"), "world locator must stage its replacement before the atomic rename");
 
-assert(!runtime.includes("local-world"), "normal runtime owner must not depend on world tooling");
+assert(!runtime.includes("local-world") && !runtimeModule.includes("local-world"), "normal runtime owner must not depend on world tooling");
 assert(!read("infra/local/compose/compose.yaml").includes("local-world"), "canonical Compose runtime must not depend on world tooling");
-assert(runtime.includes("if ($Action -in @('Reset','Purge') -and -not $AllowDataLoss)"), "destructive reset interlock must remain present");
-assert(runtime.includes("rerun_same_invocation_with=-AllowDataLoss"), "destructive reset interlock must retain explicit authorization guidance");
+assert(runtimeModule.includes("if ($Action -in @('Reset','Purge') -and -not $AllowDataLoss)"), "destructive reset interlock must remain present");
+assert(runtimeModule.includes("rerun_same_invocation_with=-AllowDataLoss"), "destructive reset interlock must retain explicit authorization guidance");
 assert(!fs.existsSync(path.join(root, "tools/dev/verify-dsh-runtime.mjs")), "retired duplicate DSH runtime verifier must remain absent");
 
 const tracked = execFileSync("git", ["-C", root, "ls-files", "-z"], { encoding: "utf8" }).split("\0").filter(Boolean);
 assert(!tracked.some((file) => /(^|[\\/])world\.json$/i.test(file)), "world locator must not be tracked by Git");
+assert(!tracked.some((file) => /(^|[\\/])storage-state\.json$/i.test(file)), "Control browser session state must not be tracked by Git");
 assert(!candidate.includes("runtime:up") && !candidate.includes("runtime:doctor") && !candidate.includes("runtime:status"), "candidate verification must not own runtime lifecycle");
 assert(candidate.includes("nx affected"), "candidate verification must remain affected-aware");
 
@@ -107,5 +122,8 @@ console.log("DIRECT_WORLD_PARTNER_PROVISION_CALL=0");
 console.log("LOCAL_WORLD_SQL_BUSINESS_MUTATION=0");
 console.log("HISTORICAL_PERSONA_CLEANUP_HACKS=0");
 console.log("WORLD_LOCATOR_TRACKED_IN_GIT=0");
+console.log("CONTROL_REUSABLE_SESSION_STATE_EXTERNAL=1");
+console.log("GENERIC_LOGIN_FAILURE_RECOVERY_PATH=0");
+console.log("GENERIC_LOGIN_FAILURE_REENROLLMENT_PATH=0");
 console.log("NORMAL_RUNTIME_DEPENDS_ON_WORLD_TOOLING=0");
 console.log("RESET_PURGE_INTERLOCK_STILL_PRESENT=1");
