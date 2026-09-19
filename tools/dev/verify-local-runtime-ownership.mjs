@@ -33,7 +33,7 @@ for(const token of [
   "Ensure-Reverse","Start-MobileServer","Start-ControlServer","Ensure-Scrcpy","Stop-LocalHosts",
   "--dev-client","--localhost","--select-usb","--serial","adb connect","adb disconnect","adb -d tcpip 5555",
   "Start-MobileServer $Name -Foreground","Start-ControlServer -Foreground",
-  "MOBILE_LIVE","CONTROL_LIVE","SCRCPY_FAILOVER","SCRCPY_FAILBACK","DEV_READY=PASS"
+  "MOBILE_LIVE","CONTROL_LIVE","SCRCPY_PREP","ADB_FALLBACK_PREPARE","SCRCPY_FAILOVER","SCRCPY_FAILBACK","DEV_READY=PASS"
 ]) check(dev.includes(token),`dev.ps1 missing invariant: ${token}`);
 
 for(const bad of [
@@ -46,8 +46,8 @@ check(/function Get-AdbSelector[\s\S]*Get-UsbSerial[\s\S]*Disconnect-TcpDevices[
   "ADB selector must prefer USB and use TCP only when USB is absent");
 check(/function Connect-TcpFallback[\s\S]*ADB_REFUSE_TCP_WHILE_USB_PRESENT/.test(dev),
   "TCP fallback must refuse host TCP connection while USB is present");
-check(/function Prepare-TcpFallback[\s\S]*adb -d tcpip 5555[\s\S]*Disconnect-TcpDevices[\s\S]*Save-TcpEndpoint/.test(dev),
-  "USB bootstrap must prepare but not retain a concurrent TCP host connection");
+check(/function Prepare-TcpFallback[\s\S]*getprop service\.adb\.tcp\.port[\s\S]*tcpip 5555[\s\S]*Disconnect-TcpDevices[\s\S]*Save-TcpEndpoint/.test(dev),
+  "USB bootstrap must reuse an existing TCP listener when possible and never retain a concurrent TCP host connection");
 const scrcpyBody=dev.slice(dev.indexOf("function Ensure-Scrcpy"),dev.indexOf("function Ensure-OneMobile"));
 check(scrcpyBody.includes("--select-usb")&&scrcpyBody.includes("--serial")&&scrcpyBody.includes("SCRCPY_FAILOVER")&&scrcpyBody.includes("SCRCPY_FAILBACK"),
   "scrcpy must prefer USB and automatically fail over/fail back with explicit selectors");

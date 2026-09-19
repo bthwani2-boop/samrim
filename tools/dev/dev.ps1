@@ -198,11 +198,19 @@ function Prepare-TcpFallback{
 
     Disconnect-TcpDevices
 
-    & adb -d tcpip 5555
-    if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=tcpip 5555 exit=$LASTEXITCODE"}
+    $tcpPort=((& adb -d shell getprop service.adb.tcp.port 2>&1)-join'').Trim()
+    if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=shell getprop service.adb.tcp.port exit=$LASTEXITCODE"}
 
-    Wait-Usb
-    Start-Sleep -Milliseconds 100
+    if($tcpPort-ne'5555'){
+        Write-Host 'ADB_FALLBACK_PREPARE state=enabling-tcp port=5555'
+        & adb -d tcpip 5555 2>&1|Out-Null
+        if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=tcpip 5555 exit=$LASTEXITCODE"}
+        Wait-Usb
+        Start-Sleep -Milliseconds 100
+    }else{
+        Write-Host 'ADB_FALLBACK_PREPARE state=reused port=5555'
+    }
+
     Disconnect-TcpDevices
     Save-TcpEndpoint $endpoint
     return $endpoint
@@ -406,6 +414,7 @@ function Ensure-Scrcpy{
     $allReverse=@($Identity,$Dsh,$Metro.client,$Metro.partner,$Metro.captain,$Metro.field)
 
     if($null-ne(Get-UsbSerial)){
+        Write-Host 'SCRCPY_PREP transport=usb'
         [void](Prepare-TcpFallback)
         Ensure-Reverse -Ports $allReverse
         Disconnect-TcpDevices
