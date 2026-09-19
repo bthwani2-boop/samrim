@@ -48,7 +48,8 @@ check(/function Connect-TcpFallback[\s\S]*ADB_REFUSE_TCP_WHILE_USB_PRESENT/.test
   "TCP fallback must refuse host TCP connection while USB is present");
 check(/function Prepare-TcpFallback[\s\S]*adb -d tcpip 5555[\s\S]*Disconnect-TcpDevices[\s\S]*Save-TcpEndpoint/.test(dev),
   "USB bootstrap must prepare but not retain a concurrent TCP host connection");
-check(/function Ensure-Scrcpy[\s\S]*--select-usb[\s\S]*SCRCPY_FAILOVER[\s\S]*--serial[\s\S]*SCRCPY_FAILBACK/.test(dev),
+const scrcpyBody=dev.slice(dev.indexOf("function Ensure-Scrcpy"),dev.indexOf("function Ensure-OneMobile"));
+check(scrcpyBody.includes("--select-usb")&&scrcpyBody.includes("--serial")&&scrcpyBody.includes("SCRCPY_FAILOVER")&&scrcpyBody.includes("SCRCPY_FAILBACK"),
   "scrcpy must prefer USB and automatically fail over/fail back with explicit selectors");
 check(/Ensure-Reverse -Ports @\(\$Identity,\$Dsh,\[int\]\$Metro\[\$Name\]\)/.test(dev),
   "targeted mobile command must apply reverse mappings to the active transport");

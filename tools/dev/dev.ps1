@@ -151,9 +151,8 @@ function Get-TcpSerials{
 }
 
 function Disconnect-TcpDevices{
-    foreach($serial in @(Get-TcpSerials)){
-        & adb disconnect $serial 2>&1|Out-Null
-    }
+    & adb disconnect 2>&1|Out-Null
+    if($LASTEXITCODE-ne0){Fail "ADB_DISCONNECT_FAILED exit=$LASTEXITCODE"}
 }
 
 function Save-TcpEndpoint([string]$Endpoint){
@@ -203,6 +202,7 @@ function Prepare-TcpFallback{
     if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=tcpip 5555 exit=$LASTEXITCODE"}
 
     Wait-Usb
+    Start-Sleep -Milliseconds 100
     Disconnect-TcpDevices
     Save-TcpEndpoint $endpoint
     return $endpoint
@@ -239,7 +239,7 @@ function Ensure-Reverse([int[]]$Ports){
     $selector=@(Get-AdbSelector)
 
     foreach($port in @($Ports|Sort-Object -Unique)){
-        & adb @selector reverse "tcp:$port" "tcp:$port"
+        & adb @selector reverse "tcp:$port" "tcp:$port" 2>&1|Out-Null
         if($LASTEXITCODE-ne0){Fail "ADB_REVERSE_FAILED port=$port exit=$LASTEXITCODE"}
     }
 }
@@ -408,6 +408,7 @@ function Ensure-Scrcpy{
     if($null-ne(Get-UsbSerial)){
         [void](Prepare-TcpFallback)
         Ensure-Reverse -Ports $allReverse
+        Disconnect-TcpDevices
         $mode='usb'
         $process=Start-ScrcpyProcess @('--select-usb')
         Write-Host 'SCRCPY_LIVE transport=usb fallback=tcp'
@@ -442,6 +443,7 @@ function Ensure-Scrcpy{
             Disconnect-TcpDevices
             [void](Prepare-TcpFallback)
             Ensure-Reverse -Ports $allReverse
+            Disconnect-TcpDevices
             $process=Start-ScrcpyProcess @('--select-usb')
             $mode='usb'
             Write-Host 'SCRCPY_FAILBACK transport=usb'
