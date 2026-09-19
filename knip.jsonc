@@ -4,7 +4,6 @@
     ".": {
       "entry": [
         "tools/dev/js-deps.mjs",
-        "tools/dev/verify-candidate-runtime.mjs",
         "tools/dev/verify-dsh-location-runtime.mjs",
         "tools/mobile/export-mobile-smoke.mjs",
         "tools/mobile/test-mobile-app.mjs"

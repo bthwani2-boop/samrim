@@ -21,6 +21,13 @@ const compose = read("infra/local/compose/compose.yaml");
 const dshDockerfile = read("services/dsh/backend/Dockerfile");
 const dockerignore = read(".dockerignore");
 
+const jsDepsReadyCase = section("function Test-Js-Dependencies-Ready", "function Assert-HttpEndpoint");
+const startupCase = section("function Start-Full-Runtime", "function Show-Status");
+const statusCase = section("function Show-Status", "function Doctor");
+const doctorCase = section("function Doctor", "function Require-Service");
+const controlCase = runtime.match(/'Control'\s*\{([\s\S]*?)\n\s*\}\n\s*'Surface'/)?.[1] ?? "";
+const surfaceCase = runtime.match(/'Surface'\s*\{([\s\S]*?)\n\s*\}\n\s*'Rebuild'/)?.[1] ?? "";
+
 const destructiveGuard = "if ($Action -in @('Reset','Purge') -and -not $AllowDataLoss)";
 assert(runtime.includes("[switch]$AllowDataLoss"), "destructive runtime actions must require an explicit same-invocation authorization switch");
 assert(runtime.includes(destructiveGuard), "destructive runtime actions must fail closed without authorization");
@@ -138,14 +145,12 @@ assert(runtime.includes("$existingText -cne $desired"), "runtime startup must no
 assert(runtime.includes("function Test-Full-RuntimeReady"), "runtime:up must prove an exact ready runtime before using the warm reconciliation path");
 assert(runtime.includes("function Get-Running-Workspace-Services"), "runtime:up must read running workspace services before dependency materialization");
 assert(runtime.includes("function Test-Js-Dependencies-Ready"), "runtime:up must retain one read-only dependency readiness check");
-const jsDepsReadyCase = section("function Test-Js-Dependencies-Ready", "function Assert-HttpEndpoint");
-assert(jsDepsReadyCase.includes("& docker exec"), "ready runtime dependency checks must reuse an already-running JavaScript container");
-assert(jsDepsReadyCase.includes("Compose @('run','--rm','js-deps'"), "dependency readiness must retain a bootstrap/down-state fallback");
-assert(jsDepsReadyCase.indexOf("& docker exec") < jsDepsReadyCase.indexOf("Compose @('run','--rm','js-deps'"), "running JavaScript ownership must be preferred before transient dependency-check containers");
+assert(jsDepsReadyCase.includes("Compose @('run','--rm','js-deps','node','tools/dev/js-deps.mjs','--check')"), "dependency readiness must use the canonical read-only js-deps owner");
+assert(!jsDepsReadyCase.includes("& docker exec"), "dependency readiness must not create a parallel direct-Docker execution path");
 assert(runtime.includes("function Start-Full-Runtime"), "runtime must have one canonical full-stack startup owner");
 assert(!runtime.includes("function Start-Requested-Runtime"), "target runtime startup orchestration must not survive the daily full-stack cutover");
 assert(!runtime.includes("function Ensure-Target-Runtime"), "app/control helpers must not own target runtime startup");
-assert(runtime.includes("$dependenciesReady = Test-Js-Dependencies-Ready $before"), "full startup must gate shared dependency materialization from the canonical pre-start snapshot");
+assert(runtime.includes("$dependenciesReady = Test-Js-Dependencies-Ready"), "full startup must gate shared dependency materialization");
 assert(!startupCase.includes("Compose @('config','--quiet')"), "runtime:up must not duplicate Compose parsing before the actual reconciliation command");
 assert(runtime.includes("JS_DEPS_GATE=READY action=no-stop scope=full"), "ready dependencies must preserve running workspace services");
 assert(runtime.includes("JS_DEPS_GATE=STALE action=stop-materialize scope=full"), "stale dependencies must expose the full-start materialization boundary");
@@ -163,13 +168,11 @@ assert(
 );
 assert(!opener.includes("docker compose") && !opener.includes("Compose @("), "mobile opener must not own Docker lifecycle");
 
-const statusCase = section("function Show-Status", "function Doctor");
 assert(statusCase.includes("Compose @('ps','-a')"), "runtime:status must use one lightweight Compose state display");
 for (const forbidden of ["Get-CanonicalRuntimeSnapshot", "Assert-WorkspaceMounts", "Get-Native-Backend-Residue", "Assert-HostRuntimeEndpoints", "Test-Js-Dependencies-Ready"]) {
   assert(!statusCase.includes(forbidden), `runtime:status must remain display-only: ${forbidden}`);
 }
 
-const startupCase = section("function Start-Full-Runtime", "function Show-Status");
 assert((startupCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "runtime:up must perform exactly one host-native backend census");
 assert(!startupCase.includes("nativeBackendAfter"), "runtime:up must not repeat the host-native backend census after Compose");
 assert(startupCase.includes("RUNTIME_RECONCILE=READY action=running-services-only"), "runtime:up must expose the exact-ready warm reconciliation path");
@@ -180,13 +183,10 @@ assert(startupCase.indexOf("Test-Full-RuntimeReady") < startupCase.indexOf("--no
 assert(startupCase.indexOf("$dependenciesReady = Test-Js-Dependencies-Ready") < startupCase.indexOf("--no-deps"), "warm reconciliation must be gated by current dependency fingerprint readiness");
 
 
-const doctorCase = section("function Doctor", "function Require-Service");
 assert((doctorCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "runtime:doctor must perform exactly one host-native backend census");
 assert(doctorCase.includes("Assert-HostRuntimeEndpoints"), "runtime:doctor must prove current host-published endpoints");
 assert(runtime.includes("HOST_RUNTIME_ENDPOINTS=PASS"), "runtime doctor must expose host endpoint proof");
 
-const controlCase = runtime.match(/'Control'\s*\{([\s\S]*?)\n\s*\}\n\s*'Surface'/)?.[1] ?? "";
-const surfaceCase = runtime.match(/'Surface'\s*\{([\s\S]*?)\n\s*\}\n\s*'Rebuild'/)?.[1] ?? "";
 assert(controlCase.includes("Read-CanonicalEnvironment") && controlCase.includes("Assert-Target-Runtime"), "control helper must read/validate the existing runtime");
 assert(surfaceCase.includes("Read-CanonicalEnvironment") && surfaceCase.includes("Assert-Target-Runtime"), "surface helper must read/validate the existing runtime");
 assert((controlCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "control helper must perform one host-native backend census");
