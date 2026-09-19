@@ -116,9 +116,8 @@ for (const app of apps) {
   }
 
   const rootCommandName = app.replace(/^app-/, "");
-  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 ${rootCommandName}`;
-  if (rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
-    console.error(`${app}: root command must route to the canonical app opener`);
+  if (rootPackage.scripts?.[rootCommandName] !== undefined) {
+    console.error(`${app}: per-app root runtime command must be absent; pnpm dev owns all Metro servers`);
     failed = true;
   }
 
@@ -234,7 +233,7 @@ for (const entry of fs.readdirSync(appsRoot, { withFileTypes: true })) {
 }
 if (failed) process.exit(1);
 console.log("MOBILE_LOCAL_RUNTIME_OWNER=tools/dev/dev.ps1");
-console.log("MOBILE_RUNTIME_ENTRYPOINTS=1_PER_APP");
+console.log("MOBILE_RUNTIME_ENTRYPOINT=PNPM_DEV");
 console.log("MOBILE_SHADOW_START_SCRIPTS=0");
 console.log("MOBILE_SHADOW_NX_RUNTIME_TARGETS=0");
 console.log("MOBILE_METRO_PORT_AUTHORITY=CANONICAL_ENV");

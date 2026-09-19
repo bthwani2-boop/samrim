@@ -1,7 +1,7 @@
 #Requires -Version 7.4
 param(
     [Parameter(Position=0)]
-    [ValidateSet('daily','client','partner','captain','field','control','scr','up','down','status')]
+    [ValidateSet('daily','up','down','status')]
     [string]$Target='daily'
 )
 
@@ -79,28 +79,7 @@ function Ensure-Backend{
     return 'started'
 }
 
-function Reverse([int[]]$Ports){
-    foreach($port in @($Ports|Sort-Object -Unique)){
-        & adb -d reverse "tcp:$port" "tcp:$port"
-        if($LASTEXITCODE-ne0){Fail "ADB_REVERSE_FAILED port=$port"}
-    }
-}
-
-function Metro-Ready([int]$Port){
-    if(-not(Has-Port $Port)){return $false}
-
-    $client=[Net.Http.HttpClient]::new()
-    $client.Timeout=[TimeSpan]::FromMilliseconds(250)
-    try{
-        return $client.GetStringAsync("http://127.0.0.1:$Port/status").GetAwaiter().GetResult().Trim()-eq'packager-status:running'
-    }catch{
-        return $false
-    }finally{
-        $client.Dispose()
-    }
-}
-
-function Set-App-Environment{
+function Set-Host-Environment{
     $env:BTHWANI_ENV='development'
     $env:EXPO_OFFLINE='1'
     $env:EXPO_NO_QR_CODE='1'
@@ -118,107 +97,207 @@ function Set-App-Environment{
     }
 }
 
-function Open-Mobile([string]$App,$Config,[int]$Port){
-    Reverse @($Identity,$Dsh,$Port)
+function Invoke-Adb([string[]]$Arguments,[int]$TimeoutMs=3000){
+    $adb=(Get-Command adb -CommandType Application -ErrorAction SilentlyContinue|Select-Object -First 1).Source
+    if([string]::IsNullOrWhiteSpace($adb)){Fail 'TOOL_NOT_FOUND name=adb'}
 
-    $url="http://127.0.0.1:$Port"
-    $deep="$([string]$Config.scheme)://expo-development-client/?url=$([Uri]::EscapeDataString($url))"
-    $package=[string]$Config.androidPackage
-
-    $launch=@(& adb -d shell am start -W -a android.intent.action.VIEW -d $deep -p $package 2>&1)
-    if($LASTEXITCODE-ne0){
-        Fail "APP_OPEN_FAILED app=$App detail=$(($launch-join' ').Trim())"
+    $process=Start-Process -FilePath $adb -ArgumentList (@('-d')+$Arguments) -PassThru -WindowStyle Hidden
+    if(-not$process.WaitForExit($TimeoutMs)){
+        try{$process.Kill($true)}catch{}
+        Fail "ADB_TIMEOUT args=$($Arguments-join' ') timeout_ms=$TimeoutMs"
     }
-
-    Start-Sleep -Milliseconds 300
-
-    $appProcess=((& adb -d shell pidof $package 2>$null|Out-String).Trim())
-    if($LASTEXITCODE-ne0-or[string]::IsNullOrWhiteSpace($appProcess)){
-        $errors=@(
-            & adb -d logcat -d -t 200 2>&1 |
-            Select-String -Pattern 'AndroidRuntime|ReactNativeJS|ReactNative|FATAL EXCEPTION' |
-            Select-Object -Last 40 |
-            ForEach-Object{$_.Line}
-        )
-        Fail "APP_EXITED app=$App package=$package log=$($errors-join' | ')"
-    }
-
-    Write-Host "APP=PASS app=$App state=reused pid=$appProcess"
+    if($process.ExitCode-ne0){Fail "ADB_FAILED args=$($Arguments-join' ') exit=$($process.ExitCode)"}
 }
 
-function Mobile([string]$Name){
-    [void](Ensure-Backend)
-    Set-App-Environment
-
-    $app="app-$Name"
-    $appRoot=Join-Path $Root "apps\$app"
-    $config=Get-Content -LiteralPath (Join-Path $appRoot 'mobile.config.json') -Raw|ConvertFrom-Json
-    $port=[int]$Metro[$Name]
-
-    if(Metro-Ready $port){
-        Open-Mobile $app $config $port
-        return
+function Ensure-Reverse{
+    foreach($port in @($Identity,$Dsh,$Metro.client,$Metro.partner,$Metro.captain,$Metro.field)){
+        Invoke-Adb @('reverse',"tcp:$port","tcp:$port")
     }
-
-    if(Has-Port $port){Fail "PORT_IN_USE port=$port"}
-
-    Reverse @($Identity,$Dsh)
-
-    $expo=Join-Path $appRoot 'node_modules\expo\bin\cli'
-    if(-not(Test-Path -LiteralPath $expo -PathType Leaf)){Fail "EXPO_NOT_INSTALLED app=$app run=pnpm_install"}
-
-    Write-Host "APP_START app=$app live=fast-refresh"
-    Set-Location $appRoot
-    & node $expo start --dev-client --localhost --android --scheme ([string]$config.scheme) --port $port
-    exit $LASTEXITCODE
 }
 
-switch($Target){
-    'up'{
-        Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)"
-        return
-    }
-    'down'{
-        Compose @('down','--remove-orphans')
-        Write-Host 'RUNTIME_DOWN=PASS'
-        return
-    }
-    'status'{
-        Compose @('ps','-a')
-        return
-    }
-    'scr'{
-        & scrcpy --max-size=1280 --max-fps=30 --video-bit-rate=4M --no-audio
-        exit $LASTEXITCODE
-    }
-    'control'{
-        [void](Ensure-Backend)
-        Set-App-Environment
+function Metro-Ready([int]$Port){
+    if(-not(Has-Port $Port)){return $false}
 
-        if(Has-Port $Control){
-            Write-Host "CONTROL=PASS state=reused url=$(Need $Map 'CONTROL_PANEL_PUBLIC_ORIGIN') live=hmr"
-            return
+    $client=[Net.Http.HttpClient]::new()
+    $client.Timeout=[TimeSpan]::FromMilliseconds(250)
+    try{
+        return $client.GetStringAsync("http://127.0.0.1:$Port/status").GetAwaiter().GetResult().Trim()-eq'packager-status:running'
+    }catch{
+        return $false
+    }finally{
+        $client.Dispose()
+    }
+}
+
+function Start-Node([string]$WorkingDirectory,[string]$Cli,[string[]]$Arguments){
+    $node=(Get-Command node -CommandType Application -ErrorAction SilentlyContinue|Select-Object -First 1).Source
+    if([string]::IsNullOrWhiteSpace($node)){Fail 'TOOL_NOT_FOUND name=node'}
+    return Start-Process -FilePath $node -ArgumentList (@($Cli)+$Arguments) -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru
+}
+
+function Ensure-HostServers{
+    $started=@{}
+    $state=@{}
+
+    foreach($name in @('client','partner','captain','field')){
+        $port=[int]$Metro[$name]
+
+        if(Metro-Ready $port){
+            $state[$name]='reused'
+            continue
         }
+        if(Has-Port $port){Fail "PORT_IN_USE surface=$name port=$port"}
 
+        $root=Join-Path $Root "apps\app-$name"
+        $expo=Join-Path $root 'node_modules\expo\bin\cli'
+        if(-not(Test-Path -LiteralPath $expo -PathType Leaf)){Fail "EXPO_NOT_INSTALLED app=app-$name run=pnpm_install"}
+
+        $started[$name]=Start-Node $root $expo @('start','--dev-client','--localhost','--port',"$port")
+        $state[$name]='started'
+    }
+
+    if(Has-Port $Control){
+        $state.control='reused'
+    }else{
         $root=Join-Path $Root 'apps\control-panel'
         $next=Join-Path $root 'node_modules\next\dist\bin\next'
         if(-not(Test-Path -LiteralPath $next -PathType Leaf)){Fail 'NEXT_NOT_INSTALLED run=pnpm_install'}
 
-        Write-Host "CONTROL_START url=$(Need $Map 'CONTROL_PANEL_PUBLIC_ORIGIN') live=hmr"
-        Set-Location $root
-        & node $next dev -H 127.0.0.1 -p $Control
-        exit $LASTEXITCODE
+        $started.control=Start-Node $root $next @('dev','-H','127.0.0.1','-p',"$Control")
+        $state.control='started'
     }
-    'client'{Mobile 'client';return}
-    'partner'{Mobile 'partner';return}
-    'captain'{Mobile 'captain';return}
-    'field'{Mobile 'field';return}
+
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    do{
+        foreach($entry in $started.GetEnumerator()){
+            if($entry.Value.HasExited){Fail "HOST_PROCESS_EXITED surface=$($entry.Key) exit=$($entry.Value.ExitCode)"}
+        }
+
+        $ready=(Metro-Ready $Metro.client) -and
+               (Metro-Ready $Metro.partner) -and
+               (Metro-Ready $Metro.captain) -and
+               (Metro-Ready $Metro.field) -and
+               (Has-Port $Control)
+
+        if($ready){return $state}
+        Start-Sleep -Milliseconds 100
+    }while($clock.ElapsedMilliseconds-lt30000)
+
+    $missing=@()
+    foreach($name in @('client','partner','captain','field')){
+        if(-not(Metro-Ready ([int]$Metro[$name]))){$missing+="app-$name"}
+    }
+    if(-not(Has-Port $Control)){$missing+='control'}
+    Fail "HOST_READY_TIMEOUT missing=$($missing-join',') timeout_ms=30000"
+}
+
+function Ensure-Scrcpy{
+    if(@(Get-Process scrcpy -ErrorAction SilentlyContinue).Count-gt0){return 'reused'}
+
+    $scrcpy=(Get-Command scrcpy -CommandType Application -ErrorAction SilentlyContinue|Select-Object -First 1).Source
+    if([string]::IsNullOrWhiteSpace($scrcpy)){Fail 'TOOL_NOT_FOUND name=scrcpy'}
+
+    Start-Process -FilePath $scrcpy -ArgumentList @('--max-size=1280','--max-fps=30','--video-bit-rate=4M','--no-audio')|Out-Null
+    return 'started'
+}
+
+function Stop-LocalHosts{
+    foreach($port in @($Metro.client,$Metro.partner,$Metro.captain,$Metro.field,$Control)){
+        foreach($listener in @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)){
+            $id=[int]$listener.OwningProcess
+            $p=Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
+            if($null-eq$p){continue}
+            if($p.Name-notmatch'^node(\.exe)?
+    Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)"
+    return
+}
+if($Target-eq'down'){
+    Stop-LocalHosts
+    Compose @('down','--remove-orphans')
+    Write-Host 'RUNTIME_DOWN=PASS scope=all-local-dev'
+    return
+}
+if($Target-eq'status'){
+    Compose @('ps','-a')
+    return
 }
 
 $total=[Diagnostics.Stopwatch]::StartNew()
+
+$phase=[Diagnostics.Stopwatch]::StartNew()
 $backendState=Ensure-Backend
+$backendMs=$phase.ElapsedMilliseconds
+
+$phase.Restart()
+Ensure-Reverse
+$adbMs=$phase.ElapsedMilliseconds
+
+Set-Host-Environment
+
+$phase.Restart()
+$hostState=Ensure-HostServers
+$hostMs=$phase.ElapsedMilliseconds
+
+$phase.Restart()
+$scrcpyState=Ensure-Scrcpy
+$scrcpyMs=$phase.ElapsedMilliseconds
+
 $total.Stop()
 
-Write-Host "DEV_TIMING backend_ms=$($total.ElapsedMilliseconds) total_ms=$($total.ElapsedMilliseconds)"
-Write-Host "DEV_STATE backend=$backendState"
-Write-Host "DEV_READY=PASS root=$Root"
+$started=@($hostState.GetEnumerator()|Where-Object Value -eq'started'|ForEach-Object Key|Sort-Object)
+$reused=@($hostState.GetEnumerator()|Where-Object Value -eq'reused'|ForEach-Object Key|Sort-Object)
+
+Write-Host "DEV_TIMING backend_ms=$backendMs adb_ms=$adbMs hosts_ms=$hostMs scrcpy_ms=$scrcpyMs total_ms=$($total.ElapsedMilliseconds)"
+Write-Host "DEV_STATE backend=$backendState scrcpy=$scrcpyState started=$($started-join',') reused=$($reused-join',')"
+Write-Host "DEV_READY=PASS apps=manual-open live=fast-refresh control=hmr root=$Root"
+-or-not([string]$p.CommandLine).Contains($Root,[StringComparison]::OrdinalIgnoreCase)){
+                Fail "REFUSE_FOREIGN_PROCESS port=$port pid=$id"
+            }
+            Stop-Process -Id $id -Force
+        }
+    }
+    Get-Process scrcpy -ErrorAction SilentlyContinue|Stop-Process -Force
+}
+
+if($Target-eq'up'){
+    Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)"
+    return
+}
+if($Target-eq'down'){
+    Compose @('down','--remove-orphans')
+    Write-Host 'RUNTIME_DOWN=PASS'
+    return
+}
+if($Target-eq'status'){
+    Compose @('ps','-a')
+    return
+}
+
+$total=[Diagnostics.Stopwatch]::StartNew()
+
+$phase=[Diagnostics.Stopwatch]::StartNew()
+$backendState=Ensure-Backend
+$backendMs=$phase.ElapsedMilliseconds
+
+$phase.Restart()
+Ensure-Reverse
+$adbMs=$phase.ElapsedMilliseconds
+
+Set-Host-Environment
+
+$phase.Restart()
+$hostState=Ensure-HostServers
+$hostMs=$phase.ElapsedMilliseconds
+
+$phase.Restart()
+$scrcpyState=Ensure-Scrcpy
+$scrcpyMs=$phase.ElapsedMilliseconds
+
+$total.Stop()
+
+$started=@($hostState.GetEnumerator()|Where-Object Value -eq'started'|ForEach-Object Key|Sort-Object)
+$reused=@($hostState.GetEnumerator()|Where-Object Value -eq'reused'|ForEach-Object Key|Sort-Object)
+
+Write-Host "DEV_TIMING backend_ms=$backendMs adb_ms=$adbMs hosts_ms=$hostMs scrcpy_ms=$scrcpyMs total_ms=$($total.ElapsedMilliseconds)"
+Write-Host "DEV_STATE backend=$backendState scrcpy=$scrcpyState started=$($started-join',') reused=$($reused-join',')"
+Write-Host "DEV_READY=PASS apps=manual-open live=fast-refresh control=hmr root=$Root"

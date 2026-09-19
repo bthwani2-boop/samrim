@@ -10,46 +10,35 @@ const dev=read("tools/dev/dev.ps1");
 const check=(ok,msg)=>{if(!ok)fail.push(msg)};
 
 const run="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1";
-const scripts={
-  dev:"daily",client:"client",partner:"partner",captain:"captain",field:"field",
-  control:"control",scr:"scr","runtime:up":"up","runtime:down":"down","runtime:status":"status",
-};
-for(const [name,target] of Object.entries(scripts)){
-  check(pkg.scripts?.[name]===`${run} ${target}`,`${name} must route to dev.ps1`);
-}
+check(pkg.scripts?.dev===`${run} daily`,"dev must route to dev.ps1 daily");
+check(pkg.scripts?.["runtime:up"]===`${run} up`,"runtime:up must route to dev.ps1");
+check(pkg.scripts?.["runtime:down"]===`${run} down`,"runtime:down must route to dev.ps1");
+check(pkg.scripts?.["runtime:status"]===`${run} status`,"runtime:status must route to dev.ps1");
 
+for(const retiredScript of ["client","partner","captain","field","control","scr","runtime:doctor"]){
+  check(pkg.scripts?.[retiredScript]===undefined,`retired daily script remains: ${retiredScript}`);
+}
 for(const old of [
   "tools/dev/local.ps1","tools/dev/runtime.ps1","tools/dev/runtime.psm1","tools/dev/device-policy.psm1",
   "tools/dev/open-mobile-apps.ps1","tools/dev/run-control.ps1","tools/dev/scrcpy.ps1"
 ]) check(!exists(old),`retired runtime file remains: ${old}`);
 
 for(const token of [
-  "ValidateSet('daily','client','partner','captain','field','control','scr','up','down','status')",
-  "DEV_TIMING","DEV_READY=PASS","--dns-result-order=ipv4first",
-  "node_modules\\expo\\bin\\cli","node_modules\\next\\dist\\bin\\next",
-  "am start -W","shell pidof","APP_EXITED"
+  "ValidateSet('daily','up','down','status')","DEV_TIMING","DEV_READY=PASS",
+  "EXPO_OFFLINE='1'","EXPO_NO_QR_CODE='1'","EXPO_NO_TYPESCRIPT_SETUP='1'",
+  "--dns-result-order=ipv4first","node_modules\\expo\\bin\\cli","node_modules\\next\\dist\\bin\\next",
+  "Ensure-Reverse","Ensure-HostServers","Ensure-Scrcpy","Stop-LocalHosts","--dev-client","--localhost"
 ]) check(dev.includes(token),`dev.ps1 missing invariant: ${token}`);
 
-check(/\$env:EXPO_OFFLINE\s*=\s*['"]1['"]/.test(dev), "dev.ps1 must keep Expo offline");
-check(/\$env:EXPO_NO_QR_CODE\s*=\s*['"]1['"]/.test(dev), "dev.ps1 must suppress Expo QR output");
-check(/\$env:EXPO_NO_TYPESCRIPT_SETUP\s*=\s*['"]1['"]/.test(dev), "dev.ps1 must disable Expo TypeScript auto-setup");
-check(/&\s*adb\s+-d\s+reverse\s+["']tcp:\$port["']\s+["']tcp:\$port["']/.test(dev), "mobile path must use direct USB ADB reverse");
-
 for(const bad of [
-  "pnpm --dir","adb devices","ANDROID_SERIAL","adb -s","scrcpy -s","adb tcpip","getprop",
-  "WIFI","wifi","METRO_START_TIMEOUT","EXPO_NO_TELEMETRY"
-]) check(!dev.includes(bad),`dev.ps1 retains removed overhead: ${bad}`);
+  "--android","am start","shell pidof","logcat","APP_EXITED","pnpm --dir","adb devices","ANDROID_SERIAL",
+  "adb -s","scrcpy -s","adb tcpip","getprop","WIFI","wifi","METRO_START_TIMEOUT","EXPO_NO_TELEMETRY"
+]) check(!dev.includes(bad),`dev.ps1 retains removed runtime behavior: ${bad}`);
 
-check(!dev.includes("Start-Process"),"dev.ps1 must not own background process supervision");
-check(!/\[string\[\]\]\$Args\b/.test(dev), "dev.ps1 must not shadow PowerShell's automatic $Args variable");
-check(!/\$states\s*=\s*@\{/.test(dev), "daily dev must not eagerly start all application servers");
-const dailyStart=dev.indexOf("$total=[Diagnostics.Stopwatch]::StartNew()");
-check(dailyStart>=0, "dev.ps1 missing daily timing block");
-if(dailyStart>=0){
-  const dailyBlock=dev.slice(dailyStart);
-  check(!/\badb\b|scrcpy|Mobile\s|Control|Reverse\s+@/.test(dailyBlock), "daily dev must touch backend only");
-}
-check(!pkg.scripts?.["runtime:doctor"],"runtime:doctor must remain absent");
+check(!/\[string\[\]\]\$Args\b/.test(dev),"dev.ps1 must not shadow PowerShell's automatic $Args variable");
+check(!/--dev-client[^\n\r]*--android/.test(dev),"Metro bootstrap must never auto-open Android apps");
+check(/Start-Node \$root \$expo @\('start','--dev-client','--localhost','--port'/.test(dev),"Metro bootstrap must remain live for Fast Refresh");
+check(/RUNTIME_DOWN=PASS scope=all-local-dev/.test(dev),"runtime:down must close the complete local dev runtime");
 
 if(fail.length){
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
@@ -60,5 +49,5 @@ console.log("LOCAL_RUNTIME_OWNERSHIP=PASS");
 console.log("LOCAL_RUNTIME_OWNER=tools/dev/dev.ps1");
 console.log("LOCAL_RUNTIME_OWNER_FILES=1");
 console.log("DAILY_ENTRYPOINT=pnpm dev");
-console.log("DEVICE_DISCOVERY_WRAPPER=0");
+console.log("MOBILE_OPEN_MODE=MANUAL");
 console.log("NESTED_PNPM=0");

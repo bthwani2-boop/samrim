@@ -101,11 +101,12 @@ if (safePush.includes("pnpm verify")) {
 const localRuntime = requireTokens("tools/dev/dev.ps1", [
   "DEV_TIMING",
   "DEV_READY=PASS",
+  "Ensure-Reverse",
+  "Ensure-HostServers",
+  "Ensure-Scrcpy",
+  "Stop-LocalHosts",
   "node_modules\\expo\\bin\\cli",
   "node_modules\\next\\dist\\bin\\next",
-  "am start -W",
-  "shell pidof",
-  "APP_EXITED",
 ]);
 if (!/\$env:EXPO_OFFLINE\s*=\s*['"]1['"]/.test(localRuntime)) {
   failures.push("tools/dev/dev.ps1 must keep Expo offline");
@@ -113,8 +114,8 @@ if (!/\$env:EXPO_OFFLINE\s*=\s*['"]1['"]/.test(localRuntime)) {
 if (!/\$env:EXPO_NO_QR_CODE\s*=\s*['"]1['"]/.test(localRuntime)) {
   failures.push("tools/dev/dev.ps1 must suppress Expo QR output");
 }
-if (!/&\s*adb\s+-d\s+reverse\s+["']tcp:\$port["']\s+["']tcp:\$port["']/.test(localRuntime)) {
-  failures.push("tools/dev/dev.ps1 mobile path must use direct USB ADB reverse");
+for (const forbidden of ["--android", "am start", "shell pidof", "logcat"]) {
+  if (localRuntime.includes(forbidden)) failures.push(`tools/dev/dev.ps1 must not open mobile apps: ${forbidden}`);
 }
 if (/\[string\[\]\]\$Args\b/.test(localRuntime)) {
   failures.push("tools/dev/dev.ps1 must not shadow PowerShell's automatic $Args variable");
@@ -138,7 +139,7 @@ if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tool
 if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") {
   failures.push("package.json safe:push must own push safety");
 }
-for (const required of ["dev", "runtime:up", "runtime:status"]) {
+for (const required of ["dev", "runtime:up", "runtime:status", "runtime:down"]) {
   if (!pkg?.scripts?.[required]) failures.push(`package.json missing required full-runtime command: ${required}`);
 }
 

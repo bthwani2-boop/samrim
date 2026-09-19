@@ -25,17 +25,11 @@ Daily local development:
 pnpm dev
 ```
 
-That single command reuses or prepares only the shared Docker backend and returns immediately. ADB, scrcpy, Mobile Metro and Control are strictly on-demand behind their targeted aliases so daily startup stays minimal. It prints measured timing and returns the prompt. The canonical runtime file is `tools/dev/dev.ps1`.
+That single command reuses or prepares the complete local development environment: Docker backend/state, USB ADB reverse mappings, all four Metro servers, Control Panel and scrcpy. It does not open the mobile applications. Open Client, Partner, Captain or Field manually on the device; the development client reconnects to its most recent project and Fast Refresh remains live. Control uses Next HMR. The canonical runtime file is `tools/dev/dev.ps1`.
 
-Targeted aliases remain available and use the same file:
+Maintenance commands:
 
 ```text
-pnpm client
-pnpm partner
-pnpm captain
-pnpm field
-pnpm control
-pnpm scr
 pnpm runtime:up
 pnpm runtime:status
 pnpm runtime:down

@@ -4,12 +4,10 @@
 
 Daily lifecycle:
 
-- `pnpm dev` — reuse/prepare shared backend only with timing output; ADB, scrcpy and application servers remain on-demand.
+- `pnpm dev` — reuse/prepare backend, USB reverse mappings, four Metro servers, Control and scrcpy; mobile apps remain manual-open.
 - `pnpm runtime:up` — ensure backend/state only.
 - `pnpm runtime:status` — display backend/state.
-- `pnpm runtime:down` — stop backend/state.
-
-Application aliases `pnpm client|partner|captain|field|control|scr` route to the same runtime file.
+- `pnpm runtime:down` — stop Metro/Control/scrcpy and backend/state.
 
 `pnpm dev` first checks the already-bound local backend ports. When they are live it skips Compose completely, so completed migration services are not restarted on every daily invocation. When backend ports are absent it runs the canonical Compose `up -d --wait` path.
 

@@ -169,18 +169,16 @@ No language, framework, service, UI or tooling layer gets a lower correctness st
 
 LOCAL_INTEGRATION has exactly one canonical runtime owner for every admitted process/state. The current process/service/container inventory and environment composition are discovered from executable runtime configuration and readback; this agent constitution does not duplicate that mutable inventory. Parallel host/container ownership for the same responsibility is forbidden. Device/host tooling remains where the executable runtime contract assigns it.
 
-The human LOCAL_INTEGRATION lifecycle has one daily bootstrap and targeted aliases, all owned by `tools/dev/dev.ps1`:
+The human LOCAL_INTEGRATION lifecycle has one daily bootstrap owned by `tools/dev/dev.ps1`:
 
 ```text
-pnpm dev            → reuse/prepare shared backend only, then return
+pnpm dev            → reuse/prepare backend, USB reverse mappings, all mobile Metro servers, Control and scrcpy
 pnpm runtime:up     → ensure backend/state only
 pnpm runtime:status → display backend/state
-pnpm control        → ensure Control only
-pnpm client|partner|captain|field → ensure/open the selected mobile surface
-pnpm scr            → ensure scrcpy only
+pnpm runtime:down   → stop backend/state
 ```
 
-The daily bootstrap reuses the live backend and must skip Docker reconciliation when backend endpoints are already live. ADB reverse, scrcpy, Mobile Metro and Control are strictly on-demand behind their targeted aliases; daily startup must not touch unused device or host-app tooling. Source-only edits reuse valid processes, device state and sessions; Expo Fast Refresh / Next HMR is the inner development loop.
+The daily bootstrap starts only missing processes, reuses healthy ones and never opens actor applications. The developer opens Client, Partner, Captain or Field manually from the device; Expo development-client reconnects to its most recent project and Metro Fast Refresh remains the inner mobile loop. Next HMR remains the Control inner loop. Docker reconciliation is skipped while backend endpoints are already live, and Metro startup must not trigger native rebuilds or eager application bundling.
 
 `runtime:up` reconciles backend/state without rebuilding existing images by default; on a fresh machine Compose may build a missing image. One-shot migrations must not be rerun merely because `pnpm dev` was invoked while the backend is already live. When baked backend source changes, use explicit targeted service rebuild before the runtime proof that needs the new binary. Application-source changes do not rebuild Docker.
 
