@@ -87,6 +87,17 @@ for (const forbidden of [
   if (verifier.includes(forbidden)) failures.push(`local verifier must not own ${forbidden}`);
 }
 
+const runtimeOwnership = read("tools/dev/verify-local-runtime-ownership.mjs");
+for (const forbidden of [
+  'read("AGENTS.md")',
+  'read("README.md")',
+  'read("infra/local/compose/README.md")',
+]) {
+  if (runtimeOwnership.includes(forbidden)) {
+    failures.push(`runtime ownership verifier must derive runtime truth from executable source/config, not docs: ${forbidden}`);
+  }
+}
+
 const safePush = requireTokens("tools/dev/safe-push.ps1", [
   "SAFE_PUSH=NOOP",
   "VERIFY_BASE=REMOTE_BRANCH",

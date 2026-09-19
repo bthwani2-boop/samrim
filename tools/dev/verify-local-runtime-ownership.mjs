@@ -8,9 +8,6 @@ const read=(p)=>fs.readFileSync(path.join(root,p),"utf8");
 const pkg=JSON.parse(read("package.json"));
 const dev=read("tools/dev/dev.ps1");
 const launcher=read("tools/dev/start-surface.mjs");
-const agent=read("AGENTS.md");
-const rootReadme=read("README.md");
-const composeReadme=read("infra/local/compose/README.md");
 const check=(ok,msg)=>{if(!ok)fail.push(msg)};
 
 const ps=spawnSync("pwsh",["-NoProfile","-Command",
@@ -31,10 +28,6 @@ for(const [name,dir] of Object.entries({client:"app-client",partner:"app-partner
 check(!Object.keys(pkg.scripts??{}).some((name)=>name.startsWith("world:")),"persistent synthetic world commands must remain absent");
 check(pkg.scripts?.["runtime:verify-ownership"]===undefined,"runtime ownership verifier must remain internal to candidate verification");
 check(pkg.scripts?.["runtime:reset"]===undefined&&pkg.scripts?.["runtime:purge"]===undefined,"unproven destructive runtime command aliases must remain absent");
-check(agent.includes("pnpm dev            → reuse/prepare backend only"),"AGENTS.md must keep backend-only daily startup");
-check(agent.includes("Each app owns its interactive development process in its own \`package.json\`."),"AGENTS.md must keep package-owned surface startup");
-check(rootReadme.includes("\`pnpm dev\` owns backend readiness only"),"README.md must describe backend-only daily startup");
-check(composeReadme.includes("\`pnpm dev\` — reuse/prepare backend/state only, then return."),"Compose README must describe backend-only daily startup");
 for(const retired of ["tools/dev/local-world.mjs","tools/dev/verify-local-world.mjs","tools/dev/runtime.ps1","tools/dev/runtime.psm1","tools/dev/run-control.ps1","tools/dev/open-mobile-apps.ps1","tools/dev/scrcpy.ps1"]){
   check(!fs.existsSync(path.join(root,retired)),`retired local development artifact remains: ${retired}`);
 }

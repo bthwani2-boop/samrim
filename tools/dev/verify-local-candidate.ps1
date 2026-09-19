@@ -107,7 +107,7 @@ try {
         Run-Step 'Docs configuration parity' { node tools/dev/verify-doc-config-parity.mjs }
     }
 
-    if (Changed-Matches '^(AGENTS\.md|README\.md|infra/local/(?:compose/|\.env\.example$)|tools/dev/(dev\.ps1|start-surface\.mjs|verify-local-runtime-ownership\.mjs)|package\.json|apps/(?:app-(?:client|partner|captain|field)|control-panel)/package\.json)$') {
+    if (Changed-Matches '^(infra/local/(?:compose/|\.env\.example$)|tools/dev/(dev\.ps1|start-surface\.mjs|verify-local-runtime-ownership\.mjs)|package\.json|apps/(?:app-(?:client|partner|captain|field)|control-panel)/package\.json)$') {
         Run-Step 'Runtime ownership' { node tools/dev/verify-local-runtime-ownership.mjs }
         Run-Step 'Canonical compose config' {
             docker compose --project-name samrim-local --env-file infra/local/.env.example -f infra/local/compose/compose.yaml config --quiet
