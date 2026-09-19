@@ -31,7 +31,7 @@ for(const old of [
 for(const token of [
   "Get-UsbSerial","Prepare-TcpFallback","Connect-TcpFallback","Disconnect-TcpDevices","Get-AdbSelector",
   "Ensure-Reverse","Start-MobileServer","Start-ControlServer","Ensure-Scrcpy","Stop-LocalHosts",
-  "--dev-client","--localhost","--select-usb","--serial","adb connect","adb disconnect","adb -d tcpip 5555",
+  "EXPO_NO_METRO_WORKSPACE_ROOT='1'","--dev-client","--localhost","--select-usb","--serial","adb connect","adb disconnect","adb -d tcpip 5555",
   "Start-MobileServer $Name -Foreground","Start-ControlServer -Foreground",
   "MOBILE_LIVE","CONTROL_LIVE","SCRCPY_PREP","ADB_FALLBACK_PREPARE","SCRCPY_FAILOVER","SCRCPY_FAILBACK","DEV_READY=PASS"
 ]) check(dev.includes(token),`dev.ps1 missing invariant: ${token}`);
