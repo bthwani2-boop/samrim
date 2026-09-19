@@ -79,13 +79,6 @@ function Ensure-Backend{
     return 'started'
 }
 
-function Resolve-Package([string]$Package,[string]$From){
-    $script="process.stdout.write(require.resolve('$Package/package.json',{paths:[process.argv[1]]}))"
-    $resolved=& node -e $script $From 2>$null
-    if($LASTEXITCODE-ne0){return $null}
-    return ([string]$resolved).Trim()
-}
-
 function Dependencies-Ready{
     foreach($name in @('client','partner','captain','field')){
         $package=Join-Path $Root "apps\app-$name\node_modules\expo\package.json"
@@ -173,24 +166,24 @@ function Ensure-HostServers{
         }
         if(Has-Port $port){Fail "PORT_IN_USE surface=$name port=$port"}
 
-        $root=Join-Path $Root "apps\app-$name"
-        $expoPackage=Resolve-Package 'expo' $root
-        if([string]::IsNullOrWhiteSpace($expoPackage)){Fail "EXPO_NOT_RESOLVABLE app=app-$name"}
+        $AppRoot=Join-Path $Root "apps\app-$name"
+        $expoPackage=Join-Path $AppRoot 'node_modules\expo\package.json'
+        if(-not(Test-Path -LiteralPath $expoPackage -PathType Leaf)){Fail "EXPO_NOT_MATERIALIZED app=app-$name run=pnpm_bootstrap"}
         $expo=Join-Path (Split-Path -Parent $expoPackage) 'bin\cli'
 
-        $started[$name]=Start-Node $root $expo @('start','--dev-client','--localhost','--port',"$port")
+        $started[$name]=Start-Node $AppRoot $expo @('start','--dev-client','--localhost','--port',"$port")
         $state[$name]='started'
     }
 
     if(Has-Port $Control){
         $state.control='reused'
     }else{
-        $root=Join-Path $Root 'apps\control-panel'
-        $nextPackage=Resolve-Package 'next' $root
-        if([string]::IsNullOrWhiteSpace($nextPackage)){Fail 'NEXT_NOT_RESOLVABLE'}
+        $ControlRoot=Join-Path $Root 'apps\control-panel'
+        $nextPackage=Join-Path $ControlRoot 'node_modules\next\package.json'
+        if(-not(Test-Path -LiteralPath $nextPackage -PathType Leaf)){Fail 'NEXT_NOT_MATERIALIZED run=pnpm_bootstrap'}
         $next=Join-Path (Split-Path -Parent $nextPackage) 'dist\bin\next'
 
-        $started.control=Start-Node $root $next @('dev','-H','127.0.0.1','-p',"$Control")
+        $started.control=Start-Node $ControlRoot $next @('dev','-H','127.0.0.1','-p',"$Control")
         $state.control='started'
     }
 

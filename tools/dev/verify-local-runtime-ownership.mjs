@@ -33,7 +33,7 @@ for(const old of [
 for(const token of [
   "ValidateSet('daily','up','down','status')","DEV_TIMING","DEV_READY=PASS",
   "EXPO_OFFLINE='1'","EXPO_NO_QR_CODE='1'","EXPO_NO_TYPESCRIPT_SETUP='1'",
-  "--dns-result-order=ipv4first","Resolve-Package","Ensure-Dependencies","--frozen-lockfile","--prefer-offline",
+  "--dns-result-order=ipv4first","Ensure-Dependencies","--frozen-lockfile","--prefer-offline",
   "Ensure-Reverse","Ensure-HostServers","Ensure-Scrcpy","Stop-LocalHosts","--dev-client","--localhost"
 ]) check(dev.includes(token),`dev.ps1 missing invariant: ${token}`);
 
@@ -43,13 +43,17 @@ for(const bad of [
 ]) check(!dev.includes(bad),`dev.ps1 retains removed runtime behavior: ${bad}`);
 
 check(!/\[string\[\]\]\$Args\b/.test(dev),"dev.ps1 must not shadow PowerShell's automatic $Args variable");
+check(!/\$root\s*=/.test(dev),"dev.ps1 must not shadow repository $Root with a case-insensitive local $root");
+check(!dev.includes("Resolve-Package"),"runtime must not spawn Node merely to resolve already-materialized Expo/Next packages");
 check(!dev.includes("ProcessStartInfo"),"dev.ps1 must not wrap ADB in custom process machinery");
 check(!dev.includes("ADB_TIMEOUT"),"dev.ps1 must not impose an arbitrary ADB timeout");
 check(/adb -d reverse --list/.test(dev),"dev.ps1 must inspect USB reverse mappings once");
 check(!/--dev-client[^\n\r]*--android/.test(dev),"Metro bootstrap must never auto-open Android apps");
 check(/Start-Node \$root \$expo @\('start','--dev-client','--localhost','--port'/.test(dev),"Metro bootstrap must remain live for Fast Refresh");
-check(!dev.includes("node_modules\\expo\\bin\\cli"),"runtime must not hard-code isolated pnpm Expo paths");
-check(!dev.includes("node_modules\\next\\dist\\bin\\next"),"runtime must not hard-code isolated pnpm Next paths");
+check(!dev.includes("node_modules\\expo\\bin\\cli"),"runtime must derive Expo CLI from the materialized package root");
+check(!dev.includes("node_modules\\next\\dist\\bin\\next"),"runtime must derive Next CLI from the materialized package root");
+check(/\$AppRoot=Join-Path \$Root "apps\\app-\$name"/.test(dev),"mobile working directory must derive from stable repository Root");
+check(/\$ControlRoot=Join-Path \$Root 'apps\\control-panel'/.test(dev),"control working directory must derive from stable repository Root");
 check(/function Dependencies-Ready/.test(dev),"runtime must detect incomplete workspace materialization");
 check(/node_modules\\expo\\package\.json/.test(dev),"dependency readiness must use cheap importer-local Expo materialization checks");
 check(/node_modules\\next\\package\.json/.test(dev),"dependency readiness must use cheap importer-local Next materialization checks");
