@@ -18,7 +18,11 @@
       "cache": true
     },
     "export-smoke": {
-      "cache": true
+      "cache": true,
+      "inputs": [
+        "{projectRoot}/**/*",
+        "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs"
+      ]
     },
     "vet": {
       "cache": true

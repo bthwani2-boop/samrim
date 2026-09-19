@@ -119,7 +119,7 @@ function Get-DeviceWifiIp([string]$Serial) {
 }
 
 function Find-DeviceByIdentity([string]$Identity) {
-    return @(Get-AdbCensus | Where-Object { $_.State -eq 'device' -and $_.Identity -eq $Identity } | Sort-Object Kind,Serial | Select-Object -First 1)
+    return @(Get-AdbCensus | Where-Object { $_.State -eq 'device' -and $_.Identity -eq $Identity } | Sort-Object Kind,Serial)
 }
 
 function Ensure-CanonicalWifiFallback([pscustomobject]$UsbDevice) {

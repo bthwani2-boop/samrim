@@ -105,8 +105,6 @@ function Read-CanonicalEnvironment {
 
 function Ensure-Docker {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fail 'Docker CLI is required.' }
-    & docker version *> $null
-    if ($LASTEXITCODE -ne 0) { Fail 'Docker daemon is not available.' }
 }
 
 function Compose([string[]]$Arguments, [switch]$Quiet) {
@@ -125,7 +123,7 @@ function Get-CanonicalRuntimeSnapshot {
     foreach ($row in $rows) {
         $parts = @(([string]$row) -split '\|', 5)
         if ($parts.Count -ne 5 -or [string]::IsNullOrWhiteSpace($parts[0])) { continue }
-        $containers.Add([pscustomobject]@{
+        $null = $containers.Add([pscustomobject]@{
             Id = $parts[0].Trim()
             State = $parts[1].Trim()
             Ports = $parts[2].Trim()
@@ -148,7 +146,8 @@ function Get-CanonicalRuntimeSnapshot {
             $entry = $matches[0]
             $entry.State = [string]$detail.State.Status
             $entry.ExitCode = [int]$detail.State.ExitCode
-            $entry.Health = if ($null -ne $detail.State.Health) { [string]$detail.State.Health.Status } else { 'none' }
+            $healthProperty = $detail.State.PSObject.Properties['Health']
+            $entry.Health = if ($null -ne $healthProperty -and $null -ne $healthProperty.Value) { [string]$healthProperty.Value.Status } else { 'none' }
             $entry.Mounts = @($detail.Mounts | ForEach-Object {
                 [pscustomobject]@{
                     Type = [string]$_.Type
@@ -174,12 +173,17 @@ function Assert-No-Parallel-Runtime($Snapshot) {
     if ($unexpected.Count -gt 0) { Fail "CANONICAL_RUNTIME_RESIDUE=FAIL services=$($unexpected -join ',')" }
 }
 
-function Assert-No-Native-Backend {
+function Get-Native-Backend-Residue {
     if (-not $IsWindows) { return }
-    $matches = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         $_.CommandLine -and $_.CommandLine -match '\bgo(?:\.exe)?\b' -and
         ($_.CommandLine -match 'services[\\/]identity[\\/]backend' -or $_.CommandLine -match 'services[\\/]dsh[\\/]backend')
     })
+}
+
+function Assert-No-Native-Backend($NativeBackendMatches) {
+    if ($null -eq $NativeBackendMatches) { return }
+    $matches = @($NativeBackendMatches)
     if ($matches.Count -gt 0) { Fail "NATIVE_RUNTIME_RESIDUE=FAIL pids=$($matches.ProcessId -join ',')" }
 }
 
@@ -233,9 +237,9 @@ function Assert-Port($Snapshot, [hashtable]$EnvMap, [string]$ServiceName, [strin
     }
 }
 
-function Assert-Full-Runtime([hashtable]$EnvMap, $Snapshot) {
+function Assert-Full-Runtime([hashtable]$EnvMap, $Snapshot, $NativeBackendMatches) {
     Assert-No-Parallel-Runtime $Snapshot
-    Assert-No-Native-Backend
+    Assert-No-Native-Backend $NativeBackendMatches
     Assert-WorkspaceMounts $Snapshot
     foreach ($serviceName in $OneShotServices) { Assert-OneShot $Snapshot $serviceName }
     foreach ($serviceName in $RunningServices) {
@@ -245,9 +249,9 @@ function Assert-Full-Runtime([hashtable]$EnvMap, $Snapshot) {
     foreach ($port in $Ports) { Assert-Port $Snapshot $EnvMap $port.Service $port.Key }
 }
 
-function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target, $Snapshot) {
+function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target, $Snapshot, $NativeBackendMatches) {
     Assert-No-Parallel-Runtime $Snapshot
-    Assert-No-Native-Backend
+    Assert-No-Native-Backend $NativeBackendMatches
     if ($Target -in $WorkspaceServices) { Assert-WorkspaceMounts $Snapshot @($Target) }
     foreach ($serviceName in @('identity-migrate','dsh-migrate','js-deps')) { Assert-OneShot $Snapshot $serviceName }
     $targets = @('postgres','mailpit','identity','dsh',$Target) | Select-Object -Unique
@@ -282,7 +286,8 @@ function Start-Full-Runtime {
     Ensure-Docker
     $before = Get-CanonicalRuntimeSnapshot
     Assert-No-Parallel-Runtime $before
-    Assert-No-Native-Backend
+    $nativeBackendBefore = Get-Native-Backend-Residue
+    Assert-No-Native-Backend $nativeBackendBefore
     Compose @('config','--quiet') -Quiet
 
     # Dependency materialization belongs to explicit full startup/restart only.
@@ -300,7 +305,8 @@ function Start-Full-Runtime {
 
     Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
     $after = Get-CanonicalRuntimeSnapshot
-    Assert-Full-Runtime $envMap $after
+    $nativeBackendAfter = Get-Native-Backend-Residue
+    Assert-Full-Runtime $envMap $after $nativeBackendAfter
     Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=full'
     Write-Host 'DOCKER_RUNTIME=PASS'
     Write-Host 'DOCKER_OWNS=postgres,mailpit,identity-migrate,identity,dsh-migrate,dsh,js-deps,control,metro-client,metro-partner,metro-captain,metro-field'
@@ -331,14 +337,15 @@ function Doctor {
         Ensure-Docker
         $snapshot = Get-CanonicalRuntimeSnapshot
         Assert-No-Parallel-Runtime $snapshot
-        Assert-No-Native-Backend
+        $nativeBackendMatches = Get-Native-Backend-Residue
+        Assert-No-Native-Backend $nativeBackendMatches
     }
     catch {
         Write-Host "DOCKER_RUNTIME=NOT_READY reason=$($_.Exception.Message)"
         $failures += 'docker'
     }
     if ($null -ne $envMap -and $null -ne $snapshot -and $failures.Count -eq 0) {
-        try { Assert-Full-Runtime $envMap $snapshot; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose' }
+        try { Assert-Full-Runtime $envMap $snapshot $nativeBackendMatches; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose' }
         catch { Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"; $failures += 'runtime' }
     }
     Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'
@@ -358,7 +365,8 @@ function Rebuild-Service {
     Ensure-Docker
     $snapshot = Get-CanonicalRuntimeSnapshot
     Assert-No-Parallel-Runtime $snapshot
-    Assert-No-Native-Backend
+    $nativeBackendMatches = Get-Native-Backend-Residue
+    Assert-No-Native-Backend $nativeBackendMatches
     if ($target -eq 'identity') {
         Compose @('build','identity-migrate','identity')
         Compose @('up','-d','--force-recreate','--wait','--wait-timeout','300','identity')
@@ -406,7 +414,8 @@ try {
             $envMap = Read-CanonicalEnvironment
             Ensure-Docker
             $snapshot = Get-CanonicalRuntimeSnapshot
-            Assert-Target-Runtime $envMap 'control' $snapshot
+            $nativeBackendMatches = Get-Native-Backend-Residue
+            Assert-Target-Runtime $envMap 'control' $snapshot $nativeBackendMatches
             $port = Require-Port $envMap 'SAMRIM_CONTROL_PORT'
             Write-Host "CONTROL_PANEL_READY=PASS mode=read-only url=http://127.0.0.1:$port"
         }
@@ -416,7 +425,8 @@ try {
             $envMap = Read-CanonicalEnvironment
             Ensure-Docker
             $snapshot = Get-CanonicalRuntimeSnapshot
-            Assert-Target-Runtime $envMap $target $snapshot
+            $nativeBackendMatches = Get-Native-Backend-Residue
+            Assert-Target-Runtime $envMap $target $snapshot $nativeBackendMatches
             Write-Host "MOBILE_SURFACE_RUNTIME=PASS mode=read-only surface=$Surface service=$target"
         }
         'Rebuild' { Rebuild-Service }
