@@ -13,32 +13,35 @@ Durable Governance and Docs remain in the separately pinned repository; do not d
 
 ## Development
 
-Bootstrap host dependencies only when setup inputs changed or the workspace is not ready:
+Bootstrap dependencies only when setup inputs changed:
 
 ```text
 pnpm bootstrap
 ```
 
-Start the Docker-owned backend once for the development session:
+Daily local development:
 
 ```text
-pnpm runtime:up
+pnpm dev
 ```
 
-Start only the surface you are actively developing:
+That single command reuses or prepares Docker backend/state, ADB reverse mappings, all four Metro servers, Control Panel and scrcpy, then prints measured startup timings and returns the prompt. The canonical runtime file is `tools/dev/dev.ps1`.
+
+Targeted aliases remain available and use the same file:
 
 ```text
-pnpm control
 pnpm client
 pnpm partner
 pnpm captain
 pnpm field
+pnpm control
 pnpm scr
+pnpm runtime:up
+pnpm runtime:status
+pnpm runtime:down
 ```
 
-All local development commands route through one owner: `tools/dev/local.ps1`. It starts Docker backend services and reuses or starts the selected Metro/Next surface. Android tooling delegates directly to ADB/Expo/scrcpy and assumes one attached device; the repository does not discover or manage device serials.
-
-Use `pnpm runtime:status` or `pnpm runtime:doctor` only when diagnosing the backend. Stop it with `pnpm runtime:down`. Exceptional rebuild/reset work uses Docker Compose directly instead of permanent repository wrappers.
+From outside the repository, use `pnpm --dir D:\samrim dev`. A child process cannot change the parent PowerShell working directory; changing the caller prompt itself requires a shell function/profile entry rather than repository runtime code.
 
 ## Verification
 

@@ -1,22 +1,18 @@
 # Local runtime ownership
 
-`tools/dev/local.ps1` is the single repository owner for local development commands; its Docker actions delegate directly to Compose. Compose owns PostgreSQL, Mailpit, Identity, DSH and the migration one-shots. It does not own Control Panel, Metro or Android device processes.
+`tools/dev/dev.ps1` is the single repository runtime command owner. Compose owns PostgreSQL, Mailpit, Identity, DSH and migration one-shots; it does not own Control Panel, Metro, ADB or scrcpy.
 
-Daily backend lifecycle:
+Daily lifecycle:
 
-- `pnpm runtime:up`
-- `pnpm runtime:down`
-- `pnpm runtime:status`
-- `pnpm runtime:doctor`
+- `pnpm dev` — reuse/prepare backend, ADB reverse, four Metro servers, Control and scrcpy with timing output.
+- `pnpm runtime:up` — ensure backend/state only.
+- `pnpm runtime:status` — display backend/state.
+- `pnpm runtime:down` — stop backend/state.
 
-Application development is host-owned:
+Application aliases `pnpm client|partner|captain|field|control|scr` route to the same runtime file.
 
-- `pnpm control` — Windows-hosted Next.js.
-- `pnpm client|partner|captain|field` — Windows-hosted Expo/Metro with one USB Android device.
-- `pnpm scr` — direct USB scrcpy mirroring.
+`pnpm dev` first checks the already-bound local backend ports. When they are live it skips Compose completely, so completed migration services are not restarted on every daily invocation. When backend ports are absent it runs the canonical Compose `up -d --wait` path.
 
-All of these route through `tools/dev/local.ps1`; there are no secondary local runtime wrapper files.
+`infra/local/.env.example` is the tracked canonical local configuration template. `infra/local/.env` is ignored and preserved after creation.
 
-`infra/local/.env.example` is the tracked canonical local configuration template. `infra/local/.env` is ignored, created from that template only when missing, and preserved afterward.
-
-There is no Docker JavaScript runtime, workspace bind mount, Docker node_modules volume, Wi-Fi ADB fallback or alternate host/Docker application mode.
+There is no Docker JavaScript runtime, workspace bind mount, Docker node_modules volume, Wi-Fi ADB fallback, serial registry or alternate host/Docker application mode.

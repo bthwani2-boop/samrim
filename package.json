@@ -8,22 +8,22 @@
     "pnpm": "10.34.0"
   },
   "scripts": {
-    "client": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 client",
-    "partner": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 partner",
-    "captain": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 captain",
-    "field": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 field",
-    "scr": "scrcpy --max-size=1280 --max-fps=30 --video-bit-rate=4M --no-audio",
+    "client": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 client",
+    "partner": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 partner",
+    "captain": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 captain",
+    "field": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 field",
+    "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 scr",
     "mobile:verify-config": "node tools/mobile/verify-mobile-config.mjs",
     "mobile:build": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/build-development.ps1",
     "mobile:test-credential-atomicity": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/test-build-development.ps1",
     "brand:check": "node tools/mobile/verify-brand-assets.mjs",
-    "control": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 control",
+    "control": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 control",
     "identity:blocklist:generate": "node services/identity/tools/generate-password-blocklist.mjs",
     "identity:blocklist:check": "node services/identity/tools/generate-password-blocklist.mjs --check",
     "dsh:import-catalog-products": "node services/dsh/tools/import-catalog-products.mjs",
-    "runtime:up": "docker compose --ansi never --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml up -d --wait --wait-timeout 300 --remove-orphans",
-    "runtime:down": "docker compose --ansi never --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml down --remove-orphans",
-    "runtime:status": "docker compose --ansi never --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml ps -a",
+    "runtime:up": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 up",
+    "runtime:down": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 down",
+    "runtime:status": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 status",
     "world:ensure": "node tools/dev/local-world.mjs --ensure",
     "world:status": "node tools/dev/local-world.mjs --status",
     "runtime:verify-ownership": "node tools/dev/verify-local-runtime-ownership.mjs",
@@ -33,7 +33,8 @@
     "theme:check": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/generate-theme-css.mjs --check",
     "theme:verify": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/verify-theme-authority.mjs",
     "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1",
-    "mobile:prepare": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/prepare-local-development.ps1"
+    "mobile:prepare": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/prepare-local-development.ps1",
+    "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 daily"
   },
   "pnpm": {
     "overrides": {

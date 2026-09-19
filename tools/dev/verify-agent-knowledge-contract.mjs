@@ -42,8 +42,8 @@ const agent = requireTokens("AGENTS.md", [
   "UNPROVEN MATERIAL CLAIMS = 0",
   "`pnpm verify`",
   "`pnpm safe:push`",
+  "pnpm dev",
   "pnpm runtime:up",
-  "pnpm runtime:doctor",
   "pnpm runtime:status",
 ]);
 
@@ -98,16 +98,17 @@ if (safePush.includes("pnpm verify")) {
   failures.push("safe push must invoke the canonical verifier once directly, not nest the public verify command");
 }
 
-const localRuntime = requireTokens("tools/dev/local.ps1", [
+const localRuntime = requireTokens("tools/dev/dev.ps1", [
+  "DEV_TIMING",
+  "DEV_READY=PASS",
   "EXPO_OFFLINE = '1'",
   "EXPO_NO_QR_CODE = '1'",
   "node_modules\\expo\\bin\\cli",
   "node_modules\\next\\dist\\bin\\next",
-  "APP_REUSE=PASS",
-  "CONTROL_REUSE=PASS",
-  "adb reverse --list",
+  "adb reverse",
 ]);
 for (const retired of [
+  "tools/dev/local.ps1",
   "tools/dev/runtime.ps1",
   "tools/dev/runtime.psm1",
   "tools/dev/device-policy.psm1",
@@ -125,7 +126,7 @@ if (pkg?.scripts?.verify !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tool
 if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/safe-push.ps1") {
   failures.push("package.json safe:push must own push safety");
 }
-for (const required of ["runtime:up", "runtime:doctor", "runtime:status"]) {
+for (const required of ["dev", "runtime:up", "runtime:status"]) {
   if (!pkg?.scripts?.[required]) failures.push(`package.json missing required full-runtime command: ${required}`);
 }
 

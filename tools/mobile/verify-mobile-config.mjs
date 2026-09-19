@@ -5,7 +5,7 @@ const repoRoot = path.resolve(import.meta.dirname, "../..");
 const appsRoot = path.join(repoRoot, "apps");
 const envExamplePath = path.join(repoRoot, "infra/local/.env.example");
 const rootPackagePath = path.join(repoRoot, "package.json");
-const localRuntimePath = path.join(repoRoot, "tools/dev/local.ps1");
+const localRuntimePath = path.join(repoRoot, "tools/dev/dev.ps1");
 const requiredStringFields = [
   "name",
   "slug",
@@ -53,7 +53,7 @@ if (apps.length === 0) {
   process.exit(1);
 }
 if (!fs.existsSync(localRuntimePath)) {
-  console.error("Canonical local runtime owner is missing: tools/dev/local.ps1");
+  console.error("Canonical local runtime owner is missing: tools/dev/dev.ps1");
   process.exit(1);
 }
 for (const retired of [
@@ -116,7 +116,7 @@ for (const app of apps) {
   }
 
   const rootCommandName = app.replace(/^app-/, "");
-  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 ${rootCommandName}`;
+  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 ${rootCommandName}`;
   if (rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
     console.error(`${app}: root command must route to the canonical app opener`);
     failed = true;
@@ -233,7 +233,7 @@ for (const entry of fs.readdirSync(appsRoot, { withFileTypes: true })) {
   }
 }
 if (failed) process.exit(1);
-console.log("MOBILE_LOCAL_RUNTIME_OWNER=tools/dev/local.ps1");
+console.log("MOBILE_LOCAL_RUNTIME_OWNER=tools/dev/dev.ps1");
 console.log("MOBILE_RUNTIME_ENTRYPOINTS=1_PER_APP");
 console.log("MOBILE_SHADOW_START_SCRIPTS=0");
 console.log("MOBILE_SHADOW_NX_RUNTIME_TARGETS=0");

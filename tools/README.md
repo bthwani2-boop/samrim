@@ -21,26 +21,15 @@ Do not add a repository-wide wrapper when a current owner or standard tool alrea
 
 `pnpm verify` is the exact local affected-candidate static/workspace entrypoint. `pnpm safe:push` owns final candidate verification and exact remote SHA confirmation.
 
-The daily local path is intentionally small:
+Local runtime has one executable owner:
 
 ```text
-pnpm runtime:up
-pnpm control
-pnpm client|partner|captain|field
-pnpm scr
+tools/dev/dev.ps1
 ```
 
-Ownership is minimal:
+`pnpm dev` is the daily bootstrap. It reuses live backend ports instead of rerunning Compose/migrations, repairs only missing ADB reverse mappings, starts only missing Metro/Next processes, ensures scrcpy, measures each phase and returns. Targeted `pnpm client|partner|captain|field|control|scr|runtime:*` aliases route to the same file.
 
-```text
-Mobile + Control launch/reuse → tools/dev/local.ps1
-Docker backend lifecycle      → Docker Compose directly
-Device mirroring              → scrcpy directly
-Metro lifecycle               → Expo CLI
-Control dev server            → Next.js
-```
-
-The host helper does not own Docker or scrcpy. Warm app launches reuse the healthy Metro/Next process; cold launches invoke the installed Expo/Next Node binaries directly without nested pnpm. Expo startup is local/offline and suppresses QR output. Android uses ADB directly with no repository-owned device discovery or serial state. Windows Metro localhost remains IPv4-first because real-device proof showed the IPv6-only listener failure.
+Expo is local/offline, QR output is suppressed, TypeScript auto-setup is disabled, and Metro localhost stays IPv4-first because real-device proof showed the IPv6-only listener failure. There is no Wi-Fi ADB fallback, serial registry, nested pnpm runtime, custom Metro supervisor or second runtime script.
 
 ## Tool admission
 
