@@ -249,7 +249,11 @@ function Stop-RepositoryHosts{
 }
 
 switch($Target){
-    'up'{Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)";return}
+    'up'{
+        [void](Ensure-Backend)
+        Write-Host 'RUNTIME_UP=PASS state=reconciled'
+        return
+    }
     'down'{
         Stop-RepositoryHosts
         Compose @('down','--remove-orphans')
@@ -260,4 +264,5 @@ switch($Target){
     'scr'{Write-Host "SCRCPY=PASS state=$(Ensure-Scrcpy)";return}
 }
 
-Write-Host "DEV_READY=PASS backend=$(Ensure-Backend) surfaces=direct-package-dev scrcpy=pnpm-scr root=$Root"
+[void](Ensure-Backend)
+Write-Host "DEV_READY=PASS backend=reconciled surfaces=direct-package-dev scrcpy=pnpm-scr root=$Root"
