@@ -51,7 +51,7 @@ func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId 
 FROM identity_actor_roles r
 JOIN identity_actors a ON a.id=r.actor_id
 WHERE r.role=$1 AND r.enabled=true AND a.security_enabled=true
-ORDER BY CASE WHEN r.activated_at IS NOT NULL THEN 0 ELSE 1 END, r.actor_id
+ORDER BY CASE WHEN r.activated_at IS NOT NULL THEN 0 ELSE 1 END, r.created_at, r.actor_id
 LIMIT 1
 FOR UPDATE OF r,a`, role).Scan(&actorID)
 	if errors.Is(err, sql.ErrNoRows) {
