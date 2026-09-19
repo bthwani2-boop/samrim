@@ -197,35 +197,26 @@ Valid LOCAL_INTEGRATION operational state is reusable: normal verification must 
 
 Actor-facing LOCAL_INTEGRATION claims require the affected actor's real surface and role-scoped session; API/database readback verifies canonical truth but does not substitute for real interaction. Reuse valid actors and resources, create fresh transactional state only when the current claim requires it, and preserve valid state during normal verification.
 
-### 3.1 Synthetic local proof state law
+### 3.1 Local proof state law
 
-This law applies to every synthetic/local-development state: actors, roles, sessions, stores, catalog, business data, credentials, locators, scenarios and proof tooling.
+Normal LOCAL_INTEGRATION development uses ordinary local Product state. Proof-only state exists only when a claim requires it; there is no persistent synthetic world, canonical test-persona set, global fixture registry or test-only Product path.
 
 ```text
-CLEAN + CANONICAL + PROVEN → REUSE
+VALID EXISTING LOCAL STATE + CLAIM-APPROPRIATE
+→ REUSE
 
-TRANSACTIONAL / SCENARIO NOISE ONLY
-→ PRESERVE VALID BASELINE
-→ CREATE FRESH TRANSACTIONAL STATE
+CLAIM REQUIRES ADDITIONAL STATE
+→ CREATE THE MINIMUM THROUGH CANONICAL OWNERS
+→ ISOLATE IT TO THE CLAIM
+→ CLEAN DISPOSABLE STATE BY THE PROOF THAT CREATED IT
 
-SMALLEST AFFECTED SYNTHETIC STATE IS UNTRUSTED
+AFFECTED LOCAL STATE IS UNTRUSTED
 → STOP USING IT
-→ DISCARD / REBUILD THROUGH CANONICAL OWNERS WHEN A SAFE OWNER BOUNDARY EXISTS
-
-BASELINE INTEGRITY CANNOT BE PROVEN
-→ STOP USING THE WORLD
-→ USE THE EXISTING EXPLICITLY AUTHORIZED LOCAL RESET/PURGE BOUNDARY
-→ PROVE CLEAN STATE
-→ REBUILD THROUGH CANONICAL OWNERS
-
-PRODUCT / SCHEMA / CONFIG / TOOLING IS POLLUTED
-→ FIX HIGHEST ROOT
-→ REMOVE RESIDUE
-→ PROVE NEGATIVE SPACE
-→ ONLY THEN REBUILD SYNTHETIC STATE
+→ RECREATE ONLY THE REQUIRED STATE THROUGH CANONICAL OWNERS
+→ USE DESTRUCTIVE RESET/PURGE ONLY WITH EXPLICIT SAME-INVOCATION DATA-LOSS AUTHORIZATION
 ```
 
-Baseline actors and resources are reusable proof anchors, not exclusive test accounts. Additional synthetic clients, partners, stores, captains, fields or scenario resources are permitted only when claim-justified, local, canonical-owner-created, isolated and free of uncontrolled external effects. Synthetic proof state is never Product truth, migration/bootstrap data or authority, and it never authorizes direct SQL business setup or test-only Product/schema branches.
+Proof tooling must not reset a developer credential, authorize re-enrollment, revoke unrelated sessions, change an established actor merely to regain tooling access, or manufacture reusable global state. Existing valid actors/resources may be reused when that does not weaken isolation or make evidence ambiguous. Business proof state is created through canonical owners rather than direct SQL/seed bypass.
 
 ### 3.2 Closed-loop multi-role journey proof
 
@@ -238,7 +229,7 @@ REAL ACTOR ACTION
 → CLAIM-APPROPRIATE CANONICAL READBACK
 ```
 
-Use the canonical LOCAL_INTEGRATION runtime and synthetic baseline through their existing owners. Reuse clean proven baseline state and create fresh transactional state only through canonical writers. Do not manufacture a green journey through direct SQL, manual synchronization, hidden test-only Product paths or persistence bypass.
+Use the canonical LOCAL_INTEGRATION runtime. Reuse valid existing local actors/resources when claim-appropriate, and create only fresh claim-specific state required by the proof through canonical writers. Do not manufacture a green journey through direct SQL, manual synchronization, hidden test-only Product paths or persistence bypass.
 
 A user-facing claim requires the real affected surface; API/database readback corroborates canonical truth but does not substitute for the interaction.
 

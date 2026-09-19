@@ -44,14 +44,9 @@ function Port([hashtable]$Map,[string]$Name){
     return $value
 }
 
-function Active-Ports{
-    return @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()|ForEach-Object Port)
-}
-
 $Map=Read-Env
 $Identity=Port $Map 'SAMRIM_IDENTITY_PORT'
 $Dsh=Port $Map 'SAMRIM_DSH_PORT'
-$Mailpit=Port $Map 'SAMRIM_MAILPIT_WEB_PORT'
 $Metro=@(
     Port $Map 'SAMRIM_APP_CLIENT_METRO_PORT'
     Port $Map 'SAMRIM_APP_PARTNER_METRO_PORT'
@@ -64,11 +59,19 @@ function Compose([string[]]$Arguments){
     if($LASTEXITCODE-ne0){Fail "DOCKER_COMPOSE_FAILED args=$($Arguments-join' ')"}
 }
 
+function Read-RunningBackendServices{
+    return @(Compose @('ps','--status','running','--services')|ForEach-Object{$_.Trim()}|Where-Object{$_})
+}
+
 function Ensure-Backend{
-    $active=Active-Ports
-    $missing=@(@($Identity,$Dsh,$Mailpit)|Where-Object{$active-notcontains$_})
+    $required=@('postgres','mailpit','identity','dsh')
+    $running=@(Read-RunningBackendServices)
+    $missing=@($required|Where-Object{$running-notcontains$_})
     if($missing.Count-eq0){return 'reused'}
     Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
+    $running=@(Read-RunningBackendServices)
+    $missing=@($required|Where-Object{$running-notcontains$_})
+    if($missing.Count-ne0){Fail "BACKEND_NOT_READY missing=$($missing-join',')"}
     return 'started'
 }
 

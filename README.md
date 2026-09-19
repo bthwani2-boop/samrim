@@ -13,21 +13,21 @@ Durable Governance and Docs remain in the separately pinned repository; do not d
 
 ## Development
 
-Bootstrap dependencies only when setup inputs changed:
+Materialize dependencies only when setup inputs changed:
 
 ```text
 pnpm bootstrap
 ```
 
-Daily local development:
+Prepare or reuse the canonical backend/state:
 
 ```text
 pnpm dev
 ```
 
-That single command reuses or prepares the complete local development environment: workspace dependencies when missing, Docker backend/state, USB ADB reverse mappings, all four Metro servers, Control Panel and scrcpy. It does not open the mobile applications. Open Client, Partner, Captain or Field manually on the device; the development client reconnects to its most recent project and Fast Refresh remains live for app code and imported workspace packages. Control uses Next HMR. The canonical runtime file is `tools/dev/dev.ps1`.
+`pnpm dev` owns backend readiness only and returns to the prompt. It does not start Metro, Control, ADB or scrcpy.
 
-Targeted commands remain available when only one surface/tool is needed:
+Start only the surface being developed:
 
 ```text
 pnpm client
@@ -35,12 +35,11 @@ pnpm partner
 pnpm captain
 pnpm field
 pnpm control
-pnpm scr
 ```
 
-They use the same canonical runtime owner and never open mobile applications automatically.
+Each command enters the owning app package and keeps Expo Metro or Next attached to that terminal with Fast Refresh/HMR. Mobile applications are opened manually. Use `pnpm scr` only when device transport/reverse mappings or scrcpy are needed.
 
-Maintenance commands:
+Backend lifecycle remains explicit:
 
 ```text
 pnpm runtime:up
@@ -48,7 +47,7 @@ pnpm runtime:status
 pnpm runtime:down
 ```
 
-From outside the repository, use `pnpm --dir D:\samrim dev`. A child process cannot change the parent PowerShell working directory; changing the caller prompt itself requires a shell function/profile entry rather than repository runtime code.
+From outside the repository, use `pnpm --dir D:\\samrim <command>`. A child process cannot change the parent PowerShell working directory.
 
 ## Verification
 

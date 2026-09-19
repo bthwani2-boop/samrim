@@ -1,16 +1,22 @@
 # Local runtime ownership
 
-`tools/dev/dev.ps1` is the single repository runtime command owner. Compose owns PostgreSQL, Mailpit, Identity, DSH and migration one-shots; it does not own Control Panel, Metro, ADB or scrcpy.
+Compose owns PostgreSQL, Mailpit, Identity, DSH and migration one-shots. It does not own Control Panel, Metro, ADB or scrcpy.
 
-Daily lifecycle:
+Daily backend lifecycle:
 
-- `pnpm dev` — reuse/prepare backend, USB reverse mappings, four Metro servers, Control and scrcpy; mobile apps remain manual-open.
+- `pnpm dev` — reuse/prepare backend/state only, then return.
 - `pnpm runtime:up` — ensure backend/state only.
 - `pnpm runtime:status` — display backend/state.
-- `pnpm runtime:down` — stop Metro/Control/scrcpy and backend/state.
+- `pnpm runtime:down` — stop repository host development processes, scrcpy and backend/state.
 
-`pnpm dev` is the complete daily path; targeted app/control/scrcpy commands are optional views into the same runtime owner. `pnpm dev` first checks the already-bound local backend ports. When they are live it skips Compose completely, so completed migration services are not restarted on every daily invocation. When backend ports are absent it runs the canonical Compose `up -d --wait` path.
+Interactive surfaces are package-owned foreground processes:
 
-`infra/local/.env.example` is the tracked canonical local configuration template. `infra/local/.env` is ignored and preserved after creation.
+- `pnpm client|partner|captain|field` — run that app's Expo development server.
+- `pnpm control` — run Control Panel Next development.
+- `pnpm scr` — own ADB transport/reverse mappings and scrcpy.
 
-There is no Docker JavaScript runtime, workspace bind mount, Docker node_modules volume, Wi-Fi ADB fallback, serial registry or alternate host/Docker application mode.
+Mobile apps are opened manually. Application-source edits reuse the running Metro process and Fast Refresh; Control uses Next HMR. Native rebuilds are not part of the source-edit loop.
+
+`infra/local/.env.example` is the tracked local configuration template. `infra/local/.env` is ignored and preserved after creation.
+
+There is no Docker JavaScript runtime, persistent synthetic world, global fixture registry, parallel surface runtime owner or automatic mobile-app opener.

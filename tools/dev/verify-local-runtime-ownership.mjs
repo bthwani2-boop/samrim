@@ -25,11 +25,19 @@ for(const [name,dir] of Object.entries({client:"app-client",partner:"app-partner
   const surfacePkg=JSON.parse(read(`apps/${dir}/package.json`));
   check(surfacePkg.scripts?.dev==="node ../../tools/dev/start-surface.mjs",`${name} package must own direct dev startup`);
 }
+check(!Object.keys(pkg.scripts??{}).some((name)=>name.startsWith("world:")),"persistent synthetic world commands must remain absent");
+check(pkg.scripts?.["runtime:verify-ownership"]===undefined,"runtime ownership verifier must remain internal to candidate verification");
+for(const retired of ["tools/dev/local-world.mjs","tools/dev/verify-local-world.mjs","tools/dev/runtime.ps1","tools/dev/runtime.psm1","tools/dev/run-control.ps1","tools/dev/open-mobile-apps.ps1","tools/dev/scrcpy.ps1"]){
+  check(!fs.existsSync(path.join(root,retired)),`retired local development artifact remains: ${retired}`);
+}
 for(const removed of ["Start-MobileServer","Start-ControlServer","Stop-OwnedListener","Get-OwnedNodeTreeRoot","Wait-Servers","Ensure-HostServers","Ensure-OneMobile","Ensure-ControlOnly"]){
   check(!dev.includes(removed),`dev.ps1 retains surface runtime ownership: ${removed}`);
 }
 check(!dev.includes("--dev-client"),"dev.ps1 must not launch Expo");
 check(!dev.includes("dist\\bin\\next"),"dev.ps1 must not launch Next");
+check(dev.includes("Read-RunningBackendServices"),"dev.ps1 must read canonical Compose service state before reuse");
+check(dev.includes("Compose @(\'ps\',\'--status\',\'running\',\'--services\')"),"backend reuse must be based on running Compose services");
+check(!dev.includes("Active-Ports")&&!dev.includes("GetActiveTcpListeners"),"backend reuse must not trust occupied host ports");
 check(dev.includes("Ensure-Scrcpy"),"dev.ps1 must retain device/scrcpy ownership");
 check(launcher.includes("process.cwd()"),"surface launcher must preserve package working directory");
 check(launcher.includes('EXPO_NO_METRO_WORKSPACE_ROOT="1"'),"mobile launcher must keep app-scoped Metro root");

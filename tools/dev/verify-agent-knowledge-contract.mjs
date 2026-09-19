@@ -34,6 +34,7 @@ const agent = requireTokens("AGENTS.md", [
   "GOVERNANCE-STANDARDS.md",
   "## 2.1 Material artifact survival",
   "## 2.2 Equal correctness across material dimensions",
+  "## 3.1 Local proof state law",
   "EVIDENCE IS VALID ONLY FOR THE EXACT STATE IT PROVES.",
   "PROVE LOSER ABSENT",
   "KNOWN MATERIAL DEFECTS = 0",
@@ -96,40 +97,6 @@ if (noopIndex < 0 || verifyIndex < 0 || noopIndex > verifyIndex) {
 }
 if (safePush.includes("pnpm verify")) {
   failures.push("safe push must invoke the canonical verifier once directly, not nest the public verify command");
-}
-
-const localRuntime = requireTokens("tools/dev/dev.ps1", [
-  "DEV_TIMING",
-  "DEV_READY=PASS",
-  "Ensure-Reverse",
-  "Ensure-HostServers",
-  "Ensure-Scrcpy",
-  "Stop-LocalHosts",
-  "node_modules\\expo\\bin\\cli",
-  "node_modules\\next\\dist\\bin\\next",
-]);
-if (!/\$env:EXPO_OFFLINE\s*=\s*['"]1['"]/.test(localRuntime)) {
-  failures.push("tools/dev/dev.ps1 must keep Expo offline");
-}
-if (!/\$env:EXPO_NO_QR_CODE\s*=\s*['"]1['"]/.test(localRuntime)) {
-  failures.push("tools/dev/dev.ps1 must suppress Expo QR output");
-}
-for (const forbidden of ["--android", "am start", "shell pidof", "logcat"]) {
-  if (localRuntime.includes(forbidden)) failures.push(`tools/dev/dev.ps1 must not open mobile apps: ${forbidden}`);
-}
-if (/\[string\[\]\]\$Args\b/.test(localRuntime)) {
-  failures.push("tools/dev/dev.ps1 must not shadow PowerShell's automatic $Args variable");
-}
-for (const retired of [
-  "tools/dev/local.ps1",
-  "tools/dev/runtime.ps1",
-  "tools/dev/runtime.psm1",
-  "tools/dev/device-policy.psm1",
-  "tools/dev/open-mobile-apps.ps1",
-  "tools/dev/run-control.ps1",
-  "tools/dev/scrcpy.ps1",
-]) {
-  if (fs.existsSync(path.join(root, retired))) failures.push(`retired local runtime file remains: ${retired}`);
 }
 
 const pkg = JSON.parse(read("package.json"));

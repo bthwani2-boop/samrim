@@ -41,7 +41,7 @@ jobs:
             base="$(git rev-parse HEAD^)"
           fi
           changed="$(git diff --name-only "${base}" HEAD)"
-          if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|infra/local/(compose/|\.env\.example$)|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
+          if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|infra/local/(compose/|\.env\.example$)|tools/dev/(mailpit-challenge|verify-(identity-migrations|identity-runtime|dsh-baseline|dsh-runtime-core))\.mjs$|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
             echo "run=true" >> "${GITHUB_OUTPUT}"
             echo "BACKEND_INTEGRATION_SCOPE=AFFECTED"
           else
@@ -54,21 +54,6 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
-
-      - name: Install pinned pnpm
-        if: steps.scope.outputs.run == 'true'
-        shell: bash
-        run: npm install --global pnpm@10.34.0
-
-      - name: Install workspace once
-        if: steps.scope.outputs.run == 'true'
-        shell: bash
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium runtime
-        if: steps.scope.outputs.run == 'true'
-        shell: bash
-        run: pnpm --dir apps/control-panel exec playwright install --with-deps chromium
 
       - name: Materialize isolated CI runtime environment
         if: steps.scope.outputs.run == 'true'
@@ -118,31 +103,6 @@ jobs:
           node tools/dev/verify-dsh-baseline.mjs --env-file=infra/local/.env
           node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/.env
 
-      - name: Start Control Panel host
-        if: steps.scope.outputs.run == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          set -a
-          source infra/local/.env
-          set +a
-          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1 NEXT_PRIVATE_DISABLE_DEV_OVERLAY_UX=1
-          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
-          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
-          for attempt in {1..120}; do
-            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
-            sleep 0.5
-          done
-          cat "$RUNNER_TEMP/control-panel.log" || true
-          exit 1
-
-      - name: Establish canonical Control operator session
-        if: steps.scope.outputs.run == 'true'
-        shell: bash
-        env:
-          BTHWANI_SECRETS_ROOT: ${{ runner.temp }}/samrim-secrets
-        run: node tools/dev/local-world.mjs --ensure-operator
-
       - name: Verify DSH runtime semantics
         if: steps.scope.outputs.run == 'true'
         shell: bash
@@ -157,14 +117,6 @@ jobs:
           set -euo pipefail
           drift="$(git status --porcelain --untracked-files=all)"
           [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
-
-      - name: Stop Control Panel host
-        if: always()
-        shell: bash
-        run: |
-          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then
-            kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true
-          fi
 
       - name: Purge backend services
         if: always() && steps.scope.outputs.run == 'true'
