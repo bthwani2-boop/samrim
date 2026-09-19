@@ -79,7 +79,9 @@ if (!String(env.IDENTITY_WEBAUTHN_ALLOWED_ORIGINS ?? "").split(",").map((value) 
 if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.length < 24) fail("canonical local secrets are too weak");
 
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", composePath];
-const requiredRunningServices = ["postgres", "mailpit", "identity", "dsh", "control", "metro-client", "metro-partner", "metro-captain", "metro-field"];
+const requiredRunningServices = action === "--ensure-operator"
+  ? ["postgres", "mailpit", "identity", "dsh", "control"]
+  : ["postgres", "mailpit", "identity", "dsh", "control", "metro-client", "metro-partner", "metro-captain", "metro-field"];
 let identityBase = "";
 let dshBase = "";
 let mailpitPort = "";
@@ -531,7 +533,7 @@ async function readStatus(state) {
 }
 
 async function main() {
-  if (!["--ensure", "--status"].includes(action)) fail("unsupported action; use --ensure or --status");
+  if (!["--ensure", "--ensure-operator", "--status"].includes(action)) fail("unsupported action; use --ensure, --ensure-operator, or --status");
   runtimeGuard();
   identityBase = `http://127.0.0.1:${publishedPort("identity", 8082)}`;
   dshBase = `http://127.0.0.1:${publishedPort("dsh", 8080)}`;
@@ -539,6 +541,11 @@ async function main() {
   for (const endpoint of ["/identity/health", "/identity/readiness"]) if ((await request(identityBase, "GET", endpoint)).status !== 200) fail("Identity is not ready");
   for (const endpoint of ["/dsh/health", "/dsh/readiness"]) if ((await request(dshBase, "GET", endpoint)).status !== 200) fail("DSH is not ready");
   const state = loadState();
+  if (action === "--ensure-operator") {
+    const operatorID = await bootstrapOperator(state);
+    console.log(`WORLD_OPERATOR_ENSURE=PASS actor=${operatorID} canonical=control-panel-passkey`);
+    return;
+  }
   const current = await readStatus(state);
   if (action === "--status") {
     if (!current.ready) {

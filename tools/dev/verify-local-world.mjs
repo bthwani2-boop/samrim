@@ -27,7 +27,7 @@ assert(JSON.stringify(worldCommands) === JSON.stringify([
 ]), "public world commands must be exactly ensure and status owned by local-world.mjs");
 assert(fs.existsSync(path.join(root, "tools/dev/local-world.mjs")), "canonical local-world owner is missing");
 assert(world.includes("const action = process.argv[2] ?? \"--status\""), "world owner must default to read-only status");
-assert(world.includes("if (![\"--ensure\", \"--status\"].includes(action))"), "world owner must expose only ensure and status actions");
+assert(world.includes("if (![\"--ensure\", \"--ensure-operator\", \"--status\"].includes(action))"), "world owner must expose only ensure, ensure-operator, and status actions");
 
 const statusStart = world.indexOf("async function readStatus");
 const mainStart = world.indexOf("async function main");
