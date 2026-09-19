@@ -40,7 +40,7 @@ test("authenticated operator discovers access and partner responsibilities throu
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
   await navigationToggle.click();
-  await expect(navigationToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" })).toHaveAttribute("data-open", "true");
   const accessLink = page.getByRole("link", { name: "الوصول والأمان" });
   await expect(accessLink).toBeVisible();
   await accessLink.click();

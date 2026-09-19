@@ -267,7 +267,7 @@ async function activateOperatorWithPasskey(phone, enrollmentToken, actorID) {
     const code = await waitForMailpitCode(phone, "operator_enroll");
     await page.getByLabel("رمز إثبات الهاتف").fill(code);
     await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح المرور" }).click();
-    await page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" }).waitFor({ state: "visible" });
+    await page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" }).waitFor({ state: "visible", timeout: 90_000 });
     await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
     await page.waitForURL(/\/workspace$/, { timeout: 15_000 });
     const session = await page.evaluate(async () => {
