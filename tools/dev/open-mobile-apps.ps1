@@ -72,6 +72,10 @@ if ($LASTEXITCODE -ne 0 -or -not $installed) { Fail "APP_NOT_INSTALLED package=$
 $env:NODE_ENV='development'
 $env:BTHWANI_ENV='development'
 $env:EXPO_NO_TELEMETRY='1'
+$existingNodeOptions=[string]$env:NODE_OPTIONS
+if ($existingNodeOptions -notmatch '(?:^|\s)--dns-result-order=ipv4first(?:\s|$)') {
+    $env:NODE_OPTIONS=(($existingNodeOptions + ' --dns-result-order=ipv4first').Trim())
+}
 $env:EXPO_PUBLIC_IDENTITY_API_URL=Require $map 'EXPO_PUBLIC_IDENTITY_API_URL'
 $env:EXPO_PUBLIC_DSH_API_URL=Require $map 'EXPO_PUBLIC_DSH_API_URL'
 $env:ANDROID_SERIAL=[string]$device.Serial

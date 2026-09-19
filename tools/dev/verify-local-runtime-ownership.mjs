@@ -62,6 +62,7 @@ assert(mobile.includes("-Action Doctor"), "mobile host must fail closed unless t
 assert(mobile.includes("Prepare-CanonicalAdbDevice"), "mobile host must retain the canonical device policy");
 assert(mobile.includes("Ports @($identityPort,$dshPort)"), "mobile host must leave Metro reverse ownership to Expo and prepare backend reverse ports only");
 assert(mobile.includes("$env:ANDROID_SERIAL=[string]$device.Serial"), "Expo must target the canonical device selected by device policy");
+assert(mobile.includes("--dns-result-order=ipv4first"), "Windows Metro localhost resolution must remain IPv4-first so Expo's 127.0.0.1 native URL and the bound listener cannot diverge");
 assert(mobile.includes("infra\\local\\.env"), "mobile host must use the canonical shared local environment");
 for (const forbidden of ["Start-Process","Metro-Ready","METRO_START_TIMEOUT","METRO_REUSE=PASS","EXPO_PACKAGER_PROXY_URL","expo-development-client/?url=","adb -s $Serial shell am start","Stop-ProcessTree"]) {
   assert(!mobile.includes(forbidden), `mobile host retains superseded orchestration residue: ${forbidden}`);
