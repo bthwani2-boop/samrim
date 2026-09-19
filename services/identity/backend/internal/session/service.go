@@ -123,9 +123,9 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
 	var currentAccessHash, currentHash, deviceHash string
-	var accessExpiry, refreshExpiry, absoluteExpiry time.Time
+	var createdAt, accessExpiry, refreshExpiry, absoluteExpiry time.Time
 	var version int
-	err = tx.QueryRowContext(ctx, "SELECT access_token_hash,refresh_token_hash,client_instance_id_hash,access_expires_at,refresh_expires_at,absolute_expires_at,version FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentAccessHash, &currentHash, &deviceHash, &accessExpiry, &refreshExpiry, &absoluteExpiry, &version)
+	err = tx.QueryRowContext(ctx, "SELECT access_token_hash,refresh_token_hash,client_instance_id_hash,created_at,access_expires_at,refresh_expires_at,absolute_expires_at,version FROM identity_sessions WHERE id=$1 AND actor_id=$2 AND role=$3 AND revoked_at IS NULL FOR UPDATE", sessionID, actorID, role).Scan(&currentAccessHash, &currentHash, &deviceHash, &createdAt, &accessExpiry, &refreshExpiry, &absoluteExpiry, &version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
@@ -133,10 +133,27 @@ func (s *Service) Refresh(ctx context.Context, input domain.RefreshRequest) (dom
 		return domain.TokenPair{}, err
 	}
 	now := s.now().UTC()
-	if !refreshExpiry.After(now) || !absoluteExpiry.After(now) || !identitysecurity.ConstantTimeHexEqual(deviceHash, identitysecurity.SHA256Hex(device)) {
+	if !identitysecurity.ConstantTimeHexEqual(deviceHash, identitysecurity.SHA256Hex(device)) {
 		return domain.TokenPair{}, domain.ErrInvalidRefresh
 	}
-	if !identitysecurity.ConstantTimeHexEqual(currentHash, presentedHash) {
+	currentTokenMatches := identitysecurity.ConstantTimeHexEqual(currentHash, presentedHash)
+	if currentTokenMatches && shouldCutOverLegacyDevelopmentOperatorSession(role, createdAt, refreshExpiry, absoluteExpiry, s.development) {
+		absoluteExpiry = createdAt.Add(sessionAbsoluteLifetime(role, true))
+		refreshExpiry = calculateRefreshExpiry(role, now, absoluteExpiry, true)
+		if !refreshExpiry.After(now) || !absoluteExpiry.After(now) {
+			return domain.TokenPair{}, domain.ErrInvalidRefresh
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE identity_sessions SET refresh_expires_at=$1,absolute_expires_at=$2 WHERE id=$3", refreshExpiry, absoluteExpiry, sessionID); err != nil {
+			return domain.TokenPair{}, err
+		}
+		if err := auditTx(ctx, tx, "session.development_policy_cutover", actorID, actorID, "success", "", map[string]any{"sessionId": sessionID, "role": role}); err != nil {
+			return domain.TokenPair{}, err
+		}
+	}
+	if !refreshExpiry.After(now) || !absoluteExpiry.After(now) {
+		return domain.TokenPair{}, domain.ErrInvalidRefresh
+	}
+	if !currentTokenMatches {
 		var rotatedAt time.Time
 		var historicalRequestID sql.NullString
 		err := tx.QueryRowContext(ctx, "SELECT rotated_at,refresh_request_id FROM identity_refresh_token_history WHERE session_id=$1 AND token_hash=$2", sessionID, presentedHash).Scan(&rotatedAt, &historicalRequestID)
@@ -307,6 +324,15 @@ func (s *Service) derivedRefreshPair(sessionID, actorID, role, deviceHash string
 	refresh := identitysecurity.HMAC256Hex(s.refreshSecret, "identity-session-refresh-v1", sessionID, versionValue, deviceHash)
 	return domain.TokenPair{AccessToken: access, RefreshToken: sessionID + "." + refresh, AccessExpiry: accessExpiry, Identity: identityOf(actorID, sessionID, role, accessExpiry)}
 }
+func shouldCutOverLegacyDevelopmentOperatorSession(role string, createdAt, refreshExpiry, absoluteExpiry time.Time, development bool) bool {
+	if !development || role != "operator" {
+		return false
+	}
+	const clockTolerance = 5 * time.Minute
+	return !refreshExpiry.After(createdAt.Add(time.Hour+clockTolerance)) &&
+		!absoluteExpiry.After(createdAt.Add(24*time.Hour+clockTolerance))
+}
+
 func sessionAbsoluteLifetime(role string, development bool) time.Duration {
 	if development {
 		return 365 * 24 * time.Hour

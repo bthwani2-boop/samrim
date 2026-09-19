@@ -105,3 +105,21 @@ func TestDerivedRefreshPairIsStablePerSessionGenerationAndInstance(t *testing.T)
 		t.Fatalf("derived refresh token format = %q", first.RefreshToken)
 	}
 }
+
+func TestLegacyDevelopmentOperatorSessionCutoverIsNarrow(t *testing.T) {
+	createdAt := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+	legacyRefresh := createdAt.Add(time.Hour)
+	legacyAbsolute := createdAt.Add(24 * time.Hour)
+	if !shouldCutOverLegacyDevelopmentOperatorSession("operator", createdAt, legacyRefresh, legacyAbsolute, true) {
+		t.Fatal("legacy development operator session was not selected for one-time policy cutover")
+	}
+	if shouldCutOverLegacyDevelopmentOperatorSession("operator", createdAt, legacyRefresh, legacyAbsolute, false) {
+		t.Fatal("non-development operator session was selected for development policy cutover")
+	}
+	if shouldCutOverLegacyDevelopmentOperatorSession("client", createdAt, legacyRefresh, legacyAbsolute, true) {
+		t.Fatal("mobile role was selected for operator-only policy cutover")
+	}
+	if shouldCutOverLegacyDevelopmentOperatorSession("operator", createdAt, createdAt.Add(30*24*time.Hour), createdAt.Add(365*24*time.Hour), true) {
+		t.Fatal("already-current development operator session was selected for legacy cutover")
+	}
+}
