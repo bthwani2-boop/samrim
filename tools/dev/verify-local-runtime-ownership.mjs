@@ -41,6 +41,7 @@ for(const bad of [
 ]) check(!dev.includes(bad),`dev.ps1 retains removed overhead: ${bad}`);
 
 check((dev.match(/Start-Process/g)||[]).length===2,"dev.ps1 must use Start-Process only for background Node servers and scrcpy");
+check(!/\[string\[\]\]\$Args\b/.test(dev), "dev.ps1 must not shadow PowerShell's automatic $Args variable");
 check(!pkg.scripts?.["runtime:doctor"],"runtime:doctor must remain absent");
 
 if(fail.length){

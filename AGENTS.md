@@ -172,7 +172,7 @@ LOCAL_INTEGRATION has exactly one canonical runtime owner for every admitted pro
 The human LOCAL_INTEGRATION lifecycle has one daily bootstrap and targeted aliases, all owned by `tools/dev/dev.ps1`:
 
 ```text
-pnpm dev            → reuse/prepare backend, ADB reverse, all four Metro servers, Control and scrcpy, then return
+pnpm dev            → reuse/prepare backend, ADB reverse, required host development servers, Control and scrcpy, then return
 pnpm runtime:up     → ensure backend/state only
 pnpm runtime:status → display backend/state
 pnpm control        → ensure Control only

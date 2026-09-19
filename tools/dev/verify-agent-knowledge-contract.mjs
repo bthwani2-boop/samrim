@@ -113,6 +113,9 @@ if (!/\$env:EXPO_NO_QR_CODE\s*=\s*['"]1['"]/.test(localRuntime)) {
 if (!/@\(['"]reverse['"],['"]--list['"]\)/.test(localRuntime)) {
   failures.push("tools/dev/dev.ps1 must read ADB reverse mappings");
 }
+if (/\[string\[\]\]\$Args\b/.test(localRuntime)) {
+  failures.push("tools/dev/dev.ps1 must not shadow PowerShell's automatic $Args variable");
+}
 for (const retired of [
   "tools/dev/local.ps1",
   "tools/dev/runtime.ps1",

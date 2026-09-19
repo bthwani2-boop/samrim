@@ -26,14 +26,14 @@ function Tool([string]$Name){
     return $cmd.Source
 }
 
-function Run([string]$File,[string[]]$Args,[int]$TimeoutMs=10000){
+function Run([string]$File,[string[]]$Arguments,[int]$TimeoutMs=10000){
     $start=[Diagnostics.ProcessStartInfo]::new()
     $start.FileName=$File
     $start.WorkingDirectory=$Root
     $start.UseShellExecute=$false
     $start.RedirectStandardOutput=$true
     $start.RedirectStandardError=$true
-    foreach($arg in $Args){$start.ArgumentList.Add($arg)}
+    foreach($argument in $Arguments){$start.ArgumentList.Add($argument)}
 
     $p=[Diagnostics.Process]::new()
     $p.StartInfo=$start
@@ -102,8 +102,8 @@ function Wait-Ports([int[]]$Ports,[int]$TimeoutMs=15000){
     Fail "PORT_READY_TIMEOUT missing=$($missing-join',') timeout_ms=$TimeoutMs"
 }
 
-function Compose-Args([string[]]$Args){
-    return @('compose','--ansi','never','--project-name',$Project,'--env-file',$EnvPath,'-f',$ComposePath)+$Args
+function Compose-Args([string[]]$Arguments){
+    return @('compose','--ansi','never','--project-name',$Project,'--env-file',$EnvPath,'-f',$ComposePath)+$Arguments
 }
 
 $Map=Read-Env
@@ -156,8 +156,8 @@ function Set-Host-Environment{
     }
 }
 
-function Start-HiddenNode([string]$WorkingDirectory,[string]$Cli,[string[]]$Args){
-    Start-Process -FilePath (Tool 'node') -ArgumentList (@($Cli)+$Args) -WorkingDirectory $WorkingDirectory -WindowStyle Hidden|Out-Null
+function Start-HiddenNode([string]$WorkingDirectory,[string]$Cli,[string[]]$Arguments){
+    Start-Process -FilePath (Tool 'node') -ArgumentList (@($Cli)+$Arguments) -WorkingDirectory $WorkingDirectory -WindowStyle Hidden|Out-Null
 }
 
 function Metro-Ready([int]$Port){
