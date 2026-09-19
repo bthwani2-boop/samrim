@@ -135,6 +135,7 @@ assert((runtime.match(/& docker ps/g) ?? []).length === 1, "runtime.ps1 must iss
 assert((runtime.match(/& docker inspect/g) ?? []).length === 1, "runtime.ps1 must batch docker inspect through the canonical snapshot owner");
 assert(runtime.includes("LOCAL_RUNTIME_ENV=READY action=reuse"), "runtime startup must expose no-write environment reuse");
 assert(runtime.includes("$existingText -cne $desired"), "runtime startup must not rewrite an unchanged local environment");
+assert(runtime.includes("function Test-Full-RuntimeReady"), "runtime:up must prove an exact ready runtime before using the warm reconciliation path");
 assert(runtime.includes("function Get-Running-Workspace-Services"), "runtime:up must read running workspace services before dependency materialization");
 assert(runtime.includes("function Test-Js-Dependencies-Ready"), "runtime:up must retain one read-only dependency readiness check");
 assert(runtime.includes("function Start-Full-Runtime"), "runtime must have one canonical full-stack startup owner");
@@ -166,6 +167,13 @@ for (const forbidden of ["Get-CanonicalRuntimeSnapshot", "Assert-WorkspaceMounts
 const startupCase = section("function Start-Full-Runtime", "function Show-Status");
 assert((startupCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "runtime:up must perform exactly one host-native backend census");
 assert(!startupCase.includes("nativeBackendAfter"), "runtime:up must not repeat the host-native backend census after Compose");
+assert(startupCase.includes("RUNTIME_RECONCILE=READY action=running-services-only"), "runtime:up must expose the exact-ready warm reconciliation path");
+assert(startupCase.includes("--no-deps"), "warm reconciliation must not rerun completed one-shot dependencies");
+assert(startupCase.includes("CANONICAL_LOCAL_RUNTIME=PASS mode=warm-reconcile"), "warm reconciliation must have an explicit success marker");
+assert(startupCase.includes("RUNTIME_RECONCILE=RETRY mode=full"), "failed warm reconciliation must return to the canonical full repair path");
+assert(startupCase.indexOf("Test-Full-RuntimeReady") < startupCase.indexOf("--no-deps"), "warm reconciliation must be gated by full runtime readiness");
+assert(startupCase.indexOf("$dependenciesReady = Test-Js-Dependencies-Ready") < startupCase.indexOf("--no-deps"), "warm reconciliation must be gated by current dependency fingerprint readiness");
+
 
 const doctorCase = section("function Doctor", "function Require-Service");
 assert((doctorCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "runtime:doctor must perform exactly one host-native backend census");

@@ -284,6 +284,16 @@ function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target, $Snapshot) {
     foreach ($port in @($Ports | Where-Object { $_.Service -in @('mailpit','identity','dsh',$Target) })) { Assert-Port $Snapshot $EnvMap $port.Service $port.Key }
 }
 
+function Test-Full-RuntimeReady([hashtable]$EnvMap, $Snapshot) {
+    try {
+        Assert-Full-Runtime $EnvMap $Snapshot
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 function Get-Running-Workspace-Services($Snapshot) {
     return @($Snapshot.Containers |
         Where-Object { $_.Project -eq $Project -and $_.State -eq 'running' -and $_.Service -in $WorkspaceServices } |
@@ -376,6 +386,23 @@ function Start-Full-Runtime {
     # volumes are proven stale, preventing Metro/Next from observing partial rewrites.
     $runningBefore = @(Get-Running-Workspace-Services $before)
     $dependenciesReady = Test-Js-Dependencies-Ready
+
+    if ($dependenciesReady -and (Test-Full-RuntimeReady $envMap $before)) {
+        try {
+            Write-Host 'RUNTIME_RECONCILE=READY action=running-services-only'
+            Compose (@('up','-d','--no-deps','--wait','--wait-timeout','300','--remove-orphans') + $RunningServices) -Quiet
+            $afterFast = Get-CanonicalRuntimeSnapshot
+            Assert-Full-Runtime $envMap $afterFast
+            Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=warm-reconcile'
+            Write-Host 'DOCKER_RUNTIME=PASS'
+            Write-Host 'DOCKER_OWNS=postgres,mailpit,identity-migrate,identity,dsh-migrate,dsh,js-deps,control,metro-client,metro-partner,metro-captain,metro-field'
+            return
+        }
+        catch {
+            Write-Host "RUNTIME_RECONCILE=RETRY mode=full reason=$($_.Exception.Message)"
+        }
+    }
+
     if ($dependenciesReady) {
         Write-Host 'JS_DEPS_GATE=READY action=no-stop scope=full'
     }
