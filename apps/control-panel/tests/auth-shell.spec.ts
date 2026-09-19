@@ -190,6 +190,44 @@ test("field access exposes DSH-owned eligibility and role controls", async ({ pa
   expect(mutationBody).toMatchObject({ actorId: "act_field_admitted", role: "field", action: "disable-role", expectedVersion: 2 });
 });
 
+test("captain access exposes DSH-owned eligibility and routes role control canonically", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let mutationBody: Record<string, unknown> | undefined;
+  await page.route("**/api/access/managed-user/status**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        actorId: "act_captain_admitted",
+        phoneE164: "+96777000104",
+        role: "captain",
+        exists: true,
+        enabled: true,
+        activated: true,
+        securityEnabled: true,
+        state: "active_unavailable",
+        actorVersion: 5,
+        roleVersion: 6,
+        operationalAdmissionState: "eligible",
+        operationalAvailabilityState: "unavailable",
+        admittedRoles: [{ actorId: "act_captain_admitted", role: "captain", state: "active", enabled: true, activated: true, securityEnabled: true }],
+      }),
+    });
+  });
+  await page.route("**/api/access/account-control", async (route) => {
+    mutationBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto("/access");
+  await page.getByLabel("الدور الإداري").selectOption("captain");
+  await page.getByLabel("رقم الهاتف للبحث").fill("+96777000104");
+  await expect(page.getByText("الأهلية التشغيلية: مؤهل للتشغيل · التوافر: غير متاح حاليًا")).toBeVisible();
+  await expect(page.getByText("act_captain_admitted")).toHaveCount(0);
+  await page.getByLabel("سبب التغيير").fill("تعليق أهلية الكابتن للمراجعة");
+  await page.getByRole("button", { name: "إيقاف الدور" }).click();
+  expect(mutationBody).toMatchObject({ actorId: "act_captain_admitted", role: "captain", action: "disable-role", expectedVersion: 6 });
+});
+
 test("operator captain operations present Arabic state without backend identifiers", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.route("**/api/captains", async (route) => {
@@ -598,6 +636,7 @@ test("remote logout failure keeps local sign-out and remains observable", async 
 });
 
 test("production security headers and cross-origin mutation guard are active", async ({ page }) => {
+  await stubSession(page, 401);
   const cspMessages: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error" && /content security policy|csp/i.test(message.text())) cspMessages.push(message.text());
