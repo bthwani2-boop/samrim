@@ -12,3 +12,8 @@
 **/*.log
 .bthwani-local/
 .diagnostics/
+apps/
+packages/
+tools/
+.github/
+infra/

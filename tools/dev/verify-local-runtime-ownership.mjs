@@ -18,6 +18,8 @@ const opener = read("tools/dev/open-mobile-apps.ps1");
 const scrcpy = read("tools/dev/scrcpy.ps1");
 const candidate = read("tools/dev/verify-local-candidate.ps1");
 const compose = read("infra/local/compose/compose.yaml");
+const dshDockerfile = read("services/dsh/backend/Dockerfile");
+const dockerignore = read(".dockerignore");
 
 const destructiveGuard = "if ($Action -in @('Reset','Purge') -and -not $AllowDataLoss)";
 assert(runtime.includes("[switch]$AllowDataLoss"), "destructive runtime actions must require an explicit same-invocation authorization switch");
@@ -87,6 +89,29 @@ assert(/^name:\s*samrim-local\s*$/m.test(compose), "Compose project must be samr
 assert(compose.includes("- ../../..:/workspace"), "Compose JavaScript services must bind the repository root to /workspace");
 assert(!compose.includes("profiles:"), "parallel Compose profiles are forbidden");
 assert(!/js-deps:\s*[\s\S]*?pull_policy:\s*build/.test(compose), "js-deps must not force image builds during routine runtime startup");
+
+assert((compose.match(/image: samrim-local-identity:dev/g) ?? []).length === 2, "identity runtime and migration must share one canonical image");
+assert((compose.match(/image: samrim-local-dsh:dev/g) ?? []).length === 2, "DSH runtime and migration must share one canonical image");
+assert(!compose.includes("samrim-local-identity-migrate:dev"), "duplicate Identity migration image tag must not return");
+assert(!compose.includes("samrim-local-dsh-migrate:dev"), "duplicate DSH migration image tag must not return");
+assert((compose.match(/dockerfile: services\/identity\/backend\/Dockerfile/g) ?? []).length === 1, "Identity backend image must have one Compose build owner");
+assert((compose.match(/dockerfile: services\/dsh\/backend\/Dockerfile/g) ?? []).length === 1, "DSH backend image must have one Compose build owner");
+assert(runtime.includes("Compose @('build','identity')"), "Identity targeted rebuild must build the canonical backend image once");
+assert(runtime.includes("Compose @('build','dsh')"), "DSH targeted rebuild must build the canonical backend image once");
+assert(!runtime.includes("Compose @('build','identity-migrate','identity')"), "duplicate Identity rebuild ownership must not return");
+assert(!runtime.includes("Compose @('build','dsh-migrate','dsh')"), "duplicate DSH rebuild ownership must not return");
+
+const dshManifestCopy = dshDockerfile.indexOf("COPY services/dsh/backend/go.mod services/dsh/backend/go.sum");
+const dshIdentityManifestCopy = dshDockerfile.indexOf("COPY services/identity/clients/go/go.mod");
+const dshDownload = dshDockerfile.indexOf("RUN go mod download");
+const dshSourceCopy = dshDockerfile.indexOf("COPY services/dsh/backend ./services/dsh/backend");
+assert(dshManifestCopy >= 0 && dshIdentityManifestCopy >= 0 && dshDownload > dshManifestCopy && dshDownload > dshIdentityManifestCopy, "DSH dependency manifests must precede go mod download");
+assert(dshSourceCopy > dshDownload, "DSH implementation source must not invalidate the go mod download layer");
+
+for (const ignored of ["apps/", "packages/", "tools/", ".github/", "infra/"]) {
+  assert(dockerignore.split(/\r?\n/).includes(ignored), `backend root build context must exclude unrelated path: ${ignored}`);
+}
+
 assert(!/\bgo\s+run\b/i.test(runtime), "runtime.ps1 must not create host-native Go runtime paths");
 assert(!/\b(?:next\s+dev|expo\s+start)\b/i.test(runtime), "runtime.ps1 must not create host-native JS runtime paths");
 

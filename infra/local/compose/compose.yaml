@@ -65,11 +65,8 @@ services:
       - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-18026}:8025"
 
   identity-migrate:
-    image: samrim-local-identity-migrate:dev
+    image: samrim-local-identity:dev
     restart: "no"
-    build:
-      context: ../../..
-      dockerfile: services/identity/backend/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
@@ -136,11 +133,8 @@ services:
       start_interval: 2s
 
   dsh-migrate:
-    image: samrim-local-dsh-migrate:dev
+    image: samrim-local-dsh:dev
     restart: "no"
-    build:
-      context: ../../..
-      dockerfile: services/dsh/backend/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy

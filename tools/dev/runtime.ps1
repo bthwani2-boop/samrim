@@ -447,11 +447,11 @@ function Rebuild-Service {
     $nativeBackendMatches = Get-Native-Backend-Residue
     Assert-No-Native-Backend $nativeBackendMatches
     if ($target -eq 'identity') {
-        Compose @('build','identity-migrate','identity')
+        Compose @('build','identity')
         Compose @('up','-d','--force-recreate','--wait','--wait-timeout','300','identity')
     }
     elseif ($target -eq 'dsh') {
-        Compose @('build','dsh-migrate','dsh')
+        Compose @('build','dsh')
         Compose @('up','-d','--force-recreate','--wait','--wait-timeout','300','dsh')
     }
     else {

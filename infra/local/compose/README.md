@@ -15,6 +15,8 @@ Use the lifecycle commands:
 
 `runtime:up` and `runtime:restart` are Docker-only and work without Android or ADB. They reconcile the ignored local environment only during explicit startup. Status, doctor, logs, and down do not generate secrets, remove unknown keys, or repair `.env` implicitly. `runtime:reset` and `runtime:purge` preserve local `.env` values.
 
+Identity and DSH each use one canonical backend image for both migration and runtime processes; migration services override the entrypoint instead of owning duplicate images/builds.
+
 For a material service, use the strict targeted interface:
 
 - `pnpm runtime:rebuild -- -Service identity`
