@@ -4,7 +4,7 @@
 
 Daily lifecycle:
 
-- `pnpm dev` — reuse/prepare shared backend, backend ADB reverse and scrcpy with timing output; application servers remain on-demand.
+- `pnpm dev` — reuse/prepare shared backend only with timing output; ADB, scrcpy and application servers remain on-demand.
 - `pnpm runtime:up` — ensure backend/state only.
 - `pnpm runtime:status` — display backend/state.
 - `pnpm runtime:down` — stop backend/state.

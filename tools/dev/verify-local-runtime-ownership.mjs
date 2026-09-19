@@ -25,22 +25,22 @@ for(const old of [
 
 for(const token of [
   "ValidateSet('daily','client','partner','captain','field','control','scr','up','down','status')",
-  "DEV_TIMING","DEV_READY=PASS","Start-HiddenNode","--dns-result-order=ipv4first",
-  "node_modules\\expo\\bin\\cli","node_modules\\next\\dist\\bin\\next"
+  "DEV_TIMING","DEV_READY=PASS","--dns-result-order=ipv4first",
+  "node_modules\\expo\\bin\\cli","node_modules\\next\\dist\\bin\\next",
+  "am start -W","shell pidof","APP_EXITED"
 ]) check(dev.includes(token),`dev.ps1 missing invariant: ${token}`);
 
 check(/\$env:EXPO_OFFLINE\s*=\s*['"]1['"]/.test(dev), "dev.ps1 must keep Expo offline");
 check(/\$env:EXPO_NO_QR_CODE\s*=\s*['"]1['"]/.test(dev), "dev.ps1 must suppress Expo QR output");
 check(/\$env:EXPO_NO_TYPESCRIPT_SETUP\s*=\s*['"]1['"]/.test(dev), "dev.ps1 must disable Expo TypeScript auto-setup");
-check(/@\(['"]reverse['"],['"]--list['"]\)/.test(dev), "dev.ps1 must read ADB reverse mappings");
-check(/@\(['"]reverse['"],\s*["']tcp:\$port["'],\s*["']tcp:\$port["']\)/.test(dev), "dev.ps1 must repair missing ADB reverse mappings");
+check(/&\s*adb\s+-d\s+reverse\s+["']tcp:\$port["']\s+["']tcp:\$port["']/.test(dev), "mobile path must use direct USB ADB reverse");
 
 for(const bad of [
   "pnpm --dir","adb devices","ANDROID_SERIAL","adb -s","scrcpy -s","adb tcpip","getprop",
   "WIFI","wifi","METRO_START_TIMEOUT","EXPO_NO_TELEMETRY"
 ]) check(!dev.includes(bad),`dev.ps1 retains removed overhead: ${bad}`);
 
-check((dev.match(/Start-Process/g)||[]).length===2,"dev.ps1 must use Start-Process only for background Node servers and scrcpy");
+check(!dev.includes("Start-Process"),"dev.ps1 must not own background process supervision");
 check(!/\[string\[\]\]\$Args\b/.test(dev), "dev.ps1 must not shadow PowerShell's automatic $Args variable");
 check(!/\$states\s*=\s*@\{/.test(dev), "daily dev must not eagerly start all application servers");
 check(/Ensure-Adb @\(\$Identity,\$Dsh\)/.test(dev), "daily dev must prepare backend reverse ports only");

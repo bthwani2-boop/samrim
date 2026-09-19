@@ -172,7 +172,7 @@ LOCAL_INTEGRATION has exactly one canonical runtime owner for every admitted pro
 The human LOCAL_INTEGRATION lifecycle has one daily bootstrap and targeted aliases, all owned by `tools/dev/dev.ps1`:
 
 ```text
-pnpm dev            → reuse/prepare shared backend, backend ADB reverse and scrcpy, then return
+pnpm dev            → reuse/prepare shared backend only, then return
 pnpm runtime:up     → ensure backend/state only
 pnpm runtime:status → display backend/state
 pnpm control        → ensure Control only
@@ -180,7 +180,7 @@ pnpm client|partner|captain|field → ensure/open the selected mobile surface
 pnpm scr            → ensure scrcpy only
 ```
 
-The daily bootstrap reuses live shared infrastructure and must skip Docker reconciliation when backend endpoints are already live. Mobile Metro and Control are started only by their targeted aliases; keeping unused host development servers cold avoids unnecessary CPU/RAM pressure on resource-constrained hosts. Source-only edits reuse valid processes, device state and sessions; Expo Fast Refresh / Next HMR is the inner development loop.
+The daily bootstrap reuses the live backend and must skip Docker reconciliation when backend endpoints are already live. ADB reverse, scrcpy, Mobile Metro and Control are strictly on-demand behind their targeted aliases; daily startup must not touch unused device or host-app tooling. Source-only edits reuse valid processes, device state and sessions; Expo Fast Refresh / Next HMR is the inner development loop.
 
 `runtime:up` reconciles backend/state without rebuilding existing images by default; on a fresh machine Compose may build a missing image. One-shot migrations must not be rerun merely because `pnpm dev` was invoked while the backend is already live. When baked backend source changes, use explicit targeted service rebuild before the runtime proof that needs the new binary. Application-source changes do not rebuild Docker.
 

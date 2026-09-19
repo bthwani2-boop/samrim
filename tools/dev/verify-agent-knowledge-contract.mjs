@@ -103,6 +103,9 @@ const localRuntime = requireTokens("tools/dev/dev.ps1", [
   "DEV_READY=PASS",
   "node_modules\\expo\\bin\\cli",
   "node_modules\\next\\dist\\bin\\next",
+  "am start -W",
+  "shell pidof",
+  "APP_EXITED",
 ]);
 if (!/\$env:EXPO_OFFLINE\s*=\s*['"]1['"]/.test(localRuntime)) {
   failures.push("tools/dev/dev.ps1 must keep Expo offline");
@@ -110,8 +113,8 @@ if (!/\$env:EXPO_OFFLINE\s*=\s*['"]1['"]/.test(localRuntime)) {
 if (!/\$env:EXPO_NO_QR_CODE\s*=\s*['"]1['"]/.test(localRuntime)) {
   failures.push("tools/dev/dev.ps1 must suppress Expo QR output");
 }
-if (!/@\(['"]reverse['"],['"]--list['"]\)/.test(localRuntime)) {
-  failures.push("tools/dev/dev.ps1 must read ADB reverse mappings");
+if (!/&\s*adb\s+-d\s+reverse\s+["']tcp:\$port["']\s+["']tcp:\$port["']/.test(localRuntime)) {
+  failures.push("tools/dev/dev.ps1 mobile path must use direct USB ADB reverse");
 }
 if (/\[string\[\]\]\$Args\b/.test(localRuntime)) {
   failures.push("tools/dev/dev.ps1 must not shadow PowerShell's automatic $Args variable");

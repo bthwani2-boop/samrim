@@ -27,7 +27,7 @@ Local runtime has one executable owner:
 tools/dev/dev.ps1
 ```
 
-`pnpm dev` is the daily shared-infrastructure bootstrap. It reuses live backend ports instead of rerunning Compose/migrations, repairs only backend ADB reverse mappings, ensures scrcpy, measures each phase and returns. Metro and Next remain on-demand behind `pnpm client|partner|captain|field|control`, which avoids paying for unused host servers.
+`pnpm dev` is the daily backend bootstrap. It reuses live backend ports instead of rerunning Compose/migrations and otherwise runs the canonical Compose up path. ADB reverse, scrcpy, Metro and Next are all on-demand behind `pnpm client|partner|captain|field|control|scr`; daily startup pays for none of them.
 
 Expo is local/offline, QR output is suppressed, TypeScript auto-setup is disabled, and Metro localhost stays IPv4-first because real-device proof showed the IPv6-only listener failure. There is no Wi-Fi ADB fallback, serial registry, nested pnpm runtime, custom Metro supervisor or second runtime script.
 
