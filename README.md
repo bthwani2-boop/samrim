@@ -25,7 +25,7 @@ Daily local development:
 pnpm dev
 ```
 
-That single command reuses or prepares Docker backend/state, ADB reverse mappings, all four Metro servers, Control Panel and scrcpy, then prints measured startup timings and returns the prompt. The canonical runtime file is `tools/dev/dev.ps1`.
+That single command reuses or prepares only shared daily infrastructure: Docker backend/state, backend ADB reverse mappings and scrcpy. Mobile Metro and Control stay on-demand so `dev` remains fast and light. It prints measured timings and returns the prompt. The canonical runtime file is `tools/dev/dev.ps1`.
 
 Targeted aliases remain available and use the same file:
 

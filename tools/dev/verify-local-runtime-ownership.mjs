@@ -42,6 +42,8 @@ for(const bad of [
 
 check((dev.match(/Start-Process/g)||[]).length===2,"dev.ps1 must use Start-Process only for background Node servers and scrcpy");
 check(!/\[string\[\]\]\$Args\b/.test(dev), "dev.ps1 must not shadow PowerShell's automatic $Args variable");
+check(!/\$states\s*=\s*@\{/.test(dev), "daily dev must not eagerly start all application servers");
+check(/Ensure-Adb @\(\$Identity,\$Dsh\)/.test(dev), "daily dev must prepare backend reverse ports only");
 check(!pkg.scripts?.["runtime:doctor"],"runtime:doctor must remain absent");
 
 if(fail.length){

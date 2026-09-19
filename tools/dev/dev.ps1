@@ -273,24 +273,8 @@ $backendState=Ensure-Backend
 $dockerMs=$phase.ElapsedMilliseconds
 
 $phase.Restart()
-Ensure-Adb @($Identity,$Dsh,$Metro.client,$Metro.partner,$Metro.captain,$Metro.field)
+Ensure-Adb @($Identity,$Dsh)
 $adbMs=$phase.ElapsedMilliseconds
-
-Set-Host-Environment
-
-$phase.Restart()
-$states=@{
-    client=Start-Metro 'client'
-    partner=Start-Metro 'partner'
-    captain=Start-Metro 'captain'
-    field=Start-Metro 'field'
-    control=Start-Control
-}
-Wait-Ports @($Metro.client,$Metro.partner,$Metro.captain,$Metro.field,$Control)
-foreach($name in @('client','partner','captain','field')){
-    if(-not(Metro-Ready ([int]$Metro[$name]))){Fail "METRO_NOT_READY app=app-$name"}
-}
-$surfaceMs=$phase.ElapsedMilliseconds
 
 $phase.Restart()
 $scrcpyState=Ensure-Scrcpy
@@ -298,9 +282,6 @@ $scrcpyMs=$phase.ElapsedMilliseconds
 
 $total.Stop()
 
-$started=@($states.GetEnumerator()|Where-Object Value -eq 'started'|ForEach-Object Name|Sort-Object)
-$reused=@($states.GetEnumerator()|Where-Object Value -eq 'reused'|ForEach-Object Name|Sort-Object)
-
-Write-Host "DEV_TIMING docker_ms=$dockerMs adb_ms=$adbMs surfaces_ms=$surfaceMs scrcpy_ms=$scrcpyMs total_ms=$($total.ElapsedMilliseconds)"
-Write-Host "DEV_STATE backend=$backendState scrcpy=$scrcpyState started=$($started-join',') reused=$($reused-join',')"
+Write-Host "DEV_TIMING docker_ms=$dockerMs adb_ms=$adbMs scrcpy_ms=$scrcpyMs total_ms=$($total.ElapsedMilliseconds)"
+Write-Host "DEV_STATE backend=$backendState scrcpy=$scrcpyState"
 Write-Host "DEV_READY=PASS root=$Root"
