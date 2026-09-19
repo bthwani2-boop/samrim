@@ -109,13 +109,6 @@ jobs:
             up -d --build --wait --wait-timeout 300 \
             postgres mailpit identity dsh control
 
-      - name: Establish canonical Control operator session
-        if: steps.scope.outputs.run == 'true'
-        shell: bash
-        env:
-          BTHWANI_SECRETS_ROOT: ${{ runner.temp }}/samrim-secrets
-        run: node tools/dev/local-world.mjs --ensure-operator
-
       - name: Verify backend runtime semantics
         if: steps.scope.outputs.run == 'true'
         shell: bash
@@ -124,6 +117,19 @@ jobs:
           node tools/dev/verify-identity-migrations.mjs --env-file=infra/local/compose/.env
           node tools/dev/verify-dsh-baseline.mjs --env-file=infra/local/compose/.env
           node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env
+
+      - name: Establish canonical Control operator session
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        env:
+          BTHWANI_SECRETS_ROOT: ${{ runner.temp }}/samrim-secrets
+        run: node tools/dev/local-world.mjs --ensure-operator
+
+      - name: Verify DSH runtime semantics
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
           node tools/dev/verify-dsh-runtime-core.mjs --env-file=infra/local/compose/.env
 
       - name: Verify backend proof is non-mutating
