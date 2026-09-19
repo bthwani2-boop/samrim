@@ -1,9 +1,13 @@
 package session
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 )
 
 func TestCalculateSessionExpiriesKeepStrictOrderingNearAbsoluteExpiry(t *testing.T) {
@@ -121,5 +125,13 @@ func TestLegacyDevelopmentOperatorSessionCutoverIsNarrow(t *testing.T) {
 	}
 	if shouldCutOverLegacyDevelopmentOperatorSession("operator", createdAt, createdAt.Add(30*24*time.Hour), createdAt.Add(365*24*time.Hour), true) {
 		t.Fatal("already-current development operator session was selected for legacy cutover")
+	}
+}
+
+func TestCreateDevelopmentSessionRejectsNonDevelopmentBeforeDatabaseAccess(t *testing.T) {
+	service := &Service{development: false}
+	_, err := service.CreateDevelopment(context.Background(), "client", "development-client-instance")
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("CreateDevelopment() error = %v, want forbidden outside development", err)
 	}
 }

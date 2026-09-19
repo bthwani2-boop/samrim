@@ -53,6 +53,7 @@ export type IdentityClient = Readonly<{
   beginOperatorRecoveryPasskeyRegistration(request: OperatorPasskeyRecoveryRegistrationOptionsRequest): Promise<PasskeyOptions>;
   finishOperatorRecoveryPasskeyRegistration(request: OperatorPasskeyRecoveryFinishRequest): Promise<OperatorPasskeyRegistrationResponse>;
   refresh(request: RefreshRequest): Promise<TokenPair>;
+  developmentSession(role: ActorType, clientInstanceId: string): Promise<TokenPair>;
   session(accessToken: string): Promise<ActorIdentity>;
   logout(accessToken: string): Promise<void>;
 }>;
@@ -159,6 +160,7 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     beginOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.method, body }),
     finishOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.method, body }),
     refresh: (body) => request(identityOperationPaths.refreshSession.path, { method: identityOperationPaths.refreshSession.method, body }),
+    developmentSession: (role, clientInstanceId) => request(identityOperationPaths.createDevelopmentSession.path, { method: identityOperationPaths.createDevelopmentSession.method, body: { role, clientInstanceId } }),
     session: (accessToken) => request(identityOperationPaths.readCurrentSession.path, { method: identityOperationPaths.readCurrentSession.method, token: accessToken }),
     logout: (accessToken) => request(identityOperationPaths.logoutSession.path, { method: identityOperationPaths.logoutSession.method, token: accessToken }),
   };

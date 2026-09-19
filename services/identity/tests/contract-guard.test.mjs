@@ -19,7 +19,7 @@ for (const route of [
   "/auth/operator/enrollment/request:", "/auth/operator/enrollment/registration/options:", "/auth/operator/enrollment/registration/finish:",
   "/auth/operator/authentication/options:", "/auth/operator/authentication/finish:", "/auth/operator/recovery/request:",
   "/auth/operator/recovery/registration/options:", "/auth/operator/recovery/registration/finish:", "/internal/bootstrap/operator:",
-  "/auth/refresh:", "/auth/logout:", "/auth/session:", "/internal/actor-roles/provision:", "/internal/actor-roles/search:",
+  "/auth/refresh:", "/auth/logout:", "/auth/session:", "/auth/development/session:", "/internal/actor-roles/provision:", "/internal/actor-roles/search:",
   "/internal/actors/{actorId}/roles/{role}/reenrollment:", "/internal/actors/{actorId}/security/disable:",
 ]) requireText(route, "canonical route " + route);
 for (const route of ["/auth/operator/" + "login/start:", "/auth/operator/" + "login/complete:", "/auth/managed/" + "recovery/request:", "/auth/managed/" + "recover:"]) forbidText(route, route);
@@ -33,6 +33,8 @@ if (contract.includes("#/components/responses/TokenPair")) {
   if (recovery.includes("#/components/responses/TokenPair")) failures.push("client recovery creates a session");
 }
 if (!contract.includes("additionalProperties: true")) failures.push("WebAuthn JSON object pass-through schema missing");
+if (!contract.includes("route is not registered outside BTHWANI_ENV=development")) failures.push("development session contract must remain explicitly environment-gated");
+if (!contract.includes("never creates actors or roles")) failures.push("development session contract must not authorize synthetic actor provisioning");
 for (const file of ["identity-types.ts", "identity-operations.ts"]) {
   const body = fs.readFileSync(path.join(root, "clients", "generated", file), "utf8");
   if (!body.includes("Source Git graph SHA:")) failures.push(file + " lacks source graph provenance");

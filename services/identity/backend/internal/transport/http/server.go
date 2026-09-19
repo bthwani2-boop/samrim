@@ -25,6 +25,7 @@ type Config struct {
 	AbuseIPSecret         []byte
 	TrustedProxies        []*net.IPNet
 	Readiness             func() error
+	Development           bool
 }
 
 type Server struct {
@@ -61,6 +62,9 @@ func New(actors *actor.Service, authenticationService *authentication.Service, c
 	mux.HandleFunc("POST /auth/refresh", s.refresh)
 	mux.HandleFunc("POST /auth/logout", s.logout)
 	mux.HandleFunc("GET /auth/session", s.currentSession)
+	if config.Development {
+		mux.HandleFunc("POST /auth/development/session", s.developmentSession)
+	}
 	mux.HandleFunc("POST /internal/actor-roles/provision", s.internal(s.provisionRole))
 	mux.HandleFunc("POST /internal/bootstrap/operator", s.internal(s.bootstrapFirstOperator))
 	mux.HandleFunc("GET /internal/actor-roles/search", s.internal(s.searchRoles))
@@ -308,6 +312,26 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, result)
 }
+func (s *Server) developmentSession(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Role             string `json:"role"`
+		ClientInstanceID string `json:"clientInstanceId"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if strings.TrimSpace(input.Role) == "" || strings.TrimSpace(input.ClientInstanceID) == "" {
+		writeDomainError(w, domain.ErrInvalidInput)
+		return
+	}
+	result, err := s.sessions.CreateDevelopment(r.Context(), input.Role, input.ClientInstanceID)
+	if err != nil {
+		writeDomainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	token, ok := bearerToken(r)
 	if !ok {

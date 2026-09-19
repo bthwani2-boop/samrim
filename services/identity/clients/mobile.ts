@@ -1,4 +1,5 @@
 declare const process: { env: Record<string, string | undefined> };
+declare const __DEV__: boolean;
 
 import type { IdentityClient } from "./client";
 import { createIdentityClient } from "./client";
@@ -69,6 +70,9 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
       config.surface,
       config.namespace,
       config.cryptoRandomUUID,
+      __DEV__
+        ? async () => identityClient().developmentSession(config.role, await clientInstanceId())
+        : undefined,
     );
     return sessionValue;
   }

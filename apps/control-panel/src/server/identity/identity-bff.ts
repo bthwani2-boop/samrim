@@ -54,6 +54,10 @@ function refreshCookieMaxAge(): number {
     : 60 * 60;
 }
 
+function developmentSessionEnabled(): boolean {
+  return process.env.BTHWANI_ENV === "development";
+}
+
 async function operatorClientInstanceId(): Promise<string> {
   const store = await cookies();
   const existing = store.get(deviceCookie)?.value?.trim();
@@ -191,12 +195,25 @@ export async function setIdentitySecurityEnabled(actorId: string, enabled: boole
   await identityInternalClient().setActorSecurityEnabled(actorId, enabled, reason, context);
 }
 
+async function createDevelopmentOperatorSession(): Promise<ActorIdentity | null> {
+  if (!developmentSessionEnabled()) return null;
+  const clientInstanceId = await operatorClientInstanceId();
+  try {
+    const pair = await identityClient().developmentSession("operator", clientInstanceId);
+    await writeTokens(pair, clientInstanceId);
+    return pair.identity;
+  } catch (error) {
+    if (isIdentityClientError(error) && error.kind === "http" && (error.status === 403 || error.status === 404)) return null;
+    throw error;
+  }
+}
+
 export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const store = await cookies();
   const accessToken = store.get(accessCookie)?.value;
   const refreshToken = store.get(refreshCookie)?.value;
   const clientInstanceId = store.get(deviceCookie)?.value;
-  if (!accessToken && !refreshToken) return null;
+  if (!accessToken && !refreshToken) return createDevelopmentOperatorSession();
 
   if (accessToken) {
     const identity = await readOperatorAccessToken(accessToken);
@@ -205,7 +222,7 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
 
   if (!refreshToken || !clientInstanceId) {
     await clearOperatorCookiesBestEffort();
-    return null;
+    return createDevelopmentOperatorSession();
   }
 
   const refreshKey = `${refreshToken ?? ""}:${clientInstanceId ?? ""}`;
@@ -242,7 +259,7 @@ async function refreshOperatorSession(store: Awaited<ReturnType<typeof cookies>>
     }
     if (isTerminalIdentityFailure(error)) {
       await clearOperatorCookiesBestEffort();
-      return null;
+      return createDevelopmentOperatorSession();
     }
     if (isIdentityClientError(error)) throw error;
     throw localSessionError(503, "IDENTITY_SESSION_RECOVERY_UNKNOWN", "identity session recovery could not be classified");

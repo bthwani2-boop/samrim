@@ -2,6 +2,7 @@ package identityhttp
 
 import (
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -77,5 +78,25 @@ func TestWriteDomainErrorPreservesRefreshStaleContract(t *testing.T) {
 				t.Fatalf("body = %q, want code %q", response.Body.String(), test.code)
 			}
 		})
+	}
+}
+
+func TestDevelopmentSessionRouteIsAbsentOutsideDevelopment(t *testing.T) {
+	handler := New(nil, nil, nil, nil, nil, Config{})
+	request := httptest.NewRequest(http.MethodPost, "/auth/development/session", strings.NewReader("{}"))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("non-development route status = %d, want 404", response.Code)
+	}
+}
+
+func TestDevelopmentSessionRouteIsRegisteredOnlyInDevelopment(t *testing.T) {
+	handler := New(nil, nil, nil, nil, nil, Config{Development: true})
+	request := httptest.NewRequest(http.MethodPost, "/auth/development/session", strings.NewReader("{}"))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("development route status = %d, want 400 for invalid request proving route registration", response.Code)
 	}
 }

@@ -30,3 +30,29 @@ paths:
           description: Current single-role session identity.
           content: { application/json: { schema: { $ref: "#/components/schemas/ActorIdentity" } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/development/session:
+    post:
+      tags: [session]
+      operationId: createDevelopmentSession
+      description: Development-only convenience for an existing enabled role. The route is not registered outside BTHWANI_ENV=development and never creates actors or roles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [role, clientInstanceId]
+              properties:
+                role:
+                  $ref: "#/components/schemas/ActorType"
+                clientInstanceId:
+                  type: string
+                  minLength: 8
+                  maxLength: 256
+      responses:
+        "200": { $ref: "#/components/responses/TokenPair" }
+        "400": { $ref: "#/components/responses/Invalid" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }

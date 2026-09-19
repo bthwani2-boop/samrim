@@ -28,6 +28,51 @@ func New(db *sql.DB, refreshSecret []byte, development bool) *Service {
 	return &Service{db: db, now: time.Now, refreshSecret: append([]byte(nil), refreshSecret...), development: development}
 }
 
+func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId string) (domain.TokenPair, error) {
+	if !s.development {
+		return domain.TokenPair{}, domain.ErrForbidden
+	}
+	role = strings.ToLower(strings.TrimSpace(role))
+	if _, ok := domain.SurfaceForRole(role); !ok {
+		return domain.TokenPair{}, domain.ErrInvalidInput
+	}
+	device, err := identitysecurity.NormalizeClientInstanceId(clientInstanceId)
+	if err != nil {
+		return domain.TokenPair{}, domain.ErrInvalidInput
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var actorID string
+	err = tx.QueryRowContext(ctx, `SELECT r.actor_id
+FROM identity_actor_roles r
+JOIN identity_actors a ON a.id=r.actor_id
+WHERE r.role=$1 AND r.enabled=true AND a.security_enabled=true
+ORDER BY CASE WHEN r.activated_at IS NOT NULL THEN 0 ELSE 1 END, r.actor_id
+LIMIT 1
+FOR UPDATE OF r,a`, role).Scan(&actorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.TokenPair{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	pair, err := s.createTx(ctx, tx, actorID, role, device)
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	if err := auditTx(ctx, tx, "session.development_created", actorID, "development-local", "success", "", map[string]any{"sessionId": pair.Identity.SessionID, "role": role}); err != nil {
+		return domain.TokenPair{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.TokenPair{}, err
+	}
+	return pair, nil
+}
+
 func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, clientInstanceId string) (domain.TokenPair, error) {
 	device, err := identitysecurity.NormalizeClientInstanceId(clientInstanceId)
 	if err != nil {

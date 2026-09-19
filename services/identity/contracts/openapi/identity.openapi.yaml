@@ -55,6 +55,8 @@ paths:
     $ref: "./paths/session.yaml#/paths/~1auth~1logout"
   /auth/session:
     $ref: "./paths/session.yaml#/paths/~1auth~1session"
+  /auth/development/session:
+    $ref: "./paths/session.yaml#/paths/~1auth~1development~1session"
   /internal/actor-roles/provision:
     $ref: "./paths/internal-actor-administration.yaml#/paths/~1internal~1actor-roles~1provision"
   /internal/actor-roles/search:
