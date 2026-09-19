@@ -43,7 +43,12 @@ for(const bad of [
 check(!dev.includes("Start-Process"),"dev.ps1 must not own background process supervision");
 check(!/\[string\[\]\]\$Args\b/.test(dev), "dev.ps1 must not shadow PowerShell's automatic $Args variable");
 check(!/\$states\s*=\s*@\{/.test(dev), "daily dev must not eagerly start all application servers");
-check(/Ensure-Adb @\(\$Identity,\$Dsh\)/.test(dev), "daily dev must prepare backend reverse ports only");
+const dailyStart=dev.indexOf("$total=[Diagnostics.Stopwatch]::StartNew()");
+check(dailyStart>=0, "dev.ps1 missing daily timing block");
+if(dailyStart>=0){
+  const dailyBlock=dev.slice(dailyStart);
+  check(!/\badb\b|scrcpy|Mobile\s|Control|Reverse\s+@/.test(dailyBlock), "daily dev must touch backend only");
+}
 check(!pkg.scripts?.["runtime:doctor"],"runtime:doctor must remain absent");
 
 if(fail.length){
