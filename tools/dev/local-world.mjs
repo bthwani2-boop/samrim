@@ -267,7 +267,23 @@ async function activateOperatorWithPasskey(phone, enrollmentToken, actorID) {
     const code = await waitForMailpitCode(phone, "operator_enroll");
     await page.getByLabel("رمز إثبات الهاتف").fill(code);
     await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح المرور" }).click();
-    await page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" }).waitFor({ state: "visible", timeout: 90_000 });
+    const recoveryHeading = page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" });
+    try {
+      await page.waitForFunction(() => {
+        const heading = document.querySelector("#recovery-credential-title");
+        const alert = document.querySelector('[role="alert"]');
+        const visible = (element) => Boolean(element && (element instanceof HTMLElement) && element.offsetParent !== null);
+        return visible(heading) || visible(alert);
+      }, undefined, { timeout: 90_000 });
+    } catch (error) {
+      const bodyText = await page.locator("body").innerText().catch(() => "");
+      const detail = bodyText.replace(/\s+/g, " ").trim().slice(-4_000);
+      throw new Error(`${error instanceof Error ? error.message : String(error)} url=${page.url()} body=${detail}`);
+    }
+    if (!(await recoveryHeading.isVisible())) {
+      const message = await page.getByRole("alert").innerText().catch(() => "unknown Control Panel enrollment error");
+      throw new Error(`Control Panel operator enrollment failed: ${message}`);
+    }
     await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
     await page.waitForURL(/\/workspace$/, { timeout: 15_000 });
     const session = await page.evaluate(async () => {
