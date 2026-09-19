@@ -116,7 +116,7 @@ for (const app of apps) {
   }
 
   const rootCommandName = app.replace(/^app-/, "");
-  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 -Action ${rootCommandName[0].toUpperCase() + rootCommandName.slice(1)}`;
+  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 ${rootCommandName}`;
   if (rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
     console.error(`${app}: root command must route to the canonical app opener`);
     failed = true;

@@ -1,53 +1,62 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const root=path.resolve(import.meta.dirname,"../..");
-const fail=[];
-const read=(p)=>fs.readFileSync(path.join(root,p),"utf8");
-const exists=(p)=>fs.existsSync(path.join(root,p));
-const pkg=JSON.parse(read("package.json"));
-const local=read("tools/dev/local.ps1");
-const compose=read("infra/local/compose/compose.yaml");
-const check=(ok,msg)=>{if(!ok)fail.push(msg)};
+const root = path.resolve(import.meta.dirname, "../..");
+const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const localPath = path.join(root, "tools/dev/local.ps1");
+const local = fs.readFileSync(localPath, "utf8");
+const fail = [];
+const check = (ok, message) => { if (!ok) fail.push(message); };
 
-const scripts={
-  client:"Client",partner:"Partner",captain:"Captain",field:"Field",control:"Control",scr:"Scrcpy",
-  "runtime:up":"Up","runtime:down":"Down","runtime:status":"Status","runtime:doctor":"Doctor",
-};
-for(const [name,action] of Object.entries(scripts)){
-  check(pkg.scripts?.[name]===`pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 -Action ${action}`,`${name} must route directly to local.ps1`);
+const compose = "docker compose --ansi never --project-name samrim-local --env-file infra/local/.env -f infra/local/compose/compose.yaml";
+const host = { client:"client", partner:"partner", captain:"captain", field:"field", control:"control" };
+
+for (const [name,target] of Object.entries(host)) {
+  check(pkg.scripts?.[name] === `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/local.ps1 ${target}`, `${name} must route to local.ps1`);
 }
-for(const old of [
+check(pkg.scripts?.scr === "scrcpy --max-size=1280 --max-fps=30 --video-bit-rate=4M --no-audio", "scr must delegate directly to scrcpy");
+check(pkg.scripts?.["runtime:up"] === `${compose} up -d --wait --wait-timeout 300 --remove-orphans`, "runtime:up must delegate directly to Compose");
+check(pkg.scripts?.["runtime:down"] === `${compose} down --remove-orphans`, "runtime:down must delegate directly to Compose");
+check(pkg.scripts?.["runtime:status"] === `${compose} ps -a`, "runtime:status must delegate directly to Compose");
+check(pkg.scripts?.["runtime:doctor"] === undefined, "runtime:doctor wrapper must be absent");
+
+for (const old of [
   "tools/dev/runtime.ps1","tools/dev/runtime.psm1","tools/dev/device-policy.psm1",
   "tools/dev/open-mobile-apps.ps1","tools/dev/run-control.ps1","tools/dev/scrcpy.ps1"
-]) check(!exists(old),`retired local runtime file remains: ${old}`);
+]) {
+  check(!fs.existsSync(path.join(root, old)), `retired runtime wrapper remains: ${old}`);
+}
 
-for(const token of [
-  "ValidateSet('Up','Down','Status','Doctor','Control','Client','Partner','Captain','Field','Scrcpy')",
-  "function Mobile","APP_REUSE=PASS","expo start --dev-client --localhost --android --scheme",
+for (const token of [
+  "EXPO_OFFLINE = '1'",
+  "EXPO_NO_QR_CODE = '1'",
+  "EXPO_NO_TYPESCRIPT_SETUP = '1'",
+  "node_modules\\expo\\bin\\cli",
+  "node_modules\\next\\dist\\bin\\next",
+  "adb reverse --list",
+  "APP_REUSE=PASS",
+  "CONTROL_REUSE=PASS",
   "--dns-result-order=ipv4first",
-  "CONTROL_REUSE=PASS","next dev -H 127.0.0.1","function Reverse","adb reverse"
-]) check(local.includes(token),`local.ps1 missing invariant: ${token}`);
-
-check(
-  /\$env:EXPO_NO_TYPESCRIPT_SETUP\s*=\s*['"]1['"]/.test(local),
-  "local.ps1 must disable Expo TypeScript auto-setup",
-);
-
-for(const bad of ["adb devices","ANDROID_SERIAL","adb -s","scrcpy -s","adb tcpip","getprop","WIFI","wifi","Start-Process","METRO_START_TIMEOUT","runtime.psm1"]){
-  check(!local.includes(bad),`local.ps1 retains removed complexity: ${bad}`);
-}
-for(const bad of ["metro-client:","metro-partner:","metro-captain:","metro-field:","js-deps:","/workspace","samrim-js-"]){
-  check(!compose.includes(bad),`compose retains JS runtime residue: ${bad}`);
+]) {
+  check(local.includes(token), `local.ps1 missing invariant: ${token}`);
 }
 
-if(fail.length){
+for (const bad of [
+  "pnpm --dir","adb devices","ANDROID_SERIAL","adb -s","scrcpy -s","adb tcpip",
+  "getprop","WIFI","wifi","Start-Process","METRO_START_TIMEOUT","EXPO_NO_TELEMETRY"
+]) {
+  check(!local.includes(bad), `local.ps1 retains removed overhead: ${bad}`);
+}
+
+if (fail.length) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");
-  for(const x of [...new Set(fail)].sort()) console.error("  "+x);
+  for (const item of [...new Set(fail)].sort()) console.error("  " + item);
   process.exit(1);
 }
+
 console.log("LOCAL_RUNTIME_OWNERSHIP=PASS");
-console.log("LOCAL_RUNTIME_OWNER=tools/dev/local.ps1");
-console.log("LOCAL_RUNTIME_OWNER_FILES=1");
-console.log("DOCKER_JS_APPLICATION_SERVICES=0");
-console.log("PARALLEL_RUNTIME_MODE=0");
+console.log("HOST_APP_HELPER=tools/dev/local.ps1");
+console.log("DOCKER_RUNTIME_OWNER=Docker Compose");
+console.log("SCRCPY_OWNER=scrcpy");
+console.log("NESTED_PNPM=0");
+console.log("DEVICE_DISCOVERY_WRAPPER=0");

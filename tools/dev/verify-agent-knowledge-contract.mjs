@@ -99,12 +99,13 @@ if (safePush.includes("pnpm verify")) {
 }
 
 const localRuntime = requireTokens("tools/dev/local.ps1", [
-  "ValidateSet('Up','Down','Status','Doctor','Control','Client','Partner','Captain','Field','Scrcpy')",
+  "EXPO_OFFLINE = '1'",
+  "EXPO_NO_QR_CODE = '1'",
+  "node_modules\\expo\\bin\\cli",
+  "node_modules\\next\\dist\\bin\\next",
   "APP_REUSE=PASS",
   "CONTROL_REUSE=PASS",
-  "expo start --dev-client --localhost --android --scheme",
-  "next dev -H 127.0.0.1",
-  "adb reverse",
+  "adb reverse --list",
 ]);
 for (const retired of [
   "tools/dev/runtime.ps1",

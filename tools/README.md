@@ -30,16 +30,17 @@ pnpm client|partner|captain|field
 pnpm scr
 ```
 
-Ownership is singular:
+Ownership is minimal:
 
 ```text
-Local development runtime → tools/dev/local.ps1
-Docker backend services   → Docker Compose
-Metro lifecycle           → Expo CLI
-Control dev server        → Next.js
+Mobile + Control launch/reuse → tools/dev/local.ps1
+Docker backend lifecycle      → Docker Compose directly
+Device mirroring              → scrcpy directly
+Metro lifecycle               → Expo CLI
+Control dev server            → Next.js
 ```
 
-The repository does not maintain separate runtime/device/mobile/control/scrcpy wrappers. Warm app launches reuse the healthy Metro/Next process; cold launches delegate directly to Expo or Next. Android commands call ADB/Expo/scrcpy directly for the one attached device; there is no repository-owned device discovery or serial state. Windows Metro localhost remains IPv4-first because real-device proof showed the IPv6-only listener failure.
+The host helper does not own Docker or scrcpy. Warm app launches reuse the healthy Metro/Next process; cold launches invoke the installed Expo/Next Node binaries directly without nested pnpm. Expo startup is local/offline and suppresses QR output. Android uses ADB directly with no repository-owned device discovery or serial state. Windows Metro localhost remains IPv4-first because real-device proof showed the IPv6-only listener failure.
 
 ## Tool admission
 
