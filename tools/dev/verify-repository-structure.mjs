@@ -224,7 +224,7 @@ for (const item of tracked.filter((value) =>
   value.startsWith("services/") && /\.(go|ts|tsx|js|jsx|mjs|cjs|json|yaml|yml)$/.test(value)
 )) {
   const body = fs.readFileSync(path.join(root, item), "utf8");
-  if (/(?:\.\.\/)+apps\//.test(body) || /github\.com\/bthwani2-boop\/samrim\/apps\//.test(body)) {
+  if (/(?:\.\.\/)+apps\//.test(body) || body.includes("github.com/bthwani2-boop/samrim/apps/")) {
     failures.push(`SERVICE_TO_APP_DEPENDENCY: ${item}`);
   }
 }

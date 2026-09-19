@@ -66,13 +66,13 @@ function localUrl(raw, name) {
 }
 
 const env = readEnv();
-const identityBase = localUrl(required(env, "IDENTITY_API_BASE_URL"), "IDENTITY_API_BASE_URL");
-const dshBase = localUrl(required(env, "DSH_API_BASE_URL"), "DSH_API_BASE_URL");
+localUrl(required(env, "IDENTITY_API_BASE_URL"), "IDENTITY_API_BASE_URL");
+localUrl(required(env, "DSH_API_BASE_URL"), "DSH_API_BASE_URL");
 const controlOrigin = localUrl(required(env, "CONTROL_PANEL_PUBLIC_ORIGIN"), "CONTROL_PANEL_PUBLIC_ORIGIN");
 const dshToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
 const identityDshToken = required(env, "IDENTITY_DSH_SERVICE_TOKEN");
 const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
-const mailpitPort = required(env, "SAMRIM_MAILPIT_WEB_PORT");
+required(env, "SAMRIM_MAILPIT_WEB_PORT");
 if (env.BTHWANI_ENV !== "development") fail("BTHWANI_ENV must be development");
 if (env.IDENTITY_CHALLENGE_DELIVERY_MODE !== "mailpit") fail("challenge delivery is not the controlled local Mailpit sink");
 if (!String(env.IDENTITY_WEBAUTHN_ALLOWED_ORIGINS ?? "").split(",").map((value) => value.trim()).includes(controlOrigin)) fail("WebAuthn allowed origin does not match the local Control Panel origin");
@@ -80,6 +80,9 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", composePath];
 const requiredRunningServices = ["postgres", "mailpit", "identity", "dsh", "control", "metro-client", "metro-partner", "metro-captain", "metro-field"];
+let identityBase = "";
+let dshBase = "";
+let mailpitPort = "";
 
 function runtimeGuard() {
   let running;
@@ -91,6 +94,18 @@ function runtimeGuard() {
   const missing = requiredRunningServices.filter((service) => !running.includes(service));
   if (missing.length) fail("canonical Docker runtime is incomplete", missing.join(","));
   console.log(`LOCAL_WORLD_SAFETY_GUARD=PASS mode=${action === "--status" ? "read-only" : "mutation"} environment=development runtime=canonical-local database=canonical-local delivery=mailpit external_effects=blocked`);
+}
+
+function publishedPort(service, containerPort) {
+  let published;
+  try {
+    published = execFileSync("docker", [...composeArgs, "port", service, String(containerPort)], { cwd: root, encoding: "utf8" }).trim();
+  } catch (error) {
+    fail(`canonical Docker port readback failed for ${service}`, error instanceof Error ? error.message : String(error));
+  }
+  const match = published.match(/:(\d+)\s*$/);
+  if (!match) fail(`canonical Docker port readback is invalid for ${service}`, published);
+  return match[1];
 }
 
 async function request(base, method, pathname, options = {}) {
@@ -518,6 +533,9 @@ async function readStatus(state) {
 async function main() {
   if (!["--ensure", "--status"].includes(action)) fail("unsupported action; use --ensure or --status");
   runtimeGuard();
+  identityBase = `http://127.0.0.1:${publishedPort("identity", 8082)}`;
+  dshBase = `http://127.0.0.1:${publishedPort("dsh", 8080)}`;
+  mailpitPort = publishedPort("mailpit", 8025);
   for (const endpoint of ["/identity/health", "/identity/readiness"]) if ((await request(identityBase, "GET", endpoint)).status !== 200) fail("Identity is not ready");
   for (const endpoint of ["/dsh/health", "/dsh/readiness"]) if ((await request(dshBase, "GET", endpoint)).status !== 200) fail("DSH is not ready");
   const state = loadState();
