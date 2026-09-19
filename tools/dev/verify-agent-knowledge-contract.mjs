@@ -101,12 +101,18 @@ if (safePush.includes("pnpm verify")) {
 const localRuntime = requireTokens("tools/dev/dev.ps1", [
   "DEV_TIMING",
   "DEV_READY=PASS",
-  "EXPO_OFFLINE = '1'",
-  "EXPO_NO_QR_CODE = '1'",
   "node_modules\\expo\\bin\\cli",
   "node_modules\\next\\dist\\bin\\next",
-  "adb reverse",
 ]);
+if (!/\$env:EXPO_OFFLINE\s*=\s*['"]1['"]/.test(localRuntime)) {
+  failures.push("tools/dev/dev.ps1 must keep Expo offline");
+}
+if (!/\$env:EXPO_NO_QR_CODE\s*=\s*['"]1['"]/.test(localRuntime)) {
+  failures.push("tools/dev/dev.ps1 must suppress Expo QR output");
+}
+if (!/@\(['"]reverse['"],['"]--list['"]\)/.test(localRuntime)) {
+  failures.push("tools/dev/dev.ps1 must read ADB reverse mappings");
+}
 for (const retired of [
   "tools/dev/local.ps1",
   "tools/dev/runtime.ps1",

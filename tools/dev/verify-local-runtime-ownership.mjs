@@ -25,10 +25,15 @@ for(const old of [
 
 for(const token of [
   "ValidateSet('daily','client','partner','captain','field','control','scr','up','down','status')",
-  "DEV_TIMING","DEV_READY=PASS","Start-HiddenNode","adb reverse","EXPO_OFFLINE = '1'",
-  "EXPO_NO_QR_CODE = '1'","EXPO_NO_TYPESCRIPT_SETUP = '1'","--dns-result-order=ipv4first",
+  "DEV_TIMING","DEV_READY=PASS","Start-HiddenNode","--dns-result-order=ipv4first",
   "node_modules\\expo\\bin\\cli","node_modules\\next\\dist\\bin\\next"
 ]) check(dev.includes(token),`dev.ps1 missing invariant: ${token}`);
+
+check(/\$env:EXPO_OFFLINE\s*=\s*['"]1['"]/.test(dev), "dev.ps1 must keep Expo offline");
+check(/\$env:EXPO_NO_QR_CODE\s*=\s*['"]1['"]/.test(dev), "dev.ps1 must suppress Expo QR output");
+check(/\$env:EXPO_NO_TYPESCRIPT_SETUP\s*=\s*['"]1['"]/.test(dev), "dev.ps1 must disable Expo TypeScript auto-setup");
+check(/@\(['"]reverse['"],['"]--list['"]\)/.test(dev), "dev.ps1 must read ADB reverse mappings");
+check(/@\(['"]reverse['"],\s*["']tcp:\$port["'],\s*["']tcp:\$port["']\)/.test(dev), "dev.ps1 must repair missing ADB reverse mappings");
 
 for(const bad of [
   "pnpm --dir","adb devices","ANDROID_SERIAL","adb -s","scrcpy -s","adb tcpip","getprop",
