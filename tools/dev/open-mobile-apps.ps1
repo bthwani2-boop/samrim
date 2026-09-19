@@ -53,6 +53,43 @@ function Read-AppConfig([string]$AppName) {
     return $config
 }
 
+function Remove-StaleSameAppIpv6Metro([int]$Port,[string]$AppName) {
+    $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+    if ($listeners.Count -eq 0) { return }
+
+    foreach ($listener in $listeners) {
+        $ownerProcessId=[int]$listener.OwningProcess
+        $process=Get-CimInstance Win32_Process -Filter "ProcessId=$ownerProcessId" -ErrorAction SilentlyContinue
+        if ($null -eq $process) { Fail "METRO_PORT_IN_USE app=$AppName port=$Port reason=unknown_owner pid=$ownerProcessId" }
+
+        $command=[string]$process.CommandLine
+        $expectedAppPath=Join-Path $RepoRoot "apps\$AppName"
+        $ownedStaleIpv6=(
+            $listener.LocalAddress -eq '::1' -and
+            $process.Name -match '^node(?:\.exe)?$' -and
+            $command.Contains($expectedAppPath,[StringComparison]::OrdinalIgnoreCase) -and
+            $command.Contains('expo',[StringComparison]::OrdinalIgnoreCase) -and
+            $command.Contains('--port',[StringComparison]::OrdinalIgnoreCase) -and
+            $command.Contains([string]$Port,[StringComparison]::Ordinal)
+        )
+
+        if (-not $ownedStaleIpv6) {
+            Fail "METRO_PORT_IN_USE app=$AppName port=$Port address=$($listener.LocalAddress) pid=$ownerProcessId name=$($process.Name)"
+        }
+
+        Stop-Process -Id $ownerProcessId -Force
+        Write-Host "METRO_STALE_IPV6_RESIDUE=REMOVED app=$AppName port=$Port pid=$ownerProcessId"
+    }
+
+    $deadline=[DateTime]::UtcNow.AddSeconds(5)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if (@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue).Count -eq 0) { return }
+        Start-Sleep -Milliseconds 100
+    }
+
+    Fail "METRO_PORT_IN_USE app=$AppName port=$Port reason=residue_not_released"
+}
+
 & pwsh -NoProfile -ExecutionPolicy Bypass -File $RuntimePath -Action Doctor
 if ($LASTEXITCODE -ne 0) { Fail 'RUNTIME_NOT_READY reason=backend_doctor_failed run=pnpm_runtime:up' }
 
@@ -62,6 +99,8 @@ $portKey="SAMRIM_$($App.Replace('-','_').ToUpperInvariant())_METRO_PORT"
 $metroPort=Require-Port $map $portKey
 $identityPort=Require-Port $map 'SAMRIM_IDENTITY_PORT'
 $dshPort=Require-Port $map 'SAMRIM_DSH_PORT'
+
+Remove-StaleSameAppIpv6Metro -Port $metroPort -AppName $App
 
 Import-Module -Name $DevicePolicyPath -Force -WarningAction SilentlyContinue
 $device=Prepare-CanonicalAdbDevice -EnvPath $EnvPath -Ports @($identityPort,$dshPort)

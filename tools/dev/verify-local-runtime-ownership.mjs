@@ -66,6 +66,9 @@ assert(scrcpy.includes("Get-CanonicalBackendReversePorts"), "scrcpy failover mus
 assert(!scrcpy.includes("Get-CanonicalReversePorts"), "retired all-port reverse ownership must not survive in scrcpy");
 assert(mobile.includes("$env:ANDROID_SERIAL=[string]$device.Serial"), "Expo must target the canonical device selected by device policy");
 assert(mobile.includes("--dns-result-order=ipv4first"), "Windows Metro localhost resolution must remain IPv4-first so Expo's 127.0.0.1 native URL and the bound listener cannot diverge");
+assert(mobile.includes("Remove-StaleSameAppIpv6Metro -Port $metroPort -AppName $App"), "mobile startup must self-heal stale same-app IPv6 Metro residue before Expo takes the port");
+assert(mobile.includes("METRO_STALE_IPV6_RESIDUE=REMOVED"), "stale IPv6 Metro cleanup must be explicit and observable");
+assert(mobile.includes("METRO_PORT_IN_USE"), "occupied Metro ports must fail closed when ownership is not exactly proven");
 assert(mobile.includes("infra\\local\\.env"), "mobile host must use the canonical shared local environment");
 for (const forbidden of ["Start-Process","Metro-Ready","METRO_START_TIMEOUT","METRO_REUSE=PASS","EXPO_PACKAGER_PROXY_URL","expo-development-client/?url=","adb -s $Serial shell am start","Stop-ProcessTree"]) {
   assert(!mobile.includes(forbidden), `mobile host retains superseded orchestration residue: ${forbidden}`);
