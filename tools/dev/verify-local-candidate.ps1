@@ -155,21 +155,7 @@ try {
         Write-Host 'AFFECTED_WORKSPACE_TARGETS=SKIPPED reason=no_changes'
     }
 
-    $mobileExportRelevant = Changed-Matches '^(nx\.json|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tools/mobile/(?:define-samrim-expo-app\.cjs|export-mobile-smoke\.mjs)|apps/app-(?:client|partner|captain|field)/(?:app\.config\.ts|metro\.config\.(?:js|cjs|mjs)|babel\.config\.(?:js|cjs|mjs)|index\.js|mobile\.config\.json|package\.json|project\.json|tsconfig\.json|fingerprint\.config\.js|eas\.json))
-
-    $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()
-    if ($endHead -ne $head) { Fail "Candidate HEAD changed during verification: before=$head after=$endHead" }
-    $endStatus = @(Invoke-Git @('status','--porcelain=v1','--untracked-files=all'))
-    if ($endStatus.Count -gt 0) { Fail 'Verification mutated repository state.' }
-
-    $verifyClock.Stop()
-    Write-Host "VERIFY_TOTAL_MS=$($verifyClock.ElapsedMilliseconds)"
-    Write-Host "VERIFY=PASS base=$BaseSha head=$head"
-}
-finally {
-    Pop-Location
-}
-
+    $mobileExportRelevant = Changed-Matches '^(nx\.json|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tools/mobile/(?:define-samrim-expo-app\.cjs|export-mobile-smoke\.mjs)|packages/design-system/theme\.css|apps/app-(?:client|partner|captain|field)/(?:app\.config\.ts|metro\.config\.(?:js|cjs|mjs)|babel\.config\.(?:js|cjs|mjs)|index\.js|mobile\.config\.json|package\.json|project\.json|tsconfig\.json|fingerprint\.config\.js|eas\.json))$'
     if ($mobileExportRelevant) {
         Run-Step 'Affected mobile export smoke' {
             pnpm exec nx affected -t export-smoke --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
@@ -186,5 +172,7 @@ finally {
     Write-Host "VERIFY=PASS base=$BaseSha head=$head"
 }
 finally {
+    $verifyClock.Stop()
+    Write-Host "VERIFY_TOTAL_MS=$($verifyClock.ElapsedMilliseconds)"
     Pop-Location
 }
