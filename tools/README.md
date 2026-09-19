@@ -39,7 +39,7 @@ pnpm captain
 pnpm field
 ```
 
-The mobile commands use the canonical device policy for device identity and backend reverse ports, then delegate Metro lifecycle and Android development-client launch directly to Expo CLI; they never create a Docker Metro path or a second Metro supervisor. On Windows they force Node localhost resolution to IPv4-first so Metro binds the same loopback family (`127.0.0.1`) that Expo publishes to Android through ADB reverse, without exposing Metro on LAN. The Control command owns the host Next.js dev process. No parallel Docker/host application mode is admitted.
+The mobile commands use the canonical device policy for device identity and backend reverse ports, then delegate Metro lifecycle and Android development-client launch directly to Expo CLI; they never create a Docker Metro path or a second Metro supervisor. On Windows they force Node localhost resolution to IPv4-first so Metro binds the same loopback family (`127.0.0.1`) that Expo publishes to Android through ADB reverse, without exposing Metro on LAN. The device policy and scrcpy own only backend reverse ports; Metro reverse is exclusively created and removed by Expo for the selected app. The Control command owns the host Next.js dev process. No parallel Docker/host application mode is admitted.
 
 ## Tool admission
 

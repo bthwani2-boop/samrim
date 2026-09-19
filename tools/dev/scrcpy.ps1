@@ -39,7 +39,7 @@ while ($true) {
     if ($currentTransport -eq 'USB') {
         $fallback = @(Find-DeviceByIdentity -Identity $identity | Where-Object { $_.Kind -eq 'WIFI' } | Select-Object -First 1)
         if ($fallback.Count -ne 1) { Fail 'DEVICE_NOT_READY reason=wifi_failover_unavailable' }
-        Ensure-CanonicalAdbReverse -Serial $fallback[0].Serial -Ports @(Get-CanonicalReversePorts -EnvPath $EnvPath)
+        Ensure-CanonicalAdbReverse -Serial $fallback[0].Serial -Ports @(Get-CanonicalBackendReversePorts -EnvPath $EnvPath)
         $currentSerial = [string]$fallback[0].Serial
         $currentTransport = 'WIFI'
         Write-Host "ADB_FAILOVER=PASS from=USB to=WIFI serial=$currentSerial"
@@ -47,7 +47,7 @@ while ($true) {
     }
     $usb = @(Find-DeviceByIdentity -Identity $identity | Where-Object { $_.Kind -eq 'USB' } | Select-Object -First 1)
     if ($usb.Count -ne 1) { Fail 'DEVICE_NOT_READY reason=usb_failover_unavailable' }
-    Ensure-CanonicalAdbReverse -Serial $usb[0].Serial -Ports @(Get-CanonicalReversePorts -EnvPath $EnvPath)
+    Ensure-CanonicalAdbReverse -Serial $usb[0].Serial -Ports @(Get-CanonicalBackendReversePorts -EnvPath $EnvPath)
     $currentSerial = [string]$usb[0].Serial
     $currentTransport = 'USB'
     Write-Host "ADB_FAILOVER=PASS from=WIFI to=USB serial=$currentSerial"

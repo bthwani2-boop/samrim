@@ -28,15 +28,11 @@ function Require-TcpPort([hashtable]$Map, [string]$Name) {
     return $port
 }
 
-function Get-CanonicalReversePorts([string]$EnvPath) {
+function Get-CanonicalBackendReversePorts([string]$EnvPath) {
     $map = Read-EnvMap -Path $EnvPath
     return @(
         Require-TcpPort -Map $map -Name 'SAMRIM_IDENTITY_PORT'
         Require-TcpPort -Map $map -Name 'SAMRIM_DSH_PORT'
-        Require-TcpPort -Map $map -Name 'SAMRIM_APP_CLIENT_METRO_PORT'
-        Require-TcpPort -Map $map -Name 'SAMRIM_APP_PARTNER_METRO_PORT'
-        Require-TcpPort -Map $map -Name 'SAMRIM_APP_CAPTAIN_METRO_PORT'
-        Require-TcpPort -Map $map -Name 'SAMRIM_APP_FIELD_METRO_PORT'
     ) | Sort-Object -Unique
 }
 
@@ -185,7 +181,7 @@ function Prepare-CanonicalAdbDevice {
         [switch]$PrepareWifiFallback
     )
 
-    $portsToPrepare = if ($Ports.Count -gt 0) { @($Ports | Sort-Object -Unique) } else { @(Get-CanonicalReversePorts -EnvPath $EnvPath) }
+    $portsToPrepare = if ($Ports.Count -gt 0) { @($Ports | Sort-Object -Unique) } else { @(Get-CanonicalBackendReversePorts -EnvPath $EnvPath) }
     $device = Get-CanonicalAdbDevice -RequireUsbPrimary:$RequireUsbPrimary
     Write-Host "ADB_DEVICE=PASS serial=$($device.Serial) transport=$($device.Kind) identity=$($device.Identity)"
     if ($PrepareWifiFallback) {
@@ -198,7 +194,7 @@ function Prepare-CanonicalAdbDevice {
 }
 
 Export-ModuleMember -Function @(
-    'Get-CanonicalReversePorts',
+    'Get-CanonicalBackendReversePorts',
     'Get-CanonicalAdbDevice',
     'Find-DeviceByIdentity',
     'Ensure-CanonicalAdbReverse',

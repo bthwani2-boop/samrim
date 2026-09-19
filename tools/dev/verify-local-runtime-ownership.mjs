@@ -61,6 +61,9 @@ assert(mobile.includes("exec expo start --dev-client --localhost --android --sch
 assert(mobile.includes("-Action Doctor"), "mobile host must fail closed unless the Docker backend is ready");
 assert(mobile.includes("Prepare-CanonicalAdbDevice"), "mobile host must retain the canonical device policy");
 assert(mobile.includes("Ports @($identityPort,$dshPort)"), "mobile host must leave Metro reverse ownership to Expo and prepare backend reverse ports only");
+assert(!/SAMRIM_APP_(?:CLIENT|PARTNER|CAPTAIN|FIELD)_METRO_PORT/.test(read("tools/dev/device-policy.psm1")), "device policy must not own Metro reverse ports; Expo owns the selected Metro port");
+assert(scrcpy.includes("Get-CanonicalBackendReversePorts"), "scrcpy failover must restore backend reverse ports only");
+assert(!scrcpy.includes("Get-CanonicalReversePorts"), "retired all-port reverse ownership must not survive in scrcpy");
 assert(mobile.includes("$env:ANDROID_SERIAL=[string]$device.Serial"), "Expo must target the canonical device selected by device policy");
 assert(mobile.includes("--dns-result-order=ipv4first"), "Windows Metro localhost resolution must remain IPv4-first so Expo's 127.0.0.1 native URL and the bound listener cannot diverge");
 assert(mobile.includes("infra\\local\\.env"), "mobile host must use the canonical shared local environment");
