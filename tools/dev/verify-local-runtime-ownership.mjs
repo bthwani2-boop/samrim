@@ -55,6 +55,9 @@ for (const forbidden of ["WorkspaceServices","Assert-WorkspaceMounts","js-deps",
 assert(control.includes("next dev -H 127.0.0.1"), "Control Panel must run directly on the Windows host loopback");
 assert(control.includes("CONTROL_PANEL_HOST=START url=$publicOrigin bind=127.0.0.1:$port"), "Control must expose localhost as the canonical browser origin while retaining loopback-only binding");
 assert(control.includes("-Action Doctor"), "Control host must fail closed unless the Docker backend is ready");
+assert(control.includes("Get-ControlState -Port $port"), "Control reuse must prove same-repository Next process-tree ownership before reusing port 13000");
+assert(control.includes("CONTROL_STALE_PROCESS=REMOVED"), "Control must self-heal only stale same-repository Next residue");
+assert(control.includes("CONTROL_PORT_IN_USE"), "Control must fail closed when port 13000 belongs to another process");
 assert(control.includes("infra\\local\\.env"), "Control host must use the canonical shared local environment");
 
 assert(mobile.includes("exec expo start --dev-client --localhost --android --scheme"), "mobile host must delegate Metro lifecycle and Android launch directly to Expo CLI");
@@ -66,11 +69,13 @@ assert(scrcpy.includes("Get-CanonicalBackendReversePorts"), "scrcpy failover mus
 assert(!scrcpy.includes("Get-CanonicalReversePorts"), "retired all-port reverse ownership must not survive in scrcpy");
 assert(mobile.includes("$env:ANDROID_SERIAL=[string]$device.Serial"), "Expo must target the canonical device selected by device policy");
 assert(mobile.includes("--dns-result-order=ipv4first"), "Windows Metro localhost resolution must remain IPv4-first so Expo's 127.0.0.1 native URL and the bound listener cannot diverge");
-assert(mobile.includes("Remove-StaleSameAppIpv6Metro -Port $metroPort -AppName $App"), "mobile startup must self-heal stale same-app IPv6 Metro residue before Expo takes the port");
-assert(mobile.includes("METRO_STALE_IPV6_RESIDUE=REMOVED"), "stale IPv6 Metro cleanup must be explicit and observable");
+assert(mobile.includes("Get-SameAppMetroState -Port $metroPort -AppName $App"), "mobile startup must classify same-app Metro ownership before deciding reuse or restart");
+assert(mobile.includes("METRO_REUSE=PASS"), "healthy same-app Metro must be reused for fast idempotent daily startup");
+assert(mobile.includes("MOBILE_OPEN=PASS app=$AppName mode=reuse"), "mobile reuse must reopen the installed development client without restarting Metro");
+assert(mobile.includes("METRO_STALE_PROCESS=REMOVED"), "unhealthy same-app Metro must be removed before canonical restart");
 assert(mobile.includes("METRO_PORT_IN_USE"), "occupied Metro ports must fail closed when ownership is not exactly proven");
 assert(mobile.includes("infra\\local\\.env"), "mobile host must use the canonical shared local environment");
-for (const forbidden of ["Start-Process","Metro-Ready","METRO_START_TIMEOUT","METRO_REUSE=PASS","EXPO_PACKAGER_PROXY_URL","expo-development-client/?url=","adb -s $Serial shell am start","Stop-ProcessTree"]) {
+for (const forbidden of ["Start-Process","Metro-Ready","METRO_START_TIMEOUT","EXPO_PACKAGER_PROXY_URL","Stop-ProcessTree"]) {
   assert(!mobile.includes(forbidden), `mobile host retains superseded orchestration residue: ${forbidden}`);
 }
 
