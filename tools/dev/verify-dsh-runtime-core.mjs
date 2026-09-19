@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { readMailpitCode } from "./mailpit-challenge.mjs";
+import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
@@ -233,33 +233,37 @@ async function collectCursorPages(base, pathname, options, itemKey) {
   }
 }
 async function activatePartner(phone, password) {
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "partner" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Partner activation challenge failed", JSON.stringify(challenge));
-  const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate" });
+  const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate", excludeMessageIds: previousMessageIds });
   const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "partner", verificationCode, password, clientInstanceId: `dsh-runtime-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "partner") fail("Partner activation failed", JSON.stringify(activation));
   return String(activation.body.accessToken);
 }
 async function activateCaptain(phone, password) {
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "captain" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Captain activation challenge failed", JSON.stringify(challenge));
-  const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate" });
+  const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate", excludeMessageIds: previousMessageIds });
   const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "captain", verificationCode, password, clientInstanceId: `dsh-captain-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "captain" || activation.body?.identity?.surface !== "app-captain") fail("Captain activation failed", JSON.stringify(activation));
   return String(activation.body.accessToken);
 }
 async function activateField(phone, password) {
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "field" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Field activation challenge failed", JSON.stringify(challenge));
-  const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate" });
+  const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate", excludeMessageIds: previousMessageIds });
   const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "field", verificationCode, password, clientInstanceId: `dsh-field-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "field" || activation.body?.identity?.surface !== "app-field") fail("Field activation failed", JSON.stringify(activation));
   return String(activation.body.accessToken);
 }
 async function createClientSession(phone) {
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "client_register" });
   const challenge = await request(identityBase, "POST", "/auth/client/registration/request", { body: { phone } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Client registration challenge failed", JSON.stringify(challenge));
-  const code = await readMailpitCode({ port: mailpitPort, phone, purpose: "client_register" });
+  const code = await readMailpitCode({ port: mailpitPort, phone, purpose: "client_register", excludeMessageIds: previousMessageIds });
   const registration = await request(identityBase, "POST", "/auth/client/register", { body: { phone, code, password: `Clie${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: `dsh-client-${suffix}` } });
   if (registration.status !== 201 || typeof registration.body?.accessToken !== "string" || registration.body?.identity?.role !== "client") fail("Client registration failed", JSON.stringify(registration));
   actorIDs.add(String(registration.body.identity.subject));

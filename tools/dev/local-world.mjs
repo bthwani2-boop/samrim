@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { readMailpitCode } from "./mailpit-challenge.mjs";
+import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const action = process.argv[2] ?? "--status";
@@ -237,9 +237,9 @@ function uniqueOrFail(items, description) {
   return items[0] ?? null;
 }
 
-async function waitForMailpitCode(phone, purpose) {
+async function waitForMailpitCode(phone, purpose, previousMessageIds) {
   try {
-    return await readMailpitCode({ port: mailpitPort, phone, purpose });
+    return await readMailpitCode({ port: mailpitPort, phone, purpose, excludeMessageIds: previousMessageIds });
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }
@@ -263,8 +263,9 @@ async function activateOperatorWithPasskey(phone, enrollmentToken, actorID) {
     await page.getByRole("button", { name: "تفعيل حساب موظف" }).click();
     await page.getByLabel("رقم الهاتف").fill(phone);
     await page.getByLabel("دعوة التفعيل عالية الأمان").fill(enrollmentToken);
+    const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "operator_enroll" });
     await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
-    const code = await waitForMailpitCode(phone, "operator_enroll");
+    const code = await waitForMailpitCode(phone, "operator_enroll", previousMessageIds);
     await page.getByLabel("رمز إثبات الهاتف").fill(code);
     await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح المرور" }).click();
     const recoveryHeading = page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" });
@@ -346,8 +347,9 @@ async function activateOrLogin(role, phone, actorID, operatorID) {
     const reenroll = await request(identityBase, "POST", `/internal/actors/${encodeURIComponent(actorID)}/roles/${role}/reenrollment`, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": crypto.randomUUID() } });
     if (reenroll.status !== 204) fail(`${role} reenrollment was not authorized`, JSON.stringify(reenroll.body));
   }
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   await expect(identityBase, "POST", "/auth/managed/activation/request", 201, { body: { phone, role } });
-  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role, verificationCode: await waitForMailpitCode(phone, "managed_activate"), password, clientInstanceId: `local-world-${role}` } });
+  const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role, verificationCode: await waitForMailpitCode(phone, "managed_activate", previousMessageIds), password, clientInstanceId: `local-world-${role}` } });
   if (activation.status !== 200) fail(`${role} activation failed`, JSON.stringify(activation.body));
   return activation.body;
 }
@@ -454,8 +456,9 @@ async function ensureClient(state) {
   const role = uniqueOrFail(await searchRoles("client", WORLD.clientPhone), "client actor");
   let client;
   if (!role) {
+    const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone: WORLD.clientPhone, purpose: "client_register" });
     await expect(identityBase, "POST", "/auth/client/registration/request", 201, { body: { phone: WORLD.clientPhone } });
-    client = await expect(identityBase, "POST", "/auth/client/register", 201, { body: { phone: WORLD.clientPhone, code: await waitForMailpitCode(WORLD.clientPhone, "client_register"), password: passwordFor("client"), clientInstanceId: "local-world-client" } });
+    client = await expect(identityBase, "POST", "/auth/client/register", 201, { body: { phone: WORLD.clientPhone, code: await waitForMailpitCode(WORLD.clientPhone, "client_register", previousMessageIds), password: passwordFor("client"), clientInstanceId: "local-world-client" } });
   } else {
     const logged = await request(identityBase, "POST", "/auth/client/login", { body: { phone: WORLD.clientPhone, password: passwordFor("client"), clientInstanceId: "local-world-client" } });
     client = logged.body;

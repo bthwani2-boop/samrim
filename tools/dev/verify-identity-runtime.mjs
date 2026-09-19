@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { readMailpitCode } from "./mailpit-challenge.mjs";
+import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env-file="))?.slice("--env-file=".length);
@@ -60,10 +60,11 @@ const service = (token, extra = {}) => ({ Authorization: "Bearer " + token, ...e
 const phone = () => "+9677" + String(crypto.randomInt(10_000_000, 99_999_999));
 const password = (label) => label.slice(0, 4).padEnd(4, "x") + crypto.randomBytes(2).toString("hex");
 const issue = async (pathname, body, purpose, role = "client") => {
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone: body.phone, purpose });
   const challenge = await expect("POST", pathname, 201, { body });
   assert(typeof challenge.challengeId === "string", purpose + " challenge id missing");
   assert(typeof mailpitPort === "string" && mailpitPort.trim(), "canonical Mailpit web port missing");
-  return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose }), role };
+  return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose, excludeMessageIds: previousMessageIds }), role };
 };
 const session = (pair, role, surface, subject) => {
   assert(typeof pair?.accessToken === "string" && typeof pair?.refreshToken === "string", "token pair missing");

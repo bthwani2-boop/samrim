@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { readMailpitCode } from "./mailpit-challenge.mjs";
+import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
@@ -77,9 +77,10 @@ async function expect(base, method, pathname, status, options = {}) {
 }
 
 async function issueChallenge(pathname, body, purpose) {
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone: body.phone, purpose });
   const challenge = await expect(identityBase, "POST", pathname, 201, { body });
   if (typeof challenge?.challengeId !== "string") throw new Error(`${pathname}: challenge id missing`);
-  return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose }) };
+  return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose, excludeMessageIds: previousMessageIds }) };
 }
 
 function userHeaders(key, expectedVersion) {
