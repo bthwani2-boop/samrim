@@ -49,12 +49,16 @@ async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose
 }
 
 function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUser: string; postgresDatabase: string } {
-  const candidates = [
-    path.resolve(process.cwd(), "infra/local/compose/.env"),
-    path.resolve(process.cwd(), "../../infra/local/compose/.env"),
+  const repoRoots = [
+    path.resolve(process.cwd()),
+    path.resolve(process.cwd(), "../.."),
   ];
-  const envFile = candidates.find((candidate) => existsSync(candidate));
-  if (!envFile) throw new Error("canonical local runtime environment is required for live Identity fixture cleanup");
+  const repoRoot = repoRoots.find((candidate) =>
+    existsSync(path.join(candidate, "infra/local/.env")) &&
+    existsSync(path.join(candidate, "infra/local/compose/compose.yaml")),
+  );
+  if (!repoRoot) throw new Error("canonical local runtime environment is required for live Identity fixture cleanup");
+  const envFile = path.join(repoRoot, "infra/local/.env");
   const values = Object.fromEntries(
     readFileSync(envFile, "utf8")
       .split(/\r?\n/)
@@ -68,7 +72,7 @@ function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUs
   const postgresUser = String(values.SAMRIM_POSTGRES_USER || "");
   const postgresDatabase = String(values.SAMRIM_POSTGRES_DB || "");
   if (!postgresUser || !postgresDatabase) throw new Error("canonical Postgres credentials are required for live Identity fixture cleanup");
-  return { envFile, repoRoot: path.resolve(path.dirname(envFile), "../../.."), postgresUser, postgresDatabase };
+  return { envFile, repoRoot, postgresUser, postgresDatabase };
 }
 
 function cleanupPreparedOperator(operator: PreparedOperator): void {
