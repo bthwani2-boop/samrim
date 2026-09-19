@@ -36,8 +36,11 @@ for(const removed of ["Start-MobileServer","Start-ControlServer","Stop-OwnedList
 }
 check(!dev.includes("--dev-client"),"dev.ps1 must not launch Expo");
 check(!dev.includes("dist\\bin\\next"),"dev.ps1 must not launch Next");
-check(dev.includes("Read-RunningBackendServices"),"dev.ps1 must read canonical Compose service state before reuse");
-check(dev.includes("Compose @(\'ps\',\'--status\',\'running\',\'--services\')"),"backend reuse must be based on running Compose services");
+check(dev.includes("Read-RunningBackendServices"),"dev.ps1 must read canonical Compose service state after reconciliation");
+check(dev.includes("Compose @(\'up\',\'-d\',\'--build\',\'--wait\',\'--wait-timeout\',\'300\',\'--remove-orphans\')"),"backend readiness must reconcile current source through Compose build before declaring ready");
+check(dev.includes("Compose @(\'ps\',\'--status\',\'running\',\'--services\')"),"backend readiness must read back running Compose services after reconciliation");
+check(dev.includes("Read-DeviceReversePorts"),"device reverse ports must be resolved only by the device path");
+check(!dev.includes("$Map=Read-Env"),"backend startup must not eagerly resolve device-only port configuration");
 check(!dev.includes("Active-Ports")&&!dev.includes("GetActiveTcpListeners"),"backend reuse must not trust occupied host ports");
 check(dev.includes("Ensure-Scrcpy"),"dev.ps1 must retain device/scrcpy ownership");
 check(launcher.includes("process.cwd()"),"surface launcher must preserve package working directory");

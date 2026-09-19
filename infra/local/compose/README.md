@@ -4,8 +4,8 @@ Compose owns PostgreSQL, Mailpit, Identity, DSH and migration one-shots. It does
 
 Daily backend lifecycle:
 
-- `pnpm dev` — reuse/prepare backend/state only, then return.
-- `pnpm runtime:up` — ensure backend/state only.
+- `pnpm dev` — reconcile current backend images through Docker build cache, preserve/reuse state, wait for health, then return.
+- `pnpm runtime:up` — perform the same backend image/state reconciliation explicitly.
 - `pnpm runtime:status` — display backend/state.
 - `pnpm runtime:down` — stop repository host development processes, scrcpy and backend/state.
 

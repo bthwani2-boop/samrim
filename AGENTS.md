@@ -100,9 +100,9 @@ On failure, capture exact failure/state, repair the highest proven root, complet
 
 Use Git plus the canonical Nx project graph. A local change must not trigger unrelated projects; a shared/root/toolchain change may legitimately affect many.
 
-During implementation run the nearest direct/affected checks needed for feedback. Do not run a separate final full proof immediately before pnpm safe:push.
+During implementation run the nearest direct/affected checks needed for feedback. A coherent change unit may be reviewed, proportionally proved and committed locally without immediately pushing it. Do not run a separate final full proof immediately before pnpm safe:push, and do not invoke safe:push merely because another local commit exists.
 
-pnpm safe:push owns one final local exact-candidate verification for the branch delta, then fast-forward/first-push safety and exact remote SHA confirmation. If the exact SHA is already remote it is a no-op and must not repeat heavy proof.
+pnpm safe:push is an objective-closure or explicit remote-checkpoint operation. It owns one final local exact-candidate verification for the complete unpushed branch delta, then fast-forward/first-push safety and exact remote SHA confirmation. Multiple coherent local commits may therefore share one final safe:push when they belong to the same authorized objective. If the exact SHA is already remote it is a no-op and must not repeat heavy proof.
 
 The local verifier remains affected-aware and non-runtime-owning. Heavy mobile export/deployability proof is required locally only when the affected change can alter bundling/deployable configuration or when the current claim explicitly requires it; normal source iteration uses targeted checks plus real Metro/device proof when user-facing behavior is claimed. CI remains independent integration/promotion assurance and may be broader.
 
@@ -133,9 +133,13 @@ DECISION-CRITICAL UNKNOWNS = 0
 INVALIDATED REQUIRED EVIDENCE = 0
 GOVERNANCE_IMPACT = RESOLVED
 
-For one coherent verified unit:
+For each coherent change unit:
 
-REVIEW DIFF → COMMIT → REPOSITORY-OWNED SAFE PUSH → CONFIRM EXACT REMOTE SHA
+REVIEW DIFF → PROPORTIONAL CLAIM-SPECIFIC PROOF → LOCAL COMMIT
+
+At authorized objective closure or an explicit remote checkpoint:
+
+REVIEW COMPLETE UNPUSHED DELTA → REPOSITORY-OWNED SAFE PUSH ONCE → CONFIRM EXACT REMOTE SHA
 
 Commit/push does not authorize merge, promotion, release or other external consequential effects.
 

@@ -44,15 +44,17 @@ function Port([hashtable]$Map,[string]$Name){
     return $value
 }
 
-$Map=Read-Env
-$Identity=Port $Map 'SAMRIM_IDENTITY_PORT'
-$Dsh=Port $Map 'SAMRIM_DSH_PORT'
-$Metro=@(
-    Port $Map 'SAMRIM_APP_CLIENT_METRO_PORT'
-    Port $Map 'SAMRIM_APP_PARTNER_METRO_PORT'
-    Port $Map 'SAMRIM_APP_CAPTAIN_METRO_PORT'
-    Port $Map 'SAMRIM_APP_FIELD_METRO_PORT'
-)
+function Read-DeviceReversePorts{
+    $map=Read-Env
+    return @(
+        Port $map 'SAMRIM_IDENTITY_PORT'
+        Port $map 'SAMRIM_DSH_PORT'
+        Port $map 'SAMRIM_APP_CLIENT_METRO_PORT'
+        Port $map 'SAMRIM_APP_PARTNER_METRO_PORT'
+        Port $map 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+        Port $map 'SAMRIM_APP_FIELD_METRO_PORT'
+    )
+}
 
 function Compose([string[]]$Arguments){
     & docker compose --ansi never --project-name $Project --env-file $EnvPath -f $ComposePath @Arguments
@@ -65,14 +67,11 @@ function Read-RunningBackendServices{
 
 function Ensure-Backend{
     $required=@('postgres','mailpit','identity','dsh')
-    $running=@(Read-RunningBackendServices)
-    $missing=@($required|Where-Object{$running-notcontains$_})
-    if($missing.Count-eq0){return 'reused'}
-    Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
+    Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')
     $running=@(Read-RunningBackendServices)
     $missing=@($required|Where-Object{$running-notcontains$_})
     if($missing.Count-ne0){Fail "BACKEND_NOT_READY missing=$($missing-join',')"}
-    return 'started'
+    return 'reconciled'
 }
 
 function Read-AdbDevices{
@@ -188,7 +187,7 @@ function Ensure-Scrcpy{
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     }
 
-    $allReverse=@($Identity,$Dsh)+$Metro
+    $allReverse=@(Read-DeviceReversePorts)
     if($null-ne(Get-UsbSerial)){
         Write-Host 'SCRCPY_PREP transport=usb'
         [void](Prepare-TcpFallback)

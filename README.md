@@ -25,7 +25,7 @@ Prepare or reuse the canonical backend/state:
 pnpm dev
 ```
 
-pnpm dev owns backend readiness only and returns to the prompt. It does not start Metro, Control, ADB or scrcpy.
+pnpm dev owns backend readiness only and returns to the prompt. It reconciles the current Identity/DSH source through Docker build cache before declaring the backend ready, preserving reusable database state. It does not start Metro, Control, ADB or scrcpy.
 
 Start only the surface being developed:
 
@@ -67,7 +67,7 @@ pnpm exec nx affected -t typecheck test build vet --base=HEAD --outputStyle=dyna
 
 Mobile export is a heavier bundling/deployability proof, so it is not part of the fast dirty-tree edit loop. The final exact-candidate verifier still runs export-smoke for affected Mobile projects after cheaper checks pass, preserving bundling/module-resolution proof without paying that cost on every intermediate edit.
 
-Use pnpm verify only after the candidate is coherent and clean. Do not run a separate final pnpm verify immediately before pnpm safe:push; safe:push owns the single final exact-candidate verification and remote SHA confirmation. Runtime and user-facing behavior are proved separately only when the claim requires them. CI performs independent integration/promotion assurance.
+Use pnpm verify only after the candidate is coherent and clean. Coherent units may be committed locally while one authorized objective is in progress; do not safe-push every local commit by default. Do not run a separate final pnpm verify immediately before pnpm safe:push; one safe:push at objective closure owns the final verification of the complete unpushed delta and remote SHA confirmation. Runtime and user-facing behavior are proved separately only when the claim requires them. CI performs independent integration/promotion assurance.
 
 The verifier prints per-step and total timings so future optimization is based on measured cost rather than guesswork.
 
