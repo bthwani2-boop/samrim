@@ -20,8 +20,10 @@
     "export-smoke": {
       "cache": true,
       "inputs": [
-        "{projectRoot}/**/*",
-        "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs"
+        "default",
+        "^default",
+        "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs",
+        "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs"
       ]
     },
     "vet": {

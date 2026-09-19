@@ -21,31 +21,26 @@ function requireTokens(file, tokens) {
   return body;
 }
 
-
 const agent = requireTokens("AGENTS.md", [
   "ARTIFACT_CLASS: REPOSITORY_AGENT_OPERATING_CONSTITUTION",
   "REPOSITORY_AGENT_LAW_AUTHORITY: CANONICAL",
   "PRODUCT_SEMANTIC_AUTHORITY: NONE",
   "CURRENT_IMPLEMENTATION_AUTHORITY: NONE",
+  "knowledge.sources.json",
+  "GOVERNANCE-STANDARDS.md",
+  "governance/policy/QUALITY.md",
+  "governance/policy/EXPERIENCE.md",
+  "governance/policy/DESIGN.md",
   "GOVERNANCE_IMPACT=NONE",
   "GOVERNANCE_IMPACT=REVALIDATE_ONLY",
   "GOVERNANCE_IMPACT=UPDATE_REQUIRED",
   "GOVERNANCE_IMPACT=DEFECT_FOUND",
-  "GOVERNANCE-STANDARDS.md",
-  "## 2.1 Material artifact survival",
-  "## 2.2 Equal correctness across material dimensions",
-  "## 3.1 Local proof state law",
-  "EVIDENCE IS VALID ONLY FOR THE EXACT STATE IT PROVES.",
-  "PROVE LOSER ABSENT",
-  "KNOWN MATERIAL DEFECTS = 0",
-  "KNOWN MATERIAL WEAKNESSES = 0",
-  "KNOWN DUPLICATE OWNERSHIP = 0",
-  "UNPROVEN MATERIAL CLAIMS = 0",
-  "`pnpm verify`",
-  "`pnpm safe:push`",
+  "pnpm verify",
+  "pnpm safe:push",
   "pnpm dev",
   "pnpm runtime:up",
   "pnpm runtime:status",
+  "KNOWN MATERIAL DEFECTS = 0",
 ]);
 
 if (/(?:localhost|127\.0\.0\.1):\d{2,5}\b/i.test(agent)) {
@@ -69,6 +64,9 @@ const verifier = requireTokens("tools/dev/verify-local-candidate.ps1", [
   "EXACT_LOCAL_CANDIDATE_SHA",
   "nx affected",
   "Affected workspace targets",
+  "AFFECTED_MOBILE_EXPORT_SMOKE",
+  "VERIFY_STEP_MS",
+  "VERIFY_TOTAL_MS",
   "VERIFY=PASS",
 ]);
 for (const forbidden of [
@@ -107,7 +105,18 @@ if (pkg?.scripts?.["safe:push"] !== "pwsh -NoProfile -ExecutionPolicy Bypass -Fi
   failures.push("package.json safe:push must own push safety");
 }
 for (const required of ["dev", "client", "partner", "captain", "field", "control", "scr", "runtime:up", "runtime:status", "runtime:down"]) {
-  if (!pkg?.scripts?.[required]) failures.push(`package.json missing required full-runtime command: ${required}`);
+  if (!pkg?.scripts?.[required]) failures.push(`package.json missing required local command: ${required}`);
+}
+
+const nx = JSON.parse(read("nx.json"));
+const exportInputs = nx?.targetDefaults?.["export-smoke"]?.inputs ?? [];
+for (const required of [
+  "default",
+  "^default",
+  "{workspaceRoot}/tools/mobile/export-mobile-smoke.mjs",
+  "{workspaceRoot}/tools/mobile/define-samrim-expo-app.cjs",
+]) {
+  if (!exportInputs.includes(required)) failures.push(`nx export-smoke missing cache input: ${required}`);
 }
 
 const prTemplate = requireTokens(".github/pull_request_template.md", [

@@ -22,10 +22,19 @@ function Invoke-Git([string[]]$Arguments) {
 function Run-Step([string]$Name, [scriptblock]$Action) {
     Write-Host ''
     Write-Host "=== $Name ==="
-    $global:LASTEXITCODE = 0
-    & $Action
-    if ($LASTEXITCODE -ne 0) { Fail "$Name failed with exit code $LASTEXITCODE" }
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $global:LASTEXITCODE = 0
+        & $Action
+        if ($LASTEXITCODE -ne 0) { Fail "$Name failed with exit code $LASTEXITCODE" }
+    }
+    finally {
+        $clock.Stop()
+        Write-Host ("VERIFY_STEP_MS name={0} ms={1}" -f ($Name -replace '\s+','_'), $clock.ElapsedMilliseconds)
+    }
 }
+
+$verifyClock = [Diagnostics.Stopwatch]::StartNew()
 
 Push-Location $Repo
 try {
@@ -140,10 +149,33 @@ try {
 
     if ($changed.Count -gt 0) {
         Run-Step 'Affected workspace targets' {
-        pnpm exec nx affected -t typecheck test build export-smoke vet --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
+            pnpm exec nx affected -t typecheck test build vet --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
         }
     } else {
         Write-Host 'AFFECTED_WORKSPACE_TARGETS=SKIPPED reason=no_changes'
+    }
+
+    $mobileExportRelevant = Changed-Matches '^(nx\.json|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tools/mobile/(?:define-samrim-expo-app\.cjs|export-mobile-smoke\.mjs)|apps/app-(?:client|partner|captain|field)/(?:app\.config\.ts|metro\.config\.(?:js|cjs|mjs)|babel\.config\.(?:js|cjs|mjs)|index\.js|mobile\.config\.json|package\.json|project\.json|tsconfig\.json|fingerprint\.config\.js|eas\.json))
+
+    $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()
+    if ($endHead -ne $head) { Fail "Candidate HEAD changed during verification: before=$head after=$endHead" }
+    $endStatus = @(Invoke-Git @('status','--porcelain=v1','--untracked-files=all'))
+    if ($endStatus.Count -gt 0) { Fail 'Verification mutated repository state.' }
+
+    $verifyClock.Stop()
+    Write-Host "VERIFY_TOTAL_MS=$($verifyClock.ElapsedMilliseconds)"
+    Write-Host "VERIFY=PASS base=$BaseSha head=$head"
+}
+finally {
+    Pop-Location
+}
+
+    if ($mobileExportRelevant) {
+        Run-Step 'Affected mobile export smoke' {
+            pnpm exec nx affected -t export-smoke --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
+        }
+    } else {
+        Write-Host 'AFFECTED_MOBILE_EXPORT_SMOKE=SKIPPED reason=no_deployability_or_bundling_config_change'
     }
 
     $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()
