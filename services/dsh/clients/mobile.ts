@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogStorefrontSectionResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, DeliveryAddressListResponse, DeliveryAddressResponse, FieldAdmissionResponse, JoiningCaseListResponse, JoiningCaseResponse, OrderListResponse, OrderResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, SetStoreDeliveryOriginRequest, StoreDeliveryOriginResponse, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateCartLineRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogStorefrontSectionResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, DeliveryAddressListResponse, DeliveryAddressResponse, FieldAdmissionResponse, JoiningCaseListResponse, JoiningCaseResponse, OrderListResponse, OrderResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateCartLineRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -112,9 +112,9 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const firstStoreName = input.firstStoreName.trim();
       const serviceCityId = input.serviceCityId.trim();
       const firstStoreVerticalId = input.firstStoreVerticalId.trim();
-      if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
+      if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180 || expectedVersion < 1) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
       const path = dshOperationPaths.correctAndResubmitJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
-      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitJoiningCase.method, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude: input.firstStoreLatitude, firstStoreLongitude: input.firstStoreLongitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async listCatalogProducts(accessToken: string, query = "", verticalID = "", limit = 100, cursor = ""): Promise<CatalogProductListResponse> {
       if (limit < 1 || limit > 100) throw new Error("DSH_PRODUCT_LIMIT_INVALID");
@@ -352,7 +352,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const firstStoreName = input.firstStoreName.trim();
       const serviceCityId = input.serviceCityId.trim();
       const firstStoreVerticalId = input.firstStoreVerticalId.trim();
-      if (!/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
+      if (!/^\+[1-9][0-9]{7,14}$/.test(contactPhoneE164) || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
       return userRequest<JoiningCaseResponse>(accessToken, dshOperationPaths.createFieldJoiningCase.path, dshOperationPaths.createFieldJoiningCase.method, { ...input, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId }, mutationHeaders());
     },
     async readOwnFieldJoiningCase(accessToken: string, caseID: string): Promise<JoiningCaseResponse> {
@@ -401,13 +401,6 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalized) throw new Error("DSH_STORE_ID_REQUIRED");
       const path = dshOperationPaths.readStoreDeliveryOrigin.path.replace("{storeId}", encodeURIComponent(normalized));
       return userRequest<StoreDeliveryOriginResponse>(accessToken, path, dshOperationPaths.readStoreDeliveryOrigin.method);
-    },
-    async setStoreDeliveryOrigin(accessToken: string, storeID: string, input: SetStoreDeliveryOriginRequest, expectedVersion: number): Promise<StoreDeliveryOriginResponse> {
-      const normalized = storeID.trim();
-      assertCoordinates(input.latitude, input.longitude);
-      if (!normalized || expectedVersion < 0) throw new Error("DSH_LOCATION_INPUT_INVALID");
-      const path = dshOperationPaths.setStoreDeliveryOrigin.path.replace("{storeId}", encodeURIComponent(normalized));
-      return userRequest<StoreDeliveryOriginResponse>(accessToken, path, dshOperationPaths.setStoreDeliveryOrigin.method, { latitude: input.latitude, longitude: input.longitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async listActiveServiceCities(): Promise<ReadonlyArray<ServiceCity>> {
       return (await publicRequest<ServiceCityListResponse>(dshOperationPaths.listActiveServiceCities.path)).cities;

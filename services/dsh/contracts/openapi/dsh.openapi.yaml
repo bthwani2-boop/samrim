@@ -338,13 +338,6 @@ components:
       schema:
         type: integer
         minimum: 0
-    OriginVersionRequired:
-      name: X-Expected-Version
-      in: header
-      required: true
-      schema:
-        type: integer
-        minimum: 0
     StoreId:
       name: storeId
       in: path
@@ -482,7 +475,7 @@ components:
 
     CreateJoiningCaseRequest:
       type: object
-      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId]
+      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude]
       additionalProperties: false
       properties:
         contactPhoneE164:
@@ -502,6 +495,14 @@ components:
         firstStoreVerticalId:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreLatitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        firstStoreLongitude:
+          type: number
+          minimum: -180
+          maximum: 180
 
     JoiningCaseState:
       type: string
@@ -509,7 +510,7 @@ components:
 
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -528,6 +529,16 @@ components:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreLatitude:
+          type: number
+          nullable: true
+          minimum: -90
+          maximum: 90
+        firstStoreLongitude:
+          type: number
+          nullable: true
+          minimum: -180
+          maximum: 180
         partnerActorId:
           type: string
           nullable: true
@@ -564,7 +575,7 @@ components:
 
     JoiningCaseSummary:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -583,6 +594,16 @@ components:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreLatitude:
+          type: number
+          nullable: true
+          minimum: -90
+          maximum: 90
+        firstStoreLongitude:
+          type: number
+          nullable: true
+          minimum: -180
+          maximum: 180
         partnerActorId:
           type: string
           nullable: true
@@ -618,7 +639,7 @@ components:
 
     CorrectJoiningCaseRequest:
       type: object
-      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId]
+      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude]
       additionalProperties: false
       properties:
         businessName:
@@ -635,6 +656,14 @@ components:
         firstStoreVerticalId:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreLatitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        firstStoreLongitude:
+          type: number
+          minimum: -180
+          maximum: 180
 
     ReviewJoiningCaseRequest:
       type: object
@@ -662,7 +691,7 @@ components:
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, version, publicationState, publicationReadiness, offers, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, deliveryOrigin, version, publicationState, publicationReadiness, offers, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -679,6 +708,9 @@ components:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        deliveryOrigin:
+          $ref: "#/components/schemas/DeliveryOrigin"
+          nullable: true
         version:
           type: integer
           minimum: 1
@@ -838,20 +870,6 @@ components:
         nextCursor:
           type: string
           maxLength: 512
-
-    SetStoreDeliveryOriginRequest:
-      type: object
-      required: [latitude, longitude]
-      additionalProperties: false
-      properties:
-        latitude:
-          type: number
-          minimum: -90
-          maximum: 90
-        longitude:
-          type: number
-          minimum: -180
-          maximum: 180
 
     StoreDeliveryOriginResponse:
       type: object

@@ -90,26 +90,6 @@ func (s *Service) ReadStoreOrigin(ctx context.Context, accessToken, storeID stri
 	return postgres.ReadStoreDeliveryOrigin(ctx, s.db, storeID, partnerActorID)
 }
 
-func (s *Service) SetStoreOrigin(ctx context.Context, accessToken, storeID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.StoreDeliveryOriginResult, error) {
-	partnerActorID, err := s.requireStoreOwner(ctx, accessToken, storeID)
-	if err != nil {
-		return postgres.StoreDeliveryOriginResult{}, err
-	}
-	storeID = strings.TrimSpace(storeID)
-	return postgres.SetStoreDeliveryOrigin(ctx, s.db, storeID, partnerActorID, latitude, longitude, expectedVersion, idempotencyKey, postgres.HashStoreDeliveryOriginRequest(storeID, partnerActorID, latitude, longitude, expectedVersion), correlationID)
-}
-
-func (s *Service) requireClientSession(ctx context.Context, accessToken string) (string, error) {
-	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
-	if err != nil {
-		return "", err
-	}
-	if identity.Role != "client" || identity.Surface != "app-client" || strings.TrimSpace(identity.Subject) == "" {
-		return "", ErrClientSessionForbidden
-	}
-	return identity.Subject, nil
-}
-
 func (s *Service) requireStoreOwner(ctx context.Context, accessToken, storeID string) (string, error) {
 	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
 	if err != nil {
@@ -124,6 +104,17 @@ func (s *Service) requireStoreOwner(ctx context.Context, accessToken, storeID st
 	}
 	if err != nil {
 		return "", err
+	}
+	return identity.Subject, nil
+}
+
+func (s *Service) requireClientSession(ctx context.Context, accessToken string) (string, error) {
+	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
+	if err != nil {
+		return "", err
+	}
+	if identity.Role != "client" || identity.Surface != "app-client" || strings.TrimSpace(identity.Subject) == "" {
+		return "", ErrClientSessionForbidden
 	}
 	return identity.Subject, nil
 }

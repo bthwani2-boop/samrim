@@ -14,16 +14,20 @@ import (
 )
 
 type StoreRecord struct {
-	ID                   string
-	PartnerActorID       string
-	Name                 string
-	ServiceCityID        string
-	PrimaryVerticalID    string
-	Version              int
-	PublicationState     string
-	PublicationChangedAt *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                      string
+	PartnerActorID          string
+	Name                    string
+	ServiceCityID           string
+	PrimaryVerticalID       string
+	Version                 int
+	PublicationState        string
+	PublicationChangedAt    *time.Time
+	DeliveryOriginLatitude  *float64
+	DeliveryOriginLongitude *float64
+	DeliveryOriginVersion   int
+	DeliveryOriginUpdatedAt *time.Time
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 func newID(prefix string) (string, error) {
@@ -287,7 +291,7 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, service
 	return store, nil
 }
 
-const storeSelect = `SELECT id, partner_actor_id, name, service_city_id, primary_vertical_id, version, publication_state, publication_changed_at, created_at, updated_at FROM dsh.stores`
+const storeSelect = `SELECT id, partner_actor_id, name, service_city_id, primary_vertical_id, version, publication_state, publication_changed_at, created_at, updated_at, delivery_origin_latitude, delivery_origin_longitude, delivery_origin_version, delivery_origin_updated_at FROM dsh.stores`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -297,7 +301,9 @@ func scanStore(row rowScanner) (StoreRecord, error) {
 	var store StoreRecord
 	var serviceCityID, primaryVerticalID sql.NullString
 	var publicationChangedAt sql.NullTime
-	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &serviceCityID, &primaryVerticalID, &store.Version, &store.PublicationState, &publicationChangedAt, &store.CreatedAt, &store.UpdatedAt); err != nil {
+	var deliveryOriginLatitude, deliveryOriginLongitude sql.NullFloat64
+	var deliveryOriginUpdatedAt sql.NullTime
+	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &serviceCityID, &primaryVerticalID, &store.Version, &store.PublicationState, &publicationChangedAt, &store.CreatedAt, &store.UpdatedAt, &deliveryOriginLatitude, &deliveryOriginLongitude, &store.DeliveryOriginVersion, &deliveryOriginUpdatedAt); err != nil {
 		return StoreRecord{}, err
 	}
 	if serviceCityID.Valid {
@@ -308,6 +314,13 @@ func scanStore(row rowScanner) (StoreRecord, error) {
 	}
 	if publicationChangedAt.Valid {
 		store.PublicationChangedAt = &publicationChangedAt.Time
+	}
+	if deliveryOriginLatitude.Valid && deliveryOriginLongitude.Valid {
+		store.DeliveryOriginLatitude = &deliveryOriginLatitude.Float64
+		store.DeliveryOriginLongitude = &deliveryOriginLongitude.Float64
+	}
+	if deliveryOriginUpdatedAt.Valid {
+		store.DeliveryOriginUpdatedAt = &deliveryOriginUpdatedAt.Time
 	}
 	return store, nil
 }

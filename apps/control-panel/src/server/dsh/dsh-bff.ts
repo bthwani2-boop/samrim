@@ -113,7 +113,7 @@ export async function createJoiningCase(
   input: CreateJoiningCaseRequest,
   context: JoiningCaseMutationContext,
 ): Promise<Readonly<{ status: number; payload: JoiningCaseResponse }>> {
-  if (!phoneE164Pattern.test(input.contactPhoneE164.trim()) || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId.trim() || !input.firstStoreVerticalId.trim()) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
+  if (!phoneE164Pattern.test(input.contactPhoneE164.trim()) || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId.trim() || !input.firstStoreVerticalId.trim() || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) throw new Error("DSH_JOINING_CASE_INPUT_INVALID");
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_JOINING_CASE_IDEMPOTENCY_INVALID");
   return requestDshJson<JoiningCaseResponse>(dshOperationPaths.createJoiningCase.method, dshOperationPaths.createJoiningCase.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });

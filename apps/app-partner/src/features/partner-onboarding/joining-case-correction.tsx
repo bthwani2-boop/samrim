@@ -13,6 +13,8 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   const [firstStoreName, setFirstStoreName] = useState(current.firstStoreName);
   const [serviceCityId, setServiceCityId] = useState(current.serviceCityId || "");
   const [verticalId, setVerticalId] = useState(current.firstStoreVerticalId || "");
+  const [latitude, setLatitude] = useState<number | null>(current.firstStoreLatitude);
+  const [longitude, setLongitude] = useState<number | null>(current.firstStoreLongitude);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState(false);
@@ -24,7 +26,9 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
     setFirstStoreName(current.firstStoreName);
     setServiceCityId(current.serviceCityId || "");
     setVerticalId(current.firstStoreVerticalId || "");
-  }, [current.businessName, current.firstStoreName, current.serviceCityId, current.firstStoreVerticalId]);
+    setLatitude(current.firstStoreLatitude);
+    setLongitude(current.firstStoreLongitude);
+  }, [current.businessName, current.firstStoreName, current.serviceCityId, current.firstStoreVerticalId, current.firstStoreLatitude, current.firstStoreLongitude]);
 
   const loadOptions = useCallback(async () => {
     setOptionsLoading(true);
@@ -49,14 +53,14 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
   async function correctAndResubmit() {
     const nextBusinessName = businessName.trim();
     const nextStoreName = firstStoreName.trim();
-    if (nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || !serviceCityId || !verticalId) {
-      setError("أدخل الأسماء واختر مدينة الخدمة والنشاط التجاري.");
+	    if (nextBusinessName.length < 2 || nextBusinessName.length > 160 || nextStoreName.length < 2 || nextStoreName.length > 160 || !serviceCityId || !verticalId || latitude === null || longitude === null) {
+		setError("أدخل الأسماء واختر مدينة الخدمة والنشاط التجاري، وتأكد من وجود موقع المتجر الثابت.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, verticalId, current.version);
+      const resubmitted = await correctAndResubmitOwnJoiningCase(current.id, nextBusinessName, nextStoreName, serviceCityId, verticalId, latitude, longitude, current.version);
       onUpdated(resubmitted);
     } catch (nextError) {
       if (nextError && typeof nextError === "object" && "status" in nextError && (nextError as { status?: unknown }).status === 409) {
@@ -74,6 +78,7 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <Text style={styles.title}>التصحيح مطلوب قبل إعادة الإرسال</Text>
       <Text style={styles.reason}>{current.correctionReason || "طلب المشغّل تصحيح البيانات."}</Text>
       <Text style={styles.phone}>رقم الهاتف المعتمد: <Text style={styles.phoneValue}>{current.contactPhoneE164}</Text></Text>
+      <View style={styles.locationBox}><Text style={styles.label}>موقع المتجر الثابت</Text><Text selectable style={styles.muted}>{latitude !== null && longitude !== null ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` : "لم يُسجل الموقع ضمن ملف الانضمام"}</Text><Text style={styles.muted}>يُجمع الموقع مع ملف الانضمام ولا يُعدّل من شاشة إدارة المتجر.</Text></View>
       <TextInput accessibilityLabel="تصحيح اسم النشاط" editable={!busy} onChangeText={setBusinessName} value={businessName} style={styles.input} />
       <TextInput accessibilityLabel="تصحيح اسم المتجر الأول" editable={!busy} onChangeText={setFirstStoreName} value={firstStoreName} style={styles.input} />
       <Text style={styles.label}>مدينة المتجر الأول</Text>
@@ -102,5 +107,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     error: { ...typography.label, color: theme.danger },
     muted: { ...typography.bodySm, color: theme.colorMuted },
     optionError: { gap: spacing[2] },
+    locationBox: { backgroundColor: theme.structureSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[2] },
   });
 }

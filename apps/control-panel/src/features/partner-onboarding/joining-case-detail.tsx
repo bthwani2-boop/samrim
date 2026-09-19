@@ -181,6 +181,8 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>الهاتف</dt><dd dir="ltr">{current.contactPhoneE164}</dd></div>
               <div><dt>مدينة الخدمة</dt><dd>{cityName}</dd></div>
               <div><dt>المجال التجاري</dt><dd>{verticalName}</dd></div>
+              <div><dt>خط العرض</dt><dd dir="ltr">{current.firstStoreLatitude ?? "غير مسجل"}</dd></div>
+              <div><dt>خط الطول</dt><dd dir="ltr">{current.firstStoreLongitude ?? "غير مسجل"}</dd></div>
               <div><dt>نسخة الحالة</dt><dd>{current.version}</dd></div>
             </dl>
             {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}

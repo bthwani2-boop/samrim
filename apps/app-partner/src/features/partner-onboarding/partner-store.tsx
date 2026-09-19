@@ -3,7 +3,6 @@ import { publicationStateLabel } from "@bthwani/dsh";
 import { type Href, Link } from "expo-router";
 import { useMemo } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
-import { StoreDeliveryOrigin } from "../location-core/store-delivery-origin";
 import { StoreOfferManagement } from "../store-offer/store-offer";
 import { usePartnerStoreContext } from "./partner-store-context";
 import { createPartnerSurfaceStyles } from "./partner-surface-styles";
@@ -27,7 +26,7 @@ export function PartnerStore() {
         <Text selectable style={styles.muted}>المتجر الأول: {joiningCase.case.store.name}</Text>
         <Text style={styles.muted}>حالة النشر: {publicationStateLabel(joiningCase.case.store.publicationState)}</Text>
         <Text style={styles.muted}>جاهزية النشر: {joiningCase.case.store.publicationReadiness.ready ? "جاهز" : "يحتاج إلى استكمال البيانات"}</Text>
-        <StoreDeliveryOrigin storeId={joiningCase.case.store.id} />
+        <View style={styles.card}><Text style={styles.metaLabel}>موقع المتجر الثابت</Text><Text selectable style={styles.value}>{joiningCase.case.store.deliveryOrigin ? `${joiningCase.case.store.deliveryOrigin.latitude.toFixed(6)}, ${joiningCase.case.store.deliveryOrigin.longitude.toFixed(6)}` : "لم يُثبت ضمن ملف الانضمام"}</Text><Text style={styles.muted}>يُقرأ من ملف الانضمام ولا يُعدّل من هذه الشاشة.</Text></View>
         <StoreOfferManagement storeId={joiningCase.case.store.id} />
       </> : <Text style={styles.muted}>لم يُنشأ المتجر بعد. راجع دورة الانضمام لإكمال أي تصحيح مطلوب.</Text>}
       {joiningCase.case.state === "needs_correction" ? <Link href={"/onboarding" as Href} asChild><BthwaniButton label="مراجعة التصحيح المطلوب" variant="secondary" /></Link> : null}

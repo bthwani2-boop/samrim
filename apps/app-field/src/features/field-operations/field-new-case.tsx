@@ -12,7 +12,9 @@ export function FieldNewCase() {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const [admission, setAdmission] = useState<FieldAdmission | null>(null);
-  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "" });
+  const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0 });
+  const [storeLatitude, setStoreLatitude] = useState("");
+  const [storeLongitude, setStoreLongitude] = useState("");
   const [createdCase, setCreatedCase] = useState<JoiningCaseResponse | null>(null);
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
@@ -58,17 +60,21 @@ const theme = useAppearanceTheme();
 
   async function createCase() {
     if (busy) return;
-    if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId) {
-      setError("أكمل الهاتف والأسماء واختر مدينة الخدمة والنشاط التجاري.");
+    const latitude = Number(storeLatitude.trim());
+    const longitude = Number(storeLongitude.trim());
+    if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+		setError("أكمل الهاتف والأسماء والاختيارات، ثم أدخل إحداثيات موقع المتجر الثابتة الصحيحة.");
       return;
     }
     setBusy(true);
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const response = await fieldClient().createFieldJoiningCase(token, input);
+      const response = await fieldClient().createFieldJoiningCase(token, { ...input, firstStoreLatitude: latitude, firstStoreLongitude: longitude });
       setCreatedCase(response);
-      setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "" });
+      setStoreLatitude("");
+      setStoreLongitude("");
+      setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0 });
       await loadAdmission();
     } catch (cause) {
       console.error("DSH Field joining-case creation failed", cause);
@@ -100,6 +106,10 @@ const theme = useAppearanceTheme();
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
         {!optionsLoading && !optionsError && verticals.length === 0 ? <Text style={styles.error}>لا يوجد نشاط تجاري متاح حاليًا.</Text> : null}
         <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
+        <Text style={styles.label}>موقع المتجر الثابت</Text>
+        <Text style={styles.muted}>أدخل إحداثيات موقع المتجر مع ملف الانضمام؛ تنتقل إلى المتجر عند الاعتماد ولا تُعدّل من شاشة إدارة المتجر.</Text>
+        <TextInput accessibilityLabel="خط عرض موقع المتجر" keyboardType="numbers-and-punctuation" placeholder="خط العرض، مثال: 15.369445" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLatitude} onChangeText={setStoreLatitude} />
+        <TextInput accessibilityLabel="خط طول موقع المتجر" keyboardType="numbers-and-punctuation" placeholder="خط الطول، مثال: 44.191006" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLongitude} onChangeText={setStoreLongitude} />
         <BthwaniButton busy={busy} disabled={optionsLoading || Boolean(optionsError)} label="حفظ الملف" onPress={() => void createCase()} />
       </View> : null}
       {createdCase ? <View accessibilityLiveRegion="polite" style={styles.successCard}>

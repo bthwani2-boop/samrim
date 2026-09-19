@@ -32,7 +32,6 @@ func (s *LocationCoreServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/addresses/{addressId}", s.readAddress)
 	mux.HandleFunc("POST /dsh/addresses/{addressId}", s.updateAddress)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/delivery-origin", s.readStoreOrigin)
-	mux.HandleFunc("POST /dsh/stores/{storeId}/delivery-origin", s.setStoreOrigin)
 }
 
 func (s *LocationCoreServer) listAddresses(w http.ResponseWriter, r *http.Request) {
@@ -123,23 +122,6 @@ func (s *LocationCoreServer) readStoreOrigin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.StoreDeliveryOriginResponse{StoreID: origin.StoreID, OriginVersion: origin.OriginVersion, Origin: deliveryOriginValue(origin, available)})
-}
-
-func (s *LocationCoreServer) setStoreOrigin(w http.ResponseWriter, r *http.Request) {
-	correlation, idempotency, expectedVersion, ok := requiredLocationHeaders(w, r, true, true)
-	if !ok {
-		return
-	}
-	var input contract.SetStoreDeliveryOriginRequest
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	result, err := s.service.SetStoreOrigin(r.Context(), bearerToken(r), r.PathValue("storeId"), input.Latitude, input.Longitude, expectedVersion, idempotency, correlation)
-	if err != nil {
-		writeLocationError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, contract.StoreDeliveryOriginResponse{StoreID: result.Origin.StoreID, OriginVersion: result.Origin.OriginVersion, Origin: deliveryOriginValue(result.Origin, true), IdempotentReplay: result.Replayed})
 }
 
 func requiredLocationHeaders(w http.ResponseWriter, r *http.Request, versioned, allowZeroVersion bool) (string, string, int, bool) {
