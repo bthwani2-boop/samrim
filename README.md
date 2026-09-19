@@ -37,7 +37,7 @@ pnpm captain
 pnpm field
 ```
 
-`pnpm client|partner|captain|field` starts or reuses that app's host Metro server, prepares the canonical ADB reverse mappings, and opens the installed development client. `pnpm control` owns the host Next.js development server. PostgreSQL, Mailpit, Identity, DSH and their migrations remain Docker-owned. Device execution remains device-owned.
+`pnpm client|partner|captain|field` prepares the canonical device/backend reverse path, then delegates the selected app's Metro lifecycle and Android development-client launch directly to Expo CLI on the Windows host. `pnpm control` owns the host Next.js development server. PostgreSQL, Mailpit, Identity, DSH and their migrations remain Docker-owned. Device execution remains device-owned.
 
 When baked backend source changes, rebuild only the invalidated service when a runtime proof requires current binaries:
 

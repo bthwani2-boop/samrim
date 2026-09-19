@@ -56,11 +56,15 @@ assert(control.includes("next dev -H 127.0.0.1"), "Control Panel must run direct
 assert(control.includes("-Action Doctor"), "Control host must fail closed unless the Docker backend is ready");
 assert(control.includes("infra\\local\\.env"), "Control host must use the canonical shared local environment");
 
-assert(mobile.includes("'expo','start','--dev-client','--host','localhost'"), "Metro must run directly on the Windows host with localhost transport");
+assert(mobile.includes("exec expo start --dev-client --localhost --android --scheme"), "mobile host must delegate Metro lifecycle and Android launch directly to Expo CLI");
 assert(mobile.includes("-Action Doctor"), "mobile host must fail closed unless the Docker backend is ready");
 assert(mobile.includes("Prepare-CanonicalAdbDevice"), "mobile host must retain the canonical device policy");
-assert(mobile.includes("METRO_REUSE=PASS"), "mobile host must reuse an already-valid Metro process");
+assert(mobile.includes("Ports @($identityPort,$dshPort)"), "mobile host must leave Metro reverse ownership to Expo and prepare backend reverse ports only");
+assert(mobile.includes("$env:ANDROID_SERIAL=[string]$device.Serial"), "Expo must target the canonical device selected by device policy");
 assert(mobile.includes("infra\\local\\.env"), "mobile host must use the canonical shared local environment");
+for (const forbidden of ["Start-Process","Metro-Ready","METRO_START_TIMEOUT","METRO_REUSE=PASS","EXPO_PACKAGER_PROXY_URL","expo-development-client/?url=","adb -s $Serial shell am start","Stop-ProcessTree"]) {
+  assert(!mobile.includes(forbidden), `mobile host retains superseded orchestration residue: ${forbidden}`);
+}
 
 const canonicalEnvTemplate = ["infra","local",".env.example"].join("/");
 const retiredRuntimeEnv = ["infra","local","compose",".env"].join("/");

@@ -39,7 +39,7 @@ pnpm captain
 pnpm field
 ```
 
-The mobile commands reuse the canonical device policy and an already-valid Metro process when present; they never create a Docker Metro path. The Control command owns the host Next.js dev process. No parallel Docker/host application mode is admitted.
+The mobile commands use the canonical device policy for device identity and backend reverse ports, then delegate Metro lifecycle and Android development-client launch directly to Expo CLI; they never create a Docker Metro path or a second Metro supervisor. The Control command owns the host Next.js dev process. No parallel Docker/host application mode is admitted.
 
 ## Tool admission
 
