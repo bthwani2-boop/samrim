@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -19,10 +20,16 @@ const compose = read("infra/local/compose/compose.yaml");
 for (const [name, action] of [["runtime:up","Up"],["runtime:doctor","Doctor"],["runtime:status","Status"],["runtime:down","Down"],["runtime:restart","Restart"],["runtime:logs","Logs"],["runtime:reset","Reset"],["runtime:purge","Purge"],["runtime:rebuild","Rebuild"],["runtime:restart-service","RestartService"],["runtime:logs-service","LogsService"]]) {
   assert(scripts[name]?.includes(`tools/dev/runtime.ps1 -Action ${action}`), `${name} must route through the canonical Docker backend runtime owner`);
 }
-for (const [name, app] of [["client","app-client"],["partner","app-partner"],["captain","app-captain"],["field","app-field"]]) {
-  assert(scripts[name]?.includes(`open-mobile-apps.ps1 -App ${app}`), `${name} must route through the canonical Windows Metro owner`);
+const canonicalHostScripts = {
+  control: "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/run-control.ps1",
+  client: "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/open-mobile-apps.ps1 -App app-client",
+  partner: "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/open-mobile-apps.ps1 -App app-partner",
+  captain: "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/open-mobile-apps.ps1 -App app-captain",
+  field: "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/open-mobile-apps.ps1 -App app-field",
+};
+for (const [name, command] of Object.entries(canonicalHostScripts)) {
+  assert(scripts[name] === command, `${name} must be the exact canonical host runtime command`);
 }
-assert(scripts.control?.includes("tools/dev/run-control.ps1"), "control must route through the canonical Windows Control owner");
 
 assert(runtimeEntrypoint.includes("runtime.psm1") && runtimeEntrypoint.includes("Invoke-SamrimRuntime @PSBoundParameters"), "runtime.ps1 must remain a thin backend lifecycle entrypoint");
 for (const forbidden of ["Control","Surface"]) assert(!runtimeEntrypoint.includes(`'${forbidden}'`), `runtime entrypoint must not own host application action ${forbidden}`);
@@ -55,10 +62,36 @@ assert(mobile.includes("Prepare-CanonicalAdbDevice"), "mobile host must retain t
 assert(mobile.includes("METRO_REUSE=PASS"), "mobile host must reuse an already-valid Metro process");
 assert(mobile.includes("infra\\local\\.env"), "mobile host must use the canonical shared local environment");
 
-assert(exists("infra/local/.env.example"), "canonical local environment template must live at infra/local/.env.example");
-for (const retired of ["infra/local/compose/.env.example","infra/local/docker/js-runtime.Dockerfile","tools/dev/js-deps.mjs"]) {
+const canonicalEnvTemplate = ["infra","local",".env.example"].join("/");
+const retiredRuntimeEnv = ["infra","local","compose",".env"].join("/");
+const retiredEnvTemplate = ["infra","local","compose",".env.example"].join("/");
+assert(exists(canonicalEnvTemplate), `canonical local environment template must live at ${canonicalEnvTemplate}`);
+for (const retired of [retiredEnvTemplate,"infra/local/docker/js-runtime.Dockerfile","tools/dev/js-deps.mjs"]) {
   assert(!exists(retired), `retired runtime artifact remains: ${retired}`);
 }
+
+const retiredEnvReferences = [retiredRuntimeEnv, retiredEnvTemplate];
+const trackedFiles = execFileSync("git", ["-C", root, "ls-files", "-z"], { encoding: "utf8" })
+  .split("\0")
+  .filter(Boolean);
+const staleEnvReferences = [];
+for (const trackedFile of trackedFiles) {
+  const absolutePath = path.join(root, trackedFile);
+  if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) continue;
+  const buffer = fs.readFileSync(absolutePath);
+  if (buffer.includes(0)) continue;
+  const text = buffer.toString("utf8");
+  for (const retired of retiredEnvReferences) {
+    const windowsRetired = retired.replaceAll("/", "\\");
+    if (text.includes(retired) || text.includes(windowsRetired)) {
+      staleEnvReferences.push(`${trackedFile} -> ${retired}`);
+    }
+  }
+}
+assert(
+  staleEnvReferences.length === 0,
+  `retired local environment path reference remains in tracked text: ${[...new Set(staleEnvReferences)].sort().join(", ")}`,
+);
 
 if (failures.length) {
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");

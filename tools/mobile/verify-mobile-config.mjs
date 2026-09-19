@@ -3,7 +3,7 @@ import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const appsRoot = path.join(repoRoot, "apps");
-const envExamplePath = path.join(repoRoot, "infra/local/compose/.env.example");
+const envExamplePath = path.join(repoRoot, "infra/local/.env.example");
 const rootPackagePath = path.join(repoRoot, "package.json");
 const runtimePath = path.join(repoRoot, "tools/dev/runtime.ps1");
 const appOpenerPath = path.join(repoRoot, "tools/dev/open-mobile-apps.ps1");

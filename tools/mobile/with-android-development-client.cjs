@@ -5,7 +5,7 @@ const path = require("path");
 
 const canonicalEnvExample = path.resolve(
   __dirname,
-  "../../infra/local/compose/.env.example",
+  "../../infra/local/.env.example",
 );
 
 function readCanonicalPort(envKey) {
