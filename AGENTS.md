@@ -5,7 +5,7 @@ REPOSITORY_AGENT_LAW_AUTHORITY: CANONICAL
 PRODUCT_SEMANTIC_AUTHORITY: NONE
 CURRENT_IMPLEMENTATION_AUTHORITY: NONE
 
-AGENTS.md is the sole repository-local execution and safety law. REPOSITORY-STRUCTURE.md owns placement only. knowledge.sources.json binds the exact immutable Governance baseline. Pinned Governance owns durable BThwani Product/System/Policy meaning; exact source/config/schema/runtime/database/readback owns current implementation truth; Git owns history.
+AGENTS.md is the sole repository-local execution and safety law. `REPOSITORY-STRUCTURE.md` owns placement only. knowledge.sources.json binds the exact immutable Governance baseline. Pinned Governance owns durable BThwani Product/System/Policy meaning; exact source/config/schema/runtime/database/readback owns current implementation truth; Git owns history.
 
 ## 1. Execution law
 
