@@ -29,11 +29,11 @@
     "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1",
     "mobile:prepare": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/prepare-local-development.ps1",
     "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 daily",
-    "client": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 client",
-    "partner": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 partner",
-    "captain": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 captain",
-    "field": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 field",
-    "control": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 control",
+    "client": "pnpm --dir apps/app-client dev",
+    "partner": "pnpm --dir apps/app-partner dev",
+    "captain": "pnpm --dir apps/app-captain dev",
+    "field": "pnpm --dir apps/app-field dev",
+    "control": "pnpm --dir apps/control-panel dev",
     "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 scr"
   },
   "pnpm": {
