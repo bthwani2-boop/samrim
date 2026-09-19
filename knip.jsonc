@@ -32,7 +32,23 @@
     "tools/mobile/with-android-development-client.d.cts"
   ],
   "ignoreDependencies": [
-    "expo"
+    "expo",
+    // These native capability declarations are intentionally retained in the
+    // mobile manifests; Knip's JS graph cannot observe native/config consumers.
+    "expo-document-picker",
+    "expo-file-system",
+    "expo-font",
+    "expo-haptics",
+    "expo-image",
+    "expo-image-manipulator",
+    "expo-image-picker",
+    "expo-keep-awake",
+    "expo-location",
+    "expo-network",
+    "expo-notifications",
+    "expo-task-manager",
+    "react-native-keyboard-controller",
+    "react-native-maps"
   ],
   "ignoreBinaries": [
     // CI, Nx project targets and developer-host binaries are resolved outside the JS graph.
