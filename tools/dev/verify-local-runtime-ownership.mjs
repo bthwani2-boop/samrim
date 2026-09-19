@@ -30,7 +30,7 @@ for(const old of [
 
 for(const token of [
   "Get-UsbSerial","Prepare-TcpFallback","Connect-TcpFallback","Disconnect-TcpDevices","Get-AdbSelector",
-  "Ensure-Reverse","Start-MobileServer","Start-ControlServer","Ensure-Scrcpy","Stop-LocalHosts",
+  "Ensure-Reverse","Start-MobileServer","Start-ControlServer","Ensure-Scrcpy","Get-OwnedNodeTreeRoot","Stop-LocalHosts",
   "EXPO_NO_METRO_WORKSPACE_ROOT='1'","--dev-client","--localhost","--select-usb","--serial","adb connect","adb disconnect","adb -d tcpip 5555",
   "Start-MobileServer $Name -Foreground","Start-ControlServer -Foreground",
   "MOBILE_LIVE","CONTROL_LIVE","SCRCPY_PREP","ADB_FALLBACK_PREPARE","SCRCPY_FAILOVER","SCRCPY_FAILBACK","DEV_READY=PASS"
@@ -55,6 +55,8 @@ check(/Ensure-Reverse -Ports @\(\$Identity,\$Dsh,\[int\]\$Metro\[\$Name\]\)/.tes
   "targeted mobile command must apply reverse mappings to the active transport");
 check(/Start-MobileServer \$Name -Foreground/.test(dev),
   "targeted mobile commands must stay attached to their terminal");
+check(/function Get-OwnedNodeTreeRoot[\s\S]*ParentProcessId[\s\S]*function Stop-OwnedListener[\s\S]*taskkill\.exe \/PID[\s\S]*\/T \/F/.test(dev),
+  "stale targeted runtime cleanup must terminate the repository-owned Node process tree, not only the listening child PID");
 check(/Start-ControlServer -Foreground/.test(dev),
   "targeted control command must stay attached to its terminal");
 check(/\$AppRoot\s*=\s*Join-Path\s+\$Root\s+"apps\\app-\$Name"/i.test(dev),

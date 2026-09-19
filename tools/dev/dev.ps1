@@ -271,24 +271,558 @@ function Start-Node([string]$WorkingDirectory,[string]$Cli,[string[]]$Arguments)
     return Start-Process -FilePath 'node' -ArgumentList (@($Cli)+$Arguments) -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru
 }
 
-function Stop-OwnedListener([int]$Port,[string]$Surface){
-    foreach($listener in @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)){
-        $ownerProcessId=[int]$listener.OwningProcess
-        $process=Get-CimInstance Win32_Process -Filter "ProcessId=$ownerProcessId" -ErrorAction SilentlyContinue
-        if($null-eq$process){continue}
+function Get-OwnedNodeTreeRoot([int]$ProcessId,[string]$Surface,[int]$Port){
+    $current=Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+    if($null-eq$current){return $null}
 
-        $command=[string]$process.CommandLine
-        if($process.Name-notmatch'^node(\.exe)?$'-or-not$command.Contains($Root,[StringComparison]::OrdinalIgnoreCase)){
-            Fail "REFUSE_FOREIGN_PROCESS surface=$Surface port=$Port pid=$ownerProcessId"
+    $command=[string]$current.CommandLine
+    if($current.Name-notmatch'^node(\.exe)?
+
+function Start-MobileServer([string]$Name,[switch]$Foreground){
+    $port=[int]$Metro[$Name]
+
+    if($Foreground-and(Has-Port $port)){
+        Stop-OwnedListener -Port $port -Surface $Name
+    }elseif(-not$Foreground-and(Metro-Ready $port)){
+        return [pscustomobject]@{Name=$Name;Port=$port;State='reused';Process=$null}
+    }elseif(Has-Port $port){
+        Fail "PORT_IN_USE surface=$Name port=$port"
+    }
+
+    $AppRoot=Join-Path $Root "apps\app-$Name"
+    $expoPackage=Join-Path $AppRoot 'node_modules\expo\package.json'
+    if(-not(Test-Path -LiteralPath $expoPackage -PathType Leaf)){Fail "EXPO_NOT_MATERIALIZED app=app-$Name run=pnpm_bootstrap"}
+    $expo=Join-Path (Split-Path -Parent $expoPackage) 'bin\cli'
+    $arguments=@('start','--dev-client','--localhost','--port',"$port")
+
+    if($Foreground){
+        Write-Host "MOBILE_LIVE app=app-$Name port=$port fast_refresh=on open=manual"
+        Push-Location $AppRoot
+        try{
+            & node $expo @arguments
+            $code=$LASTEXITCODE
+        }finally{
+            Pop-Location
         }
 
-        Stop-Process -Id $ownerProcessId -Force
+        if($code-ne0-and$code-ne130){Fail "METRO_EXITED app=app-$Name exit=$code"}
+        return
     }
 
-    $clock=[Diagnostics.Stopwatch]::StartNew()
-    while((Has-Port $Port)-and$clock.ElapsedMilliseconds-lt3000){
-        Start-Sleep -Milliseconds 50
+    $process=Start-Node $AppRoot $expo $arguments
+    return [pscustomobject]@{Name=$Name;Port=$port;State='started';Process=$process}
+}
+
+function Start-ControlServer([switch]$Foreground){
+    if($Foreground-and(Has-Port $Control)){
+        Stop-OwnedListener -Port $Control -Surface 'control'
+    }elseif(-not$Foreground-and(Has-Port $Control)){
+        return [pscustomobject]@{Name='control';Port=$Control;State='reused';Process=$null}
     }
+
+    $ControlRoot=Join-Path $Root 'apps\control-panel'
+    $nextPackage=Join-Path $ControlRoot 'node_modules\next\package.json'
+    if(-not(Test-Path -LiteralPath $nextPackage -PathType Leaf)){Fail 'NEXT_NOT_MATERIALIZED run=pnpm_bootstrap'}
+    $next=Join-Path (Split-Path -Parent $nextPackage) 'dist\bin\next'
+    $arguments=@('dev','-H','127.0.0.1','-p',"$Control")
+
+    if($Foreground){
+        Write-Host "CONTROL_LIVE port=$Control hmr=on url=$(Need $Map 'CONTROL_PANEL_PUBLIC_ORIGIN')"
+        Push-Location $ControlRoot
+        try{
+            & node $next @arguments
+            $code=$LASTEXITCODE
+        }finally{
+            Pop-Location
+        }
+
+        if($code-ne0-and$code-ne130){Fail "CONTROL_EXITED exit=$code"}
+        return
+    }
+
+    $process=Start-Node $ControlRoot $next $arguments
+    return [pscustomobject]@{Name='control';Port=$Control;State='started';Process=$process}
+}
+
+function Wait-Servers([object[]]$Servers){
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+
+    do{
+        $missing=@()
+
+        foreach($server in $Servers){
+            if($null-ne$server.Process-and$server.Process.HasExited){
+                Fail "HOST_PROCESS_EXITED surface=$($server.Name) exit=$($server.Process.ExitCode)"
+            }
+
+            $ready=if($server.Name-eq'control'){
+                Has-Port ([int]$server.Port)
+            }else{
+                Metro-Ready ([int]$server.Port)
+            }
+
+            if(-not$ready){$missing+=$server.Name}
+        }
+
+        if($missing.Count-eq0){return}
+        Start-Sleep -Milliseconds 100
+    }while($clock.ElapsedMilliseconds-lt30000)
+
+    Fail "HOST_READY_TIMEOUT missing=$($missing-join',') timeout_ms=30000"
+}
+
+function Ensure-HostServers{
+    $servers=@(
+        Start-MobileServer 'client'
+        Start-MobileServer 'partner'
+        Start-MobileServer 'captain'
+        Start-MobileServer 'field'
+        Start-ControlServer
+    )
+
+    Wait-Servers $servers
+
+    $state=@{}
+    foreach($server in $servers){$state[$server.Name]=$server.State}
+    return $state
+}
+
+function Start-ScrcpyProcess([string[]]$Selector){
+    $arguments=@($Selector)+@('--max-size=1280','--max-fps=30','--video-bit-rate=4M','--no-audio')
+    return Start-Process -FilePath 'scrcpy' -ArgumentList $arguments -PassThru -NoNewWindow
+}
+
+function Ensure-Scrcpy{
+    foreach($process in @(Get-Process scrcpy -ErrorAction SilentlyContinue)){
+        Stop-Process -Id $process.Id -Force
+    }
+
+    $allReverse=@($Identity,$Dsh,$Metro.client,$Metro.partner,$Metro.captain,$Metro.field)
+
+    if($null-ne(Get-UsbSerial)){
+        Write-Host 'SCRCPY_PREP transport=usb'
+        [void](Prepare-TcpFallback)
+        Ensure-Reverse -Ports $allReverse
+        Disconnect-TcpDevices
+        $mode='usb'
+        $process=Start-ScrcpyProcess @('--select-usb')
+        Write-Host 'SCRCPY_LIVE transport=usb fallback=tcp'
+    }else{
+        $endpoint=Connect-TcpFallback
+        Ensure-Reverse -Ports $allReverse
+        $mode='tcp'
+        $process=Start-ScrcpyProcess @('--serial',$endpoint)
+        Write-Host "SCRCPY_LIVE transport=tcp endpoint=$endpoint"
+    }
+
+    while($true){
+        Start-Sleep -Milliseconds 250
+
+        if($mode-eq'usb'){
+            if($null-eq(Get-UsbSerial)){
+                if(-not$process.HasExited){Stop-Process -Id $process.Id -Force}
+                $endpoint=Connect-TcpFallback
+                Ensure-Reverse -Ports $allReverse
+                $process=Start-ScrcpyProcess @('--serial',$endpoint)
+                $mode='tcp'
+                Write-Host "SCRCPY_FAILOVER transport=tcp endpoint=$endpoint"
+                continue
+            }
+
+            if($process.HasExited){return 'closed transport=usb'}
+            continue
+        }
+
+        if($null-ne(Get-UsbSerial)){
+            if(-not$process.HasExited){Stop-Process -Id $process.Id -Force}
+            Disconnect-TcpDevices
+            [void](Prepare-TcpFallback)
+            Ensure-Reverse -Ports $allReverse
+            Disconnect-TcpDevices
+            $process=Start-ScrcpyProcess @('--select-usb')
+            $mode='usb'
+            Write-Host 'SCRCPY_FAILBACK transport=usb'
+            continue
+        }
+
+        if($process.HasExited){return 'closed transport=tcp'}
+    }
+}
+
+function Ensure-OneMobile([string]$Name){
+    [void](Ensure-Dependencies)
+    [void](Ensure-Backend)
+    Set-Host-Environment
+    Ensure-Reverse -Ports @($Identity,$Dsh,[int]$Metro[$Name])
+    Start-MobileServer $Name -Foreground
+}
+
+function Ensure-ControlOnly{
+    [void](Ensure-Dependencies)
+    [void](Ensure-Backend)
+    Set-Host-Environment
+    Start-ControlServer -Foreground
+}
+
+function Stop-LocalHosts{
+    foreach($port in @($Metro.client,$Metro.partner,$Metro.captain,$Metro.field,$Control)){
+        if(Has-Port ([int]$port)){
+            Stop-OwnedListener -Port ([int]$port) -Surface "port-$port"
+        }
+    }
+
+    foreach($process in @(Get-Process scrcpy -ErrorAction SilentlyContinue)){
+        Stop-Process -Id $process.Id -Force
+    }
+
+    Disconnect-TcpDevices
+}
+
+switch($Target){
+    'up'{
+        Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)"
+        return
+    }
+    'down'{
+        Stop-LocalHosts
+        Compose @('down','--remove-orphans')
+        Write-Host 'RUNTIME_DOWN=PASS scope=all-local-dev'
+        return
+    }
+    'status'{
+        Compose @('ps','-a')
+        return
+    }
+    'client'{Ensure-OneMobile 'client';return}
+    'partner'{Ensure-OneMobile 'partner';return}
+    'captain'{Ensure-OneMobile 'captain';return}
+    'field'{Ensure-OneMobile 'field';return}
+    'control'{Ensure-ControlOnly;return}
+    'scr'{
+        Write-Host "SCRCPY=PASS state=$(Ensure-Scrcpy)"
+        return
+    }
+}
+
+$total=[Diagnostics.Stopwatch]::StartNew()
+
+$phase=[Diagnostics.Stopwatch]::StartNew()
+$dependencyState=Ensure-Dependencies
+$dependencyMs=$phase.ElapsedMilliseconds
+
+$phase.Restart()
+$backendState=Ensure-Backend
+$backendMs=$phase.ElapsedMilliseconds
+
+Set-Host-Environment
+
+$phase.Restart()
+$hostState=Ensure-HostServers
+$hostMs=$phase.ElapsedMilliseconds
+
+$total.Stop()
+
+$started=@($hostState.GetEnumerator()|Where-Object Value -eq'started'|ForEach-Object Key|Sort-Object)
+$reused=@($hostState.GetEnumerator()|Where-Object Value -eq'reused'|ForEach-Object Key|Sort-Object)
+
+Write-Host "DEV_TIMING deps_ms=$dependencyMs backend_ms=$backendMs hosts_ms=$hostMs total_ms=$($total.ElapsedMilliseconds)"
+Write-Host "DEV_STATE deps=$dependencyState backend=$backendState scrcpy=manual started=$($started-join',') reused=$($reused-join',')"
+Write-Host "DEV_READY=PASS apps=manual-open live=fast-refresh control=hmr scrcpy=pnpm-scr root=$Root"
+-or-not$command.Contains($Root,[StringComparison]::OrdinalIgnoreCase)){
+        Fail "REFUSE_FOREIGN_PROCESS surface=$Surface port=$Port pid=$ProcessId"
+    }
+
+    $treeRoot=$current
+    while($treeRoot.ParentProcessId-gt0){
+        $parent=Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$treeRoot.ParentProcessId)" -ErrorAction SilentlyContinue
+        if($null-eq$parent){break}
+
+        $parentCommand=[string]$parent.CommandLine
+        if($parent.Name-notmatch'^node(\.exe)?
+
+function Start-MobileServer([string]$Name,[switch]$Foreground){
+    $port=[int]$Metro[$Name]
+
+    if($Foreground-and(Has-Port $port)){
+        Stop-OwnedListener -Port $port -Surface $Name
+    }elseif(-not$Foreground-and(Metro-Ready $port)){
+        return [pscustomobject]@{Name=$Name;Port=$port;State='reused';Process=$null}
+    }elseif(Has-Port $port){
+        Fail "PORT_IN_USE surface=$Name port=$port"
+    }
+
+    $AppRoot=Join-Path $Root "apps\app-$Name"
+    $expoPackage=Join-Path $AppRoot 'node_modules\expo\package.json'
+    if(-not(Test-Path -LiteralPath $expoPackage -PathType Leaf)){Fail "EXPO_NOT_MATERIALIZED app=app-$Name run=pnpm_bootstrap"}
+    $expo=Join-Path (Split-Path -Parent $expoPackage) 'bin\cli'
+    $arguments=@('start','--dev-client','--localhost','--port',"$port")
+
+    if($Foreground){
+        Write-Host "MOBILE_LIVE app=app-$Name port=$port fast_refresh=on open=manual"
+        Push-Location $AppRoot
+        try{
+            & node $expo @arguments
+            $code=$LASTEXITCODE
+        }finally{
+            Pop-Location
+        }
+
+        if($code-ne0-and$code-ne130){Fail "METRO_EXITED app=app-$Name exit=$code"}
+        return
+    }
+
+    $process=Start-Node $AppRoot $expo $arguments
+    return [pscustomobject]@{Name=$Name;Port=$port;State='started';Process=$process}
+}
+
+function Start-ControlServer([switch]$Foreground){
+    if($Foreground-and(Has-Port $Control)){
+        Stop-OwnedListener -Port $Control -Surface 'control'
+    }elseif(-not$Foreground-and(Has-Port $Control)){
+        return [pscustomobject]@{Name='control';Port=$Control;State='reused';Process=$null}
+    }
+
+    $ControlRoot=Join-Path $Root 'apps\control-panel'
+    $nextPackage=Join-Path $ControlRoot 'node_modules\next\package.json'
+    if(-not(Test-Path -LiteralPath $nextPackage -PathType Leaf)){Fail 'NEXT_NOT_MATERIALIZED run=pnpm_bootstrap'}
+    $next=Join-Path (Split-Path -Parent $nextPackage) 'dist\bin\next'
+    $arguments=@('dev','-H','127.0.0.1','-p',"$Control")
+
+    if($Foreground){
+        Write-Host "CONTROL_LIVE port=$Control hmr=on url=$(Need $Map 'CONTROL_PANEL_PUBLIC_ORIGIN')"
+        Push-Location $ControlRoot
+        try{
+            & node $next @arguments
+            $code=$LASTEXITCODE
+        }finally{
+            Pop-Location
+        }
+
+        if($code-ne0-and$code-ne130){Fail "CONTROL_EXITED exit=$code"}
+        return
+    }
+
+    $process=Start-Node $ControlRoot $next $arguments
+    return [pscustomobject]@{Name='control';Port=$Control;State='started';Process=$process}
+}
+
+function Wait-Servers([object[]]$Servers){
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+
+    do{
+        $missing=@()
+
+        foreach($server in $Servers){
+            if($null-ne$server.Process-and$server.Process.HasExited){
+                Fail "HOST_PROCESS_EXITED surface=$($server.Name) exit=$($server.Process.ExitCode)"
+            }
+
+            $ready=if($server.Name-eq'control'){
+                Has-Port ([int]$server.Port)
+            }else{
+                Metro-Ready ([int]$server.Port)
+            }
+
+            if(-not$ready){$missing+=$server.Name}
+        }
+
+        if($missing.Count-eq0){return}
+        Start-Sleep -Milliseconds 100
+    }while($clock.ElapsedMilliseconds-lt30000)
+
+    Fail "HOST_READY_TIMEOUT missing=$($missing-join',') timeout_ms=30000"
+}
+
+function Ensure-HostServers{
+    $servers=@(
+        Start-MobileServer 'client'
+        Start-MobileServer 'partner'
+        Start-MobileServer 'captain'
+        Start-MobileServer 'field'
+        Start-ControlServer
+    )
+
+    Wait-Servers $servers
+
+    $state=@{}
+    foreach($server in $servers){$state[$server.Name]=$server.State}
+    return $state
+}
+
+function Start-ScrcpyProcess([string[]]$Selector){
+    $arguments=@($Selector)+@('--max-size=1280','--max-fps=30','--video-bit-rate=4M','--no-audio')
+    return Start-Process -FilePath 'scrcpy' -ArgumentList $arguments -PassThru -NoNewWindow
+}
+
+function Ensure-Scrcpy{
+    foreach($process in @(Get-Process scrcpy -ErrorAction SilentlyContinue)){
+        Stop-Process -Id $process.Id -Force
+    }
+
+    $allReverse=@($Identity,$Dsh,$Metro.client,$Metro.partner,$Metro.captain,$Metro.field)
+
+    if($null-ne(Get-UsbSerial)){
+        Write-Host 'SCRCPY_PREP transport=usb'
+        [void](Prepare-TcpFallback)
+        Ensure-Reverse -Ports $allReverse
+        Disconnect-TcpDevices
+        $mode='usb'
+        $process=Start-ScrcpyProcess @('--select-usb')
+        Write-Host 'SCRCPY_LIVE transport=usb fallback=tcp'
+    }else{
+        $endpoint=Connect-TcpFallback
+        Ensure-Reverse -Ports $allReverse
+        $mode='tcp'
+        $process=Start-ScrcpyProcess @('--serial',$endpoint)
+        Write-Host "SCRCPY_LIVE transport=tcp endpoint=$endpoint"
+    }
+
+    while($true){
+        Start-Sleep -Milliseconds 250
+
+        if($mode-eq'usb'){
+            if($null-eq(Get-UsbSerial)){
+                if(-not$process.HasExited){Stop-Process -Id $process.Id -Force}
+                $endpoint=Connect-TcpFallback
+                Ensure-Reverse -Ports $allReverse
+                $process=Start-ScrcpyProcess @('--serial',$endpoint)
+                $mode='tcp'
+                Write-Host "SCRCPY_FAILOVER transport=tcp endpoint=$endpoint"
+                continue
+            }
+
+            if($process.HasExited){return 'closed transport=usb'}
+            continue
+        }
+
+        if($null-ne(Get-UsbSerial)){
+            if(-not$process.HasExited){Stop-Process -Id $process.Id -Force}
+            Disconnect-TcpDevices
+            [void](Prepare-TcpFallback)
+            Ensure-Reverse -Ports $allReverse
+            Disconnect-TcpDevices
+            $process=Start-ScrcpyProcess @('--select-usb')
+            $mode='usb'
+            Write-Host 'SCRCPY_FAILBACK transport=usb'
+            continue
+        }
+
+        if($process.HasExited){return 'closed transport=tcp'}
+    }
+}
+
+function Ensure-OneMobile([string]$Name){
+    [void](Ensure-Dependencies)
+    [void](Ensure-Backend)
+    Set-Host-Environment
+    Ensure-Reverse -Ports @($Identity,$Dsh,[int]$Metro[$Name])
+    Start-MobileServer $Name -Foreground
+}
+
+function Ensure-ControlOnly{
+    [void](Ensure-Dependencies)
+    [void](Ensure-Backend)
+    Set-Host-Environment
+    Start-ControlServer -Foreground
+}
+
+function Stop-LocalHosts{
+    foreach($port in @($Metro.client,$Metro.partner,$Metro.captain,$Metro.field,$Control)){
+        if(Has-Port ([int]$port)){
+            Stop-OwnedListener -Port ([int]$port) -Surface "port-$port"
+        }
+    }
+
+    foreach($process in @(Get-Process scrcpy -ErrorAction SilentlyContinue)){
+        Stop-Process -Id $process.Id -Force
+    }
+
+    Disconnect-TcpDevices
+}
+
+switch($Target){
+    'up'{
+        Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)"
+        return
+    }
+    'down'{
+        Stop-LocalHosts
+        Compose @('down','--remove-orphans')
+        Write-Host 'RUNTIME_DOWN=PASS scope=all-local-dev'
+        return
+    }
+    'status'{
+        Compose @('ps','-a')
+        return
+    }
+    'client'{Ensure-OneMobile 'client';return}
+    'partner'{Ensure-OneMobile 'partner';return}
+    'captain'{Ensure-OneMobile 'captain';return}
+    'field'{Ensure-OneMobile 'field';return}
+    'control'{Ensure-ControlOnly;return}
+    'scr'{
+        Write-Host "SCRCPY=PASS state=$(Ensure-Scrcpy)"
+        return
+    }
+}
+
+$total=[Diagnostics.Stopwatch]::StartNew()
+
+$phase=[Diagnostics.Stopwatch]::StartNew()
+$dependencyState=Ensure-Dependencies
+$dependencyMs=$phase.ElapsedMilliseconds
+
+$phase.Restart()
+$backendState=Ensure-Backend
+$backendMs=$phase.ElapsedMilliseconds
+
+Set-Host-Environment
+
+$phase.Restart()
+$hostState=Ensure-HostServers
+$hostMs=$phase.ElapsedMilliseconds
+
+$total.Stop()
+
+$started=@($hostState.GetEnumerator()|Where-Object Value -eq'started'|ForEach-Object Key|Sort-Object)
+$reused=@($hostState.GetEnumerator()|Where-Object Value -eq'reused'|ForEach-Object Key|Sort-Object)
+
+Write-Host "DEV_TIMING deps_ms=$dependencyMs backend_ms=$backendMs hosts_ms=$hostMs total_ms=$($total.ElapsedMilliseconds)"
+Write-Host "DEV_STATE deps=$dependencyState backend=$backendState scrcpy=manual started=$($started-join',') reused=$($reused-join',')"
+Write-Host "DEV_READY=PASS apps=manual-open live=fast-refresh control=hmr scrcpy=pnpm-scr root=$Root"
+-or-not$parentCommand.Contains($Root,[StringComparison]::OrdinalIgnoreCase)){
+            break
+        }
+
+        $treeRoot=$parent
+    }
+
+    return [int]$treeRoot.ProcessId
+}
+
+function Stop-OwnedListener([int]$Port,[string]$Surface){
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+
+    do{
+        $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+        if($listeners.Count-eq0){return}
+
+        $treeRoots=@()
+        foreach($listener in $listeners){
+            $treeRoot=Get-OwnedNodeTreeRoot -ProcessId ([int]$listener.OwningProcess) -Surface $Surface -Port $Port
+            if($null-ne$treeRoot){$treeRoots+=[int]$treeRoot}
+        }
+
+        foreach($treeRoot in @($treeRoots|Sort-Object -Unique)){
+            Write-Host "STALE_RUNTIME_CLEANUP surface=$Surface port=$Port pid=$treeRoot"
+            & taskkill.exe /PID "$treeRoot" /T /F 2>&1|Out-Null
+            if($LASTEXITCODE-ne0-and(Has-Port $Port)){
+                Fail "PROCESS_TREE_STOP_FAILED surface=$Surface port=$Port pid=$treeRoot exit=$LASTEXITCODE"
+            }
+        }
+
+        Start-Sleep -Milliseconds 100
+    }while($clock.ElapsedMilliseconds-lt5000)
 
     if(Has-Port $Port){Fail "PORT_RELEASE_TIMEOUT surface=$Surface port=$Port"}
 }
