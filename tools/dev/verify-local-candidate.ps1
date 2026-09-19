@@ -87,7 +87,7 @@ try {
         Run-Step 'Nx project tags' { node tools/dev/verify-nx-project-tags.mjs }
     }
 
-    if (Changed-Matches '^(AGENTS\.md|REPOSITORY-STRUCTURE\.md|CLAUDE\.md|GEMINI\.md|\.github/copilot-instructions\.md|\.github/pull_request_template\.md|\.github/workflows/pr-policy\.yml|knowledge\.sources\.json|package\.json|tools/dev/(verify-local-candidate\.ps1|safe-push\.ps1|runtime\.ps1|verify-agent-knowledge-contract\.mjs|verify-repository-structure\.mjs))$') {
+    if (Changed-Matches '^(AGENTS\.md|REPOSITORY-STRUCTURE\.md|CLAUDE\.md|GEMINI\.md|\.github/copilot-instructions\.md|\.github/pull_request_template\.md|\.github/workflows/pr-policy\.yml|knowledge\.sources\.json|package\.json|tools/dev/(verify-local-candidate\.ps1|safe-push\.ps1|runtime\.(?:ps1|psm1)|verify-agent-knowledge-contract\.mjs|verify-repository-structure\.mjs))$') {
         Run-Step 'Agent execution contract' { node tools/dev/verify-agent-knowledge-contract.mjs }
     }
 
@@ -98,7 +98,7 @@ try {
         Run-Step 'Docs configuration parity' { node tools/dev/verify-doc-config-parity.mjs }
     }
 
-    if (Changed-Matches '^(infra/local/compose/|tools/dev/(runtime|open-mobile-apps|scrcpy)\.ps1|package\.json$)') {
+    if (Changed-Matches '^(infra/local/compose/|tools/dev/(runtime\.ps1|runtime\.psm1|open-mobile-apps\.ps1|scrcpy\.ps1)|package\.json$)') {
         Run-Step 'Runtime ownership' { node tools/dev/verify-local-runtime-ownership.mjs }
         Run-Step 'Canonical compose config' {
             docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml config --quiet

@@ -13,7 +13,8 @@ const section = (start, end) => {
 
 const pkg = JSON.parse(read("package.json"));
 const scripts = pkg.scripts ?? {};
-const runtime = read("tools/dev/runtime.ps1");
+const runtimeEntrypoint = read("tools/dev/runtime.ps1");
+const runtime = read("tools/dev/runtime.psm1");
 const opener = read("tools/dev/open-mobile-apps.ps1");
 const scrcpy = read("tools/dev/scrcpy.ps1");
 const candidate = read("tools/dev/verify-local-candidate.ps1");
@@ -27,6 +28,7 @@ const statusCase = section("function Show-Status", "function Doctor");
 const doctorCase = section("function Doctor", "function Require-Service");
 const controlCase = runtime.match(/'Control'\s*\{([\s\S]*?)\n\s*\}\n\s*'Surface'/)?.[1] ?? "";
 const surfaceCase = runtime.match(/'Surface'\s*\{([\s\S]*?)\n\s*\}\n\s*'Rebuild'/)?.[1] ?? "";
+const targetReadyCase = section("function Assert-Target-RuntimeReady", "function Start-Full-Runtime");
 
 const destructiveGuard = "if ($Action -in @('Reset','Purge') -and -not $AllowDataLoss)";
 assert(runtime.includes("[switch]$AllowDataLoss"), "destructive runtime actions must require an explicit same-invocation authorization switch");
@@ -73,6 +75,14 @@ for (const [name, app] of [
   );
 }
 assert(scripts.control?.includes("tools/dev/runtime.ps1 -Action Control"), "control must route through runtime.ps1");
+
+assert(runtimeEntrypoint.includes("runtime.psm1"), "runtime.ps1 must delegate to the canonical internal runtime module");
+assert(runtimeEntrypoint.includes("Import-Module"), "runtime.ps1 must import the canonical internal runtime module");
+assert(runtimeEntrypoint.includes("Invoke-SamrimRuntime @PSBoundParameters"), "runtime.ps1 must forward its public CLI contract without duplicating dispatch logic");
+for (const forbidden of ["function ", "docker ", "Compose @(", "Get-CimInstance", "HttpClient", "Push-Location"]) {
+  assert(!runtimeEntrypoint.includes(forbidden), `runtime.ps1 must remain a thin public entrypoint: ${forbidden}`);
+}
+assert(runtime.includes("Export-ModuleMember -Function Invoke-SamrimRuntime"), "runtime.psm1 must export the canonical runtime invocation boundary");
 
 const services = [
   "postgres",
@@ -138,8 +148,8 @@ assert(
 
 assert(runtime.includes("function Get-CanonicalRuntimeSnapshot"), "runtime readback must have one canonical per-invocation Docker snapshot owner");
 assert(!runtime.includes("function Container-Ids"), "per-service Docker ps readback must not survive the canonical snapshot cutover");
-assert((runtime.match(/& docker ps/g) ?? []).length === 1, "runtime.ps1 must issue docker ps only through the canonical snapshot owner");
-assert((runtime.match(/& docker inspect/g) ?? []).length === 1, "runtime.ps1 must batch docker inspect through the canonical snapshot owner");
+assert((runtime.match(/& docker ps/g) ?? []).length === 1, "runtime module must issue docker ps only through the canonical snapshot owner");
+assert((runtime.match(/& docker inspect/g) ?? []).length === 1, "runtime module must batch docker inspect through the canonical snapshot owner");
 assert(runtime.includes("LOCAL_RUNTIME_ENV=READY action=reuse"), "runtime startup must expose no-write environment reuse");
 assert(runtime.includes("$existingText -cne $desired"), "runtime startup must not rewrite an unchanged local environment");
 assert(runtime.includes("function Test-Full-RuntimeReady"), "runtime:up must prove an exact ready runtime before using the warm reconciliation path");
@@ -173,8 +183,8 @@ for (const forbidden of ["Get-CanonicalRuntimeSnapshot", "Assert-WorkspaceMounts
   assert(!statusCase.includes(forbidden), `runtime:status must remain display-only: ${forbidden}`);
 }
 
-assert((startupCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "runtime:up must perform exactly one host-native backend census");
-assert(!startupCase.includes("nativeBackendAfter"), "runtime:up must not repeat the host-native backend census after Compose");
+assert((startupCase.match(/Assert-No-Native-Backend/g) ?? []).length === 1, "runtime:up must perform exactly one host-native backend census");
+assert(!runtime.includes("Get-Native-Backend-Residue"), "split native-backend read/assert ownership must not return");
 assert(startupCase.includes("RUNTIME_RECONCILE=READY action=running-services-only"), "runtime:up must expose the exact-ready warm reconciliation path");
 assert(startupCase.includes("--no-deps"), "warm reconciliation must not rerun completed one-shot dependencies");
 assert(startupCase.includes("CANONICAL_LOCAL_RUNTIME=PASS mode=warm-reconcile"), "warm reconciliation must have an explicit success marker");
@@ -183,15 +193,17 @@ assert(startupCase.indexOf("Test-Full-RuntimeReady") < startupCase.indexOf("--no
 assert(startupCase.indexOf("$dependenciesReady = Test-Js-Dependencies-Ready") < startupCase.indexOf("--no-deps"), "warm reconciliation must be gated by current dependency fingerprint readiness");
 
 
-assert((doctorCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "runtime:doctor must perform exactly one host-native backend census");
+assert((doctorCase.match(/Assert-No-Native-Backend/g) ?? []).length === 1, "runtime:doctor must perform exactly one host-native backend census");
+assert(doctorCase.includes("NATIVE_RUNTIME=NOT_READY"), "runtime:doctor must report native residue through its own failure boundary");
 assert(doctorCase.includes("Assert-HostRuntimeEndpoints"), "runtime:doctor must prove current host-published endpoints");
 assert(runtime.includes("HOST_RUNTIME_ENDPOINTS=PASS"), "runtime doctor must expose host endpoint proof");
 
-assert(controlCase.includes("Read-CanonicalEnvironment") && controlCase.includes("Assert-Target-Runtime"), "control helper must read/validate the existing runtime");
-assert(surfaceCase.includes("Read-CanonicalEnvironment") && surfaceCase.includes("Assert-Target-Runtime"), "surface helper must read/validate the existing runtime");
-assert((controlCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "control helper must perform one host-native backend census");
-assert((surfaceCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "surface helper must perform one host-native backend census");
-assert(!controlCase.includes("Compose @(") && !surfaceCase.includes("Compose @("), "control/surface helpers must not mutate Compose lifecycle");
+assert(targetReadyCase.includes("Read-CanonicalEnvironment"), "target readback owner must read the canonical environment");
+assert(targetReadyCase.includes("Assert-No-Native-Backend"), "target readback owner must reject host-native backend residue");
+assert(targetReadyCase.includes("Assert-Target-Runtime"), "target readback owner must validate the selected Docker target");
+assert(controlCase.includes("Assert-Target-RuntimeReady 'control'"), "control dispatch must delegate to the canonical target readback owner");
+assert(surfaceCase.includes("Assert-Target-RuntimeReady $target"), "surface dispatch must delegate to the canonical target readback owner");
+assert(!controlCase.includes("Get-CanonicalRuntimeSnapshot") && !surfaceCase.includes("Get-CanonicalRuntimeSnapshot"), "control/surface dispatch must not duplicate target readback internals");
 assert(runtime.includes("CONTROL_PANEL_READY=PASS mode=read-only"), "control helper must expose read-only semantics");
 assert(runtime.includes("MOBILE_SURFACE_RUNTIME=PASS mode=read-only"), "surface helper must expose read-only semantics");
 

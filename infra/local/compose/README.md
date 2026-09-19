@@ -1,6 +1,6 @@
 # Local runtime ownership
 
-`tools/dev/runtime.ps1` is the single public owner of the local Docker runtime lifecycle. The canonical Compose project is `samrim-local`, and Docker owns PostgreSQL, Mailpit, Identity, DSH, Control Panel, and the four Metro services.
+`tools/dev/runtime.ps1` is the single public CLI owner of the local Docker runtime lifecycle; it is intentionally thin and delegates implementation to the internal `tools/dev/runtime.psm1` module. The canonical Compose project is `samrim-local`, and Docker owns PostgreSQL, Mailpit, Identity, DSH, Control Panel, and the four Metro services.
 
 Use the lifecycle commands:
 

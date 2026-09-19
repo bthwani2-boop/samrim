@@ -98,11 +98,17 @@ if (safePush.includes("pnpm verify")) {
   failures.push("safe push must invoke the canonical verifier once directly, not nest the public verify command");
 }
 
-const runtime = requireTokens("tools/dev/runtime.ps1", [
+requireTokens("tools/dev/runtime.ps1", [
+  "runtime.psm1",
+  "Import-Module",
+  "Invoke-SamrimRuntime @PSBoundParameters",
+]);
+const runtime = requireTokens("tools/dev/runtime.psm1", [
   "CANONICAL_LOCAL_RUNTIME=PASS mode=full",
-  "RUNTIME_STATUS=READ_ONLY scope=full-canonical-compose",
+  "RUNTIME_STATUS=READ_ONLY scope=service-state-display",
   "CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose",
   "MOBILE_SURFACE_RUNTIME=PASS",
+  "Export-ModuleMember -Function Invoke-SamrimRuntime",
 ]);
 if (runtime.includes("Stop-OtherOptionalServices")) {
   failures.push("runtime target startup must not stop unrelated already-running surfaces");
