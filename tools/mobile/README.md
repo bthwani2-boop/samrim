@@ -10,6 +10,8 @@ The tooling may derive Expo/Metro behavior from those app-owned facts. It must n
 
 The repository-owned `mobile:prepare` and `mobile:build` commands are target-aware. They do not create a second capability registry or provider map.
 
+Development builds must not bake a localhost Metro target or app-specific development-server port into native config. The daily `pnpm client|partner|captain|field` command supplies the current launch URL through Expo CLI, while app-owned native configuration stays independent of the developer machine's Metro port.
+
 Before claiming an existing Development Build remains compatible after a cutover, compare native characteristics and resolved native configuration. JavaScript/TypeScript/path-only changes are not by themselves permission to claim native equivalence.
 
 

@@ -53,6 +53,7 @@ for (const forbidden of ["WorkspaceServices","Assert-WorkspaceMounts","js-deps",
 }
 
 assert(control.includes("next dev -H 127.0.0.1"), "Control Panel must run directly on the Windows host loopback");
+assert(control.includes("CONTROL_PANEL_HOST=START url=$publicOrigin bind=127.0.0.1:$port"), "Control must expose localhost as the canonical browser origin while retaining loopback-only binding");
 assert(control.includes("-Action Doctor"), "Control host must fail closed unless the Docker backend is ready");
 assert(control.includes("infra\\local\\.env"), "Control host must use the canonical shared local environment");
 

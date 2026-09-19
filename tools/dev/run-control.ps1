@@ -46,18 +46,21 @@ if ($LASTEXITCODE -ne 0) { throw 'RUNTIME_NOT_READY reason=backend_doctor_failed
 $map=Read-EnvMap $EnvPath
 $port=0
 if (-not [int]::TryParse((Require $map 'SAMRIM_CONTROL_PORT'),[ref]$port)) { throw 'RUNTIME_NOT_READY reason=invalid_control_port' }
-if (Ready $port) { Write-Host "CONTROL_PANEL_REUSE=PASS url=http://127.0.0.1:$port"; return }
+$publicOrigin=Require $map 'CONTROL_PANEL_PUBLIC_ORIGIN'
+$publicUri=$null
+if (-not [Uri]::TryCreate($publicOrigin,[UriKind]::Absolute,[ref]$publicUri) -or $publicUri.Scheme -ne 'http' -or $publicUri.Host -ne 'localhost' -or $publicUri.Port -ne $port) { throw 'RUNTIME_NOT_READY reason=invalid_control_public_origin expected=http://localhost:<control-port>' }
+if (Ready $port) { Write-Host "CONTROL_PANEL_REUSE=PASS url=$publicOrigin"; return }
 
 $env:NODE_ENV='development'
 $env:BTHWANI_ENV='development'
 $env:NEXT_TELEMETRY_DISABLED='1'
 $env:NEXT_PRIVATE_DISABLE_DEV_OVERLAY_UX='1'
-$env:CONTROL_PANEL_PUBLIC_ORIGIN=Require $map 'CONTROL_PANEL_PUBLIC_ORIGIN'
+$env:CONTROL_PANEL_PUBLIC_ORIGIN=$publicOrigin
 $env:IDENTITY_API_BASE_URL=Require $map 'IDENTITY_API_BASE_URL'
 $env:DSH_API_BASE_URL=Require $map 'DSH_API_BASE_URL'
 $env:CONTROL_PANEL_SERVICE_TOKEN=Require $map 'CONTROL_PANEL_SERVICE_TOKEN'
 
-Write-Host "CONTROL_PANEL_HOST=START url=http://127.0.0.1:$port"
+Write-Host "CONTROL_PANEL_HOST=START url=$publicOrigin bind=127.0.0.1:$port"
 Push-Location $RepoRoot
 try {
     & pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p $port

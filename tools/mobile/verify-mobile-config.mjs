@@ -58,6 +58,15 @@ if (!fs.existsSync(runtimePath) || !fs.existsSync(appOpenerPath) || !fs.existsSy
   console.error("Canonical runtime owner is missing: tools/dev/runtime.ps1");
   process.exit(1);
 }
+for (const retired of [
+  path.join(repoRoot, "tools/mobile/with-android-development-client.cjs"),
+  path.join(repoRoot, "tools/mobile/with-android-development-client.d.cts"),
+]) {
+  if (fs.existsSync(retired)) {
+    console.error(`Retired native Metro launch wrapper remains: ${path.relative(repoRoot, retired)}`);
+    process.exit(1);
+  }
+}
 
 const env = parseEnv(fs.readFileSync(envExamplePath, "utf8"));
 const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, "utf8"));
@@ -78,13 +87,20 @@ let failed = false;
 for (const app of apps) {
   const appRoot = path.join(appsRoot, app);
   const configPath = path.join(appRoot, "mobile.config.json");
+  const appConfigPath = path.join(appRoot, "app.config.ts");
   const projectPath = path.join(appRoot, "project.json");
   const packagePath = path.join(appRoot, "package.json");
 
-  if (!fs.existsSync(projectPath) || !fs.existsSync(packagePath)) {
-    console.error(`${app}: missing project.json or package.json`);
+  if (!fs.existsSync(appConfigPath) || !fs.existsSync(projectPath) || !fs.existsSync(packagePath)) {
+    console.error(`${app}: missing app.config.ts, project.json or package.json`);
     failed = true;
     continue;
+  }
+
+  const appConfigSource = fs.readFileSync(appConfigPath, "utf8");
+  if (appConfigSource.includes("with-android-development-client") || appConfigSource.includes("defaultLaunchURL") || appConfigSource.includes("developmentClient")) {
+    console.error(`${app}: native development-client launch target must not be app-config owned; Expo CLI owns the daily launch URL`);
+    failed = true;
   }
 
   const project = JSON.parse(fs.readFileSync(projectPath, "utf8"));
