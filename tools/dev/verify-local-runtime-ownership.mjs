@@ -138,10 +138,15 @@ assert(runtime.includes("$existingText -cne $desired"), "runtime startup must no
 assert(runtime.includes("function Test-Full-RuntimeReady"), "runtime:up must prove an exact ready runtime before using the warm reconciliation path");
 assert(runtime.includes("function Get-Running-Workspace-Services"), "runtime:up must read running workspace services before dependency materialization");
 assert(runtime.includes("function Test-Js-Dependencies-Ready"), "runtime:up must retain one read-only dependency readiness check");
+const jsDepsReadyCase = section("function Test-Js-Dependencies-Ready", "function Assert-HttpEndpoint");
+assert(jsDepsReadyCase.includes("& docker exec"), "ready runtime dependency checks must reuse an already-running JavaScript container");
+assert(jsDepsReadyCase.includes("Compose @('run','--rm','js-deps'"), "dependency readiness must retain a bootstrap/down-state fallback");
+assert(jsDepsReadyCase.indexOf("& docker exec") < jsDepsReadyCase.indexOf("Compose @('run','--rm','js-deps'"), "running JavaScript ownership must be preferred before transient dependency-check containers");
 assert(runtime.includes("function Start-Full-Runtime"), "runtime must have one canonical full-stack startup owner");
 assert(!runtime.includes("function Start-Requested-Runtime"), "target runtime startup orchestration must not survive the daily full-stack cutover");
 assert(!runtime.includes("function Ensure-Target-Runtime"), "app/control helpers must not own target runtime startup");
-assert(runtime.includes("$dependenciesReady = Test-Js-Dependencies-Ready"), "full startup must gate shared dependency materialization");
+assert(runtime.includes("$dependenciesReady = Test-Js-Dependencies-Ready $before"), "full startup must gate shared dependency materialization from the canonical pre-start snapshot");
+assert(!startupCase.includes("Compose @('config','--quiet')"), "runtime:up must not duplicate Compose parsing before the actual reconciliation command");
 assert(runtime.includes("JS_DEPS_GATE=READY action=no-stop scope=full"), "ready dependencies must preserve running workspace services");
 assert(runtime.includes("JS_DEPS_GATE=STALE action=stop-materialize scope=full"), "stale dependencies must expose the full-start materialization boundary");
 assert(runtime.includes("if ($runningBefore.Count -gt 0) { Compose (@('stop') + $runningBefore) }"), "stale dependency materialization must stop only currently running workspace services");

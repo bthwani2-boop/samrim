@@ -301,10 +301,20 @@ function Get-Running-Workspace-Services($Snapshot) {
         Sort-Object)
 }
 
-function Test-Js-Dependencies-Ready {
+function Test-Js-Dependencies-Ready($Snapshot) {
+    # Prefer an already-running JavaScript owner so the normal warm path does not
+    # create a transient js-deps container merely to read the shared fingerprint.
+    foreach ($serviceName in $WorkspaceServices) {
+        $containers = @(Get-ServiceContainers $Snapshot $serviceName)
+        if ($containers.Count -ne 1 -or $containers[0].State -ne 'running') { continue }
+
+        & docker exec $containers[0].Id node tools/dev/js-deps.mjs --check *> $null
+        return ($LASTEXITCODE -eq 0)
+    }
+
     try {
-        # --check is read-only: it validates the fingerprint and required modules without
-        # running pnpm install or rewriting the shared node_modules volumes.
+        # Bootstrap/down-state fallback: validate the same shared volumes through the
+        # canonical js-deps service without installing or rewriting dependencies.
         Compose @('run','--rm','js-deps','node','tools/dev/js-deps.mjs','--check') -Quiet
         return $true
     }
@@ -379,13 +389,11 @@ function Start-Full-Runtime {
     Assert-No-Parallel-Runtime $before
     $nativeBackendBefore = Get-Native-Backend-Residue
     Assert-No-Native-Backend $nativeBackendBefore
-    Compose @('config','--quiet') -Quiet
-
     # Dependency materialization belongs to explicit full startup/restart only.
     # Existing workspace services are stopped only when their shared node_modules
     # volumes are proven stale, preventing Metro/Next from observing partial rewrites.
     $runningBefore = @(Get-Running-Workspace-Services $before)
-    $dependenciesReady = Test-Js-Dependencies-Ready
+    $dependenciesReady = Test-Js-Dependencies-Ready $before
 
     if ($dependenciesReady -and (Test-Full-RuntimeReady $envMap $before)) {
         try {
