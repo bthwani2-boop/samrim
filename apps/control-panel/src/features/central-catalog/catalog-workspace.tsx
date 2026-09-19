@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useSession } from "../../session/session-provider";
 import "./catalog-workspace.module.css";
 
-export const catalogResources = [
+const catalogResources = [
   { key: "overview", href: "/catalog", label: "نظرة عامة", description: "اختر مساحة الكتالوج المطلوبة." },
   { key: "products", href: "/catalog/products", label: "المنتجات", description: "هوية المنتج ونسخه المركزية." },
   { key: "categories", href: "/catalog/categories", label: "التصنيفات", description: "تصنيفات المنتجات التابعة للمجالات." },
