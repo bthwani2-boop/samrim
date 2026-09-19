@@ -282,7 +282,9 @@ async function activateOperatorWithPasskey(phone, enrollmentToken, actorID) {
     }
     if (!(await recoveryHeading.isVisible())) {
       const message = await page.getByRole("alert").innerText().catch(() => "unknown Control Panel enrollment error");
-      throw new Error(`Control Panel operator enrollment failed: ${message}`);
+      const bodyText = await page.locator("body").innerText().catch(() => "");
+      const detail = bodyText.replace(/\s+/g, " ").trim().slice(-4_000);
+      throw new Error(`Control Panel operator enrollment failed: ${message} url=${page.url()} body=${detail}`);
     }
     await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
     await page.waitForURL(/\/workspace$/, { timeout: 15_000 });
