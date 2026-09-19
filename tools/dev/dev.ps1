@@ -97,30 +97,18 @@ function Set-Host-Environment{
     }
 }
 
-function Invoke-Adb([string[]]$Arguments,[int]$TimeoutMs=5000){
-    $adb=(Get-Command adb -CommandType Application -ErrorAction SilentlyContinue|Select-Object -First 1).Source
-    if([string]::IsNullOrWhiteSpace($adb)){Fail 'TOOL_NOT_FOUND name=adb'}
-
-    $start=[Diagnostics.ProcessStartInfo]::new()
-    $start.FileName=$adb
-    $start.UseShellExecute=$false
-    $start.CreateNoWindow=$true
-    $start.ArgumentList.Add('-d')
-    foreach($argument in $Arguments){$start.ArgumentList.Add($argument)}
-
-    $process=[Diagnostics.Process]::new()
-    $process.StartInfo=$start
-    if(-not$process.Start()){Fail 'ADB_START_FAILED'}
-
-    if(-not$process.WaitForExit($TimeoutMs)){
-        try{$process.Kill($true)}catch{}
-        Fail "ADB_TIMEOUT args=$($Arguments-join' ') timeout_ms=$TimeoutMs"
-    }
-    if($process.ExitCode-ne0){Fail "ADB_FAILED args=$($Arguments-join' ') exit=$($process.ExitCode)"}
+function Invoke-Adb([string[]]$Arguments){
+    & adb -d @Arguments
+    if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=$($Arguments-join' ') exit=$LASTEXITCODE"}
 }
 
 function Ensure-Reverse{
+    $existing=@(adb -d reverse --list 2>&1)
+    if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=reverse --list exit=$LASTEXITCODE"}
+
     foreach($port in @($Identity,$Dsh,$Metro.client,$Metro.partner,$Metro.captain,$Metro.field)){
+        $mapping="tcp:$port tcp:$port"
+        if(@($existing|Where-Object{$_-match"\btcp:$port\s+tcp:$port\b"}).Count-gt0){continue}
         Invoke-Adb @('reverse',"tcp:$port","tcp:$port")
     }
 }

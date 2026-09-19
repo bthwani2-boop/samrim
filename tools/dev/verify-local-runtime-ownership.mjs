@@ -43,6 +43,9 @@ for(const bad of [
 ]) check(!dev.includes(bad),`dev.ps1 retains removed runtime behavior: ${bad}`);
 
 check(!/\[string\[\]\]\$Args\b/.test(dev),"dev.ps1 must not shadow PowerShell's automatic $Args variable");
+check(!dev.includes("ProcessStartInfo"),"dev.ps1 must not wrap ADB in custom process machinery");
+check(!dev.includes("ADB_TIMEOUT"),"dev.ps1 must not impose an arbitrary ADB timeout");
+check(/adb -d reverse --list/.test(dev),"dev.ps1 must inspect USB reverse mappings once");
 check(!/--dev-client[^\n\r]*--android/.test(dev),"Metro bootstrap must never auto-open Android apps");
 check(/Start-Node \$root \$expo @\('start','--dev-client','--localhost','--port'/.test(dev),"Metro bootstrap must remain live for Fast Refresh");
 check(/RUNTIME_DOWN=PASS scope=all-local-dev/.test(dev),"runtime:down must close the complete local dev runtime");
