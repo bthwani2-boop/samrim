@@ -17,7 +17,7 @@
     "mobile:build": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/build-development.ps1",
     "mobile:test-credential-atomicity": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/test-build-development.ps1",
     "brand:check": "node tools/mobile/verify-brand-assets.mjs",
-    "control": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/runtime.ps1 -Action Control",
+    "control": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/run-control.ps1",
     "identity:blocklist:generate": "node services/identity/tools/generate-password-blocklist.mjs",
     "identity:blocklist:check": "node services/identity/tools/generate-password-blocklist.mjs --check",
     "dsh:import-catalog-products": "node services/dsh/tools/import-catalog-products.mjs",

@@ -169,17 +169,19 @@ No language, framework, service, UI or tooling layer gets a lower correctness st
 
 LOCAL_INTEGRATION has exactly one canonical runtime owner for every admitted process/state. The current process/service/container inventory and environment composition are discovered from executable runtime configuration and readback; this agent constitution does not duplicate that mutable inventory. Parallel host/container ownership for the same responsibility is forbidden. Device/host tooling remains where the executable runtime contract assigns it.
 
-The human full-stack lifecycle is intentionally simple:
+The human LOCAL_INTEGRATION lifecycle separates stable backend/state from interactive application development:
 
 ```text
-pnpm runtime:up      → start the complete canonical Docker stack
-pnpm runtime:doctor  → read/validate the complete canonical Docker stack
-pnpm runtime:status  → read the complete canonical Docker stack
+pnpm runtime:up      → start/reconcile the canonical Docker backend/state runtime
+pnpm runtime:doctor  → read/validate that Docker backend/state runtime
+pnpm runtime:status  → display that Docker backend/state runtime
+pnpm control         → start/reuse the host-owned Control Panel development process
+pnpm client|partner|captain|field → start/reuse the selected host-owned Metro process and device path
 ```
 
-Normal daily LOCAL_INTEGRATION establishes device/runtime state once, then reuses it. The human daily startup interface is `pnpm scr` (long-running device/scrcpy owner, normally in its own terminal) plus `pnpm runtime:up`, `pnpm runtime:doctor`, and `pnpm runtime:status`. After that, source-only edits reuse the valid Docker runtime, device state and sessions; Expo Fast Refresh / Next HMR is the inner development loop. App-specific openers, runtime proof, authentication and cross-role journeys are claim-specific operations, not micro-edit setup, and must not restart/reconcile Docker or repeat valid login/device setup merely because source changed.
+Normal daily development establishes the Docker backend once, then starts only the host application surfaces actually needed for the current task. Source-only edits reuse those valid processes, device state and sessions; Expo Fast Refresh / Next HMR is the inner development loop. Host application commands must not start/reconcile Docker, and Docker must not own a parallel Control/Metro path.
 
-These commands remain full-stack commands. `runtime:up` starts and reconciles the complete stack without rebuilding existing images by default; on a fresh machine Compose may build a missing image. When baked backend source changes, use explicit service rebuild before the runtime proof that needs the new binary. Task-specific surface/service paths must not rebuild unrelated images.
+`runtime:up` reconciles the backend/state runtime without rebuilding existing images by default; on a fresh machine Compose may build a missing image. When baked backend source changes, use explicit targeted service rebuild before the runtime proof that needs the new binary. Application-source changes do not rebuild Docker.
 
 A task-specific runtime proof may exercise only the services/surfaces causally required by its claim. Verification must not start, stop, rebuild or restore the complete runtime merely to manufacture a generic green result.
 

@@ -41,7 +41,7 @@ jobs:
             base="$(git rev-parse HEAD^)"
           fi
           changed="$(git diff --name-only "${base}" HEAD)"
-          if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|infra/local/compose/|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
+          if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|infra/local/(compose/|\.env\.example$)|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
             echo "run=true" >> "${GITHUB_OUTPUT}"
             echo "BACKEND_INTEGRATION_SCOPE=AFFECTED"
           else
@@ -78,8 +78,8 @@ jobs:
           node <<'NODE'
           const crypto = require("node:crypto");
           const fs = require("node:fs");
-          const path = "infra/local/compose/.env";
-          const example = fs.readFileSync("infra/local/compose/.env.example", "utf8");
+          const path = "infra/local/.env";
+          const example = fs.readFileSync("infra/local/.env.example", "utf8");
           const names = [
             "SAMRIM_POSTGRES_PASSWORD",
             "IDENTITY_CHALLENGE_HMAC_SECRET",
@@ -104,19 +104,37 @@ jobs:
         run: |
           docker compose \
             --project-name samrim-local \
-            --env-file infra/local/compose/.env \
+            --env-file infra/local/.env \
             -f infra/local/compose/compose.yaml \
             up -d --build --wait --wait-timeout 300 \
-            postgres mailpit identity dsh control
+            postgres mailpit identity dsh
 
       - name: Verify backend runtime semantics
         if: steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          node tools/dev/verify-identity-migrations.mjs --env-file=infra/local/compose/.env
-          node tools/dev/verify-dsh-baseline.mjs --env-file=infra/local/compose/.env
-          node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/compose/.env
+          node tools/dev/verify-identity-migrations.mjs --env-file=infra/local/.env
+          node tools/dev/verify-dsh-baseline.mjs --env-file=infra/local/.env
+          node tools/dev/verify-identity-runtime.mjs --env-file=infra/local/.env
+
+      - name: Start Control Panel host
+        if: steps.scope.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          source infra/local/.env
+          set +a
+          export NODE_ENV=development NEXT_TELEMETRY_DISABLED=1 NEXT_PRIVATE_DISABLE_DEV_OVERLAY_UX=1
+          pnpm --dir apps/control-panel exec next dev -H 127.0.0.1 -p "$SAMRIM_CONTROL_PORT" > "$RUNNER_TEMP/control-panel.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/control-panel.pid"
+          for attempt in {1..120}; do
+            if curl --fail --silent --output /dev/null "http://127.0.0.1:$SAMRIM_CONTROL_PORT/"; then exit 0; fi
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/control-panel.log" || true
+          exit 1
 
       - name: Establish canonical Control operator session
         if: steps.scope.outputs.run == 'true'
@@ -130,7 +148,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node tools/dev/verify-dsh-runtime-core.mjs --env-file=infra/local/compose/.env
+          node tools/dev/verify-dsh-runtime-core.mjs --env-file=infra/local/.env
 
       - name: Verify backend proof is non-mutating
         if: steps.scope.outputs.run == 'true'
@@ -140,13 +158,21 @@ jobs:
           drift="$(git status --porcelain --untracked-files=all)"
           [[ -z "${drift}" ]] || { printf '%s\n' "${drift}"; git diff -- . || true; exit 1; }
 
+      - name: Stop Control Panel host
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/control-panel.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/control-panel.pid")" 2>/dev/null || true
+          fi
+
       - name: Purge backend services
         if: always() && steps.scope.outputs.run == 'true'
         shell: bash
         run: |
           docker compose \
             --project-name samrim-local \
-            --env-file infra/local/compose/.env \
+            --env-file infra/local/.env \
             -f infra/local/compose/compose.yaml \
             down --volumes --remove-orphans
-          rm -f infra/local/compose/.env
+          rm -f infra/local/.env

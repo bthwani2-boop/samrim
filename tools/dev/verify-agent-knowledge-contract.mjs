@@ -105,14 +105,17 @@ requireTokens("tools/dev/runtime.ps1", [
 ]);
 const runtime = requireTokens("tools/dev/runtime.psm1", [
   "function Write-Full-Runtime-Pass",
-  "CANONICAL_LOCAL_RUNTIME=PASS mode=$Mode",
+  "CANONICAL_LOCAL_RUNTIME=PASS scope=backend mode=$Mode",
   "Write-Full-Runtime-Pass 'full'",
   "Write-Full-Runtime-Pass 'warm-reconcile'",
-  "RUNTIME_STATUS=READ_ONLY scope=service-state-display",
-  "CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose",
-  "MOBILE_SURFACE_RUNTIME=PASS",
+  "RUNTIME_STATUS=READ_ONLY scope=backend-service-state-display",
+  "CANONICAL_RUNTIME_READBACK=PASS scope=backend-compose",
+  "DOCKER_BACKEND_RUNTIME=PASS",
+  "APPLICATION_RUNTIME=HOST_OWNED",
   "Export-ModuleMember -Function Invoke-SamrimRuntime",
 ]);
+requireTokens("tools/dev/run-control.ps1", ["next dev -H 127.0.0.1", "-Action Doctor"]);
+requireTokens("tools/dev/open-mobile-apps.ps1", ["'expo','start','--dev-client','--host','localhost'", "Prepare-CanonicalAdbDevice", "-Action Doctor"]);
 if (runtime.includes("Stop-OtherOptionalServices")) {
   failures.push("runtime target startup must not stop unrelated already-running surfaces");
 }

@@ -6,7 +6,7 @@ import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.m
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
-const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : path.resolve(root, "infra/local/compose/.env");
+const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : path.resolve(root, "infra/local/.env");
 
 function readEnv(file) {
   if (!fs.existsSync(file)) throw new Error(`canonical runtime env file missing: ${file}`);
