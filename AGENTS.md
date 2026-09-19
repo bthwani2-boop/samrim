@@ -28,6 +28,14 @@ RIGOR SCALES WITH CONSEQUENCE + UNCERTAINTY + AFFECTED CONE + IRREVERSIBILITY.
 
 `UNEXAMINED != UNAFFECTED` applies only to a dimension that is plausibly material to the current outcome. It does not make every platform dimension material to every task.
 
+### 0.1 Materiality and proof cadence
+
+`MATERIAL CHANGE` means a change capable of altering behavior, meaning, public contract, persistence, runtime composition, user-visible outcome or the validity of required evidence.
+
+`CHANGE UNIT` means one coherent authorized outcome or claim. Intermediate edits and patches inside the same change unit are implementation steps, not closure points; a new explicit user objective may redefine the unit.
+
+During implementation, use proportional source, static and targeted checks. Do not open browser/device apps, restart runtime, re-login or run full journey proof until the change unit is complete, unless the current failure requires it for diagnosis or prior evidence became stale. At change-unit closure, run the smallest claim-specific proof once; do not repeat it for every intermediate patch. The repository-owned candidate verifier and `safe:push` remain the final static/push gates.
+
 ## 1. Scope and ownership
 
 For every material task:
