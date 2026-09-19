@@ -135,22 +135,20 @@ for (const app of apps) {
   }
 
   const rootCommandName = app.replace(/^app-/, "");
-  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 ${rootCommandName}`;
+  const expectedRootScript = `pnpm --dir apps/${app} dev`;
   if (rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
-    console.error(`${app}: per-app root command must route to the canonical runtime owner`);
+    console.error(`${app}: root alias must enter the app directory and run its owned dev command`);
     failed = true;
   }
 
   const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
-  for (const forbidden of ["start", "dev", "serve"]) {
-    if (pkg.scripts?.[forbidden] !== undefined) {
-      console.error(`${app}: package.json must not expose scripts.${forbidden}; use the root runtime command`);
-      failed = true;
-    }
+  if (pkg.scripts?.dev !== "node ../../tools/dev/start-surface.mjs") {
+    console.error(`${app}: package.json scripts.dev must use the shared direct surface launcher`);
+    failed = true;
   }
-  for (const [scriptName, command] of Object.entries(pkg.scripts ?? {})) {
-    if (typeof command === "string" && /\b(?:expo|react-native)\s+start\b/i.test(command)) {
-      console.error(`${app}: package script '${scriptName}' exposes a shadow Metro runtime path`);
+  for (const forbidden of ["start", "serve"]) {
+    if (pkg.scripts?.[forbidden] !== undefined) {
+      console.error(`${app}: package.json must not expose scripts.${forbidden}; scripts.dev is canonical`);
       failed = true;
     }
   }
@@ -252,10 +250,10 @@ for (const entry of fs.readdirSync(appsRoot, { withFileTypes: true })) {
   }
 }
 if (failed) process.exit(1);
-console.log("MOBILE_LOCAL_RUNTIME_OWNER=tools/dev/dev.ps1");
-console.log("MOBILE_RUNTIME_ENTRYPOINT=PNPM_DEV");
-console.log("MOBILE_TARGETED_COMMANDS=CANONICAL_OWNER");
-console.log("MOBILE_SHADOW_START_SCRIPTS=0");
+console.log("MOBILE_LOCAL_RUNTIME_OWNER=apps/*/package.json");
+console.log("MOBILE_RUNTIME_ENTRYPOINT=PACKAGE_DEV");
+console.log("MOBILE_ROOT_COMMANDS=DIRECTORY_ALIASES");
+console.log("MOBILE_SHARED_LAUNCHER=tools/dev/start-surface.mjs");
 console.log("MOBILE_SHADOW_NX_RUNTIME_TARGETS=0");
 console.log("MOBILE_METRO_PORT_AUTHORITY=CANONICAL_ENV");
 console.log("MOBILE_MONOREPO_FAST_REFRESH=EXPO_AUTOCONFIG");
