@@ -104,6 +104,7 @@ const localRuntime = requireTokens("tools/dev/local.ps1", [
   "CONTROL_REUSE=PASS",
   "expo start --dev-client --localhost --android --scheme",
   "next dev -H 127.0.0.1",
+  "adb reverse",
 ]);
 for (const retired of [
   "tools/dev/runtime.ps1",

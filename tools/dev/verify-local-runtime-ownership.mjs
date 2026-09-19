@@ -26,7 +26,7 @@ for(const token of [
   "ValidateSet('Up','Down','Status','Doctor','Control','Client','Partner','Captain','Field','Scrcpy')",
   "function Mobile","APP_REUSE=PASS","expo start --dev-client --localhost --android --scheme",
   "--dns-result-order=ipv4first",
-  "CONTROL_REUSE=PASS","next dev -H 127.0.0.1","function Usb","function Reverse"
+  "CONTROL_REUSE=PASS","next dev -H 127.0.0.1","function Reverse","adb reverse"
 ]) check(local.includes(token),`local.ps1 missing invariant: ${token}`);
 
 check(
@@ -34,7 +34,7 @@ check(
   "local.ps1 must disable Expo TypeScript auto-setup",
 );
 
-for(const bad of ["adb tcpip","getprop","WIFI","wifi","Start-Process","METRO_START_TIMEOUT","runtime.psm1"]){
+for(const bad of ["adb devices","ANDROID_SERIAL","adb -s","scrcpy -s","adb tcpip","getprop","WIFI","wifi","Start-Process","METRO_START_TIMEOUT","runtime.psm1"]){
   check(!local.includes(bad),`local.ps1 retains removed complexity: ${bad}`);
 }
 for(const bad of ["metro-client:","metro-partner:","metro-captain:","metro-field:","js-deps:","/workspace","samrim-js-"]){

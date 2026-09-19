@@ -39,7 +39,7 @@ Metro lifecycle           → Expo CLI
 Control dev server        → Next.js
 ```
 
-The repository does not maintain separate runtime/device/mobile/control/scrcpy wrappers. Warm app launches reuse the healthy Metro/Next process; cold launches delegate directly to Expo or Next. Android development is USB-only and Windows Metro localhost remains IPv4-first because real-device proof showed the IPv6-only listener failure.
+The repository does not maintain separate runtime/device/mobile/control/scrcpy wrappers. Warm app launches reuse the healthy Metro/Next process; cold launches delegate directly to Expo or Next. Android commands call ADB/Expo/scrcpy directly for the one attached device; there is no repository-owned device discovery or serial state. Windows Metro localhost remains IPv4-first because real-device proof showed the IPv6-only listener failure.
 
 ## Tool admission
 

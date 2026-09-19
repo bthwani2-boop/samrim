@@ -36,7 +36,7 @@ pnpm field
 pnpm scr
 ```
 
-All local development commands route through one owner: `tools/dev/local.ps1`. It starts Docker backend services, reuses or starts the selected Metro/Next surface, opens the single USB Android device, and runs scrcpy without secondary runtime wrappers.
+All local development commands route through one owner: `tools/dev/local.ps1`. It starts Docker backend services and reuses or starts the selected Metro/Next surface. Android tooling delegates directly to ADB/Expo/scrcpy and assumes one attached device; the repository does not discover or manage device serials.
 
 Use `pnpm runtime:status` or `pnpm runtime:doctor` only when diagnosing the backend. Stop it with `pnpm runtime:down`. Exceptional rebuild/reset work uses Docker Compose directly instead of permanent repository wrappers.
 

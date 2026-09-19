@@ -76,25 +76,10 @@ function Http([string]$Url) {
     }
 }
 
-function Usb {
-    $serials = @()
-    foreach ($row in @(& adb devices 2>&1)) {
-        if ([string]$row -notmatch '^(?<serial>\S+)\s+device\s*$') { continue }
-
-        $serial = [string]$Matches.serial
-        if ($serial -notmatch ':\d+$' -and -not $serial.StartsWith('emulator-', [StringComparison]::OrdinalIgnoreCase)) {
-            $serials += $serial
-        }
-    }
-
-    if ($serials.Count -ne 1) { Fail "USB_DEVICE_REQUIRED observed=$($serials.Count)" }
-    return $serials[0]
-}
-
-function Reverse([string]$Serial, [int[]]$Ports) {
+function Reverse([int[]]$Ports) {
     foreach ($port in @($Ports | Sort-Object -Unique)) {
-        & adb -s $Serial reverse "tcp:$port" "tcp:$port" *> $null
-        if ($LASTEXITCODE -ne 0) { Fail "ADB_REVERSE_FAILED port=$port" }
+        & adb reverse "tcp:$port" "tcp:$port"
+        if ($LASTEXITCODE -ne 0) { Fail "ANDROID_NOT_READY adb_reverse_port=$port" }
     }
 }
 
@@ -130,12 +115,11 @@ function Mobile([string]$Name) {
     $status = Http "http://127.0.0.1:$metro/status"
 
     if ($status.Ok -and $status.Body.Trim() -eq 'packager-status:running') {
-        $serial = Usb
-        Reverse $serial @($identity, $dsh, $metro)
+        Reverse @($identity, $dsh, $metro)
 
         $url = "http://127.0.0.1:$metro"
         $deep = "$([string]$config.scheme)://expo-development-client/?url=$([Uri]::EscapeDataString($url))"
-        & adb -s $serial shell am start -a android.intent.action.VIEW -d $deep -p ([string]$config.androidPackage) *> $null
+        & adb shell am start -a android.intent.action.VIEW -d $deep -p ([string]$config.androidPackage)
 
         if ($LASTEXITCODE -ne 0) { Fail "APP_OPEN_FAILED app=$app" }
         Write-Host "APP_REUSE=PASS app=$app metro=$url"
@@ -146,8 +130,7 @@ function Mobile([string]$Name) {
         Clear-Node-Port $metro
     }
 
-    $serial = Usb
-    Reverse $serial @($identity, $dsh)
+    Reverse @($identity, $dsh)
 
     $env:NODE_ENV = 'development'
     $env:BTHWANI_ENV = 'development'
@@ -155,7 +138,6 @@ function Mobile([string]$Name) {
     $env:EXPO_NO_TYPESCRIPT_SETUP = '1'
     $env:EXPO_PUBLIC_IDENTITY_API_URL = Need $map 'EXPO_PUBLIC_IDENTITY_API_URL'
     $env:EXPO_PUBLIC_DSH_API_URL = Need $map 'EXPO_PUBLIC_DSH_API_URL'
-    $env:ANDROID_SERIAL = $serial
 
     if ([string]$env:NODE_OPTIONS -notmatch '(?:^|\s)--dns-result-order=ipv4first(?:\s|$)') {
         $env:NODE_OPTIONS = ((([string]$env:NODE_OPTIONS) + ' --dns-result-order=ipv4first').Trim())
@@ -222,8 +204,7 @@ switch ($Action) {
     'Captain' { Mobile 'captain' }
     'Field'   { Mobile 'field' }
     'Scrcpy' {
-        $serial = Usb
-        & scrcpy -s $serial --max-size=1280 --max-fps=30 --video-bit-rate=4M --no-audio
+        & scrcpy --max-size=1280 --max-fps=30 --video-bit-rate=4M --no-audio
         exit $LASTEXITCODE
     }
 }
