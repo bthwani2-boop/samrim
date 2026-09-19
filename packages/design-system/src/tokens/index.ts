@@ -9,4 +9,4 @@ export * from "./typography";
 export * from "./borders";
 export * from "./opacity";
 export * from "./z-index";
-export * from "./direction";
+export * from "./formatting";

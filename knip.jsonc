@@ -4,7 +4,7 @@
     ".": {
       "entry": [
         "tools/dev/js-deps.mjs",
-        "tools/dev/verify-candidate-runtime.mjs",
+        "tools/dev/verify-local-world.mjs",
         "tools/dev/verify-dsh-location-runtime.mjs",
         "tools/mobile/export-mobile-smoke.mjs",
         "tools/mobile/test-mobile-app.mjs"
@@ -32,9 +32,23 @@
     "tools/mobile/with-android-development-client.d.cts"
   ],
   "ignoreDependencies": [
-    // Metro probes these optional host integrations with require.resolve and falls back safely.
-    "@sentry/react-native",
-    "expo"
+    "expo",
+    // These native capability declarations are intentionally retained in the
+    // mobile manifests; Knip's JS graph cannot observe native/config consumers.
+    "expo-document-picker",
+    "expo-file-system",
+    "expo-font",
+    "expo-haptics",
+    "expo-image",
+    "expo-image-manipulator",
+    "expo-image-picker",
+    "expo-keep-awake",
+    "expo-location",
+    "expo-network",
+    "expo-notifications",
+    "expo-task-manager",
+    "react-native-keyboard-controller",
+    "react-native-maps"
   ],
   "ignoreBinaries": [
     // CI, Nx project targets and developer-host binaries are resolved outside the JS graph.

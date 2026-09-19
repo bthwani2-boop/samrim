@@ -1,10 +1,10 @@
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type Cart, createDshMobileClient, type DeliveryAddress, formatMoney, formatQuantity, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { Link, type Href } from "expo-router";
+import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
-
-import { direction, resolveTextAlign, resolveTheme, toAsciiDigits } from "@bthwani/design-system";
-import { createDshMobileClient, formatMoney, formatQuantity, orderStateLabel, type CatalogStoreOffer, type Cart, type DeliveryAddress, type Order } from "@bthwani/dsh";
+import { StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
@@ -21,16 +21,33 @@ function isNotFound(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && (error as { kind?: unknown; status?: unknown }).kind === "http" && (error as { status?: unknown }).status === 404);
 }
 
-export function CartCheckout({ storeId, offers, addresses, serviceableAddressId }: { storeId: string; offers: ReadonlyArray<CatalogStoreOffer>; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined }) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+function errorCode(error: unknown): string {
+  return error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code) : "";
+}
+
+function cartMutationErrorMessage(error: unknown): string {
+  const code = errorCode(error);
+  if (code === "STALE_CHECKOUT") return "تغيرت السلة أو بيانات المنتج. حدّثنا السلة؛ راجعها ثم أعد المحاولة.";
+  if (code === "INVALID_INPUT") return "تعذر قبول الكمية أو الخيارات الحالية. حدّث السلة ثم أعد المحاولة.";
+  if (code === "OFFER_UNAVAILABLE") return "لم يعد أحد المنتجات متاحًا. حدّث السلة لمراجعة المنتجات الحالية.";
+  if (code === "CART_CLOSED") return "أُغلقت السلة. افتح كتالوج المتجر لبدء سلة جديدة.";
+  return "تعذر تحديث السلة. أعد المحاولة بعد قراءة الحالة الحالية.";
+}
+
+function isQuantityAllowed(line: Cart["lines"][number], quantity: number): boolean {
+  return quantity >= line.quantityMinBaseUnits && quantity <= line.quantityMaxBaseUnits && (quantity - line.quantityMinBaseUnits) % line.quantityStepBaseUnits === 0;
+}
+
+export function CartCheckout({ storeId, addresses, serviceableAddressId }: { storeId: string; addresses: ReadonlyArray<DeliveryAddress>; serviceableAddressId?: string | undefined }) {
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartState>({ kind: "loading" });
   const [busy, setBusy] = useState(false);
+  const [busyLineId, setBusyLineId] = useState("");
   const [error, setError] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
-  const [selectedModifierOptionIds, setSelectedModifierOptionIds] = useState<Record<string, ReadonlyArray<string>>>({});
-  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const mutationBusy = busy || Boolean(busyLineId);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -38,7 +55,7 @@ export function CartCheckout({ storeId, offers, addresses, serviceableAddressId 
     try {
       const token = await getUsableIdentityAccessToken();
       const result = await client().readOpenCart(token, storeId);
-      setState({ kind: "ready", cart: result.cart });
+      setState(result.cart.lines.length ? { kind: "ready", cart: result.cart } : { kind: "empty" });
     } catch (cause) {
       if (isNotFound(cause)) setState({ kind: "empty" });
       else { console.error("DSH cart read failed", cause); setState({ kind: "error" }); }
@@ -47,41 +64,48 @@ export function CartCheckout({ storeId, offers, addresses, serviceableAddressId 
 
   useEffect(() => { void load(); }, [load]);
 
-  async function add(offer: CatalogStoreOffer) {
-    if (busy) return;
-    setBusy(true); setError("");
-    try {
-      const token = await getUsableIdentityAccessToken();
-      const quantity = Number(quantities[offer.offerId] ?? String(offer.quantityMinBaseUnits));
-      if (!Number.isSafeInteger(quantity) || !isQuantityAllowed(offer, quantity)) {
-        setError("الكمية لا تطابق الحد الأدنى أو الأقصى أو خطوة الكمية لهذا العرض.");
-        return;
-      }
-      const version = state.kind === "ready" ? state.cart.version : 0;
-      const result = await client().upsertCartLine(token, { storeId, storeOfferId: offer.offerId, quantityBaseUnits: quantity, selectedModifierOptionIds: selectedModifierOptionIds[offer.offerId] ?? [] }, version);
-      setState({ kind: "ready", cart: result.cart });
-    } catch (cause) { console.error("DSH cart add failed", cause); setError("تعذر إضافة المنتج. أعد قراءة السلة وحاول مرة أخرى."); }
-    finally { setBusy(false); }
+  async function refreshAfterConflict(message: string) {
+    await load();
+    setError(message);
   }
 
-  function toggleModifier(offer: CatalogStoreOffer, groupId: string, optionId: string, maxSelections: number) {
-    setSelectedModifierOptionIds((current) => {
-      const selected = [...(current[offer.offerId] ?? [])];
-      const option = selected.indexOf(optionId);
-      if (option >= 0) {
-        selected.splice(option, 1);
-      } else {
-        const groupOptionIds = new Set(offer.modifierGroups.find((group) => group.id === groupId)?.options.map((item) => item.id) ?? []);
-        const withoutGroup = selected.filter((id) => !groupOptionIds.has(id));
-        if (maxSelections === 1) selected.splice(0, selected.length, ...withoutGroup, optionId);
-        else if (selected.filter((id) => groupOptionIds.has(id)).length < maxSelections) selected.push(optionId);
-      }
-      return { ...current, [offer.offerId]: selected };
-    });
+  async function updateLine(line: Cart["lines"][number], delta: -1 | 1) {
+    const nextQuantity = line.quantityBaseUnits + delta * line.quantityStepBaseUnits;
+    if (mutationBusy || state.kind !== "ready" || !isQuantityAllowed(line, nextQuantity)) return;
+    setBusyLineId(line.id);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await client().updateCartLine(token, line.id, { quantityBaseUnits: nextQuantity, selectedModifierOptionIds: line.selectedModifierOptionIds }, state.cart.version);
+      setState(result.cart.lines.length ? { kind: "ready", cart: result.cart } : { kind: "empty" });
+    } catch (cause) {
+      console.error("DSH cart line update failed", cause);
+      if (errorCode(cause) === "STALE_CHECKOUT") await refreshAfterConflict(cartMutationErrorMessage(cause));
+      else setError(cartMutationErrorMessage(cause));
+    } finally {
+      setBusyLineId("");
+    }
+  }
+
+  async function removeLine(line: Cart["lines"][number]) {
+    if (mutationBusy || state.kind !== "ready") return;
+    setBusyLineId(line.id);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await client().removeCartLine(token, line.id, state.cart.version);
+      setState(result.cart.lines.length ? { kind: "ready", cart: result.cart } : { kind: "empty" });
+    } catch (cause) {
+      console.error("DSH cart line removal failed", cause);
+      if (errorCode(cause) === "STALE_CHECKOUT") await refreshAfterConflict(cartMutationErrorMessage(cause));
+      else setError(cartMutationErrorMessage(cause));
+    } finally {
+      setBusyLineId("");
+    }
   }
 
   async function checkout() {
-    if (busy || state.kind !== "ready" || !state.cart.lines.length || !serviceableAddressId) return;
+    if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || !serviceableAddressId) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -89,66 +113,65 @@ export function CartCheckout({ storeId, offers, addresses, serviceableAddressId 
       setOrder(result.order);
       setOrders((await client().listClientOrders(token, 20)).orders);
       setState({ kind: "empty" });
-    } catch (cause) { console.error("DSH checkout failed", cause); setError("تعذر إتمام الطلب. تأكد من أهلية العنوان ثم أعد المحاولة."); }
-    finally { setBusy(false); }
+    } catch (cause) {
+      console.error("DSH checkout failed", cause);
+      if (errorCode(cause) === "STALE_CHECKOUT") await refreshAfterConflict(cartMutationErrorMessage(cause));
+      else setError("تعذر إتمام الطلب. تأكد من أهلية العنوان ثم أعد المحاولة.");
+    } finally { setBusy(false); }
   }
 
   const selectedAddress = addresses.find((address) => address.id === serviceableAddressId);
   return (
     <View style={styles.container} accessibilityLabel="السلة وإتمام الطلب">
       <Text style={styles.title}>السلة وإتمام الطلب</Text>
-      <Text style={styles.muted}>تُعاد قراءة السعر والأهلية عند الإضافة وعند الإتمام.</Text>
-      {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة السلة…</Text></View> : null}
-      {state.kind === "error" ? <View style={styles.state}><Text style={styles.error}>تعذر قراءة السلة.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}
-      {state.kind === "empty" ? <Text style={styles.muted}>السلة فارغة. أضف منتجًا من القائمة أعلاه.</Text> : null}
+      <Text style={styles.muted}>تُعاد قراءة السعر والأهلية عند فتح السلة وعند الإتمام.</Text>
+      {state.kind === "loading" ? <View style={styles.state} accessibilityLabel="جارٍ قراءة السلة"><BthwaniSkeleton height={72} /><BthwaniSkeleton height={72} /></View> : null}
+      {state.kind === "error" ? <View style={styles.state}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>تعذر قراءة السلة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
+      {state.kind === "empty" ? <BthwaniSurface tone="inset" style={styles.emptyState}><Text style={styles.lineTitle}>{order ? "تم إنشاء الطلب والسلة الآن فارغة." : "السلة فارغة."}</Text><Text style={styles.muted}>{order ? "يمكنك متابعة التسوق من كتالوج المتجر." : "اختر منتجات من كتالوج المتجر ثم عد إلى السلة لإتمام الطلب."}</Text><Link href={`/store/${encodeURIComponent(storeId)}` as Href} asChild><BthwaniButton label="العودة إلى كتالوج المتجر" variant="secondary" /></Link></BthwaniSurface> : null}
       {state.kind === "ready" ? <>
-        <View style={styles.lineList}>{state.cart.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName}</Text><Text style={styles.muted}>{formatMoney(line.lineAmountMinor, line.currency)} · الكمية {formatQuantity(line.baseUnit, line.quantityBaseUnits)}</Text></View>)}</View>
-        <Text style={styles.total}>الإجمالي: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), "YER")}</Text>
+        <View style={styles.lineList}>{state.cart.lines.map((line) => {
+          const lineBusy = busyLineId === line.id;
+          const canDecrease = isQuantityAllowed(line, line.quantityBaseUnits - line.quantityStepBaseUnits);
+          const canIncrease = isQuantityAllowed(line, line.quantityBaseUnits + line.quantityStepBaseUnits);
+          return <View key={line.id} style={styles.line}>
+            <Text style={styles.lineTitle}>{line.productName}</Text>
+            {line.variantTitle ? <Text style={styles.muted}>{line.variantTitle}</Text> : null}
+            {line.selectedModifiers.length ? <Text style={styles.modifiers}>{line.selectedModifiers.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}
+            <Text style={styles.muted}>{formatMoney(line.lineAmountMinor, line.currency)} · الكمية {formatQuantity(line.baseUnit, line.quantityBaseUnits)}</Text>
+            <View style={styles.lineActions}>
+              <BthwaniButton accessibilityLabel={`إنقاص كمية ${line.productName}`} disabled={mutationBusy || !canDecrease} label="إنقاص" onPress={() => void updateLine(line, -1)} variant="secondary" />
+              <BthwaniButton accessibilityLabel={`زيادة كمية ${line.productName}`} disabled={mutationBusy || !canIncrease} label="زيادة" onPress={() => void updateLine(line, 1)} variant="secondary" />
+              <BthwaniButton accessibilityLabel={`إزالة ${line.productName} من السلة`} busy={lineBusy} disabled={mutationBusy} label="إزالة" onPress={() => void removeLine(line)} variant="danger" />
+            </View>
+          </View>;
+        })}</View>
+        <Text style={styles.total}>الإجمالي: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
         {serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : <Text style={styles.warning}>اختر عنوانًا مؤهلًا من قسم الأهلية قبل الإتمام.</Text>}
-        <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy || !serviceableAddressId }} disabled={busy || !serviceableAddressId} onPress={() => void checkout()} style={[styles.button, (busy || !serviceableAddressId) && styles.disabledButton]}><Text style={[styles.buttonText, (busy || !serviceableAddressId) && styles.disabledButtonText]}>{busy ? "جارٍ الإتمام…" : "إتمام الطلب"}</Text></Pressable>
+        <BthwaniButton accessibilityLabel="إتمام الطلب" busy={busy} disabled={mutationBusy || !serviceableAddressId} label="إتمام الطلب" onPress={() => void checkout()} />
       </> : null}
-      {offers.length ? <View style={styles.offerList}>{offers.map((offer) => { const selectedOptions = selectedModifierOptionIds[offer.offerId] ?? []; const quantity = quantities[offer.offerId] ?? String(offer.quantityMinBaseUnits); return <View key={offer.offerId} style={styles.offerCard}><Text style={styles.lineTitle}>{offer.productName} · {formatMoney(offer.priceMinor, offer.currency)}</Text><Text style={styles.muted}>الكمية: {formatQuantity(offer.baseUnit, offer.quantityMinBaseUnits)}–{formatQuantity(offer.baseUnit, offer.quantityMaxBaseUnits)} بخطوة {formatQuantity(offer.baseUnit, offer.quantityStepBaseUnits)}</Text><TextInput accessibilityLabel={`كمية ${offer.productName}`} editable={!busy} keyboardType="number-pad" onChangeText={(value) => setQuantities((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={quantity} style={[styles.quantityInput, busy && styles.disabledInput]} />{offer.modifierGroups.map((group) => <View key={group.id} style={styles.modifierGroup}><Text style={styles.muted}>{group.nameAr}{group.required ? " · مطلوب" : ""}</Text><View style={styles.modifierOptions}>{group.options.filter((option) => option.availability).map((option) => { const selectedOption = selectedOptions.includes(option.id); return <Pressable key={option.id} accessibilityRole="button" accessibilityState={{ selected: selectedOption, disabled: busy }} disabled={busy} onPress={() => toggleModifier(offer, group.id, option.id, group.maxSelections)} style={[styles.modifierOption, selectedOption && styles.modifierOptionSelected, busy && styles.disabledButton]}><Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>{option.nameAr}{option.priceDeltaMinor ? ` · +${formatMoney(option.priceDeltaMinor, offer.currency)}` : ""}</Text></Pressable>; })}</View></View>)}<Pressable accessibilityRole="button" accessibilityLabel={`إضافة ${offer.productName}`} disabled={busy} onPress={() => void add(offer)} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>إضافة إلى السلة</Text></Pressable></View>; })}</View> : null}
-      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><Pressable accessibilityRole="button" style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>فتح تفاصيل الطلب</Text></Pressable></Link></View> : null}
+      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
-      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}
     </View>
   );
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, direction: activeDirection, gap: 10, marginTop: 16, padding: 14 },
-    title: { color: theme.color, fontSize: 17, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 19, textAlign: startTextAlign },
-    state: { alignItems: "center", gap: 8, paddingVertical: 8 },
-    lineList: { gap: 8 },
-    line: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 3, padding: 10 },
-    lineTitle: { color: theme.color, fontSize: 14, fontWeight: "700", textAlign: startTextAlign },
-    total: { color: theme.color, fontSize: 15, fontWeight: "800", textAlign: startTextAlign },
-    offerList: { gap: 8 },
-    offerCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, gap: 8, padding: 10 },
-    modifierGroup: { gap: 6 },
-    modifierOptions: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    modifierOption: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 7 },
-    modifierOptionSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 10, justifyContent: "center", minHeight: 44, paddingHorizontal: 12 },
-    buttonText: { color: theme.onAction, fontWeight: "800" },
-    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
-    disabledButtonText: { color: theme.disabledText },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 40, paddingHorizontal: 10 },
-    secondaryButtonText: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: "center" },
-    quantityInput: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, color: theme.color, minHeight: 40, paddingHorizontal: 10, textAlign: resolveTextAlign("start", "ltr"), writingDirection: "ltr" },
-    disabledInput: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground, color: theme.disabledText },
-    orderBox: { backgroundColor: theme.actionSoft, borderRadius: 10, gap: 4, padding: 10 },
-    success: { color: theme.success, fontSize: 13, fontWeight: "800", textAlign: startTextAlign },
-    warning: { color: theme.warning, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
-    error: { color: theme.danger, fontSize: 13, textAlign: startTextAlign },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[4], padding: spacing[4] },
+    title: { ...typography.titleSm, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 19 },
+    state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
+    emptyState: { alignItems: "stretch", backgroundColor: theme.surfaceRaised, borderRadius: radius.sm, gap: spacing[2], padding: spacing[3] },
+    lineList: { gap: spacing[2] },
+    line: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
+    lineTitle: { ...typography.bodyStrong, color: theme.color },
+    modifiers: { ...typography.bodySm, color: theme.interactiveText },
+    lineActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2], marginTop: spacing[2] },
+    total: { ...typography.bodyStrong, color: theme.color },
+    orderBox: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
+    success: { ...typography.bodyStrong, color: theme.success },
+    warning: { ...typography.bodyStrong, color: theme.warning },
+    error: { ...typography.bodySm, color: theme.danger },
   });
-}
-
-function isQuantityAllowed(offer: CatalogStoreOffer, quantity: number): boolean {
-  return quantity >= offer.quantityMinBaseUnits && quantity <= offer.quantityMaxBaseUnits && (quantity - offer.quantityMinBaseUnits) % offer.quantityStepBaseUnits === 0;
 }

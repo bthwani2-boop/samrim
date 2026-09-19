@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env-file="))?.slice("--env-file=".length);
@@ -12,7 +13,7 @@ const env = Object.fromEntries(fs.readFileSync(envFile, "utf8").split(/\r?\n/).f
   return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
 }));
 const baseUrl = `http://${runtimeHost}:${env.SAMRIM_IDENTITY_PORT}`;
-const challengeSecret = env.IDENTITY_CHALLENGE_HMAC_SECRET;
+const mailpitPort = env.SAMRIM_MAILPIT_WEB_PORT;
 const dshToken = env.IDENTITY_DSH_SERVICE_TOKEN;
 const bootstrapToken = env.OPERATOR_BOOTSTRAP_SECRET;
 const controlToken = env.CONTROL_PANEL_SERVICE_TOKEN;
@@ -58,11 +59,12 @@ const expect = async (method, pathname, status, options = {}) => {
 const service = (token, extra = {}) => ({ Authorization: "Bearer " + token, ...extra });
 const phone = () => "+9677" + String(crypto.randomInt(10_000_000, 99_999_999));
 const password = (label) => label.slice(0, 4).padEnd(4, "x") + crypto.randomBytes(2).toString("hex");
-const codeFor = (challengeId, purpose) => String(crypto.createHmac("sha256", challengeSecret).update(challengeId).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest().readUInt32BE(0) % 1_000_000).padStart(6, "0");
 const issue = async (pathname, body, purpose, role = "client") => {
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone: body.phone, purpose });
   const challenge = await expect("POST", pathname, 201, { body });
   assert(typeof challenge.challengeId === "string", purpose + " challenge id missing");
-  return { ...challenge, code: codeFor(challenge.challengeId, purpose), role };
+  assert(typeof mailpitPort === "string" && mailpitPort.trim(), "canonical Mailpit web port missing");
+  return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose, excludeMessageIds: previousMessageIds }), role };
 };
 const session = (pair, role, surface, subject) => {
   assert(typeof pair?.accessToken === "string" && typeof pair?.refreshToken === "string", "token pair missing");
@@ -155,8 +157,9 @@ const managedPassword = password("Partner");
 const managedChallenge = await issue("/auth/managed/activation/request", { phone: managedPhone, role: "partner" }, "managed_activate", "partner");
 const managedPair = await expect("POST", "/auth/managed/activate", 200, { body: { phone: managedPhone, role: "partner", verificationCode: managedChallenge.code, password: managedPassword, clientInstanceId: "runtime-managed-instance-" + crypto.randomUUID() } });
 session(managedPair, "partner", "app-partner", managedPair.identity.subject);
-const repeatedManagedChallenge = await issue("/auth/managed/activation/request", { phone: managedPhone, role: "partner" }, "managed_activate", "partner");
-await expect("POST", "/auth/managed/activate", 401, { body: { phone: managedPhone, role: "partner", verificationCode: repeatedManagedChallenge.code, password: password("Repeated"), clientInstanceId: "runtime-repeat-activation-" + crypto.randomUUID() } });
+const repeatedManagedChallenge = await expect("POST", "/auth/managed/activation/request", 201, { body: { phone: managedPhone, role: "partner" } });
+assert(typeof repeatedManagedChallenge.challengeId === "string", "repeated managed activation challenge id missing");
+await expect("POST", "/auth/managed/activate", 401, { body: { phone: managedPhone, role: "partner", verificationCode: "000000", password: password("Repeated"), clientInstanceId: "runtime-repeat-activation-" + crypto.randomUUID() } });
 assert(sql("SELECT count(*) FROM identity_sessions WHERE actor_id='" + sqlLiteral(managedPair.identity.subject) + "' AND role='partner' AND revoked_at IS NULL") === "1", "repeated managed activation created a second live session");
 const managedRole = await expect("GET", "/internal/actors/" + encodeURIComponent(managedPair.identity.subject) + "/roles/partner", 200, { token: controlToken });
 await expect("POST", "/internal/actors/" + encodeURIComponent(managedPair.identity.subject) + "/roles/partner/disable", 204, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorActorID, "X-Correlation-ID": crypto.randomUUID(), "X-Expected-Version": String(managedRole.roleVersion), "X-Reason": "runtime DSH lifecycle boundary assurance" } });

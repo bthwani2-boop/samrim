@@ -1,18 +1,18 @@
-import { useMemo, type PropsWithChildren } from "react";
-import { ScrollView, StyleSheet, Text, useColorScheme, View, type ColorValue } from "react-native";
+import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniIcon, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type PropsWithChildren, useMemo } from "react";
+import { type ColorValue, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { direction, radius, resolveTextAlign, resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-
 export function CaptainScrollScreen({ children }: PropsWithChildren) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  return <ScrollView contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
+  return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{children}</ScrollView>;
 }
 
 export function createCaptainTabOptions(theme: ReturnType<typeof resolveTheme>) {
   const styles = createStyles(theme);
-  const icons = { home: "⌂", offers: "✦", deliveries: "⌁", account: "◉" } as const;
+  const icons = { home: "home", offers: "offers", deliveries: "deliveries", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
     header: () => <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><CaptainHeader styles={styles} /></SafeAreaView>,
@@ -21,7 +21,7 @@ export function createCaptainTabOptions(theme: ReturnType<typeof resolveTheme>) 
     tabBarHideOnKeyboard: true,
     tabBarInactiveTintColor: theme.colorMuted,
     tabBarShowIcon: true,
-    tabBarIcon: ({ color }: { color: ColorValue }) => <Text accessible={false} style={[styles.navigationIcon, { color }]}>{icons[route.name as keyof typeof icons] ?? "•"}</Text>,
+    tabBarIcon: ({ color }: { color: ColorValue }) => { const icon = icons[route.name as keyof typeof icons]; return icon ? <BthwaniIcon name={icon} color={color} size={sizing.iconLg} /> : null; },
     tabBarItemStyle: styles.navigationItem,
     tabBarLabelStyle: styles.navigationLabel,
     tabBarStyle: styles.navigation,
@@ -30,25 +30,22 @@ export function createCaptainTabOptions(theme: ReturnType<typeof resolveTheme>) 
 }
 
 function CaptainHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
-  return <View style={styles.header}><View><Text style={styles.brand}>بثواني</Text><Text style={styles.context}>مساحة الكابتن · المهام أولًا</Text></View><View style={styles.headerMark} accessibilityElementsHidden><View style={styles.headerMarkNavy} /><View style={styles.headerMarkOrange} /></View></View>;
+  return <View style={styles.header}><View><Text style={styles.brand}>بثواني · الكابتن</Text><Text style={styles.context}>الجاهزية والتوصيل</Text></View><View style={styles.headerMark} accessibilityElementsHidden><View style={styles.headerMarkNavy} /><View style={styles.headerMarkOrange} /></View></View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    headerSafeArea: { backgroundColor: theme.surface, direction: activeDirection },
-    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: 1, direction: activeDirection, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing[5], paddingVertical: spacing[3] },
-    brand: { color: theme.color, fontSize: typography.titleMd.fontSize, fontWeight: "800", lineHeight: typography.titleMd.lineHeight, textAlign: startTextAlign },
-    context: { color: theme.colorMuted, fontSize: typography.caption.fontSize, marginTop: spacing[1], textAlign: startTextAlign },
-    headerMark: { alignItems: "flex-end", direction: activeDirection, flexDirection: "row", gap: spacing[1], height: sizing.avatarSm },
+    headerSafeArea: { backgroundColor: theme.surface },
+    header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing[5], paddingVertical: spacing[3] },
+    brand: { ...typography.titleMd, color: theme.color },
+    context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1] },
+    headerMark: { alignItems: "flex-end", flexDirection: "row", gap: spacing[1], height: sizing.avatarSm },
     headerMarkNavy: { backgroundColor: theme.structure, borderRadius: radius.xs, height: sizing.avatarSm, width: 9 },
     headerMarkOrange: { backgroundColor: theme.brandAction, borderRadius: radius.xs, height: 16, width: 9 },
-    scene: { backgroundColor: theme.background, direction: activeDirection },
-    screenContent: { direction: activeDirection, flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
-    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: 1, direction: activeDirection, flexDirection: "row", paddingHorizontal: spacing[2], paddingVertical: spacing[2] },
-    navigationItem: { borderRadius: radius.md, minHeight: sizing.controlLg, paddingHorizontal: spacing[1] },
-    navigationIcon: { fontSize: 22, fontWeight: "800", lineHeight: 26 },
-    navigationLabel: { fontSize: typography.caption.fontSize, fontWeight: "700" },
+    scene: { backgroundColor: theme.background },
+    screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
+    navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, elevation: 8, paddingHorizontal: spacing[2], paddingTop: spacing[2], zIndex: 8 },
+    navigationItem: { alignItems: "center", borderRadius: radius.md, gap: spacing[1], justifyContent: "center", minHeight: sizing.controlLg, paddingHorizontal: spacing[1] },
+    navigationLabel: { ...typography.caption },
   });
 }

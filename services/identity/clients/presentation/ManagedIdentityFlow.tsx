@@ -1,6 +1,7 @@
-import { direction, radius, resolveTextAlign, resolveTextInputAlign, resolveTheme, spacing, toAsciiDigits, type ThemeColors } from "@bthwani/design-system";
+import { radius, spacing, type ThemeColors, toAsciiDigits } from "@bthwani/design-system";
+import { useAppearanceTheme } from "@bthwani/design-system/native";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { identityErrorMessage, identitySessionSignOutMessage } from "../errors";
 import type { IdentitySessionState } from "../index";
@@ -43,6 +44,16 @@ export interface ManagedIdentityFlowProps {
   authenticatedContent?: ReactNode;
 }
 
+/**
+ * Resolve a host-owned internal return path without allowing protocol or
+ * protocol-relative navigation. Route admission stays with the host app.
+ */
+export function resolveInternalReturnPath(value: string | string[] | undefined, fallback: string, admitted: RegExp): string {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate?.startsWith("/") || candidate.startsWith("//")) return fallback;
+  return admitted.test(candidate) ? candidate : fallback;
+}
+
 function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
   return (
     <View style={styles.brandRow}>
@@ -56,7 +67,7 @@ function BrandHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
 }
 
 export function AuthenticatedMobileBoundary({ binding, onUnauthenticated, children }: AuthenticatedMobileBoundaryProps) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
   const [busy, setBusy] = useState(false);
@@ -124,9 +135,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
     throw new Error(`MANAGED_FLOW_SURFACE_MISMATCH: binding surface ${binding.surface} !== prop surface ${surface}`);
   }
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
-  const theme = resolveTheme(isDark ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const [state, setState] = useState<IdentitySessionState>({ kind: "restoring" });
@@ -256,7 +265,7 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
   }
 
   if (state.kind === "authenticated") {
-    return authenticatedContent ? <>{authenticatedContent}</> : null;
+    return authenticatedContent ?? null;
   }
 
   if (state.kind === "degraded") {
@@ -442,16 +451,10 @@ export function ManagedIdentityFlow({ managedRole, surface, roleLabel, binding, 
 }
 
 function createStyles(theme: ThemeColors) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
-  const numericTextAlign = resolveTextInputAlign("start", "ltr");
-
   return StyleSheet.create({
     boundaryContainer: {
       alignItems: "stretch",
       backgroundColor: theme.background,
-      direction: activeDirection,
       flex: 1,
       gap: spacing[4],
       justifyContent: "center",
@@ -461,7 +464,6 @@ function createStyles(theme: ThemeColors) {
       flexGrow: 1,
       alignItems: "stretch",
       backgroundColor: theme.background,
-      direction: activeDirection,
       gap: spacing[4],
       paddingHorizontal: spacing[4],
       paddingBottom: spacing[12],
@@ -522,7 +524,6 @@ function createStyles(theme: ThemeColors) {
       borderColor: theme.borderColor,
       borderRadius: radius.lg,
       borderWidth: 1,
-      direction: activeDirection,
       gap: spacing[3],
       padding: spacing[6],
     },
@@ -536,7 +537,6 @@ function createStyles(theme: ThemeColors) {
       borderColor: theme.borderColor,
       borderRadius: radius.lg,
       borderWidth: 1,
-      direction: activeDirection,
       gap: spacing[2],
       padding: spacing[5],
     },
@@ -544,26 +544,22 @@ function createStyles(theme: ThemeColors) {
       color: theme.interactiveText,
       fontSize: 13,
       fontWeight: "800",
-      textAlign: startTextAlign,
     },
     title: {
       color: theme.color,
       fontSize: 23,
       fontWeight: "800",
-      textAlign: startTextAlign,
     },
     description: {
       color: theme.colorSecondary,
       fontSize: 14,
       lineHeight: 23,
-      textAlign: startTextAlign,
     },
     fieldLabel: {
       color: theme.color,
       fontSize: 14,
       fontWeight: "700",
       marginTop: spacing[2],
-      textAlign: startTextAlign,
     },
     input: {
       backgroundColor: theme.surface,
@@ -575,15 +571,13 @@ function createStyles(theme: ThemeColors) {
       minHeight: 52,
       paddingHorizontal: spacing[3],
       paddingVertical: spacing[2],
-      textAlign: startInputTextAlign,
-      writingDirection: activeDirection,
     },
     numericInput: {
-      textAlign: numericTextAlign,
+      textAlign: "left",
       writingDirection: "ltr",
     },
     revealButton: { alignSelf: "flex-end", minHeight: 40, justifyContent: "center", paddingHorizontal: spacing[1] },
-    revealText: { color: theme.interactiveText, fontSize: 13, fontWeight: "700", textDecorationLine: "underline", writingDirection: activeDirection },
+    revealText: { color: theme.interactiveText, fontSize: 13, fontWeight: "700", textDecorationLine: "underline" },
     summaryPhone: {
       backgroundColor: theme.structureSoft,
       borderRadius: radius.sm,
@@ -657,7 +651,6 @@ function createStyles(theme: ThemeColors) {
       fontSize: 13,
       marginTop: spacing[2],
       padding: spacing[2],
-      textAlign: startTextAlign,
     },
     error: {
       backgroundColor: theme.dangerSoft,
@@ -666,7 +659,6 @@ function createStyles(theme: ThemeColors) {
       fontSize: 13,
       marginTop: spacing[2],
       padding: spacing[2],
-      textAlign: startTextAlign,
     },
     muted: {
       color: theme.colorMuted,

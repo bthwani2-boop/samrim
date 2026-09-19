@@ -1,33 +1,11 @@
 "use client";
 
 import { useSession } from "../../../src/session/session-provider";
+import { OperatorHome } from "../../../src/features/workspace/operator-home";
 
 export default function WorkspacePage() {
   const { state } = useSession();
   if (state.kind !== "authenticated") return null;
-  return (
-    <section className="workspace-page" aria-labelledby="workspace-title">
-      <div className="workspace-card">
-        <div className="workspace-intro">
-          <span className="success-badge"><span className="success-dot" aria-hidden="true" /> الجلسة نشطة</span>
-          <p className="eyebrow">مساحة المشغل</p>
-          <h1 id="workspace-title">أهلاً بك في مساحة العمل</h1>
-          <p className="lead">تم توثيق جلستك بعاملين. من هنا تظهر فقط المسؤوليات المتاحة فعليًا لهذه المساحة.</p>
-        </div>
-        <div className="session-summary">
-          <div><span className="summary-label">الدور الحالي</span><strong>المشغل</strong></div>
-          <div><span className="summary-label">المساحة</span><strong>لوحة التحكم</strong></div>
-          <div><span className="summary-label">حالة الجلسة</span><strong className="summary-value-success">موثقة</strong></div>
-        </div>
-        <div className="workspace-note">
-          <span className="note-mark" aria-hidden="true">✓</span>
-          <div>
-            <strong>الهوية جاهزة</strong>
-            <p>لا توجد بيانات تشغيلية معروضة هنا قبل ربط صلاحيات الوحدات؛ لن نعرض أرقاماً تجريبية أو حالة غير مؤكدة.</p>
-          </div>
-        </div>
-        <p className="workspace-page-context">أنت الآن في نظرة الهوية. استخدم التنقل للوصول إلى مسؤوليات إدارة الحسابات والأدوار.</p>
-      </div>
-    </section>
-  );
+  if (state.identity.role !== "operator") return <section className="state-content workspace-restricted"><div className="state-card" role="alert"><p className="eyebrow">صلاحية غير متاحة</p><h1>مساحة المشغل غير متاحة</h1><p className="muted">هذه الجلسة لا تملك دور المشغل المطلوب لهذه الأعمال.</p></div></section>;
+  return <OperatorHome />;
 }

@@ -1,6 +1,6 @@
 # Local runtime ownership
 
-`tools/dev/runtime.ps1` is the single public owner of the local Docker runtime lifecycle. The canonical Compose project is `samrim-local`, and Docker owns PostgreSQL, Mailpit, Identity, DSH, Control Panel, and the four Metro services.
+`tools/dev/runtime.ps1` is the single public CLI owner of the local Docker runtime lifecycle; it is intentionally thin and delegates implementation to the internal `tools/dev/runtime.psm1` module. The canonical Compose project is `samrim-local`, and Docker owns PostgreSQL, Mailpit, Identity, DSH, Control Panel, and the four Metro services.
 
 Use the lifecycle commands:
 
@@ -15,6 +15,8 @@ Use the lifecycle commands:
 
 `runtime:up` and `runtime:restart` are Docker-only and work without Android or ADB. They reconcile the ignored local environment only during explicit startup. Status, doctor, logs, and down do not generate secrets, remove unknown keys, or repair `.env` implicitly. `runtime:reset` and `runtime:purge` preserve local `.env` values.
 
+Identity and DSH each use one canonical backend image for both migration and runtime processes; migration services override the entrypoint instead of owning duplicate images/builds.
+
 For a material service, use the strict targeted interface:
 
 - `pnpm runtime:rebuild -- -Service identity`
@@ -23,18 +25,33 @@ For a material service, use the strict targeted interface:
 
 Only `identity`, `dsh`, `control`, and the four `metro-*` services are accepted. Arbitrary Compose passthrough is not a public command.
 
+## Normal daily development
+
+After one-time bootstrap has created the local environment, the normal human workday uses only:
+
+- `pnpm scr` — establish/reuse the canonical physical device, ADB reverse mappings, Wi-Fi fallback, and a long-running scrcpy session (normally in its own terminal).
+- `pnpm runtime:up` — start/reconcile the complete canonical Docker stack once.
+- `pnpm runtime:doctor` — read-only deep validation of Docker ownership, workspace/volume topology, and current host-published service endpoints.
+- `pnpm runtime:status` — lightweight read-only service state display.
+
+`runtime:up` owns Docker startup. When the exact full runtime and JavaScript dependency fingerprint are already valid, it performs the canonical read-only `js-deps` check and reconciles only the long-running services without rerunning completed migrations or dependency installation; any failed warm reconciliation falls back to the canonical full repair path. `runtime:doctor` performs deep read-only proof; `runtime:status` only displays current service state. Neither repairs or mutates the runtime. Docker remains the only owner of Control Panel and all four Metro servers. After startup, ordinary JavaScript/TypeScript source edits use the already-running Expo Fast Refresh / Next.js HMR path; they do not require runtime restart, dependency materialization, ADB preparation, app relaunch, or login.
+
 ## Android development
 
-Start the Docker runtime first. Then open exactly one app with its root command:
+The four root app commands remain optional claim-specific openers:
 
 - `pnpm client`
 - `pnpm partner`
 - `pnpm captain`
 - `pnpm field`
 
-Each command reads the selected app’s deployable identity from `apps/<app>/mobile.config.json`, checks the Docker-owned Identity/DSH/Metro services, prepares and reads back ADB reverse mappings through the canonical device policy, and opens only that app. Failures are reported as `RUNTIME_NOT_READY`, `DEVICE_NOT_READY`, `ADB_REVERSE_NOT_READY`, `APP_NOT_INSTALLED`, or `APP_LAUNCH_FAILED`.
+They require the relevant Docker-owned backend and Metro service to already be ready. They perform read-only runtime validation, reuse the canonical device policy, and open the selected installed development client when a real-device interaction is required. They do not start/reconcile Docker or materialize JavaScript dependencies. Normal source-edit feedback comes from Fast Refresh and does not require re-running an app command.
 
-`pnpm scr` is a display-only scrcpy consumer. It uses the canonical device policy for USB selection, bounded Wi-Fi fallback, ADB readiness, and reverse readback; it does not own a second device bootstrap policy.
+Current mobile LOCAL_INTEGRATION proof is Android-only. iOS export/runtime proof is deferred until iOS becomes an admitted development target; do not pay that cost in the current Android workflow.
+
+`pnpm control` likewise validates the already-running Docker-owned Control Panel and reports its URL; it does not start/reconcile Docker.
+
+`pnpm scr` is the canonical device/scrcpy owner. It uses USB as the primary device identity, prepares a bounded Wi-Fi fallback, reuses valid ADB reverse mappings, and runs a resource-bounded development mirror; it does not own Docker runtime lifecycle.
 
 ## Local configuration
 

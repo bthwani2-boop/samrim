@@ -17,7 +17,7 @@ function readError(value: unknown): string {
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(readError(payload));
+  if (!response.ok) throw Object.assign(new Error(readError(payload)), { status: response.status });
   return payload as T;
 }
 
@@ -36,8 +36,10 @@ export function CentralCatalog() {
   const [selected, setSelected] = useState<CatalogProduct | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [query, setQuery] = useState("");
+  const [verticalFilter, setVerticalFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -55,22 +57,24 @@ export function CentralCatalog() {
     setCategories(payload.categories);
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (cursor = "", append = false) => {
     setLoading(true);
     setError("");
     try {
       const suffix = new URLSearchParams({ limit: "50" });
       if (query.trim()) suffix.set("q", query.trim());
-      if (form.verticalId) suffix.set("verticalId", form.verticalId);
+      if (verticalFilter) suffix.set("verticalId", verticalFilter);
+      if (cursor) suffix.set("cursor", cursor);
       const response = await fetch(`/api/catalog/products?${suffix.toString()}`, { cache: "no-store" });
-      const payload = await parseResponse<{ products: ReadonlyArray<CatalogProduct> }>(response);
-      setProducts(payload.products);
+      const payload = await parseResponse<{ products: ReadonlyArray<CatalogProduct>; nextCursor?: string }>(response);
+      setProducts((current) => append ? [...current, ...payload.products] : payload.products);
+      setNextCursor(payload.nextCursor ?? "");
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "تعذر قراءة الكتالوج.");
     } finally {
       setLoading(false);
     }
-  }, [form.verticalId, query]);
+  }, [query, verticalFilter]);
 
   useEffect(() => { void loadVerticals().catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة المجالات.")); }, [loadVerticals]);
   useEffect(() => { void loadCategories(form.verticalId).catch((nextError) => setError(nextError instanceof Error ? nextError.message : "تعذر قراءة التصنيفات.")); }, [form.verticalId, loadCategories]);
@@ -89,16 +93,23 @@ export function CentralCatalog() {
         : await fetch("/api/catalog/products", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(body) });
       const payload = await parseResponse<{ product: CatalogProduct }>(response);
       setSelected(payload.product); setForm(toForm(payload.product)); setNotice(selected ? "تم تحديث المنتج." : "تم إنشاء المنتج والنسخة الافتراضية."); await load();
-    } catch (nextError) { setError(nextError instanceof Error ? nextError.message : "تعذر حفظ المنتج."); } finally { setBusy(false); }
+    } catch (nextError) {
+      if (nextError && typeof nextError === "object" && (nextError as { status?: number }).status === 409) {
+        setError("تغير المنتج قبل حفظك. أُعيدت قراءة السجل الحالي؛ راجع النسخة ثم أعد المحاولة.");
+        await load();
+      } else {
+        setError(nextError instanceof Error ? nextError.message : "تعذر حفظ المنتج.");
+      }
+    } finally { setBusy(false); }
   }
 
   return (
     <div className="central-catalog-grid">
       <section className="access-card central-catalog-list" aria-labelledby="central-catalog-list-title">
         <div className="access-card-heading"><span className="step-chip">إدارة المنتجات</span><p className="eyebrow">سجل المنتجات</p><h2 id="central-catalog-list-title">المنتجات والنسخ</h2><p className="muted">المنتج يملك الهوية؛ وكل متجر يملك عرضه التجاري المنفصل.</p></div>
-        <div className="catalog-search"><input aria-label="البحث في الكتالوج" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void load(); }} placeholder="ابحث باسم المنتج" /><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>بحث</button></div>
+        <div className="catalog-search"><input aria-label="البحث في الكتالوج" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void load(); }} placeholder="ابحث باسم المنتج" /><select aria-label="تصفية حسب المجال" value={verticalFilter} onChange={(event) => setVerticalFilter(event.target.value)}><option value="">كل المجالات</option>{verticals.map((vertical) => <option value={vertical.id} key={vertical.id}>{vertical.nameAr}</option>)}</select><button type="button" className="button button-secondary" disabled={loading} onClick={() => void load()}>بحث</button></div>
         <button type="button" className="button button-primary" disabled={busy || verticals.length === 0} onClick={startCreate}>منتج جديد</button>
-        {loading ? <p className="muted">جارٍ قراءة الكتالوج…</p> : products.length === 0 ? <p className="muted">لا توجد منتجات مطابقة.</p> : <div className="central-product-list">{products.map((product) => <button type="button" className={`central-product-row${selected?.id === product.id ? " selected" : ""}`} key={product.id} onClick={() => selectProduct(product)}><span><strong>{product.canonicalName}</strong><small>{product.scope === "SHARED" ? "مشترك" : "خاص بالمتجر"} · {product.variants.length} نسخ</small></span><em className={product.active ? "active" : "inactive"}>{product.active ? "نشط" : "معطل"}</em></button>)}</div>}
+        {loading ? <p className="muted">جارٍ قراءة الكتالوج…</p> : products.length === 0 ? <p className="muted">لا توجد منتجات مطابقة.</p> : <><div className="central-product-list">{products.map((product) => <button type="button" className={`central-product-row${selected?.id === product.id ? " selected" : ""}`} key={product.id} onClick={() => selectProduct(product)}><span><strong>{product.canonicalName}</strong><small>{product.scope === "SHARED" ? "مشترك" : "خاص بالمتجر"} · {product.variants.length} نسخ</small></span><em className={product.active ? "active" : "inactive"}>{product.active ? "نشط" : "معطل"}</em></button>)}</div>{nextCursor ? <button type="button" className="button button-secondary" disabled={loading} onClick={() => void load(nextCursor, true)}>تحميل المزيد</button> : null}</>}
       </section>
       <section className="access-card central-catalog-editor" aria-labelledby="central-catalog-editor-title">
         <div className="access-card-heading"><p className="eyebrow">تحرير المنتج والنسخة</p><h2 id="central-catalog-editor-title">{selected ? "تعديل المنتج" : "إنشاء منتج"}</h2><p className="muted">تُحفظ الهوية والتصنيف والنسخة الافتراضية في سجل المنتجات.</p></div>

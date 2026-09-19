@@ -1,16 +1,15 @@
-import { Link, type Href } from "expo-router";
+import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type CommerceVertical, type CreateJoiningCaseRequest, type FieldAdmission, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity } from "@bthwani/dsh";
+import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, TextInput, useColorScheme, View } from "react-native";
-
-import { resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
-import { joiningCaseStateLabel, type CommerceVertical, type CreateJoiningCaseRequest, type FieldAdmission, type JoiningCaseResponse, type ServiceCity } from "@bthwani/dsh";
+import { ActivityIndicator, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 export function FieldNewCase() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const [admission, setAdmission] = useState<FieldAdmission | null>(null);
   const [input, setInput] = useState<CreateJoiningCaseRequest>({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "" });
@@ -82,7 +81,7 @@ export function FieldNewCase() {
   return (
     <View style={styles.container} accessibilityLabel="ملف انضمام جديد">
       <Text style={styles.title}>ملف انضمام جديد</Text>
-      <Text style={styles.muted}>يُنشئ الميدان الملف في DSH فقط؛ المراجعة والنشر مسؤولية المسارات المختصة.</Text>
+      <Text style={styles.muted}>اجمع بيانات النشاط والمتجر في ملف واحد، ثم أرسله للمراجعة عند اكتماله.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ التحقق من الأهلية…</Text></View> : null}
       {!loading && admission?.state !== "eligible" ? <View style={styles.card}><Text style={styles.cardTitle}>لا يمكن إنشاء ملف الآن</Text><Text style={styles.muted}>أهلية الميدان الحالية لا تسمح بإنشاء ملف جديد.</Text></View> : null}
       {!loading && admission?.state === "eligible" ? <View style={styles.card}>
@@ -94,23 +93,23 @@ export function FieldNewCase() {
         <TextInput accessibilityLabel="اسم أول متجر" placeholder="اسم أول متجر" placeholderTextColor={theme.colorMuted} style={styles.input} value={input.firstStoreName} onChangeText={(value) => setInput((current) => ({ ...current, firstStoreName: value }))} />
         <Text style={styles.label}>مدينة الخدمة</Text>
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة المدن المتاحة…</Text> : null}
-        {optionsError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{optionsError}</Text><Pressable accessibilityRole="button" onPress={() => void loadOptions()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة قراءة الخيارات</Text></Pressable></View> : null}
+        {optionsError ? <View style={styles.optionsError}><Text accessibilityRole="alert" style={styles.error}>{optionsError}</Text><BthwaniButton label="إعادة قراءة الخيارات" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
         {!optionsLoading && !optionsError && cities.length === 0 ? <Text style={styles.error}>لا توجد مدينة خدمة متاحة حاليًا.</Text> : null}
-        <View style={styles.optionList}>{cities.map((city) => { const selected = input.serviceCityId === city.id; return <Pressable key={city.id} accessibilityRole="button" accessibilityState={{ selected, disabled: busy }} disabled={busy} onPress={() => setInput((current) => ({ ...current, serviceCityId: city.id }))} style={[styles.optionButton, selected && styles.optionButtonSelected]}><Text style={styles.optionText}>{city.displayNameAr}</Text></Pressable>; })}</View>
+        <View style={styles.optionList}>{cities.map((city) => <BthwaniChip key={city.id} label={city.displayNameAr} onPress={() => setInput((current) => ({ ...current, serviceCityId: city.id }))} selected={input.serviceCityId === city.id} />)}</View>
         <Text style={styles.label}>النشاط التجاري</Text>
         {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
         {!optionsLoading && !optionsError && verticals.length === 0 ? <Text style={styles.error}>لا يوجد نشاط تجاري متاح حاليًا.</Text> : null}
-        <View style={styles.optionList}>{verticals.map((vertical) => { const selected = input.firstStoreVerticalId === vertical.id; return <Pressable key={vertical.id} accessibilityRole="button" accessibilityState={{ selected, disabled: busy }} disabled={busy} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} style={[styles.optionButton, selected && styles.optionButtonSelected]}><Text style={styles.optionText}>{vertical.nameAr}</Text></Pressable>; })}</View>
-        <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy || optionsLoading || Boolean(optionsError) }} disabled={busy || optionsLoading || Boolean(optionsError)} onPress={() => void createCase()} style={[styles.button, (busy || optionsLoading || Boolean(optionsError)) && styles.disabledButton]}><Text style={styles.buttonText}>{busy ? "جارٍ الحفظ…" : "حفظ الملف"}</Text></Pressable>
+        <View style={styles.optionList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} onPress={() => setInput((current) => ({ ...current, firstStoreVerticalId: vertical.id }))} selected={input.firstStoreVerticalId === vertical.id} />)}</View>
+        <BthwaniButton busy={busy} disabled={optionsLoading || Boolean(optionsError)} label="حفظ الملف" onPress={() => void createCase()} />
       </View> : null}
       {createdCase ? <View accessibilityLiveRegion="polite" style={styles.successCard}>
         <Text style={styles.cardTitle}>تم حفظ ملف الانضمام</Text>
         <Text style={styles.muted}>{createdCase.case.businessName} · {createdCase.case.firstStoreName}</Text>
         <Text style={styles.successText}>الحالة: {joiningCaseStateLabel(createdCase.case.state)}</Text>
-        <Link href={"/cases" as Href} asChild><Pressable accessibilityRole="button" style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>فتح ملفات الانضمام</Text></Pressable></Link>
+        <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح ملفات الانضمام" variant="secondary" /></Link>
       </View> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => void loadAdmission()} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={styles.secondaryButtonText}>تحديث الأهلية</Text></Pressable>
+      <BthwaniButton busy={busy} disabled={busy} label="تحديث الأهلية" onPress={() => void loadAdmission()} variant="secondary" />
     </View>
   );
 }

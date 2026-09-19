@@ -18,12 +18,17 @@ func (s *CatalogServer) listOwnProductProposals(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
-	items, err := s.service.ListProductProposalsForPartner(r.Context(), bearerToken(r), r.URL.Query().Get("state"), limit)
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 2048 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
+		return
+	}
+	page, err := s.service.ListProductProposalsForPartner(r.Context(), bearerToken(r), r.URL.Query().Get("state"), limit, cursor)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.CatalogProductProposalListResponse{Proposals: toProductProposals(items)})
+	writeJSON(w, http.StatusOK, contract.CatalogProductProposalListResponse{Proposals: toProductProposals(page.Proposals), NextCursor: page.NextCursor})
 }
 
 func (s *CatalogServer) createProductProposal(w http.ResponseWriter, r *http.Request) {
@@ -157,12 +162,17 @@ func (s *CatalogServer) listProductProposalReviewQueue(w http.ResponseWriter, r 
 	if !ok {
 		return
 	}
-	items, err := s.service.ListProductProposalsForReview(r.Context(), acting, r.URL.Query().Get("state"), limit)
+	cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+	if len(cursor) > 2048 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cursor is too long")
+		return
+	}
+	page, err := s.service.ListProductProposalsForReview(r.Context(), acting, r.URL.Query().Get("state"), limit, cursor)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, contract.CatalogProductProposalListResponse{Proposals: toProductProposals(items)})
+	writeJSON(w, http.StatusOK, contract.CatalogProductProposalListResponse{Proposals: toProductProposals(page.Proposals), NextCursor: page.NextCursor})
 }
 
 func (s *CatalogServer) reviewProductProposal(w http.ResponseWriter, r *http.Request) {

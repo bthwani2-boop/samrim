@@ -15,7 +15,8 @@ export async function GET(request: Request) {
   if (!identity) return errorResponse("UNAUTHENTICATED", "authentication is required", 401);
   if (identity.role !== "operator") return errorResponse("FORBIDDEN", "control operator access is required", 403);
   try {
-    const products = await listCatalogProducts(new URL(request.url).searchParams.get("q")?.trim() ?? "", new URL(request.url).searchParams.get("verticalId")?.trim() ?? "", { operatorActorId: identity.subject });
+    const params = new URL(request.url).searchParams;
+    const products = await listCatalogProducts(params.get("q")?.trim() ?? "", params.get("verticalId")?.trim() ?? "", params.get("cursor")?.trim() ?? "", { operatorActorId: identity.subject });
     return NextResponse.json(products, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (!isDshClientError(error)) return errorResponse("INTERNAL_ERROR", "catalog Product lookup failed", 500);

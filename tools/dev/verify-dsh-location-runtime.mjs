@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
@@ -28,25 +29,29 @@ const identityBase = required(env, "IDENTITY_API_BASE_URL").replace(/\/+$/, "");
 const identityDshToken = required(env, "IDENTITY_DSH_SERVICE_TOKEN");
 const controlPanelToken = required(env, "CONTROL_PANEL_SERVICE_TOKEN");
 const bootstrapToken = required(env, "OPERATOR_BOOTSTRAP_SECRET");
-const challengeSecret = required(env, "IDENTITY_CHALLENGE_HMAC_SECRET");
+const mailpitPort = required(env, "SAMRIM_MAILPIT_WEB_PORT");
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const clientPhone = `+96778${crypto.randomInt(1_000_000, 9_999_999)}`;
 const partnerPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
 const foreignPartnerPhone = `+96777${crypto.randomInt(1_000_000, 9_999_999)}`;
-const partnerStoreID = `store_location_runtime_${suffix}`;
-const foreignStoreID = `store_location_foreign_${suffix}`;
-const serviceCityID = `location-city-${suffix}`;
+let partnerStoreID = "";
+let foreignStoreID = "";
+let serviceCityID = "";
 const actorIDs = new Set();
+const caseIDs = new Set();
 let clientActorID = "";
 let partnerActorID = "";
 let foreignPartnerActorID = "";
+let verticalID = "";
 
 function sqlLiteral(value) {
   return String(value).replaceAll("'", "''");
 }
 
 function sql(query) {
+  // Readback is allowed for schema/contract assertions. DELETE statements below
+  // are bounded cleanup of IDs captured by this run, never business fixture setup.
   return execFileSync("docker", [...composeArgs, "exec", "-T", "postgres", "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
 }
 
@@ -71,14 +76,11 @@ async function expect(base, method, pathname, status, options = {}) {
   return result.body;
 }
 
-function codeFor(challengeID, purpose) {
-  return String(crypto.createHmac("sha256", challengeSecret).update(challengeID).update(Buffer.from([0])).update(purpose).update(Buffer.from([0])).update("challenge-code").digest().readUInt32BE(0) % 1_000_000).padStart(6, "0");
-}
-
 async function issueChallenge(pathname, body, purpose) {
+  const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone: body.phone, purpose });
   const challenge = await expect(identityBase, "POST", pathname, 201, { body });
   if (typeof challenge?.challengeId !== "string") throw new Error(`${pathname}: challenge id missing`);
-  return { ...challenge, code: codeFor(challenge.challengeId, purpose) };
+  return { ...challenge, code: await readMailpitCode({ port: mailpitPort, phone: body.phone, purpose, excludeMessageIds: previousMessageIds }) };
 }
 
 function userHeaders(key, expectedVersion) {
@@ -86,7 +88,7 @@ function userHeaders(key, expectedVersion) {
 }
 
 function serviceHeaders(actingActorID) {
-  return { "X-Acting-Actor-ID": actingActorID };
+  return { "X-Acting-Actor-ID": actingActorID, "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": crypto.randomUUID() };
 }
 
 async function createClientSession(phone, instance) {
@@ -100,16 +102,45 @@ async function createClientSession(phone, instance) {
 
 async function createPartnerSession(operatorID, phone, instance) {
   const provisioned = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: identityDshToken, headers: { "X-Acting-Actor-ID": operatorID, "X-Correlation-ID": crypto.randomUUID() }, body: { phoneE164: phone, role: "partner" } });
-  if (provisioned.status !== 201 || typeof provisioned.body?.actorId !== "string") throw new Error(`partner fixture provisioning failed: ${JSON.stringify(provisioned.body)}`);
   const actorID = String(provisioned.body.actorId);
-  actorIDs.add(actorID);
+  if (actorID && actorID !== "undefined") actorIDs.add(actorID);
+  if (![200, 201].includes(provisioned.status) || !actorID || actorID === "undefined") throw new Error(`partner fixture provisioning failed: ${JSON.stringify(provisioned.body)}`);
   const challenge = await issueChallenge("/auth/managed/activation/request", { phone, role: "partner" }, "managed_activate");
-  const pair = await expect(identityBase, "POST", "/auth/managed/activate", 200, { body: { phone, role: "partner", verificationCode: challenge.code, password: `Part${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: instance } });
+  const pairResponse = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "partner", verificationCode: challenge.code, password: `Part${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: instance } });
+  if (pairResponse.status !== 200) throw new Error(`partner activation failed status=${pairResponse.status} body=${JSON.stringify(pairResponse.body)}`);
+  const pair = pairResponse.body;
   if (pair.identity?.subject !== actorID || pair.identity?.role !== "partner" || pair.identity?.surface !== "app-partner") throw new Error("partner fixture session identity is not app-partner");
   return { actorID, pair };
 }
 
+async function createApprovedPartner(operatorID, phone, name, serviceCityId) {
+  const created = await expect(dshBase, "POST", "/dsh/joining-cases", 201, {
+    token: controlPanelToken,
+    headers: serviceHeaders(operatorID),
+    body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: verticalID },
+  });
+  if (created?.case?.state !== "draft" || created.case.firstStoreVerticalId !== verticalID) throw new Error("location joining case create readback failed");
+  const caseID = String(created.case.id);
+  caseIDs.add(caseID);
+  const submitted = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/submit`, 200, {
+    token: controlPanelToken,
+    headers: { ...serviceHeaders(operatorID), "X-Expected-Version": "1" },
+  });
+  if (submitted?.case?.state !== "submitted" || !submitted.case.partnerActorId) throw new Error("location joining case submit readback failed");
+  const fixture = await createPartnerSession(operatorID, phone, `location-partner-${suffix}-${name.replace(/[^A-Za-z0-9._:-]/g, "-")}`);
+  if (fixture.actorID !== String(submitted.case.partnerActorId)) throw new Error("location joining case actor binding drifted");
+  const approved = await expect(dshBase, "POST", `/dsh/joining-cases/${encodeURIComponent(caseID)}/review`, 200, {
+    token: controlPanelToken,
+    headers: { ...serviceHeaders(operatorID), "X-Expected-Version": "2" },
+    body: { decision: "approved" },
+  });
+  if (approved?.case?.state !== "approved" || !approved.case.store?.id) throw new Error("location joining case approval readback failed");
+  return { ...fixture, caseID, storeID: String(approved.case.store.id) };
+}
+
 function cleanup() {
+  // Cleanup is intentionally scoped to this verifier's freshly created actors,
+  // cases, stores, city and addresses; it must preserve the reusable local world.
   try {
     const locationSchemaExists = sql("SELECT to_regclass('dsh.delivery_addresses') IS NOT NULL");
     if (locationSchemaExists === "t" && clientActorID) {
@@ -119,10 +150,23 @@ function cleanup() {
       sql(`DELETE FROM dsh.delivery_addresses WHERE client_actor_id='${actor}'`);
     }
     if (locationSchemaExists === "t") {
+      for (const caseID of caseIDs) {
+        const value = sqlLiteral(caseID);
+        sql(`DELETE FROM dsh.joining_case_audit WHERE case_id='${value}'`);
+        sql(`DELETE FROM dsh.joining_case_mutation_idempotency WHERE case_id='${value}'`);
+        sql(`DELETE FROM dsh.joining_cases WHERE id='${value}'`);
+      }
       const stores = `'${sqlLiteral(partnerStoreID)}','${sqlLiteral(foreignStoreID)}'`;
       sql(`DELETE FROM dsh.store_origin_audit WHERE store_id IN (${stores})`);
       sql(`DELETE FROM dsh.store_origin_mutation_idempotency WHERE store_id IN (${stores})`);
+      sql(`DELETE FROM dsh.store_publication_audit WHERE store_id IN (${stores})`);
+      sql(`DELETE FROM dsh.store_publication_idempotency WHERE store_id IN (${stores})`);
       sql(`DELETE FROM dsh.stores WHERE id IN (${stores})`);
+    }
+    if (verticalID) {
+      const vertical = sqlLiteral(verticalID);
+      sql(`DELETE FROM dsh.catalog_registry_mutation_idempotency WHERE entity_id='${vertical}'`);
+      sql(`DELETE FROM dsh.commerce_verticals WHERE id='${vertical}'`);
     }
     if (locationSchemaExists === "t") {
       const city = sqlLiteral(serviceCityID);
@@ -147,7 +191,7 @@ try {
     if (sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema='dsh' AND table_name='${table}' AND column_name='${column}'`) !== "0") throw new Error(`Location Core precise/dead column remains: dsh.${table}.${column}`);
   }
 
-  let operatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
+  let operatorID = sql("SELECT actor_id FROM identity_actor_roles WHERE role='operator' AND enabled AND activated_at IS NOT NULL ORDER BY activated_at DESC, actor_id LIMIT 1");
   if (!operatorID) {
     const bootstrap = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+96775${crypto.randomInt(1_000_000, 9_999_999)}`, role: "operator" } });
     if (![201, 409].includes(bootstrap.status)) throw new Error(`operator bootstrap failed: ${JSON.stringify(bootstrap.body)}`);
@@ -155,15 +199,29 @@ try {
   }
   if (!operatorID) throw new Error("Location Core runtime operator fixture is unavailable");
 
-  sql(`INSERT INTO dsh.service_cities(id, display_name_ar, active) VALUES('${sqlLiteral(serviceCityID)}','مدينة اختبار المواقع ${sqlLiteral(suffix)}',true)`);
+  const cityCreated = await expect(dshBase, "POST", "/dsh/service-cities", 201, {
+    token: controlPanelToken,
+    headers: serviceHeaders(operatorID),
+    body: { displayNameAr: `مدينة اختبار المواقع ${Date.now()}`, active: true },
+  });
+  if (!cityCreated?.city?.id) throw new Error("location service city canonical create failed");
+  serviceCityID = String(cityCreated.city.id);
+
+  const verticalCreated = await expect(dshBase, "POST", "/dsh/catalog/verticals", 201, {
+    token: controlPanelToken,
+    headers: serviceHeaders(operatorID),
+    body: { nameAr: `متاجر المواقع ${Date.now()}`, nameEn: `Location Stores ${suffix}`, active: true },
+  });
+  if (!verticalCreated?.vertical?.id) throw new Error("location vertical canonical create failed");
+  verticalID = String(verticalCreated.vertical.id);
 
   const client = await createClientSession(clientPhone, `location-client-${suffix}`);
-  const partnerFixture = await createPartnerSession(operatorID, partnerPhone, `location-partner-${suffix}`);
-  const foreignPartnerFixture = await createPartnerSession(operatorID, foreignPartnerPhone, `location-foreign-partner-${suffix}`);
+  const partnerFixture = await createApprovedPartner(operatorID, partnerPhone, "Location Runtime", serviceCityID);
+  const foreignPartnerFixture = await createApprovedPartner(operatorID, foreignPartnerPhone, "Foreign Location Runtime", serviceCityID);
   partnerActorID = partnerFixture.actorID;
   foreignPartnerActorID = foreignPartnerFixture.actorID;
-  sql(`INSERT INTO dsh.stores(id, partner_actor_id, name, service_city_id) VALUES('${sqlLiteral(partnerStoreID)}','${sqlLiteral(partnerActorID)}','Location Runtime Store','${sqlLiteral(serviceCityID)}')`);
-  sql(`INSERT INTO dsh.stores(id, partner_actor_id, name, service_city_id) VALUES('${sqlLiteral(foreignStoreID)}','${sqlLiteral(foreignPartnerActorID)}','Foreign Location Runtime Store','${sqlLiteral(serviceCityID)}')`);
+  partnerStoreID = partnerFixture.storeID;
+  foreignStoreID = foreignPartnerFixture.storeID;
 
   const empty = await expect(dshBase, "GET", "/dsh/addresses?limit=10", 200, { token: client.accessToken });
   if (!Array.isArray(empty?.addresses) || empty.addresses.length !== 0 || empty.nextCursor !== "") throw new Error("client address empty readback is not canonical");
@@ -211,10 +269,10 @@ try {
   if (!storeReadback.startsWith("1|3")) throw new Error(`origin DB readback is not independent from Store publication version: ${storeReadback}`);
 
   const publicationAttempt = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(partnerStoreID)}/publication`, { token: controlPanelToken, headers: { ...userHeaders(`location-publication-${suffix}`, 1), ...serviceHeaders(operatorID) }, body: { state: "published" } });
-  if (publicationAttempt.status !== 403 || publicationAttempt.body?.error?.code !== "FORBIDDEN") throw new Error(`unactivated local operator bypassed the publication authority gate: ${JSON.stringify(publicationAttempt)}`);
+  if (publicationAttempt.status !== 409 || publicationAttempt.body?.error?.code !== "READINESS_BLOCKED") throw new Error(`publication readiness gate did not fail closed: ${JSON.stringify(publicationAttempt)}`);
   storeReadback = sql(`SELECT version || '|' || delivery_origin_version FROM dsh.stores WHERE id='${sqlLiteral(partnerStoreID)}'`);
   if (storeReadback !== "1|3") throw new Error(`blocked publication changed Store or origin version: ${storeReadback}`);
-  console.log("LOCATION_CORE_PUBLICATION_J1_STORAGE_PROOF=PASS");
+  console.log("LOCATION_CORE_PUBLICATION_READINESS_GATE=PASS");
 
   const wrongRoleAddress = await request(dshBase, "GET", `/dsh/addresses/${encodeURIComponent(addressID)}`, { token: partnerFixture.pair.accessToken });
   if (wrongRoleAddress.status !== 403) throw new Error(`wrong-role address read returned ${wrongRoleAddress.status}`);

@@ -152,8 +152,8 @@ for (const app of apps) {
       failed = true;
     }
   }
-  if (!Array.isArray(config.nativeCapabilities)) {
-    console.error(`${app}: nativeCapabilities must be an array`);
+  if (Object.prototype.hasOwnProperty.call(config, "nativeCapabilities")) {
+    console.error(`${app}: nativeCapabilities shadow registry must be absent`);
     failed = true;
   }
 
@@ -173,14 +173,49 @@ for (const app of apps) {
 const toolingText = [runtimePath, appOpenerPath, devicePolicyPath]
   .map((file) => fs.readFileSync(file, "utf8"))
   .join("\n");
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 for (const entry of fs.readdirSync(appsRoot, { withFileTypes: true })) {
   if (!entry.isDirectory()) continue;
   const configPath = path.join(appsRoot, entry.name, "mobile.config.json");
   if (!fs.existsSync(configPath)) continue;
+
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  for (const field of ["scheme", "androidPackage", "iosBundleIdentifier", "slug", "projectId"]) {
+
+  // These deployable identities are globally distinctive. A literal occurrence
+  // in runtime tooling therefore proves an improper mirrored identity.
+  for (const field of ["androidPackage", "iosBundleIdentifier", "slug", "projectId"]) {
     if (typeof config[field] === "string" && toolingText.includes(config[field])) {
       console.error(`deployable identity mirror detected in tooling: ${field}=${config[field]}`);
+      failed = true;
+    }
+  }
+
+  // Schemes such as "client" and "captain" are intentionally short semantic
+  // names and legitimately occur in runtime tooling as surface/service names.
+  // Bare substring presence is therefore not evidence of an identity mirror.
+  // Reject only an actual hard-coded scheme URL or explicit scheme assignment.
+  if (typeof config.scheme === "string") {
+    const escapedScheme = escapeRegExp(config.scheme);
+
+    const hardCodedSchemeUrl = new RegExp(
+      `(?:^|[^a-z0-9+.-])${escapedScheme}:\\/\\/`,
+      "im",
+    );
+
+    const hardCodedSchemeAssignment = new RegExp(
+      `["']?scheme["']?\\s*[:=]\\s*["']${escapedScheme}["']`,
+      "im",
+    );
+
+    if (
+      hardCodedSchemeUrl.test(toolingText) ||
+      hardCodedSchemeAssignment.test(toolingText)
+    ) {
+      console.error(`deployable identity mirror detected in tooling: scheme=${config.scheme}`);
       failed = true;
     }
   }

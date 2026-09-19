@@ -1,9 +1,9 @@
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniChip, BthwaniSearchField, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type CaptainAssignment, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
-
-import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, orderStateLabel, type CaptainAssignment, type Order } from "@bthwani/dsh";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 function baseUrl(): string {
@@ -21,14 +21,45 @@ function nextState(order: Order): "PARTNER_ACCEPTED" | "PREPARING" | "READY_FOR_
   return null;
 }
 
+const queueFilters = [
+  { key: "ALL", label: "الكل" },
+  { key: "NEEDS_ACTION", label: "تحتاج إجراء" },
+  { key: "PREPARING", label: "قيد التجهيز" },
+  { key: "HANDOFF", label: "التسليم" },
+  { key: "CLOSED", label: "مغلقة" },
+] as const;
+
+type QueueFilter = (typeof queueFilters)[number]["key"];
+type OrderQueue = Exclude<QueueFilter, "ALL">;
+
+function queueForOrder(order: Order): OrderQueue {
+  if (order.state === "CREATED") return "NEEDS_ACTION";
+  if (order.state === "PARTNER_ACCEPTED" || order.state === "PREPARING") return "PREPARING";
+  if (order.state === "READY_FOR_DISPATCH" || order.state === "CAPTAIN_ASSIGNED" || order.state === "IN_CUSTODY") return "HANDOFF";
+  return "CLOSED";
+}
+
+function matchesQuery(order: Order, query: string): boolean {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) return true;
+  const searchableText = [
+    order.id,
+    order.addressText,
+    ...order.lines.flatMap((line) => [line.productName, line.variantTitle]),
+  ].join(" ").toLocaleLowerCase();
+  return searchableText.includes(normalizedQuery);
+}
+
 export function OrderManagement({ storeId }: { storeId: string }) {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
   const [assignments, setAssignments] = useState<Readonly<Record<string, CaptainAssignment>>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState<QueueFilter>("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -50,8 +81,11 @@ export function OrderManagement({ storeId }: { storeId: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
+  const filteredOrders = useMemo(() => orders.filter((order) => (filter === "ALL" || queueForOrder(order) === filter) && matchesQuery(order, searchQuery)), [filter, orders, searchQuery]);
+  const queueCounts = useMemo(() => Object.fromEntries(queueFilters.map(({ key }) => [key, key === "ALL" ? orders.length : orders.filter((order) => queueForOrder(order) === key).length])) as Record<QueueFilter, number>, [orders]);
+
   async function transition(order: Order, requestedState = nextState(order)) {
-    if (!requestedState || busy) return;
+    if (!requestedState || busy || loading) return;
     setBusy(order.id); setError("");
     try { const token = await getUsableIdentityAccessToken(); await client().transitionStoreOrder(token, storeId, order.id, { state: requestedState }, order.version); await load(); }
     catch (cause) { console.error("DSH order transition failed", cause); setError("تعذر تحديث حالة الطلب. أعد القراءة ثم حاول مرة أخرى."); }
@@ -59,14 +93,62 @@ export function OrderManagement({ storeId }: { storeId: string }) {
   }
 
   async function confirmHandoff(order: Order, assignment: CaptainAssignment) {
-    if (busy || assignment.handoff.state !== "pending") return;
+    if (busy || loading || assignment.handoff.state !== "pending") return;
     setBusy(order.id); setError("");
     try { const token = await getUsableIdentityAccessToken(); await client().confirmCaptainStoreHandoff(token, storeId, order.id, assignment.id, assignment.handoff.version); await load(); }
     catch (cause) { console.error("DSH Captain handoff failed", cause); setError("تعذر تأكيد جاهزية التسليم. أعد القراءة ثم حاول مرة أخرى."); }
     finally { setBusy(""); }
   }
 
-  return <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر"><Text style={styles.title}>طلبات المتجر</Text><Text style={styles.muted}>تظهر الطلبات بعد إتمام العميل، وتنتقل هنا حتى تصبح جاهزة للتسليم.</Text>{loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View> : null}{!loading && !orders.length ? <Text style={styles.muted}>لا توجد طلبات جديدة.</Text> : null}{orders.map((order) => { const next = nextState(order); const assignment = assignments[order.id]; return <View key={order.id} style={styles.order}><Text style={styles.orderTitle}>طلب بتاريخ {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.muted}>{order.lines.length} منتج · العنوان: {order.addressText}</Text><View style={styles.lines}>{order.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName} · {line.variantTitle}</Text><Text style={styles.muted}>المطلوب: {formatQuantity(line.baseUnit, line.requestedQuantityBaseUnits)} · النهائي: {formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}</Text><Text style={styles.muted}>{pricingBasisLabel(line.pricingBasis)} · {formatMoney(line.lineAmountMinor, line.currency)}{line.modifierAmountMinor > 0 ? ` · الإضافات: ${formatMoney(line.modifierAmountMinor, line.currency)}` : ""}</Text>{line.modifierSnapshots.length ? <Text style={styles.muted}>الإضافات المحددة: {line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}{line.attributeSnapshots.length ? <Text style={styles.muted}>تفاصيل المنتج: {line.attributeSnapshots.map((attribute) => `${attribute.code}: ${attributeSnapshotValue(attribute)}`).join("، ")}</Text> : null}</View>)}</View>{assignment ? <View style={styles.handoff}><Text style={styles.muted}>حالة تسليم المتجر: {captainHandoffStateLabel(assignment.handoff.state)}</Text>{assignment.handoff.state === "pending" ? <Pressable accessibilityRole="button" accessibilityState={{ busy: busy === order.id, disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void confirmHandoff(order, assignment)} style={[styles.button, busy && styles.disabledButton]}><Text style={[styles.buttonText, busy && styles.disabledButtonText]}>{busy === order.id ? "جارٍ الحفظ…" : "تأكيد جاهزية التسليم"}</Text></Pressable> : null}</View> : null}{next ? <View style={styles.actionRow}><Pressable accessibilityRole="button" accessibilityState={{ busy: busy === order.id, disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void transition(order)} style={[styles.button, busy && styles.disabledButton]}><Text style={[styles.buttonText, busy && styles.disabledButtonText]}>{busy === order.id ? "جارٍ الحفظ…" : next === "PARTNER_ACCEPTED" ? "قبول الطلب" : next === "PREPARING" ? "بدء التجهيز" : "جاهز للتسليم"}</Text></Pressable>{next === "PARTNER_ACCEPTED" ? <Pressable accessibilityRole="button" accessibilityState={{ busy: busy === order.id, disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void transition(order, "REJECTED")} style={[styles.rejectButton, busy && styles.disabledButton]}><Text style={[styles.rejectButtonText, busy && styles.disabledButtonText]}>رفض الطلب</Text></Pressable> : null}</View> : null}</View>; })}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}<Pressable accessibilityRole="button" accessibilityState={{ disabled: Boolean(busy) }} disabled={Boolean(busy)} onPress={() => void load()} style={[styles.secondaryButton, busy && styles.disabledButton]}><Text style={[styles.secondaryButtonText, busy && styles.disabledButtonText]}>تحديث الطلبات</Text></Pressable></View>;
+  return (
+    <View style={styles.container} accessibilityLabel="إدارة طلبات المتجر">
+      <Text style={styles.title}>طلبات المتجر</Text>
+      <Text style={styles.muted}>تابع الطلبات حسب ما يحتاج إجراءً الآن، ثم افتح تفاصيل المنتجات عند الحاجة.</Text>
+
+      {!loading && orders.length ? (
+        <View style={styles.summaryRow} accessibilityLabel="ملخص طابور الطلبات">
+          <View style={styles.summaryCard}><Text style={styles.summaryValue}>{queueCounts.ALL}</Text><Text style={styles.summaryLabel}>كل الطلبات</Text></View>
+          <View style={styles.summaryCard}><Text style={styles.summaryValue}>{queueCounts.NEEDS_ACTION}</Text><Text style={styles.summaryLabel}>تحتاج إجراء</Text></View>
+          <View style={styles.summaryCard}><Text style={styles.summaryValue}>{queueCounts.HANDOFF}</Text><Text style={styles.summaryLabel}>التسليم</Text></View>
+        </View>
+      ) : null}
+
+      <BthwaniSearchField accessibilityLabel="البحث في طلبات المتجر" editable={!loading && !busy} onChangeText={setSearchQuery} onClear={() => setSearchQuery("")} placeholder="ابحث برقم الطلب أو العنوان أو المنتج" value={searchQuery} />
+      <View style={styles.filterRow} accessibilityLabel="تصفية طلبات المتجر">
+        {queueFilters.map(({ key, label }) => <BthwaniChip key={key} disabled={loading || Boolean(busy)} label={`${label} (${queueCounts[key]})`} onPress={() => setFilter(key)} selected={filter === key} />)}
+      </View>
+
+      {loading ? <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة طلبات المتجر" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View> : null}
+      {!loading && !orders.length ? <Text style={styles.muted}>لا توجد طلبات جديدة.</Text> : null}
+      {!loading && orders.length > 0 && !filteredOrders.length ? <View style={styles.state}><Text style={styles.muted}>لا توجد طلبات مطابقة لهذا البحث أو التصنيف.</Text><BthwaniButton disabled={Boolean(busy)} label="عرض كل الطلبات" onPress={() => { setFilter("ALL"); setSearchQuery(""); }} variant="secondary" /></View> : null}
+
+      {filteredOrders.map((order) => {
+        const next = nextState(order);
+        const assignment = assignments[order.id];
+        const actionDisabled = loading || Boolean(busy);
+        return (
+          <View key={order.id} style={styles.order}>
+            <View style={styles.orderHeader}>
+              <View style={styles.orderHeaderCopy}>
+                <Text style={styles.orderTitle}>طلب بتاريخ {formatOrderDate(order.createdAt)}</Text>
+                <Text style={styles.muted}>{order.lines.length} منتج · {formatMoney(order.totalAmountMinor, order.currency)}</Text>
+              </View>
+              <BthwaniStatusBadge icon={order.state === "REJECTED" ? "warning" : order.state === "READY_FOR_DISPATCH" ? "success" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "REJECTED" ? "danger" : order.state === "READY_FOR_DISPATCH" ? "success" : "info"} />
+            </View>
+            <Text style={styles.muted}>العنوان: {order.addressText}</Text>
+            <View style={styles.lines}>
+              {order.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName} · {line.variantTitle}</Text><Text style={styles.muted}>المطلوب: {formatQuantity(line.baseUnit, line.requestedQuantityBaseUnits)} · النهائي: {formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}</Text><Text style={styles.muted}>{pricingBasisLabel(line.pricingBasis)} · {formatMoney(line.lineAmountMinor, line.currency)}{line.modifierAmountMinor > 0 ? ` · الإضافات: ${formatMoney(line.modifierAmountMinor, line.currency)}` : ""}</Text>{line.modifierSnapshots.length ? <Text style={styles.muted}>الإضافات المحددة: {line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}</Text> : null}{line.attributeSnapshots.length ? <Text style={styles.muted}>تفاصيل المنتج: {line.attributeSnapshots.map((attribute) => `${attribute.code}: ${attributeSnapshotValue(attribute)}`).join("، ")}</Text> : null}</View>)}
+            </View>
+            {assignment ? <View style={styles.handoff}><BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "deliveries"} label={`تسليم المتجر: ${captainHandoffStateLabel(assignment.handoff.state)}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />{assignment.handoff.state === "pending" ? <BthwaniButton busy={busy === order.id} disabled={actionDisabled} label="تأكيد جاهزية التسليم" onPress={() => void confirmHandoff(order, assignment)} /> : null}</View> : null}
+            {next ? <View style={styles.actionRow}><BthwaniButton busy={busy === order.id} disabled={actionDisabled} label={next === "PARTNER_ACCEPTED" ? "قبول الطلب" : next === "PREPARING" ? "بدء التجهيز" : "جاهز للتسليم"} onPress={() => void transition(order)} style={styles.actionButton} />{next === "PARTNER_ACCEPTED" ? <BthwaniButton disabled={actionDisabled} label="رفض الطلب" onPress={() => void transition(order, "REJECTED")} style={styles.actionButton} variant="danger" /> : null}</View> : null}
+          </View>
+        );
+      })}
+
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      <BthwaniButton busy={loading || Boolean(busy)} disabled={loading || Boolean(busy)} label="تحديث الطلبات" onPress={() => void load()} variant="secondary" />
+    </View>
+  );
 }
 
 function pricingBasisLabel(basis: Order["lines"][number]["pricingBasis"]): string { return basis === "PER_UNIT" ? "لكل قطعة" : "لكل وحدة قياس"; }
@@ -82,28 +164,26 @@ function attributeSnapshotValue(attribute: Order["lines"][number]["attributeSnap
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 10, marginTop: 16, padding: 14, width: "100%", direction: activeDirection },
-    title: { color: theme.color, fontSize: 17, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 19, textAlign: startTextAlign },
-    state: { alignItems: "center", gap: 8, paddingVertical: 8 },
-    order: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 5, padding: 10 },
-    lines: { gap: 8, marginTop: 4 },
-    line: { borderColor: theme.borderColor, borderTopWidth: 1, gap: 3, paddingTop: 8 },
-    lineTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
-    handoff: { borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, gap: 7, marginTop: 5, padding: 8 },
-    actionRow: { direction: activeDirection, flexDirection: "row", gap: 8 },
-    orderTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 8, flex: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },
-    buttonText: { color: theme.onAction, fontWeight: "800" },
-    rejectButton: { alignItems: "center", borderColor: theme.danger, borderRadius: 8, borderWidth: 1, flex: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 12 },
-    rejectButtonText: { color: theme.danger, fontWeight: "800" },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 8, borderWidth: 1, justifyContent: "center", minHeight: 40, paddingHorizontal: 10 },
-    secondaryButtonText: { color: theme.color, fontSize: 13, fontWeight: "700" },
-    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
-    disabledButtonText: { color: theme.disabledText },
-    error: { color: theme.danger, fontSize: 13, textAlign: startTextAlign },
+    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[3], marginTop: spacing[4], padding: spacing[3], width: "100%" },
+    title: { ...typography.titleSm, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    state: { alignItems: "center", gap: spacing[2], paddingVertical: spacing[2] },
+    summaryRow: { flexDirection: "row-reverse", gap: spacing[2] },
+    summaryCard: { alignItems: "center", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, flex: 1, gap: spacing[1], padding: spacing[2] },
+    summaryValue: { ...typography.titleSm, color: theme.actionBackground },
+    summaryLabel: { ...typography.label, color: theme.colorMuted, textAlign: "center" },
+    filterRow: { flexDirection: "row-reverse", flexWrap: "wrap", gap: spacing[1] },
+    order: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[2] },
+    lines: { gap: spacing[2], marginTop: spacing[1] },
+    line: { borderColor: theme.borderColor, borderTopWidth: borders.hairline, gap: spacing[1], paddingTop: spacing[2] },
+    lineTitle: { ...typography.bodyStrong, color: theme.color },
+    handoff: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], marginTop: spacing[1], padding: spacing[2] },
+    actionRow: { flexDirection: "row", gap: spacing[2] },
+    orderTitle: { ...typography.bodyStrong, color: theme.color },
+    orderHeaderCopy: { flex: 1, gap: spacing[1] },
+    orderHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
+    actionButton: { flex: 1 },
+    error: { ...typography.label, color: theme.danger },
   });
 }

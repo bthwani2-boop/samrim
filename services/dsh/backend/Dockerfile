@@ -1,9 +1,14 @@
 FROM golang:1.27.1-alpine AS build
 WORKDIR /src
+COPY services/dsh/backend/go.mod services/dsh/backend/go.sum ./services/dsh/backend/
+COPY services/identity/clients/go/go.mod ./services/identity/clients/go/go.mod
+WORKDIR /src/services/dsh/backend
+RUN go mod download
+
+WORKDIR /src
 COPY services/identity/clients/go ./services/identity/clients/go
 COPY services/dsh/backend ./services/dsh/backend
 WORKDIR /src/services/dsh/backend
-RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/schema-verify ./cmd/schema-verify

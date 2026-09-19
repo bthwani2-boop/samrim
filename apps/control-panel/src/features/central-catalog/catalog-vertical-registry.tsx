@@ -55,7 +55,7 @@ export function CatalogVerticalRegistry() {
     try {
       const response = await fetch("/api/catalog/verticals", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ nameAr: normalizedNameAr, nameEn: normalizedNameEn, active }) });
       const payload = await parseResponse<{ vertical: CommerceVertical }>(response);
-      setNotice(`تم حفظ المجال التجاري: ${payload.vertical.nameAr}. المعرف التلقائي: ${payload.vertical.id}`);
+      setNotice(`تم حفظ المجال التجاري: ${payload.vertical.nameAr}.`);
       setNameAr("");
       setNameEn("");
       await load();
@@ -84,7 +84,7 @@ export function CatalogVerticalRegistry() {
       {error ? <p className="identity-error" role="alert">{error} <button type="button" className="button button-secondary" onClick={() => void load()}>إعادة المحاولة</button></p> : null}
       <div className="managed-status managed-status-info">
         <strong>المجالات النشطة في السجل الكانوني</strong>
-        {loading ? <p>جارٍ قراءة السجل…</p> : verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف المجال قبل إنشاء طلب شريك أو منتج.</p> : <ul>{verticals.map((vertical) => <li key={vertical.id}><span>{vertical.nameAr} · {vertical.nameEn} · {vertical.id}</span></li>)}</ul>}
+        {loading ? <p>جارٍ قراءة السجل…</p> : verticals.length === 0 ? <p>لا توجد مجالات تجارية بعد. أضف المجال قبل إنشاء طلب شريك أو منتج.</p> : <ul>{verticals.map((vertical) => <li key={vertical.id}><span>{vertical.nameAr} · {vertical.nameEn}</span></li>)}</ul>}
       </div>
     </section>
   );

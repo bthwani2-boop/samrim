@@ -1,0 +1,54 @@
+/* Responsive behavior belongs to the authenticated/public shell boundary. */
+@media (max-width: 820px) {
+  :global(.control-frame) { width: min(100% - 32px, 640px); padding-top: 20px; }
+  :global(.workspace-app-shell .control-frame) { width: min(100% - 32px, 900px); }
+  :global(.workspace-layout) { display: block !important; }
+  :global(.workspace-nav-toggle) { display: inline-flex !important; }
+  :global(.workspace-nav) { position: fixed !important; z-index: var(--z-overlay); inset-block: 0; inset-inline-start: 0; width: min(86vw, 320px); min-height: 100vh; overflow-y: auto; padding: var(--space-5); border-inline-start: 0; border-inline-end: 1px solid var(--border-strong); background: var(--surface-base); box-shadow: var(--shadow-card); transform: translateX(110%); transition: transform var(--duration-calm) var(--easing-standard); }
+  :global(.workspace-nav[data-open="true"]) { transform: translateX(0); }
+  :global(.workspace-nav-backdrop) { position: fixed; z-index: calc(var(--z-overlay) - 1); inset: 0; display: block !important; width: 100%; height: 100%; border: 0; background: var(--surface-muted); opacity: var(--opacity-backdrop); }
+  :global(.workspace-nav-close) { display: inline-flex !important; }
+  :global(.workspace-nav-label) { margin-bottom: var(--space-2); }
+  :global(.workspace-nav-section-label) { margin-top: var(--space-5); }
+  :global(.auth-layout) { grid-template-columns: 1fr; gap: 34px; min-height: auto; padding: 44px 0 24px; }
+  :global(.auth-context) { max-width: none; text-align: center; }
+  :global(.auth-context h1) { font-size: clamp(40px, 11vw, 58px); }
+  :global(.auth-context > p) { margin-inline: auto; }
+  :global(.context-list) { width: max-content; max-width: 100%; margin: 28px auto 0; text-align: right; }
+  :global(.home-work-areas) { grid-template-columns: 1fr; }
+  :global(.workspace-toolbar) { align-items: stretch; flex-direction: column; }
+  :global(.toolbar-meta) { justify-content: space-between; }
+}
+@media (max-width: 700px) {
+  :global(.access-form) { grid-template-columns: 1fr; }
+  :global(.access-form .button) { width: 100%; }
+  :global(.form-action-placeholder) { display: none; }
+  :global(.managed-status-actions) { grid-template-columns: 1fr; }
+  :global(.managed-status-actions .text-button) { width: 100%; }
+}
+@media (max-width: 900px) {
+  :global(.central-catalog-grid) { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  :global(.workspace-header) { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; }
+  :global(.workspace-actor-context) { justify-items: start; text-align: start; }
+  :global(.account-menu) { min-width: 0; }
+  :global(.account-menu-panel) { inset-inline-end: 0; }
+  :global(.appearance-control) { min-width: 0; }
+  :global(.workspace-logout) { min-width: 122px; }
+}
+@media (max-width: 480px) {
+  :global(.control-frame) { width: min(100% - 24px, 420px); }
+  :global(.workspace-app-shell .control-frame) { width: min(100% - 24px, 420px); }
+  :global(.brand-header) { padding-bottom: 20px; }
+  :global(.surface-label) { font-size: 11px; }
+  :global(.auth-card) { padding: 24px 19px; border-radius: 22px; }
+  :global(.auth-context) { padding: 8px 4px; }
+  :global(.auth-context > p) { font-size: 15px; }
+  :global(.session-summary) { grid-template-columns: 1fr; }
+  :global(.access-card) { padding: 24px 20px; border-radius: 18px; }
+  :global(.workspace-actor-context) { display: none; }
+  :global(.workspace-header) { grid-template-columns: auto 1fr auto; }
+  :global(.admission-form) { grid-template-columns: 1fr; }
+  :global(.admission-form .button) { width: 100%; }
+}

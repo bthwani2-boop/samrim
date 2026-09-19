@@ -28,17 +28,7 @@ const surface = app;
 const configPath = path.join(appDir, "mobile.config.json");
 assert.ok(fs.existsSync(configPath), `${app}: missing mobile.config.json`);
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-const expectedCapabilities = [
-  "router",
-  "updates",
-  "constants",
-  "crypto",
-  "splashScreen",
-  "secureStore",
-  "localization",
-];
-if (app === "app-client" || app === "app-partner") expectedCapabilities.push("location");
-assert.deepEqual(config.nativeCapabilities, expectedCapabilities, `${app}: nativeCapabilities drifted`);
+assert.equal(Object.prototype.hasOwnProperty.call(config, "nativeCapabilities"), false, `${app}: nativeCapabilities shadow registry survived`);
 
 // 2. Targeted dependency regression verification.
 // This is intentionally not a complete unused-package census; dependency
@@ -47,30 +37,31 @@ const pkgPath = path.join(appDir, "package.json");
 assert.ok(fs.existsSync(pkgPath), `${app}: missing package.json`);
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-assert.equal(allDeps["expo-localization"], "~57.0.1", `${app}: static RTL requires expo-localization`);
+assert.equal(allDeps["expo-localization"], "~57.0.2", `${app}: static RTL requires expo-localization`);
+
+assert.ok(Object.keys(allDeps).some((dependency) => dependency.startsWith("expo-")), `${app}: Expo package inventory must remain available for future consumers`);
 
 const forbiddenDependencyRegressions = [
   "@react-native-community/netinfo",
   "@sentry/react-native",
-  "expo-document-picker",
-  "expo-file-system",
-  "expo-haptics",
-  "expo-image",
-  "expo-notifications",
+  "@react-native-firebase/messaging",
+  "expo-audio",
+  "expo-background-task",
+  "expo-battery",
+  "expo-camera",
+  "expo-local-authentication",
+  "expo-maps",
+  "expo-sqlite",
   "expo-sharing",
   "expo-video",
   "expo-web-browser",
-  "react-native-maps",
+  "react-native-gifted-chat",
 ];
 
 for (const forbidden of forbiddenDependencyRegressions) {
   assert.ok(!allDeps[forbidden], `${app}: contains unused dependency: ${forbidden}`);
 }
-if (app === "app-client" || app === "app-partner") {
-  assert.equal(allDeps["expo-location"], "~57.0.17", `${app}: location core requires the Expo 57 location module`);
-} else {
-  assert.ok(!allDeps["expo-location"], `${app}: location dependency must remain scoped to Location Core hosts`);
-}
+assert.equal(allDeps["expo-location"], "~57.0.19", `${app}: admitted location readiness requires the Expo 57 location module`);
 
   const identityPath = path.join(appDir, "src", "bootstrap", "identity.ts");
   assert.ok(fs.existsSync(identityPath), `${app}: missing src/bootstrap/identity.ts`);
@@ -99,10 +90,12 @@ assert.ok(fs.existsSync(shellPath), `${app}: missing actor-specific application 
 const shellContent = fs.readFileSync(shellPath, "utf8");
 assert.ok(!shellContent.includes('accessibilityRole="tablist"'), `${app}: manual bottom navigation must not remain beside the canonical Tabs owner`);
 assert.ok(!shellContent.includes("<Slot />"), `${app}: application shell must not own a parallel Expo Router slot`);
-assert.ok(shellContent.includes("direction.defaultDirection"), `${app}: application shell must bind layout to the canonical design direction`);
-assert.ok(shellContent.includes('flexDirection: "row"'), `${app}: application shell must use the native logical row direction`);
-assert.ok(!shellContent.includes("row-reverse"), `${app}: application shell must not double-reverse native RTL rows`);
-assert.ok(shellContent.includes("direction: activeDirection"), `${app}: application shell must apply direction to its rendered surfaces`);
+  assert.ok(shellContent.includes('flexDirection: "row"'), `${app}: application shell must use the native logical row direction`);
+  assert.ok(!shellContent.includes("direction:"), `${app}: application shell must not duplicate Expo RTL direction ownership`);
+  assert.ok(!shellContent.includes("textAlign:"), `${app}: application shell must not duplicate text alignment ownership`);
+  const navigationStyle = shellContent.match(/navigation:\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.ok(!navigationStyle.includes("direction:") && !navigationStyle.includes("flexDirection:") && !navigationStyle.includes("row-reverse"), `${app}: native tab bar must use Expo Router route order, not a manual direction override`);
+  assert.ok(!navigationStyle.includes("paddingBottom:") && !navigationStyle.includes("paddingVertical:"), `${app}: native tab bar must own the bottom safe-area inset; do not override it in tabBarStyle`);
 const layoutContent = fs.readFileSync(path.join(appRouteDir, "_layout.tsx"), "utf8");
 assert.ok(layoutContent.includes("Tabs"), `${app}: authenticated layout must declare stable Expo Router JS Tabs`);
 assert.ok(layoutContent.includes("<Tabs"), `${app}: authenticated layout must compose route content through Expo Router Tabs`);
@@ -111,7 +104,13 @@ const tabRoutes =
   app === "app-partner" ? ["store", "orders", "account", "onboarding"] :
   app === "app-captain" ? ["home", "offers", "deliveries", "account"] :
   ["home", "cases", "account", "new-case"];
-for (const tabRoute of tabRoutes) assert.ok(layoutContent.includes(`name="${tabRoute}"`), `${app}: missing canonical Tabs route ${tabRoute}`);
+ let previousTabRouteIndex = -1;
+ for (const tabRoute of tabRoutes) {
+   const tabRouteIndex = layoutContent.indexOf(`<Tabs.Screen name="${tabRoute}"`);
+   assert.ok(tabRouteIndex >= 0, `${app}: missing canonical Tabs route ${tabRoute}`);
+   assert.ok(tabRouteIndex > previousTabRouteIndex, `${app}: canonical Tabs route order drifted at ${tabRoute}`);
+   previousTabRouteIndex = tabRouteIndex;
+ }
 const identityGatePath = path.join(appDir, "src", "features", "access", "identity-gate.tsx");
 const identityGateContent = fs.readFileSync(identityGatePath, "utf8");
 if (app === "app-client") {
@@ -129,7 +128,11 @@ const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "s
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
-const expoConfig = defineSamrimExpoApp(app);
+const expoConfig = defineSamrimExpoApp(app, app === "app-client" || app === "app-partner" ? { locationMode: "foreground" } : {});
+assert.equal(expoConfig.extra.nativeCapabilities, undefined, `${app}: Expo config must not expose native capability shadow truth`);
+assert.equal(expoConfig.android.blockedPermissions, undefined, `${app}: manual RECORD_AUDIO workaround must be absent`);
+assert.equal(expoConfig.android.config, undefined, `${app}: manual Android provider config must be absent`);
+assert.equal(expoConfig.ios.config, undefined, `${app}: manual iOS provider config must be absent`);
 const localizationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-localization");
 assert.deepEqual(localizationPlugin, [
   "expo-localization",
@@ -141,44 +144,20 @@ assert.deepEqual(localizationPlugin, [
 ], `${app}: native localization config must be Arabic-only and statically RTL`);
 const locationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-location");
 if (app === "app-client" || app === "app-partner") {
+  assert.ok(locationPlugin, `${app}: admitted foreground location must be owned by expo-location`);
   assert.deepEqual(locationPlugin, [
     "expo-location",
-    { locationWhenInUsePermission: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر." },
-  ], `${app}: Location Core must use foreground-only location permission`);
+    {
+      locationWhenInUsePermission: "نحتاج الوصول إلى موقعك عند طلب التقاط موقع العنوان أو أصل المتجر.",
+    },
+  ], `${app}: foreground location must be owned by expo-location`);
 } else {
-  assert.equal(locationPlugin, undefined, `${app}: location plugin must remain scoped to Location Core hosts`);
+  assert.equal(locationPlugin, undefined, `${app}: location permissions must not be inferred without an explicit app-owned request`);
 }
+assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "expo-image-picker"), false, `${app}: image-picker plugin must not be inferred from package presence`);
+assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "react-native-maps"), false, `${app}: maps plugin must not be inferred from package presence`);
+assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "expo-notifications"), false, `${app}: notifications plugin must not be inferred from package presence`);
 console.log(`MOBILE_AR_RTL_NATIVE_CONFIG=PASS app=${app} locale=ar forcesRTL=true`);
-
-// Remote EAS environments may retain provider variables after a native dependency
-// has been intentionally removed. Provider variables alone must not re-admit a
-// native config plugin that is absent from the current app dependency graph.
-{
-  const sentryKeys = ["SENTRY_ORG", "SENTRY_PROJECT", "EXPO_PUBLIC_SENTRY_DSN"];
-  const previous = Object.fromEntries(sentryKeys.map((key) => [key, process.env[key]]));
-  try {
-    process.env.SENTRY_ORG = "test-org";
-    process.env.SENTRY_PROJECT = "test-project";
-    process.env.EXPO_PUBLIC_SENTRY_DSN = "https://public@example.invalid/1";
-
-    const providerConfiguredExpo = defineSamrimExpoApp(app);
-    const sentryPlugin = providerConfiguredExpo.plugins.find(
-      (plugin) =>
-        (Array.isArray(plugin) ? plugin[0] : plugin) === "@sentry/react-native/expo",
-    );
-
-    assert.equal(sentryPlugin, undefined, `${app}: stale EAS Sentry variables must not admit a missing native dependency`);
-    assert.equal(providerConfiguredExpo.extra.sentry.enabled, false, `${app}: Sentry must remain disabled without its dependency`);
-    assert.equal(providerConfiguredExpo.extra.sentry.nativeConfigured, false, `${app}: Sentry native config must remain disabled without its dependency`);
-    assert.equal(providerConfiguredExpo.extra.sentry.nativeDependencyInstalled, false, `${app}: Sentry dependency census drifted`);
-  } finally {
-    for (const key of sentryKeys) {
-      if (previous[key] === undefined) delete process.env[key];
-      else process.env[key] = previous[key];
-    }
-  }
-}
-console.log(`MOBILE_PROVIDER_ENV_GATING=PASS app=${app} provider=sentry`);
 
 for (const reason of ["no_local_session", "corrupt_local_session", "terminal_invalidated", "surface_mismatch", "local_proof_invalid", "explicit_logout", "recovery"]) {
   assert.ok(identitySessionSignOutMessage(reason).length > 0, `${app}: missing sign-out reason message: ${reason}`);

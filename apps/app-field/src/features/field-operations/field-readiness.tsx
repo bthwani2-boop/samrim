@@ -1,16 +1,15 @@
-import { Link, type Href } from "expo-router";
+import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
+import { type FieldAdmission, fieldAdmissionStateLabel } from "@bthwani/dsh";
+import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, useColorScheme, View } from "react-native";
-
-import { resolveTheme } from "@bthwani/design-system";
-import { fieldAdmissionStateLabel, type FieldAdmission } from "@bthwani/dsh";
+import { ActivityIndicator, Text, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
 import { createFieldOperationStyles } from "./field-operation-styles";
 
 export function FieldReadiness() {
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+const theme = useAppearanceTheme();
   const styles = useMemo(() => createFieldOperationStyles(theme), [theme]);
   const [admission, setAdmission] = useState<FieldAdmission | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,13 +35,13 @@ export function FieldReadiness() {
   return (
     <View style={styles.container} accessibilityLabel="جاهزية الميدان">
       <Text style={styles.title}>جاهزية الميدان</Text>
-      <Text style={styles.muted}>القبول وملفات الانضمام مملوكة لـ DSH، ولا يملك الميدان نشر المتجر أو مراجعته.</Text>
+      <Text style={styles.muted}>تأكد من أهليتك، أنشئ ملف الانضمام، وتابع ما يحتاج إلى إجراء منك.</Text>
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
-      {!loading && admission ? <View style={styles.card}><Text style={styles.cardTitle}>قبول الميدان</Text><Text style={styles.muted}>الحالة: {fieldAdmissionStateLabel(admission.state)}</Text></View> : null}
-      {!loading && !admission ? <View style={styles.card} accessibilityLiveRegion="polite"><Text style={styles.cardTitle}>لا توجد أهلية تشغيلية</Text><Text style={styles.muted}>لم تصل أهلية الميدان من DSH. أعد المحاولة أو تواصل مع المشغل.</Text></View> : null}
-      {!loading && admission?.state === "eligible" ? <View style={styles.summaryCard}><Text style={styles.muted}>يمكنك فتح ملف انضمام جديد من المسار المخصص.</Text><Link href={"/new-case" as Href} asChild><Pressable accessibilityRole="button" style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>فتح ملف جديد</Text></Pressable></Link></View> : null}
+      {!loading && admission ? <View style={styles.card}><Text style={styles.cardTitle}>حالة الأهلية</Text><BthwaniStatusBadge icon={admission.state === "eligible" ? "success" : "warning"} label={fieldAdmissionStateLabel(admission.state)} tone={admission.state === "eligible" ? "success" : "warning"} /><Text style={styles.muted}>{admission.state === "eligible" ? "يمكنك بدء ملف انضمام جديد الآن." : "تابع الحالة أو تواصل مع المشغل إذا بقيت غير متاحة."}</Text></View> : null}
+      {!loading && !admission ? <View style={styles.card} accessibilityLiveRegion="polite"><Text style={styles.cardTitle}>لا توجد أهلية تشغيلية</Text><Text style={styles.muted}>لم تصل حالة الأهلية بعد. أعد المحاولة أو تواصل مع المشغل.</Text></View> : null}
+      {!loading && admission?.state === "eligible" ? <View style={styles.summaryCard}><Text style={styles.muted}>يمكنك بدء ملف انضمام جديد عند جاهزيتك.</Text><Link href={"/new-case" as Href} asChild><BthwaniButton label="فتح ملف جديد" variant="secondary" /></Link></View> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      <Pressable accessibilityRole="button" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>تحديث الحالة</Text></Pressable>
+      <BthwaniButton label="تحديث الحالة" onPress={() => void load()} variant="secondary" />
     </View>
   );
 }

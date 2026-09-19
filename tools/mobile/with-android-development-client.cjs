@@ -3,13 +3,6 @@
 const fs = require("fs");
 const path = require("path");
 
-const LOCAL_ANDROID_METRO_CONTRACT = Object.freeze({
-  "app-client": Object.freeze({ envKey: "SAMRIM_APP_CLIENT_METRO_PORT", port: 18101 }),
-  "app-partner": Object.freeze({ envKey: "SAMRIM_APP_PARTNER_METRO_PORT", port: 18102 }),
-  "app-captain": Object.freeze({ envKey: "SAMRIM_APP_CAPTAIN_METRO_PORT", port: 18103 }),
-  "app-field": Object.freeze({ envKey: "SAMRIM_APP_FIELD_METRO_PORT", port: 18104 }),
-});
-
 const canonicalEnvExample = path.resolve(
   __dirname,
   "../../infra/local/compose/.env.example",
@@ -32,21 +25,12 @@ function readCanonicalPort(envKey) {
   return port;
 }
 
+function metroEnvKey(appKey) {
+  return `SAMRIM_${appKey.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}_METRO_PORT`;
+}
+
 function resolveAndroidMetroPort(appKey) {
-  const contract = LOCAL_ANDROID_METRO_CONTRACT[appKey];
-  if (!contract) {
-    throw new Error(`Unknown Android development client app: ${appKey}`);
-  }
-
-  const canonicalPort = readCanonicalPort(contract.envKey);
-  if (canonicalPort !== undefined && canonicalPort !== contract.port) {
-    throw new Error(
-      `Android development client port drift for ${appKey}: ` +
-        `${contract.port} != ${contract.envKey}=${canonicalPort}`,
-    );
-  }
-
-  return contract.port;
+  return readCanonicalPort(metroEnvKey(appKey));
 }
 
 function pluginName(plugin) {

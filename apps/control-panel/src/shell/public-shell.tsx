@@ -1,6 +1,8 @@
 "use client";
 
 import { type ReactNode } from "react";
+import "./public-shell.module.css";
+import "./responsive-shell.module.css";
 
 function BrandHeader() {
   return (
@@ -27,13 +29,13 @@ function QuietFooter() {
 export function ControlShell({
   children,
   className = "",
+  surface = "public",
   header = <BrandHeader />,
   footer = <QuietFooter />,
-}: Readonly<{ children: ReactNode; className?: string; header?: ReactNode; footer?: ReactNode }>) {
+}: Readonly<{ children: ReactNode; className?: string; surface?: "public" | "workspace" | "state"; header?: ReactNode; footer?: ReactNode }>) {
   return (
-    <div className={"control-shell " + className}>
-      <div className="ambient-orb ambient-orb-one" aria-hidden="true" />
-      <div className="ambient-orb ambient-orb-two" aria-hidden="true" />
+    <div className={"control-shell control-shell-" + surface + " " + className}>
+      {surface !== "workspace" ? <><div className="ambient-orb ambient-orb-one" aria-hidden="true" /><div className="ambient-orb ambient-orb-two" aria-hidden="true" /></> : null}
       <div className="control-frame">
         {header}
         {children}

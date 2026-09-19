@@ -14,17 +14,23 @@ jobs:
   policy:
     name: repository-pr-policy
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
-      - name: Validate concise promotion evidence
+      - name: Checkout exact candidate
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate concise promotion evidence and Governance interlock
         shell: bash
         env:
           GH_EVENT: ${{ github.event_name }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_DRAFT: ${{ github.event.pull_request.draft }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_HEAD: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
 
@@ -40,15 +46,57 @@ jobs:
             exit 0
           fi
 
-          if [[ "${PR_AUTHOR}" == "dependabot[bot]" ]]; then
-            [[ "${PR_HEAD}" == dependabot/* ]] || { echo "::error::Unexpected Dependabot branch"; exit 1; }
-            echo "PR_POLICY_DEPENDABOT=PASS"
-            exit 0
-          fi
-
-          [[ ${#PR_BODY} -ge 120 ]] || { echo "::error::PR body is too short to explain the change"; exit 1; }
-          for heading in "## Summary" "## Scope" "## Verification" "## Remaining limits"; do
-            grep -Fq -- "${heading}" <<<"${PR_BODY}" || { echo "::error::Missing PR section: ${heading}"; exit 1; }
+          body="${PR_BODY:-}"
+          [[ ${#body} -ge 160 ]] || { echo "::error::PR body is too short to explain the change"; exit 1; }
+          for heading in "## Summary" "## Scope" "## Governance impact" "## Verification" "## Remaining limits"; do
+            grep -Fq -- "${heading}" <<<"${body}" || { echo "::error::Missing PR section: ${heading}"; exit 1; }
           done
 
+          mapfile -t impacts < <(grep -Eo 'GOVERNANCE_IMPACT=(NONE|REVALIDATE_ONLY|UPDATE_REQUIRED|DEFECT_FOUND)' <<<"${body}" || true)
+          [[ ${#impacts[@]} -eq 1 ]] || { echo "::error::Ready PR must declare exactly one GOVERNANCE_IMPACT"; exit 1; }
+          impact="${impacts[0]#GOVERNANCE_IMPACT=}"
+
+          changed="$(git diff --name-only "${PR_BASE_SHA}" HEAD)"
+          pin_changed=0
+          if grep -Fxq 'knowledge.sources.json' <<<"${changed}"; then
+            pin_changed=1
+          fi
+
+          if [[ "${pin_changed}" -eq 1 && "${impact}" == "NONE" ]]; then
+            echo "::error::Governance pin changed but GOVERNANCE_IMPACT=NONE"
+            exit 1
+          fi
+
+          if [[ "${pin_changed}" -eq 1 ]]; then
+            pinned="$(node -p "JSON.parse(require('fs').readFileSync('knowledge.sources.json','utf8')).governance.commit")"
+            gov_checkout="${RUNNER_TEMP}/bthwani-governance-canonical"
+            rm -rf "${gov_checkout}"
+            git clone --quiet --filter=blob:none --no-checkout https://github.com/bthwani2-boop/governance-and-docs.git "${gov_checkout}"
+            git -C "${gov_checkout}" merge-base --is-ancestor "${pinned}" origin/main || {
+              echo "::error::Pinned Governance SHA is not in canonical governance-and-docs/main history: ${pinned}"
+              exit 1
+            }
+
+            base_manifest="$(git show "${PR_BASE_SHA}:knowledge.sources.json")"
+            previous_pinned="$(node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(value.governance.commit)' <<<"${base_manifest}")"
+            git -C "${gov_checkout}" merge-base --is-ancestor "${previous_pinned}" "${pinned}" || {
+              echo "::error::Governance pin rollback is forbidden: previous=${previous_pinned} candidate=${pinned}"
+              exit 1
+            }
+
+            echo "GOVERNANCE_CANONICAL_MAIN=PASS sha=${pinned}"
+            echo "GOVERNANCE_PIN_MONOTONIC=PASS previous=${previous_pinned} candidate=${pinned}"
+          fi
+
+          if [[ "${impact}" == "UPDATE_REQUIRED" || "${impact}" == "DEFECT_FOUND" ]]; then
+            [[ "${pin_changed}" -eq 1 ]] || { echo "::error::${impact} requires deliberate knowledge.sources.json repin"; exit 1; }
+            mapfile -t canonical_shas < <(grep -Eo 'GOVERNANCE_CANONICAL_SHA=[0-9a-f]{40}' <<<"${body}" || true)
+            [[ ${#canonical_shas[@]} -eq 1 ]] || { echo "::error::${impact} requires exactly one GOVERNANCE_CANONICAL_SHA"; exit 1; }
+            expected="${canonical_shas[0]#GOVERNANCE_CANONICAL_SHA=}"
+            pinned="$(node -p "JSON.parse(require('fs').readFileSync('knowledge.sources.json','utf8')).governance.commit")"
+            [[ "${pinned}" == "${expected}" ]] || { echo "::error::Governance evidence SHA does not match pinned SHA"; exit 1; }
+          fi
+
           echo "PR_POLICY=PASS"
+          echo "GOVERNANCE_IMPACT=${impact}"
+          echo "GOVERNANCE_PIN_CHANGED=${pin_changed}"

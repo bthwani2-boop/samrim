@@ -1,8 +1,9 @@
-import { direction, resolveTextAlign, resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { DeliveryAddress } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { createOwnDeliveryAddress, isLocationHttpError, listOwnDeliveryAddresses, updateOwnDeliveryAddress } from "./delivery-address-client";
 
@@ -24,7 +25,7 @@ function errorText(error: unknown): string {
 
 export default function LocationCore() {
   const { cities, selectedCityID } = useServiceCityScope();
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<AddressState>({ kind: "loading" });
   const [addressText, setAddressText] = useState("");
@@ -157,12 +158,12 @@ export default function LocationCore() {
       <Text selectable style={styles.muted}>احفظ أكثر من عنوان. الموقع يُطلب فقط عند التقاطه، ولا يُستخدم هنا لاتخاذ قرار إمكانية التوصيل.</Text>
       {notice ? <Text accessibilityLiveRegion="polite" selectable style={styles.notice}>{notice}</Text> : null}
       {error && state.kind !== "ready" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" selectable style={styles.error}>{error}</Text> : null}
-      {!formOpen ? <Pressable accessibilityRole="button" accessibilityLabel="إضافة عنوان جديد" onPress={() => { setFormOpen(true); setNotice(""); setError(""); }} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إضافة عنوان جديد</Text></Pressable> : null}
+      {!formOpen ? <BthwaniButton accessibilityLabel="إضافة عنوان جديد" label="إضافة عنوان جديد" onPress={() => { setFormOpen(true); setNotice(""); setError(""); }} variant="secondary" /> : null}
 
       {formOpen ? <View style={styles.formCard}>
         <Text style={styles.sectionTitle}>{editing ? "تعديل العنوان" : "إضافة عنوان"}</Text>
         <Text style={styles.fieldLabel}>مدينة العنوان</Text>
-        <View style={styles.cityList}>{cities.map((city) => <Pressable key={city.id} accessibilityRole="button" accessibilityState={{ selected: addressCityID === city.id }} onPress={() => setAddressCityID(city.id)} style={[styles.cityButton, addressCityID === city.id && styles.cityButtonSelected]}><Text style={styles.cityButtonText}>{city.displayNameAr}</Text></Pressable>)}</View>
+        <View style={styles.cityList}>{cities.map((city) => <BthwaniChip key={city.id} label={city.displayNameAr} onPress={() => setAddressCityID(city.id)} selected={addressCityID === city.id} />)}</View>
         <Text style={styles.fieldLabel}>وصف العنوان</Text>
         <TextInput
           accessibilityLabel="وصف العنوان"
@@ -172,21 +173,16 @@ export default function LocationCore() {
           placeholder="مثال: شارع الزبيري، جوار المبنى الأبيض"
           placeholderTextColor={theme.colorMuted}
           style={styles.input}
-          textAlign={resolveTextInputAlign("start", direction.defaultDirection)}
           value={addressText}
         />
-        <Pressable accessibilityRole="button" accessibilityLabel="التقاط الموقع الحالي" accessibilityState={{ busy: locationBusy, disabled: busy || locationBusy }} disabled={busy || locationBusy} onPress={() => void captureLocation()} style={styles.secondaryButton}>
-          <Text style={styles.secondaryButtonText}>{locationBusy ? "جارٍ التقاط الموقع…" : "التقاط الموقع الحالي"}</Text>
-        </Pressable>
+        <BthwaniButton accessibilityLabel="التقاط الموقع الحالي" busy={locationBusy} disabled={busy} label="التقاط الموقع الحالي" onPress={() => void captureLocation()} variant="secondary" />
         <View style={styles.coordinateBox}>
           <Text style={styles.coordinateLabel}>حالة الموقع</Text>
           <Text selectable style={styles.coordinateValue}>{coordinates ? "تم تحديد الموقع" : "لم يُحدد الموقع بعد"}</Text>
         </View>
         <View style={styles.actionRow}>
-          <Pressable accessibilityRole="button" accessibilityLabel={editing ? "حفظ تغييرات العنوان" : "حفظ العنوان"} accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void save()} style={[styles.primaryButton, busy && styles.disabledButton]}>
-            <Text style={[styles.primaryButtonText, busy && styles.disabledButtonText]}>{busy ? "جارٍ الحفظ…" : editing ? "حفظ تغييرات العنوان" : "حفظ العنوان"}</Text>
-          </Pressable>
-          {editing ? <Pressable accessibilityRole="button" accessibilityLabel="إلغاء تعديل العنوان" disabled={busy} onPress={cancelEdit} style={styles.cancelButton}><Text style={styles.cancelButtonText}>إلغاء</Text></Pressable> : null}
+          <BthwaniButton accessibilityLabel={editing ? "حفظ تغييرات العنوان" : "حفظ العنوان"} busy={busy} label={editing ? "حفظ تغييرات العنوان" : "حفظ العنوان"} onPress={() => void save()} style={styles.actionButton} />
+          {editing ? <BthwaniButton accessibilityLabel="إلغاء تعديل العنوان" disabled={busy} label="إلغاء" onPress={cancelEdit} variant="secondary" /> : null}
         </View>
         {error && state.kind === "ready" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" selectable style={styles.error}>{error}</Text> : null}
       </View> : null}
@@ -194,53 +190,39 @@ export default function LocationCore() {
       <View style={styles.listCard}>
         <Text style={styles.sectionTitle}>العناوين المحفوظة</Text>
         {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة العناوين…</Text></View> : null}
-        {state.kind === "error" ? <View style={styles.state}><Text selectable style={styles.muted}>{error || "تعذر قراءة العناوين."}</Text><Pressable accessibilityRole="button" accessibilityLabel="إعادة قراءة العناوين" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View> : null}
+        {state.kind === "error" ? <View style={styles.state}><Text selectable style={styles.muted}>{error || "تعذر قراءة العناوين."}</Text><BthwaniButton accessibilityLabel="إعادة قراءة العناوين" label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
         {state.kind === "ready" && state.addresses.length === 0 ? <View style={styles.state}><Text style={styles.muted}>لا توجد عناوين محفوظة بعد.</Text><Text style={styles.muted}>أضف عنوانًا ليصبح جاهزًا للاستخدام لاحقًا.</Text></View> : null}
-        {state.kind === "ready" && state.addresses.length > 0 ? <><View style={styles.addressList}>{state.addresses.map((address) => <View key={address.id} style={styles.addressItem}><Text selectable style={styles.addressText}>{address.addressText}</Text><Text selectable style={styles.addressMeta}>الموقع: تم تحديد الموقع</Text><Pressable accessibilityRole="button" accessibilityLabel={`تعديل العنوان ${address.addressText}`} disabled={busy} onPress={() => beginEdit(address)} style={styles.editButton}><Text style={styles.editButtonText}>تعديل العنوان</Text></Pressable></View>)}</View>{state.nextCursor ? <Pressable accessibilityRole="button" accessibilityLabel="عرض المزيد من العناوين" accessibilityState={{ busy: loadingMore }} disabled={loadingMore} onPress={() => void loadMore()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{loadingMore ? "جارٍ تحميل المزيد…" : "عرض المزيد"}</Text></Pressable> : null}</> : null}
+        {state.kind === "ready" && state.addresses.length > 0 ? <><View style={styles.addressList}>{state.addresses.map((address) => <View key={address.id} style={styles.addressItem}><Text selectable style={styles.addressText}>{address.addressText}</Text><Text selectable style={styles.addressMeta}>الموقع: تم تحديد الموقع</Text><Pressable accessibilityRole="button" accessibilityLabel={`تعديل العنوان ${address.addressText}`} disabled={busy} onPress={() => beginEdit(address)} style={styles.editButton}><Text style={styles.editButtonText}>تعديل العنوان</Text></Pressable></View>)}</View>{state.nextCursor ? <BthwaniButton accessibilityLabel="عرض المزيد من العناوين" busy={loadingMore} label="عرض المزيد" onPress={() => void loadMore()} variant="secondary" /> : null}</> : null}
       </View>
     </View>
   );
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
-
   return StyleSheet.create({
-    container: { backgroundColor: theme.background, gap: 12, padding: 16, width: "100%", direction: activeDirection },
-    eyebrow: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textAlign: startTextAlign },
-    title: { color: theme.color, fontSize: 22, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },
-    formCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 18, borderWidth: 1, gap: 10, padding: 16 },
-    listCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 18, borderWidth: 1, gap: 10, padding: 16 },
-    sectionTitle: { color: theme.color, fontSize: 16, fontWeight: "800", textAlign: startTextAlign },
-    fieldLabel: { color: theme.color, fontSize: 14, fontWeight: "700", textAlign: startTextAlign },
-    cityList: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    cityButton: { borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 9 },
-    cityButtonSelected: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText },
-    cityButtonText: { color: theme.color, fontSize: 13, fontWeight: "700" },
-    input: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, color: theme.color, minHeight: 84, paddingHorizontal: 12, paddingVertical: 12, textAlign: startInputTextAlign, textAlignVertical: "top", writingDirection: activeDirection },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColorStrong, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 48, paddingHorizontal: 14 },
-    secondaryButtonText: { color: theme.color, fontSize: 14, fontWeight: "800" },
-    coordinateBox: { backgroundColor: theme.structureSoft, borderRadius: 12, gap: 4, padding: 12 },
-    coordinateLabel: { color: theme.colorMuted, fontSize: 12, textAlign: startTextAlign },
-    coordinateValue: { color: theme.color, fontSize: 14, fontVariant: ["tabular-nums"], textAlign: startTextAlign },
-    actionRow: { direction: activeDirection, flexDirection: "row", gap: 10 },
-    primaryButton: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 12, flex: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 14 },
-    disabledButton: { backgroundColor: theme.disabledBackground, borderColor: theme.disabledBackground },
-    disabledButtonText: { color: theme.disabledText },
-    primaryButtonText: { color: theme.onAction, fontSize: 14, fontWeight: "800", textAlign: "center" },
-    cancelButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, justifyContent: "center", minHeight: 50, paddingHorizontal: 16 },
-    cancelButtonText: { color: theme.color, fontSize: 14, fontWeight: "800" },
-    notice: { backgroundColor: theme.successSoft, borderRadius: 10, color: theme.success, fontSize: 13, padding: 10, textAlign: startTextAlign },
-    error: { backgroundColor: theme.dangerSoft, borderRadius: 10, color: theme.danger, fontSize: 13, padding: 10, textAlign: startTextAlign },
-    state: { alignItems: "center", gap: 8, minHeight: 110, justifyContent: "center" },
-    addressList: { gap: 10 },
-    addressItem: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, gap: 8, padding: 12 },
-    addressText: { color: theme.color, fontSize: 15, fontWeight: "700", lineHeight: 22, textAlign: startTextAlign },
-    addressMeta: { color: theme.colorMuted, fontSize: 12, fontVariant: ["tabular-nums"], lineHeight: 18, textAlign: startTextAlign },
-    editButton: { alignSelf: "flex-start", minHeight: 40, justifyContent: "center", paddingHorizontal: 6 },
-    editButtonText: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textDecorationLine: "underline" },
+    container: { backgroundColor: theme.background, gap: spacing[3], padding: spacing[4], width: "100%" },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.titleMd, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    formCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
+    listCard: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
+    sectionTitle: { ...typography.bodyStrong, color: theme.color },
+    fieldLabel: { ...typography.bodyStrong, color: theme.color },
+    cityList: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    actionButton: { flex: 1 },
+    input: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 84, paddingHorizontal: spacing[3], paddingVertical: spacing[3], textAlignVertical: "top" },
+    coordinateBox: { backgroundColor: theme.structureSoft, borderRadius: radius.md, gap: spacing[1], padding: spacing[3] },
+    coordinateLabel: { ...typography.caption, color: theme.colorMuted },
+    coordinateValue: { ...typography.bodySm, color: theme.color, fontVariant: ["tabular-nums"] },
+    actionRow: { flexDirection: "row", gap: spacing[3] },
+    notice: { ...typography.bodySm, backgroundColor: theme.successSoft, borderRadius: radius.sm, color: theme.success, padding: spacing[2] },
+    error: { ...typography.bodySm, backgroundColor: theme.dangerSoft, borderRadius: radius.sm, color: theme.danger, padding: spacing[2] },
+    state: { alignItems: "center", gap: spacing[2], justifyContent: "center", paddingVertical: spacing[8] },
+    addressList: { gap: spacing[3] },
+    addressItem: { backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    addressText: { ...typography.bodyStrong, color: theme.color },
+    addressMeta: { ...typography.caption, color: theme.colorMuted, fontVariant: ["tabular-nums"] },
+    editButton: { alignSelf: "flex-start", minHeight: sizing.controlMd, justifyContent: "center", paddingHorizontal: spacing[1] },
+    editButtonText: { ...typography.label, color: theme.interactiveText, textDecorationLine: "underline" },
   });
 }

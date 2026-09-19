@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"math/big"
 	"strconv"
@@ -114,6 +116,17 @@ type OrderRecord struct {
 	UpdatedAt                    time.Time
 }
 
+type OperatorOperationRecord struct {
+	Order      OrderRecord
+	StoreName  string
+	Assignment *CaptainAssignment
+}
+
+type OperatorOperationsResult struct {
+	Operations []OperatorOperationRecord
+	NextCursor string
+}
+
 func HashCheckoutRequest(input CheckoutInput) string {
 	return hashFacts(strings.TrimSpace(input.ClientActorID), strings.TrimSpace(input.CartID), strings.TrimSpace(input.StoreID), strings.TrimSpace(input.AddressID), strconv.Itoa(input.ExpectedCartVersion), input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, strconv.Itoa(input.Evidence.StoreVersion), strconv.Itoa(input.Evidence.AddressVersion))
 }
@@ -136,6 +149,110 @@ func ListOrdersForClient(ctx context.Context, db *sql.DB, clientActorID, state s
 
 func ListOrdersForStore(ctx context.Context, db *sql.DB, storeID, state string, limit int) ([]OrderRecord, error) {
 	return listOrders(ctx, db, "store_id=$1", []any{strings.TrimSpace(storeID)}, state, limit)
+}
+
+var (
+	ErrOperatorOperationInvalidCursor = errors.New("operator operation cursor is invalid")
+	ErrOperatorOperationInvalidLimit  = errors.New("operator operation limit is invalid")
+)
+
+type operatorOperationsCursor struct {
+	UpdatedAt time.Time `json:"updatedAt"`
+	ID        string    `json:"id"`
+	State     string    `json:"state"`
+}
+
+func ListOrdersForOperator(ctx context.Context, db *sql.DB, state string, limit int, cursor string) (OperatorOperationsResult, error) {
+	if db == nil || limit < 1 || limit > 100 {
+		return OperatorOperationsResult{}, ErrOperatorOperationInvalidLimit
+	}
+	state = strings.TrimSpace(state)
+	args := []any{}
+	where := "TRUE"
+	if state != "" {
+		args = append(args, state)
+		where += " AND state=$" + strconv.Itoa(len(args))
+	}
+	if strings.TrimSpace(cursor) != "" {
+		decoded, err := decodeOperatorOperationsCursor(cursor, state)
+		if err != nil {
+			return OperatorOperationsResult{}, err
+		}
+		args = append(args, decoded.UpdatedAt, decoded.ID)
+		where += " AND (updated_at,id)<($" + strconv.Itoa(len(args)-1) + ",$" + strconv.Itoa(len(args)) + ")"
+	}
+	args = append(args, limit+1)
+	rows, err := db.QueryContext(ctx, "SELECT id FROM dsh.commerce_orders WHERE "+where+" ORDER BY updated_at DESC,id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
+	if err != nil {
+		return OperatorOperationsResult{}, err
+	}
+	defer rows.Close()
+	orderIDs := make([]string, 0, limit+1)
+	for rows.Next() {
+		var orderID string
+		if err := rows.Scan(&orderID); err != nil {
+			return OperatorOperationsResult{}, err
+		}
+		orderIDs = append(orderIDs, orderID)
+	}
+	if err := rows.Err(); err != nil {
+		return OperatorOperationsResult{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return OperatorOperationsResult{}, err
+	}
+
+	operations := make([]OperatorOperationRecord, 0, len(orderIDs))
+	for _, orderID := range orderIDs {
+		operation, err := ReadOperatorOperation(ctx, db, orderID)
+		if err != nil {
+			return OperatorOperationsResult{}, err
+		}
+		operations = append(operations, operation)
+	}
+	result := OperatorOperationsResult{Operations: operations}
+	if len(operations) > limit {
+		last := operations[limit-1]
+		result.Operations = operations[:limit]
+		result.NextCursor = encodeOperatorOperationsCursor(operatorOperationsCursor{UpdatedAt: last.Order.UpdatedAt, ID: last.Order.ID, State: state})
+	}
+	return result, nil
+}
+
+func ReadOperatorOperation(ctx context.Context, db *sql.DB, orderID string) (OperatorOperationRecord, error) {
+	order, err := ReadOrder(ctx, db, orderID)
+	if err != nil {
+		return OperatorOperationRecord{}, err
+	}
+	var storeName string
+	if err := db.QueryRowContext(ctx, "SELECT name FROM dsh.stores WHERE id=$1", order.StoreID).Scan(&storeName); err != nil {
+		return OperatorOperationRecord{}, err
+	}
+	operation := OperatorOperationRecord{Order: order, StoreName: storeName}
+	assignment, assignmentErr := ReadCaptainAssignmentForOrder(ctx, db, order.ID)
+	if assignmentErr == nil {
+		operation.Assignment = &assignment
+	} else if !errors.Is(assignmentErr, ErrCaptainAssignmentNotFound) {
+		return OperatorOperationRecord{}, assignmentErr
+	}
+	return operation, nil
+}
+
+func encodeOperatorOperationsCursor(cursor operatorOperationsCursor) string {
+	value, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(value)
+}
+
+func decodeOperatorOperationsCursor(raw, state string) (operatorOperationsCursor, error) {
+	value, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
+	}
+	var cursor operatorOperationsCursor
+	if err := json.Unmarshal(value, &cursor); err != nil || cursor.ID == "" || cursor.UpdatedAt.IsZero() || cursor.State != strings.TrimSpace(state) {
+		return operatorOperationsCursor{}, ErrOperatorOperationInvalidCursor
+	}
+	return cursor, nil
 }
 
 func readOrder(ctx context.Context, source rowQueryer, where string, args ...any) (OrderRecord, error) {

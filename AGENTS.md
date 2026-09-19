@@ -48,7 +48,28 @@ Current source is evidence of what exists, not automatic proof that the design i
 
 Treat the highest proven causal root. Do not move, wrap, suppress or document around a surviving root defect.
 
-### 1.1 User-facing surface correctness
+### 1.1 Governance impact and evidence
+
+Every material task must classify exactly one:
+
+```text
+GOVERNANCE_IMPACT=NONE
+GOVERNANCE_IMPACT=REVALIDATE_ONLY
+GOVERNANCE_IMPACT=UPDATE_REQUIRED
+GOVERNANCE_IMPACT=DEFECT_FOUND
+```
+
+Use the exact pinned Governance as the durable baseline and actively challenge the owners that the affected cone can change. `NONE` means durable meaning cannot materially be affected; `REVALIDATE_ONLY` means the relevant meaning was examined and remains correct; `UPDATE_REQUIRED` means the authorized outcome changes durable meaning; `DEFECT_FOUND` means the pinned durable meaning is stale, wrong, incomplete or duplicated.
+
+If `UPDATE_REQUIRED` or `DEFECT_FOUND`, correct and merge `governance-and-docs` through its canonical lane first, then deliberately repin `knowledge.sources.json` to the required merged immutable SHA and rerun affected proof. A change to the Governance pin can never be classified `NONE`. Normal promotion never moves the Governance pin backward; a newer pin must descend from the previously bound canonical Governance state.
+
+The pinned `GOVERNANCE-STANDARDS.md` defines Governance/agent integrity but owns no BThwani Product/System/Policy meaning.
+
+Use donor/history, relevant OSS/product exemplars, Yemen-market/competitor evidence, current primary technology sources, assurance/experience sources and ecosystem discovery only when a lane can materially change the current need, owner, boundary, risk, solution or proof. Revalidate mutable external facts at use. A newer tool/version is a candidate, not an automatic upgrade; apply the pinned Knowledge/Integration maturity and adoption gates.
+
+Do not create a second local Governance tree, standards registry, evidence ledger, technology-radar database or semantic guard. The pinned Governance plus the existing repository knowledge materialization/query/verification path is the canonical knowledge system.
+
+### 1.2 User-facing surface correctness
 
 User-facing presentation is part of correctness, not post-functional polish. A logically working feature is incomplete when its information architecture, application shell, navigation, hierarchy, Arabic/RTL behavior, interaction states, accessibility, visual-system use or real-device behavior is materially weak or incomplete.
 
@@ -65,11 +86,11 @@ ACTOR / USER OUTCOME
 → RENDERED + INTERACTION PROOF
 ```
 
-Establish the simplest complete canonical shell/navigation model required by the affected actor and capability set before deepening screens that depend on it. Do not force Client, Partner, Captain, Field or Control Panel into the same shell merely for visual consistency, and do not create empty destinations or speculative navigation to make an app appear complete.
+Establish the simplest complete canonical shell/navigation model required by the affected actor and capability set before deepening screens that depend on it. Do not force distinct actor-facing surfaces into the same shell merely for visual consistency, and do not create empty destinations or speculative navigation to make a surface appear complete.
 
 Arabic-first RTL is an end-to-end interaction invariant where the admitted surface is Arabic: prove layout/order, reading/alignment, directional icons and navigation, scrolling, forms, mixed-direction values, focus/keyboard behavior and direction-sensitive gesture/animation semantics as applicable. `textAlign: right` is not RTL proof.
 
-Pinned Governance owns durable Product/Experience/Design meaning within its fact-specific authority. If stronger evidence proves durable meaning stale or defective, correct Governance through its canonical path before relying on an implementation exception. `packages/design-system` owns executable reusable visual tokens/themes/primitives/patterns only when reuse is proven. Apps own host-specific IA, shell, navigation and presentation/composition. No repository-local Markdown or app-local visual foundation may become parallel durable Design/Experience authority.
+Pinned Governance owns durable Product/Experience/Design meaning within its fact-specific authority. If stronger evidence proves durable meaning stale or defective, correct Governance through its canonical path before relying on an implementation exception. The repository's canonical executable Design System owner, discovered through current placement/public exports, owns reusable visual tokens/themes/primitives/patterns only when reuse is proven. Apps own host-specific IA, shell, navigation and presentation/composition. No repository-local Markdown or app-local visual foundation may become parallel durable Design/Experience authority.
 
 For significant surface establishment or refoundation, inspect relevant donor implementation, current Product evidence, applicable platform guidance and proportional OSS/current practice only when they can change the decision. They are evidence, not copy authority or automatic truth.
 
@@ -106,9 +127,39 @@ No speculative scaffolding. No compatibility just in case. No new execution mode
 
 Minimum means smallest complete current model, never partial behavior or lost meaning.
 
+### 2.1 Material artifact survival
+
+Within the proven affected cone, every material file, module, component, hook, route, handler, service, package, type/DTO, schema, migration, contract, config/env key, script, dependency, state/cache/registry, test and generated artifact must re-earn existence through:
+
+```text
+EXISTENCE
+→ OWNERSHIP
+→ PLACEMENT
+→ PROVENANCE
+→ CURRENT CONSUMER
+→ SIMPLEST COMPLETE FORM
+```
+
+If current need, canonical ownership, correct placement/provenance, a real consumer or the simplest complete form cannot be proved, delete, merge, rehome or refound it within the affected cone. Existing code has no preservation right merely because it already exists.
+
+Any treatment that increases one-off exceptions, copied truth, manual synchronization or suppressions instead of strengthening/simplifying the canonical model is rejected; revisit the design rather than normalizing patch culture.
+
+### 2.2 Equal correctness across material dimensions
+
+Every plausibly material engineering dimension is held to the same correctness standard. Use the pinned Quality taxonomy to discover applicable Product, ownership, data/migration, contract/API/event, security/authorization, privacy/location, finance, reliability/recovery, performance, observability/audit, UX/IA/content, accessibility/RTL/localization, visual-system, platform/device, runtime/config/infra, dependency/supply-chain, release/deployable-identity, verification/evidence and governance/residue concerns.
+
+```text
+PLAUSIBLY MATERIAL DIMENSION
+→ CORRECT OWNER / BOUNDARY
+→ FAILURE + RECOVERY SEMANTICS AS APPLICABLE
+→ CLAIM-SPECIFIC PROOF
+```
+
+No language, framework, service, UI or tooling layer gets a lower correctness standard merely because another layer is the visible focus.
+
 ## 3. Repository and runtime execution
 
-Docker is the sole LOCAL_INTEGRATION runtime owner for PostgreSQL, Mailpit, Identity, DSH, Control Panel and all four Metro servers. Host-native or parallel launch paths for those components are forbidden. Android application execution and device tooling remain device/host owned as appropriate.
+LOCAL_INTEGRATION has exactly one canonical runtime owner for every admitted process/state. The current process/service/container inventory and environment composition are discovered from executable runtime configuration and readback; this agent constitution does not duplicate that mutable inventory. Parallel host/container ownership for the same responsibility is forbidden. Device/host tooling remains where the executable runtime contract assigns it.
 
 The human full-stack lifecycle is intentionally simple:
 
@@ -118,11 +169,78 @@ pnpm runtime:doctor  → read/validate the complete canonical Docker stack
 pnpm runtime:status  → read the complete canonical Docker stack
 ```
 
+Normal daily LOCAL_INTEGRATION establishes device/runtime state once, then reuses it. The human daily startup interface is `pnpm scr` (long-running device/scrcpy owner, normally in its own terminal) plus `pnpm runtime:up`, `pnpm runtime:doctor`, and `pnpm runtime:status`. After that, source-only edits reuse the valid Docker runtime, device state and sessions; Expo Fast Refresh / Next HMR is the inner development loop. App-specific openers, runtime proof, authentication and cross-role journeys are claim-specific operations, not micro-edit setup, and must not restart/reconcile Docker or repeat valid login/device setup merely because source changed.
+
 These commands remain full-stack commands. `runtime:up` starts and reconciles the complete stack without rebuilding existing images by default; on a fresh machine Compose may build a missing image. When baked backend source changes, use explicit service rebuild before the runtime proof that needs the new binary. Task-specific surface/service paths must not rebuild unrelated images.
 
 A task-specific runtime proof may exercise only the services/surfaces causally required by its claim. Verification must not start, stop, rebuild or restore the complete runtime merely to manufacture a generic green result.
 
 Setup is not verification. Dependency installation/materialization belongs to bootstrap/setup and must not be repeated inside normal candidate proof when inputs are already ready.
+
+Valid LOCAL_INTEGRATION operational state is reusable: normal verification must not destroy it, business proof state is created through canonical owners rather than direct SQL/seed bypass, and destructive reset/purge requires explicit same-invocation data-loss authorization.
+
+Actor-facing LOCAL_INTEGRATION claims require the affected actor's real surface and role-scoped session; API/database readback verifies canonical truth but does not substitute for real interaction. Reuse valid actors and resources, create fresh transactional state only when the current claim requires it, and preserve valid state during normal verification.
+
+### 3.1 Synthetic local proof state law
+
+This law applies to every synthetic/local-development state: actors, roles, sessions, stores, catalog, business data, credentials, locators, scenarios and proof tooling.
+
+```text
+CLEAN + CANONICAL + PROVEN → REUSE
+
+TRANSACTIONAL / SCENARIO NOISE ONLY
+→ PRESERVE VALID BASELINE
+→ CREATE FRESH TRANSACTIONAL STATE
+
+SMALLEST AFFECTED SYNTHETIC STATE IS UNTRUSTED
+→ STOP USING IT
+→ DISCARD / REBUILD THROUGH CANONICAL OWNERS WHEN A SAFE OWNER BOUNDARY EXISTS
+
+BASELINE INTEGRITY CANNOT BE PROVEN
+→ STOP USING THE WORLD
+→ USE THE EXISTING EXPLICITLY AUTHORIZED LOCAL RESET/PURGE BOUNDARY
+→ PROVE CLEAN STATE
+→ REBUILD THROUGH CANONICAL OWNERS
+
+PRODUCT / SCHEMA / CONFIG / TOOLING IS POLLUTED
+→ FIX HIGHEST ROOT
+→ REMOVE RESIDUE
+→ PROVE NEGATIVE SPACE
+→ ONLY THEN REBUILD SYNTHETIC STATE
+```
+
+Baseline actors and resources are reusable proof anchors, not exclusive test accounts. Additional synthetic clients, partners, stores, captains, fields or scenario resources are permitted only when claim-justified, local, canonical-owner-created, isolated and free of uncontrolled external effects. Synthetic proof state is never Product truth, migration/bootstrap data or authority, and it never authorizes direct SQL business setup or test-only Product/schema branches.
+
+### 3.2 Closed-loop multi-role journey proof
+
+When a material claim crosses actor-facing surfaces, shared mutable business state or cross-boundary behavior, validate it as a closed runtime repair loop across every causally participating real surface discovered from the exact current state.
+
+```text
+REAL ACTOR ACTION
+→ CANONICAL BUSINESS TRANSITION
+→ AFFECTED ACTOR/SURFACE OBSERVATION OR ACTION
+→ CLAIM-APPROPRIATE CANONICAL READBACK
+```
+
+Use the canonical LOCAL_INTEGRATION runtime and synthetic baseline through their existing owners. Reuse clean proven baseline state and create fresh transactional state only through canonical writers. Do not manufacture a green journey through direct SQL, manual synchronization, hidden test-only Product paths or persistence bypass.
+
+A user-facing claim requires the real affected surface; API/database readback corroborates canonical truth but does not substitute for the interaction.
+
+On any material failure:
+
+```text
+CAPTURE EXACT FAILURE + STATE
+→ TRACE HIGHEST PROVEN CAUSAL ROOT
+→ REPAIR ROOT + COMPLETE REQUIRED CUTOVER
+→ INVALIDATE AFFECTED EVIDENCE
+→ REMOVE MATERIAL RESIDUE
+→ REBUILD ONLY REQUIRED TRANSACTIONAL STATE THROUGH CANONICAL WRITERS
+→ REPLAY FROM THE EARLIEST TRUSTWORTHY POINT
+```
+
+If the treatment changes a shared identity, contract, persistence shape, state-machine, routing or runtime assumption used earlier in the journey, replay from the earliest point whose evidence became stale; replay the complete journey when no trustworthy earlier checkpoint remains.
+
+Continue until all materially participating surfaces observe the same canonical truth, required failure/recovery behavior is proven, affected evidence is current and no known material cross-role defect or residue remains.
 
 ## 4. Fast proportional verification
 
@@ -148,6 +266,22 @@ During implementation use direct/affected checks as needed. Do not run a separat
 
 CI is independent integration/promotion assurance. It may be broader when the integration claim is broader, but it must not duplicate setup or run unrelated heavyweight jobs by default.
 
+### 4.1 Independent subagent orchestration
+
+Use subagents for genuinely independent material evidence, implementation, review or proof lanes.
+
+When two or more such lanes exist and delegation materially reduces context interference or execution cost without increasing integration risk, delegate proactively rather than serializing all work. There is no required subagent count and no delegation for ceremony.
+
+On resource-constrained LOCAL_INTEGRATION hosts, parallelize independent read/reasoning lanes but serialize heavyweight local builds, exports, Docker/runtime proof, device/browser journeys and similar CPU/RAM-intensive work unless measured evidence proves concurrency reduces total cost without contention.
+
+Every delegated lane must have an exact input state, one material question or deliverable, a bounded read/write scope and required evidence. Parallel mutation lanes require disjoint write sets.
+
+The lead retains the objective, affected-cone and ownership decisions, cross-lane conflict resolution, final integration, Governance classification, consequential mutations, commit/push and closure census.
+
+Subagents must not independently push, merge, repin Governance, reset/purge persistent state, expose secrets or declare closure.
+
+Returned evidence is exact-state evidence. If its material inputs change before integration, invalidate and revalidate the affected result.
+
 ## 5. Canonical change and cutover
 
 Choose the simplest complete durable treatment. `SMALLEST DIFF != SIMPLEST SYSTEM`.
@@ -156,11 +290,17 @@ When replacing a mechanism:
 
 ```text
 ESTABLISH WINNER
-→ MIGRATE REQUIRED CALLERS/CONSUMERS
+→ MIGRATE MATERIAL PRODUCERS + CONSUMERS
+→ MIGRATE AFFECTED CONTRACTS / TYPES / ROUTES / STATE
+→ MIGRATE AFFECTED DATABASE / MIGRATIONS / CONFIG / RUNTIME
+→ MIGRATE AFFECTED TESTS / GENERATED ARTIFACTS / CURRENT IMPLEMENTATION DOCS
 → DISABLE LOSING PATH
-→ DELETE LOSING PATH/ALIASES/RESIDUE
+→ DELETE LOSING PATH / ALIASES / RESIDUE
 → VERIFY WINNER
+→ PROVE LOSER ABSENT
 ```
+
+A cutover is incomplete while any materially affected producer, consumer, contract, persistence path, runtime/config path, generated artifact, test or current implementation description still depends on the losing model.
 
 Do not leave old/new paths in parallel. Do not keep unused scripts, wrappers, allowlists, suppressions, guards, aliases or compatibility layers for comfort.
 
@@ -169,6 +309,10 @@ Repository placement follows `REPOSITORY-STRUCTURE.md`. A structural split/rehom
 Do not force-push, blind-merge/cherry-pick, bypass interlocks, manufacture green by suppressing failures, or retry an ambiguous consequential mutation without reconciliation.
 
 ## 6. Claim-specific evidence
+
+EVIDENCE IS VALID ONLY FOR THE EXACT STATE IT PROVES.
+
+A material change to the candidate, semantic owner, contract/schema, persistence/runtime composition, Governance binding or mutable external fact invalidates the affected proof. Re-run only the proof made stale; never carry evidence forward by assumption.
 
 Use the smallest adequate evidence producer:
 
@@ -198,12 +342,18 @@ AUTHORIZED OBJECTIVE = PROVEN
 MATERIAL AFFECTED CONE = ACCOUNTED
 EXPECTED OWNER/WRITER/READBACK = PROVEN
 REQUIRED DATA/CONTRACT/RUNTIME/JOURNEYS = PROVEN
+KNOWN MATERIAL DEFECTS = 0
+KNOWN MATERIAL WEAKNESSES = 0
 KNOWN MATERIAL REGRESSIONS = 0
+KNOWN DUPLICATE OWNERSHIP = 0
+UNPROVEN MATERIAL CLAIMS = 0
 DECISION-CRITICAL UNKNOWNS = 0
 KNOWN PARTIAL CUTOVERS = 0
 KNOWN PARALLEL/SHADOW TRUTH = 0
 KNOWN UNJUSTIFIED COMPLEXITY/RESIDUE = 0
 INVALIDATED REQUIRED EVIDENCE = 0
+GOVERNANCE_IMPACT = RESOLVED
+PINNED_GOVERNANCE = EXACT_WHEN_MATERIALLY_REQUIRED
 ```
 
 For a coherent verified unit:

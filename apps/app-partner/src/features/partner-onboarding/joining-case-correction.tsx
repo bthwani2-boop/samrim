@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, useColorScheme } from "react-native";
-
-import { direction, resolveTextAlign, resolveTextInputAlign, resolveTheme } from "@bthwani/design-system";
+import { borders, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
 import type { CommerceVertical, JoiningCaseResponse, ServiceCity } from "@bthwani/dsh";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 import { correctAndResubmitOwnJoiningCase, listCatalogVerticals } from "./store-readback-client";
 
 export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: JoiningCaseResponse; cities: ReadonlyArray<ServiceCity>; onUpdated: (next: JoiningCaseResponse) => void }) {
   const current = value.case;
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [businessName, setBusinessName] = useState(current.businessName);
   const [firstStoreName, setFirstStoreName] = useState(current.firstStoreName);
@@ -78,43 +78,29 @@ export function JoiningCaseCorrection({ value, cities, onUpdated }: { value: Joi
       <TextInput accessibilityLabel="تصحيح اسم المتجر الأول" editable={!busy} onChangeText={setFirstStoreName} value={firstStoreName} style={styles.input} />
       <Text style={styles.label}>مدينة المتجر الأول</Text>
       {cities.length === 0 ? <Text style={styles.muted}>لا توجد مدن خدمة مقروءة حاليًا. أعد قراءة بيانات الشريك.</Text> : null}
-      <View style={styles.cityList}>{cities.map((city) => <Pressable key={city.id} accessibilityRole="button" accessibilityState={{ selected: serviceCityId === city.id }} disabled={busy} onPress={() => setServiceCityId(city.id)} style={[styles.cityButton, serviceCityId === city.id && styles.cityButtonSelected]}><Text style={styles.cityText}>{city.displayNameAr}</Text></Pressable>)}</View>
+      <View style={styles.cityList}>{cities.map((city) => <BthwaniChip key={city.id} disabled={busy} label={city.displayNameAr} onPress={() => setServiceCityId(city.id)} selected={serviceCityId === city.id} />)}</View>
       <Text style={styles.label}>النشاط التجاري</Text>
       {optionsLoading ? <Text style={styles.muted}>جارٍ قراءة الأنشطة المتاحة…</Text> : null}
-      {optionsError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة الأنشطة التجارية.</Text><Pressable accessibilityRole="button" onPress={() => void loadOptions()} style={styles.retryButton}><Text style={styles.retryText}>إعادة قراءة الأنشطة</Text></Pressable></View> : null}
-      <View style={styles.cityList}>{verticals.map((vertical) => <Pressable key={vertical.id} accessibilityRole="button" accessibilityState={{ selected: verticalId === vertical.id }} disabled={busy} onPress={() => setVerticalId(vertical.id)} style={[styles.cityButton, verticalId === vertical.id && styles.cityButtonSelected]}><Text style={styles.cityText}>{vertical.nameAr}</Text></Pressable>)}</View>
-      <Pressable accessibilityRole="button" accessibilityState={{ busy, disabled: busy || optionsLoading }} disabled={busy || optionsLoading} onPress={() => void correctAndResubmit()} style={[styles.button, (busy || optionsLoading) && styles.disabledButton]}>
-        {busy ? <ActivityIndicator color={theme.disabledText} /> : <Text style={styles.buttonText}>حفظ التصحيح وإعادة الإرسال</Text>}
-      </Pressable>
+      {optionsError ? <View style={styles.optionError}><Text accessibilityRole="alert" style={styles.error}>تعذر قراءة الأنشطة التجارية.</Text><BthwaniButton label="إعادة قراءة الأنشطة" onPress={() => void loadOptions()} variant="secondary" /></View> : null}
+      <View style={styles.cityList}>{verticals.map((vertical) => <BthwaniChip key={vertical.id} disabled={busy} label={vertical.nameAr} onPress={() => setVerticalId(vertical.id)} selected={verticalId === vertical.id} />)}</View>
+      <BthwaniButton busy={busy} disabled={optionsLoading} label="حفظ التصحيح وإعادة الإرسال" onPress={() => void correctAndResubmit()} />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </View>
   );
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
-  const startInputTextAlign = resolveTextInputAlign("start", activeDirection);
-
   return StyleSheet.create({
-    container: { backgroundColor: theme.warningSoft, borderColor: theme.warning, borderRadius: 14, borderWidth: 1, gap: 8, marginTop: 12, padding: 12, direction: activeDirection },
-    title: { color: theme.warning, fontSize: 15, fontWeight: "800", textAlign: startTextAlign },
-    reason: { color: theme.color, fontSize: 14, lineHeight: 20, textAlign: startTextAlign },
-    phone: { color: theme.colorSecondary, fontSize: 13, textAlign: startTextAlign },
+    container: { backgroundColor: theme.warningSoft, borderColor: theme.warning, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], marginTop: spacing[3], padding: spacing[3] },
+    title: { ...typography.bodyStrong, color: theme.warning },
+    reason: { ...typography.bodySm, color: theme.color },
+    phone: { ...typography.label, color: theme.colorSecondary },
     phoneValue: { writingDirection: "ltr" },
-    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, color: theme.color, minHeight: 44, paddingHorizontal: 10, textAlign: startInputTextAlign, writingDirection: activeDirection },
-    label: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
-    cityList: { direction: activeDirection, flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    cityButton: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },
-    cityButtonSelected: { backgroundColor: theme.actionSoft, borderColor: theme.actionBackground },
-    cityText: { color: theme.color, fontSize: 13, fontWeight: "700", textAlign: startTextAlign },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 10, justifyContent: "center", minHeight: 44, paddingHorizontal: 12 },
-    buttonText: { color: theme.onAction, fontWeight: "800" },
-    disabledButton: { backgroundColor: theme.disabledBackground },
-    error: { color: theme.danger, fontSize: 13, textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 19, textAlign: startTextAlign },
-    optionError: { gap: 6 },
-    retryButton: { alignItems: "flex-start", minHeight: 40, justifyContent: "center", paddingHorizontal: 4 },
-    retryText: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textDecorationLine: "underline", textAlign: startTextAlign },
+    input: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: sizing.controlMd, paddingHorizontal: spacing[2] },
+    label: { ...typography.label, color: theme.color },
+    cityList: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
+    error: { ...typography.label, color: theme.danger },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    optionError: { gap: spacing[2] },
   });
 }

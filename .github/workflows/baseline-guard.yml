@@ -208,7 +208,7 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
-      - name: Verify affected Windows mobile exports
+      - name: Verify affected Windows Android exports
         if: steps.mobile.outputs.run == 'true'
         shell: pwsh
         run: pnpm exec nx affected -t export-smoke --base=${{ steps.mobile.outputs.base }} --head=HEAD --outputStyle=stream

@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -14,6 +16,7 @@ var (
 	ErrCatalogProposalConflict = errors.New("catalog Product proposal state or version conflicts")
 	ErrCatalogProposalInvalid  = errors.New("catalog Product proposal facts are invalid")
 	ErrCatalogProposalReview   = errors.New("catalog Product proposal review decision is invalid")
+	ErrCatalogProposalCursor   = errors.New("catalog Product proposal cursor is invalid")
 )
 
 type CatalogProductProposalRecord struct {
@@ -39,6 +42,43 @@ type CatalogProductProposalInput struct {
 type CatalogProductProposalResult struct {
 	Proposal CatalogProductProposalRecord
 	Replayed bool
+}
+
+type CatalogProductProposalPage struct {
+	Proposals  []CatalogProductProposalRecord
+	NextCursor string
+}
+
+type catalogProductProposalCursor struct {
+	Version        int       `json:"v"`
+	Scope          string    `json:"scope"`
+	State          string    `json:"state"`
+	PartnerActorID string    `json:"partnerActorId,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+	ProposalID     string    `json:"proposalId"`
+}
+
+func encodeCatalogProductProposalCursor(cursor catalogProductProposalCursor) (string, error) {
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeCatalogProductProposalCursor(raw, scope, state, partnerActorID string) (*catalogProductProposalCursor, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, ErrCatalogProposalCursor
+	}
+	var cursor catalogProductProposalCursor
+	if err := json.Unmarshal(decoded, &cursor); err != nil || cursor.Version != 1 || cursor.Scope != scope || cursor.State != state || cursor.PartnerActorID != partnerActorID || cursor.ProposalID == "" || cursor.CreatedAt.IsZero() {
+		return nil, ErrCatalogProposalCursor
+	}
+	return &cursor, nil
 }
 
 func HashCatalogProductProposalCreateRequest(input CatalogProductProposalInput) string {
@@ -214,26 +254,39 @@ func UpdateCatalogProductProposal(ctx context.Context, db *sql.DB, proposalID st
 	return CatalogProductProposalResult{Proposal: item}, nil
 }
 
-func ListCatalogProductProposalsForPartner(ctx context.Context, db *sql.DB, partnerActorID, state string, limit int) ([]CatalogProductProposalRecord, error) {
-	return listCatalogProductProposals(ctx, db, "partner_actor_id=$1", []any{strings.TrimSpace(partnerActorID)}, state, limit)
+func ListCatalogProductProposalsForPartner(ctx context.Context, db *sql.DB, partnerActorID, state string, limit int, rawCursor string) (CatalogProductProposalPage, error) {
+	partnerActorID = strings.TrimSpace(partnerActorID)
+	if partnerActorID == "" {
+		return CatalogProductProposalPage{}, ErrCatalogProposalInvalid
+	}
+	return listCatalogProductProposals(ctx, db, "partner_actor_id=$1", []any{partnerActorID}, state, limit, rawCursor, "partner", partnerActorID)
 }
 
-func ListCatalogProductProposalsForReview(ctx context.Context, db *sql.DB, state string, limit int) ([]CatalogProductProposalRecord, error) {
-	return listCatalogProductProposals(ctx, db, "1=1", nil, state, limit)
+func ListCatalogProductProposalsForReview(ctx context.Context, db *sql.DB, state string, limit int, rawCursor string) (CatalogProductProposalPage, error) {
+	return listCatalogProductProposals(ctx, db, "1=1", nil, state, limit, rawCursor, "review", "")
 }
 
-func listCatalogProductProposals(ctx context.Context, db *sql.DB, where string, args []any, state string, limit int) ([]CatalogProductProposalRecord, error) {
+func listCatalogProductProposals(ctx context.Context, db *sql.DB, where string, args []any, state string, limit int, rawCursor, scope, partnerActorID string) (CatalogProductProposalPage, error) {
 	if limit < 1 || limit > 100 {
-		return nil, ErrCatalogProposalInvalid
+		return CatalogProductProposalPage{}, ErrCatalogProposalInvalid
+	}
+	state = strings.TrimSpace(state)
+	cursor, err := decodeCatalogProductProposalCursor(rawCursor, scope, state, partnerActorID)
+	if err != nil {
+		return CatalogProductProposalPage{}, err
 	}
 	if strings.TrimSpace(state) != "" {
-		args = append(args, strings.TrimSpace(state))
+		args = append(args, state)
 		where += " AND state=$" + strconv.Itoa(len(args))
 	}
-	args = append(args, limit)
+	if cursor != nil {
+		args = append(args, cursor.CreatedAt, cursor.ProposalID)
+		where += " AND (created_at<$" + strconv.Itoa(len(args)-1) + " OR (created_at=$" + strconv.Itoa(len(args)-1) + " AND id<$" + strconv.Itoa(len(args)) + "))"
+	}
+	args = append(args, limit+1)
 	rows, err := db.QueryContext(ctx, "SELECT id,partner_actor_id,vertical_id,category_id,proposed_name,proposed_brand,proposed_variant_title,proposed_measurement_kind,proposed_base_unit,proposed_identifier_type,proposed_identifier_value,proposed_image_uri,state,correction_reason,reviewed_by,version,created_at,updated_at FROM dsh.catalog_product_proposals WHERE "+where+" ORDER BY created_at DESC,id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
 	if err != nil {
-		return nil, err
+		return CatalogProductProposalPage{}, err
 	}
 	defer rows.Close()
 	items := make([]CatalogProductProposalRecord, 0)
@@ -241,13 +294,25 @@ func listCatalogProductProposals(ctx context.Context, db *sql.DB, where string, 
 		var item CatalogProductProposalRecord
 		var brand, identifierType, identifierValue, imageURI, correction, reviewed sql.NullString
 		if err := rows.Scan(&item.ID, &item.PartnerActorID, &item.VerticalID, &item.CategoryID, &item.ProposedName, &brand, &item.ProposedVariantTitle, &item.ProposedMeasurementKind, &item.ProposedBaseUnit, &identifierType, &identifierValue, &imageURI, &item.State, &correction, &reviewed, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
+			return CatalogProductProposalPage{}, err
 		}
 		item.ProposedBrand, item.ProposedIdentifierType, item.ProposedIdentifierValue = nullableString(brand), nullableString(identifierType), nullableString(identifierValue)
 		item.ProposedImageURI, item.CorrectionReason, item.ReviewedBy = nullableString(imageURI), nullableString(correction), nullableString(reviewed)
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return CatalogProductProposalPage{}, err
+	}
+	page := CatalogProductProposalPage{Proposals: items}
+	if len(items) > limit {
+		page.Proposals = items[:limit]
+		last := page.Proposals[len(page.Proposals)-1]
+		page.NextCursor, err = encodeCatalogProductProposalCursor(catalogProductProposalCursor{Version: 1, Scope: scope, State: state, PartnerActorID: partnerActorID, CreatedAt: last.CreatedAt, ProposalID: last.ID})
+		if err != nil {
+			return CatalogProductProposalPage{}, err
+		}
+	}
+	return page, nil
 }
 
 func SubmitCatalogProductProposal(ctx context.Context, db *sql.DB, proposalID string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CatalogProductProposalResult, error) {

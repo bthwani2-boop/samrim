@@ -39,7 +39,7 @@ function parseRgb(colorStr) {
 function relativeLuminance(colorStr) {
   const [r, g, b] = parseRgb(colorStr).map((c) => {
     const s = c / 255;
-    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
@@ -78,34 +78,18 @@ if (!themeIndexTs.includes("export function generateThemeCss")) {
 if (!themeIndexTs.includes("export function themeToCssVariables")) {
   failures.push("packages/design-system/src/theme/index.ts missing themeToCssVariables");
 }
+if (!themeIndexTs.includes("export function webFoundationToCssVariables")) {
+  failures.push("packages/design-system/src/theme/index.ts missing webFoundationToCssVariables");
+}
 
 // 2. Parity check on light and dark keys
 const { lightThemeColors, darkThemeColors } = await import("../../packages/design-system/src/tokens/colors.ts");
-const { generateThemeCss } = await import("../../packages/design-system/src/theme/index.ts");
-const { resolveTextAlign, resolveTextInputAlign, toAsciiDigits } = await import("../../packages/design-system/src/tokens/direction.ts");
+const { generateThemeCss, isThemePreference, resolveThemeName, themePreferences, webFoundationToCssVariables } = await import("../../packages/design-system/src/theme/index.ts");
+const { toAsciiDigits } = await import("../../packages/design-system/src/tokens/formatting.ts");
 
 if (toAsciiDigits("١٢٣٤٥٦٧٨٩٠ ۱۲۳۴۵۶۷۸۹۰") !== "1234567890 1234567890") {
   failures.push("Design System ASCII digit normalization is incomplete");
 }
-const alignmentCases = [
-  { value: "start", activeDirection: "rtl", textExpected: "left", inputExpected: "right" },
-  { value: "end", activeDirection: "rtl", textExpected: "right", inputExpected: "left" },
-  { value: "start", activeDirection: "ltr", textExpected: "left", inputExpected: "left" },
-  { value: "end", activeDirection: "ltr", textExpected: "right", inputExpected: "right" },
-  { value: "center", activeDirection: "rtl", textExpected: "center", inputExpected: "center" },
-  { value: "center", activeDirection: "ltr", textExpected: "center", inputExpected: "center" }
-];
-
-if (
-  alignmentCases.some(
-    ({ value, activeDirection, textExpected, inputExpected }) =>
-      resolveTextAlign(value, activeDirection) !== textExpected ||
-      resolveTextInputAlign(value, activeDirection) !== inputExpected
-  )
-) {
-  failures.push("Design System logical text and input alignment contracts are inconsistent");
-}
-
 const lightKeys = Object.keys(lightThemeColors).sort();
 const darkKeys = Object.keys(darkThemeColors).sort();
 
@@ -165,8 +149,20 @@ const dsThemeCss = read("packages/design-system/theme.css");
 const expectedHeader = `/* Auto-generated from @bthwani/design-system. Do not edit manually. */\n`;
 const expectedCss = expectedHeader + generateThemeCss();
 
+for (const [name, value] of Object.entries(webFoundationToCssVariables())) {
+  if (!dsThemeCss.includes(`${name}: ${value};`)) {
+    failures.push(`theme.css is missing canonical web token ${name}`);
+  }
+}
+
 if (dsThemeCss !== expectedCss) {
   failures.push("packages/design-system/theme.css has drifted from canonical generateThemeCss()");
+}
+if (!themePreferences.every((preference) => isThemePreference(preference))) {
+  failures.push("Design System theme preference contract is incomplete");
+}
+if (resolveThemeName("system", "dark") !== "dark" || resolveThemeName("system", "light") !== "light") {
+  failures.push("Design System system theme resolution does not follow the platform scheme");
 }
 
 // Verify no duplicate editable theme.css in control-panel
@@ -189,8 +185,8 @@ if (globalsCss.includes("@media (prefers-color-scheme: dark)")) {
 if (globalsCss.includes('[data-theme="dark"]') || globalsCss.includes('[data-theme="light"]')) {
   failures.push("apps/control-panel/app/globals.css contains dead data-theme manual branch");
 }
-if (dsThemeCss.includes("[data-theme=")) {
-  failures.push("packages/design-system/theme.css contains dead data-theme manual branch");
+if (!dsThemeCss.includes(':root[data-theme="light"]') || !dsThemeCss.includes(':root[data-theme="dark"]')) {
+  failures.push("packages/design-system/theme.css is missing canonical explicit theme preference overrides");
 }
 
 // Verify no raw hex or rgb colors in control-panel globals.css
@@ -213,7 +209,7 @@ for (const app of mobileApps) {
   if (/style=["'](?:dark|light)["']/.test(layout)) {
     failures.push(`apps/${app}/app/_layout.tsx has fixed StatusBar style instead of adaptive`);
   }
-  if (!layout.includes("useColorScheme") && !layout.includes("style=\"auto\"")) {
+  if (!layout.includes("AppearanceProvider")) {
     failures.push(`apps/${app}/app/_layout.tsx is not theme-adaptive`);
   }
 }
@@ -255,12 +251,12 @@ if (failures.length > 0) {
 }
 
 console.log("DESIGN_SYSTEM_SINGLE_THEME_AUTHORITY=PASS");
-console.log("LOCAL_SEMANTIC_COLOR_AUTHORITY=0");
-console.log("DUPLICATE_LIGHT_DARK_TRUTH=0");
+console.log("SCOPED_LOCAL_SEMANTIC_COLOR_AUTHORITY=0");
+console.log("SCOPED_DUPLICATE_LIGHT_DARK_TRUTH=0");
 console.log("DEAD_THEME_TOKEN=0");
 console.log("STATUS_BAR_THEME_SYNC=PASS");
 console.log("CONTROL_PANEL_RAW_SEMANTIC_COLORS=0");
 console.log("THEME_KEYS_PARITY=PASS");
-console.log("WCAG_AA_THEME_CONTRAST=PASS");
+console.log("STATIC_THEME_TOKEN_CONTRAST_MATRIX=PASS");
 console.log("UNJUSTIFIED_DUPLICATE_THEME_CSS=0");
 console.log("DEAD_MANUAL_THEME_BRANCH=0");

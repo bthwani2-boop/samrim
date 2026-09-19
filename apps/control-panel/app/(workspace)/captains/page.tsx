@@ -1,14 +1,14 @@
-import { CaptainDispatchPanel } from "../../../src/features/captain/captain-dispatch-panel";
+import { CaptainAdmissionPanel } from "../../../src/features/captain/captain-admission-panel";
 
 export default function CaptainsPage() {
   return (
     <section className="workspace-page" aria-labelledby="captains-page-title">
       <div className="workspace-page-heading">
-        <p className="eyebrow">التشغيل</p>
-        <h1 id="captains-page-title">عمليات الكابتن</h1>
-        <p className="lead">اقبل الكابتن من خلال صلاحية المشغل، ثم اعرض نتيجة القبول الكانونية بعد استجابة المنصة.</p>
+        <p className="eyebrow">الكباتن</p>
+        <h1 id="captains-page-title">قبول الكباتن</h1>
+        <p className="lead">أنشئ أهلية كابتن من خلال DSH ثم اعرض نتيجة القبول المقروءة. التوزيع والاستعادة مكانهما في العمليات.</p>
       </div>
-      <CaptainDispatchPanel />
+      <CaptainAdmissionPanel />
     </section>
   );
 }

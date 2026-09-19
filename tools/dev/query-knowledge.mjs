@@ -82,6 +82,19 @@ function referenceRecords() {
   }).sort((a, b) => a.source.localeCompare(b.source));
 }
 
+function policyRecords() {
+  const policyRoot = path.join(root, "governance/policy");
+  return collectMarkdown(policyRoot).map((absolute) => {
+    const body = fs.readFileSync(absolute, "utf8");
+    return {
+      source: relative(absolute),
+      title: body.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "",
+      owner: body.match(/^SEMANTIC_OWNER:\s*(\S+)\s*$/m)?.[1] ?? "",
+      body,
+    };
+  }).sort((a, b) => a.source.localeCompare(b.source));
+}
+
 function qualityDimensions() {
   const body = read("governance/policy/QUALITY.md");
   return [...body.matchAll(/^QUALITY_DIMENSION:\s*([A-Z0-9_]+)\s*$/gm)].map((match) => match[1]);
@@ -93,15 +106,25 @@ const rawId = args.join(" ").trim();
 
 function usage(exitCode = 1) {
   console.error("Usage:");
-  console.error("  node tools/dev/query-knowledge.mjs list capabilities|journeys|owners|references|quality-dimensions");
+  console.error("  node tools/dev/query-knowledge.mjs list capabilities|journeys|owners|policies|references|quality-dimensions");
+  console.error("  node tools/dev/query-knowledge.mjs meta-standard");
   console.error("  node tools/dev/query-knowledge.mjs capability <CAPABILITY_ID>");
   console.error("  node tools/dev/query-knowledge.mjs journey <J0|J1|...>");
   console.error("  node tools/dev/query-knowledge.mjs owner <keyword-or-path>");
+  console.error("  node tools/dev/query-knowledge.mjs policy <keyword-or-path>");
   console.error("  node tools/dev/query-knowledge.mjs reference <keyword-or-class-or-path>");
   process.exit(exitCode);
 }
 
 if (!kind) usage();
+
+if (kind === "meta-standard") {
+  console.log("SOURCE=GOVERNANCE-STANDARDS.md");
+  console.log("SEMANTIC_AUTHORITY=NONE");
+  console.log("");
+  console.log(read("GOVERNANCE-STANDARDS.md"));
+  process.exit(0);
+}
 
 if (kind === "list") {
   if (rawId === "capabilities") {
@@ -114,6 +137,10 @@ if (kind === "list") {
   }
   if (rawId === "owners") {
     for (const value of governanceOwners()) console.log(value.owner + "\t" + value.title + "\t" + value.artifactClass);
+    process.exit(0);
+  }
+  if (rawId === "policies") {
+    for (const value of policyRecords()) console.log(value.owner + "\t" + value.title);
     process.exit(0);
   }
   if (rawId === "references") {
@@ -170,6 +197,27 @@ if (kind === "owner") {
     process.exit(2);
   }
   for (const value of values) console.log(value.owner + "\t" + value.title + "\t" + value.artifactClass);
+  process.exit(0);
+}
+
+if (kind === "policy") {
+  const wanted = rawId.toLowerCase();
+  const values = policyRecords().filter((item) =>
+    item.owner.toLowerCase().includes(wanted) ||
+    item.source.toLowerCase().includes(wanted) ||
+    item.title.toLowerCase().includes(wanted)
+  );
+  if (!values.length) {
+    console.error("UNKNOWN_POLICY_QUERY=" + rawId);
+    process.exit(2);
+  }
+  for (const value of values) {
+    console.log("SOURCE=" + value.source);
+    console.log("SEMANTIC_OWNER=" + value.owner);
+    console.log("");
+    console.log(value.body);
+    if (values.length > 1) console.log("\n---\n");
+  }
   process.exit(0);
 }
 

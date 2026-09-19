@@ -20,6 +20,31 @@ function requireFile(relative) {
   }
 }
 
+for (const requiredPinned of [
+  "GOVERNANCE-STANDARDS.md",
+  "AGENTS.md",
+  "governance/GOVERNANCE.md",
+  "governance/policy/QUALITY.md",
+  "tools/verify-knowledge.mjs",
+]) {
+  const absolute = path.join(knowledgeRoot, requiredPinned);
+  if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) {
+    failures.push(`pinned Governance missing required artifact: ${requiredPinned}`);
+  }
+}
+
+const metaStandardPath = path.join(knowledgeRoot, "GOVERNANCE-STANDARDS.md");
+if (fs.existsSync(metaStandardPath)) {
+  const meta = fs.readFileSync(metaStandardPath, "utf8");
+  for (const token of [
+    "ARTIFACT_CLASS: GOVERNANCE_AND_AGENT_META_STANDARD",
+    "PROJECT_SEMANTIC_AUTHORITY: NONE",
+    "EXECUTION_AUTHORITY: NONE",
+  ]) {
+    if (!meta.includes(token)) failures.push(`pinned meta-standard missing authority boundary: ${token}`);
+  }
+}
+
 try {
   execFileSync(process.execPath, [path.join(knowledgeRoot, "tools", "verify-knowledge.mjs")], {
     cwd: knowledgeRoot,
@@ -51,6 +76,7 @@ for (const forbidden of ["branch", "branch_url"]) {
   }
 }
 
+
 for (const required of [
   "AGENTS.md",
   "knowledge.sources.json",
@@ -67,15 +93,24 @@ for (const required of [
   requireFile(required);
 }
 
-const queryTool = fs.readFileSync(path.join(root, "tools/dev/query-knowledge.mjs"), "utf8");
-for (const token of [
-  "ensureKnowledgeRoot",
-  "governance/product/capabilities",
-  "governance/product/JOURNEYS.md",
-  "governance/policy/QUALITY.md",
-  "docs/reference",
+const queryToolPath = path.join(root, "tools/dev/query-knowledge.mjs");
+for (const args of [
+  ["meta-standard"],
+  ["list", "owners"],
+  ["list", "policies"],
+  ["list", "capabilities"],
+  ["list", "journeys"],
+  ["list", "references"],
+  ["list", "quality-dimensions"],
 ]) {
-  if (!queryTool.includes(token)) failures.push(`knowledge query tool missing source-derived behavior: ${token}`);
+  try {
+    execFileSync(process.execPath, [queryToolPath, ...args], {
+      cwd: root,
+      stdio: "ignore",
+    });
+  } catch {
+    failures.push(`knowledge query behavior failed: ${args.join(" ")}`);
+  }
 }
 
 if (failures.length) {
@@ -89,3 +124,4 @@ console.log(`KNOWLEDGE_REPOSITORY=${pin.repository}`);
 console.log(`KNOWLEDGE_COMMIT=${pin.commit}`);
 console.log("AGENT_LAW_OWNER=AGENTS.md");
 console.log("LOCAL_PROMPT_PACKAGE_ROOT=0");
+console.log("PINNED_GOVERNANCE_META_STANDARD=PASS");

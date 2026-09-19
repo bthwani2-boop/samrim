@@ -1,13 +1,13 @@
-import { type Href, useRouter } from "expo-router";
+import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniIcon, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { createDshMobileClient, formatMoney, formatOrderDate, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
-import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { createDshMobileClient, formatMoney, formatOrderDate, orderStateLabel, type Order } from "@bthwani/dsh";
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
-
-type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order> } | { kind: "error" };
+type OrdersState = { kind: "loading" } | { kind: "ready"; orders: ReadonlyArray<Order> } | { kind: "error" } | { kind: "auth_required" };
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -19,57 +19,101 @@ const client = () => createDshMobileClient(baseUrl(), { cryptoRandomUUID: () => 
 
 export default function ClientOrders() {
   const router = useRouter();
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<OrdersState>({ kind: "loading" });
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
 
-  const load = useCallback(async () => {
-    setState({ kind: "loading" });
+  const load = useCallback(async (preserveCurrent = false) => {
+    if (preserveCurrent) setRefreshing(true);
+    else setState({ kind: "loading" });
+    setRefreshError("");
     try {
       const token = await getUsableIdentityAccessToken();
       setState({ kind: "ready", orders: (await client().listClientOrders(token, 50)).orders });
     } catch (error) {
       console.error("DSH client orders read failed", error);
-      setState({ kind: "error" });
+      if (preserveCurrent) setRefreshError("تعذر تحديث الطلبات. ما زالت القائمة الحالية معروضة.");
+      else setState({ kind: "error" });
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => subscribeIdentitySession(setIdentityState), []);
 
+  useEffect(() => {
+    if (identityState.kind !== "authenticated") {
+      setState({ kind: "auth_required" });
+      setRefreshError("");
+      return;
+    }
+    void load();
+  }, [identityState.kind, load]);
+
+  if (state.kind === "auth_required") {
+    return <View style={styles.state}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>سجّل الدخول لمتابعة طلباتك</Text><Text style={styles.muted}>ستظهر طلباتك وحالاتها هنا بعد تسجيل الدخول.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/orders" as Href)} /></View>;
+  }
   if (state.kind === "loading") {
-    return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة الطلبات" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة الطلبات…</Text></View>;
+    return <View style={styles.state} accessibilityLabel="جارٍ تجهيز الطلبات"><BthwaniSkeleton width="42%" height={28} /><BthwaniSkeleton height={112} /><BthwaniSkeleton height={112} /></View>;
   }
   if (state.kind === "error") {
-    return <View style={styles.state}><Text style={styles.title}>تعذر قراءة الطلبات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>إعادة المحاولة</Text></Pressable></View>;
+    return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر قراءة الطلبات</Text><Text style={styles.muted}>تحقق من الاتصال ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View>;
   }
 
   return (
     <View style={styles.container} accessibilityLabel="طلبات العميل">
-      <Text style={styles.eyebrow}>سجل الطلبات</Text>
-      <Text style={styles.title}>طلباتي</Text>
-      <Text style={styles.muted}>اختر طلبًا لقراءة التفاصيل والحالة الحالية ومسار الاسترداد المتاح.</Text>
-      {state.orders.length === 0 ? <Text style={styles.muted}>لا توجد طلبات محفوظة.</Text> : null}
-      <View style={styles.list}>
-        {state.orders.map((order) => <Pressable key={order.id} accessibilityRole="button" accessibilityLabel={`قراءة الطلب بتاريخ ${formatOrderDate(order.createdAt)}`} onPress={() => router.push(`/orders/${encodeURIComponent(order.id)}` as Href)} style={({ pressed }) => [styles.order, pressed && styles.pressed]}><Text style={styles.orderTitle}>طلب بتاريخ {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{orderStateLabel(order.state)} · {formatMoney(order.totalAmountMinor, order.currency)} · {order.lines.length} منتجات</Text></Pressable>)}
+      <Text style={styles.eyebrow}>متابعة رحلتك</Text>
+      <View style={styles.headingRow}>
+        <View style={styles.headingCopy}><Text style={styles.title}>طلباتي</Text><Text style={styles.muted}>تابع حالة طلباتك وافتح أي طلب لمراجعة التفاصيل الحالية.</Text></View>
+        <BthwaniButton accessibilityLabel="تحديث قائمة الطلبات" busy={refreshing} label="تحديث" onPress={() => void load(true)} variant="secondary" />
       </View>
+      {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.error}>{refreshError}</Text> : null}
+      {state.orders.length === 0 ? (
+        <BthwaniSurface tone="inset" style={styles.emptyState}>
+          <View style={styles.emptyIcon}><BthwaniIcon name="orders" color={theme.interactiveText} size={sizing.iconXl} /></View>
+          <Text style={styles.cardTitle}>لا توجد طلبات بعد</Text>
+          <Text style={styles.muted}>عندما تنشئ طلبًا سيظهر هنا مع حالته وتفاصيله.</Text>
+          <BthwaniButton label="استكشف المتاجر" onPress={() => router.push("/home" as Href)} />
+        </BthwaniSurface>
+      ) : (
+        <View style={styles.list}>
+          {state.orders.map((order) => <Pressable key={order.id} accessibilityRole="button" accessibilityLabel={`قراءة الطلب بتاريخ ${formatOrderDate(order.createdAt)}`} onPress={() => router.push(`/orders/${encodeURIComponent(order.id)}` as Href)} style={({ pressed }) => [styles.order, pressed && styles.pressed]}>
+            <View style={styles.orderTop}><View style={styles.orderTitleBlock}><Text style={styles.orderTitle}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.orderAddress} numberOfLines={1}>{order.addressText}</Text></View><View style={styles.statusPill}><Text style={styles.statusText}>{orderStateLabel(order.state)}</Text></View></View>
+            <View style={styles.orderBottom}><Text style={styles.orderMeta}>{order.lines.length} {order.lines.length === 1 ? "منتج" : "منتجات"}</Text><Text style={styles.orderTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} /></View>
+          </Pressable>)}
+        </View>
+      )}
     </View>
   );
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, direction: activeDirection, gap: 10, marginTop: 16, padding: 14, width: "100%" },
-    state: { alignItems: "center", direction: activeDirection, gap: 10, paddingVertical: 28, width: "100%" },
-    eyebrow: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textAlign: startTextAlign },
-    title: { color: theme.color, fontSize: 20, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },
-    list: { gap: 8 },
-    order: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: 12, borderWidth: 1, gap: 4, padding: 12 },
-    pressed: { opacity: 0.74 },
-    orderTitle: { color: theme.color, fontSize: 14, fontWeight: "800", textAlign: startTextAlign },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 12 },
-    secondaryButtonText: { color: theme.color, fontWeight: "700" },
+    container: { backgroundColor: theme.background, flexGrow: 1, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.hero, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    headingRow: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    headingCopy: { flex: 1, gap: spacing[1] },
+    error: { ...typography.bodySm, color: theme.danger },
+    state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
+    emptyState: { alignItems: "center", borderRadius: radius.xl, gap: spacing[3], padding: spacing[5] },
+    emptyIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
+    cardTitle: { ...typography.titleSm, color: theme.color, textAlign: "center" },
+    list: { gap: spacing[3] },
+    order: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4], ...elevation.raised },
+    orderTop: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    orderTitleBlock: { flex: 1, gap: spacing[1] },
+    orderTitle: { ...typography.titleSm, color: theme.color },
+    orderAddress: { ...typography.caption, color: theme.colorMuted },
+    statusPill: { backgroundColor: theme.actionSoft, borderRadius: radius.round, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
+    statusText: { ...typography.caption, color: theme.interactiveText, textAlign: "center" },
+    orderBottom: { alignItems: "center", borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, flexDirection: "row", gap: spacing[2], paddingTop: spacing[3] },
+    orderMeta: { ...typography.bodySm, color: theme.colorMuted, flex: 1 },
+    orderTotal: { ...typography.bodyStrong, color: theme.color },
+    pressed: { opacity: opacity.subtle },
   });
 }

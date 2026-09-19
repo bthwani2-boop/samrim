@@ -1,11 +1,11 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
-
-import { direction, resolveTextAlign, resolveTheme } from "@bthwani/design-system";
-import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, orderStateLabel, type Order } from "@bthwani/dsh";
-import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -19,51 +19,87 @@ export default function ClientOrderDetail() {
   const { orderId: rawOrderId } = useLocalSearchParams<{ orderId?: string | string[] }>();
   const orderId = Array.isArray(rawOrderId) ? rawOrderId[0] ?? "" : rawOrderId ?? "";
   const router = useRouter();
-  const theme = resolveTheme(useColorScheme() === "dark" ? "dark" : "light");
+  const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; order: Order } | { kind: "error" }>({ kind: "loading" });
+  const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; order: Order } | { kind: "error" } | { kind: "auth_required" }>({ kind: "loading" });
+  const [identityState, setIdentityState] = useState(currentIdentityState);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preserveCurrent = false) => {
     if (!orderId.trim()) { setState({ kind: "error" }); return; }
-    setState({ kind: "loading" });
+    if (preserveCurrent) setRefreshing(true);
+    else setState({ kind: "loading" });
+    setRefreshError("");
     try {
       const token = await getUsableIdentityAccessToken();
       setState({ kind: "ready", order: (await client().readOrder(token, orderId)).order });
     } catch (error) {
       console.error("DSH client order detail read failed", error);
-      setState({ kind: "error" });
+      if (preserveCurrent) setRefreshError("تعذر تحديث الحالة. ما زالت التفاصيل الحالية معروضة.");
+      else setState({ kind: "error" });
+    } finally {
+      setRefreshing(false);
     }
   }, [orderId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => subscribeIdentitySession(setIdentityState), []);
 
-  if (state.kind === "loading") return <View style={styles.state}><ActivityIndicator accessibilityLabel="جارٍ قراءة تفاصيل الطلب" color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة تفاصيل الطلب…</Text></View>;
-  if (state.kind === "error") return <View style={styles.state}><Text style={styles.title}>تعذر قراءة تفاصيل الطلب</Text><Text style={styles.muted}>قد تكون الجلسة أو الطلب غير متاحين الآن.</Text><Pressable accessibilityRole="button" onPress={() => void load()} style={styles.button}><Text style={styles.buttonText}>إعادة المحاولة</Text></Pressable><Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>العودة إلى الطلبات</Text></Pressable></View>;
+  useEffect(() => {
+    if (identityState.kind !== "authenticated") {
+      setState({ kind: "auth_required" });
+      setRefreshError("");
+      return;
+    }
+    void load();
+  }, [identityState.kind, load]);
+
+  if (state.kind === "auth_required") return <View style={styles.state}><BthwaniIcon name="account" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.title}>سجّل الدخول لعرض تفاصيل الطلب</Text><Text style={styles.muted}>سجّل الدخول أولًا ثم افتح الطلب مرة أخرى.</Text><BthwaniButton label="تسجيل الدخول" onPress={() => router.replace("/?returnTo=/orders" as Href)} /></View>;
+  if (state.kind === "loading") return <View style={styles.state} accessibilityLabel="جارٍ تجهيز تفاصيل الطلب"><BthwaniSkeleton width="42%" height={28} /><BthwaniSkeleton height={128} /><BthwaniSkeleton height={180} /></View>;
+  if (state.kind === "error") return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>تعذر قراءة تفاصيل الطلب</Text><Text style={styles.muted}>قد تكون الجلسة أو الطلب غير متاحين الآن.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى الطلبات" onPress={() => router.back()} variant="secondary" /></View>;
 
   const { order } = state;
-  return <View style={styles.container} accessibilityLabel="تفاصيل الطلب"><Pressable accessibilityRole="button" onPress={() => router.back()}><Text style={styles.back}>طلباتي</Text></Pressable><Text style={styles.eyebrow}>تفاصيل الطلب</Text><Text style={styles.title}>طلب بتاريخ {formatOrderDate(order.createdAt)}</Text><View style={styles.status}><Text style={styles.statusTitle}>الحالة الحالية</Text><Text style={styles.statusValue}>{orderStateLabel(order.state)}</Text><Text style={styles.muted}>الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text></View><Text style={styles.sectionTitle}>العنوان</Text><Text style={styles.muted}>{order.addressText}</Text><Text style={styles.sectionTitle}>المنتجات</Text><View style={styles.lines}>{order.lines.map((line) => <View key={line.id} style={styles.line}><Text style={styles.lineTitle}>{line.productName}</Text><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)} · {formatMoney(line.lineAmountMinor, line.currency)}</Text></View>)}</View><Text style={styles.muted}>تُقرأ الحالة الحالية من DSH عند كل فتح؛ أعد المحاولة عند تعذر القراءة.</Text></View>;
+  return (
+    <View style={styles.container} accessibilityLabel="تفاصيل الطلب">
+      <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى الطلبات" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>طلباتي</Text></Pressable>
+      <BthwaniSurface tone="raised" style={styles.summary}>
+        <View style={styles.summaryIcon}><BthwaniIcon name="orders" color={theme.onAction} size={sizing.iconXl} /></View>
+        <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{order.addressText}</Text></View>
+      </BthwaniSurface>
+      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "warning" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "danger" : "info"} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text></View><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" /></View>
+      {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
+      <BthwaniSectionHeader title="عنوان التوصيل" />
+      <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
+      <BthwaniSectionHeader title="المنتجات" subtitle={`${order.lines.length} ${order.lines.length === 1 ? "منتج" : "منتجات"}`} />
+      <View style={styles.lines}>{order.lines.map((line) => <BthwaniSurface key={line.id} tone="base" style={styles.line}><View style={styles.lineTop}><Text style={styles.lineTitle} numberOfLines={2}>{line.productName}</Text><Text style={styles.linePrice}>{formatMoney(line.lineAmountMinor, line.currency)}</Text></View><Text style={styles.muted}>{formatQuantity(line.baseUnit, line.finalQuantityBaseUnits)}{line.modifierSnapshots.length ? ` · ${line.modifierSnapshots.map((modifier) => modifier.optionNameAr).join("، ")}` : ""}</Text></BthwaniSurface>)}</View>
+      <Text style={styles.muted}>تُقرأ حالة الطلب الحالية من الخدمة عند كل فتح.</Text>
+    </View>
+  );
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
-  const activeDirection = direction.defaultDirection;
-  const startTextAlign = resolveTextAlign("start", activeDirection);
   return StyleSheet.create({
-    container: { backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: 14, borderWidth: 1, direction: activeDirection, gap: 10, marginTop: 16, padding: 14, width: "100%" },
-    state: { alignItems: "center", direction: activeDirection, gap: 10, paddingVertical: 28, width: "100%" },
-    eyebrow: { color: theme.interactiveText, fontSize: 13, fontWeight: "800", textAlign: startTextAlign },
-    title: { color: theme.color, fontSize: 20, fontWeight: "800", textAlign: startTextAlign },
-    muted: { color: theme.colorMuted, fontSize: 13, lineHeight: 20, textAlign: startTextAlign },
-    back: { color: theme.interactiveText, fontSize: 14, fontWeight: "700", textAlign: startTextAlign },
-    status: { backgroundColor: theme.actionSoft, borderRadius: 10, gap: 4, padding: 12 },
-    statusTitle: { color: theme.colorMuted, fontSize: 13, textAlign: startTextAlign },
-    statusValue: { color: theme.interactiveText, fontSize: 18, fontWeight: "800", textAlign: startTextAlign },
-    sectionTitle: { color: theme.color, fontSize: 15, fontWeight: "800", textAlign: startTextAlign },
-    lines: { gap: 8 },
-    line: { borderColor: theme.borderColor, borderTopWidth: 1, gap: 3, paddingTop: 8 },
-    lineTitle: { color: theme.color, fontSize: 14, fontWeight: "700", textAlign: startTextAlign },
-    button: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: 10, justifyContent: "center", minHeight: 44, paddingHorizontal: 14 },
-    buttonText: { color: theme.onAction, fontWeight: "800" },
-    secondaryButton: { alignItems: "center", borderColor: theme.borderColor, borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 14 },
-    secondaryButtonText: { color: theme.color, fontWeight: "700" },
+    container: { backgroundColor: theme.background, gap: spacing[4], paddingBottom: spacing[5], width: "100%" },
+    state: { alignItems: "center", gap: spacing[3], paddingVertical: spacing[10], width: "100%" },
+    backButton: { alignItems: "center", flexDirection: "row", gap: spacing[1], minHeight: sizing.controlMd },
+    back: { ...typography.body, color: theme.interactiveText },
+    summary: { alignItems: "center", borderRadius: radius.xl, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
+    summaryIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
+    summaryCopy: { flex: 1, gap: spacing[1] },
+    eyebrow: { ...typography.label, color: theme.interactiveText },
+    title: { ...typography.titleMd, color: theme.color },
+    muted: { ...typography.bodySm, color: theme.colorMuted },
+    status: { backgroundColor: theme.actionSoft, borderRadius: radius.lg, gap: spacing[1], padding: spacing[4] },
+    statusCopy: { flex: 1, gap: spacing[1] },
+    statusTitle: { ...typography.caption, color: theme.colorMuted },
+    statusValue: { ...typography.titleSm, color: theme.interactiveText },
+    statusTotal: { ...typography.bodyStrong, color: theme.color },
+    address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[4] },
+    lines: { gap: spacing[3] },
+    line: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
+    lineTop: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
+    lineTitle: { ...typography.bodyStrong, color: theme.color, flex: 1 },
+    linePrice: { ...typography.bodyStrong, color: theme.interactiveText },
+    refreshError: { ...typography.bodySm, color: theme.danger },
   });
 }
