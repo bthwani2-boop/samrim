@@ -30,21 +30,16 @@ pnpm client|partner|captain|field
 pnpm scr
 ```
 
-Ownership is narrow:
+Ownership is singular:
 
 ```text
-Docker backend lifecycle → tools/dev/runtime.ps1
-Android USB + ADB reverse → tools/dev/device-policy.psm1
-Mobile launch/reuse → tools/dev/open-mobile-apps.ps1
-Control launch/reuse → tools/dev/run-control.ps1
-Device mirroring → tools/dev/scrcpy.ps1
-Metro lifecycle → Expo CLI
-Control dev server → Next.js
+Local development runtime → tools/dev/local.ps1
+Docker backend services   → Docker Compose
+Metro lifecycle           → Expo CLI
+Control dev server        → Next.js
 ```
 
-`runtime:doctor` is explicit diagnostics and is never part of app startup. Mobile development is USB-only; Wi-Fi ADB bootstrap/failover is not part of the canonical daily runtime. Expo TypeScript auto-setup is disabled because TypeScript is repository-owned; Expo Autolinking remains enabled. Windows Metro localhost remains IPv4-first because real-device proof showed that an IPv6-only `::1` listener is incompatible with Expo's Android `127.0.0.1` URL.
-
-A healthy Metro is reused. A stale Metro proven to belong to the same app may be removed before a canonical cold start. A foreign port owner fails closed. Control reuses its healthy canonical endpoint and otherwise starts Next directly.
+The repository does not maintain separate runtime/device/mobile/control/scrcpy wrappers. Warm app launches reuse the healthy Metro/Next process; cold launches delegate directly to Expo or Next. Android development is USB-only and Windows Metro localhost remains IPv4-first because real-device proof showed the IPv6-only listener failure.
 
 ## Tool admission
 

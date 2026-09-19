@@ -36,28 +36,9 @@ pnpm field
 pnpm scr
 ```
 
-The mobile commands use one authorized USB Android device, maintain only the reverse mappings required by the selected app, reuse a healthy Metro when available, and otherwise delegate Metro startup to Expo CLI. Control reuses a healthy Next server and otherwise starts Next directly on the Windows loopback. Application commands never run Docker diagnostics.
+All local development commands route through one owner: `tools/dev/local.ps1`. It starts Docker backend services, reuses or starts the selected Metro/Next surface, opens the single USB Android device, and runs scrcpy without secondary runtime wrappers.
 
-Use backend diagnostics only when needed:
-
-```text
-pnpm runtime:doctor
-pnpm runtime:status
-pnpm runtime:logs
-```
-
-When baked backend source changes, rebuild only the affected service:
-
-```text
-pnpm runtime:rebuild -- -Service identity
-pnpm runtime:rebuild -- -Service dsh
-```
-
-Stop the backend with `pnpm runtime:down`. Destructive local database reset is explicit:
-
-```text
-pnpm runtime:reset -- -AllowDataLoss
-```
+Use `pnpm runtime:status` or `pnpm runtime:doctor` only when diagnosing the backend. Stop it with `pnpm runtime:down`. Exceptional rebuild/reset work uses Docker Compose directly instead of permanent repository wrappers.
 
 ## Verification
 

@@ -98,31 +98,22 @@ if (safePush.includes("pnpm verify")) {
   failures.push("safe push must invoke the canonical verifier once directly, not nest the public verify command");
 }
 
-const runtime = requireTokens("tools/dev/runtime.ps1", [
-  "ValidateSet('Up','Down','Status','Logs','Doctor','Reset','Rebuild')",
-  "RUNTIME_UP=PASS scope=backend",
-  "CANONICAL_RUNTIME_READBACK=PASS scope=backend-compose",
-  "RUNTIME_DOCTOR=PASS",
-]);
-if (fs.existsSync(path.join(root, "tools/dev/runtime.psm1"))) {
-  failures.push("retired tools/dev/runtime.psm1 must be absent");
-}
-const controlRuntime = requireTokens("tools/dev/run-control.ps1", [
-  "CONTROL_PANEL_REUSE=PASS",
+const localRuntime = requireTokens("tools/dev/local.ps1", [
+  "ValidateSet('Up','Down','Status','Doctor','Control','Client','Partner','Captain','Field','Scrcpy')",
+  "APP_REUSE=PASS",
+  "CONTROL_REUSE=PASS",
+  "expo start --dev-client --localhost --android --scheme",
   "next dev -H 127.0.0.1",
 ]);
-if (controlRuntime.includes("-Action Doctor") || controlRuntime.includes("docker ")) {
-  failures.push("Control hot path must not invoke Docker diagnostics");
-}
-const mobileRuntime = requireTokens("tools/dev/open-mobile-apps.ps1", [
-  "Get-MetroState -Port $metroPort",
-  "Get-UsbAdbDevice",
-  "METRO_REUSE=PASS",
-  "expo start --dev-client --localhost --android --scheme",
-  "--dns-result-order=ipv4first",
-]);
-if (mobileRuntime.includes("-Action Doctor") || mobileRuntime.includes("docker ")) {
-  failures.push("mobile hot path must not invoke Docker diagnostics");
+for (const retired of [
+  "tools/dev/runtime.ps1",
+  "tools/dev/runtime.psm1",
+  "tools/dev/device-policy.psm1",
+  "tools/dev/open-mobile-apps.ps1",
+  "tools/dev/run-control.ps1",
+  "tools/dev/scrcpy.ps1",
+]) {
+  if (fs.existsSync(path.join(root, retired))) failures.push(`retired local runtime file remains: ${retired}`);
 }
 
 const pkg = JSON.parse(read("package.json"));
