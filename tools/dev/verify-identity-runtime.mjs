@@ -6,7 +6,7 @@ import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.m
 
 const root = path.resolve(import.meta.dirname, "../..");
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env-file="))?.slice("--env-file=".length);
-const envFile = path.resolve(root, requestedEnv || "infra/local/compose/.env");
+const envFile = path.resolve(root, requestedEnv || "infra/local/.env");
 const runtimeHost = process.argv.find((arg) => arg.startsWith("--host="))?.slice("--host=".length) || "127.0.0.1";
 const env = Object.fromEntries(fs.readFileSync(envFile, "utf8").split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#")).map((line) => {
   const index = line.indexOf("=");

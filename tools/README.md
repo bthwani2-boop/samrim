@@ -19,20 +19,9 @@ Do not add a repository-wide wrapper when a current owner or standard tool alrea
 
 ## Execution model
 
-```text
-AGENTS.md
-→ exact Git state
-→ affected project graph
-→ claim-specific evidence
-→ one final safe push
-→ independent CI integration proof
-```
+`pnpm verify` is the exact local affected-candidate static/workspace entrypoint. `pnpm safe:push` owns final candidate verification and exact remote SHA confirmation.
 
-`pnpm verify` is the exact local affected-candidate static/workspace entrypoint. It does not install dependencies and does not start/stop Docker.
-
-`pnpm safe:push` resolves the correct branch delta, runs the canonical verifier once, pushes safely, and confirms the exact remote SHA. An already-pushed exact SHA is a no-op.
-
-Docker runtime lifecycle remains separate:
+Docker owns only the shared backend/state runtime:
 
 ```text
 pnpm runtime:up
@@ -40,19 +29,20 @@ pnpm runtime:doctor
 pnpm runtime:status
 ```
 
-These three commands intentionally address the complete canonical Docker stack. Surface commands may start only their causal runtime subset and never stop unrelated running surfaces.
+The application development servers are host-owned and on demand:
+
+```text
+pnpm control
+pnpm client
+pnpm partner
+pnpm captain
+pnpm field
+```
+
+The mobile commands reuse the canonical device policy and an already-valid Metro process when present; they never create a Docker Metro path. The Control command owns the host Next.js dev process. No parallel Docker/host application mode is admitted.
 
 ## Tool admission
 
-Before adding a tool, wrapper, registry, manifest, cache or guard:
+Before adding a tool, wrapper, registry, manifest, cache or guard: prove a current material problem, prefer an existing owner, keep one lifecycle owner, and delete the mechanism when its current benefit disappears.
 
-1. prove a current material problem;
-2. prove an existing mechanism cannot solve it more simply;
-3. identify one lifecycle owner;
-4. keep deterministic inputs/outputs;
-5. add CI only for a materially distinct claim;
-6. define when the mechanism can be deleted.
-
-If the same outcome survives with less code, fewer states, fewer commands or fewer layers, use the simpler design.
-
-Pinned Governance/Docs materializes on demand through `tools/dev/knowledge-source.mjs`. `query-knowledge.mjs` is available for decision-relevant source inspection; do not enumerate knowledge without a material question.
+Pinned Governance/Docs materializes on demand through `tools/dev/knowledge-source.mjs`.

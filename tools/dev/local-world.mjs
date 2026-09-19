@@ -7,7 +7,7 @@ import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.m
 
 const root = path.resolve(import.meta.dirname, "../..");
 const action = process.argv[2] ?? "--status";
-const envPath = path.join(root, "infra/local/compose/.env");
+const envPath = path.join(root, "infra/local/.env");
 const composePath = path.join(root, "infra/local/compose/compose.yaml");
 const secretRoot = process.env.BTHWANI_SECRETS_ROOT?.trim() || "C:\\BTHWANI-Secrets\\samrim";
 const locatorPath = path.join(secretRoot, "local-world", "world.json");
@@ -79,9 +79,7 @@ if (!String(env.IDENTITY_WEBAUTHN_ALLOWED_ORIGINS ?? "").split(",").map((value) 
 if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.length < 24) fail("canonical local secrets are too weak");
 
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", composePath];
-const requiredRunningServices = action === "--ensure-operator"
-  ? ["postgres", "mailpit", "identity", "dsh", "control"]
-  : ["postgres", "mailpit", "identity", "dsh", "control", "metro-client", "metro-partner", "metro-captain", "metro-field"];
+const requiredRunningServices = ["postgres", "mailpit", "identity", "dsh"];
 let identityBase = "";
 let dshBase = "";
 let mailpitPort = "";
@@ -246,6 +244,12 @@ async function waitForMailpitCode(phone, purpose, previousMessageIds) {
 }
 
 async function activateOperatorWithPasskey(phone, enrollmentToken, actorID) {
+  try {
+    const response = await fetch(controlOrigin, { signal: AbortSignal.timeout(3_000) });
+    if (response.status >= 500) fail("Control Panel host is not ready; run pnpm control before operator enrollment");
+  } catch (error) {
+    fail("Control Panel host is not ready; run pnpm control before operator enrollment", error instanceof Error ? error.message : String(error));
+  }
   let chromium;
   try {
     ({ chromium } = createRequire(path.join(root, "apps/control-panel/package.json"))("@playwright/test"));

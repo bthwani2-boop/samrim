@@ -2,11 +2,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Purge','Control','Rebuild','RestartService','LogsService','Surface')]
+    [ValidateSet('Up','Down','Restart','Status','Logs','Doctor','Reset','Purge','Rebuild','RestartService','LogsService')]
     [string]$Action,
     [string]$Service = '',
-    [ValidateSet('client','partner','captain','field')]
-    [string]$Surface = '',
     [switch]$AllowDataLoss
 )
 

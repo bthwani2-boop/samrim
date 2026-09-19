@@ -131,7 +131,7 @@ jobs:
 
       - name: Verify canonical Compose configuration
         shell: bash
-        run: docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml config --quiet
+        run: docker compose --project-name samrim-local --env-file infra/local/.env.example -f infra/local/compose/compose.yaml config --quiet
 
       - name: Verify tooling is non-mutating
         shell: bash

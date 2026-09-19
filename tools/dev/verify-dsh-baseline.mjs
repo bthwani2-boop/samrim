@@ -3,7 +3,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const defaultEnvPath = path.join(root, "infra/local/compose/.env");
+const defaultEnvPath = path.join(root, "infra/local/.env");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
 const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : defaultEnvPath;
 const canonicalProject = "samrim-local";

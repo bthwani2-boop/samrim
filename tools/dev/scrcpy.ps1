@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$EnvPath = Join-Path $RepoRoot 'infra\local\compose\.env'
+$EnvPath = Join-Path $RepoRoot 'infra\local\.env'
 $DevicePolicyPath = Join-Path $PSScriptRoot 'device-policy.psm1'
 
 function Fail([string]$Message) { throw $Message }
