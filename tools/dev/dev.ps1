@@ -1,7 +1,7 @@
 #Requires -Version 7.4
 param(
     [Parameter(Position=0)]
-    [ValidateSet('daily','up','down','status')]
+    [ValidateSet('daily','client','partner','captain','field','control','scr','up','down','status')]
     [string]$Target='daily'
 )
 
@@ -122,12 +122,11 @@ function Invoke-Adb([string[]]$Arguments){
     if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=$($Arguments-join' ') exit=$LASTEXITCODE"}
 }
 
-function Ensure-Reverse{
+function Ensure-Reverse([int[]]$Ports){
     $existing=@(adb -d reverse --list 2>&1)
     if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=reverse --list exit=$LASTEXITCODE"}
 
-    foreach($port in @($Identity,$Dsh,$Metro.client,$Metro.partner,$Metro.captain,$Metro.field)){
-        $mapping="tcp:$port tcp:$port"
+    foreach($port in @($Ports|Sort-Object -Unique)){
         if(@($existing|Where-Object{$_-match"\btcp:$port\s+tcp:$port\b"}).Count-gt0){continue}
         Invoke-Adb @('reverse',"tcp:$port","tcp:$port")
     }
@@ -148,74 +147,111 @@ function Metro-Ready([int]$Port){
 }
 
 function Start-Node([string]$WorkingDirectory,[string]$Cli,[string[]]$Arguments){
-    $node=(Get-Command node -CommandType Application -ErrorAction SilentlyContinue|Select-Object -First 1).Source
-    if([string]::IsNullOrWhiteSpace($node)){Fail 'TOOL_NOT_FOUND name=node'}
-    return Start-Process -FilePath $node -ArgumentList (@($Cli)+$Arguments) -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru
+    return Start-Process -FilePath 'node' -ArgumentList (@($Cli)+$Arguments) -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru
 }
 
-function Ensure-HostServers{
-    $started=@{}
-    $state=@{}
+function Start-MobileServer([string]$Name){
+    $port=[int]$Metro[$Name]
 
-    foreach($name in @('client','partner','captain','field')){
-        $port=[int]$Metro[$name]
-
-        if(Metro-Ready $port){
-            $state[$name]='reused'
-            continue
-        }
-        if(Has-Port $port){Fail "PORT_IN_USE surface=$name port=$port"}
-
-        $AppRoot=Join-Path $Root "apps\app-$name"
-        $expoPackage=Join-Path $AppRoot 'node_modules\expo\package.json'
-        if(-not(Test-Path -LiteralPath $expoPackage -PathType Leaf)){Fail "EXPO_NOT_MATERIALIZED app=app-$name run=pnpm_bootstrap"}
-        $expo=Join-Path (Split-Path -Parent $expoPackage) 'bin\cli'
-
-        $started[$name]=Start-Node $AppRoot $expo @('start','--dev-client','--localhost','--port',"$port")
-        $state[$name]='started'
+    if(Metro-Ready $port){
+        return [pscustomobject]@{Name=$Name;Port=$port;State='reused';Process=$null}
     }
+    if(Has-Port $port){Fail "PORT_IN_USE surface=$Name port=$port"}
 
+    $AppRoot=Join-Path $Root "apps\app-$Name"
+    $expoPackage=Join-Path $AppRoot 'node_modules\expo\package.json'
+    if(-not(Test-Path -LiteralPath $expoPackage -PathType Leaf)){Fail "EXPO_NOT_MATERIALIZED app=app-$Name run=pnpm_bootstrap"}
+    $expo=Join-Path (Split-Path -Parent $expoPackage) 'bin\cli'
+
+    $process=Start-Node $AppRoot $expo @('start','--dev-client','--localhost','--port',"$port")
+    return [pscustomobject]@{Name=$Name;Port=$port;State='started';Process=$process}
+}
+
+function Start-ControlServer{
     if(Has-Port $Control){
-        $state.control='reused'
-    }else{
-        $ControlRoot=Join-Path $Root 'apps\control-panel'
-        $nextPackage=Join-Path $ControlRoot 'node_modules\next\package.json'
-        if(-not(Test-Path -LiteralPath $nextPackage -PathType Leaf)){Fail 'NEXT_NOT_MATERIALIZED run=pnpm_bootstrap'}
-        $next=Join-Path (Split-Path -Parent $nextPackage) 'dist\bin\next'
-
-        $started.control=Start-Node $ControlRoot $next @('dev','-H','127.0.0.1','-p',"$Control")
-        $state.control='started'
+        return [pscustomobject]@{Name='control';Port=$Control;State='reused';Process=$null}
     }
 
+    $ControlRoot=Join-Path $Root 'apps\control-panel'
+    $nextPackage=Join-Path $ControlRoot 'node_modules\next\package.json'
+    if(-not(Test-Path -LiteralPath $nextPackage -PathType Leaf)){Fail 'NEXT_NOT_MATERIALIZED run=pnpm_bootstrap'}
+    $next=Join-Path (Split-Path -Parent $nextPackage) 'dist\bin\next'
+
+    $process=Start-Node $ControlRoot $next @('dev','-H','127.0.0.1','-p',"$Control")
+    return [pscustomobject]@{Name='control';Port=$Control;State='started';Process=$process}
+}
+
+function Wait-Servers([object[]]$Servers){
     $clock=[Diagnostics.Stopwatch]::StartNew()
+
     do{
-        foreach($entry in $started.GetEnumerator()){
-            if($entry.Value.HasExited){Fail "HOST_PROCESS_EXITED surface=$($entry.Key) exit=$($entry.Value.ExitCode)"}
+        $missing=@()
+
+        foreach($server in $Servers){
+            if($null-ne$server.Process-and$server.Process.HasExited){
+                Fail "HOST_PROCESS_EXITED surface=$($server.Name) exit=$($server.Process.ExitCode)"
+            }
+
+            $ready=if($server.Name-eq'control'){
+                Has-Port ([int]$server.Port)
+            }else{
+                Metro-Ready ([int]$server.Port)
+            }
+
+            if(-not$ready){$missing+=$server.Name}
         }
 
-        $ready=(Metro-Ready $Metro.client)-and(Metro-Ready $Metro.partner)-and(Metro-Ready $Metro.captain)-and(Metro-Ready $Metro.field)-and(Has-Port $Control)
-        if($ready){return $state}
-
+        if($missing.Count-eq0){return}
         Start-Sleep -Milliseconds 100
     }while($clock.ElapsedMilliseconds-lt30000)
 
-    $missing=@()
-    foreach($name in @('client','partner','captain','field')){
-        if(-not(Metro-Ready ([int]$Metro[$name]))){$missing+="app-$name"}
-    }
-    if(-not(Has-Port $Control)){$missing+='control'}
-
     Fail "HOST_READY_TIMEOUT missing=$($missing-join',') timeout_ms=30000"
+}
+
+function Ensure-HostServers{
+    $servers=@(
+        Start-MobileServer 'client'
+        Start-MobileServer 'partner'
+        Start-MobileServer 'captain'
+        Start-MobileServer 'field'
+        Start-ControlServer
+    )
+
+    Wait-Servers $servers
+
+    $state=@{}
+    foreach($server in $servers){$state[$server.Name]=$server.State}
+    return $state
 }
 
 function Ensure-Scrcpy{
     if(@(Get-Process scrcpy -ErrorAction SilentlyContinue).Count-gt0){return 'reused'}
 
-    $scrcpy=(Get-Command scrcpy -CommandType Application -ErrorAction SilentlyContinue|Select-Object -First 1).Source
-    if([string]::IsNullOrWhiteSpace($scrcpy)){Fail 'TOOL_NOT_FOUND name=scrcpy'}
-
-    Start-Process -FilePath $scrcpy -ArgumentList @('--max-size=1280','--max-fps=30','--video-bit-rate=4M','--no-audio')|Out-Null
+    Start-Process -FilePath 'scrcpy' -ArgumentList @('--max-size=1280','--max-fps=30','--video-bit-rate=4M','--no-audio')|Out-Null
     return 'started'
+}
+
+function Ensure-OneMobile([string]$Name){
+    [void](Ensure-Dependencies)
+    [void](Ensure-Backend)
+    Set-Host-Environment
+    Ensure-Reverse -Ports @($Identity,$Dsh,[int]$Metro[$Name])
+
+    $server=Start-MobileServer $Name
+    Wait-Servers @($server)
+
+    Write-Host "MOBILE_SERVER=PASS app=app-$Name state=$($server.State) live=fast-refresh open=manual"
+}
+
+function Ensure-ControlOnly{
+    [void](Ensure-Dependencies)
+    [void](Ensure-Backend)
+    Set-Host-Environment
+
+    $server=Start-ControlServer
+    Wait-Servers @($server)
+
+    Write-Host "CONTROL_SERVER=PASS state=$($server.State) live=hmr url=$(Need $Map 'CONTROL_PANEL_PUBLIC_ORIGIN')"
 }
 
 function Stop-LocalHosts{
@@ -239,21 +275,30 @@ function Stop-LocalHosts{
     }
 }
 
-if($Target-eq'up'){
-    Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)"
-    return
-}
-
-if($Target-eq'down'){
-    Stop-LocalHosts
-    Compose @('down','--remove-orphans')
-    Write-Host 'RUNTIME_DOWN=PASS scope=all-local-dev'
-    return
-}
-
-if($Target-eq'status'){
-    Compose @('ps','-a')
-    return
+switch($Target){
+    'up'{
+        Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)"
+        return
+    }
+    'down'{
+        Stop-LocalHosts
+        Compose @('down','--remove-orphans')
+        Write-Host 'RUNTIME_DOWN=PASS scope=all-local-dev'
+        return
+    }
+    'status'{
+        Compose @('ps','-a')
+        return
+    }
+    'client'{Ensure-OneMobile 'client';return}
+    'partner'{Ensure-OneMobile 'partner';return}
+    'captain'{Ensure-OneMobile 'captain';return}
+    'field'{Ensure-OneMobile 'field';return}
+    'control'{Ensure-ControlOnly;return}
+    'scr'{
+        Write-Host "SCRCPY=PASS state=$(Ensure-Scrcpy)"
+        return
+    }
 }
 
 $total=[Diagnostics.Stopwatch]::StartNew()
@@ -267,7 +312,7 @@ $backendState=Ensure-Backend
 $backendMs=$phase.ElapsedMilliseconds
 
 $phase.Restart()
-Ensure-Reverse
+Ensure-Reverse -Ports @($Identity,$Dsh,$Metro.client,$Metro.partner,$Metro.captain,$Metro.field)
 $adbMs=$phase.ElapsedMilliseconds
 
 Set-Host-Environment

@@ -88,11 +88,30 @@ for (const app of apps) {
   const appConfigPath = path.join(appRoot, "app.config.ts");
   const projectPath = path.join(appRoot, "project.json");
   const packagePath = path.join(appRoot, "package.json");
+  const metroConfigPath = path.join(appRoot, "metro.config.cjs");
 
-  if (!fs.existsSync(appConfigPath) || !fs.existsSync(projectPath) || !fs.existsSync(packagePath)) {
-    console.error(`${app}: missing app.config.ts, project.json or package.json`);
+  if (!fs.existsSync(appConfigPath) || !fs.existsSync(projectPath) || !fs.existsSync(packagePath) || !fs.existsSync(metroConfigPath)) {
+    console.error(`${app}: missing app.config.ts, project.json, package.json or metro.config.cjs`);
     failed = true;
     continue;
+  }
+
+  const metroSource = fs.readFileSync(metroConfigPath, "utf8");
+  if (!metroSource.includes('require("expo/metro-config")') || !metroSource.includes("getDefaultConfig(__dirname)")) {
+    console.error(`${app}: Metro must use Expo automatic monorepo configuration`);
+    failed = true;
+  }
+  for (const forbidden of [
+    "watchFolders",
+    "resolver.nodeModulesPaths",
+    "resolver.extraNodeModules",
+    "resolver.disableHierarchicalLookup",
+    "EXPO_NO_METRO_WORKSPACE_ROOT",
+  ]) {
+    if (metroSource.includes(forbidden)) {
+      console.error(`${app}: manual Metro monorepo override must be absent: ${forbidden}`);
+      failed = true;
+    }
   }
 
   const appConfigSource = fs.readFileSync(appConfigPath, "utf8");
@@ -116,8 +135,9 @@ for (const app of apps) {
   }
 
   const rootCommandName = app.replace(/^app-/, "");
-  if (rootPackage.scripts?.[rootCommandName] !== undefined) {
-    console.error(`${app}: per-app root runtime command must be absent; pnpm dev owns all Metro servers`);
+  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 ${rootCommandName}`;
+  if (rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
+    console.error(`${app}: per-app root command must route to the canonical runtime owner`);
     failed = true;
   }
 
@@ -234,7 +254,9 @@ for (const entry of fs.readdirSync(appsRoot, { withFileTypes: true })) {
 if (failed) process.exit(1);
 console.log("MOBILE_LOCAL_RUNTIME_OWNER=tools/dev/dev.ps1");
 console.log("MOBILE_RUNTIME_ENTRYPOINT=PNPM_DEV");
+console.log("MOBILE_TARGETED_COMMANDS=CANONICAL_OWNER");
 console.log("MOBILE_SHADOW_START_SCRIPTS=0");
 console.log("MOBILE_SHADOW_NX_RUNTIME_TARGETS=0");
 console.log("MOBILE_METRO_PORT_AUTHORITY=CANONICAL_ENV");
+console.log("MOBILE_MONOREPO_FAST_REFRESH=EXPO_AUTOCONFIG");
 console.log("MOBILE_CONFIG=PASS apps=" + apps.join(","));

@@ -28,7 +28,13 @@
     "theme:verify": "node --loader ./tools/dev/ts-resolver.mjs tools/dev/verify-theme-authority.mjs",
     "verify": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-local-candidate.ps1",
     "mobile:prepare": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/mobile/prepare-local-development.ps1",
-    "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 daily"
+    "dev": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 daily",
+    "client": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 client",
+    "partner": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 partner",
+    "captain": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 captain",
+    "field": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 field",
+    "control": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 control",
+    "scr": "pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1 scr"
   },
   "pnpm": {
     "overrides": {

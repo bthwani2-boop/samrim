@@ -22,19 +22,22 @@ check(pkg.scripts?.["runtime:up"]===`${run} up`,"runtime:up must route to dev.ps
 check(pkg.scripts?.["runtime:down"]===`${run} down`,"runtime:down must route to dev.ps1");
 check(pkg.scripts?.["runtime:status"]===`${run} status`,"runtime:status must route to dev.ps1");
 
-for(const retiredScript of ["client","partner","captain","field","control","scr","runtime:doctor"]){
-  check(pkg.scripts?.[retiredScript]===undefined,`retired daily script remains: ${retiredScript}`);
+for(const [name,target] of Object.entries({
+  client:"client",partner:"partner",captain:"captain",field:"field",control:"control",scr:"scr"
+})){
+  check(pkg.scripts?.[name]===`${run} ${target}`,`${name} must route to the single runtime owner`);
 }
+check(pkg.scripts?.["runtime:doctor"]===undefined,"runtime:doctor must remain absent");
 for(const old of [
   "tools/dev/local.ps1","tools/dev/runtime.ps1","tools/dev/runtime.psm1","tools/dev/device-policy.psm1",
   "tools/dev/open-mobile-apps.ps1","tools/dev/run-control.ps1","tools/dev/scrcpy.ps1"
 ]) check(!exists(old),`retired runtime file remains: ${old}`);
 
 for(const token of [
-  "ValidateSet('daily','up','down','status')","DEV_TIMING","DEV_READY=PASS",
+  "ValidateSet('daily','client','partner','captain','field','control','scr','up','down','status')","DEV_TIMING","DEV_READY=PASS",
   "EXPO_OFFLINE='1'","EXPO_NO_QR_CODE='1'","EXPO_NO_TYPESCRIPT_SETUP='1'",
   "--dns-result-order=ipv4first","Ensure-Dependencies","--frozen-lockfile","--prefer-offline",
-  "Ensure-Reverse","Ensure-HostServers","Ensure-Scrcpy","Stop-LocalHosts","--dev-client","--localhost"
+  "Ensure-Reverse","Start-MobileServer","Start-ControlServer","Wait-Servers","Ensure-HostServers","Ensure-Scrcpy","Stop-LocalHosts","--dev-client","--localhost"
 ]) check(dev.includes(token),`dev.ps1 missing invariant: ${token}`);
 
 for(const bad of [
@@ -49,7 +52,8 @@ check(!dev.includes("ProcessStartInfo"),"dev.ps1 must not wrap ADB in custom pro
 check(!dev.includes("ADB_TIMEOUT"),"dev.ps1 must not impose an arbitrary ADB timeout");
 check(/adb -d reverse --list/.test(dev),"dev.ps1 must inspect USB reverse mappings once");
 check(!/--dev-client[^\n\r]*--android/.test(dev),"Metro bootstrap must never auto-open Android apps");
-check(/Start-Node \$root \$expo @\('start','--dev-client','--localhost','--port'/.test(dev),"Metro bootstrap must remain live for Fast Refresh");
+check(/Start-Node \$AppRoot \$expo @\('start','--dev-client','--localhost','--port'/.test(dev),"Metro bootstrap must remain live for Fast Refresh");
+check(/Ensure-Reverse -Ports @\(\$Identity,\$Dsh,\[int\]\$Metro\[\$Name\]\)/.test(dev),"targeted mobile command must reuse canonical reverse logic");
 check(!dev.includes("node_modules\\expo\\bin\\cli"),"runtime must derive Expo CLI from the materialized package root");
 check(!dev.includes("node_modules\\next\\dist\\bin\\next"),"runtime must derive Next CLI from the materialized package root");
 check(/\$AppRoot=Join-Path \$Root "apps\\app-\$name"/.test(dev),"mobile working directory must derive from stable repository Root");
@@ -59,6 +63,9 @@ check(/node_modules\\expo\\package\.json/.test(dev),"dependency readiness must u
 check(/node_modules\\next\\package\.json/.test(dev),"dependency readiness must use cheap importer-local Next materialization checks");
 check(/pnpm install --frozen-lockfile --prefer-offline/.test(dev),"runtime must materialize missing workspace dependencies once");
 check(/RUNTIME_DOWN=PASS scope=all-local-dev/.test(dev),"runtime:down must close the complete local dev runtime");
+check(/MOBILE_SERVER=PASS app=app-\$Name/.test(dev),"targeted mobile commands must start/reuse Metro without opening the app");
+check(/CONTROL_SERVER=PASS/.test(dev),"targeted control command must start/reuse Next");
+check(/DEV_READY=PASS apps=manual-open live=fast-refresh control=hmr/.test(dev),"daily dev must declare manual-open live runtime readiness");
 
 if(fail.length){
   console.error("LOCAL_RUNTIME_OWNERSHIP=FAIL");

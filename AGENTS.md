@@ -175,7 +175,10 @@ The human LOCAL_INTEGRATION lifecycle has one daily bootstrap owned by `tools/de
 pnpm dev            → reuse/prepare backend, USB reverse mappings, all mobile Metro servers, Control and scrcpy
 pnpm runtime:up     → ensure backend/state only
 pnpm runtime:status → display backend/state
-pnpm runtime:down   → stop backend/state
+pnpm client|partner|captain|field → ensure only that Metro server; manual app open
+pnpm control         → ensure only Control
+pnpm scr             → ensure only scrcpy
+pnpm runtime:down    → stop complete local dev runtime
 ```
 
 The daily bootstrap materializes missing workspace dependencies once when required, starts only missing processes, reuses healthy ones and never opens actor applications. The developer opens Client, Partner, Captain or Field manually from the device; Expo development-client reconnects to its most recent project and Metro Fast Refresh remains the inner mobile loop. Next HMR remains the Control inner loop. Docker reconciliation is skipped while backend endpoints are already live, and Metro startup must not trigger native rebuilds or eager application bundling.

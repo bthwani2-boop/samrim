@@ -9,7 +9,7 @@ Daily lifecycle:
 - `pnpm runtime:status` — display backend/state.
 - `pnpm runtime:down` — stop Metro/Control/scrcpy and backend/state.
 
-`pnpm dev` first checks the already-bound local backend ports. When they are live it skips Compose completely, so completed migration services are not restarted on every daily invocation. When backend ports are absent it runs the canonical Compose `up -d --wait` path.
+`pnpm dev` is the complete daily path; targeted app/control/scrcpy commands are optional views into the same runtime owner. `pnpm dev` first checks the already-bound local backend ports. When they are live it skips Compose completely, so completed migration services are not restarted on every daily invocation. When backend ports are absent it runs the canonical Compose `up -d --wait` path.
 
 `infra/local/.env.example` is the tracked canonical local configuration template. `infra/local/.env` is ignored and preserved after creation.
 
