@@ -12,6 +12,8 @@ The repository-owned `mobile:prepare` and `mobile:build` commands are target-awa
 
 Development builds must not bake a localhost Metro target or app-specific development-server port into native config. The daily `pnpm client|partner|captain|field` command supplies the current launch URL through Expo CLI, while app-owned native configuration stays independent of the developer machine's Metro port.
 
+Each app keeps Expo's automatic resolver/watch-folder behavior but uses an app-scoped Metro cache namespace instead of SDK57's shared `%TEMP%\\metro-cache`, so a later Fast Refresh/request cannot reuse another app's route graph.
+
 Before claiming an existing Development Build remains compatible after a cutover, compare native characteristics and resolved native configuration. JavaScript/TypeScript/path-only changes are not by themselves permission to claim native equivalence.
 
 

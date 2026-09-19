@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
@@ -6,6 +7,8 @@ const appsRoot = path.join(repoRoot, "apps");
 const envExamplePath = path.join(repoRoot, "infra/local/.env.example");
 const rootPackagePath = path.join(repoRoot, "package.json");
 const localRuntimePath = path.join(repoRoot, "tools/dev/dev.ps1");
+const metroOwnerPath = path.join(repoRoot, "tools/mobile/create-samrim-metro-config.cjs");
+const requireFromTools = createRequire(import.meta.url);
 const requiredStringFields = [
   "name",
   "slug",
@@ -56,6 +59,17 @@ if (!fs.existsSync(localRuntimePath)) {
   console.error("Canonical local runtime owner is missing: tools/dev/dev.ps1");
   process.exit(1);
 }
+if (!fs.existsSync(metroOwnerPath)) {
+  console.error("Canonical Metro cache owner is missing: tools/mobile/create-samrim-metro-config.cjs");
+  process.exit(1);
+}
+let metroOwner;
+try {
+  metroOwner = requireFromTools(metroOwnerPath);
+} catch (error) {
+  console.error(`Canonical Metro cache owner cannot load: ${error.message}`);
+  process.exit(1);
+}
 for (const retired of [
   path.join(repoRoot, "tools/mobile/with-android-development-client.cjs"),
   path.join(repoRoot, "tools/mobile/with-android-development-client.d.cts"),
@@ -76,6 +90,7 @@ const seen = {
   projectId: new Map(),
 };
 const seenPorts = new Map();
+const seenMetroCacheRoots = new Map();
 const servicePorts = new Set([
   requirePort(env, "SAMRIM_IDENTITY_PORT"),
   requirePort(env, "SAMRIM_DSH_PORT"),
@@ -97,8 +112,8 @@ for (const app of apps) {
   }
 
   const metroSource = fs.readFileSync(metroConfigPath, "utf8");
-  if (!metroSource.includes('require("expo/metro-config")') || !metroSource.includes("getDefaultConfig(__dirname)")) {
-    console.error(`${app}: Metro must use Expo automatic monorepo configuration`);
+  if (!metroSource.includes('require("../../tools/mobile/create-samrim-metro-config.cjs")') || !metroSource.includes("createSamrimMetroConfig(__dirname)")) {
+    console.error(`${app}: Metro must use the canonical app-scoped cache owner`);
     failed = true;
   }
   for (const forbidden of [
@@ -112,6 +127,29 @@ for (const app of apps) {
       console.error(`${app}: manual Metro monorepo override must be absent: ${forbidden}`);
       failed = true;
     }
+  }
+
+  try {
+    const metroRuntimeConfig = metroOwner.createSamrimMetroConfig(appRoot);
+    if (!Array.isArray(metroRuntimeConfig.cacheStores) || metroRuntimeConfig.cacheStores.length !== 1) {
+      console.error(`${app}: canonical Metro config must expose exactly one cache store`);
+      failed = true;
+    }
+    const cacheRoot = metroOwner.getSamrimMetroCacheRoot(appRoot);
+    const previous = seenMetroCacheRoots.get(cacheRoot);
+    if (previous) {
+      console.error(`Metro cache collision: ${cacheRoot} used by ${previous} and ${app}`);
+      failed = true;
+    } else {
+      seenMetroCacheRoots.set(cacheRoot, app);
+    }
+    if (path.basename(cacheRoot) !== app) {
+      console.error(`${app}: Metro cache root is not app-scoped: ${cacheRoot}`);
+      failed = true;
+    }
+  } catch (error) {
+    console.error(`${app}: canonical Metro config failed: ${error.message}`);
+    failed = true;
   }
 
   const appConfigSource = fs.readFileSync(appConfigPath, "utf8");
@@ -201,7 +239,10 @@ for (const app of apps) {
   }
 }
 
-const toolingText = fs.readFileSync(localRuntimePath, "utf8");
+const toolingText = [
+  fs.readFileSync(localRuntimePath, "utf8"),
+  fs.readFileSync(metroOwnerPath, "utf8"),
+].join("\n");
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -256,5 +297,6 @@ console.log("MOBILE_ROOT_COMMANDS=DIRECTORY_ALIASES");
 console.log("MOBILE_SHARED_LAUNCHER=tools/dev/start-surface.mjs");
 console.log("MOBILE_SHADOW_NX_RUNTIME_TARGETS=0");
 console.log("MOBILE_METRO_PORT_AUTHORITY=CANONICAL_ENV");
+console.log("MOBILE_METRO_CACHE_OWNER=APP_SCOPED");
 console.log("MOBILE_MONOREPO_FAST_REFRESH=EXPO_AUTOCONFIG");
 console.log("MOBILE_CONFIG=PASS apps=" + apps.join(","));
