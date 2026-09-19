@@ -97,11 +97,21 @@ function Set-Host-Environment{
     }
 }
 
-function Invoke-Adb([string[]]$Arguments,[int]$TimeoutMs=3000){
+function Invoke-Adb([string[]]$Arguments,[int]$TimeoutMs=5000){
     $adb=(Get-Command adb -CommandType Application -ErrorAction SilentlyContinue|Select-Object -First 1).Source
     if([string]::IsNullOrWhiteSpace($adb)){Fail 'TOOL_NOT_FOUND name=adb'}
 
-    $process=Start-Process -FilePath $adb -ArgumentList (@('-d')+$Arguments) -PassThru -WindowStyle Hidden
+    $start=[Diagnostics.ProcessStartInfo]::new()
+    $start.FileName=$adb
+    $start.UseShellExecute=$false
+    $start.CreateNoWindow=$true
+    $start.ArgumentList.Add('-d')
+    foreach($argument in $Arguments){$start.ArgumentList.Add($argument)}
+
+    $process=[Diagnostics.Process]::new()
+    $process.StartInfo=$start
+    if(-not$process.Start()){Fail 'ADB_START_FAILED'}
+
     if(-not$process.WaitForExit($TimeoutMs)){
         try{$process.Kill($true)}catch{}
         Fail "ADB_TIMEOUT args=$($Arguments-join' ') timeout_ms=$TimeoutMs"
@@ -173,13 +183,9 @@ function Ensure-HostServers{
             if($entry.Value.HasExited){Fail "HOST_PROCESS_EXITED surface=$($entry.Key) exit=$($entry.Value.ExitCode)"}
         }
 
-        $ready=(Metro-Ready $Metro.client) -and
-               (Metro-Ready $Metro.partner) -and
-               (Metro-Ready $Metro.captain) -and
-               (Metro-Ready $Metro.field) -and
-               (Has-Port $Control)
-
+        $ready=(Metro-Ready $Metro.client)-and(Metro-Ready $Metro.partner)-and(Metro-Ready $Metro.captain)-and(Metro-Ready $Metro.field)-and(Has-Port $Control)
         if($ready){return $state}
+
         Start-Sleep -Milliseconds 100
     }while($clock.ElapsedMilliseconds-lt30000)
 
@@ -188,6 +194,7 @@ function Ensure-HostServers{
         if(-not(Metro-Ready ([int]$Metro[$name]))){$missing+="app-$name"}
     }
     if(-not(Has-Port $Control)){$missing+='control'}
+
     Fail "HOST_READY_TIMEOUT missing=$($missing-join',') timeout_ms=30000"
 }
 
@@ -204,70 +211,36 @@ function Ensure-Scrcpy{
 function Stop-LocalHosts{
     foreach($port in @($Metro.client,$Metro.partner,$Metro.captain,$Metro.field,$Control)){
         foreach($listener in @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)){
-            $id=[int]$listener.OwningProcess
-            $p=Get-CimInstance Win32_Process -Filter "ProcessId=$id" -ErrorAction SilentlyContinue
-            if($null-eq$p){continue}
-            if($p.Name-notmatch'^node(\.exe)?
-    Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)"
-    return
-}
-if($Target-eq'down'){
-    Stop-LocalHosts
-    Compose @('down','--remove-orphans')
-    Write-Host 'RUNTIME_DOWN=PASS scope=all-local-dev'
-    return
-}
-if($Target-eq'status'){
-    Compose @('ps','-a')
-    return
-}
+            $ownerProcessId=[int]$listener.OwningProcess
+            $process=Get-CimInstance Win32_Process -Filter "ProcessId=$ownerProcessId" -ErrorAction SilentlyContinue
+            if($null-eq$process){continue}
 
-$total=[Diagnostics.Stopwatch]::StartNew()
-
-$phase=[Diagnostics.Stopwatch]::StartNew()
-$backendState=Ensure-Backend
-$backendMs=$phase.ElapsedMilliseconds
-
-$phase.Restart()
-Ensure-Reverse
-$adbMs=$phase.ElapsedMilliseconds
-
-Set-Host-Environment
-
-$phase.Restart()
-$hostState=Ensure-HostServers
-$hostMs=$phase.ElapsedMilliseconds
-
-$phase.Restart()
-$scrcpyState=Ensure-Scrcpy
-$scrcpyMs=$phase.ElapsedMilliseconds
-
-$total.Stop()
-
-$started=@($hostState.GetEnumerator()|Where-Object Value -eq'started'|ForEach-Object Key|Sort-Object)
-$reused=@($hostState.GetEnumerator()|Where-Object Value -eq'reused'|ForEach-Object Key|Sort-Object)
-
-Write-Host "DEV_TIMING backend_ms=$backendMs adb_ms=$adbMs hosts_ms=$hostMs scrcpy_ms=$scrcpyMs total_ms=$($total.ElapsedMilliseconds)"
-Write-Host "DEV_STATE backend=$backendState scrcpy=$scrcpyState started=$($started-join',') reused=$($reused-join',')"
-Write-Host "DEV_READY=PASS apps=manual-open live=fast-refresh control=hmr root=$Root"
--or-not([string]$p.CommandLine).Contains($Root,[StringComparison]::OrdinalIgnoreCase)){
-                Fail "REFUSE_FOREIGN_PROCESS port=$port pid=$id"
+            $command=[string]$process.CommandLine
+            if($process.Name-notmatch'^node(\.exe)?$'-or-not$command.Contains($Root,[StringComparison]::OrdinalIgnoreCase)){
+                Fail "REFUSE_FOREIGN_PROCESS port=$port pid=$ownerProcessId"
             }
-            Stop-Process -Id $id -Force
+
+            Stop-Process -Id $ownerProcessId -Force
         }
     }
-    Get-Process scrcpy -ErrorAction SilentlyContinue|Stop-Process -Force
+
+    foreach($process in @(Get-Process scrcpy -ErrorAction SilentlyContinue)){
+        Stop-Process -Id $process.Id -Force
+    }
 }
 
 if($Target-eq'up'){
     Write-Host "RUNTIME_UP=PASS state=$(Ensure-Backend)"
     return
 }
+
 if($Target-eq'down'){
+    Stop-LocalHosts
     Compose @('down','--remove-orphans')
-    Write-Host 'RUNTIME_DOWN=PASS'
+    Write-Host 'RUNTIME_DOWN=PASS scope=all-local-dev'
     return
 }
+
 if($Target-eq'status'){
     Compose @('ps','-a')
     return

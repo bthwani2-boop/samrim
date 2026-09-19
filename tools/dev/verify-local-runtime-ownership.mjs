@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const root=path.resolve(import.meta.dirname,"../..");
 const fail=[];
@@ -8,6 +9,13 @@ const exists=(p)=>fs.existsSync(path.join(root,p));
 const pkg=JSON.parse(read("package.json"));
 const dev=read("tools/dev/dev.ps1");
 const check=(ok,msg)=>{if(!ok)fail.push(msg)};
+
+import { spawnSync } from "node:child_process";
+const ps = spawnSync("pwsh", ["-NoProfile","-Command",
+  "$e=$null;$t=$null;[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'tools/dev/dev.ps1'),[ref]$t,[ref]$e)|Out-Null;if($e.Count){$e|ForEach-Object{[Console]::Error.WriteLine($_.Message)};exit 1}"
+], { cwd: root, encoding: "utf8" });
+check(ps.status === 0, "dev.ps1 PowerShell syntax must parse cleanly" + (ps.stderr?.trim() ? ": " + ps.stderr.trim() : ""));
+
 
 const run="pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dev.ps1";
 check(pkg.scripts?.dev===`${run} daily`,"dev must route to dev.ps1 daily");
