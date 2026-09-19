@@ -241,7 +241,7 @@ if (!toolingText.includes("device-policy.psm1")) {
   failed = true;
 }
 if (failed) process.exit(1);
-console.log("MOBILE_RUNTIME_OWNER=tools/dev/runtime.ps1");
+console.log("MOBILE_BACKEND_RUNTIME_OWNER=tools/dev/runtime.ps1");
 console.log("MOBILE_APP_OPENER=tools/dev/open-mobile-apps.ps1");
 console.log("MOBILE_DEVICE_POLICY=tools/dev/device-policy.psm1");
 console.log("MOBILE_RUNTIME_ENTRYPOINTS=1_PER_APP");

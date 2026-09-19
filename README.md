@@ -19,15 +19,13 @@ Bootstrap host dependencies only when setup inputs changed or the workspace is n
 pnpm bootstrap
 ```
 
-Start the canonical Docker-owned backend/state runtime:
+Start the Docker-owned backend once for the development session:
 
 ```text
 pnpm runtime:up
-pnpm runtime:doctor
-pnpm runtime:status
 ```
 
-Start only the application surfaces you are actively developing. These run directly on the Windows host and reuse the already-ready Docker backend:
+Start only the surface you are actively developing:
 
 ```text
 pnpm control
@@ -35,18 +33,31 @@ pnpm client
 pnpm partner
 pnpm captain
 pnpm field
+pnpm scr
 ```
 
-`pnpm client|partner|captain|field` prepares the canonical device/backend reverse path, then delegates the selected app's Metro lifecycle and Android development-client launch directly to Expo CLI on the Windows host. `pnpm control` owns the host Next.js development server. PostgreSQL, Mailpit, Identity, DSH and their migrations remain Docker-owned. Device execution remains device-owned.
+The mobile commands use one authorized USB Android device, maintain only the reverse mappings required by the selected app, reuse a healthy Metro when available, and otherwise delegate Metro startup to Expo CLI. Control reuses a healthy Next server and otherwise starts Next directly on the Windows loopback. Application commands never run Docker diagnostics.
 
-When baked backend source changes, rebuild only the invalidated service when a runtime proof requires current binaries:
+Use backend diagnostics only when needed:
+
+```text
+pnpm runtime:doctor
+pnpm runtime:status
+pnpm runtime:logs
+```
+
+When baked backend source changes, rebuild only the affected service:
 
 ```text
 pnpm runtime:rebuild -- -Service identity
 pnpm runtime:rebuild -- -Service dsh
 ```
 
-`pnpm runtime:up` does not intentionally rebuild existing backend images. On a fresh machine Compose may build missing images; after baked backend source changes use the targeted rebuild command above before behavior proof.
+Stop the backend with `pnpm runtime:down`. Destructive local database reset is explicit:
+
+```text
+pnpm runtime:reset -- -AllowDataLoss
+```
 
 ## Verification
 

@@ -98,26 +98,31 @@ if (safePush.includes("pnpm verify")) {
   failures.push("safe push must invoke the canonical verifier once directly, not nest the public verify command");
 }
 
-requireTokens("tools/dev/runtime.ps1", [
-  "runtime.psm1",
-  "Import-Module",
-  "Invoke-SamrimRuntime @PSBoundParameters",
-]);
-const runtime = requireTokens("tools/dev/runtime.psm1", [
-  "function Write-Full-Runtime-Pass",
-  "CANONICAL_LOCAL_RUNTIME=PASS scope=backend mode=$Mode",
-  "Write-Full-Runtime-Pass 'full'",
-  "Write-Full-Runtime-Pass 'warm-reconcile'",
-  "RUNTIME_STATUS=READ_ONLY scope=backend-service-state-display",
+const runtime = requireTokens("tools/dev/runtime.ps1", [
+  "ValidateSet('Up','Down','Status','Logs','Doctor','Reset','Rebuild')",
+  "RUNTIME_UP=PASS scope=backend",
   "CANONICAL_RUNTIME_READBACK=PASS scope=backend-compose",
-  "DOCKER_BACKEND_RUNTIME=PASS",
-  "APPLICATION_RUNTIME=HOST_OWNED",
-  "Export-ModuleMember -Function Invoke-SamrimRuntime",
+  "RUNTIME_DOCTOR=PASS",
 ]);
-requireTokens("tools/dev/run-control.ps1", ["next dev -H 127.0.0.1", "-Action Doctor"]);
-requireTokens("tools/dev/open-mobile-apps.ps1", ["'expo','start','--dev-client','--host','localhost'", "Prepare-CanonicalAdbDevice", "-Action Doctor"]);
-if (runtime.includes("Stop-OtherOptionalServices")) {
-  failures.push("runtime target startup must not stop unrelated already-running surfaces");
+if (fs.existsSync(path.join(root, "tools/dev/runtime.psm1"))) {
+  failures.push("retired tools/dev/runtime.psm1 must be absent");
+}
+const controlRuntime = requireTokens("tools/dev/run-control.ps1", [
+  "CONTROL_PANEL_REUSE=PASS",
+  "next dev -H 127.0.0.1",
+]);
+if (controlRuntime.includes("-Action Doctor") || controlRuntime.includes("docker ")) {
+  failures.push("Control hot path must not invoke Docker diagnostics");
+}
+const mobileRuntime = requireTokens("tools/dev/open-mobile-apps.ps1", [
+  "Get-MetroState -Port $metroPort",
+  "Get-UsbAdbDevice",
+  "METRO_REUSE=PASS",
+  "expo start --dev-client --localhost --android --scheme",
+  "--dns-result-order=ipv4first",
+]);
+if (mobileRuntime.includes("-Action Doctor") || mobileRuntime.includes("docker ")) {
+  failures.push("mobile hot path must not invoke Docker diagnostics");
 }
 
 const pkg = JSON.parse(read("package.json"));

@@ -21,25 +21,30 @@ Do not add a repository-wide wrapper when a current owner or standard tool alrea
 
 `pnpm verify` is the exact local affected-candidate static/workspace entrypoint. `pnpm safe:push` owns final candidate verification and exact remote SHA confirmation.
 
-Docker owns only the shared backend/state runtime:
+The daily local path is intentionally small:
 
 ```text
 pnpm runtime:up
-pnpm runtime:doctor
-pnpm runtime:status
+pnpm control
+pnpm client|partner|captain|field
+pnpm scr
 ```
 
-The application development servers are host-owned and on demand:
+Ownership is narrow:
 
 ```text
-pnpm control
-pnpm client
-pnpm partner
-pnpm captain
-pnpm field
+Docker backend lifecycle → tools/dev/runtime.ps1
+Android USB + ADB reverse → tools/dev/device-policy.psm1
+Mobile launch/reuse → tools/dev/open-mobile-apps.ps1
+Control launch/reuse → tools/dev/run-control.ps1
+Device mirroring → tools/dev/scrcpy.ps1
+Metro lifecycle → Expo CLI
+Control dev server → Next.js
 ```
 
-The mobile commands use the canonical device policy for device identity and backend reverse ports, then delegate Metro lifecycle and Android development-client launch directly to Expo CLI; they never create a Docker Metro path or a second Metro supervisor. On Windows they force Node localhost resolution to IPv4-first so Metro binds the same loopback family (`127.0.0.1`) that Expo publishes to Android through ADB reverse, without exposing Metro on LAN. The device policy and scrcpy own only backend reverse ports; Metro reverse is exclusively created and removed by Expo for the selected app. For each mobile app, the root command classifies the canonical port before starting anything: a healthy same-app Metro on `127.0.0.1` with its matching ADB reverse is reused immediately and the installed development client is reopened; an unhealthy same-app Metro is removed and recreated by Expo; any foreign owner fails closed. Control follows the same ownership rule on port 13000: reuse only a healthy Next process from `apps/control-panel`, remove only stale same-repository Next residue, and reject foreign processes. This keeps repeated daily commands fast and idempotent without a second Metro/Next supervisor. The Control command owns the host Next.js dev process. No parallel Docker/host application mode is admitted.
+`runtime:doctor` is explicit diagnostics and is never part of app startup. Mobile development is USB-only; Wi-Fi ADB bootstrap/failover is not part of the canonical daily runtime. Expo TypeScript auto-setup is disabled because TypeScript is repository-owned; Expo Autolinking remains enabled. Windows Metro localhost remains IPv4-first because real-device proof showed that an IPv6-only `::1` listener is incompatible with Expo's Android `127.0.0.1` URL.
+
+A healthy Metro is reused. A stale Metro proven to belong to the same app may be removed before a canonical cold start. A foreign port owner fails closed. Control reuses its healthy canonical endpoint and otherwise starts Next directly.
 
 ## Tool admission
 
