@@ -5,6 +5,11 @@ const root = path.resolve(import.meta.dirname, "../..");
 const failures = [];
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const assert = (ok, message) => { if (!ok) failures.push(message); };
+const section = (start, end) => {
+  const from = runtime.indexOf(start);
+  const to = runtime.indexOf(end, from + start.length);
+  return from >= 0 && to > from ? runtime.slice(from, to) : "";
+};
 
 const pkg = JSON.parse(read("package.json"));
 const scripts = pkg.scripts ?? {};
@@ -87,7 +92,7 @@ assert(!/\b(?:next\s+dev|expo\s+start)\b/i.test(runtime), "runtime.ps1 must not 
 
 for (const token of [
   "CANONICAL_LOCAL_RUNTIME=PASS mode=full",
-  "RUNTIME_STATUS=READ_ONLY scope=full-canonical-compose",
+  "RUNTIME_STATUS=READ_ONLY scope=service-state-display",
   "CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose",
   "Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')",
 ]) {
@@ -117,18 +122,37 @@ assert(runtime.includes("if ($runningBefore.Count -gt 0) { Compose (@('stop') + 
 assert(!runtime.includes("JS_DEPS_GATE=RESTORE"), "retired target-start restore orchestration must not survive");
 assert(runtime.includes("$WorkspaceServices = @('control','metro-client','metro-partner','metro-captain','metro-field')"), "workspace-bound JavaScript services must have one canonical runtime set");
 assert(runtime.includes("Assert-WorkspaceMounts"), "runtime readback must verify the repository bind mount for every workspace-bound service");
-assert(runtime.includes("target=/workspace"), "runtime workspace readback must identify the canonical /workspace target");
-assert(runtime.includes("DOCKER_WORKSPACE_MOUNTS=PASS source=repository-root target=/workspace"), "runtime status must expose workspace bind readback");
+assert(runtime.includes("$WorkspaceVolumeDestinations"), "runtime readback must define canonical performance-sensitive workspace volume overlays");
+assert(runtime.includes("WORKSPACE_VOLUME=FAIL"), "runtime readback must reject missing or non-volume node_modules overlays");
+assert(runtime.includes("target=/workspace/apps/control-panel/.next"), "runtime readback must protect the Control Panel .next volume overlay");
+assert(runtime.includes("DOCKER_WORKSPACE_MOUNTS=PASS source=repository-root target=/workspace overlays=volume"), "runtime doctor must expose workspace bind and volume-overlay proof");
 assert(
   opener.includes("-Action Surface -Surface $surface"),
   "mobile opener must use the canonical read-only surface assertion",
 );
 assert(!opener.includes("docker compose") && !opener.includes("Compose @("), "mobile opener must not own Docker lifecycle");
 
+const statusCase = section("function Show-Status", "function Doctor");
+assert(statusCase.includes("Compose @('ps','-a')"), "runtime:status must use one lightweight Compose state display");
+for (const forbidden of ["Get-CanonicalRuntimeSnapshot", "Assert-WorkspaceMounts", "Get-Native-Backend-Residue", "Assert-HostRuntimeEndpoints", "Test-Js-Dependencies-Ready"]) {
+  assert(!statusCase.includes(forbidden), `runtime:status must remain display-only: ${forbidden}`);
+}
+
+const startupCase = section("function Start-Full-Runtime", "function Show-Status");
+assert((startupCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "runtime:up must perform exactly one host-native backend census");
+assert(!startupCase.includes("nativeBackendAfter"), "runtime:up must not repeat the host-native backend census after Compose");
+
+const doctorCase = section("function Doctor", "function Require-Service");
+assert((doctorCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "runtime:doctor must perform exactly one host-native backend census");
+assert(doctorCase.includes("Assert-HostRuntimeEndpoints"), "runtime:doctor must prove current host-published endpoints");
+assert(runtime.includes("HOST_RUNTIME_ENDPOINTS=PASS"), "runtime doctor must expose host endpoint proof");
+
 const controlCase = runtime.match(/'Control'\s*\{([\s\S]*?)\n\s*\}\n\s*'Surface'/)?.[1] ?? "";
 const surfaceCase = runtime.match(/'Surface'\s*\{([\s\S]*?)\n\s*\}\n\s*'Rebuild'/)?.[1] ?? "";
 assert(controlCase.includes("Read-CanonicalEnvironment") && controlCase.includes("Assert-Target-Runtime"), "control helper must read/validate the existing runtime");
 assert(surfaceCase.includes("Read-CanonicalEnvironment") && surfaceCase.includes("Assert-Target-Runtime"), "surface helper must read/validate the existing runtime");
+assert((controlCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "control helper must perform one host-native backend census");
+assert((surfaceCase.match(/Get-Native-Backend-Residue/g) ?? []).length === 1, "surface helper must perform one host-native backend census");
 assert(!controlCase.includes("Compose @(") && !surfaceCase.includes("Compose @("), "control/surface helpers must not mutate Compose lifecycle");
 assert(runtime.includes("CONTROL_PANEL_READY=PASS mode=read-only"), "control helper must expose read-only semantics");
 assert(runtime.includes("MOBILE_SURFACE_RUNTIME=PASS mode=read-only"), "surface helper must expose read-only semantics");

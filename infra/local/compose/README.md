@@ -29,10 +29,10 @@ After one-time bootstrap has created the local environment, the normal human wor
 
 - `pnpm scr` — establish/reuse the canonical physical device, ADB reverse mappings, Wi-Fi fallback, and a long-running scrcpy session (normally in its own terminal).
 - `pnpm runtime:up` — start/reconcile the complete canonical Docker stack once.
-- `pnpm runtime:doctor` — read-only deep validation of the complete Docker runtime.
-- `pnpm runtime:status` — read-only runtime state display.
+- `pnpm runtime:doctor` — read-only deep validation of Docker ownership, workspace/volume topology, and current host-published service endpoints.
+- `pnpm runtime:status` — lightweight read-only service state display.
 
-`runtime:up` owns Docker startup. `runtime:doctor` and `runtime:status` do not repair or mutate the runtime. Docker remains the only owner of Control Panel and all four Metro servers. After startup, ordinary JavaScript/TypeScript source edits use the already-running Expo Fast Refresh / Next.js HMR path; they do not require runtime restart, dependency materialization, ADB preparation, app relaunch, or login.
+`runtime:up` owns Docker startup. `runtime:doctor` performs deep read-only proof; `runtime:status` only displays current service state. Neither repairs or mutates the runtime. Docker remains the only owner of Control Panel and all four Metro servers. After startup, ordinary JavaScript/TypeScript source edits use the already-running Expo Fast Refresh / Next.js HMR path; they do not require runtime restart, dependency materialization, ADB preparation, app relaunch, or login.
 
 ## Android development
 

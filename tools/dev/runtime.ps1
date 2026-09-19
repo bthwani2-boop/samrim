@@ -24,6 +24,17 @@ $CanonicalServices = @('postgres','mailpit','identity-migrate','identity','dsh-m
 $RunningServices = @('postgres','mailpit','identity','dsh','control','metro-client','metro-partner','metro-captain','metro-field')
 $OneShotServices = @('identity-migrate','dsh-migrate','js-deps')
 $WorkspaceServices = @('control','metro-client','metro-partner','metro-captain','metro-field')
+$WorkspaceVolumeDestinations = @(
+    '/workspace/node_modules',
+    '/workspace/apps/app-client/node_modules',
+    '/workspace/apps/app-partner/node_modules',
+    '/workspace/apps/app-captain/node_modules',
+    '/workspace/apps/app-field/node_modules',
+    '/workspace/apps/control-panel/node_modules',
+    '/workspace/services/identity/node_modules',
+    '/workspace/services/dsh/node_modules',
+    '/workspace/packages/design-system/node_modules'
+)
 $Ports = @(
     @{ Key='SAMRIM_MAILPIT_WEB_PORT'; Service='mailpit' },
     @{ Key='SAMRIM_IDENTITY_PORT'; Service='identity' },
@@ -203,11 +214,24 @@ function Assert-WorkspaceMounts($Snapshot, [string[]]$Services = $WorkspaceServi
     foreach ($serviceName in $Services) {
         $containers = @(Get-ServiceContainers $Snapshot $serviceName)
         if ($containers.Count -ne 1) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName containers=$($containers.Count)" }
-        $mounts = @($containers[0].Mounts | Where-Object { $_.Destination -eq '/workspace' })
-        if ($mounts.Count -ne 1) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace mounts=$($mounts.Count)" }
-        if ($mounts[0].Type -ne 'bind') { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace type=$($mounts[0].Type)" }
-        try { $actual = Normalize-Workspace-Source $mounts[0].Source } catch { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName source=$($mounts[0].Source)" }
+
+        $rootMounts = @($containers[0].Mounts | Where-Object { $_.Destination -eq '/workspace' })
+        if ($rootMounts.Count -ne 1) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace mounts=$($rootMounts.Count)" }
+        if ($rootMounts[0].Type -ne 'bind') { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName target=/workspace type=$($rootMounts[0].Type)" }
+        try { $actual = Normalize-Workspace-Source $rootMounts[0].Source } catch { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName source=$($rootMounts[0].Source)" }
         if (-not [StringComparer]::OrdinalIgnoreCase.Equals($actual, $expected)) { Fail "WORKSPACE_MOUNT=FAIL service=$serviceName expected=$expected actual=$actual" }
+
+        foreach ($destination in $WorkspaceVolumeDestinations) {
+            $overlays = @($containers[0].Mounts | Where-Object { $_.Destination -eq $destination })
+            if ($overlays.Count -ne 1) { Fail "WORKSPACE_VOLUME=FAIL service=$serviceName target=$destination mounts=$($overlays.Count)" }
+            if ($overlays[0].Type -ne 'volume') { Fail "WORKSPACE_VOLUME=FAIL service=$serviceName target=$destination type=$($overlays[0].Type)" }
+        }
+
+        if ($serviceName -eq 'control') {
+            $nextMounts = @($containers[0].Mounts | Where-Object { $_.Destination -eq '/workspace/apps/control-panel/.next' })
+            if ($nextMounts.Count -ne 1) { Fail "WORKSPACE_VOLUME=FAIL service=control target=/workspace/apps/control-panel/.next mounts=$($nextMounts.Count)" }
+            if ($nextMounts[0].Type -ne 'volume') { Fail "WORKSPACE_VOLUME=FAIL service=control target=/workspace/apps/control-panel/.next type=$($nextMounts[0].Type)" }
+        }
     }
 }
 
@@ -237,9 +261,8 @@ function Assert-Port($Snapshot, [hashtable]$EnvMap, [string]$ServiceName, [strin
     }
 }
 
-function Assert-Full-Runtime([hashtable]$EnvMap, $Snapshot, $NativeBackendMatches) {
+function Assert-Full-Runtime([hashtable]$EnvMap, $Snapshot) {
     Assert-No-Parallel-Runtime $Snapshot
-    Assert-No-Native-Backend $NativeBackendMatches
     Assert-WorkspaceMounts $Snapshot
     foreach ($serviceName in $OneShotServices) { Assert-OneShot $Snapshot $serviceName }
     foreach ($serviceName in $RunningServices) {
@@ -249,9 +272,8 @@ function Assert-Full-Runtime([hashtable]$EnvMap, $Snapshot, $NativeBackendMatche
     foreach ($port in $Ports) { Assert-Port $Snapshot $EnvMap $port.Service $port.Key }
 }
 
-function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target, $Snapshot, $NativeBackendMatches) {
+function Assert-Target-Runtime([hashtable]$EnvMap, [string]$Target, $Snapshot) {
     Assert-No-Parallel-Runtime $Snapshot
-    Assert-No-Native-Backend $NativeBackendMatches
     if ($Target -in $WorkspaceServices) { Assert-WorkspaceMounts $Snapshot @($Target) }
     foreach ($serviceName in @('identity-migrate','dsh-migrate','js-deps')) { Assert-OneShot $Snapshot $serviceName }
     $targets = @('postgres','mailpit','identity','dsh',$Target) | Select-Object -Unique
@@ -281,6 +303,65 @@ function Test-Js-Dependencies-Ready {
     }
 }
 
+function Assert-HttpEndpoint(
+    [System.Net.Http.HttpClient]$Client,
+    [string]$Name,
+    [string]$Url,
+    [switch]$RequireSuccess,
+    [string]$Contains = ''
+) {
+    $response = $null
+    try {
+        $response = $Client.GetAsync($Url).GetAwaiter().GetResult()
+        $status = [int]$response.StatusCode
+        if ($RequireSuccess) {
+            if ($status -lt 200 -or $status -ge 300) { Fail "HOST_ENDPOINT=FAIL name=$Name status=$status url=$Url" }
+        }
+        elseif ($status -lt 200 -or $status -ge 500) {
+            Fail "HOST_ENDPOINT=FAIL name=$Name status=$status url=$Url"
+        }
+
+        if (-not [string]::IsNullOrEmpty($Contains)) {
+            $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            if (-not $body.Contains($Contains)) { Fail "HOST_ENDPOINT=FAIL name=$Name reason=content_mismatch url=$Url" }
+        }
+    }
+    catch {
+        Fail "HOST_ENDPOINT=FAIL name=$Name url=$Url reason=$($_.Exception.Message)"
+    }
+    finally {
+        if ($null -ne $response) { $response.Dispose() }
+    }
+}
+
+function Assert-HostRuntimeEndpoints([hashtable]$EnvMap) {
+    $client = [System.Net.Http.HttpClient]::new()
+    $client.Timeout = [TimeSpan]::FromSeconds(3)
+    try {
+        $identityPort = Require-Port $EnvMap 'SAMRIM_IDENTITY_PORT'
+        $dshPort = Require-Port $EnvMap 'SAMRIM_DSH_PORT'
+        $controlPort = Require-Port $EnvMap 'SAMRIM_CONTROL_PORT'
+        $mailpitPort = Require-Port $EnvMap 'SAMRIM_MAILPIT_WEB_PORT'
+        $clientMetroPort = Require-Port $EnvMap 'SAMRIM_APP_CLIENT_METRO_PORT'
+        $partnerMetroPort = Require-Port $EnvMap 'SAMRIM_APP_PARTNER_METRO_PORT'
+        $captainMetroPort = Require-Port $EnvMap 'SAMRIM_APP_CAPTAIN_METRO_PORT'
+        $fieldMetroPort = Require-Port $EnvMap 'SAMRIM_APP_FIELD_METRO_PORT'
+
+        Assert-HttpEndpoint $client 'identity' "http://127.0.0.1:$identityPort/identity/health" -RequireSuccess
+        Assert-HttpEndpoint $client 'dsh' "http://127.0.0.1:$dshPort/dsh/health" -RequireSuccess
+        Assert-HttpEndpoint $client 'control' "http://127.0.0.1:$controlPort/"
+        Assert-HttpEndpoint $client 'mailpit' "http://127.0.0.1:$mailpitPort/" -RequireSuccess
+        Assert-HttpEndpoint $client 'metro-client' "http://127.0.0.1:$clientMetroPort/status" -RequireSuccess -Contains 'packager-status:running'
+        Assert-HttpEndpoint $client 'metro-partner' "http://127.0.0.1:$partnerMetroPort/status" -RequireSuccess -Contains 'packager-status:running'
+        Assert-HttpEndpoint $client 'metro-captain' "http://127.0.0.1:$captainMetroPort/status" -RequireSuccess -Contains 'packager-status:running'
+        Assert-HttpEndpoint $client 'metro-field' "http://127.0.0.1:$fieldMetroPort/status" -RequireSuccess -Contains 'packager-status:running'
+    }
+    finally {
+        $client.Dispose()
+    }
+    Write-Host 'HOST_RUNTIME_ENDPOINTS=PASS identity,dsh,control,mailpit,metro-client,metro-partner,metro-captain,metro-field'
+}
+
 function Start-Full-Runtime {
     $envMap = Ensure-Environment
     Ensure-Docker
@@ -305,27 +386,17 @@ function Start-Full-Runtime {
 
     Compose @('up','-d','--wait','--wait-timeout','300','--remove-orphans')
     $after = Get-CanonicalRuntimeSnapshot
-    $nativeBackendAfter = Get-Native-Backend-Residue
-    Assert-Full-Runtime $envMap $after $nativeBackendAfter
+    Assert-Full-Runtime $envMap $after
     Write-Host 'CANONICAL_LOCAL_RUNTIME=PASS mode=full'
     Write-Host 'DOCKER_RUNTIME=PASS'
     Write-Host 'DOCKER_OWNS=postgres,mailpit,identity-migrate,identity,dsh-migrate,dsh,js-deps,control,metro-client,metro-partner,metro-captain,metro-field'
 }
 
 function Show-Status {
-    Write-Host "RUNTIME_STATUS=READ_ONLY scope=full-canonical-compose"
+    Write-Host 'RUNTIME_STATUS=READ_ONLY scope=service-state-display'
     try { $null = Read-CanonicalEnvironment; Write-Host 'LOCAL_RUNTIME_ENV=PASS mode=read-only' } catch { Write-Host "LOCAL_RUNTIME_ENV=NOT_READY reason=$($_.Exception.Message)" }
     Ensure-Docker
-    $snapshot = Get-CanonicalRuntimeSnapshot
-    foreach ($serviceName in $CanonicalServices) {
-        $containers = @(Get-ServiceContainers $snapshot $serviceName)
-        if ($containers.Count -eq 0) { Write-Host "DOCKER_SERVICE=$serviceName state=missing"; continue }
-        if ($containers.Count -ne 1) { Write-Host "DOCKER_SERVICE=$serviceName state=duplicate count=$($containers.Count)"; continue }
-        $entry = $containers[0]
-        Write-Host "DOCKER_SERVICE=$serviceName state=$($entry.State)|$($entry.Health)|$($entry.ExitCode)"
-    }
-    try { Assert-WorkspaceMounts $snapshot; Write-Host 'DOCKER_WORKSPACE_MOUNTS=PASS source=repository-root target=/workspace' }
-    catch { Write-Host "DOCKER_WORKSPACE_MOUNTS=NOT_READY reason=$($_.Exception.Message)" }
+    Compose @('ps','-a')
 }
 
 function Doctor {
@@ -335,18 +406,26 @@ function Doctor {
     $snapshot = $null
     try {
         Ensure-Docker
-        $snapshot = Get-CanonicalRuntimeSnapshot
-        Assert-No-Parallel-Runtime $snapshot
         $nativeBackendMatches = Get-Native-Backend-Residue
         Assert-No-Native-Backend $nativeBackendMatches
+        $snapshot = Get-CanonicalRuntimeSnapshot
+        Assert-No-Parallel-Runtime $snapshot
     }
     catch {
         Write-Host "DOCKER_RUNTIME=NOT_READY reason=$($_.Exception.Message)"
         $failures += 'docker'
     }
     if ($null -ne $envMap -and $null -ne $snapshot -and $failures.Count -eq 0) {
-        try { Assert-Full-Runtime $envMap $snapshot $nativeBackendMatches; Write-Host 'CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose' }
-        catch { Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"; $failures += 'runtime' }
+        try {
+            Assert-Full-Runtime $envMap $snapshot
+            Write-Host 'DOCKER_WORKSPACE_MOUNTS=PASS source=repository-root target=/workspace overlays=volume'
+            Assert-HostRuntimeEndpoints $envMap
+            Write-Host 'CANONICAL_RUNTIME_READBACK=PASS scope=full-canonical-compose'
+        }
+        catch {
+            Write-Host "CANONICAL_RUNTIME_READBACK=NOT_READY reason=$($_.Exception.Message)"
+            $failures += 'runtime'
+        }
     }
     Write-Host 'DEVICE_RUNTIME=SEPARATE_OWNER'
     Write-Host 'DESTRUCTIVE=0'
@@ -415,7 +494,8 @@ try {
             Ensure-Docker
             $snapshot = Get-CanonicalRuntimeSnapshot
             $nativeBackendMatches = Get-Native-Backend-Residue
-            Assert-Target-Runtime $envMap 'control' $snapshot $nativeBackendMatches
+            Assert-No-Native-Backend $nativeBackendMatches
+            Assert-Target-Runtime $envMap 'control' $snapshot
             $port = Require-Port $envMap 'SAMRIM_CONTROL_PORT'
             Write-Host "CONTROL_PANEL_READY=PASS mode=read-only url=http://127.0.0.1:$port"
         }
@@ -426,7 +506,8 @@ try {
             Ensure-Docker
             $snapshot = Get-CanonicalRuntimeSnapshot
             $nativeBackendMatches = Get-Native-Backend-Residue
-            Assert-Target-Runtime $envMap $target $snapshot $nativeBackendMatches
+            Assert-No-Native-Backend $nativeBackendMatches
+            Assert-Target-Runtime $envMap $target $snapshot
             Write-Host "MOBILE_SURFACE_RUNTIME=PASS mode=read-only surface=$Surface service=$target"
         }
         'Rebuild' { Rebuild-Service }
