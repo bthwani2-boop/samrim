@@ -211,7 +211,11 @@ function cleanup() {
     sql(`DELETE FROM dsh.catalog_attribute_definitions WHERE id='${value}'`);
   }
   sql(`DELETE FROM dsh.commerce_verticals WHERE id='${sqlLiteral(verticalID)}'`);
-  for (const actorID of actorIDs) sql(`DELETE FROM identity_actors WHERE id='${sqlLiteral(actorID)}'`);
+  for (const actorID of actorIDs) {
+    const value = sqlLiteral(actorID);
+    sql(`DELETE FROM dsh.notification_read_state WHERE actor_id='${value}'`);
+    sql(`DELETE FROM identity_actors WHERE id='${value}'`);
+  }
 }
 process.on("exit", () => { try { cleanup(); } catch (error) { console.error(`DSH_RUNTIME_CLEANUP=FAIL ${error instanceof Error ? error.message : String(error)}`); } });
 
@@ -301,7 +305,7 @@ if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is inva
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "26", "DSH migration history is not v26");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "27", "DSH migration history is not v27");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -319,6 +323,7 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=24", "024_catalog_media_assets.sql", "DSH catalog media assets migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=25", "025_order_client_cancellation.sql", "DSH client cancellation migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=26", "026_captain_live_location.sql", "DSH Captain live-location migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=27", "027_notification_read_state.sql", "DSH notification read-state migration is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_orders_state_chk'", "t", "DSH Order cancellation state is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_order_transition_state_chk'", "t", "DSH Order cancellation transition is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%order_cancelled%' FROM pg_constraint WHERE conname='commerce_order_audit_event_type_chk'", "t", "DSH Order cancellation audit is not canonical");
@@ -330,6 +335,7 @@ for (const table of ["catalog_import_mutation_idempotency", "catalog_import_run_
   expectSQL("SELECT to_regclass('dsh.catalog_media_assets') IS NOT NULL", "t", "required v24 media asset relation is missing");
 for (const table of ["captain_admissions", "captain_admission_idempotency", "captain_admission_audit", "captain_dispatch_offers", "captain_assignments", "captain_handoffs", "captain_operation_idempotency", "captain_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required Captain relation is missing: ${table}`);
 for (const table of ["captain_location_snapshots", "captain_location_mutation_idempotency", "captain_location_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required Captain live-location relation is missing: ${table}`);
+  expectSQL("SELECT to_regclass('dsh.notification_read_state') IS NOT NULL", "t", "required notification read-state relation is missing");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_phone_chk'", "CHECK (((contact_phone_e164 IS NULL) OR (contact_phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'::text)))", "Captain phone constraint is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_suspended_availability_chk'", "CHECK (((state <> 'suspended'::text) OR (availability_state = 'unavailable'::text)))", "Captain suspended availability invariant is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Captain admission state set is not canonical");
@@ -342,7 +348,7 @@ expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='fi
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "CHECK (((originating_field_actor_id IS NULL) OR (length(btrim(originating_field_actor_id)) > 0)))", "Field joining-case origin invariant is not canonical");
 expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name='originating_field_actor_id')", "t", "Field joining-case origin column is missing");
-  console.log("DSH_SCHEMA_V26=PASS");
+  console.log("DSH_SCHEMA_V27=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -862,6 +868,20 @@ const captainAuditCount = sql(`SELECT count(*) FROM dsh.captain_audit WHERE orde
 const captainOperationCount = sql(`SELECT count(*) FROM dsh.captain_operation_idempotency WHERE order_id='${sqlLiteral(orderID)}'`);
 if (captainAuditCount !== "9" || captainOperationCount !== "9" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='delivery_failed' AND order_id='${sqlLiteral(orderID)}'`) !== "1" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='delivery_recovered' AND order_id='${sqlLiteral(orderID)}'`) !== "1") fail("Captain audit/idempotency readback is incomplete", JSON.stringify({ captainAuditCount, captainOperationCount }));
 console.log("DSH_CAPTAIN_DISPATCH_HANDOFF_DELIVERY=PASS");
+
+const clientNotifications = await request(dshBase, "GET", "/dsh/notifications?limit=50", { token: client.accessToken });
+const partnerNotifications = await request(dshBase, "GET", "/dsh/notifications?limit=50", { token: first.accessToken });
+const captainNotifications = await request(dshBase, "GET", "/dsh/notifications?limit=50", { token: captainAccessToken });
+const targetClientNotifications = clientNotifications.body?.notifications?.filter((item) => item.orderId === orderID) ?? [];
+const targetPartnerNotifications = partnerNotifications.body?.notifications?.filter((item) => item.orderId === orderID) ?? [];
+const targetCaptainNotifications = captainNotifications.body?.notifications?.filter((item) => item.orderId === orderID) ?? [];
+const firstNotificationID = targetClientNotifications.find((item) => item.id.startsWith("order:"))?.id;
+const initialClientUnread = clientNotifications.body?.unreadCount;
+const markedNotification = firstNotificationID ? await request(dshBase, "POST", `/dsh/notifications/${encodeURIComponent(firstNotificationID)}/read`, { token: client.accessToken }) : null;
+const clientNotificationsAfterRead = await request(dshBase, "GET", "/dsh/notifications?limit=50", { token: client.accessToken });
+const crossActorRead = firstNotificationID ? await request(dshBase, "POST", `/dsh/notifications/${encodeURIComponent(firstNotificationID)}/read`, { token: captainAccessToken }) : null;
+if (clientNotifications.status !== 200 || targetClientNotifications.length !== 10 || targetPartnerNotifications.length !== 10 || captainNotifications.status !== 200 || targetCaptainNotifications.length !== 9 || !targetCaptainNotifications.some((item) => item.kind === "CAPTAIN_OFFER") || !Number.isInteger(initialClientUnread) || !firstNotificationID || markedNotification?.status !== 200 || markedNotification.body?.notificationId !== firstNotificationID || !markedNotification.body?.readAt || clientNotificationsAfterRead.status !== 200 || clientNotificationsAfterRead.body?.unreadCount !== initialClientUnread - 1 || !clientNotificationsAfterRead.body.notifications.some((item) => item.id === firstNotificationID && item.readAt) || crossActorRead?.status !== 404) fail("actor-scoped notification inbox or read-state boundary failed", JSON.stringify({ clientNotifications, partnerNotifications, captainNotifications, targetClientNotifications, targetPartnerNotifications, targetCaptainNotifications, markedNotification, clientNotificationsAfterRead, crossActorRead }));
+console.log("DSH_NOTIFICATIONS=PASS");
 
 const expiryCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`captain-expiry-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [modifierOptionID] } });
 if (expiryCartCreate.status !== 201 || !expiryCartCreate.body?.cart?.id) fail("Captain expiry order cart fixture failed", JSON.stringify(expiryCartCreate));

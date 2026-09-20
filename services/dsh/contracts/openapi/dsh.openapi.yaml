@@ -186,6 +186,12 @@ paths:
   /dsh/orders/{orderId}/cancel:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancel"
 
+  /dsh/notifications:
+    $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications"
+
+  /dsh/notifications/{notificationId}/read:
+    $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications~1{notificationId}~1read"
+
   /dsh/operator/operations:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations"
 
@@ -2901,6 +2907,58 @@ components:
         captainLocation:
           $ref: "#/components/schemas/CaptainLocationSnapshot"
           nullable: true
+
+    NotificationKind:
+      type: string
+      enum: [ORDER_CREATED, ORDER_ACCEPTED, ORDER_PREPARING, ORDER_READY, ORDER_REJECTED, ORDER_STATUS, CAPTAIN_OFFER, CAPTAIN_ASSIGNED, HANDOFF_CONFIRMED, PICKED_UP, DELIVERY_FAILED, DELIVERY_RECOVERED, DELIVERED, REASSIGNED]
+
+    Notification:
+      type: object
+      required: [id, kind, title, body, orderId, createdAt, readAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/NotificationKind"
+        title:
+          type: string
+        body:
+          type: string
+        orderId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+          x-go-pointer: true
+
+    NotificationListResponse:
+      type: object
+      required: [notifications, unreadCount]
+      additionalProperties: false
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        unreadCount:
+          type: integer
+          minimum: 0
+
+    NotificationReadResponse:
+      type: object
+      required: [notificationId, readAt]
+      additionalProperties: false
+      properties:
+        notificationId:
+          type: string
+        readAt:
+          type: string
+          format: date-time
 
     CaptainDeliveryTask:
       type: object

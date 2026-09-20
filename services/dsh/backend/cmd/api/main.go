@@ -100,6 +100,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	notificationServer, err := transporthttp.NewNotification(identityClient, database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
@@ -114,6 +118,7 @@ func main() {
 		cartServer.Register(mux)
 		orderServer.Register(mux)
 		captainServer.Register(mux)
+		notificationServer.Register(mux)
 		fieldServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
