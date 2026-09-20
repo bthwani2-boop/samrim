@@ -301,9 +301,6 @@ importers:
       expo-localization:
         specifier: ~57.0.2
         version: 57.0.2(expo@57.0.24)(react@19.2.3)
-      expo-location:
-        specifier: ~57.0.19
-        version: 57.0.19(@typescript/typescript6@6.0.2)(expo@57.0.24)
       expo-router:
         specifier: ~57.0.22
         version: 57.0.22(d06760ec9c68ef99c5bfc76ec5947e33)
