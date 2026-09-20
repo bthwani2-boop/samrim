@@ -517,6 +517,9 @@ const fieldCorrectionSubmitted = await request(dshBase, "POST", `/dsh/field/join
 const fieldNeedsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-needs-correction-${suffix}`, crypto.randomUUID(), 2), body: { decision: "needs_correction", correctionReason: "أكمل بيانات ملف الميداني" } });
 const fieldCorrected = await request(dshBase, "POST", `/dsh/field/joining-cases/${fieldCorrectionCaseID}/correct-and-resubmit`, { token: secondFieldAccessToken, headers: partnerHeaders(`field-correction-resubmit-${suffix}`, 3), body: { businessName: "Field correction business fixed", firstStoreName: "Field correction store fixed", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...correctedStoreOrigin } });
 if (fieldCorrectionCreated.status !== 201 || fieldCorrectionSubmitted.status !== 200 || fieldNeedsCorrection.status !== 200 || fieldNeedsCorrection.body?.case?.state !== "needs_correction" || fieldCorrected.status !== 200 || fieldCorrected.body?.case?.origin !== "field" || fieldCorrected.body?.case?.state !== "submitted" || fieldCorrected.body?.case?.version !== 4 || fieldCorrected.body?.case?.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || fieldCorrected.body?.case?.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude) fail("Field correction did not return to the originating Field writer", JSON.stringify({ fieldCorrectionCreated, fieldCorrectionSubmitted, fieldNeedsCorrection, fieldCorrected }));
+const fieldCorrectionPartnerActorID = String(fieldCorrectionSubmitted.body.case.partnerActorId || "");
+if (!fieldCorrectionPartnerActorID) fail("Field correction submission did not expose its canonical partner actor", JSON.stringify(fieldCorrectionSubmitted));
+actorIDs.add(fieldCorrectionPartnerActorID);
 console.log("DSH_JOINING_CASE_VERTICAL=PASS");
 console.log("DSH_JOINING_CASE_CORRECTION=PASS");
 
