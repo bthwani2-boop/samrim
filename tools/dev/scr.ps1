@@ -14,7 +14,7 @@ Set-Location $Root
 
 function Fail([string]$Message){throw $Message}
 
-function Read-Ports{
+function Read-BackendPorts{
     if(-not(Test-Path -LiteralPath $EnvPath -PathType Leaf)){Fail 'LOCAL_ENV_MISSING copy=infra/local/.env.example->infra/local/.env'}
     $map=@{}
     foreach($raw in Get-Content -LiteralPath $EnvPath){
@@ -23,12 +23,7 @@ function Read-Ports{
         $parts=$line.Split('=',2)
         if($parts.Count-eq2){$map[$parts[0].Trim()]=$parts[1].Trim()}
     }
-    $names=@(
-        'SAMRIM_IDENTITY_PORT','SAMRIM_DSH_PORT',
-        'SAMRIM_APP_CLIENT_METRO_PORT','SAMRIM_APP_PARTNER_METRO_PORT',
-        'SAMRIM_APP_CAPTAIN_METRO_PORT','SAMRIM_APP_FIELD_METRO_PORT'
-    )
-    return @($names|ForEach-Object{
+    return @('SAMRIM_IDENTITY_PORT','SAMRIM_DSH_PORT'|ForEach-Object{
         $port=0
         if(-not[int]::TryParse([string]$map[$_],[ref]$port)){Fail "LOCAL_ENV_INVALID_PORT name=$_"}
         $port
@@ -56,7 +51,6 @@ function Get-Usb{
 
 function Disconnect-Tcp{
     & $Adb disconnect 2>&1|Out-Null
-    if($LASTEXITCODE-ne0){Fail "ADB_DISCONNECT_FAILED exit=$LASTEXITCODE"}
 }
 
 function Wait-Usb{
@@ -64,19 +58,21 @@ function Wait-Usb{
     do{
         if($null-ne(Get-Usb)){return}
         Start-Sleep -Milliseconds 100
-    }while($clock.ElapsedMilliseconds-lt5000)
+    }while($clock.ElapsedMilliseconds-lt3000)
     Fail 'ADB_USB_REATTACH_TIMEOUT'
 }
 
 function Prepare-Tcp{
     if($null-eq(Get-Usb)){Fail 'ADB_USB_REQUIRED_FOR_TCP_PREPARE'}
+
     $route=@(& $Adb -d shell ip route 2>&1)
     if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=shell-ip-route exit=$LASTEXITCODE"}
     $ip=$null
-    foreach($line in $route){if($line-match'\bsrc\s+(?<ip>(?:\d{1,3}\.){3}\d{1,3})\b'){$ip=$Matches.ip;break}}
+    foreach($line in $route){
+        if($line-match'\bsrc\s+(?<ip>(?:\d{1,3}\.){3}\d{1,3})\b'){$ip=$Matches.ip;break}
+    }
     if(-not$ip){Fail 'ADB_USB_IP_NOT_FOUND'}
 
-    Disconnect-Tcp
     $tcpPort=((& $Adb -d shell getprop service.adb.tcp.port 2>&1)-join'').Trim()
     if($LASTEXITCODE-ne0){Fail "ADB_FAILED args=getprop-tcp-port exit=$LASTEXITCODE"}
     if($tcpPort-ne'5555'){
@@ -95,8 +91,10 @@ function Prepare-Tcp{
 function Connect-Tcp{
     if($null-ne(Get-Usb)){Fail 'ADB_REFUSE_TCP_WHILE_USB_PRESENT'}
     if(-not(Test-Path -LiteralPath $EndpointFile -PathType Leaf)){Fail 'ADB_TCP_ENDPOINT_UNKNOWN connect_usb_once'}
+
     $endpoint=(Get-Content -LiteralPath $EndpointFile -Raw).Trim()
     if($endpoint-notmatch'^(?:\d{1,3}\.){3}\d{1,3}:5555$'){Fail 'ADB_TCP_ENDPOINT_INVALID connect_usb_once'}
+
     & $Adb connect $endpoint 2>&1|Out-Null
     if($LASTEXITCODE-ne0){Fail "ADB_CONNECT_FAILED endpoint=$endpoint exit=$LASTEXITCODE"}
     $state=(& $Adb -s $endpoint get-state 2>&1)
@@ -117,53 +115,67 @@ function Start-Scrcpy([string[]]$Selector){
     )) -PassThru -NoNewWindow
 }
 
-& $Adb start-server 2>&1|Out-Null
-if($LASTEXITCODE-ne0){Fail "ADB_START_FAILED exit=$LASTEXITCODE adb=$Adb"}
 foreach($old in @(Get-Process scrcpy -ErrorAction SilentlyContinue)){
     Stop-Process -Id $old.Id -Force -ErrorAction SilentlyContinue
 }
 
-$ports=Read-Ports
+Write-Host "SCRCPY_START adb=$Adb"
+$ports=Read-BackendPorts
 $process=$null
 $mode=$null
+
 try{
-    if($null-ne(Get-Usb)){
-        [void](Prepare-Tcp)
-        Set-Reverse @('-d') $ports
+    $usb=Get-Usb
+    if($null-ne$usb){
         $mode='usb'
         $process=Start-Scrcpy @('--select-usb')
-        Write-Host "SCRCPY_LIVE transport=usb fallback=tcp adb=$Adb"
+        Write-Host 'SCRCPY_LIVE transport=usb fallback=tcp'
+
+        Disconnect-Tcp
+        [void](Prepare-Tcp)
+        if($process.HasExited-and$null-ne(Get-Usb)){$process=Start-Scrcpy @('--select-usb')}
+        Set-Reverse @('-d') $ports
     }else{
         $endpoint=Connect-Tcp
-        Set-Reverse @('-s',$endpoint) $ports
         $mode='tcp'
         $process=Start-Scrcpy @('--serial',$endpoint)
-        Write-Host "SCRCPY_LIVE transport=tcp endpoint=$endpoint adb=$Adb"
+        Write-Host "SCRCPY_LIVE transport=tcp endpoint=$endpoint"
+        Set-Reverse @('-s',$endpoint) $ports
     }
 
     while($true){
-        Start-Sleep -Milliseconds 250
+        Start-Sleep -Milliseconds 500
+
         if($mode-eq'usb'){
             if($null-eq(Get-Usb)){
                 if(-not$process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}
                 $endpoint=Connect-Tcp
-                Set-Reverse @('-s',$endpoint) $ports
                 $process=Start-Scrcpy @('--serial',$endpoint)
+                Set-Reverse @('-s',$endpoint) $ports
                 $mode='tcp'
                 Write-Host "SCRCPY_FAILOVER transport=tcp endpoint=$endpoint"
-            }elseif($process.HasExited){break}
-        }else{
-            if($null-ne(Get-Usb)){
-                if(-not$process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}
-                Disconnect-Tcp
-                [void](Prepare-Tcp)
-                Set-Reverse @('-d') $ports
-                $process=Start-Scrcpy @('--select-usb')
-                $mode='usb'
-                Write-Host 'SCRCPY_FAILBACK transport=usb'
-            }elseif($process.HasExited){break}
+            }elseif($process.HasExited){
+                break
+            }
+            continue
+        }
+
+        if($null-ne(Get-Usb)){
+            if(-not$process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}
+            Disconnect-Tcp
+            $process=Start-Scrcpy @('--select-usb')
+            $mode='usb'
+            Write-Host 'SCRCPY_FAILBACK transport=usb'
+
+            [void](Prepare-Tcp)
+            if($process.HasExited-and$null-ne(Get-Usb)){$process=Start-Scrcpy @('--select-usb')}
+            Set-Reverse @('-d') $ports
+        }elseif($process.HasExited){
+            break
         }
     }
 }finally{
-    if($process-and-not$process.HasExited){Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue}
+    if($process-and-not$process.HasExited){
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    }
 }

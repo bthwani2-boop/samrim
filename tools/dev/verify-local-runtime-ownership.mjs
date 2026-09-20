@@ -54,8 +54,13 @@ check(!dev.includes("Active-Ports")&&!dev.includes("GetActiveTcpListeners"),"bac
 check(scr.includes("$env:ADB=$Adb"),"scr.ps1 must pin scrcpy to the exact ADB executable used by the script");
 check(scr.includes("--select-usb")&&scr.includes("--serial"),"scr.ps1 must preserve explicit USB-first and TCP selectors");
 check(scr.includes("SCRCPY_FAILOVER")&&scr.includes("SCRCPY_FAILBACK"),"scr.ps1 must preserve automatic TCP failover and USB failback");
-check(scr.includes(" reverse ")&&scr.includes("SAMRIM_IDENTITY_PORT")&&scr.includes("SAMRIM_DSH_PORT"),"scr.ps1 must own device reverse mappings");
+check(scr.includes(" reverse ")&&scr.includes("SAMRIM_IDENTITY_PORT")&&scr.includes("SAMRIM_DSH_PORT"),"scr.ps1 must own backend reverse mappings");
+check(!scr.includes("SAMRIM_APP_CLIENT_METRO_PORT")&&!scr.includes("SAMRIM_APP_PARTNER_METRO_PORT")&&!scr.includes("SAMRIM_APP_CAPTAIN_METRO_PORT")&&!scr.includes("SAMRIM_APP_FIELD_METRO_PORT"),"scr.ps1 must not waste startup on Metro reverse mappings");
 check(scr.includes("ADB_REFUSE_TCP_WHILE_USB_PRESENT"),"scr.ps1 must keep USB and TCP host transports mutually exclusive");
+check(!scr.includes(" start-server"),"scr.ps1 must let the first real ADB command start the daemon on demand");
+const firstUsbStart=scr.indexOf("$process=Start-Scrcpy @('--select-usb')");
+const firstTcpPrepare=scr.indexOf("[void](Prepare-Tcp)");
+check(firstUsbStart>=0&&firstTcpPrepare>firstUsbStart,"USB scrcpy must become live before TCP fallback preparation");
 check(launcher.includes("process.cwd()"),"surface launcher must preserve package working directory");
 check(launcher.includes('EXPO_NO_METRO_WORKSPACE_ROOT="1"'),"mobile launcher must keep app-scoped Metro root");
 check(launcher.includes('"--dev-client","--localhost","--port"'),"mobile launcher must directly start Expo");
