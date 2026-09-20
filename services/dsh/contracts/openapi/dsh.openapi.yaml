@@ -313,6 +313,9 @@ paths:
   /dsh/field/joining-cases/{caseId}/submit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
 
+  /dsh/field/joining-cases/{caseId}/correct-and-resubmit:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1correct-and-resubmit"
+
 components:
   securitySchemes:
     serviceBearer:
@@ -554,9 +557,13 @@ components:
       type: string
       enum: [draft, submitted, needs_correction, approved]
 
+    JoiningCaseOrigin:
+      type: string
+      enum: [field, control_panel]
+
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, origin, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -585,6 +592,8 @@ components:
           nullable: true
           minimum: -180
           maximum: 180
+        origin:
+          $ref: "#/components/schemas/JoiningCaseOrigin"
         partnerActorId:
           type: string
           nullable: true
@@ -621,7 +630,7 @@ components:
 
     JoiningCaseSummary:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, origin, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -650,6 +659,8 @@ components:
           nullable: true
           minimum: -180
           maximum: 180
+        origin:
+          $ref: "#/components/schemas/JoiningCaseOrigin"
         partnerActorId:
           type: string
           nullable: true

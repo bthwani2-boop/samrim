@@ -496,6 +496,16 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.submitFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
       return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.submitFieldJoiningCase.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
+    async correctAndResubmitFieldJoiningCase(accessToken: string, caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number): Promise<JoiningCaseResponse> {
+      const normalized = caseID.trim();
+      const businessName = input.businessName.trim();
+      const firstStoreName = input.firstStoreName.trim();
+      const serviceCityId = input.serviceCityId.trim();
+      const firstStoreVerticalId = input.firstStoreVerticalId.trim();
+      if (!normalized || businessName.length < 2 || businessName.length > 160 || firstStoreName.length < 2 || firstStoreName.length > 160 || !serviceCityId || !firstStoreVerticalId || expectedVersion < 1 || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) throw new Error("DSH_FIELD_JOINING_CASE_INPUT_INVALID");
+      const path = dshOperationPaths.correctAndResubmitFieldJoiningCase.path.replace("{caseId}", encodeURIComponent(normalized));
+      return userRequest<JoiningCaseResponse>(accessToken, path, dshOperationPaths.correctAndResubmitFieldJoiningCase.method, { businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude: input.firstStoreLatitude, firstStoreLongitude: input.firstStoreLongitude }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
     async listOwnDeliveryAddresses(accessToken: string, limit = 50, cursor = ""): Promise<DeliveryAddressListResponse> {
       if (limit < 1 || limit > 50) throw new Error("DSH_ADDRESS_LIMIT_INVALID");
       const params = new URLSearchParams({ limit: String(limit) });

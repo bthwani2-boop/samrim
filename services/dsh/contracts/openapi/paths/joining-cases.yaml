@@ -17,7 +17,7 @@ paths:
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
     post:
       operationId: createJoiningCase
-      summary: Create a DSH-owned prospective partner joining case
+      summary: Create a partner joining case from the Control partner workspace
       security: [{ serviceBearer: [] }]
       parameters:
         - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
@@ -29,7 +29,7 @@ paths:
           application/json:
             schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateJoiningCaseRequest" }
       responses:
-        "201": { description: Joining case created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
+        "201": { description: Control-originated joining case created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
         "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse" } } } }
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }

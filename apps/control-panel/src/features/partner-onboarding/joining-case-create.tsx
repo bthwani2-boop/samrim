@@ -60,7 +60,7 @@ export function JoiningCaseCreate() {
       firstStoreLongitude: Number(longitude),
     };
     if (!phoneE164Pattern.test(input.contactPhoneE164) || input.businessName.length < 2 || input.firstStoreName.length < 2 || !input.serviceCityId || !input.firstStoreVerticalId || !Number.isFinite(input.firstStoreLatitude) || !Number.isFinite(input.firstStoreLongitude) || input.firstStoreLatitude < -90 || input.firstStoreLatitude > 90 || input.firstStoreLongitude < -180 || input.firstStoreLongitude > 180) {
-		setError("أدخل بيانات النشاط والمتجر والمدينة والمجال وإحداثيات موقع المتجر الثابت.");
+      setError("أدخل بيانات النشاط والمتجر والمدينة والمجال وإحداثيات موقع المتجر الثابت.");
       return;
     }
     setBusy(true);

@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useSession } from "../../session/session-provider";
 
-export type PartnerWorkspaceResource = "queue" | "new" | "cities" | "detail";
+export type PartnerWorkspaceResource = "queue" | "cities" | "detail" | "new";
 
 export function PartnerOperatorBoundary({ children }: { children: ReactNode }) {
   const { state } = useSession();
@@ -32,7 +32,7 @@ export function PartnerWorkspaceLinks({ active }: { active: PartnerWorkspaceReso
       <strong>مساحات الشركاء والمتاجر</strong>
       <ul>
         <li><Link href="/partners" aria-current={active === "queue" ? "page" : undefined}>طابور حالات الانضمام</Link></li>
-        <li><Link href="/partners/new" aria-current={active === "new" ? "page" : undefined}>إنشاء حالة انضمام</Link></li>
+        <li><Link href="/partners/new" aria-current={active === "new" ? "page" : undefined}>إضافة شريك من لوحة التحكم</Link></li>
         <li><Link href="/partners/service-cities" aria-current={active === "cities" ? "page" : undefined}>مدن الخدمة</Link></li>
       </ul>
     </nav>

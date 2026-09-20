@@ -323,7 +323,7 @@ if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is inva
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "30", "DSH migration history is not v30");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "31", "DSH migration history is not v31");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -345,6 +345,7 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=28", "028_client_favorite_stores.sql", "DSH client favorite-store migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=29", "029_order_delivery_proof.sql", "DSH order delivery-proof migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=30", "030_order_ratings.sql", "DSH order-ratings migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=31", "031_field_joining_writer_cutover.sql", "DSH Field joining writer cutover migration is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_orders_state_chk'", "t", "DSH Order cancellation state is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_order_transition_state_chk'", "t", "DSH Order cancellation transition is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%order_cancelled%' FROM pg_constraint WHERE conname='commerce_order_audit_event_type_chk'", "t", "DSH Order cancellation audit is not canonical");
@@ -367,9 +368,10 @@ for (const table of ["field_admissions", "field_admission_idempotency", "field_a
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admissions_state_chk'", "CHECK ((state = ANY (ARRAY['pending_identity'::text, 'eligible'::text, 'suspended'::text])))", "Field admission state set is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_idempotency_operation_chk'", "CHECK ((operation = 'create'::text))", "Field admission idempotency operation is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
-expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "CHECK (((originating_field_actor_id IS NULL) OR (length(btrim(originating_field_actor_id)) > 0)))", "Field joining-case origin invariant is not canonical");
-expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name='originating_field_actor_id')", "t", "Field joining-case origin column is missing");
-console.log("DSH_SCHEMA_V30=PASS");
+expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%origin%' AND pg_get_constraintdef(oid) LIKE '%control_panel%' AND pg_get_constraintdef(oid) LIKE '%field%' FROM pg_constraint WHERE conname='joining_cases_origin_chk'", "t", "Joining-case origin values are not canonical");
+expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%control_panel%' AND pg_get_constraintdef(oid) LIKE '%originating_field_actor_id%' FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "t", "Joining-case field provenance invariant is not canonical");
+expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name IN ('originating_field_actor_id','origin') GROUP BY table_schema,table_name HAVING count(*)=2)", "t", "Joining-case provenance columns are missing");
+console.log("DSH_SCHEMA_V31=PASS");
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=2", "002_cash_remittances.sql", "WLT cash-remittance migration is not canonical");
 console.log("WLT_SCHEMA_V2=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
@@ -417,12 +419,13 @@ console.log("DSH_TYPED_ATTRIBUTES=PASS");
 const firstStoreOrigin = { firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006 };
 const correctedStoreOrigin = { firstStoreLatitude: 15.370001, firstStoreLongitude: 44.192002 };
 
-async function createApprovedPartner(phone, name, serviceCityId) {
+async function createApprovedPartner(phone, name, serviceCityId, origin = "control_panel") {
   const createKey = `joining-${crypto.randomUUID()}`;
-  const created = await request(dshBase, "POST", "/dsh/joining-cases", { token: dshToken, headers: serviceHeaders(actingOperatorID, createKey), body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
-  if (created.status !== 201 || created.body?.case?.state !== "draft" || created.body?.case?.firstStoreVerticalId !== verticalID || created.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case creation did not preserve the fixed store origin", JSON.stringify(created));
+  const fieldOrigin = origin === "field";
+  const created = await request(dshBase, "POST", fieldOrigin ? "/dsh/field/joining-cases" : "/dsh/joining-cases", { token: fieldOrigin ? fieldAccessToken : dshToken, headers: fieldOrigin ? partnerHeaders(createKey) : serviceHeaders(actingOperatorID, createKey), body: { contactPhoneE164: phone, businessName: `${name} business`, firstStoreName: `${name} store`, serviceCityId, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
+  if (created.status !== 201 || created.body?.case?.state !== "draft" || created.body?.case?.origin !== origin || created.body?.case?.firstStoreVerticalId !== verticalID || created.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || created.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("joining case creation did not preserve source provenance or fixed store origin", JSON.stringify(created));
   const caseID = String(created.body.case.id); caseIDs.add(caseID);
-  const submitted = await request(dshBase, "POST", `/dsh/joining-cases/${caseID}/submit`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `submit-${crypto.randomUUID()}`, crypto.randomUUID(), 1) });
+  const submitted = await request(dshBase, "POST", fieldOrigin ? `/dsh/field/joining-cases/${caseID}/submit` : `/dsh/joining-cases/${caseID}/submit`, { token: fieldOrigin ? fieldAccessToken : dshToken, headers: fieldOrigin ? partnerHeaders(`submit-${crypto.randomUUID()}`, 1) : serviceHeaders(actingOperatorID, `submit-${crypto.randomUUID()}`, crypto.randomUUID(), 1) });
   if (submitted.status !== 200 || submitted.body?.case?.state !== "submitted" || !submitted.body?.case?.partnerActorId) fail("joining case submission failed", JSON.stringify(submitted));
   const actorID = String(submitted.body.case.partnerActorId); actorIDs.add(actorID);
   const accessToken = await activatePartner(phone, name.slice(0, 4).padEnd(4, "x") + suffix.slice(0, 4));
@@ -431,8 +434,6 @@ async function createApprovedPartner(phone, name, serviceCityId) {
   const storeID = String(approved.body.case.store.id); storeIDs.add(storeID);
   return { accessToken, actorID, caseID, storeID };
 }
-const first = await createApprovedPartner(`+96772${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime A", cityA);
-const second = await createApprovedPartner(`+96774${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime B", cityB);
 const fieldPhone = `+96771${crypto.randomInt(1_000_000, 9_999_999)}`;
 const fieldAdmissionResponse = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-${suffix}`), body: { contactPhoneE164: fieldPhone } });
 const fieldAdmissionReplay = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-${suffix}`), body: { contactPhoneE164: fieldPhone } });
@@ -446,6 +447,8 @@ const fieldAdmissionRead = await request(dshBase, "GET", `/dsh/fields/admissions
 const fieldActorAdmissionRead = await request(dshBase, "GET", `/dsh/fields/actors/${encodeURIComponent(fieldActorID)}/admission`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 const fieldDirectIdentityWrite = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: fieldAccessToken, body: { phoneE164: `+96770${crypto.randomInt(1_000_000, 9_999_999)}`, role: "field" } });
 if (fieldSelf.status !== 200 || fieldSelf.body?.admission?.actorId !== fieldActorID || fieldAdmissionRead.status !== 200 || fieldAdmissionRead.body?.admission?.id !== fieldAdmissionID || fieldActorAdmissionRead.status !== 200 || fieldActorAdmissionRead.body?.admission?.actorId !== fieldActorID || fieldDirectIdentityWrite.status !== 401) fail("Field admission readback or direct Identity creation boundary failed", JSON.stringify({ fieldSelf, fieldAdmissionRead, fieldActorAdmissionRead, fieldDirectIdentityWrite }));
+const first = await createApprovedPartner(`+96772${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime A", cityA);
+const second = await createApprovedPartner(`+96774${crypto.randomInt(1_000_000, 9_999_999)}`, "Catalog Runtime B", cityB, "field");
 const secondFieldPhone = `+96773${crypto.randomInt(1_000_000, 9_999_999)}`;
 const secondFieldAdmission = await request(dshBase, "POST", "/dsh/fields/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-admit-second-${suffix}`), body: { contactPhoneE164: secondFieldPhone } });
 if (secondFieldAdmission.status !== 201 || secondFieldAdmission.body?.admission?.state !== "eligible" || !secondFieldAdmission.body?.admission?.actorId) fail("second Field admission fixture failed", JSON.stringify(secondFieldAdmission));
@@ -485,7 +488,7 @@ if (fieldRoleBeforeDisable.status !== 200 || fieldDisabled.status !== 204 || fie
 console.log("DSH_FIELD_ADMISSION_AND_SCOPED_JOINING=PASS");
 const correctionPhone = `+96776${crypto.randomInt(1_000_000, 9_999_999)}`;
 const correctionCreated = await request(dshBase, "POST", "/dsh/joining-cases", { token: dshToken, headers: serviceHeaders(actingOperatorID, `joining-correction-${suffix}`), body: { contactPhoneE164: correctionPhone, businessName: "Correction business", firstStoreName: "Correction store", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
-if (correctionCreated.status !== 201 || correctionCreated.body?.case?.state !== "draft" || correctionCreated.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || correctionCreated.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("correction joining case creation did not preserve the fixed store origin", JSON.stringify(correctionCreated));
+if (correctionCreated.status !== 201 || correctionCreated.body?.case?.state !== "draft" || correctionCreated.body?.case?.origin !== "control_panel" || correctionCreated.body?.case?.firstStoreLatitude !== firstStoreOrigin.firstStoreLatitude || correctionCreated.body?.case?.firstStoreLongitude !== firstStoreOrigin.firstStoreLongitude) fail("control-panel correction case creation did not preserve provenance or fixed store origin", JSON.stringify(correctionCreated));
 const correctionCaseID = String(correctionCreated.body.case.id); caseIDs.add(correctionCaseID);
 const correctionSubmitted = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/submit`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `submit-correction-${suffix}`, crypto.randomUUID(), 1) });
 if (correctionSubmitted.status !== 200 || correctionSubmitted.body?.case?.state !== "submitted" || !correctionSubmitted.body?.case?.partnerActorId) fail("correction joining case submission failed", JSON.stringify(correctionSubmitted));
@@ -502,6 +505,15 @@ const correctionRoleEnable = await request(dshBase, "POST", `/dsh/partners/${enc
 const approvedAfterReenable = await request(dshBase, "POST", `/dsh/joining-cases/${correctionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `approve-reenable-${suffix}`, crypto.randomUUID(), 4), body: { decision: "approved" } });
 if (correctionRoleBeforeDisable.status !== 200 || correctionRoleDisable.status !== 204 || correctionRoleAfterDisable.status !== 200 || correctionRoleEnable.status !== 204 || approvedAfterReenable.status !== 200 || approvedAfterReenable.body?.case?.state !== "approved" || approvedAfterReenable.body?.case?.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || approvedAfterReenable.body?.case?.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude || approvedAfterReenable.body?.case?.store?.deliveryOrigin?.latitude !== correctedStoreOrigin.firstStoreLatitude || approvedAfterReenable.body?.case?.store?.deliveryOrigin?.longitude !== correctedStoreOrigin.firstStoreLongitude) fail("Partner re-enable did not honor the submitted joining lifecycle or corrected store origin", JSON.stringify({ correctionRoleBeforeDisable, correctionRoleDisable, correctionRoleAfterDisable, correctionRoleEnable, approvedAfterReenable }));
 storeIDs.add(String(approvedAfterReenable.body.case.store.id));
+const fieldCorrectionPhone = `+96777${crypto.randomInt(1_000_000, 9_999_999)}`;
+const fieldCorrectionCreated = await request(dshBase, "POST", "/dsh/field/joining-cases", { token: secondFieldAccessToken, headers: { "X-Correlation-ID": crypto.randomUUID(), "Idempotency-Key": `field-correction-${suffix}` }, body: { contactPhoneE164: fieldCorrectionPhone, businessName: "Field correction business", firstStoreName: "Field correction store", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...firstStoreOrigin } });
+const fieldCorrectionCaseID = String(fieldCorrectionCreated.body?.case?.id || "");
+if (fieldCorrectionCreated.status !== 201 || fieldCorrectionCreated.body?.case?.origin !== "field" || fieldCorrectionCreated.body?.case?.state !== "draft") fail("Field correction fixture creation did not preserve provenance", JSON.stringify(fieldCorrectionCreated));
+caseIDs.add(fieldCorrectionCaseID);
+const fieldCorrectionSubmitted = await request(dshBase, "POST", `/dsh/field/joining-cases/${fieldCorrectionCaseID}/submit`, { token: secondFieldAccessToken, headers: partnerHeaders(`field-correction-submit-${suffix}`, 1) });
+const fieldNeedsCorrection = await request(dshBase, "POST", `/dsh/joining-cases/${fieldCorrectionCaseID}/review`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-needs-correction-${suffix}`, crypto.randomUUID(), 2), body: { decision: "needs_correction", correctionReason: "أكمل بيانات ملف الميداني" } });
+const fieldCorrected = await request(dshBase, "POST", `/dsh/field/joining-cases/${fieldCorrectionCaseID}/correct-and-resubmit`, { token: secondFieldAccessToken, headers: partnerHeaders(`field-correction-resubmit-${suffix}`, 3), body: { businessName: "Field correction business fixed", firstStoreName: "Field correction store fixed", serviceCityId: cityA, firstStoreVerticalId: verticalID, ...correctedStoreOrigin } });
+if (fieldCorrectionCreated.status !== 201 || fieldCorrectionSubmitted.status !== 200 || fieldNeedsCorrection.status !== 200 || fieldNeedsCorrection.body?.case?.state !== "needs_correction" || fieldCorrected.status !== 200 || fieldCorrected.body?.case?.origin !== "field" || fieldCorrected.body?.case?.state !== "submitted" || fieldCorrected.body?.case?.version !== 4 || fieldCorrected.body?.case?.firstStoreLatitude !== correctedStoreOrigin.firstStoreLatitude || fieldCorrected.body?.case?.firstStoreLongitude !== correctedStoreOrigin.firstStoreLongitude) fail("Field correction did not return to the originating Field writer", JSON.stringify({ fieldCorrectionCreated, fieldCorrectionSubmitted, fieldNeedsCorrection, fieldCorrected }));
 console.log("DSH_JOINING_CASE_VERTICAL=PASS");
 console.log("DSH_JOINING_CASE_CORRECTION=PASS");
 

@@ -66,6 +66,9 @@ func (s *Service) Submit(ctx context.Context, caseID string, expectedVersion int
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
+	if current.Case.Origin != "control_panel" {
+		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
+	}
 	if current.Case.State != "draft" {
 		if current.Case.PartnerActorID == "" {
 			return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState

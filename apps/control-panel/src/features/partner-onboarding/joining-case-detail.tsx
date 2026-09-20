@@ -58,7 +58,7 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
 
   async function submitCase() {
     const current = result?.case;
-    if (current?.state !== "draft") return;
+    if (current?.state !== "draft" || current.origin !== "control_panel") return;
     setBusy(true);
     setError("");
     try {
@@ -183,13 +183,15 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>المجال التجاري</dt><dd>{verticalName}</dd></div>
               <div><dt>خط العرض</dt><dd dir="ltr">{current.firstStoreLatitude ?? "غير مسجل"}</dd></div>
               <div><dt>خط الطول</dt><dd dir="ltr">{current.firstStoreLongitude ?? "غير مسجل"}</dd></div>
+              <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : "لوحة التحكم"}</dd></div>
               <div><dt>نسخة الحالة</dt><dd>{current.version}</dd></div>
             </dl>
             {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
           </div>
           <div className="managed-status managed-status-info">
             <strong>العمليات المتاحة</strong>
-            {current.state === "draft" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
+            {current.state === "draft" && current.origin === "field" ? <p>المسودة قيد استكمال تطبيق الميداني، وهو المسار الوحيد المسموح بإرسالها للمراجعة.</p> : null}
+            {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
             {current.state === "submitted" ? <>
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
               <button type="button" className="button button-primary" disabled={busy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر</button>
