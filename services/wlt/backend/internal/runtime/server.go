@@ -19,14 +19,6 @@ type statusResponse struct {
 	Status  string `json:"status"`
 }
 
-func Run(service, prefix, defaultPort string) error {
-	return RunWithRoutesAndReadiness(service, prefix, defaultPort, nil, nil)
-}
-
-func RunWithRoutes(service, prefix, defaultPort string, register func(*http.ServeMux)) error {
-	return RunWithRoutesAndReadiness(service, prefix, defaultPort, register, nil)
-}
-
 func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register func(*http.ServeMux), readiness func(context.Context) error) error {
 	if err := requireOrdinaryRuntimeEnvironment(os.Getenv("BTHWANI_ENV")); err != nil {
 		return err
@@ -35,8 +27,7 @@ func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register fun
 	if port == "" {
 		port = defaultPort
 	}
-	listenHost := strings.TrimSpace(os.Getenv("BTHWANI_LISTEN_HOST"))
-
+	host := strings.TrimSpace(os.Getenv("BTHWANI_LISTEN_HOST"))
 	mux := http.NewServeMux()
 	writeStatus := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -44,7 +35,7 @@ func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register fun
 	}
 	writeReadiness := func(w http.ResponseWriter, r *http.Request) {
 		if readiness != nil {
-			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
 			if err := readiness(ctx); err != nil {
 				w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -55,35 +46,23 @@ func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register fun
 		}
 		writeStatus(w, r)
 	}
-
 	mux.HandleFunc(prefix+"/health", writeStatus)
 	mux.HandleFunc(prefix+"/readiness", writeReadiness)
 	if register != nil {
 		register(mux)
 	}
-
-	server := &http.Server{
-		Addr:              net.JoinHostPort(listenHost, port),
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
-
+	server := &http.Server{Addr: net.JoinHostPort(host, port), Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {
 		return err
 	}
-
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("%s API listening on %s", service, server.Addr)
 		errCh <- server.Serve(listener)
 	}()
-
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

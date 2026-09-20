@@ -66,7 +66,7 @@ function Read-RunningBackendServices{
 }
 
 function Ensure-Backend{
-    $required=@('postgres','mailpit','identity','dsh')
+    $required=@('postgres','mailpit','identity','dsh','wlt')
     Compose @('up','-d','--build','--wait','--wait-timeout','300','--remove-orphans')
     $running=@(Read-RunningBackendServices)
     $missing=@($required|Where-Object{$running-notcontains$_})

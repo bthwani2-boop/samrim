@@ -1731,7 +1731,7 @@ components:
 
     CatalogStoreOffer:
       type: object
-      required: [offerId, storeId, variantId, productId, productName, measurementKind, baseUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, availability, publicationState, modifierGroups, version, createdAt, updatedAt]
+      required: [offerId, storeId, variantId, productId, productName, measurementKind, baseUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, availability, publicationState, media, modifierGroups, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         offerId:
@@ -1789,6 +1789,10 @@ components:
           type: boolean
         publicationState:
           $ref: "#/components/schemas/StoreOfferPublicationState"
+        media:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogMedia"
         modifierGroups:
           type: array
           items:

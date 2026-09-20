@@ -144,5 +144,54 @@ services:
       start_period: 30s
       start_interval: 2s
 
+  wlt-migrate:
+    image: samrim-local-wlt:dev
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BTHWANI_ENV: "development"
+      WLT_MIGRATION_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
+      BTHWANI_EXPECTED_DATABASE_PORT: "5432"
+      BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
+      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
+      WLT_MIGRATION_DIR: "/app/migrations"
+    entrypoint: ["/migrate"]
+
+  wlt:
+    image: samrim-local-wlt:dev
+    restart: unless-stopped
+    build:
+      context: ../../..
+      dockerfile: services/wlt/backend/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      wlt-migrate:
+        condition: service_completed_successfully
+    environment:
+      PORT: "8083"
+      BTHWANI_LISTEN_HOST: "0.0.0.0"
+      BTHWANI_ENV: "development"
+      WLT_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      WLT_SCHEMA_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
+      BTHWANI_EXPECTED_DATABASE_HOST: "postgres"
+      BTHWANI_EXPECTED_DATABASE_PORT: "5432"
+      BTHWANI_EXPECTED_DATABASE_NAME: "${SAMRIM_POSTGRES_DB}"
+      BTHWANI_EXPECTED_DATABASE_USER: "${SAMRIM_POSTGRES_USER}"
+      WLT_MIGRATION_DIR: "/app/migrations"
+      WLT_DSH_SERVICE_TOKEN: "${WLT_DSH_SERVICE_TOKEN}"
+    ports:
+      - "127.0.0.1:${SAMRIM_WLT_PORT:-18083}:8083"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8083/wlt/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 2s
+
 volumes:
   samrim-postgres-data:

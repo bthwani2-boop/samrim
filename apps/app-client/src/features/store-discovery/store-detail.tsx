@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSearchField, BthwaniSec
 import { formatMoney, type PublicCatalogResponse, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { addCatalogOfferToCart, readPublicStoreCatalog, readPublishedStore } from "./store-discovery-client";
@@ -158,8 +158,10 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     const quantity = quantities[offer.offerId] ?? String(offer.quantityMinBaseUnits);
     const busy = busyOfferId === offer.offerId;
     const modifierError = validateModifierSelection(offer, selectedOptions);
+    const primaryMedia = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
     return (
       <BthwaniSurface key={offer.offerId} tone="base" style={styles.item}>
+        {primaryMedia ? <Image accessibilityLabel={`صورة ${offer.productName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${offer.productName}`} style={styles.productImagePlaceholder}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
         <View style={styles.itemHeader}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{offer.productName}</Text><Text style={styles.muted}>{offer.measurementKind === "DISCRETE" ? "بالقطعة" : offer.baseUnit === "GRAM" ? "بالغرام" : "بالمليلتر"}</Text></View><Text style={styles.itemPrice}>{formatMoney(offer.priceMinor, offer.currency)}</Text></View>
         <Text style={styles.quantityHint}>الكمية: {formatQuantity(offer.baseUnit, offer.quantityMinBaseUnits)}–{formatQuantity(offer.baseUnit, offer.quantityMaxBaseUnits)} · الخطوة {formatQuantity(offer.baseUnit, offer.quantityStepBaseUnits)}</Text>
         <TextInput accessibilityLabel={`كمية ${offer.productName}`} editable={!mutationBusy} keyboardType="number-pad" onChangeText={(value) => setQuantities((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={quantity} style={[styles.quantityInput, mutationBusy && styles.disabledInput]} />
@@ -260,6 +262,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     sectionTitle: { ...typography.bodyStrong, color: theme.color },
     section: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     item: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    productImage: { backgroundColor: theme.surface, borderRadius: radius.md, height: 172, width: "100%" },
+    productImagePlaceholder: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.md, height: 172, justifyContent: "center", width: "100%" },
     itemHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
     itemCopy: { flex: 1, gap: spacing[1] },
     itemTitle: { ...typography.bodyStrong, color: theme.color },

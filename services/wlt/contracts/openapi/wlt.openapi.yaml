@@ -1,0 +1,137 @@
+openapi: 3.1.0
+info:
+  title: Samrim WLT Internal Payment API
+  version: 0.1.0
+  description: Canonical internal payment-intent and cash-collection boundary.
+servers:
+  - url: http://localhost:18083
+paths:
+  /wlt/v1/payment-intents:
+    post:
+      operationId: createPaymentIntent
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePaymentIntentRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+        '200':
+          description: Idempotent replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/payment-intents/{intentId}:
+    get:
+      operationId: readPaymentIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IntentId' }
+      responses:
+        '200':
+          description: Payment intent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/payment-intents/{intentId}/collect:
+    post:
+      operationId: collectPaymentIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IntentId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CollectPaymentIntentRequest' }
+      responses:
+        '200':
+          description: Collected payment intent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/payment-intents/{intentId}/cancel:
+    post:
+      operationId: cancelPaymentIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IntentId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelPaymentIntentRequest' }
+      responses:
+        '200':
+          description: Cancelled payment intent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+  parameters:
+    IntentId:
+      name: intentId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+  schemas:
+    CreatePaymentIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [externalReference, payerActorId, amountMinor, currency, method]
+      properties:
+        externalReference: { type: string, minLength: 1, maxLength: 128 }
+        payerActorId: { type: string, minLength: 1, maxLength: 128 }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        method: { type: string, const: CASH_ON_DELIVERY }
+    CollectPaymentIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [collectedAmountMinor, collectedByActorId]
+      properties:
+        collectedAmountMinor: { type: integer, minimum: 1 }
+        collectedByActorId: { type: string, minLength: 1, maxLength: 128 }
+        collectionReference: { type: string, maxLength: 128 }
+    CancelPaymentIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 256 }
+    PaymentIntent:
+      type: object
+      additionalProperties: false
+      required: [id, externalReference, payerActorId, amountMinor, currency, method, state, version, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        externalReference: { type: string }
+        payerActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        method: { type: string, const: CASH_ON_DELIVERY }
+        state: { type: string, enum: [REQUIRES_COLLECTION, COLLECTED, CANCELLED] }
+        version: { type: integer, minimum: 1 }
+        collectedAmountMinor: { type: integer, nullable: true }
+        collectedByActorId: { type: string, nullable: true }
+        collectionReference: { type: string, nullable: true }
+        collectedAt: { type: string, format: date-time, nullable: true }
+        cancellationReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PaymentIntentResponse:
+      type: object
+      additionalProperties: false
+      required: [paymentIntent, idempotentReplay]
+      properties:
+        paymentIntent: { $ref: '#/components/schemas/PaymentIntent' }
+        idempotentReplay: { type: boolean }

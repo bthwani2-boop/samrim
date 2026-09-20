@@ -1,0 +1,9 @@
+{
+  "name": "wlt",
+  "root": "services/wlt",
+  "projectType": "application",
+  "tags": [
+    "scope:wlt",
+    "type:service"
+  ]
+}
