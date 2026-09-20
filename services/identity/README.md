@@ -23,7 +23,7 @@ Operator
 
 Credentials are role-scoped. Customer and managed-role passwords cannot authenticate each other's roles even when they belong to the same `actor_id`; Operator has no password credential or normal SMS login path.
 
-For `BTHWANI_ENV=development` only, the HTTP composition registers a development-session convenience route. It can mint a normal role-scoped session only for an already-existing enabled actor/role with actor security enabled; it never creates actors, roles or credentials. Mobile and Control use it only when reusable local session state is missing or terminally invalid, keeping authentication ceremonies out of the normal local product-development loop while preserving the production authentication implementation unchanged.
+For `BTHWANI_ENV=development` only, the HTTP composition registers a development-session convenience route. It can mint a normal role-scoped session only for an already-existing enabled, security-enabled, authentication-ready actor/role whose canonical activation or enrollment is complete; it never creates actors, roles or credentials. Mobile and Control use it only when reusable local session state is missing or terminally invalid. Explicit logout or recovery remains signed out for that runtime instance, while a fresh runtime may resume development continuity. This keeps authentication ceremonies out of ordinary local product iteration without allowing the development shortcut to satisfy activation, enrollment, login, or recovery proof.
 
 Identity does not own DSH participant eligibility/assignment, partner/store membership/business scope, WLT finance, enterprise HR/personnel, a generic permissions engine, Tenant, AccessGrant, or cross-domain authorization scope.
 

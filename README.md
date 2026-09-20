@@ -39,7 +39,7 @@ pnpm control
 
 Each command enters the owning app package and keeps Expo Metro or Next attached to that terminal with Fast Refresh/HMR. Mobile applications are opened manually. Use pnpm scr only when device transport/reverse mappings or scrcpy are needed.
 
-In local development, Identity first restores the persisted real session. If that reusable session is absent or terminally invalid, the development-only Identity route issues a fresh real session for an existing enabled actor/role; it never creates actors or roles and is not registered outside `BTHWANI_ENV=development`. OTP, activation, Passkey and recovery remain product/security journeys, not prerequisites for ordinary screen and feature iteration.
+In local development, Identity first restores the persisted real session. If that reusable session is absent or terminally invalid, the development-only Identity route may issue a fresh role-scoped session only for an existing enabled, security-enabled, authentication-ready actor/role whose required activation or enrollment is already complete; it never creates actors, roles or credentials and is not registered outside `BTHWANI_ENV=development`. Explicit logout or recovery remains signed out within that runtime instance, while a fresh runtime can resume development continuity. OTP, activation, Passkey and recovery remain product/security journeys and the development shortcut never substitutes for proving them.
 
 Backend lifecycle remains explicit:
 

@@ -423,4 +423,63 @@ for (const [status, code, reason] of [[429, "RATE_LIMITED", "rate_limited"], [50
   assert.ok(loggedOut);
 }
 
-console.log(`MOBILE_TEST=PASS app=${app} cases=15+`);
+// Test 14: Development fallback authenticates a fresh runtime with no stored session
+{
+  const storage = new MockStorage();
+  let developmentCalls = 0;
+  const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "e".repeat(36), async () => {
+    developmentCalls += 1;
+    return samplePair;
+  });
+  const restored = await mgr.restore();
+  assert.equal(restored.kind, "authenticated");
+  assert.equal(developmentCalls, 1);
+}
+
+// Test 15: Explicit logout remains signed out in the same runtime
+{
+  const storage = new MockStorage({[`test.${app}.identity.session.v1`]: JSON.stringify({accessToken: samplePair.accessToken, refreshToken: samplePair.refreshToken})});
+  let developmentCalls = 0;
+  const mgr = new IdentitySessionManager({async logout() {}}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "f".repeat(36), async () => {
+    developmentCalls += 1;
+    return samplePair;
+  });
+  await mgr.logout();
+  const restored = await mgr.restore();
+  assert.equal(restored.kind, "signed_out");
+  assert.equal(restored.reason, "explicit_logout");
+  assert.equal(developmentCalls, 0);
+}
+
+// Test 16: Recovery intent remains signed out in the same runtime
+{
+  const storage = new MockStorage();
+  let developmentCalls = 0;
+  const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "g".repeat(36), async () => {
+    developmentCalls += 1;
+    return samplePair;
+  });
+  await mgr.adopt(samplePair);
+  const cleared = await mgr.clearLocalSession();
+  assert.equal(cleared.kind, "signed_out");
+  assert.equal(cleared.reason, "recovery");
+  const restored = await mgr.restore();
+  assert.equal(restored.kind, "signed_out");
+  assert.equal(restored.reason, "recovery");
+  assert.equal(developmentCalls, 0);
+}
+
+// Test 17: A new runtime can use development continuity again
+{
+  const storage = new MockStorage();
+  let developmentCalls = 0;
+  const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "h".repeat(36), async () => {
+    developmentCalls += 1;
+    return samplePair;
+  });
+  const restored = await mgr.restore();
+  assert.equal(restored.kind, "authenticated");
+  assert.equal(developmentCalls, 1);
+}
+
+console.log(`MOBILE_TEST=PASS app=${app} cases=19+`);
