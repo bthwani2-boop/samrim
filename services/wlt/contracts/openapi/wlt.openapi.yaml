@@ -84,6 +84,16 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CashLiabilityResponse' }
+  /wlt/v1/operator/cash-liability:
+    get:
+      operationId: listOperatorCashLiability
+      security: [{ serviceToken: [] }]
+      responses:
+        '200':
+          description: Bounded read of unremitted COD cash collected by Captains
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashLiabilityResponse' }
   /wlt/v1/payment-intents/{intentId}/remit:
     post:
       operationId: remitCashForPaymentIntent

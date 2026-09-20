@@ -229,6 +229,12 @@ func (c *Client) ListCashLiability(ctx context.Context, captainActorID string) (
 	return response, err
 }
 
+func (c *Client) ListOperatorCashLiability(ctx context.Context) (CashLiabilityResponse, error) {
+	var response CashLiabilityResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/operator/cash-liability", nil, "", "", 0, &response)
+	return response, err
+}
+
 func (c *Client) RemitCash(ctx context.Context, intentID, captainActorID string, amountMinor int64, remittanceReference string, expectedPaymentVersion int, idempotencyKey, correlationID string) (CashRemittance, bool, error) {
 	body := map[string]any{
 		"captainActorId":      strings.TrimSpace(captainActorID),

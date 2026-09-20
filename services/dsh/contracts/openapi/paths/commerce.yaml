@@ -585,6 +585,30 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/operator/cash-custody:
+    get:
+      operationId: listOperatorCashCustody
+      summary: Read the bounded COD cash-custody projection
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+      responses:
+        "200":
+          description: Bounded read of unremitted COD cash collected by Captains, owned by WLT.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CashLiabilityResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
   /dsh/stores/{storeId}/orders:
     get:
       operationId: listStoreOrders

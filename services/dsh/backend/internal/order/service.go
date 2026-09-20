@@ -149,6 +149,13 @@ func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID st
 	return postgres.ReadOperatorOperation(ctx, s.db, orderID)
 }
 
+func (s *Service) ListCashCustodyForOperator(ctx context.Context, actingActorID string) (wlt.CashLiabilityResponse, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return wlt.CashLiabilityResponse{}, err
+	}
+	return s.payment.ListOperatorCashLiability(ctx)
+}
+
 func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID, orderID, state string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
 	if err != nil {

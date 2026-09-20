@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
@@ -43,6 +44,7 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/orders/{orderId}/cancel", s.cancel)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}", s.readOperatorOperation)
+	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
@@ -101,6 +103,33 @@ func (s *OrderServer) readOperatorOperation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.OperatorOperationResponse{Operation: toOperatorOperation(operation)})
+}
+
+func (s *OrderServer) listOperatorCashCustody(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actingActorID == "" || len(actingActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	result, err := s.service.ListCashCustodyForOperator(r.Context(), actingActorID)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	items := make([]contract.CashLiabilityItem, 0, len(result.Items))
+	for _, item := range result.Items {
+		collectedAt, parseErr := time.Parse(time.RFC3339Nano, item.CollectedAt)
+		if parseErr != nil {
+			writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash liability timestamp is invalid")
+			return
+		}
+		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt})
+	}
+	writeJSON(w, http.StatusOK, contract.CashLiabilityResponse{Items: items, TotalAmountMinor: int(result.TotalAmountMinor)})
 }
 
 func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.OperatorOperation {

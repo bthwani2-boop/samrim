@@ -63,6 +63,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     ["/access", "الحسابات والأدوار"],
     ["/partners", "انضمام الشركاء"],
     ["/operations", "العمليات"],
+    ["/finance", "المالية"],
     ["/captains", "قبول الكباتن"],
     ["/fields", "قبول الميدان"],
     ["/catalog", "الكتالوج"],
@@ -73,7 +74,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     await expect(page.locator("#workspace-main")).toHaveCount(1, { timeout: 30_000 });
     await expect(page.locator("#workspace-main > main")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 30_000 });
-    const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "الوصول والأمان" : path === "/partners" ? "الشركاء والمتاجر" : path === "/operations" ? "العمليات" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج";
+    const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "الوصول والأمان" : path === "/partners" ? "الشركاء والمتاجر" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج";
     await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
   }
 });
@@ -300,6 +301,23 @@ test("operator operations uses the DSH read model and resource actions", async (
   await expect(page.getByRole("button", { name: "قراءة الصفحة التالية" })).toHaveCount(0);
   expect(requestedCursor).toBe("cursor-page-2");
   await expect(page.getByRole("textbox")).toHaveCount(0);
+});
+
+test("operator finance reads only the bounded COD cash-custody projection", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/finance/cash-custody", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [{ paymentIntentId: "payment-1", externalReference: "dsh-order-1", captainActorId: "act-captain-1", amountMinor: 12500, currency: "YER", paymentVersion: 3, collectedAt: "2026-09-20T08:00:00.000Z" }], totalAmountMinor: 12500 }),
+    });
+  });
+  await page.goto("/finance");
+  await expect(page.getByRole("heading", { name: "المالية" })).toBeVisible();
+  await expect(page.getByText("12,500 ريال يمني").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "النقد المحصل عند الاستلام" })).toBeVisible();
+  await expect(page.getByText("لا توجد هنا تسوية للتجار أو عمولات أو استردادات أو وسائل دفع إلكترونية.")).toBeVisible();
+  await expect(page.getByText("dsh-order-1")).toBeVisible();
 });
 
 test("operator admits a Field actor through the DSH-owned Field surface", async ({ page }) => {

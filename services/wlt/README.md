@@ -21,6 +21,7 @@ Endpoints:
 - `POST /wlt/v1/payment-intents/{intentId}/collect`
 - `POST /wlt/v1/payment-intents/{intentId}/cancel`
 - `GET /wlt/v1/captains/{captainActorId}/cash-liability`
+- `GET /wlt/v1/operator/cash-liability`
 - `POST /wlt/v1/payment-intents/{intentId}/remit`
 
 Health and readiness are available under `/wlt/health` and `/wlt/readiness`.

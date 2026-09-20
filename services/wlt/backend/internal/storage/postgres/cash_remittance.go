@@ -61,13 +61,29 @@ func ListCashLiability(ctx context.Context, db *sql.DB, captainActorID string, l
 	if db == nil || captainActorID == "" || limit < 1 || limit > 100 {
 		return CashLiabilityList{}, ErrRemittanceInvalidInput
 	}
-	rows, err := db.QueryContext(ctx, `
+	return listCashLiability(ctx, db, captainActorID, limit)
+}
+
+func ListAllCashLiability(ctx context.Context, db *sql.DB, limit int) (CashLiabilityList, error) {
+	if db == nil || limit < 1 || limit > 100 {
+		return CashLiabilityList{}, ErrRemittanceInvalidInput
+	}
+	return listCashLiability(ctx, db, "", limit)
+}
+
+func listCashLiability(ctx context.Context, db *sql.DB, captainActorID string, limit int) (CashLiabilityList, error) {
+	query := `
 		SELECT p.id, p.external_reference, p.collected_by_actor_id, p.amount_minor, p.currency, p.version, p.collected_at
 		FROM wlt.payment_intents p
 		LEFT JOIN wlt.cash_remittances r ON r.payment_intent_id = p.id
-		WHERE p.state='COLLECTED' AND p.collected_by_actor_id=$1 AND r.id IS NULL
-		ORDER BY p.collected_at ASC, p.id ASC
-		LIMIT $2`, captainActorID, limit)
+		WHERE p.state='COLLECTED' AND r.id IS NULL`
+	args := []any{limit}
+	if captainActorID != "" {
+		query += ` AND p.collected_by_actor_id=$1`
+		args = []any{captainActorID, limit}
+	}
+	query += ` ORDER BY p.collected_at ASC, p.id ASC LIMIT $` + fmt.Sprintf("%d", len(args))
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return CashLiabilityList{}, fmt.Errorf("list cash liability: %w", err)
 	}

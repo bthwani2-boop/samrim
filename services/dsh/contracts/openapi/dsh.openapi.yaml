@@ -216,6 +216,9 @@ paths:
   /dsh/operator/operations/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}"
 
+  /dsh/operator/cash-custody:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cash-custody"
+
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
 

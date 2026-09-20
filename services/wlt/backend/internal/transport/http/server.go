@@ -31,6 +31,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/collect", s.collect)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/cancel", s.cancel)
 	mux.HandleFunc("GET /wlt/v1/captains/{captainActorId}/cash-liability", s.cashLiability)
+	mux.HandleFunc("GET /wlt/v1/operator/cash-liability", s.operatorCashLiability)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/remit", s.remitCash)
 }
 
@@ -197,6 +198,22 @@ func (s *Server) cashLiability(w http.ResponseWriter, r *http.Request) {
 		writePaymentError(w, err)
 		return
 	}
+	writeCashLiability(w, result)
+}
+
+func (s *Server) operatorCashLiability(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ListAllCashLiability(r.Context(), s.db, 100)
+	if err != nil {
+		writePaymentError(w, err)
+		return
+	}
+	writeCashLiability(w, result)
+}
+
+func writeCashLiability(w http.ResponseWriter, result postgres.CashLiabilityList) {
 	items := make([]cashLiabilityItemJSON, 0, len(result.Items))
 	for _, item := range result.Items {
 		items = append(items, cashLiabilityItemJSON{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: item.CollectedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")})

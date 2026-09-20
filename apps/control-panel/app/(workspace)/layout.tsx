@@ -25,6 +25,7 @@ const workspaceDestinations = [
   },
   { href: "/captains", label: "الكباتن", section: "مسارات العمل", children: [] },
   { href: "/fields", label: "الميدان", section: "مسارات العمل", children: [] },
+  { href: "/finance", label: "المالية", section: "المال", children: [] },
   {
     href: "/catalog",
     label: "الكتالوج",
