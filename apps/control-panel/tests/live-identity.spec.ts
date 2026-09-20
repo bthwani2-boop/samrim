@@ -292,6 +292,14 @@ test("@live operator passkey registration, authentication and governed recovery 
   await page.getByText("حساب المشغل", { exact: true }).click();
   await page.getByRole("button", { name: "تسجيل الخروج" }).click();
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+  const cookiesAfterExplicitLogout = await page.context().cookies();
+  expect(cookiesAfterExplicitLogout.some((cookie) => cookie.name.endsWith("bt_identity_access") || cookie.name.endsWith("bt_identity_refresh"))).toBe(false);
+  expect(cookiesAfterExplicitLogout.find((cookie) => cookie.name.endsWith("bt_identity_device"))?.value).toBeTruthy();
+  const signedOutSession = await readBrowserSession(page);
+  expect(signedOutSession.status, JSON.stringify(signedOutSession.body)).toBe(401);
+  expect(signedOutSession.body.error.code).toBe("UNAUTHENTICATED");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await page.getByRole("button", { name: "الدخول بمفتاح المرور" }).click();
   await expect(page).toHaveURL(/\/workspace$/);
   await expect(page.getByText("حساب المشغل", { exact: true })).toBeVisible();

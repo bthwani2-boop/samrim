@@ -163,3 +163,21 @@ func TestRoleSessionReadyRequiresCanonicalEnrollmentFacts(t *testing.T) {
 		})
 	}
 }
+
+func TestSelectDevelopmentSessionActorFailsClosedOnAmbiguity(t *testing.T) {
+	unready := roleSessionReadiness{enabled: true, securityEnabled: true, activated: true}
+	ready := roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passkeyCredential: true}
+
+	selected, err := selectDevelopmentSessionActor("operator", "", "act_unready", unready)
+	if err != nil || selected != "" {
+		t.Fatalf("unready candidate selected=%q err=%v, want empty selection without error", selected, err)
+	}
+	selected, err = selectDevelopmentSessionActor("operator", selected, "act_first", ready)
+	if err != nil || selected != "act_first" {
+		t.Fatalf("single ready candidate selected=%q err=%v, want act_first", selected, err)
+	}
+	_, err = selectDevelopmentSessionActor("operator", selected, "act_second", ready)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("second ready candidate error=%v, want conflict", err)
+	}
+}

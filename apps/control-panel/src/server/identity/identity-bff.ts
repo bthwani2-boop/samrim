@@ -28,6 +28,14 @@ const refreshCookie = `${cookiePrefix}bt_identity_refresh`;
 const deviceCookie = `${cookiePrefix}bt_identity_device`;
 const refreshInFlight = new Map<string, Promise<ActorIdentity | null>>();
 
+type DevelopmentGlobal = typeof globalThis & {
+  __bthwaniDevelopmentOperatorLogoutSuppressions?: Set<string>;
+};
+const developmentGlobal = globalThis as DevelopmentGlobal;
+const developmentOperatorLogoutSuppressions =
+  developmentGlobal.__bthwaniDevelopmentOperatorLogoutSuppressions ??
+  (developmentGlobal.__bthwaniDevelopmentOperatorLogoutSuppressions = new Set<string>());
+
 function identityBaseUrl(): string {
   const explicit = process.env.IDENTITY_API_BASE_URL?.trim();
   if (explicit) return validateServiceUrl(explicit, "IDENTITY_API_BASE_URL");
@@ -77,6 +85,7 @@ async function writeTokens(pair: TokenPair, clientInstanceId: string): Promise<v
   store.set(accessCookie, pair.accessToken, { ...cookieOptions(), expires: new Date(pair.accessExpiresAt) });
   store.set(refreshCookie, pair.refreshToken, { ...cookieOptions(), maxAge: refreshCookieMaxAge() });
   store.set(deviceCookie, clientInstanceId, { ...cookieOptions(), maxAge: 365 * 24 * 60 * 60 });
+  developmentOperatorLogoutSuppressions.delete(clientInstanceId);
 }
 
 function isControlPanelRole(role: ActorType): role is ControlPanelRole {
@@ -87,17 +96,26 @@ function isControlPanelIdentity(identity: ActorIdentity): boolean {
   return isControlPanelRole(identity.role) && identity.surface === "control-panel" && identityAuthorizesSurface(identity, identity.role, "control-panel");
 }
 
-async function clearOperatorCookies(): Promise<void> {
+async function clearOperatorCookies(preserveDevice = false): Promise<void> {
   const store = await cookies();
-  for (const key of [accessCookie, refreshCookie, deviceCookie]) store.set(key, "", { ...cookieOptions(), maxAge: 0 });
+  const keys = preserveDevice ? [accessCookie, refreshCookie] : [accessCookie, refreshCookie, deviceCookie];
+  for (const key of keys) store.set(key, "", { ...cookieOptions(), maxAge: 0 });
 }
 
-async function clearOperatorCookiesBestEffort(): Promise<void> {
+async function clearOperatorCookiesBestEffort(preserveDevice = false): Promise<void> {
   try {
-    await clearOperatorCookies();
+    await clearOperatorCookies(preserveDevice);
   } catch {
     // A confirmed terminal session remains fail-closed even if cookie cleanup is unavailable.
   }
+}
+
+function suppressDevelopmentOperatorSession(clientInstanceId: string | undefined): boolean {
+  if (!developmentSessionEnabled()) return false;
+  const normalized = clientInstanceId?.trim();
+  if (!normalized || normalized.length < 8) return false;
+  developmentOperatorLogoutSuppressions.add(normalized);
+  return true;
 }
 
 function localSessionError(status: number, code: string, message: string): IdentityClientError {
@@ -198,6 +216,7 @@ export async function setIdentitySecurityEnabled(actorId: string, enabled: boole
 async function createDevelopmentOperatorSession(): Promise<ActorIdentity | null> {
   if (!developmentSessionEnabled()) return null;
   const clientInstanceId = await operatorClientInstanceId();
+  if (developmentOperatorLogoutSuppressions.has(clientInstanceId)) return null;
   try {
     const pair = await identityClient().developmentSession("operator", clientInstanceId);
     await writeTokens(pair, clientInstanceId);
@@ -213,6 +232,10 @@ export async function readOperatorSession(): Promise<ActorIdentity | null> {
   const accessToken = store.get(accessCookie)?.value;
   const refreshToken = store.get(refreshCookie)?.value;
   const clientInstanceId = store.get(deviceCookie)?.value;
+  if (developmentSessionEnabled() && clientInstanceId && developmentOperatorLogoutSuppressions.has(clientInstanceId)) {
+    await clearOperatorCookiesBestEffort(true);
+    return null;
+  }
   if (!accessToken && !refreshToken) return createDevelopmentOperatorSession();
 
   if (accessToken) {
@@ -277,7 +300,8 @@ export async function logoutOperator(): Promise<void> {
   const store = await cookies();
   const accessToken = store.get(accessCookie)?.value;
   const refreshToken = store.get(refreshCookie)?.value;
-  const clientInstanceId = store.get(deviceCookie)?.value;
+  let clientInstanceId = store.get(deviceCookie)?.value;
+  if (!clientInstanceId && developmentSessionEnabled()) clientInstanceId = await operatorClientInstanceId();
   let remoteError: unknown = null;
   let tokenToRevoke = accessToken;
 
@@ -299,7 +323,8 @@ export async function logoutOperator(): Promise<void> {
       }
     }
   } finally {
-    await clearOperatorCookiesBestEffort();
+    const preserveDevice = suppressDevelopmentOperatorSession(clientInstanceId);
+    await clearOperatorCookiesBestEffort(preserveDevice);
   }
   if (remoteError) throw remoteError;
 }

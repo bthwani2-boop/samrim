@@ -68,9 +68,10 @@ FOR UPDATE OF r,a`, role)
 			_ = rows.Close()
 			return domain.TokenPair{}, err
 		}
-		if roleSessionReady(role, readiness) {
-			actorID = candidateActorID
-			break
+		actorID, err = selectDevelopmentSessionActor(role, actorID, candidateActorID, readiness)
+		if err != nil {
+			_ = rows.Close()
+			return domain.TokenPair{}, err
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -118,6 +119,16 @@ func roleSessionReady(role string, readiness roleSessionReadiness) bool {
 	default:
 		return false
 	}
+}
+
+func selectDevelopmentSessionActor(role, selectedActorID, candidateActorID string, readiness roleSessionReadiness) (string, error) {
+	if !roleSessionReady(role, readiness) {
+		return selectedActorID, nil
+	}
+	if selectedActorID != "" {
+		return "", domain.ErrConflict
+	}
+	return candidateActorID, nil
 }
 
 func readRoleSessionReadinessTx(ctx context.Context, tx *sql.Tx, actorID, role string) (roleSessionReadiness, error) {

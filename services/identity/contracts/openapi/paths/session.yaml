@@ -35,7 +35,7 @@ paths:
     post:
       tags: [session]
       operationId: createDevelopmentSession
-      description: Development-only convenience for an existing enabled role. The route is not registered outside BTHWANI_ENV=development and never creates actors or roles.
+      description: Development-only convenience that mints a role-scoped session only when exactly one existing enabled, security-enabled, authentication-ready actor/role has completed its required activation or enrollment. The route is not registered outside BTHWANI_ENV=development, never creates actors or roles, and fails with 409 rather than selecting an actor when more than one candidate is ready.
       requestBody:
         required: true
         content:
@@ -56,3 +56,4 @@ paths:
         "400": { $ref: "#/components/responses/Invalid" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }

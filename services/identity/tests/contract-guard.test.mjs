@@ -6,6 +6,7 @@ const entry = fs.readFileSync(path.join(root, "contracts", "openapi", "identity.
 const pathDir = path.join(root, "contracts", "openapi", "paths");
 const modules = fs.readdirSync(pathDir).filter((name) => name.endsWith(".yaml")).map((name) => fs.readFileSync(path.join(pathDir, name), "utf8")).join("\n");
 const contract = entry + "\n" + modules;
+const sessionContract = fs.readFileSync(path.join(pathDir, "session.yaml"), "utf8");
 const failures = [];
 
 function requireText(value, message = value) { if (!contract.includes(value)) failures.push("missing " + message); }
@@ -35,6 +36,8 @@ if (contract.includes("#/components/responses/TokenPair")) {
 if (!contract.includes("additionalProperties: true")) failures.push("WebAuthn JSON object pass-through schema missing");
 if (!contract.includes("route is not registered outside BTHWANI_ENV=development")) failures.push("development session contract must remain explicitly environment-gated");
 if (!contract.includes("never creates actors or roles")) failures.push("development session contract must not authorize synthetic actor provisioning");
+if (!sessionContract.includes("exactly one")) failures.push("development session contract must require exactly one ready actor");
+if (!sessionContract.includes('\"409\": { $ref: \"#/components/responses/Conflict\" }')) failures.push("development session contract must expose ambiguity as 409 conflict");
 for (const file of ["identity-types.ts", "identity-operations.ts"]) {
   const body = fs.readFileSync(path.join(root, "clients", "generated", file), "utf8");
   if (!body.includes("Source Git graph SHA:")) failures.push(file + " lacks source graph provenance");
