@@ -1,6 +1,6 @@
 import { toAsciiDigits } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CaptainAssignment, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import { type CaptainAssignment, type CaptainDeliveryTask, type CashLiabilityItem, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, TextInput, View } from "react-native";
@@ -21,6 +21,9 @@ export function CaptainDeliveries() {
   const [deliveryProofCodes, setDeliveryProofCodes] = useState<Record<string, string>>({});
   const [locationError, setLocationError] = useState("");
   const [lastLocationUpdatedAt, setLastLocationUpdatedAt] = useState("");
+  const [cashLiability, setCashLiability] = useState<{ items: ReadonlyArray<CashLiabilityItem>; totalAmountMinor: number } | null>(null);
+  const [cashRemittanceReferences, setCashRemittanceReferences] = useState<Record<string, string>>({});
+  const [cashBusy, setCashBusy] = useState("");
   const activeAssignmentID = useMemo(() => assignments.find((assignment) => assignment.state === "in_custody")?.id ?? "", [assignments]);
 
   const load = useCallback(async () => {
@@ -41,6 +44,7 @@ export function CaptainDeliveries() {
         }
       }));
       setTasks(Object.fromEntries(taskEntries.filter((entry): entry is readonly [string, CaptainDeliveryTask] => entry !== null)));
+      setCashLiability(await api.readOwnCaptainCashLiability(token));
     } catch (cause) {
       console.error("DSH Captain deliveries readback failed", cause);
       setError("تعذر قراءة التوصيلات. أعد المحاولة.");
@@ -135,10 +139,31 @@ export function CaptainDeliveries() {
     }
   }
 
+  async function remitCash(item: CashLiabilityItem) {
+    const reference = cashRemittanceReferences[item.paymentIntentId]?.trim() ?? "";
+    if (cashBusy || !reference) {
+      setError("أدخل مرجع توريد العهدة قبل التأكيد.");
+      return;
+    }
+    setCashBusy(item.paymentIntentId);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      await captainClient().remitOwnCaptainCash(token, item.paymentIntentId, { amountMinor: item.amountMinor, remittanceReference: reference }, item.paymentVersion);
+      await load();
+    } catch (cause) {
+      console.error("WLT Captain cash remittance failed", cause);
+      setError("تعذر تسجيل توريد العهدة. أعد القراءة قبل المحاولة.");
+    } finally {
+      setCashBusy("");
+    }
+  }
+
   return (
     <View style={styles.container} accessibilityLabel="التوصيلات الحالية">
       <Text style={styles.title}>التوصيلات الحالية</Text>
       <Text style={styles.muted}>رتّب عملك من الاستلام إلى التسليم، وتعرّف على العائق قبل بدء الإجراء.</Text>
+      {cashLiability ? <View style={styles.summaryCard} accessibilityLabel="العهدة النقدية"><Text style={styles.sectionTitle}>العهدة النقدية غير المورّدة</Text><Text style={styles.warning}>الإجمالي: {formatMoney(cashLiability.totalAmountMinor, "YER")}</Text>{cashLiability.items.length === 0 ? <Text style={styles.muted}>لا توجد مبالغ معلّقة.</Text> : cashLiability.items.map((item) => { const reference = cashRemittanceReferences[item.paymentIntentId] ?? ""; return <View key={item.paymentIntentId} style={styles.task}><Text style={styles.cardTitle}>طلب {item.externalReference}</Text><Text style={styles.muted}>المبلغ: {formatMoney(item.amountMinor, item.currency)}</Text><TextInput accessibilityLabel={`مرجع توريد العهدة ${item.externalReference}`} onChangeText={(value) => setCashRemittanceReferences((current) => ({ ...current, [item.paymentIntentId]: value }))} value={reference} style={styles.input} placeholder="مرجع الإيصال أو التوريد" /><BthwaniButton busy={cashBusy === item.paymentIntentId} disabled={Boolean(cashBusy) || !reference.trim()} label="تأكيد توريد العهدة" onPress={() => void remitCash(item)} /></View>; })}</View> : null}
       {activeAssignmentID ? <Text accessibilityLiveRegion="polite" style={locationError ? styles.warning : styles.progress}>{locationError || (lastLocationUpdatedAt ? "الموقع المباشر مفعّل أثناء العهدة." : "جارٍ تفعيل الموقع المباشر أثناء العهدة…")}</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}

@@ -72,6 +72,35 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/captains/{captainActorId}/cash-liability:
+    get:
+      operationId: listCaptainCashLiability
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/CaptainActorId' }
+      responses:
+        '200':
+          description: Unremitted cash collected by the Captain
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashLiabilityResponse' }
+  /wlt/v1/payment-intents/{intentId}/remit:
+    post:
+      operationId: remitCashForPaymentIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IntentId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RemitCashRequest' }
+      responses:
+        '200':
+          description: Cash remittance recorded or idempotently replayed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashRemittanceResponse' }
 components:
   securitySchemes:
     serviceToken:
@@ -80,6 +109,11 @@ components:
   parameters:
     IntentId:
       name: intentId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    CaptainActorId:
+      name: captainActorId
       in: path
       required: true
       schema: { type: string, minLength: 1, maxLength: 128 }
@@ -134,4 +168,53 @@ components:
       required: [paymentIntent, idempotentReplay]
       properties:
         paymentIntent: { $ref: '#/components/schemas/PaymentIntent' }
+        idempotentReplay: { type: boolean }
+    RemitCashRequest:
+      type: object
+      additionalProperties: false
+      required: [captainActorId, amountMinor, remittanceReference]
+      properties:
+        captainActorId: { type: string, minLength: 1, maxLength: 128 }
+        amountMinor: { type: integer, minimum: 1 }
+        remittanceReference: { type: string, minLength: 1, maxLength: 128 }
+    CashLiabilityItem:
+      type: object
+      additionalProperties: false
+      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt]
+      properties:
+        paymentIntentId: { type: string }
+        externalReference: { type: string }
+        captainActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        paymentVersion: { type: integer, minimum: 1 }
+        collectedAt: { type: string, format: date-time }
+    CashLiabilityResponse:
+      type: object
+      additionalProperties: false
+      required: [items, totalAmountMinor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CashLiabilityItem' }
+        totalAmountMinor: { type: integer, minimum: 0 }
+    CashRemittance:
+      type: object
+      additionalProperties: false
+      required: [id, paymentIntentId, captainActorId, amountMinor, currency, remittanceReference, state, createdAt]
+      properties:
+        id: { type: string }
+        paymentIntentId: { type: string }
+        captainActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        remittanceReference: { type: string }
+        state: { type: string, const: REMITTED }
+        createdAt: { type: string, format: date-time }
+    CashRemittanceResponse:
+      type: object
+      additionalProperties: false
+      required: [cashRemittance, idempotentReplay]
+      properties:
+        cashRemittance: { $ref: '#/components/schemas/CashRemittance' }
         idempotentReplay: { type: boolean }

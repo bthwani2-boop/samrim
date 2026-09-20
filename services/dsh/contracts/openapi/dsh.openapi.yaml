@@ -242,6 +242,10 @@ paths:
 
   /dsh/captains/me/assignments:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments"
+  /dsh/captains/me/cash-liability:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1cash-liability"
+  /dsh/captains/me/cash-liability/{paymentIntentId}/remit:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1cash-liability~1{paymentIntentId}~1remit"
 
   /dsh/captains/me/assignments/{assignmentId}/delivery-task:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1delivery-task"
@@ -2863,6 +2867,96 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CaptainAssignment"
+
+    CashLiabilityItem:
+      type: object
+      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt]
+      additionalProperties: false
+      properties:
+        paymentIntentId:
+          type: string
+        externalReference:
+          type: string
+        captainActorId:
+          type: string
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        paymentVersion:
+          type: integer
+          minimum: 1
+        collectedAt:
+          type: string
+          format: date-time
+
+    CashLiabilityResponse:
+      type: object
+      required: [items, totalAmountMinor]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CashLiabilityItem"
+        totalAmountMinor:
+          type: integer
+          format: int64
+          minimum: 0
+
+    CaptainCashRemittanceRequest:
+      type: object
+      required: [amountMinor, remittanceReference]
+      additionalProperties: false
+      properties:
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+        remittanceReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    CaptainCashRemittance:
+      type: object
+      required: [id, paymentIntentId, captainActorId, amountMinor, currency, remittanceReference, state, createdAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        paymentIntentId:
+          type: string
+        captainActorId:
+          type: string
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        remittanceReference:
+          type: string
+        state:
+          type: string
+          const: REMITTED
+        createdAt:
+          type: string
+          format: date-time
+
+    CaptainCashRemittanceResponse:
+      type: object
+      required: [cashRemittance, idempotentReplay]
+      additionalProperties: false
+      properties:
+        cashRemittance:
+          $ref: "#/components/schemas/CaptainCashRemittance"
+        idempotentReplay:
+          type: boolean
 
     CaptainLocation:
       type: object

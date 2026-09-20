@@ -30,6 +30,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/payment-intents/{intentId}", s.read)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/collect", s.collect)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/cancel", s.cancel)
+	mux.HandleFunc("GET /wlt/v1/captains/{captainActorId}/cash-liability", s.cashLiability)
+	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/remit", s.remitCash)
 }
 
 type createRequest struct {
@@ -48,6 +50,12 @@ type collectRequest struct {
 
 type cancelRequest struct {
 	Reason string `json:"reason"`
+}
+
+type remitCashRequest struct {
+	CaptainActorID      string `json:"captainActorId"`
+	AmountMinor         int64  `json:"amountMinor"`
+	RemittanceReference string `json:"remittanceReference"`
 }
 
 type paymentIntentResponse struct {
@@ -71,6 +79,37 @@ type paymentIntentJSON struct {
 	CancellationReason   *string `json:"cancellationReason"`
 	CreatedAt            string  `json:"createdAt"`
 	UpdatedAt            string  `json:"updatedAt"`
+}
+
+type cashLiabilityItemJSON struct {
+	PaymentIntentID   string `json:"paymentIntentId"`
+	ExternalReference string `json:"externalReference"`
+	CaptainActorID    string `json:"captainActorId"`
+	AmountMinor       int64  `json:"amountMinor"`
+	Currency          string `json:"currency"`
+	PaymentVersion    int    `json:"paymentVersion"`
+	CollectedAt       string `json:"collectedAt"`
+}
+
+type cashLiabilityResponse struct {
+	Items            []cashLiabilityItemJSON `json:"items"`
+	TotalAmountMinor int64                   `json:"totalAmountMinor"`
+}
+
+type cashRemittanceJSON struct {
+	ID                  string `json:"id"`
+	PaymentIntentID     string `json:"paymentIntentId"`
+	CaptainActorID      string `json:"captainActorId"`
+	AmountMinor         int64  `json:"amountMinor"`
+	Currency            string `json:"currency"`
+	RemittanceReference string `json:"remittanceReference"`
+	State               string `json:"state"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type cashRemittanceResponse struct {
+	CashRemittance   cashRemittanceJSON `json:"cashRemittance"`
+	IdempotentReplay bool               `json:"idempotentReplay"`
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -149,6 +188,42 @@ func (s *Server) cancel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, paymentIntentResponse{PaymentIntent: toPaymentIntent(result), IdempotentReplay: replayed})
 }
 
+func (s *Server) cashLiability(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ListCashLiability(r.Context(), s.db, r.PathValue("captainActorId"), 100)
+	if err != nil {
+		writePaymentError(w, err)
+		return
+	}
+	items := make([]cashLiabilityItemJSON, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, cashLiabilityItemJSON{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: item.CollectedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")})
+	}
+	writeJSON(w, http.StatusOK, cashLiabilityResponse{Items: items, TotalAmountMinor: result.TotalAmountMinor})
+}
+
+func (s *Server) remitCash(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, expected, ok := versionedMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input remitCashRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.RemitCash(r.Context(), s.db, postgres.RemitCashInput{PaymentIntentID: r.PathValue("intentId"), CaptainActorID: input.CaptainActorID, AmountMinor: input.AmountMinor, RemittanceReference: input.RemittanceReference, ExpectedPaymentVersion: expected, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writePaymentError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cashRemittanceResponse{CashRemittance: toCashRemittance(result), IdempotentReplay: replayed})
+}
+
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
 	provided := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(r.Header.Get("Authorization")), "Bearer "))
 	if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.serviceToken)) != 1 {
@@ -206,6 +281,10 @@ func toPaymentIntent(item postgres.PaymentIntentRecord) paymentIntentJSON {
 	return result
 }
 
+func toCashRemittance(item postgres.CashRemittanceRecord) cashRemittanceJSON {
+	return cashRemittanceJSON{ID: item.ID, PaymentIntentID: item.PaymentIntentID, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, RemittanceReference: item.RemittanceReference, State: item.State, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -231,6 +310,12 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "STATE_CONFLICT", "payment intent state does not allow this operation")
 	case errors.Is(err, postgres.ErrAmountMismatch):
 		writeError(w, http.StatusBadRequest, "AMOUNT_MISMATCH", "collected amount must equal the payment intent amount")
+	case errors.Is(err, postgres.ErrRemittanceExists):
+		writeError(w, http.StatusConflict, "CASH_ALREADY_REMITTED", "cash for this payment intent was already remitted")
+	case errors.Is(err, postgres.ErrRemittanceIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different cash remittance facts")
+	case errors.Is(err, postgres.ErrRemittanceInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cash remittance input is invalid")
 	case errors.Is(err, postgres.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payment input is invalid")
 	default:

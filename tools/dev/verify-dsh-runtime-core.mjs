@@ -123,6 +123,8 @@ function cleanup() {
   }
   for (const paymentIntentID of paymentIntentIDs) {
     const value = sqlLiteral(paymentIntentID);
+    sql(`DELETE FROM wlt.cash_remittance_events WHERE payment_intent_id='${value}'`);
+    sql(`DELETE FROM wlt.cash_remittances WHERE payment_intent_id='${value}'`);
     sql(`DELETE FROM wlt.payment_intent_events WHERE intent_id='${value}'`);
     sql(`DELETE FROM wlt.payment_intents WHERE id='${value}'`);
   }
@@ -363,7 +365,9 @@ expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='fi
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "CHECK (((originating_field_actor_id IS NULL) OR (length(btrim(originating_field_actor_id)) > 0)))", "Field joining-case origin invariant is not canonical");
 expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name='originating_field_actor_id')", "t", "Field joining-case origin column is missing");
-  console.log("DSH_SCHEMA_V30=PASS");
+console.log("DSH_SCHEMA_V30=PASS");
+expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=2", "002_cash_remittances.sql", "WLT cash-remittance migration is not canonical");
+console.log("WLT_SCHEMA_V2=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -910,6 +914,18 @@ const locationIdempotencyCount = sql(`SELECT count(*) FROM dsh.captain_location_
 if (locationAuditCount !== "1" || locationIdempotencyCount !== "1") fail("Captain live-location audit/idempotency readback is incomplete", JSON.stringify({ locationAuditCount, locationIdempotencyCount }));
 console.log("DSH_LIVE_TRACKING=PASS");
 console.log("DSH_PAYMENT_COLLECTION=PASS");
+const cashLiabilityBeforeRemittance = await request(dshBase, "GET", "/dsh/captains/me/cash-liability", { token: captainAccessToken });
+const remittanceKey = `cash-remittance-${suffix}`;
+const remittanceReference = `vault-${suffix}`;
+const createdRemittance = await request(dshBase, "POST", `/dsh/captains/me/cash-liability/${encodeURIComponent(paymentIntentID)}/remit`, { token: captainAccessToken, headers: partnerHeaders(remittanceKey, collectedPaymentRead.body?.paymentIntent?.version), body: { amountMinor: 4200, remittanceReference } });
+const remittanceReplay = await request(dshBase, "POST", `/dsh/captains/me/cash-liability/${encodeURIComponent(paymentIntentID)}/remit`, { token: captainAccessToken, headers: partnerHeaders(remittanceKey, collectedPaymentRead.body?.paymentIntent?.version), body: { amountMinor: 4200, remittanceReference } });
+const remittanceKeyConflict = await request(dshBase, "POST", `/dsh/captains/me/cash-liability/${encodeURIComponent(paymentIntentID)}/remit`, { token: captainAccessToken, headers: partnerHeaders(remittanceKey, collectedPaymentRead.body?.paymentIntent?.version), body: { amountMinor: 4200, remittanceReference: "different-reference" } });
+const duplicateRemittance = await request(dshBase, "POST", `/dsh/captains/me/cash-liability/${encodeURIComponent(paymentIntentID)}/remit`, { token: captainAccessToken, headers: partnerHeaders(`cash-remittance-duplicate-${suffix}`, collectedPaymentRead.body?.paymentIntent?.version), body: { amountMinor: 4200, remittanceReference: "duplicate-reference" } });
+const cashLiabilityAfterRemittance = await request(dshBase, "GET", "/dsh/captains/me/cash-liability", { token: captainAccessToken });
+const remittanceAuditCount = sql(`SELECT count(*) FROM wlt.cash_remittance_events WHERE payment_intent_id='${sqlLiteral(paymentIntentID)}' AND event_type='CASH_REMITTED' AND idempotency_key='${sqlLiteral(remittanceKey)}' AND captain_actor_id='${sqlLiteral(captainActorID)}' AND amount_minor=4200`);
+const remittanceRowCount = sql(`SELECT count(*) FROM wlt.cash_remittances WHERE payment_intent_id='${sqlLiteral(paymentIntentID)}' AND captain_actor_id='${sqlLiteral(captainActorID)}' AND amount_minor=4200 AND remittance_reference='${sqlLiteral(remittanceReference)}'`);
+if (cashLiabilityBeforeRemittance.status !== 200 || cashLiabilityBeforeRemittance.body?.items?.length !== 1 || cashLiabilityBeforeRemittance.body.items[0]?.paymentIntentId !== paymentIntentID || cashLiabilityBeforeRemittance.body.items[0]?.amountMinor !== 4200 || createdRemittance.status !== 200 || createdRemittance.body?.cashRemittance?.paymentIntentId !== paymentIntentID || createdRemittance.body.cashRemittance.captainActorId !== captainActorID || createdRemittance.body.cashRemittance.amountMinor !== 4200 || createdRemittance.body.cashRemittance.state !== "REMITTED" || createdRemittance.body.cashRemittance.remittanceReference !== remittanceReference || remittanceReplay.status !== 200 || remittanceReplay.body?.idempotentReplay !== true || remittanceReplay.body.cashRemittance.id !== createdRemittance.body.cashRemittance.id || remittanceKeyConflict.status !== 409 || remittanceKeyConflict.body?.error?.code !== "IDEMPOTENCY_CONFLICT" || duplicateRemittance.status !== 409 || duplicateRemittance.body?.error?.code !== "CASH_ALREADY_REMITTED" || cashLiabilityAfterRemittance.status !== 200 || cashLiabilityAfterRemittance.body?.items?.length !== 0 || cashLiabilityAfterRemittance.body?.totalAmountMinor !== 0 || remittanceAuditCount !== "1" || remittanceRowCount !== "1") fail("Captain cash liability, remittance ownership, idempotency, or audit boundary failed", JSON.stringify({ cashLiabilityBeforeRemittance, createdRemittance, remittanceReplay, remittanceKeyConflict, duplicateRemittance, cashLiabilityAfterRemittance, remittanceAuditCount, remittanceRowCount }));
+console.log("DSH_CASH_REMITTANCE=PASS");
 const ratingBefore = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: client.accessToken });
 const partnerRatingBefore = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: first.accessToken });
 const ratingKey = `order-rating-${suffix}`;

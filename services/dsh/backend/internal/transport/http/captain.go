@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/captain"
@@ -42,6 +43,8 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/captains/me/offers", s.listOffers)
 	mux.HandleFunc("POST /dsh/captains/me/offers/{offerId}/respond", s.respondToOffer)
 	mux.HandleFunc("GET /dsh/captains/me/assignments", s.listAssignments)
+	mux.HandleFunc("GET /dsh/captains/me/cash-liability", s.readCashLiability)
+	mux.HandleFunc("POST /dsh/captains/me/cash-liability/{paymentIntentId}/remit", s.remitCash)
 	mux.HandleFunc("GET /dsh/captains/me/assignments/{assignmentId}/delivery-task", s.readDeliveryTask)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/location", s.updateLocation)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/pickup", s.pickup)
@@ -209,6 +212,54 @@ func (s *CaptainServer) listAssignments(w http.ResponseWriter, r *http.Request) 
 		items = append(items, toCaptainAssignment(assignment))
 	}
 	writeJSON(w, http.StatusOK, contract.CaptainAssignmentListResponse{Assignments: items})
+}
+
+func (s *CaptainServer) readCashLiability(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
+		return
+	}
+	liability, err := s.service.ReadCashLiability(r.Context(), bearerToken(r))
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	items := make([]contract.CashLiabilityItem, 0, len(liability.Items))
+	for _, item := range liability.Items {
+		collectedAt, parseErr := time.Parse(time.RFC3339Nano, item.CollectedAt)
+		if parseErr != nil {
+			writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash liability timestamp is invalid")
+			return
+		}
+		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt})
+	}
+	writeJSON(w, http.StatusOK, contract.CashLiabilityResponse{Items: items, TotalAmountMinor: int(liability.TotalAmountMinor)})
+}
+
+func (s *CaptainServer) remitCash(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
+		return
+	}
+	_, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok {
+		return
+	}
+	var input contract.CaptainCashRemittanceRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	remittance, replayed, err := s.service.RemitCash(r.Context(), bearerToken(r), r.PathValue("paymentIntentId"), int64(input.AmountMinor), input.RemittanceReference, expected, idempotency, correlation)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	createdAt, parseErr := time.Parse(time.RFC3339Nano, remittance.CreatedAt)
+	if parseErr != nil {
+		writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash remittance timestamp is invalid")
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainCashRemittanceResponse{CashRemittance: contract.CaptainCashRemittance{ID: remittance.ID, PaymentIntentID: remittance.PaymentIntentID, CaptainActorID: remittance.CaptainActorID, AmountMinor: int(remittance.AmountMinor), Currency: remittance.Currency, RemittanceReference: remittance.RemittanceReference, State: remittance.State, CreatedAt: createdAt}, IdempotentReplay: replayed})
 }
 
 func (s *CaptainServer) readDeliveryTask(w http.ResponseWriter, r *http.Request) {
@@ -502,6 +553,18 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 	case errors.Is(err, captain.ErrPaymentUnavailable):
 		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "cash collection is temporarily unavailable; the delivery was not finalized")
 	default:
+		var wltErr *wlt.Error
+		if errors.As(err, &wltErr) {
+			switch wltErr.Code {
+			case "INVALID_INPUT", "AMOUNT_MISMATCH":
+				writeError(w, http.StatusBadRequest, wltErr.Code, wltErr.Message)
+			case "CASH_ALREADY_REMITTED", "IDEMPOTENCY_CONFLICT", "VERSION_CONFLICT", "STATE_CONFLICT":
+				writeError(w, http.StatusConflict, wltErr.Code, wltErr.Message)
+			default:
+				writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash remittance is temporarily unavailable")
+			}
+			return
+		}
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {
 			writeIdentityError(w, err)

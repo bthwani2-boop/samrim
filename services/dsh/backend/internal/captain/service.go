@@ -164,6 +164,25 @@ func (s *Service) ListAssignments(ctx context.Context, accessToken string, limit
 	return postgres.ListCaptainAssignments(ctx, s.db, identity.Subject, limit)
 }
 
+func (s *Service) ReadCashLiability(ctx context.Context, accessToken string) (wlt.CashLiabilityResponse, error) {
+	identity, err := s.requireCaptain(ctx, accessToken)
+	if err != nil {
+		return wlt.CashLiabilityResponse{}, err
+	}
+	return s.payment.ListCashLiability(ctx, identity.Subject)
+}
+
+func (s *Service) RemitCash(ctx context.Context, accessToken, paymentIntentID string, amountMinor int64, remittanceReference string, expectedPaymentVersion int, idempotencyKey, correlationID string) (wlt.CashRemittance, bool, error) {
+	identity, err := s.requireCaptain(ctx, accessToken)
+	if err != nil {
+		return wlt.CashRemittance{}, false, err
+	}
+	if expectedPaymentVersion < 1 || amountMinor <= 0 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
+		return wlt.CashRemittance{}, false, ErrInvalidInput
+	}
+	return s.payment.RemitCash(ctx, paymentIntentID, identity.Subject, amountMinor, remittanceReference, expectedPaymentVersion, idempotencyKey, correlationID)
+}
+
 func (s *Service) ReadDeliveryTask(ctx context.Context, accessToken, assignmentID string) (postgres.CaptainDeliveryTask, error) {
 	identity, err := s.requireCaptain(ctx, accessToken)
 	if err != nil {

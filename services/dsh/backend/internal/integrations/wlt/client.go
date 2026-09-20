@@ -47,6 +47,37 @@ type paymentIntentResponse struct {
 	IdempotentReplay bool          `json:"idempotentReplay"`
 }
 
+type CashLiability struct {
+	PaymentIntentID   string `json:"paymentIntentId"`
+	ExternalReference string `json:"externalReference"`
+	CaptainActorID    string `json:"captainActorId"`
+	AmountMinor       int64  `json:"amountMinor"`
+	Currency          string `json:"currency"`
+	PaymentVersion    int    `json:"paymentVersion"`
+	CollectedAt       string `json:"collectedAt"`
+}
+
+type CashLiabilityResponse struct {
+	Items            []CashLiability `json:"items"`
+	TotalAmountMinor int64           `json:"totalAmountMinor"`
+}
+
+type CashRemittance struct {
+	ID                  string `json:"id"`
+	PaymentIntentID     string `json:"paymentIntentId"`
+	CaptainActorID      string `json:"captainActorId"`
+	AmountMinor         int64  `json:"amountMinor"`
+	Currency            string `json:"currency"`
+	RemittanceReference string `json:"remittanceReference"`
+	State               string `json:"state"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type cashRemittanceResponse struct {
+	CashRemittance   CashRemittance `json:"cashRemittance"`
+	IdempotentReplay bool           `json:"idempotentReplay"`
+}
+
 type Error struct {
 	Status  int
 	Code    string
@@ -190,6 +221,23 @@ func (c *Client) EnsureCancelled(ctx context.Context, intentID, reason, idempote
 		return current, nil
 	}
 	return PaymentIntent{}, err
+}
+
+func (c *Client) ListCashLiability(ctx context.Context, captainActorID string) (CashLiabilityResponse, error) {
+	var response CashLiabilityResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/captains/"+url.PathEscape(strings.TrimSpace(captainActorID))+"/cash-liability", nil, "", "", 0, &response)
+	return response, err
+}
+
+func (c *Client) RemitCash(ctx context.Context, intentID, captainActorID string, amountMinor int64, remittanceReference string, expectedPaymentVersion int, idempotencyKey, correlationID string) (CashRemittance, bool, error) {
+	body := map[string]any{
+		"captainActorId":      strings.TrimSpace(captainActorID),
+		"amountMinor":         amountMinor,
+		"remittanceReference": strings.TrimSpace(remittanceReference),
+	}
+	var response cashRemittanceResponse
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents/"+url.PathEscape(strings.TrimSpace(intentID))+"/remit", body, idempotencyKey, correlationID, expectedPaymentVersion, &response)
+	return response.CashRemittance, response.IdempotentReplay, err
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body any, idempotencyKey, correlationID string, expectedVersion int, target any) error {
