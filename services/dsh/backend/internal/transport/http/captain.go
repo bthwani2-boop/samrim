@@ -43,6 +43,7 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/captains/me/offers/{offerId}/respond", s.respondToOffer)
 	mux.HandleFunc("GET /dsh/captains/me/assignments", s.listAssignments)
 	mux.HandleFunc("GET /dsh/captains/me/assignments/{assignmentId}/delivery-task", s.readDeliveryTask)
+	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/location", s.updateLocation)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/pickup", s.pickup)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/complete", s.complete)
 	mux.HandleFunc("POST /dsh/captains/assignments/{assignmentId}/recover", s.recover)
@@ -245,6 +246,31 @@ func (s *CaptainServer) pickup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, contract.CaptainAssignmentResponse{Assignment: toCaptainAssignment(assignment), IdempotentReplay: replayed})
 }
 
+func (s *CaptainServer) updateLocation(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
+		return
+	}
+	_, correlation, idempotency, _, ok := captainHeaders(w, r, false)
+	if !ok {
+		return
+	}
+	if idempotency == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Idempotency-Key is required")
+		return
+	}
+	var input contract.CaptainLocationUpdateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.UpdateLocation(r.Context(), bearerToken(r), r.PathValue("assignmentId"), input.Latitude, input.Longitude, idempotency, correlation)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainLocationResponse{Location: toCaptainLocationSnapshot(result.Location), IdempotentReplay: result.Replayed})
+}
+
 func (s *CaptainServer) complete(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
@@ -438,6 +464,10 @@ func toCaptainAssignment(value postgres.CaptainAssignment) contract.CaptainAssig
 	return contract.CaptainAssignment{ID: value.ID, OrderID: value.OrderID, CaptainActorID: value.CaptainActorID, AcceptedOfferID: value.AcceptedOfferID, State: value.State, Version: value.Version, CustodyStartedAt: value.CustodyStartedAt, TerminalResult: value.TerminalResult, TerminalAt: value.TerminalAt, Handoff: contract.CaptainHandoff{AssignmentID: value.Handoff.AssignmentID, OrderID: value.Handoff.OrderID, StoreID: value.Handoff.StoreID, State: value.Handoff.State, Version: value.Handoff.Version, StoreConfirmedAt: value.Handoff.StoreConfirmedAt, CaptainPickedUpAt: value.Handoff.CaptainPickedUpAt}, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 
+func toCaptainLocationSnapshot(value postgres.CaptainLocationSnapshot) contract.CaptainLocationSnapshot {
+	return contract.CaptainLocationSnapshot{Latitude: value.Latitude, Longitude: value.Longitude, UpdatedAt: value.UpdatedAt}
+}
+
 func toCaptainOfferResponse(value postgres.CaptainOfferResult) contract.CaptainOfferResponse {
 	result := contract.CaptainOfferResponse{Offer: toCaptainOffer(value.Offer), IdempotentReplay: value.Replayed}
 	if value.Assignment != nil {
@@ -455,8 +485,14 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not permitted for this Captain operation")
 	case errors.Is(err, postgres.ErrCaptainAdmissionNotFound), errors.Is(err, postgres.ErrCaptainOfferNotFound), errors.Is(err, postgres.ErrCaptainAssignmentNotFound), errors.Is(err, postgres.ErrCaptainDeliveryTaskNotFound), errors.Is(err, postgres.ErrOrderNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain operational resource was not found")
+	case errors.Is(err, postgres.ErrCaptainLocationNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain location assignment was not found")
 	case errors.Is(err, postgres.ErrCaptainAdmissionExists), errors.Is(err, postgres.ErrCaptainAdmissionConflict), errors.Is(err, postgres.ErrCaptainOperationConflict), errors.Is(err, postgres.ErrCaptainDispatchConflict), errors.Is(err, postgres.ErrCaptainOfferConflict), errors.Is(err, postgres.ErrCaptainAssignmentConflict), errors.Is(err, postgres.ErrCaptainCustodyConflict), errors.Is(err, postgres.ErrCaptainTerminalConflict), errors.Is(err, postgres.ErrCaptainDeliveryTaskInvalid), errors.Is(err, captain.ErrManagedRoleNotEligible), errors.Is(err, captain.ErrManagedRoleVersionConflict), errors.Is(err, postgres.ErrCaptainNoAvailable), errors.Is(err, postgres.ErrCaptainOfferExpired), errors.Is(err, postgres.ErrCaptainOfferForbidden), errors.Is(err, postgres.ErrCaptainNotEligible), errors.Is(err, postgres.ErrCaptainVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain operational state or eligibility is stale or not actionable")
+	case errors.Is(err, captain.ErrLocationStateConflict):
+		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain location is only available while the assignment is in custody")
+	case errors.Is(err, captain.ErrLocationIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different location facts")
 	case errors.Is(err, postgres.ErrPaymentStateConflict):
 		writeError(w, http.StatusConflict, "PAYMENT_STATE_CONFLICT", "the order payment state is not actionable")
 	case errors.Is(err, captain.ErrCollectionAmountMismatch):

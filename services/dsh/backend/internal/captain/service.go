@@ -15,16 +15,18 @@ import (
 )
 
 var (
-	ErrInvalidInput               = errors.New("captain input is invalid")
-	ErrOperatorNotActive          = errors.New("operator is not active")
-	ErrCaptainSessionForbidden    = errors.New("an active app-captain session is required")
-	ErrPartnerSessionForbidden    = errors.New("an active app-partner session is required")
-	ErrManagedRoleClosed          = errors.New("managed role mutation is outside the DSH-owned domain boundary")
-	ErrManagedRoleNotEligible     = errors.New("managed role is not currently eligible in its owning domain")
-	ErrManagedRoleVersionConflict = errors.New("managed role version is stale")
-	ErrCaptainIdentityUnavailable = errors.New("captain identity was not provisioned")
-	ErrPaymentUnavailable         = errors.New("payment collection is unavailable")
-	ErrCollectionAmountMismatch   = errors.New("collected amount does not match the order amount")
+	ErrInvalidInput                = errors.New("captain input is invalid")
+	ErrOperatorNotActive           = errors.New("operator is not active")
+	ErrCaptainSessionForbidden     = errors.New("an active app-captain session is required")
+	ErrPartnerSessionForbidden     = errors.New("an active app-partner session is required")
+	ErrManagedRoleClosed           = errors.New("managed role mutation is outside the DSH-owned domain boundary")
+	ErrManagedRoleNotEligible      = errors.New("managed role is not currently eligible in its owning domain")
+	ErrManagedRoleVersionConflict  = errors.New("managed role version is stale")
+	ErrCaptainIdentityUnavailable  = errors.New("captain identity was not provisioned")
+	ErrPaymentUnavailable          = errors.New("payment collection is unavailable")
+	ErrCollectionAmountMismatch    = errors.New("collected amount does not match the order amount")
+	ErrLocationStateConflict       = errors.New("captain location is only publishable while the order is in custody")
+	ErrLocationIdempotencyConflict = errors.New("captain location idempotency key conflicts with a previous request")
 )
 
 var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
@@ -171,6 +173,24 @@ func (s *Service) ReadDeliveryTask(ctx context.Context, accessToken, assignmentI
 		return postgres.CaptainDeliveryTask{}, ErrInvalidInput
 	}
 	return postgres.ReadCaptainDeliveryTask(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject)
+}
+
+func (s *Service) UpdateLocation(ctx context.Context, accessToken, assignmentID string, latitude, longitude float64, idempotencyKey, correlationID string) (postgres.CaptainLocationResult, error) {
+	identity, err := s.requireCaptain(ctx, accessToken)
+	if err != nil {
+		return postgres.CaptainLocationResult{}, err
+	}
+	if !validMutation(idempotencyKey, correlationID, identity.Subject) || strings.TrimSpace(assignmentID) == "" {
+		return postgres.CaptainLocationResult{}, ErrInvalidInput
+	}
+	result, err := postgres.UpdateCaptainLocation(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, latitude, longitude, strings.TrimSpace(idempotencyKey), postgres.HashCaptainLocationRequest(assignmentID, latitude, longitude), strings.TrimSpace(correlationID))
+	if errors.Is(err, postgres.ErrCaptainLocationConflict) {
+		return postgres.CaptainLocationResult{}, ErrLocationStateConflict
+	}
+	if errors.Is(err, postgres.ErrCaptainLocationIdempotency) {
+		return postgres.CaptainLocationResult{}, ErrLocationIdempotencyConflict
+	}
+	return result, err
 }
 
 func (s *Service) Pickup(ctx context.Context, accessToken, assignmentID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {

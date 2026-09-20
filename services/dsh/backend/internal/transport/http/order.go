@@ -36,6 +36,7 @@ func NewOrder(identityClient *identityintegration.Client, accessToken string, db
 func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders", s.listClient)
 	mux.HandleFunc("GET /dsh/orders/{orderId}", s.read)
+	mux.HandleFunc("GET /dsh/orders/{orderId}/tracking", s.readTracking)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/cancel", s.cancel)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}", s.readOperatorOperation)
@@ -142,6 +143,28 @@ func (s *OrderServer) read(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item)})
+}
+
+func (s *OrderServer) readTracking(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	tracking, err := s.service.ReadTracking(r.Context(), bearerToken(r), r.PathValue("orderId"))
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	response := contract.OrderTrackingResponse{OrderID: tracking.OrderID, OrderState: contract.OrderState(tracking.OrderState), TrackingState: contract.OrderTrackingState(tracking.TrackingState)}
+	if tracking.AssignmentID != nil {
+		assignmentID := *tracking.AssignmentID
+		response.AssignmentID = &assignmentID
+	}
+	if tracking.CaptainLocation != nil {
+		location := toCaptainLocationSnapshot(*tracking.CaptainLocation)
+		response.CaptainLocation = &location
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *OrderServer) cancel(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,7 @@
 import { toAsciiDigits } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, type CaptainDeliveryTask, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
+import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, TextInput, View } from "react-native";
 
@@ -17,6 +18,9 @@ const theme = useAppearanceTheme();
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [collectionAmounts, setCollectionAmounts] = useState<Record<string, string>>({});
+  const [locationError, setLocationError] = useState("");
+  const [lastLocationUpdatedAt, setLastLocationUpdatedAt] = useState("");
+  const activeAssignmentID = useMemo(() => assignments.find((assignment) => assignment.state === "in_custody")?.id ?? "", [assignments]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,6 +49,57 @@ const theme = useAppearanceTheme();
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!activeAssignmentID) {
+      setLocationError("");
+      setLastLocationUpdatedAt("");
+      return;
+    }
+    let disposed = false;
+    let publishing = false;
+    let subscription: Location.LocationSubscription | undefined;
+    const publish = async (latitude: number, longitude: number) => {
+      if (publishing || disposed) return;
+      publishing = true;
+      try {
+        const token = await getUsableIdentityAccessToken();
+        const result = await captainClient().updateCaptainLocation(token, activeAssignmentID, latitude, longitude);
+        if (!disposed) {
+          setLastLocationUpdatedAt(result.location.updatedAt);
+          setLocationError("");
+        }
+      } catch (cause) {
+        console.warn("DSH Captain live location update failed", cause);
+        if (!disposed) setLocationError("تعذر تحديث الموقع. فعّل إذن الموقع وأعد المحاولة.");
+      } finally {
+        publishing = false;
+      }
+    };
+    const start = async () => {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (disposed) return;
+      if (permission.status !== "granted") {
+        setLocationError("اسمح بالوصول إلى الموقع أثناء استخدام التطبيق لتحديث رحلة التوصيل.");
+        return;
+      }
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      if (disposed) return;
+      await publish(current.coords.latitude, current.coords.longitude);
+      if (disposed) return;
+      subscription = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 30_000, distanceInterval: 100 }, (position) => {
+        void publish(position.coords.latitude, position.coords.longitude);
+      });
+    };
+    void start().catch((cause) => {
+      console.warn("DSH Captain live location setup failed", cause);
+      if (!disposed) setLocationError("تعذر تشغيل تحديث الموقع لهذه الرحلة.");
+    });
+    return () => {
+      disposed = true;
+      subscription?.remove();
+    };
+  }, [activeAssignmentID]);
 
   async function pickup(assignment: CaptainAssignment) {
     if (busy || assignment.state !== "assigned") return;
@@ -82,6 +137,7 @@ const theme = useAppearanceTheme();
     <View style={styles.container} accessibilityLabel="التوصيلات الحالية">
       <Text style={styles.title}>التوصيلات الحالية</Text>
       <Text style={styles.muted}>رتّب عملك من الاستلام إلى التسليم، وتعرّف على العائق قبل بدء الإجراء.</Text>
+      {activeAssignmentID ? <Text accessibilityLiveRegion="polite" style={locationError ? styles.warning : styles.progress}>{locationError || (lastLocationUpdatedAt ? "الموقع المباشر مفعّل أثناء العهدة." : "جارٍ تفعيل الموقع المباشر أثناء العهدة…")}</Text> : null}
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
       {!loading && !assignments.length ? <Text style={styles.muted}>لا توجد تكليفات.</Text> : null}

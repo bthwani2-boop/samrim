@@ -253,6 +253,36 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/orders/{orderId}/tracking:
+    get:
+      operationId: readClientOrderTracking
+      summary: Read the authenticated client's privacy-scoped live delivery tracking projection
+      security:
+        - userBearer: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Current order tracking state and latest available Captain location.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/OrderTrackingResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
   /dsh/orders/{orderId}/cancel:
     post:
       operationId: cancelClientOrder

@@ -180,6 +180,9 @@ paths:
   /dsh/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}"
 
+  /dsh/orders/{orderId}/tracking:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1tracking"
+
   /dsh/orders/{orderId}/cancel:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancel"
 
@@ -224,6 +227,9 @@ paths:
 
   /dsh/captains/me/assignments/{assignmentId}/delivery-task:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1delivery-task"
+
+  /dsh/captains/me/assignments/{assignmentId}/location:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1location"
 
   /dsh/captains/me/assignments/{assignmentId}/pickup:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1pickup"
@@ -2831,6 +2837,70 @@ components:
           type: number
           minimum: -180
           maximum: 180
+
+    CaptainLocationUpdateRequest:
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    CaptainLocationSnapshot:
+      type: object
+      required: [latitude, longitude, updatedAt]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        updatedAt:
+          type: string
+          format: date-time
+
+    CaptainLocationResponse:
+      type: object
+      required: [location, idempotentReplay]
+      additionalProperties: false
+      properties:
+        location:
+          $ref: "#/components/schemas/CaptainLocationSnapshot"
+        idempotentReplay:
+          type: boolean
+
+    OrderTrackingState:
+      type: string
+      enum: [NOT_ASSIGNED, AWAITING_LOCATION, LIVE, COMPLETED]
+
+    OrderTrackingResponse:
+      type: object
+      required: [orderId, orderState, trackingState, assignmentId, captainLocation]
+      additionalProperties: false
+      properties:
+        orderId:
+          type: string
+        orderState:
+          $ref: "#/components/schemas/OrderState"
+        trackingState:
+          $ref: "#/components/schemas/OrderTrackingState"
+        assignmentId:
+          type: string
+          nullable: true
+          x-go-pointer: true
+        captainLocation:
+          $ref: "#/components/schemas/CaptainLocationSnapshot"
+          nullable: true
 
     CaptainDeliveryTask:
       type: object

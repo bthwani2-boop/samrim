@@ -312,36 +312,38 @@ function goFieldName(name) {
 
 function goPropertyType(lines, optional, context) {
   const nullable = valueAfter(lines, "nullable:", 10) === "true";
+  const pointer = valueAfter(lines, "x-go-pointer:", 10) === "true";
+  const pointerType = pointer;
   const ref = valueAfter(lines, "$ref:", 10);
   if (ref) return nullable ? "*" + refType(ref) : refType(ref);
 
   const constant = valueAfter(lines, "const:", 10);
-  if (constant !== null) return "string";
+  if (constant !== null) return pointerType ? "*string" : "string";
 
   const enumValue = valueAfter(lines, "enum:", 10);
-  if (enumValue) return "string";
+  if (enumValue) return pointerType ? "*string" : "string";
 
   const type = valueAfter(lines, "type:", 10);
   if (type === "string") {
     const format = valueAfter(lines, "format:", 10);
-    if (format === "date-time") return optional ? "*time.Time" : "time.Time";
-    return "string";
+    if (format === "date-time") return pointer || optional ? "*time.Time" : "time.Time";
+    return pointerType ? "*string" : "string";
   }
-  if (type === "integer") return "int";
-  if (type === "number") return "float64";
-  if (type === "boolean") return "bool";
-  if (type === "object") return "map[string]any";
+  if (type === "integer") return pointerType ? "*int" : "int";
+  if (type === "number") return pointerType ? "*float64" : "float64";
+  if (type === "boolean") return pointerType ? "*bool" : "bool";
+  if (type === "object") return pointerType ? "*map[string]any" : "map[string]any";
   if (type === "array") {
     const itemsIndex = lines.findIndex((line) => line === "          items:");
     if (itemsIndex < 0) throw new Error(context + " array is missing items");
     const itemLines = lines.slice(itemsIndex + 1);
     const itemRef = valueAfter(itemLines, "$ref:", 12);
-    if (itemRef) return "[]" + refType(itemRef);
+    if (itemRef) return pointerType ? "*[]" + refType(itemRef) : "[]" + refType(itemRef);
     const itemType = valueAfter(itemLines, "type:", 12);
-    if (itemType === "string") return "[]string";
-    if (itemType === "integer") return "[]int";
-    if (itemType === "number") return "[]float64";
-    if (itemType === "boolean") return "[]bool";
+    if (itemType === "string") return pointerType ? "*[]string" : "[]string";
+    if (itemType === "integer") return pointerType ? "*[]int" : "[]int";
+    if (itemType === "number") return pointerType ? "*[]float64" : "[]float64";
+    if (itemType === "boolean") return pointerType ? "*[]bool" : "[]bool";
   }
   throw new Error(context + " has unsupported Go property type " + JSON.stringify(type));
 }

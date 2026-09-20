@@ -102,7 +102,7 @@ const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "s
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
-const expectsForegroundLocation = app === "app-client" || app === "app-partner";
+const expectsForegroundLocation = app === "app-client" || app === "app-partner" || app === "app-captain";
 const expoConfig = defineSamrimExpoApp(app, expectsForegroundLocation ? { locationMode: "foreground" } : {});
 assert.equal(expoConfig.extra.nativeCapabilities, undefined, `${app}: Expo config must not expose native capability shadow truth`);
 assert.equal(expoConfig.android.blockedPermissions, undefined, `${app}: manual RECORD_AUDIO workaround must be absent`);
