@@ -54,6 +54,9 @@ paths:
   /dsh/catalog/products/{productId}/media:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1media"
 
+  /dsh/catalog/products/{productId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1media~1upload"
+
   /dsh/catalog/products/{productId}/attributes/{attributeId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1attributes~1{attributeId}"
 
@@ -1329,6 +1332,18 @@ components:
           maxItems: 21
           items:
             $ref: "#/components/schemas/CatalogMedia"
+
+    UploadCatalogProductMediaRequest:
+      type: object
+      required: [role, file]
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum: [primary, gallery]
+        file:
+          type: string
+          format: binary
 
     CatalogProductResponse:
       type: object

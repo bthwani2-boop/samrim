@@ -24,6 +24,26 @@ services:
     ports:
       - "127.0.0.1:${SAMRIM_MAILPIT_WEB_PORT:-18026}:8025"
 
+  media:
+    image: chrislusf/seaweedfs:4.47
+    restart: unless-stopped
+    command: ["mini", "-dir=/data"]
+    environment:
+      AWS_ACCESS_KEY_ID: "${DSH_MEDIA_ACCESS_KEY:-samrim-media}"
+      AWS_SECRET_ACCESS_KEY: "${DSH_MEDIA_SECRET_KEY:-samrim-media-secret}"
+      S3_BUCKET: "${DSH_MEDIA_BUCKET:-samrim-catalog-media}"
+    ports:
+      - "127.0.0.1:${SAMRIM_MEDIA_PORT:-18333}:8333"
+    volumes:
+      - samrim-media-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+      start_interval: 2s
+
   identity-migrate:
     image: samrim-local-identity:dev
     restart: "no"
@@ -117,6 +137,8 @@ services:
     depends_on:
       identity:
         condition: service_healthy
+      media:
+        condition: service_healthy
       dsh-migrate:
         condition: service_completed_successfully
       wlt:
@@ -138,6 +160,12 @@ services:
       IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"
       CONTROL_PANEL_SERVICE_TOKEN: "${CONTROL_PANEL_SERVICE_TOKEN}"
       WLT_DSH_SERVICE_TOKEN: "${WLT_DSH_SERVICE_TOKEN}"
+      DSH_MEDIA_S3_ENDPOINT: "http://media:8333"
+      DSH_MEDIA_ACCESS_KEY: "${DSH_MEDIA_ACCESS_KEY:-samrim-media}"
+      DSH_MEDIA_SECRET_KEY: "${DSH_MEDIA_SECRET_KEY:-samrim-media-secret}"
+      DSH_MEDIA_BUCKET: "${DSH_MEDIA_BUCKET:-samrim-catalog-media}"
+      DSH_MEDIA_PUBLIC_BASE_URL: "${DSH_MEDIA_PUBLIC_BASE_URL:-http://127.0.0.1:18080/dsh/catalog/media}"
+      DSH_MEDIA_MAX_BYTES: "${DSH_MEDIA_MAX_BYTES:-10485760}"
     ports:
       - "127.0.0.1:${SAMRIM_DSH_PORT:-18080}:8080"
     healthcheck:
@@ -199,3 +227,4 @@ services:
 
 volumes:
   samrim-postgres-data:
+  samrim-media-data:

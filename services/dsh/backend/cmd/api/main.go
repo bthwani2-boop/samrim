@@ -7,9 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	serviceruntime "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/runtime"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/serviceability"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
@@ -30,6 +32,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	mediaStore, _, err := media.NewFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	mediaContext, mediaCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if err := mediaStore.EnsureBucket(mediaContext); err != nil {
+		mediaCancel()
+		log.Fatal(err)
+	}
+	mediaCancel()
 	database, err := postgres.Open(os.Getenv("DSH_DATABASE_URL"))
 	if err != nil {
 		log.Fatal(err)
@@ -47,10 +59,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	catalogServer, err := transporthttp.NewCatalog(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	catalogServer, err := transporthttp.NewCatalogWithMediaStore(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
 	}
+	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if err := catalogServer.ReconcileMediaStorage(cleanupContext); err != nil {
+		log.Printf("catalog media reconciliation deferred: %v", err)
+	}
+	cleanupCancel()
 	storePublicationServer, err := transporthttp.NewStorePublication(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)

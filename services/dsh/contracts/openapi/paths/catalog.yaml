@@ -220,6 +220,25 @@ paths:
       responses:
         "200": { description: Product media replacement readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
 
+  /dsh/catalog/products/{productId}/media/upload:
+    post:
+      operationId: uploadCatalogProductMedia
+      summary: Upload and atomically attach one Product image
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/UploadCatalogProductMediaRequest" } }
+      responses:
+        "200": { description: Product media upload readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+
   /dsh/catalog/products/{productId}/variants:
     post:
       operationId: createCatalogVariant

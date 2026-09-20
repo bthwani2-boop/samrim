@@ -536,6 +536,53 @@ test("operator replaces a product primary image and gallery through the canonica
   ] });
 });
 
+test("operator uploads a real product image through the catalog media control", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const product = {
+    id: "product_media_upload_test",
+    verticalId: "grocery",
+    scope: "SHARED",
+    canonicalName: "قهوة رفع الصور",
+    brand: null,
+    storeId: null,
+    active: true,
+    version: 1,
+    createdAt: "2026-09-12T00:00:00.000Z",
+    updatedAt: "2026-09-12T00:00:00.000Z",
+    variants: [{ id: "variant_media_upload_test", productId: "product_media_upload_test", title: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, version: 1, identifiers: [{ type: "SKU", value: "MEDIA-UPLOAD-TEST" }], attributes: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }],
+    categoryIds: ["coffee"],
+    attributes: [],
+    media: [{ uri: "https://example.com/coffee.jpg", role: "primary", ordinal: 0 }],
+  } as const;
+  let uploadContentType = "";
+  let uploadBody = "";
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
+  });
+  await page.route("**/api/catalog/categories**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
+  });
+  await page.route("**/api/catalog/products**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [product], nextCursor: "" }) });
+  });
+  await page.route("**/api/catalog/products/product_media_upload_test/media", async (route) => {
+    uploadContentType = route.request().headers()["content-type"] ?? "";
+    uploadBody = route.request().postDataBuffer()?.toString("latin1") ?? "";
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ product: { ...product, version: 2, media: [{ uri: "http://127.0.0.1:18080/dsh/catalog/media/catalog/products/product_media_upload_test/uploads/test.png", role: "primary", ordinal: 0 }] }, idempotentReplay: false }) });
+  });
+
+  await page.goto("/catalog/products");
+  await page.getByRole("button", { name: /قهوة رفع الصور/ }).click();
+  await page.getByLabel("ملف الصورة").setInputFiles({ name: "coffee.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+  await page.getByRole("button", { name: "رفع الصورة وربطها" }).click();
+
+  await expect(page.getByRole("status")).toContainText("تم رفع الصورة الأساسية وربطها بالمنتج.");
+  expect(uploadContentType).toContain("multipart/form-data");
+  expect(uploadBody).toContain('name="role"');
+  expect(uploadBody).toContain('name="file"');
+  expect(uploadBody).toContain("coffee.png");
+});
+
 test("operator resumes a canonical joining case from the DSH queue", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.route("**/api/partners/joining-cases?limit=50", async (route) => {

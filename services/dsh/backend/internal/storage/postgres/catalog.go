@@ -56,6 +56,19 @@ type CatalogMediaInput struct {
 	URI, Role string
 	Ordinal   int
 }
+type CatalogMediaAssetInput struct {
+	ID, ProductID, IdempotencyKey, ObjectKey, URI string
+	ContentSHA256, ContentType, Role              string
+	ExpectedVersion                               int
+	ByteSize                                      int64
+}
+type CatalogMediaAssetRecord struct {
+	ID, ProductID, IdempotencyKey, ObjectKey, URI string
+	ContentSHA256, ContentType, Role, State       string
+	ExpectedVersion                               int
+	ByteSize, CleanupAttempts                     int64
+	LastCleanupError                              *string
+}
 
 type CatalogAttributeValueRecord struct {
 	AttributeID, Code, ValueKind string
@@ -198,6 +211,9 @@ func HashCatalogMediaReplaceRequest(productID string, media []CatalogMediaInput,
 		facts = append(facts, item.URI, item.Role, strconv.Itoa(item.Ordinal))
 	}
 	return hashFacts(facts...)
+}
+func HashCatalogMediaUploadRequest(productID, role, contentSHA256 string, expectedVersion int) string {
+	return hashFacts("media-upload", productID, role, contentSHA256, strconv.Itoa(expectedVersion))
 }
 func HashCatalogVariantCreateRequest(input CatalogVariantInput) string {
 	return hashFacts("variant", input.ProductID, input.ID, input.Title, input.MeasurementKind, input.BaseUnit, strconv.FormatBool(input.Active), input.IdentifierType, input.IdentifierValue)
@@ -772,6 +788,14 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 }
 
 func ReplaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID string, media []CatalogMediaInput, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CatalogProductResult, error) {
+	return replaceCatalogProductMedia(ctx, db, productID, media, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, nil)
+}
+
+func ReplaceCatalogProductMediaWithAsset(ctx context.Context, db *sql.DB, productID string, media []CatalogMediaInput, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string, asset CatalogMediaAssetInput) (CatalogProductResult, error) {
+	return replaceCatalogProductMedia(ctx, db, productID, media, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, &asset)
+}
+
+func replaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID string, media []CatalogMediaInput, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string, asset *CatalogMediaAssetInput) (CatalogProductResult, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return CatalogProductResult{}, err
@@ -812,11 +836,36 @@ func ReplaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID strin
 	if current.Version != expectedVersion {
 		return CatalogProductResult{}, ErrCatalogVersionConflict
 	}
+	oldMedia, err := listCatalogMedia(ctx, tx, productID)
+	if err != nil {
+		return CatalogProductResult{}, err
+	}
 	if _, err = tx.ExecContext(ctx, "DELETE FROM dsh.catalog_media WHERE product_id=$1", productID); err != nil {
 		return CatalogProductResult{}, err
 	}
 	for _, item := range media {
 		if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_media(product_id,uri,media_role,ordinal) VALUES($1,$2,$3,$4)", productID, item.URI, item.Role, item.Ordinal); err != nil {
+			return CatalogProductResult{}, err
+		}
+	}
+	if asset != nil {
+		result, updateErr := tx.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET state='active', retired_at=NULL, cleaned_at=NULL, last_cleanup_error=NULL WHERE id=$1 AND product_id=$2 AND idempotency_key=$3 AND object_key=$4 AND uri=$5", asset.ID, asset.ProductID, asset.IdempotencyKey, asset.ObjectKey, asset.URI)
+		if updateErr != nil {
+			return CatalogProductResult{}, updateErr
+		}
+		if affected, affectedErr := result.RowsAffected(); affectedErr != nil || affected != 1 {
+			return CatalogProductResult{}, ErrCatalogMediaInvalid
+		}
+	}
+	newURIs := make(map[string]struct{}, len(media))
+	for _, item := range media {
+		newURIs[item.URI] = struct{}{}
+	}
+	for _, item := range oldMedia {
+		if _, retained := newURIs[item.URI]; retained {
+			continue
+		}
+		if _, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET state='retired', retired_at=COALESCE(retired_at,clock_timestamp()), last_cleanup_error=NULL WHERE product_id=$1 AND uri=$2 AND state='active'", productID, item.URI); err != nil {
 			return CatalogProductResult{}, err
 		}
 	}
@@ -841,6 +890,84 @@ func ReplaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID strin
 		return CatalogProductResult{}, err
 	}
 	return CatalogProductResult{Product: product}, nil
+}
+
+func RegisterCatalogMediaAssetPending(ctx context.Context, db *sql.DB, asset CatalogMediaAssetInput) (CatalogMediaAssetRecord, bool, error) {
+	if strings.TrimSpace(asset.ID) == "" || strings.TrimSpace(asset.ProductID) == "" || strings.TrimSpace(asset.IdempotencyKey) == "" || strings.TrimSpace(asset.ObjectKey) == "" || strings.TrimSpace(asset.URI) == "" || asset.ExpectedVersion < 1 || len(asset.ContentSHA256) != 64 || asset.ByteSize < 1 || asset.ByteSize > 10485760 || (asset.ContentType != "image/jpeg" && asset.ContentType != "image/png") || (asset.Role != "primary" && asset.Role != "gallery") {
+		return CatalogMediaAssetRecord{}, false, ErrCatalogMediaInvalid
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CatalogMediaAssetRecord{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-media-asset:idempotency:"+asset.IdempotencyKey); err != nil {
+		return CatalogMediaAssetRecord{}, false, err
+	}
+	stored, err := readCatalogMediaAssetByIdempotencyTx(ctx, tx, asset.IdempotencyKey)
+	if err == nil {
+		if stored.ProductID != asset.ProductID || stored.ExpectedVersion != asset.ExpectedVersion || stored.ObjectKey != asset.ObjectKey || stored.URI != asset.URI || stored.ContentSHA256 != asset.ContentSHA256 || stored.ContentType != asset.ContentType || stored.Role != asset.Role || stored.ByteSize != asset.ByteSize {
+			return CatalogMediaAssetRecord{}, false, ErrCatalogIdempotencyConflict
+		}
+		if stored.State == "failed" {
+			if _, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET state='pending', last_cleanup_error=NULL WHERE id=$1", stored.ID); err != nil {
+				return CatalogMediaAssetRecord{}, false, err
+			}
+			stored.State = "pending"
+		}
+		if err = tx.Commit(); err != nil {
+			return CatalogMediaAssetRecord{}, false, err
+		}
+		return stored, stored.State == "active", nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return CatalogMediaAssetRecord{}, false, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_media_assets(id,product_id,idempotency_key,expected_version,object_key,uri,content_sha256,content_type,byte_size,media_role,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending')", asset.ID, asset.ProductID, asset.IdempotencyKey, asset.ExpectedVersion, asset.ObjectKey, asset.URI, asset.ContentSHA256, asset.ContentType, asset.ByteSize, asset.Role); err != nil {
+		return CatalogMediaAssetRecord{}, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return CatalogMediaAssetRecord{}, false, err
+	}
+	return CatalogMediaAssetRecord{ID: asset.ID, ProductID: asset.ProductID, IdempotencyKey: asset.IdempotencyKey, ExpectedVersion: asset.ExpectedVersion, ObjectKey: asset.ObjectKey, URI: asset.URI, ContentSHA256: asset.ContentSHA256, ContentType: asset.ContentType, Role: asset.Role, State: "pending", ByteSize: asset.ByteSize}, false, nil
+}
+
+func MarkCatalogMediaAssetFailed(ctx context.Context, db *sql.DB, assetID, message string) error {
+	_, err := db.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET state='failed', cleanup_attempts=cleanup_attempts+1, last_cleanup_error=$2 WHERE id=$1 AND state<>'deleted'", assetID, strings.TrimSpace(message))
+	return err
+}
+
+func ListCatalogMediaAssetsForCleanup(ctx context.Context, db *sql.DB, limit int) ([]CatalogMediaAssetRecord, error) {
+	if limit < 1 || limit > 100 {
+		limit = 100
+	}
+	rows, err := db.QueryContext(ctx, "SELECT id,product_id,idempotency_key,expected_version,object_key,uri,content_sha256,content_type,byte_size,media_role,state,cleanup_attempts,last_cleanup_error FROM dsh.catalog_media_assets WHERE state IN ('retired','failed') OR (state='pending' AND created_at < clock_timestamp() - interval '10 minutes') ORDER BY created_at ASC LIMIT $1", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	assets := make([]CatalogMediaAssetRecord, 0)
+	for rows.Next() {
+		var asset CatalogMediaAssetRecord
+		if err := rows.Scan(&asset.ID, &asset.ProductID, &asset.IdempotencyKey, &asset.ExpectedVersion, &asset.ObjectKey, &asset.URI, &asset.ContentSHA256, &asset.ContentType, &asset.ByteSize, &asset.Role, &asset.State, &asset.CleanupAttempts, &asset.LastCleanupError); err != nil {
+			return nil, err
+		}
+		assets = append(assets, asset)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return assets, nil
+}
+
+func MarkCatalogMediaAssetDeleted(ctx context.Context, db *sql.DB, assetID string) error {
+	_, err := db.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET state='deleted', cleaned_at=clock_timestamp(), cleanup_attempts=cleanup_attempts+1, last_cleanup_error=NULL WHERE id=$1 AND state IN ('retired','failed','pending')", assetID)
+	return err
+}
+
+func MarkCatalogMediaAssetCleanupFailure(ctx context.Context, db *sql.DB, assetID, message string) error {
+	_, err := db.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET cleanup_attempts=cleanup_attempts+1, last_cleanup_error=$2 WHERE id=$1 AND state IN ('retired','failed','pending')", assetID, strings.TrimSpace(message))
+	return err
 }
 
 func CreateCatalogVariant(ctx context.Context, db *sql.DB, input CatalogVariantInput, idempotencyKey, requestHash, actingActorID, correlationID string) (CatalogVariantResult, error) {
@@ -1307,6 +1434,28 @@ func listCatalogMedia(ctx context.Context, db queryer, productID string) ([]Cata
 	}
 	return items, rows.Err()
 }
+
+func readCatalogMediaAssetByIdempotencyTx(ctx context.Context, db queryer, idempotencyKey string) (CatalogMediaAssetRecord, error) {
+	var asset CatalogMediaAssetRecord
+	var lastCleanupError sql.NullString
+	rows, err := db.QueryContext(ctx, "SELECT id,product_id,idempotency_key,expected_version,object_key,uri,content_sha256,content_type,byte_size,media_role,state,cleanup_attempts,last_cleanup_error FROM dsh.catalog_media_assets WHERE idempotency_key=$1", idempotencyKey)
+	if err != nil {
+		return asset, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return asset, err
+		}
+		return asset, sql.ErrNoRows
+	}
+	err = rows.Scan(&asset.ID, &asset.ProductID, &asset.IdempotencyKey, &asset.ExpectedVersion, &asset.ObjectKey, &asset.URI, &asset.ContentSHA256, &asset.ContentType, &asset.ByteSize, &asset.Role, &asset.State, &asset.CleanupAttempts, &lastCleanupError)
+	if lastCleanupError.Valid {
+		asset.LastCleanupError = &lastCleanupError.String
+	}
+	return asset, err
+}
+
 func readCatalogProductTx(ctx context.Context, tx *sql.Tx, id string) (CatalogProductRecord, error) {
 	item, err := readCatalogProductRow(tx.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1", id))
 	if errors.Is(err, sql.ErrNoRows) {

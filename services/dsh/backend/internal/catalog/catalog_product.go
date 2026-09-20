@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -22,6 +23,8 @@ var (
 	ErrCatalogProductNameInvalid       = errors.New("catalog Product name is invalid")
 	ErrCatalogProductIdentifierInvalid = errors.New("catalog Product identifier is invalid")
 	ErrCatalogProductImageInvalid      = errors.New("catalog Product image URL is invalid")
+	ErrCatalogMediaUploadInvalid       = errors.New("catalog Product media upload is invalid")
+	ErrCatalogMediaStorageUnavailable  = errors.New("catalog Product media storage is unavailable")
 	ErrCatalogProductScopeInvalid      = errors.New("catalog Product scope is invalid")
 	ErrCatalogProductVerticalInvalid   = errors.New("catalog Product vertical is invalid")
 	ErrCatalogVerticalInvalid          = errors.New("commerce vertical facts are invalid")
@@ -36,13 +39,18 @@ var verticalIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,127}$`)
 type Service struct {
 	identity *identityintegration.Client
 	db       *sql.DB
+	media    media.Store
 }
 
 func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
+	return NewWithMediaStore(identity, db, nil)
+}
+
+func NewWithMediaStore(identity *identityintegration.Client, db *sql.DB, mediaStore media.Store) (*Service, error) {
 	if identity == nil || db == nil {
 		return nil, errors.New("catalog configuration is invalid")
 	}
-	return &Service{identity: identity, db: db}, nil
+	return &Service{identity: identity, db: db, media: mediaStore}, nil
 }
 
 func (s *Service) ListProductsForPartner(ctx context.Context, accessToken, query, verticalID string, limit int, cursor string) (postgres.CatalogProductPage, error) {
@@ -224,7 +232,14 @@ func (s *Service) ReplaceCatalogProductMedia(ctx context.Context, actingActorID,
 	if productID == "" || expectedVersion < 1 {
 		return postgres.CatalogProductResult{}, postgres.ErrCatalogVersionConflict
 	}
-	return postgres.ReplaceCatalogProductMedia(ctx, s.db, productID, normalized, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogMediaReplaceRequest(productID, normalized, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	result, err := postgres.ReplaceCatalogProductMedia(ctx, s.db, productID, normalized, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogMediaReplaceRequest(productID, normalized, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if s.media != nil {
+		_ = s.ReconcileMediaStorage(ctx)
+	}
+	return result, nil
 }
 
 func (s *Service) ReadCatalogProduct(ctx context.Context, actingActorID, productID string) (postgres.CatalogProductRecord, error) {
