@@ -52,8 +52,12 @@ function sqlLiteral(value) { return String(value).replaceAll("'", "''"); }
 // SQL is limited to schema/readback assertions, bounded cleanup of IDs captured
 // by this run, and the one database-time fault injection below. Business fixtures
 // are created through canonical HTTP owners; this is not a SQL setup path.
+const postgresContainerID = compose("ps", "-aq", "postgres").trim();
 function sql(query) {
-  try { return execFileSync("docker", [...composeArgs, "exec", "-T", "postgres", "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim(); }
+  try {
+    if (!postgresContainerID) fail("postgres container is not present");
+    return execFileSync("docker", ["exec", postgresContainerID, "psql", "-U", required(env, "SAMRIM_POSTGRES_USER"), "-d", required(env, "SAMRIM_POSTGRES_DB"), "-Atc", query], { cwd: root, encoding: "utf8" }).trim();
+  }
   catch (error) { fail("database proof failed", String(error?.stderr || error?.message || error)); }
 }
 function expectSQL(query, expected, message) { const observed = sql(query); if (observed !== expected) fail(message, `expected=${expected} observed=${observed}`); }
@@ -1034,12 +1038,19 @@ if (afterHideA.status !== 200 || afterHideA.body?.stores?.some((store) => store.
 console.log("DSH_CATALOG_CROSS_STORE_READBACK=PASS");
 
 let outageFailure = "";
+const identityContainerID = compose("ps", "-aq", "identity").trim();
 try {
-  compose("stop", "identity");
+  if (!identityContainerID) throw new Error("identity container is not present");
+  execFileSync("docker", ["stop", identityContainerID], { cwd: root, encoding: "utf8" });
   const unavailable = await request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(cityB)}`, { timeoutMs: 15_000, allowNetworkError: true });
   if (unavailable.status !== 502 || unavailable.body?.error?.code !== "IDENTITY_UNAVAILABLE") outageFailure = `Identity outage did not fail closed: ${JSON.stringify(unavailable)}`;
 } finally {
-  try { compose("up", "-d", "identity"); } catch (error) { outageFailure ||= `Identity restart failed: ${String(error?.message || error)}`; }
+  if (!identityContainerID) {
+    outageFailure ||= "Identity restart failed: identity container is not present";
+  } else {
+    try { execFileSync("docker", ["start", identityContainerID], { cwd: root, encoding: "utf8" }); }
+    catch (error) { outageFailure ||= `Identity restart failed: ${String(error?.message || error)}`; }
+  }
 }
 if (outageFailure) fail(outageFailure);
 await waitForIdentityReady();
