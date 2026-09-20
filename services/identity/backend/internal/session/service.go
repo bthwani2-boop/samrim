@@ -46,19 +46,42 @@ func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var actorID string
-	err = tx.QueryRowContext(ctx, `SELECT r.actor_id
+	rows, err := tx.QueryContext(ctx, `SELECT r.actor_id,
+r.enabled,
+a.security_enabled,
+(r.activated_at IS NOT NULL),
+EXISTS(SELECT 1 FROM identity_password_credentials c WHERE c.actor_id=r.actor_id AND c.role=r.role),
+EXISTS(SELECT 1 FROM identity_webauthn_credentials w WHERE w.actor_id=r.actor_id AND w.revoked_at IS NULL)
 FROM identity_actor_roles r
 JOIN identity_actors a ON a.id=r.actor_id
-WHERE r.role=$1 AND r.enabled=true AND a.security_enabled=true
-ORDER BY CASE WHEN r.activated_at IS NOT NULL THEN 0 ELSE 1 END, r.created_at, r.actor_id
-LIMIT 1
-FOR UPDATE OF r,a`, role).Scan(&actorID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domain.TokenPair{}, domain.ErrNotFound
-	}
+WHERE r.role=$1
+ORDER BY r.created_at,r.actor_id
+FOR UPDATE OF r,a`, role)
 	if err != nil {
 		return domain.TokenPair{}, err
+	}
+	var actorID string
+	for rows.Next() {
+		var candidateActorID string
+		var readiness roleSessionReadiness
+		if err := rows.Scan(&candidateActorID, &readiness.enabled, &readiness.securityEnabled, &readiness.activated, &readiness.passwordCredential, &readiness.passkeyCredential); err != nil {
+			_ = rows.Close()
+			return domain.TokenPair{}, err
+		}
+		if roleSessionReady(role, readiness) {
+			actorID = candidateActorID
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return domain.TokenPair{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return domain.TokenPair{}, err
+	}
+	if actorID == "" {
+		return domain.TokenPair{}, domain.ErrNotFound
 	}
 	pair, err := s.createTx(ctx, tx, actorID, role, device)
 	if err != nil {
@@ -73,6 +96,44 @@ FOR UPDATE OF r,a`, role).Scan(&actorID)
 	return pair, nil
 }
 
+type roleSessionReadiness struct {
+	enabled            bool
+	securityEnabled    bool
+	activated          bool
+	passwordCredential bool
+	passkeyCredential  bool
+}
+
+func roleSessionReady(role string, readiness roleSessionReadiness) bool {
+	if !readiness.enabled || !readiness.securityEnabled {
+		return false
+	}
+	switch role {
+	case "client":
+		return readiness.passwordCredential
+	case "partner", "captain", "field":
+		return readiness.activated && readiness.passwordCredential
+	case "operator":
+		return readiness.activated && readiness.passkeyCredential
+	default:
+		return false
+	}
+}
+
+func readRoleSessionReadinessTx(ctx context.Context, tx *sql.Tx, actorID, role string) (roleSessionReadiness, error) {
+	var readiness roleSessionReadiness
+	err := tx.QueryRowContext(ctx, `SELECT r.enabled,
+a.security_enabled,
+(r.activated_at IS NOT NULL),
+EXISTS(SELECT 1 FROM identity_password_credentials c WHERE c.actor_id=r.actor_id AND c.role=r.role),
+EXISTS(SELECT 1 FROM identity_webauthn_credentials w WHERE w.actor_id=r.actor_id AND w.revoked_at IS NULL)
+FROM identity_actor_roles r
+JOIN identity_actors a ON a.id=r.actor_id
+WHERE r.actor_id=$1 AND r.role=$2
+FOR UPDATE OF r,a`, actorID, role).Scan(&readiness.enabled, &readiness.securityEnabled, &readiness.activated, &readiness.passwordCredential, &readiness.passkeyCredential)
+	return readiness, err
+}
+
 func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, clientInstanceId string) (domain.TokenPair, error) {
 	device, err := identitysecurity.NormalizeClientInstanceId(clientInstanceId)
 	if err != nil {
@@ -81,8 +142,14 @@ func (s *Service) CreateTx(ctx context.Context, tx *sql.Tx, actorID, role, clien
 	if _, ok := domain.SurfaceForRole(role); !ok {
 		return domain.TokenPair{}, domain.ErrForbidden
 	}
-	var enabled, securityEnabled bool
-	if err := tx.QueryRowContext(ctx, `SELECT r.enabled,a.security_enabled FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.actor_id=$1 AND r.role=$2 FOR UPDATE OF r,a`, actorID, role).Scan(&enabled, &securityEnabled); err != nil || !enabled || !securityEnabled {
+	readiness, err := readRoleSessionReadinessTx(ctx, tx, actorID, role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.TokenPair{}, domain.ErrUnauthenticated
+	}
+	if err != nil {
+		return domain.TokenPair{}, err
+	}
+	if !roleSessionReady(role, readiness) {
 		return domain.TokenPair{}, domain.ErrUnauthenticated
 	}
 	return s.createTx(ctx, tx, actorID, role, device)

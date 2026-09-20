@@ -228,6 +228,9 @@ export class IdentitySessionManager {
   }
 
   async restore(): Promise<IdentitySessionState> {
+    if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
+      return this.stateValue;
+    }
     this.transition({ kind: "restoring" });
 
     let raw: string | null;
@@ -282,6 +285,9 @@ export class IdentitySessionManager {
   }
 
   async refresh(): Promise<IdentitySessionState> {
+    if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
+      return this.stateValue;
+    }
     let storedSession: StoredSession | null;
     try {
       storedSession = parseStoredSession(await this.readStorage());

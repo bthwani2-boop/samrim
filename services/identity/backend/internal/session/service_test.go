@@ -135,3 +135,31 @@ func TestCreateDevelopmentSessionRejectsNonDevelopmentBeforeDatabaseAccess(t *te
 		t.Fatalf("CreateDevelopment() error = %v, want forbidden outside development", err)
 	}
 }
+
+func TestRoleSessionReadyRequiresCanonicalEnrollmentFacts(t *testing.T) {
+	ready := roleSessionReadiness{enabled: true, securityEnabled: true}
+	cases := []struct {
+		name      string
+		role      string
+		readiness roleSessionReadiness
+		want      bool
+	}{
+		{name: "client credential", role: "client", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, passwordCredential: true}, want: true},
+		{name: "client bare role", role: "client", readiness: ready, want: false},
+		{name: "partner activated credential", role: "partner", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "partner pending activation", role: "partner", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, passwordCredential: true}, want: false},
+		{name: "captain activated credential", role: "captain", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "field activated credential", role: "field", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "operator enrolled passkey", role: "operator", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passkeyCredential: true}, want: true},
+		{name: "operator bootstrap only", role: "operator", readiness: roleSessionReadiness{enabled: true, securityEnabled: true}, want: false},
+		{name: "disabled role", role: "captain", readiness: roleSessionReadiness{securityEnabled: true, activated: true, passwordCredential: true}, want: false},
+		{name: "disabled security", role: "captain", readiness: roleSessionReadiness{enabled: true, activated: true, passwordCredential: true}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := roleSessionReady(tc.role, tc.readiness); got != tc.want {
+				t.Fatalf("roleSessionReady(%q) = %t, want %t", tc.role, got, tc.want)
+			}
+		})
+	}
+}
