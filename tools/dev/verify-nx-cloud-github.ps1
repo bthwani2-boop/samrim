@@ -69,7 +69,7 @@ try {
 
     $workflowJson = ((Invoke-Gh @('workflow', 'list', '--repo', $Repository, '--all', '--json', 'path,name,state')) -join '') | ConvertFrom-Json
     $workflowPaths = @($workflowJson | ForEach-Object { [string]$_.path })
-    foreach ($requiredWorkflow in @('.github/workflows/baseline-guard.yml', '.github/workflows/control-panel-e2e.yml')) {
+    foreach ($requiredWorkflow in @('.github/workflows/baseline-guard.yml', '.github/workflows/control-panel-e2e.yml', '.github/workflows/backend-integration.yml')) {
         if ($workflowPaths -notcontains $requiredWorkflow) { Fail "workflow is not registered on GitHub: $requiredWorkflow" }
     }
 
@@ -86,11 +86,19 @@ try {
         Fail 'control-panel:e2e must be an intrinsically uncached Nx target'
     }
 
+    $backend = Read-Workflow '.github/workflows/backend-integration.yml'
+    if ($backend -notmatch 'workflow_dispatch\s*:') { Fail 'backend-integration.yml has no workflow_dispatch trigger' }
+    if ($backend -notmatch 'services/wlt/' -or $backend -notmatch 'wlt=true' -or $backend -notmatch 'Start WLT service for CI composition and health') {
+        Fail 'backend-integration.yml does not include the WLT CI composition path'
+    }
+
     Write-Host 'NX_CLOUD_GITHUB_VERIFY=PASS'
     Write-Host "NX_CLOUD_WORKSPACE_ID=present"
     Write-Host 'NX_CLOUD_REPOSITORY_RO=present'
     Write-Host "NX_CLOUD_PROTECTED_RW=present environment=$ProtectedEnvironment"
     Write-Host 'NX_CLOUD_WORKFLOW_DISPATCH=present'
+    Write-Host 'NX_BACKEND_WLT_WORKFLOW_DISPATCH=present'
+    Write-Host 'NX_BACKEND_WLT_CI_COMPOSITION=present'
     Write-Host 'NX_E2E_TARGET_FRESHNESS=intrinsic'
     Write-Host "NX_CLOUD_REF_VERIFIED=$Ref"
 }
