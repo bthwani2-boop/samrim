@@ -24,6 +24,26 @@ func (s *Service) UploadCatalogProductMedia(ctx context.Context, actingActorID s
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogProductResult{}, err
 	}
+	return s.uploadCatalogProductMedia(ctx, actingActorID, input)
+}
+
+func (s *Service) UploadStoreScopedProductMedia(ctx context.Context, accessToken, storeID, productID string, input CatalogMediaUploadInput) (postgres.CatalogProductResult, error) {
+	actorID, err := s.requireStoreOwner(ctx, accessToken, storeID)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	product, err := postgres.ReadCatalogProduct(ctx, s.db, strings.TrimSpace(productID))
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if product.Scope != "STORE_SCOPED" || product.StoreID != strings.TrimSpace(storeID) {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogProductOwnership
+	}
+	input.ProductID = strings.TrimSpace(productID)
+	return s.uploadCatalogProductMedia(ctx, actorID, input)
+}
+
+func (s *Service) uploadCatalogProductMedia(ctx context.Context, actingActorID string, input CatalogMediaUploadInput) (postgres.CatalogProductResult, error) {
 	if s.media == nil {
 		return postgres.CatalogProductResult{}, ErrCatalogMediaStorageUnavailable
 	}

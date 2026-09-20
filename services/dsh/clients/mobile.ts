@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CashLiabilityResponse, CartResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, JoiningCaseListResponse, JoiningCaseResponse, NotificationListResponse, NotificationReadResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashLiabilityResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, JoiningCaseListResponse, JoiningCaseResponse, NotificationListResponse, NotificationReadResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -8,6 +8,25 @@ export type DshMobileClientError =
 export type DshMobileClientOptions = Readonly<{
   timeoutMs?: number;
   cryptoRandomUUID?: () => string;
+}>;
+
+export type DshNativeMultipartUpload = (request: Readonly<{
+  url: string;
+  method: string;
+  headers: Readonly<Record<string, string>>;
+  fieldName: string;
+  fileName: string;
+  mimeType: string;
+  parameters: Readonly<Record<string, string>>;
+  signal: AbortSignal;
+}>) => Promise<Readonly<{ status: number; body: string }>>;
+
+export type DshImageUploadInput = Readonly<{
+  uri: string;
+  name?: string;
+  type?: string;
+  blob?: Blob;
+  nativeMultipartUpload?: DshNativeMultipartUpload;
 }>;
 
 function isDshMobileClientError(value: unknown): value is DshMobileClientError {
@@ -82,6 +101,34 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     }
   }
 
+  async function userMultipartRequest<T>(accessToken: string, path: string, method: string, body: FormData | undefined, headers: Record<string, string> = {}, nativeUpload?: DshNativeMultipartUpload, uploadMeta: Omit<Parameters<DshNativeMultipartUpload>[0], "url" | "method" | "headers" | "signal"> = { fieldName: "file", fileName: "upload.bin", mimeType: "application/octet-stream", parameters: {} }): Promise<T> {
+    const token = accessToken.trim();
+    if (!token) throw new Error("DSH_ACCESS_TOKEN_REQUIRED");
+    try {
+      const result = await requestWithTimeout(async (signal) => {
+        const requestHeaders = { Accept: "application/json", Authorization: `Bearer ${token}`, ...headers };
+        const nativeResult = nativeUpload ? await nativeUpload({ url: `${baseUrl}${path}`, method, headers: requestHeaders, ...uploadMeta, signal }) : undefined;
+        const fetchInit: RequestInit = { method, headers: requestHeaders, signal };
+        if (body !== undefined) fetchInit.body = body;
+        const response = nativeResult ? undefined : await fetch(`${baseUrl}${path}`, fetchInit);
+        const status = nativeResult?.status ?? response?.status ?? 0;
+        const responseText = nativeResult?.body ?? await response?.text();
+        if (status < 200 || status >= 300) {
+          let raw: { error?: { code?: unknown; message?: unknown } } | null = null;
+          try { raw = responseText ? JSON.parse(responseText) as { error?: { code?: unknown; message?: unknown } } : null; } catch { raw = null; }
+          const nested = raw?.error;
+          throw { kind: "http", status, code: typeof nested?.code === "string" ? nested.code : "DSH_ERROR", message: typeof nested?.message === "string" ? nested.message : "dsh request failed" } satisfies DshMobileClientError;
+        }
+        if (!responseText) throw new Error("DSH_EMPTY_MULTIPART_RESPONSE");
+        return JSON.parse(responseText) as T;
+      }, timeoutMs);
+      return result;
+    } catch (error) {
+      if (isDshMobileClientError(error)) throw error;
+      throw { kind: "network", message: error instanceof Error ? error.message : "dsh network error" } satisfies DshMobileClientError;
+    }
+  }
+
   function mutationHeaders(): Record<string, string> {
     const randomUUID = options.cryptoRandomUUID;
     if (!randomUUID) throw new Error("DSH_IDEMPOTENCY_KEY_GENERATOR_REQUIRED");
@@ -132,6 +179,21 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalizedStore || input.scope !== "STORE_SCOPED" || input.verticalId.trim() === "" || input.canonicalName.trim() === "" || input.categoryIds.length === 0) throw new Error("DSH_STORE_PRODUCT_INPUT_INVALID");
       const path = dshOperationPaths.createStoreScopedProduct.path.replace("{storeId}", encodeURIComponent(normalizedStore));
       return userRequest(accessToken, path, dshOperationPaths.createStoreScopedProduct.method, { ...input, scope: "STORE_SCOPED", storeId: normalizedStore }, mutationHeaders());
+    },
+    async uploadStoreProductMedia(accessToken: string, storeID: string, productID: string, input: DshImageUploadInput, role: "primary" | "gallery", expectedVersion: number): Promise<{ product: CatalogProduct; idempotentReplay: boolean }> {
+      const normalizedStore = storeID.trim();
+      const normalizedProduct = productID.trim();
+      const uri = input.uri.trim();
+      if (!normalizedStore || !normalizedProduct || !uri || expectedVersion < 1 || (role !== "primary" && role !== "gallery")) throw new Error("DSH_STORE_PRODUCT_MEDIA_INPUT_INVALID");
+      const fileName = input.name?.trim() || "product-image.jpg";
+      const mimeType = input.type?.trim() || "image/jpeg";
+      const form = input.nativeMultipartUpload ? undefined : new FormData();
+      if (form) {
+        form.append("role", role);
+        form.append("file", input.blob ?? ({ uri, name: fileName, type: mimeType } as unknown as Blob));
+      }
+      const path = dshOperationPaths.uploadStoreProductMedia.path.replace("{storeId}", encodeURIComponent(normalizedStore)).replace("{productId}", encodeURIComponent(normalizedProduct));
+      return userMultipartRequest(accessToken, path, dshOperationPaths.uploadStoreProductMedia.method, form, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) }, input.nativeMultipartUpload, { fieldName: "file", fileName, mimeType, parameters: { role } });
     },
     async updateStoreScopedProduct(accessToken: string, storeID: string, productID: string, input: UpdateCatalogProductRequest, expectedVersion: number): Promise<{ product: CatalogProduct; idempotentReplay: boolean }> {
       const normalizedStore = storeID.trim();

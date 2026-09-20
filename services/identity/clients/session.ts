@@ -453,7 +453,7 @@ export class IdentitySessionManager {
     try {
       return this.adopt(await this.developmentSession());
     } catch (error) {
-      if (isIdentityClientError(error) && error.kind === "http" && (error.status === 403 || error.status === 404)) {
+      if (isIdentityClientError(error) && error.kind === "http" && (error.status === 403 || error.status === 404 || error.status === 409)) {
         return this.signOut(fallbackReason);
       }
       return this.degraded(degradedReason(error));

@@ -57,6 +57,9 @@ paths:
   /dsh/catalog/products/{productId}/media/upload:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1media~1upload"
 
+  /dsh/stores/{storeId}/products/{productId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products~1{productId}~1media~1upload"
+
   /dsh/catalog/products/{productId}/attributes/{attributeId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1attributes~1{attributeId}"
 

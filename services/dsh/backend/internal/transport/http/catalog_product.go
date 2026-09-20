@@ -59,6 +59,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /dsh/catalog/products/{productId}", s.updateProduct)
 	mux.HandleFunc("PUT /dsh/catalog/products/{productId}/media", s.replaceProductMedia)
 	mux.HandleFunc("POST /dsh/catalog/products/{productId}/media/upload", s.uploadProductMedia)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/products/{productId}/media/upload", s.uploadStoreProductMedia)
 	mux.HandleFunc("GET /dsh/catalog/media/{key...}", s.readProductMedia)
 	mux.HandleFunc("PUT /dsh/catalog/products/{productId}/attributes/{attributeId}", s.upsertProductAttribute)
 	mux.HandleFunc("POST /dsh/catalog/products/{productId}/variants", s.createVariant)
@@ -282,38 +283,73 @@ func (s *CatalogServer) uploadProductMedia(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+1)
-	if err := r.ParseMultipartForm(media.MaxUploadBytes + 1); err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
+	upload, ok := parseCatalogMediaUpload(w, r)
+	if !ok {
 		return
 	}
-	role := strings.TrimSpace(r.FormValue("role"))
-	file, header, err := r.FormFile("file")
-	if err != nil || header == nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
-		return
-	}
-	defer file.Close()
-	if header.Size < 1 || header.Size > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return
-	}
-	bytes, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
-	if err != nil || int64(len(bytes)) > media.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
-		return
-	}
-	contentType, _, _, err := media.ValidateImageBytes(bytes)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only valid JPEG and PNG images are accepted")
-		return
-	}
-	result, err := s.service.UploadCatalogProductMedia(r.Context(), acting, catalog.CatalogMediaUploadInput{ProductID: r.PathValue("productId"), Role: role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: contentType, Bytes: bytes})
+	result, err := s.service.UploadCatalogProductMedia(r.Context(), acting, catalog.CatalogMediaUploadInput{ProductID: r.PathValue("productId"), Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes})
 	if err != nil {
 		writeCatalogError(w, err)
 		return
 	}
 	writeJSON(w, responseStatus(result.Replayed), contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
+}
+
+func (s *CatalogServer) uploadStoreProductMedia(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, expected, ok := requiredPartnerOfferHeaders(w, r, true)
+	if !ok {
+		return
+	}
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	upload, ok := parseCatalogMediaUpload(w, r)
+	if !ok {
+		return
+	}
+	result, err := s.service.UploadStoreScopedProductMedia(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), catalog.CatalogMediaUploadInput{Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes})
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, responseStatus(result.Replayed), contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
+}
+
+type catalogMediaUpload struct {
+	role        string
+	contentType string
+	bytes       []byte
+}
+
+func parseCatalogMediaUpload(w http.ResponseWriter, r *http.Request) (catalogMediaUpload, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+1)
+	if err := r.ParseMultipartForm(media.MaxUploadBytes + 1); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
+		return catalogMediaUpload{}, false
+	}
+	role := strings.TrimSpace(r.FormValue("role"))
+	file, header, err := r.FormFile("file")
+	if err != nil || header == nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
+		return catalogMediaUpload{}, false
+	}
+	defer file.Close()
+	if header.Size < 1 || header.Size > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return catalogMediaUpload{}, false
+	}
+	bytes, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
+	if err != nil || int64(len(bytes)) > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return catalogMediaUpload{}, false
+	}
+	contentType, _, _, err := media.ValidateImageBytes(bytes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only valid JPEG and PNG images are accepted")
+		return catalogMediaUpload{}, false
+	}
+	return catalogMediaUpload{role: role, contentType: contentType, bytes: bytes}, true
 }
 
 func (s *CatalogServer) readProductMedia(w http.ResponseWriter, r *http.Request) {

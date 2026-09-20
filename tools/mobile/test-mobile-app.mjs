@@ -187,6 +187,20 @@ const samplePair = {
   assert.equal(await storage.getItem(`test.${app}.identity.session.v1`), null);
 }
 
+// Test 2b: Ambiguous local development identity -> signed_out so the real login form is reachable.
+{
+  const conflict = new Error("multiple ready development actors");
+  conflict.kind = "http";
+  conflict.status = 409;
+  const storage = new MockStorage();
+  const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, undefined, async () => {
+    throw conflict;
+  });
+  const res = await mgr.restore();
+  assert.equal(res.kind, "signed_out");
+  assert.equal(res.reason, "no_local_session");
+}
+
 // Test 3: Valid stored tokens -> authenticated
 {
   const storage = new MockStorage({
