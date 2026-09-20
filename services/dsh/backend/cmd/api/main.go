@@ -132,7 +132,9 @@ func main() {
 		}
 		return nil
 	}
-	if err := serviceruntime.RunWithRoutesAndReadiness("dsh", "/dsh", "18080", register, readiness); err != nil {
+	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
+		runMediaReconciliationLoop(ctx, time.Minute, catalogServer.ReconcileMediaStorage)
+	}); err != nil {
 		log.Fatal(err)
 	}
 }

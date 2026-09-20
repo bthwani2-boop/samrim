@@ -28,6 +28,10 @@ func RunWithRoutes(service, prefix, defaultPort string, register func(*http.Serv
 }
 
 func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register func(*http.ServeMux), readiness func(context.Context) error) error {
+	return RunWithRoutesAndReadinessAndWorker(service, prefix, defaultPort, register, readiness, nil)
+}
+
+func RunWithRoutesAndReadinessAndWorker(service, prefix, defaultPort string, register func(*http.ServeMux), readiness func(context.Context) error, worker func(context.Context)) error {
 	if err := requireOrdinaryRuntimeEnvironment(os.Getenv("BTHWANI_ENV")); err != nil {
 		return err
 	}
@@ -73,6 +77,9 @@ func RunWithRoutesAndReadiness(service, prefix, defaultPort string, register fun
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if worker != nil {
+		go worker(ctx)
+	}
 	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {
 		return err
