@@ -139,21 +139,21 @@ func TestCreateDevelopmentSessionRejectsNonDevelopmentBeforeDatabaseAccess(t *te
 func TestRoleSessionReadyRequiresCanonicalEnrollmentFacts(t *testing.T) {
 	ready := roleSessionReadiness{enabled: true, securityEnabled: true}
 	cases := []struct {
-		name string
-		role string
+		name      string
+		role      string
 		readiness roleSessionReadiness
-		want bool
+		want      bool
 	}{
-		{"client credential", "client", roleSessionReadiness{enabled:true, securityEnabled:true, passwordCredential:true}, true},
-		{"client bare role", "client", ready, false},
-		{"partner activated credential", "partner", roleSessionReadiness{enabled:true, securityEnabled:true, activated:true, passwordCredential:true}, true},
-		{"partner pending activation", "partner", roleSessionReadiness{enabled:true, securityEnabled:true, passwordCredential:true}, false},
-		{"captain activated credential", "captain", roleSessionReadiness{enabled:true, securityEnabled:true, activated:true, passwordCredential:true}, true},
-		{"field activated credential", "field", roleSessionReadiness{enabled:true, securityEnabled:true, activated:true, passwordCredential:true}, true},
-		{"operator enrolled passkey", "operator", roleSessionReadiness{enabled:true, securityEnabled:true, activated:true, passkeyCredential:true}, true},
-		{"operator bootstrap only", "operator", roleSessionReadiness{enabled:true, securityEnabled:true}, false},
-		{"disabled role", "captain", roleSessionReadiness{securityEnabled:true, activated:true, passwordCredential:true}, false},
-		{"disabled security", "captain", roleSessionReadiness{enabled:true, activated:true, passwordCredential:true}, false},
+		{name: "client credential", role: "client", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, passwordCredential: true}, want: true},
+		{name: "client bare role", role: "client", readiness: ready, want: false},
+		{name: "partner activated credential", role: "partner", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "partner pending activation", role: "partner", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, passwordCredential: true}, want: false},
+		{name: "captain activated credential", role: "captain", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "field activated credential", role: "field", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "operator enrolled passkey", role: "operator", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passkeyCredential: true}, want: true},
+		{name: "operator bootstrap only", role: "operator", readiness: roleSessionReadiness{enabled: true, securityEnabled: true}, want: false},
+		{name: "disabled role", role: "captain", readiness: roleSessionReadiness{securityEnabled: true, activated: true, passwordCredential: true}, want: false},
+		{name: "disabled security", role: "captain", readiness: roleSessionReadiness{enabled: true, activated: true, passwordCredential: true}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
