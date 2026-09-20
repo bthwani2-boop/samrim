@@ -1,12 +1,12 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { formatMoney, type PublicCatalogResponse, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { addCatalogOfferToCart, readPublicStoreCatalog, readPublishedStore } from "./store-discovery-client";
+import { addCatalogOfferToCart, listFavoriteStoreIDs, readPublicStoreCatalog, readPublishedStore, setFavoriteStore } from "./store-discovery-client";
 
 type DetailState =
   | { kind: "loading" }
@@ -30,6 +30,8 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const catalogRequestID = useRef(0);
   const [error, setError] = useState("");
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const mutationBusy = Boolean(busyOfferId);
 
   const load = useCallback(async () => {
@@ -47,7 +49,16 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     setState({ kind: "loading" });
     try {
       const [store, catalog] = await Promise.all([readPublishedStore(storeId, selectedCityID), readPublicStoreCatalog(storeId, selectedCityID, "", "", 20)]);
+      let favorite = false;
+      if (currentIdentityState().kind === "authenticated") {
+        try {
+          favorite = (await listFavoriteStoreIDs()).includes(storeId);
+        } catch {
+          favorite = false;
+        }
+      }
       if (requestID !== catalogRequestID.current) return;
+      setIsFavorite(favorite);
       setState({ kind: "ready", store, catalog });
     } catch {
       if (requestID !== catalogRequestID.current) return;
@@ -153,6 +164,23 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     }
   }
 
+  async function toggleFavorite() {
+    if (favoriteBusy) return;
+    if (currentIdentityState().kind !== "authenticated") {
+      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
+      return;
+    }
+    setFavoriteBusy(true);
+    setError("");
+    try {
+      setIsFavorite(await setFavoriteStore(storeId, !isFavorite));
+    } catch {
+      setError("تعذر تحديث المفضلة. أعد المحاولة.");
+    } finally {
+      setFavoriteBusy(false);
+    }
+  }
+
   const renderOffer = (offer: PublicCatalogResponse["offers"][number]) => {
     const selectedOptions = selectedModifierOptionIds[offer.offerId] ?? [];
     const quantity = quantities[offer.offerId] ?? String(offer.quantityMinBaseUnits);
@@ -193,6 +221,13 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
       <BthwaniSurface tone="raised" style={styles.merchantHero}>
         <View style={styles.merchantIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>
         <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متاح للطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{state.store.serviceCity.displayNameAr} · كتالوج منشور</Text></View>
+        <BthwaniIconButton
+          disabled={favoriteBusy}
+          icon="favorite"
+          label={isFavorite ? "إزالة المتجر من المفضلة" : "إضافة المتجر إلى المفضلة"}
+          onPress={() => void toggleFavorite()}
+          tone={isFavorite ? "primary" : "soft"}
+        />
         <BthwaniIcon name="success" color={theme.success} size={sizing.iconLg} />
       </BthwaniSurface>
       <BthwaniSectionHeader title="استكشف المنتجات" subtitle={`${state.catalog.offers.length} منتج معروض${catalogRefreshing ? " · جارٍ التحديث…" : ""}`} />

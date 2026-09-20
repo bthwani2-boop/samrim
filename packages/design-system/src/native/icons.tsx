@@ -12,6 +12,7 @@ const iconNames: Record<MobileIconName, ReturnType<typeof Icon.select>> = {
   orders: Icon.select({ ios: "list.bullet.rectangle", android: require("@expo/material-symbols/receipt_long.xml") }),
   account: Icon.select({ ios: "person.fill", android: require("@expo/material-symbols/person.xml") }),
   store: Icon.select({ ios: "storefront", android: require("@expo/material-symbols/storefront.xml") }),
+  favorite: Icon.select({ ios: "heart.fill", android: require("@expo/material-symbols/favorite.xml") }),
   offers: Icon.select({ ios: "tag.fill", android: require("@expo/material-symbols/sell.xml") }),
   deliveries: Icon.select({ ios: "truck.box.fill", android: require("@expo/material-symbols/local_shipping.xml") }),
   cases: Icon.select({ ios: "folder.fill", android: require("@expo/material-symbols/folder.xml") }),

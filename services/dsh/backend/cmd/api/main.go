@@ -108,6 +108,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	clientFavoritesServer, err := transporthttp.NewClientFavorites(identityClient, database)
+	if err != nil {
+		log.Fatal(err)
+	}
 	register := func(mux *http.ServeMux) {
 		joiningCaseServer.Register(mux)
 		catalogServer.Register(mux)
@@ -120,6 +124,7 @@ func main() {
 		captainServer.Register(mux)
 		notificationServer.Register(mux)
 		fieldServer.Register(mux)
+		clientFavoritesServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
 		if err := postgres.VerifySchema(ctx, database, records); err != nil {

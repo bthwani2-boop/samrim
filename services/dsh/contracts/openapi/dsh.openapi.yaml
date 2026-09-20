@@ -162,6 +162,12 @@ paths:
   /dsh/serviceability:
     $ref: "./paths/serviceability.yaml#/paths/~1dsh~1serviceability"
 
+  /dsh/client/favorite-stores:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1client~1favorite-stores"
+
+  /dsh/client/favorite-stores/{storeId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1client~1favorite-stores~1{storeId}"
+
   /dsh/cart:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart"
 
@@ -2252,6 +2258,28 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    FavoriteStoreResponse:
+      type: object
+      required: [storeId, isFavorite, idempotentReplay]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        isFavorite:
+          type: boolean
+        idempotentReplay:
+          type: boolean
+
+    FavoriteStoreListResponse:
+      type: object
+      required: [storeIds]
+      additionalProperties: false
+      properties:
+        storeIds:
+          type: array
+          items:
+            type: string
 
     PublicStoreView:
       type: object

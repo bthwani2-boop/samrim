@@ -3,6 +3,7 @@ export type MobileIconName =
   | "orders"
   | "account"
   | "store"
+  | "favorite"
   | "offers"
   | "deliveries"
   | "cases"

@@ -168,6 +168,9 @@ function cleanup() {
   }
   for (const storeID of storeIDs) {
     const value = sqlLiteral(storeID);
+    sql(`DELETE FROM dsh.client_favorite_store_audit WHERE store_id='${value}'`);
+    sql(`DELETE FROM dsh.client_favorite_store_mutation_idempotency WHERE store_id='${value}'`);
+    sql(`DELETE FROM dsh.client_favorite_stores WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_storefront_section_offers WHERE section_id IN (SELECT id FROM dsh.catalog_storefront_sections WHERE store_id='${value}')`);
     sql(`DELETE FROM dsh.catalog_storefront_sections WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_store_offer_modifier_groups WHERE offer_id IN (SELECT id FROM dsh.catalog_store_offers WHERE store_id='${value}')`);
@@ -305,7 +308,7 @@ if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is inva
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "27", "DSH migration history is not v27");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "28", "DSH migration history is not v28");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -324,6 +327,7 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=25", "025_order_client_cancellation.sql", "DSH client cancellation migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=26", "026_captain_live_location.sql", "DSH Captain live-location migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=27", "027_notification_read_state.sql", "DSH notification read-state migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=28", "028_client_favorite_stores.sql", "DSH client favorite-store migration is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_orders_state_chk'", "t", "DSH Order cancellation state is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_order_transition_state_chk'", "t", "DSH Order cancellation transition is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%order_cancelled%' FROM pg_constraint WHERE conname='commerce_order_audit_event_type_chk'", "t", "DSH Order cancellation audit is not canonical");
@@ -348,7 +352,7 @@ expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='fi
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "CHECK (((originating_field_actor_id IS NULL) OR (length(btrim(originating_field_actor_id)) > 0)))", "Field joining-case origin invariant is not canonical");
 expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name='originating_field_actor_id')", "t", "Field joining-case origin column is missing");
-  console.log("DSH_SCHEMA_V27=PASS");
+  console.log("DSH_SCHEMA_V28=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -660,6 +664,27 @@ if (publicStores.status !== 200 || !publicStores.body?.stores?.some((store) => s
 console.log("DSH_CUSTOMER_VISIBLE_CATALOG=PASS");
 
 const client = await createClientSession(clientPhone);
+const favoriteEmpty = await request(dshBase, "GET", "/dsh/client/favorite-stores", { token: client.accessToken });
+const favoriteAddKey = `favorite-add-${suffix}`;
+const favoriteAdd = await request(dshBase, "PUT", `/dsh/client/favorite-stores/${encodeURIComponent(first.storeID)}`, { token: client.accessToken, headers: partnerHeaders(favoriteAddKey), body: undefined });
+const favoriteAddReplay = await request(dshBase, "PUT", `/dsh/client/favorite-stores/${encodeURIComponent(first.storeID)}`, { token: client.accessToken, headers: partnerHeaders(favoriteAddKey), body: undefined });
+const favoriteRead = await request(dshBase, "GET", "/dsh/client/favorite-stores", { token: client.accessToken });
+const favoriteRemoveKey = `favorite-remove-${suffix}`;
+const favoriteRemove = await request(dshBase, "DELETE", `/dsh/client/favorite-stores/${encodeURIComponent(first.storeID)}`, { token: client.accessToken, headers: partnerHeaders(favoriteRemoveKey), body: undefined });
+const favoriteRemoveReplay = await request(dshBase, "DELETE", `/dsh/client/favorite-stores/${encodeURIComponent(first.storeID)}`, { token: client.accessToken, headers: partnerHeaders(favoriteRemoveKey), body: undefined });
+const favoriteAfterRemove = await request(dshBase, "GET", "/dsh/client/favorite-stores", { token: client.accessToken });
+const favoriteWrongRole = await request(dshBase, "GET", "/dsh/client/favorite-stores", { token: first.accessToken });
+if (
+  favoriteEmpty.status !== 200 || favoriteEmpty.body?.storeIds?.length !== 0 ||
+  favoriteAdd.status !== 200 || favoriteAdd.body?.storeId !== first.storeID || favoriteAdd.body?.isFavorite !== true || favoriteAdd.body?.idempotentReplay === true ||
+  favoriteAddReplay.status !== 200 || favoriteAddReplay.body?.idempotentReplay !== true || favoriteAddReplay.body?.isFavorite !== true ||
+  favoriteRead.status !== 200 || !favoriteRead.body?.storeIds?.includes(first.storeID) ||
+  favoriteRemove.status !== 200 || favoriteRemove.body?.isFavorite !== false || favoriteRemove.body?.idempotentReplay === true ||
+  favoriteRemoveReplay.status !== 200 || favoriteRemoveReplay.body?.idempotentReplay !== true || favoriteRemoveReplay.body?.isFavorite !== false ||
+  favoriteAfterRemove.status !== 200 || favoriteAfterRemove.body?.storeIds?.includes(first.storeID) ||
+  favoriteWrongRole.status !== 403
+) fail("client favorite store lifecycle/idempotency/role scope failed", JSON.stringify({ favoriteEmpty, favoriteAdd, favoriteAddReplay, favoriteRead, favoriteRemove, favoriteRemoveReplay, favoriteAfterRemove, favoriteWrongRole }));
+console.log("DSH_CLIENT_FAVORITES=PASS");
 const addressA = await request(dshBase, "POST", "/dsh/addresses", { token: client.accessToken, headers: partnerHeaders(`address-a-${suffix}`), body: { addressText: `عنوان أ ${suffix}`, latitude: 15.3694457, longitude: 44.1910064, serviceCityId: cityA } });
 const addressB = await request(dshBase, "POST", "/dsh/addresses", { token: client.accessToken, headers: partnerHeaders(`address-b-${suffix}`), body: { addressText: `عنوان ب ${suffix}`, latitude: 15.3694458, longitude: 44.1910065, serviceCityId: cityB } });
 if (addressA.status !== 201 || addressB.status !== 201) fail("serviceability address fixtures failed", JSON.stringify({ addressA, addressB }));
