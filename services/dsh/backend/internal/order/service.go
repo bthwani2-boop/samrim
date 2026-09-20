@@ -69,6 +69,28 @@ func (s *Service) ListForClient(ctx context.Context, accessToken string, limit i
 	return postgres.ListOrdersForClient(ctx, s.db, identity, "", limit)
 }
 
+func (s *Service) CancelForClient(ctx context.Context, accessToken, orderID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if expectedVersion < 1 || strings.TrimSpace(orderID) == "" {
+		return postgres.OrderRecord{}, false, postgres.ErrOrderTransitionInvalid
+	}
+	if _, err := postgres.ReadOrderForClient(ctx, s.db, orderID, identity); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	return postgres.TransitionOrderWithPreparation(ctx, s.db, orderID, "CANCELLED", "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, "CANCELLED", expectedVersion), identity, strings.TrimSpace(correlationID), func(ctx context.Context, current postgres.OrderRecord) (string, error) {
+		if current.State != "CREATED" || current.PaymentIntentID == nil || current.PaymentState != "REQUIRES_COLLECTION" {
+			return "", postgres.ErrOrderStateConflict
+		}
+		if _, err := s.payment.EnsureCancelled(ctx, *current.PaymentIntentID, "client_cancelled", wlt.DerivedIdempotencyKey("cancel-client", idempotencyKey), correlationID); err != nil {
+			return "", fmt.Errorf("%w: %v", ErrPaymentUnavailable, err)
+		}
+		return "CANCELLED", nil
+	})
+}
+
 func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID string, limit int) ([]postgres.OrderRecord, error) {
 	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
 	if err != nil {
@@ -109,25 +131,25 @@ func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID
 	if current.StoreID != strings.TrimSpace(storeID) {
 		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
 	}
-	paymentState := ""
 	if strings.TrimSpace(state) == "REJECTED" {
-		if current.PaymentIntentID == nil || current.PaymentState == "NOT_LINKED" {
-			return postgres.TransitionOrder(ctx, s.db, orderID, strings.TrimSpace(state), paymentState, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
-		}
-		switch current.PaymentState {
-		case "REQUIRES_COLLECTION":
-			_, err := s.payment.EnsureCancelled(ctx, *current.PaymentIntentID, "partner_rejected", wlt.DerivedIdempotencyKey("cancel", idempotencyKey), correlationID)
-			if err != nil {
-				return postgres.OrderRecord{}, false, fmt.Errorf("%w: %v", ErrPaymentUnavailable, err)
+		return postgres.TransitionOrderWithPreparation(ctx, s.db, orderID, "REJECTED", "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), func(ctx context.Context, current postgres.OrderRecord) (string, error) {
+			if current.PaymentIntentID == nil || current.PaymentState == "NOT_LINKED" {
+				return "", nil
 			}
-			paymentState = "CANCELLED"
-		case "CANCELLED":
-			paymentState = "CANCELLED"
-		default:
-			return postgres.OrderRecord{}, false, postgres.ErrPaymentStateConflict
-		}
+			switch current.PaymentState {
+			case "REQUIRES_COLLECTION":
+				if _, err := s.payment.EnsureCancelled(ctx, *current.PaymentIntentID, "partner_rejected", wlt.DerivedIdempotencyKey("cancel", idempotencyKey), correlationID); err != nil {
+					return "", fmt.Errorf("%w: %v", ErrPaymentUnavailable, err)
+				}
+				return "CANCELLED", nil
+			case "CANCELLED":
+				return "CANCELLED", nil
+			default:
+				return "", postgres.ErrPaymentStateConflict
+			}
+		})
 	}
-	return postgres.TransitionOrder(ctx, s.db, orderID, strings.TrimSpace(state), paymentState, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
+	return postgres.TransitionOrder(ctx, s.db, orderID, strings.TrimSpace(state), "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
 }
 
 func (s *Service) requireSession(ctx context.Context, accessToken, role, surface string) (string, error) {

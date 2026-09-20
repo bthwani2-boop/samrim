@@ -12,6 +12,7 @@ const orderStateLabels: Record<Order["state"], string> = {
   DELIVERED: "تم التسليم",
   DELIVERY_FAILED: "تعذر التسليم",
   REJECTED: "تعذر قبول الطلب",
+  CANCELLED: "أُلغي الطلب",
 };
 
 export function orderStateLabel(state: Order["state"]): string {

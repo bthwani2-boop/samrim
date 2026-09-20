@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 24
+const SchemaVersion = 25
 
 type MigrationRecord struct {
 	Version int
@@ -124,7 +124,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if strings.TrimSpace(directory) == "" {
 		return nil, nil, errors.New("DSH_MIGRATION_DIR is required")
 	}
-	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql", "007_location_core.sql", "008_location_core_corrective_boundaries.sql", "009_service_city_scope.sql", "010_central_catalog_refoundation.sql", "011_cart_checkout_order.sql", "012_catalog_semantic_correction.sql", "013_catalog_variant_mutations.sql", "014_catalog_proposal_import_closure.sql", "015_captain_dispatch_and_identity_boundary.sql", "016_captain_phone_constraint_correction.sql", "017_captain_access_and_timeout_canonicalization.sql", "018_remove_unjustified_captain_terminated_state.sql", "019_captain_delivery_recovery.sql", "020_field_standing_admission_and_joining_scope.sql", "021_joining_case_store_origin.sql", "022_order_payment_intents.sql", "023_catalog_media_management.sql", "024_catalog_media_assets.sql"}
+	names := []string{"001_partner_store_baseline.sql", "002_store_publication.sql", "003_joining_cases_and_catalog.sql", "004_central_product_store_assortment_cutover.sql", "005_joining_case_partner_correction.sql", "006_joining_case_correct_and_resubmit.sql", "007_location_core.sql", "008_location_core_corrective_boundaries.sql", "009_service_city_scope.sql", "010_central_catalog_refoundation.sql", "011_cart_checkout_order.sql", "012_catalog_semantic_correction.sql", "013_catalog_variant_mutations.sql", "014_catalog_proposal_import_closure.sql", "015_captain_dispatch_and_identity_boundary.sql", "016_captain_phone_constraint_correction.sql", "017_captain_access_and_timeout_canonicalization.sql", "018_remove_unjustified_captain_terminated_state.sql", "019_captain_delivery_recovery.sql", "020_field_standing_admission_and_joining_scope.sql", "021_joining_case_store_origin.sql", "022_order_payment_intents.sql", "023_catalog_media_management.sql", "024_catalog_media_assets.sql", "025_order_client_cancellation.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {

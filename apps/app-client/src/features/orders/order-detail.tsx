@@ -4,7 +4,7 @@ import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, pa
 import * as Crypto from "expo-crypto";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
 function baseUrl(): string {
@@ -25,12 +25,15 @@ export default function ClientOrderDetail() {
   const [identityState, setIdentityState] = useState(currentIdentityState);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
 
   const load = useCallback(async (preserveCurrent = false) => {
     if (!orderId.trim()) { setState({ kind: "error" }); return; }
     if (preserveCurrent) setRefreshing(true);
     else setState({ kind: "loading" });
     setRefreshError("");
+    setCancelError("");
     try {
       const token = await getUsableIdentityAccessToken();
       setState({ kind: "ready", order: (await client().readOrder(token, orderId)).order });
@@ -42,6 +45,29 @@ export default function ClientOrderDetail() {
       setRefreshing(false);
     }
   }, [orderId]);
+
+  const cancelOrder = useCallback(async () => {
+    if (state.kind !== "ready" || state.order.state !== "CREATED" || cancelling) return;
+    setCancelling(true);
+    setCancelError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await client().cancelClientOrder(token, state.order.id, state.order.version);
+      setState({ kind: "ready", order: result.order });
+    } catch (error) {
+      console.error("DSH client order cancellation failed", error);
+      setCancelError("تعذر إلغاء الطلب. ربما بدأ المتجر معالجته؛ حدّث الحالة وحاول مرة أخرى.");
+    } finally {
+      setCancelling(false);
+    }
+  }, [cancelling, state]);
+
+  function requestCancel() {
+    Alert.alert("إلغاء الطلب", "سيتم إلغاء الطلب وإلغاء التحصيل النقدي. هل تريد المتابعة؟", [
+      { text: "متابعة الطلب", style: "cancel" },
+      { text: "إلغاء الطلب", style: "destructive", onPress: () => void cancelOrder() },
+    ]);
+  }
 
   useEffect(() => subscribeIdentitySession(setIdentityState), []);
 
@@ -66,8 +92,9 @@ export default function ClientOrderDetail() {
         <View style={styles.summaryIcon}><BthwaniIcon name="orders" color={theme.onAction} size={sizing.iconXl} /></View>
         <View style={styles.summaryCopy}><Text style={styles.eyebrow}>طلبك</Text><Text style={styles.title}>طلب {formatOrderDate(order.createdAt)}</Text><Text style={styles.muted}>{order.addressText}</Text></View>
       </BthwaniSurface>
-      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "warning" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "danger" : "info"} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text></View><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" /></View>
+      <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "warning" : order.state === "CANCELLED" ? "warning" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" || order.state === "CANCELLED" ? "danger" : "info"} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={cancelling || refreshing} label="إلغاء الطلب" onPress={requestCancel} variant="danger" /> : null}</View></View>
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
+      {cancelError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{cancelError}</Text> : null}
       <BthwaniSectionHeader title="عنوان التوصيل" />
       <BthwaniSurface tone="base" style={styles.address}><BthwaniIcon name="location" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.muted}>{order.addressText}</Text></BthwaniSurface>
       <BthwaniSectionHeader title="المنتجات" subtitle={`${order.lines.length} ${order.lines.length === 1 ? "منتج" : "منتجات"}`} />
@@ -95,6 +122,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     statusValue: { ...typography.titleSm, color: theme.interactiveText },
     statusTotal: { ...typography.bodyStrong, color: theme.color },
     payment: { ...typography.bodySm, color: theme.interactiveText },
+    actionStack: { gap: spacing[2] },
     address: { alignItems: "center", borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[2], padding: spacing[4] },
     lines: { gap: spacing[3] },
     line: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },

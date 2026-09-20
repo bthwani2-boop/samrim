@@ -270,6 +270,12 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       const path = dshOperationPaths.readOrder.path.replace("{orderId}", encodeURIComponent(normalized));
       return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.readOrder.method);
     },
+    async cancelClientOrder(accessToken: string, orderID: string, expectedVersion: number): Promise<OrderResponse> {
+      const normalized = orderID.trim();
+      if (!normalized || expectedVersion < 1) throw new Error("DSH_ORDER_CANCELLATION_INPUT_INVALID");
+      const path = dshOperationPaths.cancelClientOrder.path.replace("{orderId}", encodeURIComponent(normalized));
+      return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.cancelClientOrder.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
+    },
     async listStoreOrders(accessToken: string, storeID: string, limit = 50): Promise<OrderListResponse> {
       const normalized = storeID.trim();
       if (!normalized || limit < 1 || limit > 100) throw new Error("DSH_ORDER_INPUT_INVALID");

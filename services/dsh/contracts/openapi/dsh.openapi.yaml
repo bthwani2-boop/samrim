@@ -180,6 +180,9 @@ paths:
   /dsh/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}"
 
+  /dsh/orders/{orderId}/cancel:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancel"
+
   /dsh/operator/operations:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations"
 
@@ -2920,7 +2923,7 @@ components:
 
     OrderState:
       type: string
-      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, CAPTAIN_ASSIGNED, IN_CUSTODY, DELIVERED, DELIVERY_FAILED, REJECTED]
+      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, CAPTAIN_ASSIGNED, IN_CUSTODY, DELIVERED, DELIVERY_FAILED, REJECTED, CANCELLED]
 
     OrderLineModifierSnapshot:
       type: object

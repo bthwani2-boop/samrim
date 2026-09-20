@@ -632,12 +632,18 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	return order, false, err
 }
 
+type TransitionPreparation func(context.Context, OrderRecord) (string, error)
+
 func TransitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState, paymentState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (OrderRecord, bool, error) {
+	return TransitionOrderWithPreparation(ctx, db, orderID, requestedState, paymentState, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, nil)
+}
+
+func TransitionOrderWithPreparation(ctx context.Context, db *sql.DB, orderID, requestedState, paymentState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string, prepare TransitionPreparation) (OrderRecord, bool, error) {
 	if strings.TrimSpace(orderID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(correlationID) == "" {
 		return OrderRecord{}, false, ErrOrderTransitionInvalid
 	}
 	paymentState = strings.TrimSpace(paymentState)
-	if paymentState != "" && (requestedState != "REJECTED" || paymentState != "CANCELLED") {
+	if paymentState != "" && ((requestedState != "REJECTED" && requestedState != "CANCELLED") || paymentState != "CANCELLED") {
 		return OrderRecord{}, false, ErrPaymentStateConflict
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -679,6 +685,15 @@ func TransitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState, p
 	if !validOrderTransition(current.State, requestedState) {
 		return OrderRecord{}, false, ErrOrderStateConflict
 	}
+	if prepare != nil {
+		paymentState, err = prepare(ctx, current)
+		if err != nil {
+			return OrderRecord{}, false, err
+		}
+	}
+	if paymentState != "" && ((requestedState != "REJECTED" && requestedState != "CANCELLED") || paymentState != "CANCELLED") {
+		return OrderRecord{}, false, ErrPaymentStateConflict
+	}
 	result, err := scanOrder(tx.QueryRowContext(ctx, "UPDATE dsh.commerce_orders SET state=$2,payment_state=CASE WHEN $4='' THEN payment_state ELSE $4 END,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$3 RETURNING "+orderSelectColumns, orderID, requestedState, expectedVersion, paymentState))
 	if err != nil {
 		return OrderRecord{}, false, err
@@ -708,7 +723,7 @@ func TransitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState, p
 func validOrderTransition(from, to string) bool {
 	switch from {
 	case "CREATED":
-		return to == "PARTNER_ACCEPTED" || to == "REJECTED"
+		return to == "PARTNER_ACCEPTED" || to == "REJECTED" || to == "CANCELLED"
 	case "PARTNER_ACCEPTED":
 		return to == "PREPARING"
 	case "PREPARING":
