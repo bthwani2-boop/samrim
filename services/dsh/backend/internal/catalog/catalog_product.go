@@ -242,6 +242,37 @@ func (s *Service) ReplaceCatalogProductMedia(ctx context.Context, actingActorID,
 	return result, nil
 }
 
+func (s *Service) ReplaceStoreScopedProductMedia(ctx context.Context, accessToken, storeID, productID string, media []postgres.CatalogMediaInput, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductResult, error) {
+	actorID, err := s.requireStoreOwner(ctx, accessToken, storeID)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	productID = strings.TrimSpace(productID)
+	storeID = strings.TrimSpace(storeID)
+	current, err := postgres.ReadCatalogProduct(ctx, s.db, productID)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if current.Scope != "STORE_SCOPED" || current.StoreID != storeID {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogProductOwnership
+	}
+	normalized, err := normalizeCatalogMedia(media)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if expectedVersion < 1 {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogVersionConflict
+	}
+	result, err := postgres.ReplaceCatalogProductMedia(ctx, s.db, productID, normalized, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogMediaReplaceRequest(productID, normalized, expectedVersion), actorID, strings.TrimSpace(correlationID))
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if s.media != nil {
+		_ = s.ReconcileMediaStorage(ctx)
+	}
+	return result, nil
+}
+
 func (s *Service) ReadCatalogProduct(ctx context.Context, actingActorID, productID string) (postgres.CatalogProductRecord, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogProductRecord{}, err

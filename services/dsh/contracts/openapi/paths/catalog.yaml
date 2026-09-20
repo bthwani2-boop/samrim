@@ -258,6 +258,25 @@ paths:
       responses:
         "200": { description: Store-scoped Product media upload readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
 
+  /dsh/stores/{storeId}/products/{productId}/media:
+    put:
+      operationId: replaceStoreProductMedia
+      summary: Atomically replace the ordered media gallery of a store-owned Product
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/ReplaceCatalogProductMediaRequest" } }
+      responses:
+        "200": { description: Store-scoped Product media replacement readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CatalogProductResponse" } } } }
+
   /dsh/catalog/products/{productId}/variants:
     post:
       operationId: createCatalogVariant
