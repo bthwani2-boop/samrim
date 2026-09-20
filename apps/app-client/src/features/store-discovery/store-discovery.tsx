@@ -1,11 +1,11 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { PublicStoreView } from "@bthwani/dsh";
+import type { CommerceVertical, PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, type TextInput, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { listFavoriteStoreIDs, listPublishedStores, setFavoriteStore } from "./store-discovery-client";
+import { listCatalogVerticals, listFavoriteStoreIDs, listPublishedStores, setFavoriteStore } from "./store-discovery-client";
 
 type DiscoveryState =
   | { kind: "loading" }
@@ -19,8 +19,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
+  const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [query, setQuery] = useState("");
   const [favoriteFilter, setFavoriteFilter] = useState(false);
+  const [selectedVerticalID, setSelectedVerticalID] = useState("");
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
   const [favoriteError, setFavoriteError] = useState("");
   const searchInputRef = useRef<TextInput>(null);
@@ -37,6 +39,14 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         return;
       }
       const stores = await listPublishedStores(selectedCityID);
+      let availableVerticals: ReadonlyArray<CommerceVertical> = [];
+      try {
+        availableVerticals = (await listCatalogVerticals()).filter((vertical) => vertical.active);
+      } catch {
+        // Store discovery remains usable if the optional filter registry is unavailable.
+      }
+      setVerticals(availableVerticals);
+      setSelectedVerticalID("");
       let favoriteStoreIDs: ReadonlyArray<string> = [];
       if (isAuthenticated) {
         try {
@@ -61,11 +71,16 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   const filteredStores = useMemo(() => {
     if (state.kind !== "ready") return [];
-    const stores = favoriteFilter ? state.stores.filter((store) => state.favoriteStoreIDs.includes(store.id)) : state.stores;
+    const stores = state.stores.filter((store) => (!favoriteFilter || state.favoriteStoreIDs.includes(store.id)) && (!selectedVerticalID || store.primaryVerticalId === selectedVerticalID));
     const normalizedQuery = query.trim().toLocaleLowerCase();
     if (!normalizedQuery) return stores;
     return stores.filter((store) => store.name.toLocaleLowerCase().includes(normalizedQuery));
-  }, [favoriteFilter, query, state]);
+  }, [favoriteFilter, query, selectedVerticalID, state]);
+
+  const visibleVerticals = useMemo(() => {
+    if (state.kind !== "ready") return [];
+    return verticals.filter((vertical) => state.stores.some((store) => store.primaryVerticalId === vertical.id));
+  }, [state, verticals]);
 
   const searchField = <BthwaniSearchField accessibilityLabel="البحث في المتاجر" inputRef={searchInputRef} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="ابحث باسم المتجر" value={query} />;
 
@@ -138,15 +153,16 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           }}
         />
       </View>
+      {visibleVerticals.length ? <View accessibilityLabel="تصفية حسب المجال التجاري" style={styles.filterRow}><BthwaniChip label="كل المجالات" selected={!selectedVerticalID} onPress={() => setSelectedVerticalID("")} />{visibleVerticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} selected={selectedVerticalID === vertical.id} onPress={() => setSelectedVerticalID(vertical.id)} />)}</View> : null}
       {favoriteError ? <Text accessibilityRole="alert" style={styles.error}>{favoriteError}</Text> : null}
 
       <BthwaniSectionHeader title={`متاجر في ${cityName}`} subtitle={`${filteredStores.length} متجر متاح للطلب`} />
       {filteredStores.length === 0 ? (
         <BthwaniSurface tone="inset" style={styles.noResults}>
           <BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} />
-          <Text style={styles.cardTitle}>لا توجد نتائج بهذا الاسم</Text>
-          <Text style={styles.muted}>جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر.</Text>
-          <BthwaniButton label="مسح البحث" onPress={() => setQuery("")} variant="quiet" />
+          <Text style={styles.cardTitle}>{query.trim() ? "لا توجد نتائج بهذا الاسم" : selectedVerticalID ? "لا توجد متاجر ضمن هذا المجال" : "لا توجد متاجر مطابقة"}</Text>
+          <Text style={styles.muted}>{query.trim() ? "جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر." : "غيّر المجال أو أزل الفلاتر لعرض المتاجر المتاحة."}</Text>
+          {query.trim() ? <BthwaniButton label="مسح البحث" onPress={() => setQuery("")} variant="quiet" /> : null}
         </BthwaniSurface>
       ) : (
         <View style={styles.list}>

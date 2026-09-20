@@ -1,4 +1,4 @@
-import { type CartResponse, type CatalogStoreOffer, createDshMobileClient, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
+import { type CartResponse, type CatalogStoreOffer, createDshMobileClient, type CommerceVertical, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
@@ -13,6 +13,10 @@ const client = () => createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () 
 
 export async function listPublishedStores(serviceCityID: string): Promise<ReadonlyArray<PublicStoreView>> {
   return client().listPublishedStores(serviceCityID);
+}
+
+export async function listCatalogVerticals(): Promise<ReadonlyArray<CommerceVertical>> {
+  return client().listCatalogVerticals();
 }
 
 export async function listFavoriteStoreIDs(): Promise<ReadonlyArray<string>> {
