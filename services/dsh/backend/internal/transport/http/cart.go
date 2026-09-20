@@ -175,6 +175,10 @@ func writeCartError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different cart or checkout facts")
 	case errors.Is(err, postgres.ErrCartOfferUnavailable):
 		writeError(w, http.StatusConflict, "OFFER_UNAVAILABLE", "the StoreOffer is no longer customer-visible")
+	case errors.Is(err, postgres.ErrCatalogInventoryInsufficient):
+		writeError(w, http.StatusConflict, "INVENTORY_INSUFFICIENT", "the StoreOffer has insufficient quantity available")
+	case errors.Is(err, postgres.ErrCatalogInventoryInvalid):
+		writeError(w, http.StatusConflict, "INVENTORY_CONFLICT", "the StoreOffer inventory state is inconsistent")
 	case errors.Is(err, postgres.ErrCartEmpty):
 		writeError(w, http.StatusConflict, "CART_EMPTY", "cart must contain at least one current line")
 	case errors.Is(err, postgres.ErrCartQuantityInvalid), errors.Is(err, postgres.ErrCartModifierInvalid):

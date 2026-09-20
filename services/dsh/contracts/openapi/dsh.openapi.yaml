@@ -1811,7 +1811,7 @@ components:
 
     CatalogStoreOffer:
       type: object
-      required: [offerId, storeId, variantId, productId, productName, measurementKind, baseUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, availability, publicationState, media, modifierGroups, version, createdAt, updatedAt]
+      required: [offerId, storeId, variantId, productId, productName, measurementKind, baseUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, inventoryOnHandBaseUnits, inventoryReservedBaseUnits, availability, publicationState, media, modifierGroups, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         offerId:
@@ -1864,7 +1864,13 @@ components:
           minimum: 1
         inventoryPolicy:
           type: string
-          const: AVAILABILITY_ONLY
+          enum: [AVAILABILITY_ONLY, QUANTITY_ON_HAND]
+        inventoryOnHandBaseUnits:
+          type: integer
+          minimum: 0
+        inventoryReservedBaseUnits:
+          type: integer
+          minimum: 0
         availability:
           type: boolean
         publicationState:
@@ -2031,7 +2037,7 @@ components:
 
     CreateStoreOfferRequest:
       type: object
-      required: [variantId, priceMinor, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits]
+      required: [variantId, priceMinor, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, inventoryOnHandBaseUnits]
       additionalProperties: false
       properties:
         variantId:
@@ -2059,10 +2065,16 @@ components:
         pricingUnitBaseUnits:
           type: integer
           minimum: 1
+        inventoryPolicy:
+          type: string
+          enum: [AVAILABILITY_ONLY, QUANTITY_ON_HAND]
+        inventoryOnHandBaseUnits:
+          type: integer
+          minimum: 0
 
     UpdateStoreOfferRequest:
       type: object
-      required: [priceMinor, availability, publicationState, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits]
+      required: [priceMinor, availability, publicationState, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, inventoryOnHandBaseUnits]
       additionalProperties: false
       properties:
         priceMinor:
@@ -2090,6 +2102,12 @@ components:
         pricingUnitBaseUnits:
           type: integer
           minimum: 1
+        inventoryPolicy:
+          type: string
+          enum: [AVAILABILITY_ONLY, QUANTITY_ON_HAND]
+        inventoryOnHandBaseUnits:
+          type: integer
+          minimum: 0
 
     CatalogStoreOfferResponse:
       type: object

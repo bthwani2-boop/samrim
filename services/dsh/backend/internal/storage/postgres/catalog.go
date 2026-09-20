@@ -29,6 +29,9 @@ var (
 	ErrCatalogOfferProductDisabled  = errors.New("disabled Product or Variant cannot be published")
 	ErrCatalogOfferQuantityInvalid  = errors.New("StoreOffer quantity policy is invalid")
 	ErrCatalogOfferStoreNotFound    = errors.New("catalog Store was not found")
+	ErrCatalogInventoryInvalid      = errors.New("catalog inventory facts are invalid")
+	ErrCatalogInventoryInsufficient = errors.New("catalog inventory is insufficient")
+	ErrCatalogInventoryReserved     = errors.New("catalog inventory has active reservations")
 	ErrCatalogProductScopeForbidden = errors.New("Partner cannot directly create or mutate a Shared Product")
 	ErrCatalogProductOwnership      = errors.New("Store-scoped Product ownership is invalid")
 	ErrCatalogMediaInvalid          = errors.New("catalog Product media is invalid")
@@ -137,6 +140,7 @@ type CatalogStoreOfferRecord struct {
 	Currency, QuantityPolicy, PricingBasis, InventoryPolicy, PublicationState string
 	QuantityMinBaseUnits, QuantityMaxBaseUnits, QuantityStepBaseUnits         *int64
 	PricingUnitBaseUnits                                                      int64
+	InventoryOnHandBaseUnits, InventoryReservedBaseUnits                      int64
 	Availability                                                              bool
 	Version                                                                   int
 	ModifierGroups                                                            []CatalogModifierGroupRecord
@@ -167,6 +171,8 @@ type CatalogOfferInput struct {
 	QuantityMinBaseUnits, QuantityMaxBaseUnits, QuantityStepBaseUnits int64
 	PricingBasis                                                      string
 	PricingUnitBaseUnits                                              int64
+	InventoryPolicy                                                   string
+	InventoryOnHandBaseUnits                                          int64
 }
 type CatalogOfferUpdateInput struct {
 	PriceMinor                                                        int64
@@ -175,6 +181,8 @@ type CatalogOfferUpdateInput struct {
 	QuantityMinBaseUnits, QuantityMaxBaseUnits, QuantityStepBaseUnits int64
 	PricingBasis                                                      string
 	PricingUnitBaseUnits                                              int64
+	InventoryPolicy                                                   string
+	InventoryOnHandBaseUnits                                          int64
 }
 type CatalogProductResult struct {
 	Product  CatalogProductRecord
@@ -222,10 +230,10 @@ func HashCatalogVariantUpdateRequest(variantID string, input CatalogVariantInput
 	return hashFacts("variant-update", variantID, input.Title, input.MeasurementKind, input.BaseUnit, strconv.FormatBool(input.Active), strconv.Itoa(expectedVersion))
 }
 func HashCatalogOfferCreateRequest(input CatalogOfferInput) string {
-	return hashFacts(input.StoreID, input.VariantID, strconv.FormatInt(input.PriceMinor, 10), input.QuantityPolicy, strconv.FormatInt(input.QuantityMinBaseUnits, 10), strconv.FormatInt(input.QuantityMaxBaseUnits, 10), strconv.FormatInt(input.QuantityStepBaseUnits, 10), input.PricingBasis, strconv.FormatInt(input.PricingUnitBaseUnits, 10))
+	return hashFacts(input.StoreID, input.VariantID, strconv.FormatInt(input.PriceMinor, 10), input.QuantityPolicy, strconv.FormatInt(input.QuantityMinBaseUnits, 10), strconv.FormatInt(input.QuantityMaxBaseUnits, 10), strconv.FormatInt(input.QuantityStepBaseUnits, 10), input.PricingBasis, strconv.FormatInt(input.PricingUnitBaseUnits, 10), input.InventoryPolicy, strconv.FormatInt(input.InventoryOnHandBaseUnits, 10))
 }
 func HashCatalogOfferUpdateRequest(offerID string, input CatalogOfferUpdateInput, expectedVersion int) string {
-	return hashFacts(offerID, strconv.FormatInt(input.PriceMinor, 10), strconv.FormatBool(input.Availability), input.PublicationState, input.QuantityPolicy, strconv.FormatInt(input.QuantityMinBaseUnits, 10), strconv.FormatInt(input.QuantityMaxBaseUnits, 10), strconv.FormatInt(input.QuantityStepBaseUnits, 10), input.PricingBasis, strconv.FormatInt(input.PricingUnitBaseUnits, 10), strconv.Itoa(expectedVersion))
+	return hashFacts(offerID, strconv.FormatInt(input.PriceMinor, 10), strconv.FormatBool(input.Availability), input.PublicationState, input.QuantityPolicy, strconv.FormatInt(input.QuantityMinBaseUnits, 10), strconv.FormatInt(input.QuantityMaxBaseUnits, 10), strconv.FormatInt(input.QuantityStepBaseUnits, 10), input.PricingBasis, strconv.FormatInt(input.PricingUnitBaseUnits, 10), input.InventoryPolicy, strconv.FormatInt(input.InventoryOnHandBaseUnits, 10), strconv.Itoa(expectedVersion))
 }
 
 func CreateCommerceVertical(ctx context.Context, db *sql.DB, item CommerceVerticalRecord, idempotencyKey, requestHash string) (CommerceVerticalResult, error) {
@@ -393,7 +401,7 @@ func ListCatalogCategories(ctx context.Context, db *sql.DB, verticalID string, a
 }
 
 const catalogProductSelect = `SELECT p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at FROM dsh.catalog_products p`
-const catalogOfferSelect = `SELECT o.id,o.store_id,o.variant_id,o.price_minor,o.currency,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.availability,o.publication_state,o.version,o.created_at,o.updated_at,v.id,v.product_id,v.title,v.measurement_kind,v.base_unit,v.active,v.version,v.created_at,v.updated_at,p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id JOIN dsh.stores s ON s.id=o.store_id`
+const catalogOfferSelect = `SELECT o.id,o.store_id,o.variant_id,o.price_minor,o.currency,o.quantity_policy,o.quantity_min_base_units,o.quantity_max_base_units,o.quantity_step_base_units,o.pricing_basis,o.pricing_unit_base_units,o.inventory_policy,o.inventory_on_hand_base_units,o.inventory_reserved_base_units,o.availability,o.publication_state,o.version,o.created_at,o.updated_at,v.id,v.product_id,v.title,v.measurement_kind,v.base_unit,v.active,v.version,v.created_at,v.updated_at,p.id,p.vertical_id,p.scope,p.store_id,p.canonical_name,p.brand,p.active,p.version,p.created_at,p.updated_at FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id JOIN dsh.stores s ON s.id=o.store_id`
 
 type CatalogProductPage struct {
 	Products   []CatalogProductRecord
@@ -1156,6 +1164,21 @@ func validateOfferInput(input CatalogOfferInput) error {
 	if input.PricingBasis != "PER_UNIT" && input.PricingBasis != "PER_MEASURE" {
 		return ErrCatalogOfferQuantityInvalid
 	}
+	if input.InventoryPolicy == "" {
+		input.InventoryPolicy = "AVAILABILITY_ONLY"
+	}
+	if input.InventoryPolicy != "AVAILABILITY_ONLY" && input.InventoryPolicy != "QUANTITY_ON_HAND" {
+		return ErrCatalogInventoryInvalid
+	}
+	if input.InventoryOnHandBaseUnits < 0 {
+		return ErrCatalogInventoryInvalid
+	}
+	if input.InventoryPolicy == "AVAILABILITY_ONLY" && input.InventoryOnHandBaseUnits != 0 {
+		return ErrCatalogInventoryInvalid
+	}
+	if input.InventoryPolicy == "QUANTITY_ON_HAND" && input.InventoryOnHandBaseUnits%input.QuantityStepBaseUnits != 0 {
+		return ErrCatalogInventoryInvalid
+	}
 	if input.QuantityPolicy == "DISCRETE" {
 		if input.PricingBasis != "PER_UNIT" || input.PricingUnitBaseUnits != 1 {
 			return ErrCatalogOfferQuantityInvalid
@@ -1218,7 +1241,10 @@ func CreateCatalogOffer(ctx context.Context, db *sql.DB, input CatalogOfferInput
 	if err != nil {
 		return CatalogStoreOfferResult{}, err
 	}
-	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_store_offers(id,store_id,variant_id,price_minor,quantity_policy,quantity_min_base_units,quantity_max_base_units,quantity_step_base_units,pricing_basis,pricing_unit_base_units) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", offerID, input.StoreID, input.VariantID, input.PriceMinor, input.QuantityPolicy, input.QuantityMinBaseUnits, input.QuantityMaxBaseUnits, input.QuantityStepBaseUnits, input.PricingBasis, input.PricingUnitBaseUnits); err != nil {
+	if input.InventoryPolicy == "" {
+		input.InventoryPolicy = "AVAILABILITY_ONLY"
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_store_offers(id,store_id,variant_id,price_minor,quantity_policy,quantity_min_base_units,quantity_max_base_units,quantity_step_base_units,pricing_basis,pricing_unit_base_units,inventory_policy,inventory_on_hand_base_units) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)", offerID, input.StoreID, input.VariantID, input.PriceMinor, input.QuantityPolicy, input.QuantityMinBaseUnits, input.QuantityMaxBaseUnits, input.QuantityStepBaseUnits, input.PricingBasis, input.PricingUnitBaseUnits, input.InventoryPolicy, input.InventoryOnHandBaseUnits); err != nil {
 		if isUniqueViolation(err) {
 			return CatalogStoreOfferResult{}, ErrCatalogOfferAlreadyExists
 		}
@@ -1285,6 +1311,18 @@ func UpdateCatalogOffer(ctx context.Context, db *sql.DB, offerID string, input C
 	if input.QuantityPolicy != current.Variant.MeasurementKind {
 		return CatalogStoreOfferResult{}, ErrCatalogOfferQuantityInvalid
 	}
+	if input.InventoryPolicy == "" {
+		input.InventoryPolicy = "AVAILABILITY_ONLY"
+	}
+	if input.InventoryPolicy != "AVAILABILITY_ONLY" && input.InventoryPolicy != "QUANTITY_ON_HAND" || input.InventoryOnHandBaseUnits < 0 {
+		return CatalogStoreOfferResult{}, ErrCatalogInventoryInvalid
+	}
+	if input.InventoryPolicy == "AVAILABILITY_ONLY" && (input.InventoryOnHandBaseUnits != 0 || current.InventoryReservedBaseUnits != 0) {
+		return CatalogStoreOfferResult{}, ErrCatalogInventoryReserved
+	}
+	if input.InventoryPolicy == "QUANTITY_ON_HAND" && (input.InventoryOnHandBaseUnits < current.InventoryReservedBaseUnits || input.InventoryOnHandBaseUnits%input.QuantityStepBaseUnits != 0) {
+		return CatalogStoreOfferResult{}, ErrCatalogInventoryInvalid
+	}
 	if input.PublicationState == "published" && current.Variant.MeasurementKind == "VARIABLE_MEASURE" {
 		return CatalogStoreOfferResult{}, ErrCatalogOfferProductDisabled
 	}
@@ -1322,7 +1360,7 @@ func UpdateCatalogOffer(ctx context.Context, db *sql.DB, offerID string, input C
 			return CatalogStoreOfferResult{}, ErrCatalogOfferProductDisabled
 		}
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_store_offers SET price_minor=$2,quantity_policy=$3,quantity_min_base_units=$4,quantity_max_base_units=$5,quantity_step_base_units=$6,pricing_basis=$7,pricing_unit_base_units=$8,availability=$9,publication_state=$10,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$11", offerID, input.PriceMinor, input.QuantityPolicy, input.QuantityMinBaseUnits, input.QuantityMaxBaseUnits, input.QuantityStepBaseUnits, input.PricingBasis, input.PricingUnitBaseUnits, input.Availability, input.PublicationState, expectedVersion); err != nil {
+	if _, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_store_offers SET price_minor=$2,quantity_policy=$3,quantity_min_base_units=$4,quantity_max_base_units=$5,quantity_step_base_units=$6,pricing_basis=$7,pricing_unit_base_units=$8,inventory_policy=$9,inventory_on_hand_base_units=$10,inventory_reserved_base_units=CASE WHEN $9='AVAILABILITY_ONLY' THEN 0 ELSE inventory_reserved_base_units END,availability=$11,publication_state=$12,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$13", offerID, input.PriceMinor, input.QuantityPolicy, input.QuantityMinBaseUnits, input.QuantityMaxBaseUnits, input.QuantityStepBaseUnits, input.PricingBasis, input.PricingUnitBaseUnits, input.InventoryPolicy, input.InventoryOnHandBaseUnits, input.Availability, input.PublicationState, expectedVersion); err != nil {
 		return CatalogStoreOfferResult{}, err
 	}
 	offer, err := scanCatalogOffer(tx.QueryRowContext(ctx, catalogOfferSelect+" WHERE o.id=$1", offerID))
@@ -1511,7 +1549,7 @@ func scanCatalogOffer(row rowScanner) (CatalogStoreOfferRecord, error) {
 	var p CatalogProductRecord
 	var vertical, store, brand sql.NullString
 	var min, max, step sql.NullInt64
-	err := row.Scan(&item.ID, &item.StoreID, &item.VariantID, &item.PriceMinor, &item.Currency, &item.QuantityPolicy, &min, &max, &step, &item.PricingBasis, &item.PricingUnitBaseUnits, &item.InventoryPolicy, &item.Availability, &item.PublicationState, &item.Version, &item.CreatedAt, &item.UpdatedAt, &v.ID, &v.ProductID, &v.Title, &v.MeasurementKind, &v.BaseUnit, &v.Active, &v.Version, &v.CreatedAt, &v.UpdatedAt, &p.ID, &vertical, &p.Scope, &store, &p.CanonicalName, &brand, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&item.ID, &item.StoreID, &item.VariantID, &item.PriceMinor, &item.Currency, &item.QuantityPolicy, &min, &max, &step, &item.PricingBasis, &item.PricingUnitBaseUnits, &item.InventoryPolicy, &item.InventoryOnHandBaseUnits, &item.InventoryReservedBaseUnits, &item.Availability, &item.PublicationState, &item.Version, &item.CreatedAt, &item.UpdatedAt, &v.ID, &v.ProductID, &v.Title, &v.MeasurementKind, &v.BaseUnit, &v.Active, &v.Version, &v.CreatedAt, &v.UpdatedAt, &p.ID, &vertical, &p.Scope, &store, &p.CanonicalName, &brand, &p.Active, &p.Version, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return item, err
 	}

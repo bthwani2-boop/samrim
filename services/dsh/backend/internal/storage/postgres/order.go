@@ -533,6 +533,7 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 		modifierOptions        []CatalogModifierOptionRecord
 		modifierAmount         int64
 		amount                 int64
+		inventoryReserved      int64
 	}
 	type cartLine struct {
 		id, offerID, variantID string
@@ -592,6 +593,10 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 		if err != nil {
 			return OrderRecord{}, false, err
 		}
+		line.inventoryReserved, err = reserveCatalogOfferInventoryTx(ctx, tx, line.offer.ID, line.quantity)
+		if err != nil {
+			return OrderRecord{}, false, err
+		}
 		combined := new(big.Int).Add(big.NewInt(total), big.NewInt(line.amount))
 		if !combined.IsInt64() {
 			return OrderRecord{}, false, ErrCheckoutEvidenceStale
@@ -632,7 +637,7 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 		if idErr != nil {
 			return OrderRecord{}, false, idErr
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_lines(id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,measurement_kind,base_unit,pricing_basis,quantity_policy,quantity_min_base_units,quantity_max_base_units,quantity_step_base_units,pricing_unit_base_units,requested_quantity_base_units,final_quantity_base_units,unit_price_minor,line_amount_minor,currency,selected_modifier_option_ids,modifier_amount_minor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`, lineID, newOrderID, line.offer.ID, line.offer.VariantID, line.offer.Product.ID, line.offer.Product.CanonicalName, line.offer.Variant.Title, line.offer.Variant.MeasurementKind, line.offer.Variant.BaseUnit, line.offer.PricingBasis, line.offer.QuantityPolicy, quantityValue(line.offer.QuantityMinBaseUnits), quantityValue(line.offer.QuantityMaxBaseUnits), quantityValue(line.offer.QuantityStepBaseUnits), line.offer.PricingUnitBaseUnits, line.quantity, line.quantity, line.offer.PriceMinor, line.amount, line.offer.Currency, pq.Array(line.modifiers), line.modifierAmount); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_lines(id,order_id,store_offer_id,variant_id,product_id,product_name,variant_title,measurement_kind,base_unit,pricing_basis,quantity_policy,quantity_min_base_units,quantity_max_base_units,quantity_step_base_units,pricing_unit_base_units,requested_quantity_base_units,final_quantity_base_units,inventory_reserved_base_units,unit_price_minor,line_amount_minor,currency,selected_modifier_option_ids,modifier_amount_minor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`, lineID, newOrderID, line.offer.ID, line.offer.VariantID, line.offer.Product.ID, line.offer.Product.CanonicalName, line.offer.Variant.Title, line.offer.Variant.MeasurementKind, line.offer.Variant.BaseUnit, line.offer.PricingBasis, line.offer.QuantityPolicy, quantityValue(line.offer.QuantityMinBaseUnits), quantityValue(line.offer.QuantityMaxBaseUnits), quantityValue(line.offer.QuantityStepBaseUnits), line.offer.PricingUnitBaseUnits, line.quantity, line.quantity, line.inventoryReserved, line.offer.PriceMinor, line.amount, line.offer.Currency, pq.Array(line.modifiers), line.modifierAmount); err != nil {
 			return OrderRecord{}, false, err
 		}
 		for _, option := range line.modifierOptions {
@@ -735,6 +740,11 @@ func TransitionOrderWithPreparation(ctx context.Context, db *sql.DB, orderID, re
 	}
 	if paymentState != "" && ((requestedState != "REJECTED" && requestedState != "CANCELLED") || paymentState != "CANCELLED") {
 		return OrderRecord{}, false, ErrPaymentStateConflict
+	}
+	if requestedState == "REJECTED" || requestedState == "CANCELLED" {
+		if err := releaseOrderInventoryTx(ctx, tx, orderID); err != nil {
+			return OrderRecord{}, false, err
+		}
 	}
 	result, err := scanOrder(tx.QueryRowContext(ctx, "UPDATE dsh.commerce_orders SET state=$2,payment_state=CASE WHEN $4='' THEN payment_state ELSE $4 END,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$3 RETURNING "+orderSelectColumns, orderID, requestedState, expectedVersion, paymentState))
 	if err != nil {

@@ -441,7 +441,7 @@ func (s *CatalogServer) createOffer(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateStoreOffer(r.Context(), bearerToken(r), r.PathValue("storeId"), input.VariantID, int64(input.PriceMinor), input.QuantityPolicy, int64(input.QuantityMinBaseUnits), int64(input.QuantityMaxBaseUnits), int64(input.QuantityStepBaseUnits), input.PricingBasis, int64(input.PricingUnitBaseUnits), idempotency, correlation)
+	result, err := s.service.CreateStoreOffer(r.Context(), bearerToken(r), r.PathValue("storeId"), input.VariantID, int64(input.PriceMinor), input.QuantityPolicy, int64(input.QuantityMinBaseUnits), int64(input.QuantityMaxBaseUnits), int64(input.QuantityStepBaseUnits), input.PricingBasis, int64(input.PricingUnitBaseUnits), input.InventoryPolicy, int64(input.InventoryOnHandBaseUnits), idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -457,7 +457,7 @@ func (s *CatalogServer) updateOffer(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.UpdateStoreOffer(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("offerId"), int64(input.PriceMinor), input.Availability, string(input.PublicationState), input.QuantityPolicy, int64(input.QuantityMinBaseUnits), int64(input.QuantityMaxBaseUnits), int64(input.QuantityStepBaseUnits), input.PricingBasis, int64(input.PricingUnitBaseUnits), expected, idempotency, correlation)
+	result, err := s.service.UpdateStoreOffer(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("offerId"), int64(input.PriceMinor), input.Availability, string(input.PublicationState), input.QuantityPolicy, int64(input.QuantityMinBaseUnits), int64(input.QuantityMaxBaseUnits), int64(input.QuantityStepBaseUnits), input.PricingBasis, int64(input.PricingUnitBaseUnits), input.InventoryPolicy, int64(input.InventoryOnHandBaseUnits), expected, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -563,6 +563,10 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "PRODUCT_NOT_ELIGIBLE", "Product/Variant/vertical is not eligible for this StoreOffer")
 	case errors.Is(err, postgres.ErrCatalogOfferQuantityInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog quantity or measurement policy is invalid")
+	case errors.Is(err, postgres.ErrCatalogInventoryInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog inventory facts are invalid")
+	case errors.Is(err, postgres.ErrCatalogInventoryReserved):
+		writeError(w, http.StatusConflict, "INVENTORY_RESERVED", "active inventory reservations must be settled before changing inventory mode")
 	case errors.Is(err, postgres.ErrCatalogProductOwnership):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "catalog Product ownership is invalid")
 	case errors.Is(err, postgres.ErrCatalogProposalInvalid), errors.Is(err, postgres.ErrCatalogProposalReview):

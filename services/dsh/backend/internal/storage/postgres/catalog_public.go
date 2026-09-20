@@ -50,7 +50,7 @@ func readCustomerVisibleOffer(ctx context.Context, rowSource rowQueryer, storeID
 	conditions := append([]string{"o.store_id=$1", "o.id=$2"}, customerVisibleOfferConditions()...)
 	query := catalogOfferSelect + " WHERE " + strings.Join(conditions, " AND ")
 	if lock {
-		query += " FOR SHARE OF o,v,p,s"
+		query += " FOR UPDATE OF o,v,p,s"
 	}
 	item, err := scanCatalogOffer(rowSource.QueryRowContext(ctx, query, strings.TrimSpace(storeID), strings.TrimSpace(offerID)))
 	if err != nil {
@@ -236,6 +236,7 @@ func publishableCatalogOfferConditionsForAliases(offerAlias, variantAlias, produ
 		offerAlias + ".quantity_min_base_units>0 AND " + offerAlias + ".quantity_max_base_units>=" + offerAlias + ".quantity_min_base_units AND " + offerAlias + ".quantity_step_base_units>0",
 		"(" + offerAlias + ".quantity_max_base_units-" + offerAlias + ".quantity_min_base_units)%" + offerAlias + ".quantity_step_base_units=0",
 		"((" + offerAlias + ".pricing_basis='PER_UNIT' AND " + offerAlias + ".pricing_unit_base_units=1) OR (" + offerAlias + ".pricing_basis='PER_MEASURE' AND " + offerAlias + ".pricing_unit_base_units>0))",
+		"(" + offerAlias + ".inventory_policy='AVAILABILITY_ONLY' OR (" + offerAlias + ".inventory_on_hand_base_units-" + offerAlias + ".inventory_reserved_base_units>=" + offerAlias + ".quantity_min_base_units))",
 		"EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id AND c.active=true AND c.vertical_id=" + productAlias + ".vertical_id WHERE pc.product_id=" + productAlias + ".id)",
 		"NOT EXISTS (SELECT 1 FROM dsh.catalog_product_categories pc JOIN dsh.catalog_categories c ON c.id=pc.category_id JOIN dsh.catalog_category_attribute_rules r ON r.category_id=c.id JOIN dsh.catalog_attribute_definitions ad ON ad.id=r.attribute_id WHERE pc.product_id=" + productAlias + ".id AND c.active=true AND ad.active=true AND ad.vertical_id=" + productAlias + ".vertical_id AND r.required AND ((r.variant_axis AND NOT EXISTS (SELECT 1 FROM dsh.catalog_variant_attribute_values av WHERE av.variant_id=" + variantAlias + ".id AND av.attribute_id=r.attribute_id)) OR (NOT r.variant_axis AND NOT EXISTS (SELECT 1 FROM dsh.catalog_product_attribute_values av WHERE av.product_id=" + productAlias + ".id AND av.attribute_id=r.attribute_id))))",
 		"NOT EXISTS (SELECT 1 FROM dsh.catalog_store_offer_modifier_groups og JOIN dsh.catalog_modifier_groups mg ON mg.id=og.group_id WHERE og.offer_id=" + offerAlias + ".id AND (mg.store_id<>" + offerAlias + ".store_id OR NOT mg.active OR mg.min_selections > (SELECT COUNT(*) FROM dsh.catalog_modifier_options mo WHERE mo.group_id=mg.id AND mo.availability=true)))",

@@ -1195,6 +1195,11 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
 	}
 	if result == "delivered" {
+		if err := consumeOrderInventoryTx(ctx, tx, orderID); err != nil {
+			return CaptainAssignment{}, false, err
+		}
+	}
+	if result == "delivered" {
 		if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_admissions SET availability_state='available',version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND state='eligible' AND availability_state='unavailable'", captainActorID); err != nil {
 			return CaptainAssignment{}, false, err
 		}
