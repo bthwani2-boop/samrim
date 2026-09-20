@@ -2293,7 +2293,7 @@ components:
 
     PublicStoreView:
       type: object
-      required: [id, name, serviceCity, primaryVerticalId, version, publishedAt, createdAt, updatedAt]
+      required: [id, name, serviceCity, primaryVerticalId, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2308,6 +2308,14 @@ components:
         version:
           type: integer
           minimum: 1
+        ratingAverage:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 5
+        ratingCount:
+          type: integer
+          minimum: 0
         publishedAt:
           type: string
           format: date-time

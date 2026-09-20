@@ -220,7 +220,7 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
       <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتاجر" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>المتاجر المتاحة</Text></Pressable>
       <BthwaniSurface tone="raised" style={styles.merchantHero}>
         <View style={styles.merchantIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>
-        <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متاح للطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{state.store.serviceCity.displayNameAr} · كتالوج منشور</Text></View>
+        <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متاح للطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{state.store.serviceCity.displayNameAr} · كتالوج منشور</Text><Text accessibilityLabel="تقييم المتجر" style={styles.rating}>{state.store.ratingCount > 0 ? `★ ${state.store.ratingAverage.toFixed(1)} من 5 · ${state.store.ratingCount} تقييم` : "لا توجد تقييمات بعد"}</Text></View>
         <BthwaniIconButton
           disabled={favoriteBusy}
           icon="favorite"
@@ -289,6 +289,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     merchantHero: { alignItems: "center", borderRadius: radius.xl, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
     merchantIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
     merchantCopy: { flex: 1, gap: spacing[1] },
+    rating: { ...typography.bodySm, color: theme.warning },
     sectionChips: { gap: spacing[2], paddingVertical: spacing[1] },
     searchField: { width: "100%" },
     searchActions: { flexDirection: "row", gap: spacing[2] },

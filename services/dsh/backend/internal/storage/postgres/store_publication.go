@@ -63,6 +63,8 @@ type PublicStoreRecord struct {
 	ServiceCity       *ServiceCityRecord
 	PrimaryVerticalID string
 	Version           int
+	RatingAverage     float64
+	RatingCount       int
 	PublishedAt       time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -234,9 +236,13 @@ func ListPublishedStores(ctx context.Context, db *sql.DB, serviceCityIDs ...stri
 		return nil, ErrServiceCityNotFound
 	}
 	visibleOfferConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
-	rows, err := db.QueryContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version, s.publication_changed_at, s.created_at, s.updated_at,
+	rows, err := db.QueryContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version,
+		COALESCE(ratings.rating_average, 0), COALESCE(ratings.rating_count, 0),
+		s.publication_changed_at, s.created_at, s.updated_at,
 		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
 		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
+		LEFT JOIN (SELECT store_id, AVG(rating)::double precision AS rating_average, COUNT(*)::int AS rating_count
+			FROM dsh.commerce_order_ratings GROUP BY store_id) ratings ON ratings.store_id=s.id
 		WHERE s.service_city_id=$1 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
 		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id WHERE o.store_id=s.id AND `+visibleOfferConditions+`)
 		ORDER BY s.name ASC, s.id ASC`, serviceCityID)
@@ -247,7 +253,7 @@ func ListPublishedStores(ctx context.Context, db *sql.DB, serviceCityIDs ...stri
 	for rows.Next() {
 		var store PublicStoreRecord
 		var city ServiceCityRecord
-		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt); err != nil {
+		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.RatingAverage, &store.RatingCount, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan published store: %w", err)
 		}
 		store.ServiceCity = &city
@@ -276,12 +282,16 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, service
 	var store PublicStoreRecord
 	var city ServiceCityRecord
 	visibleOfferConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
-	err := db.QueryRowContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version, s.publication_changed_at, s.created_at, s.updated_at,
+	err := db.QueryRowContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version,
+		COALESCE(ratings.rating_average, 0), COALESCE(ratings.rating_count, 0),
+		s.publication_changed_at, s.created_at, s.updated_at,
 		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
 		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
+		LEFT JOIN (SELECT store_id, AVG(rating)::double precision AS rating_average, COUNT(*)::int AS rating_count
+			FROM dsh.commerce_order_ratings GROUP BY store_id) ratings ON ratings.store_id=s.id
 		WHERE s.id=$1 AND s.service_city_id=$2 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
 		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id WHERE o.store_id=s.id AND `+visibleOfferConditions+`)`, strings.TrimSpace(storeID), serviceCityID).Scan(
-		&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt)
+		&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.RatingAverage, &store.RatingCount, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PublicStoreRecord{}, ErrStoreNotFound
 	}

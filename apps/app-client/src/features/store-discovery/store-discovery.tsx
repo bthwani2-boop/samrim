@@ -161,7 +161,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
                 style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}
               >
                 <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>
-                <View style={styles.storeCopy}><Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text><Text style={styles.storeMeta}>{store.serviceCity.displayNameAr} · متاح للطلب</Text><Text style={styles.storeHint}>افتح الكتالوج واستكشف المنتجات</Text></View>
+                <View style={styles.storeCopy}><Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text><Text style={styles.storeMeta}>{store.serviceCity.displayNameAr} · متاح للطلب</Text><Text style={styles.storeRating}>{store.ratingCount > 0 ? `★ ${store.ratingAverage.toFixed(1)} (${store.ratingCount})` : "لا توجد تقييمات بعد"}</Text><Text style={styles.storeHint}>افتح الكتالوج واستكشف المنتجات</Text></View>
                 <View style={styles.storeActions}>
                   <BthwaniIconButton
                     disabled={Boolean(favoriteBusyStoreID)}
@@ -201,6 +201,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     storeCopy: { flex: 1, gap: spacing[1] },
     storeTitle: { ...typography.titleSm, color: theme.color },
     storeMeta: { ...typography.bodySm, color: theme.interactiveText },
+    storeRating: { ...typography.bodySm, color: theme.warning },
     storeHint: { ...typography.caption, color: theme.colorMuted },
     pressed: { opacity: opacity.subtle },
     noResults: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[5] },

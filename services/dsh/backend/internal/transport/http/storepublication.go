@@ -253,6 +253,8 @@ func writeStorePublication(w http.ResponseWriter, status int, result postgres.Pu
 func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreView {
 	return contract.PublicStoreView{
 		ID: store.ID, Name: store.Name, Version: store.Version, PublishedAt: store.PublishedAt,
+		RatingAverage:     store.RatingAverage,
+		RatingCount:       store.RatingCount,
 		ServiceCity:       toServiceCityRecord(store.ServiceCity),
 		PrimaryVerticalID: store.PrimaryVerticalID,
 		CreatedAt:         store.CreatedAt, UpdatedAt: store.UpdatedAt,
