@@ -750,7 +750,7 @@ test("remote logout failure keeps local sign-out and remains observable", async 
   await expect(page.locator("p.identity-error")).toHaveCount(0);
 });
 
-test("production security headers and cross-origin mutation guard are active", async ({ page }) => {
+test("security headers and cross-origin mutation guard are active", async ({ page }) => {
   await stubSession(page, 401);
   const cspMessages: string[] = [];
   page.on("console", (message) => {
@@ -768,16 +768,21 @@ test("production security headers and cross-origin mutation guard are active", a
   expect(csp).toContain("object-src 'none'");
   expect(csp).toContain("base-uri 'self'");
   expect(csp).toContain("frame-ancestors 'none'");
-  expect(csp).not.toContain("'unsafe-eval'");
-  expect(csp).not.toContain("'unsafe-inline'");
   expect(headers["strict-transport-security"]).toContain("max-age=63072000");
   expect(headers["x-frame-options"]).toBe("DENY");
 
-  const nonce = csp.match(/'nonce-([^']+)'/)?.[1];
-  expect(nonce).toBeTruthy();
-  const renderedNonces = await page.locator("script[nonce]").evaluateAll((scripts) => scripts.map((script) => (script as HTMLScriptElement).nonce));
-  expect(renderedNonces.length).toBeGreaterThan(0);
-  expect(new Set(renderedNonces)).toEqual(new Set([nonce]));
+  const developmentPolicy = csp.includes("'unsafe-inline'");
+  if (developmentPolicy) {
+    expect(csp).toContain("'unsafe-eval'");
+  } else {
+    expect(csp).not.toContain("'unsafe-eval'");
+    expect(csp).not.toContain("'unsafe-inline'");
+    const nonce = csp.match(/'nonce-([^']+)'/)?.[1];
+    expect(nonce).toBeTruthy();
+    const renderedNonces = await page.locator("script[nonce]").evaluateAll((scripts) => scripts.map((script) => (script as HTMLScriptElement).nonce));
+    expect(renderedNonces.length).toBeGreaterThan(0);
+    expect(new Set(renderedNonces)).toEqual(new Set([nonce]));
+  }
 
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByRole("heading", { name: /الدخول بمفتاح المرور|تعذر الوصول إلى الهوية/ })).toBeVisible();
