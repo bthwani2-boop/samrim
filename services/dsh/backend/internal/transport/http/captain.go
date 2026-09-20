@@ -284,7 +284,7 @@ func (s *CaptainServer) complete(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	assignment, replayed, err := s.service.Complete(r.Context(), bearerToken(r), r.PathValue("assignmentId"), input.Result, int64(input.CollectedAmountMinor), expected, idempotency, correlation)
+	assignment, replayed, err := s.service.Complete(r.Context(), bearerToken(r), r.PathValue("assignmentId"), input.Result, int64(input.CollectedAmountMinor), input.DeliveryProofCode, expected, idempotency, correlation)
 	if err != nil {
 		writeCaptainError(w, err)
 		return
@@ -489,6 +489,8 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain location assignment was not found")
 	case errors.Is(err, postgres.ErrCaptainAdmissionExists), errors.Is(err, postgres.ErrCaptainAdmissionConflict), errors.Is(err, postgres.ErrCaptainOperationConflict), errors.Is(err, postgres.ErrCaptainDispatchConflict), errors.Is(err, postgres.ErrCaptainOfferConflict), errors.Is(err, postgres.ErrCaptainAssignmentConflict), errors.Is(err, postgres.ErrCaptainCustodyConflict), errors.Is(err, postgres.ErrCaptainTerminalConflict), errors.Is(err, postgres.ErrCaptainDeliveryTaskInvalid), errors.Is(err, captain.ErrManagedRoleNotEligible), errors.Is(err, captain.ErrManagedRoleVersionConflict), errors.Is(err, postgres.ErrCaptainNoAvailable), errors.Is(err, postgres.ErrCaptainOfferExpired), errors.Is(err, postgres.ErrCaptainOfferForbidden), errors.Is(err, postgres.ErrCaptainNotEligible), errors.Is(err, postgres.ErrCaptainVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain operational state or eligibility is stale or not actionable")
+	case errors.Is(err, postgres.ErrDeliveryProofInvalid):
+		writeError(w, http.StatusConflict, "DELIVERY_PROOF_INVALID", "the customer delivery code is missing or incorrect; the delivery was not finalized")
 	case errors.Is(err, captain.ErrLocationStateConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain location is only available while the assignment is in custody")
 	case errors.Is(err, captain.ErrLocationIdempotencyConflict):

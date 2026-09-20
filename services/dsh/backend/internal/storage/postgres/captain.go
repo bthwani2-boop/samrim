@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"strconv"
@@ -31,6 +32,7 @@ var (
 	ErrCaptainAssignmentConflict   = errors.New("captain assignment is in conflict")
 	ErrCaptainCustodyConflict      = errors.New("captain custody transition is not allowed")
 	ErrCaptainTerminalConflict     = errors.New("captain assignment is already terminal")
+	ErrDeliveryProofInvalid        = errors.New("delivery proof is invalid")
 )
 
 type CaptainAdmission struct {
@@ -137,8 +139,38 @@ func HashCaptainPickupRequest(assignmentID string, expectedVersion int) string {
 	return hashFacts("captain-pickup", strings.TrimSpace(assignmentID), strconv.Itoa(expectedVersion))
 }
 
-func HashCaptainCompletionRequest(assignmentID, result string, collectedAmountMinor int64, expectedVersion int) string {
-	return hashFacts("captain-complete", strings.TrimSpace(assignmentID), strings.TrimSpace(result), strconv.FormatInt(collectedAmountMinor, 10), strconv.Itoa(expectedVersion))
+func HashCaptainCompletionRequest(assignmentID, result string, collectedAmountMinor int64, deliveryProofCode string, expectedVersion int) string {
+	return hashFacts("captain-complete", strings.TrimSpace(assignmentID), strings.TrimSpace(result), strconv.FormatInt(collectedAmountMinor, 10), strings.TrimSpace(deliveryProofCode), strconv.Itoa(expectedVersion))
+}
+
+func ValidateCaptainDeliveryProof(ctx context.Context, db *sql.DB, assignmentID, captainActorID, deliveryProofCode string) error {
+	assignmentID = strings.TrimSpace(assignmentID)
+	captainActorID = strings.TrimSpace(captainActorID)
+	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
+	if db == nil || assignmentID == "" || captainActorID == "" || len(deliveryProofCode) != 6 {
+		return ErrDeliveryProofInvalid
+	}
+	assignment, err := ReadCaptainAssignment(ctx, db, assignmentID)
+	if err != nil {
+		return err
+	}
+	if assignment.CaptainActorID != captainActorID {
+		return ErrDeliveryProofInvalid
+	}
+	var proofHash, proofState string
+	if err := db.QueryRowContext(ctx, `SELECT code_hash,state FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1`, assignment.OrderID).Scan(&proofHash, &proofState); errors.Is(err, sql.ErrNoRows) {
+		return ErrDeliveryProofInvalid
+	} else if err != nil {
+		return err
+	}
+	proofMatches := subtle.ConstantTimeCompare([]byte(proofHash), []byte(HashDeliveryProofCode(assignment.OrderID, deliveryProofCode))) == 1
+	if assignment.State == "delivered" && proofState == "VERIFIED" && proofMatches {
+		return nil
+	}
+	if assignment.State != "in_custody" || assignment.Handoff.State != "completed" || proofState != "PENDING" || !proofMatches {
+		return ErrDeliveryProofInvalid
+	}
+	return nil
 }
 
 func HashCaptainRecoveryRequest(assignmentID string, expectedVersion int) string {
@@ -1082,9 +1114,10 @@ func CompleteCaptainPickup(ctx context.Context, db *sql.DB, assignmentID, captai
 	return assignment, false, err
 }
 
-func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, captainActorID, result, paymentState string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (CaptainAssignment, bool, error) {
+func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, captainActorID, result, paymentState, deliveryProofCode string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (CaptainAssignment, bool, error) {
 	result = strings.ToLower(strings.TrimSpace(result))
 	paymentState = strings.TrimSpace(paymentState)
+	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
 	if result != "delivered" && result != "delivery_failed" {
 		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
 	}
@@ -1126,6 +1159,20 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 	var orderID string
 	if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_assignments SET state=$2,terminal_result=$3,terminal_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='in_custody' AND version=$4 RETURNING order_id`, assignmentID, result, result, expectedVersion).Scan(&orderID); err != nil {
 		return CaptainAssignment{}, false, err
+	}
+	if result == "delivered" {
+		var proofHash, proofState string
+		if err := tx.QueryRowContext(ctx, `SELECT code_hash,state FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&proofHash, &proofState); errors.Is(err, sql.ErrNoRows) {
+			return CaptainAssignment{}, false, ErrDeliveryProofInvalid
+		} else if err != nil {
+			return CaptainAssignment{}, false, err
+		}
+		if proofState != "PENDING" || len(deliveryProofCode) != 6 || subtle.ConstantTimeCompare([]byte(proofHash), []byte(HashDeliveryProofCode(orderID, deliveryProofCode))) != 1 {
+			return CaptainAssignment{}, false, ErrDeliveryProofInvalid
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_delivery_proofs SET state='VERIFIED',verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`, orderID, captainActorID); err != nil {
+			return CaptainAssignment{}, false, err
+		}
 	}
 	var paymentIntentID sql.NullString
 	var paymentAmount int64

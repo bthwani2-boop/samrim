@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -134,6 +136,39 @@ type OrderRecord struct {
 	Lines                        []OrderLineRecord
 	CreatedAt                    time.Time
 	UpdatedAt                    time.Time
+}
+
+type DeliveryProofRecord struct {
+	OrderID    string
+	State      string
+	Code       string
+	VerifiedAt *time.Time
+}
+
+func newDeliveryProofCode() (string, error) {
+	value, err := rand.Int(rand.Reader, big.NewInt(900000))
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(value.Int64()+100000, 10), nil
+}
+
+func HashDeliveryProofCode(orderID, code string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(orderID) + "|" + strings.TrimSpace(code)))
+	return fmt.Sprintf("%x", digest[:])
+}
+
+func ReadClientDeliveryProof(ctx context.Context, db *sql.DB, orderID, clientActorID string) (DeliveryProofRecord, error) {
+	if db == nil || strings.TrimSpace(orderID) == "" || strings.TrimSpace(clientActorID) == "" {
+		return DeliveryProofRecord{}, ErrOrderNotFound
+	}
+	var proof DeliveryProofRecord
+	if err := db.QueryRowContext(ctx, `SELECT p.order_id,p.state,CASE WHEN p.state='PENDING' THEN p.code ELSE '' END,p.verified_at FROM dsh.commerce_order_delivery_proofs p WHERE p.order_id=$1 AND p.client_actor_id=$2`, strings.TrimSpace(orderID), strings.TrimSpace(clientActorID)).Scan(&proof.OrderID, &proof.State, &proof.Code, &proof.VerifiedAt); errors.Is(err, sql.ErrNoRows) {
+		return DeliveryProofRecord{}, ErrOrderNotFound
+	} else if err != nil {
+		return DeliveryProofRecord{}, err
+	}
+	return proof, nil
 }
 
 type OperatorOperationRecord struct {
@@ -571,6 +606,10 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	if err != nil {
 		return OrderRecord{}, false, err
 	}
+	deliveryProofCode, err := newDeliveryProofCode()
+	if err != nil {
+		return OrderRecord{}, false, err
+	}
 	payment, err := input.PaymentProvisioner(ctx, input.PaymentExternalReference, input.ClientActorID, total, input.PaymentIdempotencyKey, input.CorrelationID)
 	if err != nil || strings.TrimSpace(payment.IntentID) == "" || payment.State != "REQUIRES_COLLECTION" {
 		if err != nil {
@@ -580,6 +619,9 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	}
 	paymentIntentID = strings.TrimSpace(payment.IntentID)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_intent_id,payment_method,payment_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'CREATED',$15,$16,'CASH_ON_DELIVERY',$17)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.AddressID, addressVersion, addressText, latitude, longitude, input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, storeVersion, addressVersion, total, payment.IntentID, payment.State); err != nil {
+		return OrderRecord{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_delivery_proofs(order_id,client_actor_id,code,code_hash) VALUES($1,$2,$3,$4)`, newOrderID, input.ClientActorID, deliveryProofCode, HashDeliveryProofCode(newOrderID, deliveryProofCode)); err != nil {
 		return OrderRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor) VALUES('payment_intent_linked',$1,$2,$3,$4,$5,'NOT_LINKED',$6,$7)`, input.IdempotencyKey, input.CorrelationID, input.ActingActorID, newOrderID, payment.IntentID, payment.State, total); err != nil {

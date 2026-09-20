@@ -36,6 +36,7 @@ func NewOrder(identityClient *identityintegration.Client, accessToken string, db
 func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders", s.listClient)
 	mux.HandleFunc("GET /dsh/orders/{orderId}", s.read)
+	mux.HandleFunc("GET /dsh/orders/{orderId}/delivery-proof", s.readDeliveryProof)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/tracking", s.readTracking)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/cancel", s.cancel)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
@@ -164,6 +165,21 @@ func (s *OrderServer) readTracking(w http.ResponseWriter, r *http.Request) {
 		location := toCaptainLocationSnapshot(*tracking.CaptainLocation)
 		response.CaptainLocation = &location
 	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *OrderServer) readDeliveryProof(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	proof, err := s.service.ReadClientDeliveryProof(r.Context(), bearerToken(r), r.PathValue("orderId"))
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	response := contract.DeliveryProofResponse{OrderID: proof.OrderID, State: proof.State, VerifiedAt: proof.VerifiedAt}
+	response.Code = proof.Code
 	writeJSON(w, http.StatusOK, response)
 }
 

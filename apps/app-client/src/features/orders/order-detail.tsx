@@ -1,6 +1,6 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, paymentMethodLabel, paymentStateLabel, type Order, type OrderTrackingResponse, orderStateLabel } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, paymentMethodLabel, paymentStateLabel, type DeliveryProofResponse, type Order, type OrderTrackingResponse, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -28,6 +28,7 @@ export default function ClientOrderDetail() {
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState("");
   const [tracking, setTracking] = useState<{ kind: "loading" } | { kind: "ready"; value: OrderTrackingResponse } | { kind: "error" }>({ kind: "loading" });
+  const [deliveryProof, setDeliveryProof] = useState<{ kind: "loading" } | { kind: "ready"; value: DeliveryProofResponse } | { kind: "error" }>({ kind: "loading" });
 
   const refreshTracking = useCallback(async () => {
     if (!orderId.trim()) return;
@@ -40,6 +41,17 @@ export default function ClientOrderDetail() {
     }
   }, [orderId]);
 
+  const refreshDeliveryProof = useCallback(async () => {
+    if (!orderId.trim()) return;
+    try {
+      const token = await getUsableIdentityAccessToken();
+      setDeliveryProof({ kind: "ready", value: await client().readClientDeliveryProof(token, orderId) });
+    } catch (error) {
+      console.error("DSH client delivery proof read failed", error);
+      setDeliveryProof({ kind: "error" });
+    }
+  }, [orderId]);
+
   const load = useCallback(async (preserveCurrent = false) => {
     if (!orderId.trim()) { setState({ kind: "error" }); return; }
     if (preserveCurrent) setRefreshing(true);
@@ -47,10 +59,12 @@ export default function ClientOrderDetail() {
     setRefreshError("");
     setCancelError("");
     setTracking({ kind: "loading" });
+    setDeliveryProof({ kind: "loading" });
     try {
       const token = await getUsableIdentityAccessToken();
       const order = (await client().readOrder(token, orderId)).order;
       setState({ kind: "ready", order });
+      await refreshDeliveryProof();
       await refreshTracking();
     } catch (error) {
       console.error("DSH client order detail read failed", error);
@@ -59,7 +73,7 @@ export default function ClientOrderDetail() {
     } finally {
       setRefreshing(false);
     }
-  }, [orderId, refreshTracking]);
+  }, [orderId, refreshDeliveryProof, refreshTracking]);
 
   const cancelOrder = useCallback(async () => {
     if (state.kind !== "ready" || state.order.state !== "CREATED" || cancelling) return;
@@ -117,6 +131,13 @@ export default function ClientOrderDetail() {
       <View style={styles.status}><View style={styles.statusCopy}><Text style={styles.statusTitle}>الحالة الحالية</Text><BthwaniStatusBadge icon={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" ? "warning" : order.state === "CANCELLED" ? "warning" : "orders"} label={orderStateLabel(order.state)} tone={order.state === "DELIVERED" ? "success" : order.state === "DELIVERY_FAILED" || order.state === "CANCELLED" ? "danger" : "info"} /><Text style={styles.statusTotal}>{formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text></View><View style={styles.actionStack}><BthwaniButton accessibilityLabel="تحديث حالة الطلب" busy={refreshing} label="تحديث الحالة" onPress={() => void load(true)} variant="secondary" />{order.state === "CREATED" ? <BthwaniButton accessibilityLabel="إلغاء الطلب" busy={cancelling} disabled={cancelling || refreshing} label="إلغاء الطلب" onPress={requestCancel} variant="danger" /> : null}</View></View>
       {refreshError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{refreshError}</Text> : null}
       {cancelError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{cancelError}</Text> : null}
+      <BthwaniSectionHeader title="إثبات التسليم" subtitle="يؤكّد العميل الرمز للكابتن عند استلام الطلب" />
+      <BthwaniSurface tone="base" style={styles.proofSurface}>
+        {deliveryProof.kind === "loading" ? <Text style={styles.muted}>جارٍ تجهيز رمز التسليم…</Text> : null}
+        {deliveryProof.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة رمز التسليم الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>رمز التسليم</Text><Text accessibilityLabel="رمز التسليم" style={styles.proofCode}>{deliveryProof.value.code ?? "—"}</Text><Text style={styles.muted}>لا تشارك الرمز إلا مع الكابتن عند وصول الطلب.</Text></> : null}
+        {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label="تم إثبات التسليم" tone="success" /><Text style={styles.muted}>تم قبول رمز التسليم وتسجيل الاستلام.</Text></> : null}
+      </BthwaniSurface>
       <BthwaniSectionHeader title="التتبع المباشر" subtitle="يظهر الموقع أثناء عهدة الكابتن فقط" />
       <BthwaniSurface tone="base" style={styles.trackingSurface}>
         {tracking.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة حالة التتبع…</Text> : null}
@@ -163,6 +184,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     refreshError: { ...typography.bodySm, color: theme.danger },
     trackingSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     trackingTitle: { ...typography.bodyStrong, color: theme.interactiveText },
+    proofSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
+    proofTitle: { ...typography.bodyStrong, color: theme.color },
+    proofCode: { ...typography.titleLg, color: theme.interactiveText, letterSpacing: 6, textAlign: "center" },
   });
 }
 

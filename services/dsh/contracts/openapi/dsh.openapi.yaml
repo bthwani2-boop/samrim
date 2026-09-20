@@ -186,6 +186,9 @@ paths:
   /dsh/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}"
 
+  /dsh/orders/{orderId}/delivery-proof:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1delivery-proof"
+
   /dsh/orders/{orderId}/tracking:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1tracking"
 
@@ -3070,6 +3073,32 @@ components:
           format: int64
           minimum: 1
           description: Required for a delivered cash-on-delivery assignment; must equal the order amount.
+        deliveryProofCode:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: Required when result is delivered; the customer reads this code from the client application.
+
+    DeliveryProofResponse:
+      type: object
+      required: [orderId, state]
+      additionalProperties: false
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        state:
+          type: string
+          enum: [PENDING, VERIFIED]
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          nullable: true
+          description: Present only while the proof is pending; never returned after verification.
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
 
     ManagedRoleMutationRequest:
       type: object

@@ -36,7 +36,7 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set();
+const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -61,6 +61,9 @@ function expectSQL(query, expected, message) { const observed = sql(query); if (
 function cleanup() {
   // Disposable cleanup is intentionally ID-scoped to this verifier's fresh state;
   // it must never delete the reusable local baseline or synthetic world locators.
+  for (const challengeID of challengeIDs) {
+    sql(`DELETE FROM identity_challenges WHERE id='${sqlLiteral(challengeID)}'`);
+  }
   for (const importRunID of importRunIDs) {
     const value = sqlLiteral(importRunID);
     sql(`DELETE FROM dsh.catalog_import_audit WHERE run_id='${value}'`);
@@ -262,6 +265,7 @@ async function activatePartner(phone, password) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "partner" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Partner activation challenge failed", JSON.stringify(challenge));
+  challengeIDs.add(String(challenge.body.challengeId));
   const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate", excludeMessageIds: previousMessageIds });
   const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "partner", verificationCode, password, clientInstanceId: `dsh-runtime-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "partner") fail("Partner activation failed", JSON.stringify(activation));
@@ -271,6 +275,7 @@ async function activateCaptain(phone, password) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "captain" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Captain activation challenge failed", JSON.stringify(challenge));
+  challengeIDs.add(String(challenge.body.challengeId));
   const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate", excludeMessageIds: previousMessageIds });
   const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "captain", verificationCode, password, clientInstanceId: `dsh-captain-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "captain" || activation.body?.identity?.surface !== "app-captain") fail("Captain activation failed", JSON.stringify(activation));
@@ -280,6 +285,7 @@ async function activateField(phone, password) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "managed_activate" });
   const challenge = await request(identityBase, "POST", "/auth/managed/activation/request", { body: { phone, role: "field" } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Field activation challenge failed", JSON.stringify(challenge));
+  challengeIDs.add(String(challenge.body.challengeId));
   const verificationCode = await readMailpitCode({ port: mailpitPort, phone, purpose: "managed_activate", excludeMessageIds: previousMessageIds });
   const activation = await request(identityBase, "POST", "/auth/managed/activate", { body: { phone, role: "field", verificationCode, password, clientInstanceId: `dsh-field-${suffix}` } });
   if (activation.status !== 200 || typeof activation.body?.accessToken !== "string" || activation.body?.identity?.role !== "field" || activation.body?.identity?.surface !== "app-field") fail("Field activation failed", JSON.stringify(activation));
@@ -289,6 +295,7 @@ async function createClientSession(phone) {
   const previousMessageIds = await captureMailpitMessageIds({ port: mailpitPort, phone, purpose: "client_register" });
   const challenge = await request(identityBase, "POST", "/auth/client/registration/request", { body: { phone } });
   if (challenge.status !== 201 || typeof challenge.body?.challengeId !== "string") fail("Client registration challenge failed", JSON.stringify(challenge));
+  challengeIDs.add(String(challenge.body.challengeId));
   const code = await readMailpitCode({ port: mailpitPort, phone, purpose: "client_register", excludeMessageIds: previousMessageIds });
   const registration = await request(identityBase, "POST", "/auth/client/register", { body: { phone, code, password: `Clie${crypto.randomBytes(2).toString("hex")}`, clientInstanceId: `dsh-client-${suffix}` } });
   if (registration.status !== 201 || typeof registration.body?.accessToken !== "string" || registration.body?.identity?.role !== "client") fail("Client registration failed", JSON.stringify(registration));
@@ -308,7 +315,7 @@ if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is inva
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "28", "DSH migration history is not v28");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "29", "DSH migration history is not v29");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -328,10 +335,11 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=26", "026_captain_live_location.sql", "DSH Captain live-location migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=27", "027_notification_read_state.sql", "DSH notification read-state migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=28", "028_client_favorite_stores.sql", "DSH client favorite-store migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=29", "029_order_delivery_proof.sql", "DSH order delivery-proof migration is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_orders_state_chk'", "t", "DSH Order cancellation state is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_order_transition_state_chk'", "t", "DSH Order cancellation transition is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%order_cancelled%' FROM pg_constraint WHERE conname='commerce_order_audit_event_type_chk'", "t", "DSH Order cancellation audit is not canonical");
-for (const table of ["commerce_carts", "commerce_cart_lines", "commerce_cart_mutation_idempotency", "commerce_cart_audit", "commerce_orders", "commerce_order_lines", "commerce_order_checkout_idempotency", "commerce_order_transition_idempotency", "commerce_order_audit", "commerce_order_payment_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required commerce relation is missing: ${table}`);
+ for (const table of ["commerce_carts", "commerce_cart_lines", "commerce_cart_mutation_idempotency", "commerce_cart_audit", "commerce_orders", "commerce_order_lines", "commerce_order_checkout_idempotency", "commerce_order_transition_idempotency", "commerce_order_audit", "commerce_order_payment_audit", "commerce_order_delivery_proofs"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required commerce relation is missing: ${table}`);
 for (const table of ["central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NULL`, "t", `retired catalog relation remains: ${table}`);
 for (const table of ["catalog_attribute_enum_options", "catalog_category_attribute_rules", "catalog_variant_attribute_values", "catalog_storefront_sections", "catalog_modifier_groups", "catalog_modifier_options", "catalog_variant_mutation_idempotency", "catalog_variant_audit", "catalog_attribute_mutation_idempotency", "commerce_order_line_modifier_snapshots", "commerce_order_line_attribute_snapshots"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v12/v13 relation is missing: ${table}`);
 for (const table of ["catalog_import_mutation_idempotency", "catalog_import_run_items", "catalog_import_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v14 relation is missing: ${table}`);
@@ -352,7 +360,7 @@ expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='fi
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "CHECK (((originating_field_actor_id IS NULL) OR (length(btrim(originating_field_actor_id)) > 0)))", "Field joining-case origin invariant is not canonical");
 expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name='originating_field_actor_id')", "t", "Field joining-case origin column is missing");
-  console.log("DSH_SCHEMA_V28=PASS");
+  console.log("DSH_SCHEMA_V29=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -754,6 +762,10 @@ const checkout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: c
 if (checkout.status !== 201 || checkout.body?.order?.state !== "CREATED" || checkout.body.order.version !== 1 || checkout.body.order.totalAmountMinor !== 4200 || checkout.body.order.paymentMethod !== "CASH_ON_DELIVERY" || checkout.body.order.paymentState !== "REQUIRES_COLLECTION" || typeof checkout.body.order.paymentIntentId !== "string" || checkout.body.order.lines?.[0]?.requestedQuantityBaseUnits !== 2 || checkout.body.order.lines?.[0]?.unitPriceMinor !== 1800 || checkout.body.order.lines?.[0]?.modifierAmountMinor !== 600 || !checkout.body.order.lines?.[0]?.modifierSnapshots?.some((snapshot) => snapshot.optionId === modifierOptionID && snapshot.optionNameAr === `حليب ${suffix}` && snapshot.priceDeltaMinor === 300) || checkout.body.order.lines?.[0]?.attributeSnapshots?.length !== 3 || !checkout.body.order.lines?.[0]?.attributeSnapshots?.some((snapshot) => snapshot.attributeId === enumAttributeID && snapshot.valueKind === "ENUM" && snapshot.enumValue === "Dark")) fail("cart checkout did not create an immutable Order/payment snapshot", JSON.stringify(checkout));
 const checkoutLineID = String(checkout.body.order.lines?.[0]?.id || "");
 const orderID = String(checkout.body.order.id); orderIDs.add(orderID);
+const deliveryProof = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/delivery-proof`, { token: client.accessToken });
+const partnerDeliveryProof = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/delivery-proof`, { token: first.accessToken });
+if (deliveryProof.status !== 200 || deliveryProof.body?.orderId !== orderID || deliveryProof.body?.state !== "PENDING" || !/^[0-9]{6}$/.test(String(deliveryProof.body?.code || "")) || partnerDeliveryProof.status !== 403) fail("customer-scoped delivery proof readback or role boundary failed", JSON.stringify({ deliveryProof, partnerDeliveryProof }));
+const deliveryProofCode = String(deliveryProof.body.code);
 const paymentIntentID = String(checkout.body.order.paymentIntentId); paymentIntentIDs.add(paymentIntentID);
 const linkedPaymentRead = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(paymentIntentID)}`, { token: wltToken });
 const linkedPaymentAuditCount = sql(`SELECT count(*) FROM dsh.commerce_order_payment_audit WHERE order_id='${sqlLiteral(orderID)}' AND event_type='payment_intent_linked' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND amount_minor=4200`);
@@ -875,14 +887,20 @@ const recovered = await request(dshBase, "POST", `/dsh/captains/assignments/${en
 const recoveredReplay = await request(dshBase, "POST", `/dsh/captains/assignments/${encodeURIComponent(captainAssignmentID)}/recover`, { token: dshToken, headers: serviceHeaders(actingOperatorID, recoveryKey, crypto.randomUUID(), 3) });
 const recoveredTask = await request(dshBase, "GET", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/delivery-task`, { token: captainAccessToken });
 const reassignmentAfterFailure = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/reassign`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-reassign-after-failure-${suffix}`) });
-const wrongCollection = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-wrong-${suffix}`, 4), body: { result: "delivered", collectedAmountMinor: 4199 } });
-const completed = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-${suffix}`, 4), body: { result: "delivered", collectedAmountMinor: 4200 } });
-const completedReplay = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-${suffix}`, 4), body: { result: "delivered", collectedAmountMinor: 4200 } });
+const wrongProof = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-proof-wrong-${suffix}`, 4), body: { result: "delivered", collectedAmountMinor: 4200, deliveryProofCode: "000000" } });
+const paymentAfterWrongProof = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(paymentIntentID)}`, { token: wltToken });
+const wrongCollection = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-wrong-${suffix}`, 4), body: { result: "delivered", collectedAmountMinor: 4199, deliveryProofCode } });
+const completed = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-${suffix}`, 4), body: { result: "delivered", collectedAmountMinor: 4200, deliveryProofCode } });
+const completedReplay = await request(dshBase, "POST", `/dsh/captains/me/assignments/${encodeURIComponent(captainAssignmentID)}/complete`, { token: captainAccessToken, headers: partnerHeaders(`captain-complete-${suffix}`, 4), body: { result: "delivered", collectedAmountMinor: 4200, deliveryProofCode } });
 const deliveredOrder = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}`, { token: client.accessToken });
+const verifiedDeliveryProof = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/delivery-proof`, { token: client.accessToken });
 const completedTracking = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/tracking`, { token: client.accessToken });
 const captainAfterDelivery = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
 const collectedPaymentRead = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(paymentIntentID)}`, { token: wltToken });
 const collectedPaymentAuditCount = sql(`SELECT count(*) FROM dsh.commerce_order_payment_audit WHERE order_id='${sqlLiteral(orderID)}' AND event_type='payment_collected' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND from_state='REQUIRES_COLLECTION' AND to_state='COLLECTED' AND amount_minor=4200`);
+if (wrongProof.status !== 409 || wrongProof.body?.error?.code !== "DELIVERY_PROOF_INVALID") fail("incorrect delivery proof was accepted", JSON.stringify(wrongProof));
+if (paymentAfterWrongProof.status !== 200 || paymentAfterWrongProof.body?.paymentIntent?.state !== "REQUIRES_COLLECTION") fail("incorrect delivery proof mutated cash collection state", JSON.stringify(paymentAfterWrongProof));
+if (verifiedDeliveryProof.status !== 200 || verifiedDeliveryProof.body?.state !== "VERIFIED" || verifiedDeliveryProof.body?.code !== undefined) fail("verified delivery proof readback exposed the customer code or wrong state", JSON.stringify(verifiedDeliveryProof));
  if (pickedUp.status !== 200 || pickedUp.body?.assignment?.state !== "in_custody" || captainLocation.status !== 200 || captainLocation.body?.location?.latitude !== 15.3701 || captainLocation.body?.location?.longitude !== 44.1911 || captainLocationReplay.status !== 200 || captainLocationReplay.body?.idempotentReplay !== true || wrongCaptainLocation.status !== 404 || clientTracking.status !== 200 || clientTracking.body?.trackingState !== "LIVE" || clientTracking.body?.assignmentId !== captainAssignmentID || clientTracking.body?.captainLocation?.latitude !== 15.3701 || completedTracking.status !== 200 || completedTracking.body?.trackingState !== "COMPLETED" || completedTracking.body?.assignmentId !== null || completedTracking.body?.captainLocation !== null || failedDelivery.status !== 200 || failedDelivery.body?.assignment?.state !== "delivery_failed" || failedOrder.status !== 200 || failedOrder.body?.order?.state !== "DELIVERY_FAILED" || captainAfterFailure.status !== 200 || captainAfterFailure.body?.admission?.availabilityState !== "unavailable" || recovered.status !== 200 || recovered.body?.assignment?.state !== "in_custody" || recovered.body.assignment.captainActorId !== captainActorID || recoveredReplay.status !== 200 || recoveredReplay.body?.idempotentReplay !== true || recoveredReplay.body.assignment.version !== recovered.body.assignment.version || recoveredTask.status !== 200 || recoveredTask.body?.task?.deliveryState !== "in_custody" || reassignmentAfterFailure.status !== 409 || wrongCollection.status !== 409 || wrongCollection.body?.error?.code !== "AMOUNT_MISMATCH" || completed.status !== 200 || completed.body?.assignment?.state !== "delivered" || completedReplay.status !== 200 || completedReplay.body?.idempotentReplay !== true || deliveredOrder.status !== 200 || deliveredOrder.body?.order?.state !== "DELIVERED" || deliveredOrder.body.order.paymentMethod !== "CASH_ON_DELIVERY" || deliveredOrder.body.order.paymentState !== "COLLECTED" || collectedPaymentRead.status !== 200 || collectedPaymentRead.body?.paymentIntent?.state !== "COLLECTED" || collectedPaymentRead.body.paymentIntent.collectedAmountMinor !== 4200 || collectedPaymentAuditCount !== "1" || captainAfterDelivery.status !== 200 || captainAfterDelivery.body?.admission?.availabilityState !== "available") fail("Captain custody, live location privacy, governed failure recovery, exact cash collection, and terminal delivery journey failed", JSON.stringify({ pickedUp, captainLocation, captainLocationReplay, wrongCaptainLocation, clientTracking, completedTracking, failedDelivery, failedOrder, captainAfterFailure, recovered, recoveredReplay, recoveredTask, reassignmentAfterFailure, wrongCollection, completed, completedReplay, deliveredOrder, collectedPaymentRead, collectedPaymentAuditCount, captainAfterDelivery }));
 const locationAuditCount = sql(`SELECT count(*) FROM dsh.captain_location_audit WHERE order_id='${sqlLiteral(orderID)}'`);
 const locationIdempotencyCount = sql(`SELECT count(*) FROM dsh.captain_location_mutation_idempotency WHERE order_id='${sqlLiteral(orderID)}'`);

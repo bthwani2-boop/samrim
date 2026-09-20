@@ -204,7 +204,7 @@ func (s *Service) Pickup(ctx context.Context, accessToken, assignmentID string, 
 	return postgres.CompleteCaptainPickup(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainPickupRequest(assignmentID, expectedVersion), strings.TrimSpace(correlationID))
 }
 
-func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, result string, collectedAmountMinor int64, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
+func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, result string, collectedAmountMinor int64, deliveryProofCode string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
 	identity, err := s.requireCaptain(ctx, accessToken)
 	if err != nil {
 		return postgres.CaptainAssignment{}, false, err
@@ -215,9 +215,21 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 	if collectedAmountMinor < 0 {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
+	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
+	if strings.EqualFold(strings.TrimSpace(result), "delivered") && (len(deliveryProofCode) != 6 || strings.Trim(deliveryProofCode, "0123456789") != "") {
+		return postgres.CaptainAssignment{}, false, ErrInvalidInput
+	}
+	if !strings.EqualFold(strings.TrimSpace(result), "delivered") && deliveryProofCode != "" {
+		return postgres.CaptainAssignment{}, false, ErrInvalidInput
+	}
 	assignment, err := postgres.ReadCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID))
 	if err != nil {
 		return postgres.CaptainAssignment{}, false, err
+	}
+	if strings.EqualFold(strings.TrimSpace(result), "delivered") {
+		if err := postgres.ValidateCaptainDeliveryProof(ctx, s.db, assignment.ID, identity.Subject, deliveryProofCode); err != nil {
+			return postgres.CaptainAssignment{}, false, err
+		}
 	}
 	paymentState := ""
 	if strings.ToLower(strings.TrimSpace(result)) == "delivered" {
@@ -248,7 +260,7 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 	} else if collectedAmountMinor != 0 {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, paymentState, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, collectedAmountMinor, expectedVersion), strings.TrimSpace(correlationID))
+	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, paymentState, deliveryProofCode, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, collectedAmountMinor, deliveryProofCode, expectedVersion), strings.TrimSpace(correlationID))
 }
 
 func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
