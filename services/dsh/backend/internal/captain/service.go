@@ -24,6 +24,7 @@ var (
 	ErrManagedRoleVersionConflict = errors.New("managed role version is stale")
 	ErrCaptainIdentityUnavailable = errors.New("captain identity was not provisioned")
 	ErrPaymentUnavailable         = errors.New("payment collection is unavailable")
+	ErrCollectionAmountMismatch   = errors.New("collected amount does not match the order amount")
 )
 
 var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
@@ -183,12 +184,15 @@ func (s *Service) Pickup(ctx context.Context, accessToken, assignmentID string, 
 	return postgres.CompleteCaptainPickup(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainPickupRequest(assignmentID, expectedVersion), strings.TrimSpace(correlationID))
 }
 
-func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, result string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
+func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, result string, collectedAmountMinor int64, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
 	identity, err := s.requireCaptain(ctx, accessToken)
 	if err != nil {
 		return postgres.CaptainAssignment{}, false, err
 	}
 	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
+		return postgres.CaptainAssignment{}, false, ErrInvalidInput
+	}
+	if collectedAmountMinor < 0 {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
 	assignment, err := postgres.ReadCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID))
@@ -202,7 +206,10 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 			return postgres.CaptainAssignment{}, false, orderErr
 		}
 		if order.PaymentState == "REQUIRES_COLLECTION" && order.PaymentIntentID != nil {
-			intent, collectErr := s.payment.EnsureCollected(ctx, *order.PaymentIntentID, identity.Subject, wlt.DerivedExternalReference("cash", idempotencyKey), order.TotalAmountMinor, wlt.DerivedIdempotencyKey("collect", idempotencyKey), correlationID)
+			if collectedAmountMinor <= 0 || collectedAmountMinor != order.TotalAmountMinor {
+				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
+			}
+			intent, collectErr := s.payment.EnsureCollected(ctx, *order.PaymentIntentID, identity.Subject, wlt.DerivedExternalReference("cash", idempotencyKey), collectedAmountMinor, wlt.DerivedIdempotencyKey("collect", idempotencyKey), correlationID)
 			if collectErr != nil || intent.State != "COLLECTED" {
 				if collectErr != nil {
 					return postgres.CaptainAssignment{}, false, fmt.Errorf("%w: %v", ErrPaymentUnavailable, collectErr)
@@ -211,12 +218,17 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 			}
 			paymentState = "COLLECTED"
 		} else if order.PaymentState == "COLLECTED" {
+			if collectedAmountMinor != 0 && collectedAmountMinor != order.TotalAmountMinor {
+				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
+			}
 			paymentState = "COLLECTED"
 		} else if order.PaymentState != "NOT_LINKED" {
 			return postgres.CaptainAssignment{}, false, postgres.ErrPaymentStateConflict
 		}
+	} else if collectedAmountMinor != 0 {
+		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, paymentState, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, expectedVersion), strings.TrimSpace(correlationID))
+	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, paymentState, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, collectedAmountMinor, expectedVersion), strings.TrimSpace(correlationID))
 }
 
 func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {

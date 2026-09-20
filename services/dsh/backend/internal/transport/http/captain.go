@@ -258,7 +258,7 @@ func (s *CaptainServer) complete(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	assignment, replayed, err := s.service.Complete(r.Context(), bearerToken(r), r.PathValue("assignmentId"), input.Result, expected, idempotency, correlation)
+	assignment, replayed, err := s.service.Complete(r.Context(), bearerToken(r), r.PathValue("assignmentId"), input.Result, int64(input.CollectedAmountMinor), expected, idempotency, correlation)
 	if err != nil {
 		writeCaptainError(w, err)
 		return
@@ -459,6 +459,8 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain operational state or eligibility is stale or not actionable")
 	case errors.Is(err, postgres.ErrPaymentStateConflict):
 		writeError(w, http.StatusConflict, "PAYMENT_STATE_CONFLICT", "the order payment state is not actionable")
+	case errors.Is(err, captain.ErrCollectionAmountMismatch):
+		writeError(w, http.StatusConflict, "AMOUNT_MISMATCH", "the collected amount must equal the order amount")
 	case errors.Is(err, captain.ErrPaymentUnavailable):
 		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "cash collection is temporarily unavailable; the delivery was not finalized")
 	default:

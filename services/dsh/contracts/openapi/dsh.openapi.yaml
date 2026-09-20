@@ -2909,6 +2909,11 @@ components:
         result:
           type: string
           enum: [delivered, delivery_failed]
+        collectedAmountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Required for a delivered cash-on-delivery assignment; must equal the order amount.
 
     ManagedRoleMutationRequest:
       type: object

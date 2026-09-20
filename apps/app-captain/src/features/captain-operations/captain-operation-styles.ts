@@ -13,6 +13,7 @@ export function createCaptainOperationStyles(theme: ReturnType<typeof resolveThe
     cardTitle: { ...typography.bodyStrong, color: theme.color },
     task: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     payment: { ...typography.bodySm, color: theme.interactiveText },
+    input: { backgroundColor: theme.surfaceInset, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, minHeight: 48, paddingHorizontal: spacing[3], textAlign: "left", writingDirection: "ltr" },
     row: { flexDirection: "row", gap: spacing[2] },
     actionButton: { flex: 1 },
     orderHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },

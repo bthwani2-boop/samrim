@@ -137,8 +137,8 @@ func HashCaptainPickupRequest(assignmentID string, expectedVersion int) string {
 	return hashFacts("captain-pickup", strings.TrimSpace(assignmentID), strconv.Itoa(expectedVersion))
 }
 
-func HashCaptainCompletionRequest(assignmentID, result string, expectedVersion int) string {
-	return hashFacts("captain-complete", strings.TrimSpace(assignmentID), strings.TrimSpace(result), strconv.Itoa(expectedVersion))
+func HashCaptainCompletionRequest(assignmentID, result string, collectedAmountMinor int64, expectedVersion int) string {
+	return hashFacts("captain-complete", strings.TrimSpace(assignmentID), strings.TrimSpace(result), strconv.FormatInt(collectedAmountMinor, 10), strconv.Itoa(expectedVersion))
 }
 
 func HashCaptainRecoveryRequest(assignmentID string, expectedVersion int) string {
