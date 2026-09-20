@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	serviceruntime "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/runtime"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/serviceability"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
@@ -22,6 +23,10 @@ func main() {
 		log.Fatal(err)
 	}
 	identityClient, err := identityintegration.New(identityEndpoint, os.Getenv("IDENTITY_DSH_SERVICE_TOKEN"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	paymentClient, err := wlt.New(os.Getenv("DSH_WLT_API_BASE_URL"), os.Getenv("BTHWANI_ENV"), os.Getenv("WLT_DSH_SERVICE_TOKEN"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -66,15 +71,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cartServer, err := transporthttp.NewCart(identityClient, database, serviceabilityService)
+	cartServer, err := transporthttp.NewCart(identityClient, database, serviceabilityService, paymentClient)
 	if err != nil {
 		log.Fatal(err)
 	}
-	orderServer, err := transporthttp.NewOrder(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	orderServer, err := transporthttp.NewOrder(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient)
 	if err != nil {
 		log.Fatal(err)
 	}
-	captainServer, err := transporthttp.NewCaptain(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	captainServer, err := transporthttp.NewCaptain(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient)
 	if err != nil {
 		log.Fatal(err)
 	}

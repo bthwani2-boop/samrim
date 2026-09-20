@@ -1196,20 +1196,28 @@ func hydrateCatalogProduct(ctx context.Context, db queryer, item CatalogProductR
 	if err != nil {
 		return item, err
 	}
-	media, err := db.QueryContext(ctx, "SELECT uri,media_role,ordinal FROM dsh.catalog_media WHERE product_id=$1 ORDER BY ordinal", item.ID)
+	item.Media, err = listCatalogMedia(ctx, db, item.ID)
 	if err != nil {
 		return item, err
 	}
-	defer media.Close()
-	item.Media = []CatalogMediaRecord{}
-	for media.Next() {
-		var m CatalogMediaRecord
-		if err = media.Scan(&m.URI, &m.Role, &m.Ordinal); err != nil {
-			return item, err
-		}
-		item.Media = append(item.Media, m)
+	return item, nil
+}
+
+func listCatalogMedia(ctx context.Context, db queryer, productID string) ([]CatalogMediaRecord, error) {
+	rows, err := db.QueryContext(ctx, "SELECT uri,media_role,ordinal FROM dsh.catalog_media WHERE product_id=$1 ORDER BY ordinal", productID)
+	if err != nil {
+		return nil, err
 	}
-	return item, media.Err()
+	defer rows.Close()
+	items := make([]CatalogMediaRecord, 0)
+	for rows.Next() {
+		var item CatalogMediaRecord
+		if err := rows.Scan(&item.URI, &item.Role, &item.Ordinal); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 func readCatalogProductTx(ctx context.Context, tx *sql.Tx, id string) (CatalogProductRecord, error) {
 	item, err := readCatalogProductRow(tx.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1", id))
@@ -1285,6 +1293,10 @@ func scanCatalogOffer(row rowScanner) (CatalogStoreOfferRecord, error) {
 }
 func hydrateCatalogOffer(ctx context.Context, db queryer, item CatalogStoreOfferRecord) (CatalogStoreOfferRecord, error) {
 	var err error
+	item.Product.Media, err = listCatalogMedia(ctx, db, item.Product.ID)
+	if err != nil {
+		return item, err
+	}
 	item.Product.Attributes, err = listProductAttributes(ctx, db, item.Product.ID)
 	if err != nil {
 		return item, err

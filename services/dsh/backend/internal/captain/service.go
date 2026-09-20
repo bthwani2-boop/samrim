@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -21,6 +23,7 @@ var (
 	ErrManagedRoleNotEligible     = errors.New("managed role is not currently eligible in its owning domain")
 	ErrManagedRoleVersionConflict = errors.New("managed role version is stale")
 	ErrCaptainIdentityUnavailable = errors.New("captain identity was not provisioned")
+	ErrPaymentUnavailable         = errors.New("payment collection is unavailable")
 )
 
 var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
@@ -28,13 +31,14 @@ var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 type Service struct {
 	identity *identityintegration.Client
 	db       *sql.DB
+	payment  *wlt.Client
 }
 
-func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
-	if identity == nil || db == nil {
+func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client) (*Service, error) {
+	if identity == nil || db == nil || payment == nil {
 		return nil, errors.New("captain configuration is invalid")
 	}
-	return &Service{identity: identity, db: db}, nil
+	return &Service{identity: identity, db: db, payment: payment}, nil
 }
 
 func (s *Service) Admit(ctx context.Context, phone, idempotencyKey, actingActorID, correlationID string) (postgres.CaptainAdmission, bool, error) {
@@ -187,7 +191,32 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, expectedVersion), strings.TrimSpace(correlationID))
+	assignment, err := postgres.ReadCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID))
+	if err != nil {
+		return postgres.CaptainAssignment{}, false, err
+	}
+	paymentState := ""
+	if strings.ToLower(strings.TrimSpace(result)) == "delivered" {
+		order, orderErr := postgres.ReadOrder(ctx, s.db, assignment.OrderID)
+		if orderErr != nil {
+			return postgres.CaptainAssignment{}, false, orderErr
+		}
+		if order.PaymentState == "REQUIRES_COLLECTION" && order.PaymentIntentID != nil {
+			intent, collectErr := s.payment.EnsureCollected(ctx, *order.PaymentIntentID, identity.Subject, wlt.DerivedExternalReference("cash", idempotencyKey), order.TotalAmountMinor, wlt.DerivedIdempotencyKey("collect", idempotencyKey), correlationID)
+			if collectErr != nil || intent.State != "COLLECTED" {
+				if collectErr != nil {
+					return postgres.CaptainAssignment{}, false, fmt.Errorf("%w: %v", ErrPaymentUnavailable, collectErr)
+				}
+				return postgres.CaptainAssignment{}, false, ErrPaymentUnavailable
+			}
+			paymentState = "COLLECTED"
+		} else if order.PaymentState == "COLLECTED" {
+			paymentState = "COLLECTED"
+		} else if order.PaymentState != "NOT_LINKED" {
+			return postgres.CaptainAssignment{}, false, postgres.ErrPaymentStateConflict
+		}
+	}
+	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, paymentState, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, expectedVersion), strings.TrimSpace(correlationID))
 }
 
 func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {

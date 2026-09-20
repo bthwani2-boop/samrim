@@ -1,6 +1,6 @@
 "use client";
 
-import { orderStateLabel, formatMoney, formatOrderDate, type OperatorOperation } from "@bthwani/dsh";
+import { formatMoney, formatOrderDate, orderStateLabel, paymentMethodLabel, paymentStateLabel, type OperatorOperation } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
@@ -149,6 +149,7 @@ export function OperationsWorkspace() {
                         <div className="operation-detail-body">
                           {detailBusy === order.id ? <span role="status">جارٍ إعادة قراءة التفاصيل…</span> : null}
                           <span>{detail.order.lines.length} عناصر · {formatMoney(detail.order.totalAmountMinor, detail.order.currency)}</span>
+                          <span>الدفع: {paymentMethodLabel(detail.order.paymentMethod)} · {paymentStateLabel(detail.order.paymentState)}</span>
                           <span>العنوان: {detail.order.addressText}</span>
                           <span>مدينة الخدمة: <bdi dir="ltr">{detail.order.serviceCityId}</bdi> · قابلية الخدمة: {detail.order.serviceabilityStatus}</span>
                           <ul>

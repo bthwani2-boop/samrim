@@ -11,6 +11,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/captain"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -20,12 +21,12 @@ type CaptainServer struct {
 	service *captain.Service
 }
 
-func NewCaptain(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*CaptainServer, error) {
+func NewCaptain(identityClient *identityintegration.Client, accessToken string, db *sql.DB, payment *wlt.Client) (*CaptainServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := captain.New(identityClient, db)
+	service, err := captain.New(identityClient, db, payment)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +224,7 @@ func (s *CaptainServer) readDeliveryTask(w http.ResponseWriter, r *http.Request)
 		AssignmentID: task.AssignmentID, OrderReference: task.OrderReference, StoreID: task.StoreID, StoreName: task.StoreName,
 		PickupOrigin: contract.CaptainLocation{Latitude: task.PickupLatitude, Longitude: task.PickupLongitude}, CustomerAddressText: task.CustomerAddressText,
 		CustomerDestination: contract.CaptainLocation{Latitude: task.DestinationLatitude, Longitude: task.DestinationLongitude}, OrderState: contract.OrderState(task.OrderState),
-		HandoffState: task.HandoffState, DeliveryState: task.DeliveryState,
+		HandoffState: task.HandoffState, DeliveryState: task.DeliveryState, PaymentMethod: contract.PaymentMethod(task.PaymentMethod), PaymentState: contract.PaymentState(task.PaymentState), AmountDueMinor: int(task.AmountDueMinor), Currency: task.Currency,
 	}})
 }
 
@@ -456,6 +457,10 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain operational resource was not found")
 	case errors.Is(err, postgres.ErrCaptainAdmissionExists), errors.Is(err, postgres.ErrCaptainAdmissionConflict), errors.Is(err, postgres.ErrCaptainOperationConflict), errors.Is(err, postgres.ErrCaptainDispatchConflict), errors.Is(err, postgres.ErrCaptainOfferConflict), errors.Is(err, postgres.ErrCaptainAssignmentConflict), errors.Is(err, postgres.ErrCaptainCustodyConflict), errors.Is(err, postgres.ErrCaptainTerminalConflict), errors.Is(err, postgres.ErrCaptainDeliveryTaskInvalid), errors.Is(err, captain.ErrManagedRoleNotEligible), errors.Is(err, captain.ErrManagedRoleVersionConflict), errors.Is(err, postgres.ErrCaptainNoAvailable), errors.Is(err, postgres.ErrCaptainOfferExpired), errors.Is(err, postgres.ErrCaptainOfferForbidden), errors.Is(err, postgres.ErrCaptainNotEligible), errors.Is(err, postgres.ErrCaptainVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain operational state or eligibility is stale or not actionable")
+	case errors.Is(err, postgres.ErrPaymentStateConflict):
+		writeError(w, http.StatusConflict, "PAYMENT_STATE_CONFLICT", "the order payment state is not actionable")
+	case errors.Is(err, captain.ErrPaymentUnavailable):
+		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "cash collection is temporarily unavailable; the delivery was not finalized")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {

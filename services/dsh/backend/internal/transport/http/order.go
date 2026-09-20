@@ -10,6 +10,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	orderdomain "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/order"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -20,12 +21,12 @@ type OrderServer struct {
 	service *orderdomain.Service
 }
 
-func NewOrder(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*OrderServer, error) {
+func NewOrder(identityClient *identityintegration.Client, accessToken string, db *sql.DB, payment *wlt.Client) (*OrderServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := orderdomain.New(identityClient, db)
+	service, err := orderdomain.New(identityClient, db, payment)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +262,11 @@ func toOrder(item postgres.OrderRecord) contract.Order {
 		}
 		lines = append(lines, contract.OrderLine{ID: line.ID, OrderID: line.OrderID, StoreOfferID: line.StoreOfferID, VariantID: line.VariantID, ProductID: line.ProductID, ProductName: line.ProductName, VariantTitle: line.VariantTitle, MeasurementKind: contract.MeasurementKind(line.MeasurementKind), BaseUnit: contract.BaseUnit(line.BaseUnit), PricingBasis: line.PricingBasis, QuantityPolicy: line.QuantityPolicy, QuantityMinBaseUnits: int(line.QuantityMinBaseUnits), QuantityMaxBaseUnits: int(line.QuantityMaxBaseUnits), QuantityStepBaseUnits: int(line.QuantityStepBaseUnits), PricingUnitBaseUnits: int(line.PricingUnitBaseUnits), RequestedQuantityBaseUnits: int(line.RequestedQuantityBaseUnits), FinalQuantityBaseUnits: finalQuantity, ModifierAmountMinor: int(line.ModifierAmountMinor), UnitPriceMinor: int(line.UnitPriceMinor), LineAmountMinor: int(line.LineAmountMinor), Currency: line.Currency, SelectedModifierOptionIds: line.SelectedModifierOptionIDs, ModifierSnapshots: modifierSnapshots, AttributeSnapshots: attributeSnapshots, CreatedAt: line.CreatedAt})
 	}
-	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CartID: item.CartID, AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	paymentIntentID := ""
+	if item.PaymentIntentID != nil {
+		paymentIntentID = *item.PaymentIntentID
+	}
+	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CartID: item.CartID, AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func snapshotStringValue(value *string) string {
@@ -295,6 +300,10 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order was not found")
 	case errors.Is(err, postgres.ErrCheckoutEvidenceStale), errors.Is(err, postgres.ErrOrderVersionConflict), errors.Is(err, postgres.ErrOrderStateConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Order evidence, version, or lifecycle state is stale")
+	case errors.Is(err, postgres.ErrPaymentStateConflict):
+		writeError(w, http.StatusConflict, "PAYMENT_STATE_CONFLICT", "the order payment state is not actionable")
+	case errors.Is(err, orderdomain.ErrPaymentUnavailable):
+		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "the payment service is temporarily unavailable")
 	case errors.Is(err, postgres.ErrOrderTransitionConflict), errors.Is(err, postgres.ErrCheckoutIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Order facts")
 	default:

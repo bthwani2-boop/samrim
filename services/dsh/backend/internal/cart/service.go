@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/serviceability"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
@@ -20,13 +21,14 @@ type Service struct {
 	identity       *identityintegration.Client
 	db             *sql.DB
 	serviceability *serviceability.Service
+	payment        *wlt.Client
 }
 
-func New(identity *identityintegration.Client, db *sql.DB, serviceabilityService *serviceability.Service) (*Service, error) {
-	if identity == nil || db == nil || serviceabilityService == nil {
+func New(identity *identityintegration.Client, db *sql.DB, serviceabilityService *serviceability.Service, payment *wlt.Client) (*Service, error) {
+	if identity == nil || db == nil || serviceabilityService == nil || payment == nil {
 		return nil, errors.New("cart configuration is invalid")
 	}
-	return &Service{identity: identity, db: db, serviceability: serviceabilityService}, nil
+	return &Service{identity: identity, db: db, serviceability: serviceabilityService, payment: payment}, nil
 }
 
 func (s *Service) Read(ctx context.Context, accessToken, storeID string) (postgres.CartRecord, error) {
@@ -98,6 +100,20 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		ClientActorID: actorID, CartID: strings.TrimSpace(cartID), StoreID: strings.TrimSpace(storeID), AddressID: strings.TrimSpace(addressID), ExpectedCartVersion: expectedCartVersion,
 		Evidence:       postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion},
 		IdempotencyKey: strings.TrimSpace(idempotencyKey), ActingActorID: actorID, CorrelationID: strings.TrimSpace(correlationID),
+		PaymentExternalReference: wlt.DerivedExternalReference("checkout", idempotencyKey),
+		PaymentIdempotencyKey:    wlt.DerivedIdempotencyKey("create", idempotencyKey),
+		PaymentCancellationKey:   wlt.DerivedIdempotencyKey("cancel-checkout", idempotencyKey),
+	}
+	input.PaymentProvisioner = func(provisionContext context.Context, externalReference, payerActorID string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
+		intent, _, provisionErr := s.payment.Create(provisionContext, externalReference, payerActorID, amountMinor, paymentIdempotencyKey, paymentCorrelationID)
+		if provisionErr != nil {
+			return postgres.ProvisionedPayment{}, provisionErr
+		}
+		return postgres.ProvisionedPayment{IntentID: intent.ID, State: intent.State}, nil
+	}
+	input.PaymentCanceller = func(compensationContext context.Context, intentID, reason, cancellationKey, paymentCorrelationID string) error {
+		_, cancelErr := s.payment.EnsureCancelled(compensationContext, intentID, reason, cancellationKey, paymentCorrelationID)
+		return cancelErr
 	}
 	input.RequestHash = postgres.HashCheckoutRequest(input)
 	return postgres.CreateOrderFromCart(ctx, s.db, input)

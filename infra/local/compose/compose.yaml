@@ -119,11 +119,14 @@ services:
         condition: service_healthy
       dsh-migrate:
         condition: service_completed_successfully
+      wlt:
+        condition: service_healthy
     environment:
       PORT: "8080"
       BTHWANI_LISTEN_HOST: "0.0.0.0"
       BTHWANI_ENV: "development"
       DSH_IDENTITY_API_BASE_URL: "http://identity:8082"
+      DSH_WLT_API_BASE_URL: "http://wlt:8083"
       DSH_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       DSH_MIGRATION_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
       DSH_SCHEMA_DATABASE_URL: "postgres://${SAMRIM_POSTGRES_USER}:${SAMRIM_POSTGRES_PASSWORD}@postgres:5432/${SAMRIM_POSTGRES_DB}?sslmode=disable"
@@ -134,6 +137,7 @@ services:
       DSH_MIGRATION_DIR: "/app/migrations"
       IDENTITY_DSH_SERVICE_TOKEN: "${IDENTITY_DSH_SERVICE_TOKEN}"
       CONTROL_PANEL_SERVICE_TOKEN: "${CONTROL_PANEL_SERVICE_TOKEN}"
+      WLT_DSH_SERVICE_TOKEN: "${WLT_DSH_SERVICE_TOKEN}"
     ports:
       - "127.0.0.1:${SAMRIM_DSH_PORT:-18080}:8080"
     healthcheck:

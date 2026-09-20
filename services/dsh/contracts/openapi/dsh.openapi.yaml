@@ -2802,7 +2802,7 @@ components:
 
     CaptainDeliveryTask:
       type: object
-      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, orderState, handoffState, deliveryState]
+      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, orderState, handoffState, deliveryState, paymentMethod, paymentState, amountDueMinor, currency]
       additionalProperties: false
       properties:
         assignmentId:
@@ -2827,6 +2827,16 @@ components:
         deliveryState:
           type: string
           enum: [assigned, in_custody, delivered, delivery_failed]
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        paymentState:
+          $ref: "#/components/schemas/PaymentState"
+        amountDueMinor:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: YER
 
     CaptainDeliveryTaskResponse:
       type: object
@@ -3005,9 +3015,17 @@ components:
           type: string
           format: date-time
 
+    PaymentMethod:
+      type: string
+      enum: [CASH_ON_DELIVERY]
+
+    PaymentState:
+      type: string
+      enum: [NOT_LINKED, REQUIRES_COLLECTION, COLLECTED, CANCELLED]
+
     Order:
       type: object
-      required: [id, clientActorId, storeId, cartId, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, totalAmountMinor, currency, version, lines, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, cartId, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -3055,6 +3073,13 @@ components:
         currency:
           type: string
           const: YER
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        paymentState:
+          $ref: "#/components/schemas/PaymentState"
+        paymentIntentId:
+          type: string
+          nullable: true
         version:
           type: integer
           minimum: 1

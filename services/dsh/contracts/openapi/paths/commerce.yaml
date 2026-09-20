@@ -158,7 +158,7 @@ paths:
   /dsh/cart/checkout:
     post:
       operationId: checkoutCart
-      summary: Revalidate serviceability and customer-visible offers, then create a CREATED Order
+      summary: Revalidate serviceability and customer-visible offers, provision COD collection, then create a CREATED Order
       security:
         - userBearer: []
       parameters:
@@ -173,7 +173,7 @@ paths:
               $ref: "../dsh.openapi.yaml#/components/schemas/CheckoutRequest"
       responses:
         "201":
-          description: Canonical Order created from the cart.
+          description: Canonical Order created from the cart with a linked CASH_ON_DELIVERY payment intent requiring collection at delivery.
           content:
             application/json:
               schema:

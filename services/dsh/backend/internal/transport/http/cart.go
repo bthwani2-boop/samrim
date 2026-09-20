@@ -10,6 +10,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/cart"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/serviceability"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -17,8 +18,8 @@ import (
 
 type CartServer struct{ service *cart.Service }
 
-func NewCart(identityClient *identityintegration.Client, db *sql.DB, serviceabilityService *serviceability.Service) (*CartServer, error) {
-	service, err := cart.New(identityClient, db, serviceabilityService)
+func NewCart(identityClient *identityintegration.Client, db *sql.DB, serviceabilityService *serviceability.Service, payment *wlt.Client) (*CartServer, error) {
+	service, err := cart.New(identityClient, db, serviceabilityService, payment)
 	if err != nil {
 		return nil, err
 	}
@@ -180,6 +181,8 @@ func writeCartError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cart quantity or modifier selection is invalid")
 	case errors.Is(err, postgres.ErrCartStateConflict):
 		writeError(w, http.StatusConflict, "CART_CLOSED", "cart is no longer open")
+	case errors.Is(err, postgres.ErrPaymentProvisioning):
+		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "the payment service is temporarily unavailable; the order was not created")
 	case errors.Is(err, cart.ErrCheckoutNotServiceable):
 		writeError(w, http.StatusConflict, "UNSERVICEABLE", "the selected address is not serviceable for this Store")
 	default:

@@ -98,6 +98,10 @@ type CaptainDeliveryTask struct {
 	OrderState           string
 	HandoffState         string
 	DeliveryState        string
+	PaymentMethod        string
+	PaymentState         string
+	AmountDueMinor       int64
+	Currency             string
 }
 
 type CaptainOperationResult struct {
@@ -1078,10 +1082,14 @@ func CompleteCaptainPickup(ctx context.Context, db *sql.DB, assignmentID, captai
 	return assignment, false, err
 }
 
-func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, captainActorID, result string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (CaptainAssignment, bool, error) {
+func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, captainActorID, result, paymentState string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (CaptainAssignment, bool, error) {
 	result = strings.ToLower(strings.TrimSpace(result))
+	paymentState = strings.TrimSpace(paymentState)
 	if result != "delivered" && result != "delivery_failed" {
 		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
+	}
+	if paymentState != "" && (result != "delivered" || paymentState != "COLLECTED") {
+		return CaptainAssignment{}, false, ErrPaymentStateConflict
 	}
 	if db == nil || strings.TrimSpace(assignmentID) == "" || strings.TrimSpace(captainActorID) == "" || expectedVersion < 1 {
 		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
@@ -1119,11 +1127,20 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 	if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_assignments SET state=$2,terminal_result=$3,terminal_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='in_custody' AND version=$4 RETURNING order_id`, assignmentID, result, result, expectedVersion).Scan(&orderID); err != nil {
 		return CaptainAssignment{}, false, err
 	}
+	var paymentIntentID sql.NullString
+	var paymentAmount int64
+	var currentPaymentState string
+	if err := tx.QueryRowContext(ctx, "SELECT payment_intent_id,total_amount_minor,payment_state FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&paymentIntentID, &paymentAmount, &currentPaymentState); err != nil {
+		return CaptainAssignment{}, false, err
+	}
+	if paymentState != "" && !paymentIntentID.Valid {
+		return CaptainAssignment{}, false, ErrPaymentStateConflict
+	}
 	orderState := "DELIVERED"
 	if result == "delivery_failed" {
 		orderState = "DELIVERY_FAILED"
 	}
-	if result, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='IN_CUSTODY'", orderID, orderState); err != nil {
+	if result, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state=$2,payment_state=CASE WHEN $3='' THEN payment_state ELSE $3 END,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='IN_CUSTODY'", orderID, orderState, paymentState); err != nil {
 		return CaptainAssignment{}, false, err
 	} else if rows, err := result.RowsAffected(); err != nil {
 		return CaptainAssignment{}, false, err
@@ -1144,6 +1161,11 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,assignment_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,'in_custody',$8,$9,$10)`, auditEvent, idempotencyKey, correlationID, captainActorID, orderID, assignmentID, captainActorID, orderState, assignment.Version+1, requestHash); err != nil {
 		return CaptainAssignment{}, false, err
+	}
+	if paymentState != "" {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor) VALUES('payment_collected',$1,$2,$3,$4,$5,$6,$7,$8)`, idempotencyKey, correlationID, captainActorID, orderID, paymentIntentID.String, currentPaymentState, paymentState, paymentAmount); err != nil {
+			return CaptainAssignment{}, false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return CaptainAssignment{}, false, err
@@ -1327,14 +1349,15 @@ func ReadCaptainDeliveryTask(ctx context.Context, db *sql.DB, assignmentID, capt
 	}
 	var task CaptainDeliveryTask
 	var pickupLatitude, pickupLongitude, destinationLatitude, destinationLongitude sql.NullFloat64
-	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state
+	err = tx.QueryRowContext(ctx, `SELECT a.id,a.order_id,s.id,s.name,s.delivery_origin_latitude,s.delivery_origin_longitude,o.address_text,o.address_latitude,o.address_longitude,o.state,h.state,a.state,o.payment_method,o.payment_state,o.total_amount_minor,o.currency
 		FROM dsh.captain_assignments a
 		JOIN dsh.captain_handoffs h ON h.assignment_id=a.id
 		JOIN dsh.commerce_orders o ON o.id=a.order_id
 		JOIN dsh.stores s ON s.id=o.store_id
 		WHERE a.id=$1 AND a.captain_actor_id=$2 AND a.state <> 'reassigned'`, strings.TrimSpace(assignmentID), strings.TrimSpace(captainActorID)).Scan(
 		&task.AssignmentID, &task.OrderReference, &task.StoreID, &task.StoreName, &pickupLatitude, &pickupLongitude,
-		&task.CustomerAddressText, &destinationLatitude, &destinationLongitude, &task.OrderState, &task.HandoffState, &task.DeliveryState)
+		&task.CustomerAddressText, &destinationLatitude, &destinationLongitude, &task.OrderState, &task.HandoffState, &task.DeliveryState,
+		&task.PaymentMethod, &task.PaymentState, &task.AmountDueMinor, &task.Currency)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainDeliveryTask{}, ErrCaptainDeliveryTaskNotFound
 	}

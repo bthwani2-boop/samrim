@@ -1,6 +1,6 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Cart, createDshMobileClient, type DeliveryAddress, formatMoney, formatQuantity, type Order, orderStateLabel } from "@bthwani/dsh";
+import { type Cart, createDshMobileClient, type DeliveryAddress, formatMoney, formatQuantity, paymentMethodLabel, paymentStateLabel, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -145,11 +145,12 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
             </View>
           </View>;
         })}</View>
-        <Text style={styles.total}>الإجمالي: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
+        <Text style={styles.total}>الإجمالي المستحق: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
+        <Text style={styles.payment}>طريقة الدفع: الدفع نقدًا عند الاستلام. لا يتم إنهاء الرحلة إلا بعد تحصيل المبلغ المطابق للإجمالي.</Text>
         {serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : <Text style={styles.warning}>اختر عنوانًا مؤهلًا من قسم الأهلية قبل الإتمام.</Text>}
         <BthwaniButton accessibilityLabel="إتمام الطلب" busy={busy} disabled={mutationBusy || !serviceableAddressId} label="إتمام الطلب" onPress={() => void checkout()} />
       </> : null}
-      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
+      {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
       {error ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}
     </View>
@@ -169,6 +170,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     modifiers: { ...typography.bodySm, color: theme.interactiveText },
     lineActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2], marginTop: spacing[2] },
     total: { ...typography.bodyStrong, color: theme.color },
+    payment: { ...typography.bodySm, color: theme.interactiveText, lineHeight: 19 },
     orderBox: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
     success: { ...typography.bodyStrong, color: theme.success },
     warning: { ...typography.bodyStrong, color: theme.warning },

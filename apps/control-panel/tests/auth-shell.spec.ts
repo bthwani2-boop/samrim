@@ -254,7 +254,7 @@ test("operator operations uses the DSH read model and resource actions", async (
   let mutationBody: Record<string, unknown> | undefined;
   let requestedCursor = "";
   const operation = {
-    order: { id: "order_ready", state: "READY_FOR_DISPATCH", totalAmountMinor: 1800, currency: "YER", version: 3, updatedAt: "2026-09-18T06:00:00.000Z", addressText: "شارع الاختبار", serviceCityId: "sanaa", serviceabilityStatus: "SERVICEABLE", lines: [] },
+    order: { id: "order_ready", state: "READY_FOR_DISPATCH", totalAmountMinor: 1800, currency: "YER", paymentMethod: "CASH_ON_DELIVERY", paymentState: "REQUIRES_COLLECTION", paymentIntentId: "payment_ready", version: 3, updatedAt: "2026-09-18T06:00:00.000Z", addressText: "شارع الاختبار", serviceCityId: "sanaa", serviceabilityStatus: "SERVICEABLE", lines: [] },
     storeName: "متجر الاختبار",
     assignment: null,
   };
@@ -291,6 +291,7 @@ test("operator operations uses the DSH read model and resource actions", async (
   await expect(page.getByRole("button", { name: "إرسال للتوزيع" })).toBeVisible();
   await page.getByText("order_ready").click();
   await expect(page.getByText("شارع الاختبار")).toBeVisible();
+  await expect(page.getByText("الدفع: الدفع نقدًا عند الاستلام · بانتظار التحصيل عند التسليم")).toBeVisible();
   await expect(page.getByText("قهوة · الافتراضي · 1")).toBeVisible();
   await page.getByRole("button", { name: "إرسال للتوزيع" }).click();
   expect(mutationBody).toMatchObject({ action: "dispatch", orderId: "order_ready" });
