@@ -51,6 +51,9 @@ paths:
   /dsh/catalog/products/{productId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
 
+  /dsh/catalog/products/{productId}/media:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1media"
+
   /dsh/catalog/products/{productId}/attributes/{attributeId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1attributes~1{attributeId}"
 
@@ -1315,6 +1318,17 @@ components:
           maxLength: 160
         active:
           type: boolean
+
+    ReplaceCatalogProductMediaRequest:
+      type: object
+      required: [media]
+      additionalProperties: false
+      properties:
+        media:
+          type: array
+          maxItems: 21
+          items:
+            $ref: "#/components/schemas/CatalogMedia"
 
     CatalogProductResponse:
       type: object

@@ -42,6 +42,7 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/products", s.listProducts)
 	mux.HandleFunc("POST /dsh/catalog/products", s.createProduct)
 	mux.HandleFunc("PATCH /dsh/catalog/products/{productId}", s.updateProduct)
+	mux.HandleFunc("PUT /dsh/catalog/products/{productId}/media", s.replaceProductMedia)
 	mux.HandleFunc("PUT /dsh/catalog/products/{productId}/attributes/{attributeId}", s.upsertProductAttribute)
 	mux.HandleFunc("POST /dsh/catalog/products/{productId}/variants", s.createVariant)
 	mux.HandleFunc("PATCH /dsh/catalog/variants/{variantId}", s.updateVariant)
@@ -226,6 +227,31 @@ func (s *CatalogServer) updateProduct(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
 }
 
+func (s *CatalogServer) replaceProductMedia(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.ReplaceCatalogProductMediaRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	media := make([]postgres.CatalogMediaInput, 0, len(input.Media))
+	for _, item := range input.Media {
+		media = append(media, postgres.CatalogMediaInput{URI: item.Uri, Role: item.Role, Ordinal: item.Ordinal})
+	}
+	result, err := s.service.ReplaceCatalogProductMedia(r.Context(), acting, r.PathValue("productId"), media, expected, idempotency, correlation)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
+}
+
 func (s *CatalogServer) updateStoreScopedProduct(w http.ResponseWriter, r *http.Request) {
 	correlation, idempotency, expected, ok := requiredPartnerOfferHeaders(w, r, true)
 	if !ok {
@@ -374,6 +400,8 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "DUPLICATE_IDENTIFIER", "identifier is already assigned to another Variant")
 	case errors.Is(err, postgres.ErrCatalogIdentifierInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog identifier facts are invalid")
+	case errors.Is(err, postgres.ErrCatalogMediaInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product media facts are invalid")
 	case errors.Is(err, postgres.ErrCatalogOfferAlreadyExists):
 		writeError(w, http.StatusConflict, "OFFER_EXISTS", "StoreOffer already exists for this Variant")
 	case errors.Is(err, postgres.ErrCatalogOfferProductDisabled):

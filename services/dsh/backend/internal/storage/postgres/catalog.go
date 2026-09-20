@@ -31,6 +31,7 @@ var (
 	ErrCatalogOfferStoreNotFound    = errors.New("catalog Store was not found")
 	ErrCatalogProductScopeForbidden = errors.New("Partner cannot directly create or mutate a Shared Product")
 	ErrCatalogProductOwnership      = errors.New("Store-scoped Product ownership is invalid")
+	ErrCatalogMediaInvalid          = errors.New("catalog Product media is invalid")
 	ErrCatalogProductInvalidCursor  = errors.New("catalog Product cursor is invalid")
 )
 
@@ -48,6 +49,10 @@ type CatalogCategoryRecord struct {
 }
 type CatalogIdentifierRecord struct{ Type, Value string }
 type CatalogMediaRecord struct {
+	URI, Role string
+	Ordinal   int
+}
+type CatalogMediaInput struct {
 	URI, Role string
 	Ordinal   int
 }
@@ -186,6 +191,13 @@ func HashCatalogCategoryCreateRequest(item CatalogCategoryRecord) string {
 }
 func HashCatalogProductUpdateRequest(productID string, input CatalogProductUpdateInput, expectedVersion int) string {
 	return hashFacts(productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, optionalProductFact(input.Brand), strconv.FormatBool(input.Active), strconv.Itoa(expectedVersion))
+}
+func HashCatalogMediaReplaceRequest(productID string, media []CatalogMediaInput, expectedVersion int) string {
+	facts := []string{"media-replace", productID, strconv.Itoa(expectedVersion)}
+	for _, item := range media {
+		facts = append(facts, item.URI, item.Role, strconv.Itoa(item.Ordinal))
+	}
+	return hashFacts(facts...)
 }
 func HashCatalogVariantCreateRequest(input CatalogVariantInput) string {
 	return hashFacts("variant", input.ProductID, input.ID, input.Title, input.MeasurementKind, input.BaseUnit, strconv.FormatBool(input.Active), input.IdentifierType, input.IdentifierValue)
@@ -736,8 +748,12 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 	if categoryMismatch {
 		return CatalogProductResult{}, ErrCatalogCategoryNotFound
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_products SET vertical_id=$2,scope=$3,store_id=NULLIF($4,''),canonical_name=$5,brand=$6,active=$7,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$8", productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Brand, input.Active, expectedVersion); err != nil {
+	var result sql.Result
+	if result, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_products SET vertical_id=$2,scope=$3,store_id=NULLIF($4,''),canonical_name=$5,brand=$6,active=$7,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$8", productID, input.VerticalID, input.Scope, input.StoreID, input.CanonicalName, input.Brand, input.Active, expectedVersion); err != nil {
 		return CatalogProductResult{}, err
+	}
+	if affected, affectedErr := result.RowsAffected(); affectedErr != nil || affected != 1 {
+		return CatalogProductResult{}, ErrCatalogVersionConflict
 	}
 	product, err := readCatalogProductTx(ctx, tx, productID)
 	if err != nil {
@@ -747,6 +763,78 @@ func UpdateCatalogProduct(ctx context.Context, db *sql.DB, productID string, inp
 		return CatalogProductResult{}, err
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_product_audit(event_type,idempotency_key,correlation_id,acting_actor_id,product_id,from_version,result_version,request_hash,canonical_name,brand,vertical_id,scope) VALUES('catalog_product_updated',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)", idempotencyKey, correlationID, actingActorID, productID, current.Version, product.Version, requestHash, product.CanonicalName, product.Brand, product.VerticalID, product.Scope); err != nil {
+		return CatalogProductResult{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return CatalogProductResult{}, err
+	}
+	return CatalogProductResult{Product: product}, nil
+}
+
+func ReplaceCatalogProductMedia(ctx context.Context, db *sql.DB, productID string, media []CatalogMediaInput, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CatalogProductResult, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CatalogProductResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if strings.TrimSpace(productID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
+		return CatalogProductResult{}, ErrCatalogMediaInvalid
+	}
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:catalog-media:idempotency:"+idempotencyKey); err != nil {
+		return CatalogProductResult{}, err
+	}
+	var storedHash, storedProductID string
+	var storedExpectedVersion int
+	err = tx.QueryRowContext(ctx, "SELECT request_hash,product_id,expected_version FROM dsh.catalog_media_mutation_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &storedProductID, &storedExpectedVersion)
+	if err == nil {
+		if storedHash != requestHash || storedProductID != productID || storedExpectedVersion != expectedVersion {
+			return CatalogProductResult{}, ErrCatalogIdempotencyConflict
+		}
+		product, readErr := readCatalogProductTx(ctx, tx, productID)
+		if readErr != nil {
+			return CatalogProductResult{}, readErr
+		}
+		if err = tx.Commit(); err != nil {
+			return CatalogProductResult{}, err
+		}
+		return CatalogProductResult{Product: product, Replayed: true}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return CatalogProductResult{}, err
+	}
+	current, err := readCatalogProductTxForUpdate(ctx, tx, productID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CatalogProductResult{}, ErrCatalogProductNotFound
+	}
+	if err != nil {
+		return CatalogProductResult{}, err
+	}
+	if current.Version != expectedVersion {
+		return CatalogProductResult{}, ErrCatalogVersionConflict
+	}
+	if _, err = tx.ExecContext(ctx, "DELETE FROM dsh.catalog_media WHERE product_id=$1", productID); err != nil {
+		return CatalogProductResult{}, err
+	}
+	for _, item := range media {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_media(product_id,uri,media_role,ordinal) VALUES($1,$2,$3,$4)", productID, item.URI, item.Role, item.Ordinal); err != nil {
+			return CatalogProductResult{}, err
+		}
+	}
+	var result sql.Result
+	if result, err = tx.ExecContext(ctx, "UPDATE dsh.catalog_products SET version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$2", productID, expectedVersion); err != nil {
+		return CatalogProductResult{}, err
+	}
+	if affected, affectedErr := result.RowsAffected(); affectedErr != nil || affected != 1 {
+		return CatalogProductResult{}, ErrCatalogVersionConflict
+	}
+	product, err := readCatalogProductTx(ctx, tx, productID)
+	if err != nil {
+		return CatalogProductResult{}, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_media_mutation_idempotency(idempotency_key,request_hash,product_id,expected_version,result_version) VALUES($1,$2,$3,$4,$5)", idempotencyKey, requestHash, productID, expectedVersion, product.Version); err != nil {
+		return CatalogProductResult{}, err
+	}
+	if _, err = tx.ExecContext(ctx, "INSERT INTO dsh.catalog_media_audit(event_type,idempotency_key,correlation_id,acting_actor_id,product_id,from_version,result_version,media_count,request_hash) VALUES('catalog_media_replaced',$1,$2,$3,$4,$5,$6,$7,$8)", idempotencyKey, correlationID, actingActorID, productID, current.Version, product.Version, len(media), requestHash); err != nil {
 		return CatalogProductResult{}, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -1230,7 +1318,14 @@ func readCatalogProductTx(ctx context.Context, tx *sql.Tx, id string) (CatalogPr
 	return hydrateCatalogProduct(ctx, tx, item)
 }
 func readCatalogProductTxForUpdate(ctx context.Context, tx *sql.Tx, id string) (CatalogProductRecord, error) {
-	return readCatalogProductTx(ctx, tx, id)
+	item, err := readCatalogProductRow(tx.QueryRowContext(ctx, catalogProductSelect+" WHERE p.id=$1 FOR UPDATE", id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return CatalogProductRecord{}, ErrCatalogProductNotFound
+	}
+	if err != nil {
+		return CatalogProductRecord{}, err
+	}
+	return hydrateCatalogProduct(ctx, tx, item)
 }
 func readCatalogVariantTx(ctx context.Context, tx *sql.Tx, id string) (CatalogVariantRecord, error) {
 	var v CatalogVariantRecord

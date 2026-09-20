@@ -3,9 +3,9 @@
 import type { BaseUnit, CatalogProduct, CatalogVariant, CommerceVertical, MeasurementKind } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 
-type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryId: string; identifierType: string; identifierValue: string; imageUri: string; active: boolean };
+type ProductForm = { verticalId: string; scope: "SHARED" | "STORE_SCOPED"; canonicalName: string; brand: string; variantTitle: string; measurementKind: MeasurementKind; baseUnit: BaseUnit; categoryId: string; identifierType: string; identifierValue: string; imageUri: string; galleryImageUris: string; active: boolean };
 
-const emptyForm: ProductForm = { verticalId: "", scope: "SHARED", canonicalName: "", brand: "", variantTitle: "", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryId: "", identifierType: "GTIN", identifierValue: "", imageUri: "", active: true };
+const emptyForm: ProductForm = { verticalId: "", scope: "SHARED", canonicalName: "", brand: "", variantTitle: "", measurementKind: "DISCRETE", baseUnit: "COUNT", categoryId: "", identifierType: "GTIN", identifierValue: "", imageUri: "", galleryImageUris: "", active: true };
 
 function readError(value: unknown): string {
   if (!value || typeof value !== "object") return "تعذر تنفيذ العملية.";
@@ -26,7 +26,17 @@ function firstVariant(product: CatalogProduct): CatalogVariant | undefined { ret
 function toForm(product: CatalogProduct): ProductForm {
   const variant = firstVariant(product);
   const identifier = variant?.identifiers[0];
-  return { verticalId: product.verticalId ?? "", scope: product.scope as ProductForm["scope"], canonicalName: product.canonicalName, brand: product.brand ?? "", variantTitle: variant?.title ?? "", measurementKind: variant?.measurementKind ?? "DISCRETE", baseUnit: variant?.baseUnit ?? "COUNT", categoryId: product.categoryIds[0] ?? "", identifierType: identifier?.type ?? "GTIN", identifierValue: identifier?.value ?? "", imageUri: product.media[0]?.uri ?? "", active: product.active };
+  const orderedMedia = [...product.media].sort((left, right) => left.ordinal - right.ordinal);
+  return { verticalId: product.verticalId ?? "", scope: product.scope as ProductForm["scope"], canonicalName: product.canonicalName, brand: product.brand ?? "", variantTitle: variant?.title ?? "", measurementKind: variant?.measurementKind ?? "DISCRETE", baseUnit: variant?.baseUnit ?? "COUNT", categoryId: product.categoryIds[0] ?? "", identifierType: identifier?.type ?? "GTIN", identifierValue: identifier?.value ?? "", imageUri: orderedMedia.find((item) => item.role === "primary")?.uri ?? "", galleryImageUris: orderedMedia.filter((item) => item.role === "gallery").map((item) => item.uri).join("\n"), active: product.active };
+}
+
+function mediaInput(form: ProductForm) {
+  const primary = form.imageUri.trim();
+  const gallery = form.galleryImageUris.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  return [
+    ...(primary ? [{ uri: primary, role: "primary" as const, ordinal: 0 }] : []),
+    ...gallery.map((uri, index) => ({ uri, role: "gallery" as const, ordinal: index + 1 })),
+  ];
 }
 
 export function CentralCatalog() {
@@ -103,6 +113,23 @@ export function CentralCatalog() {
     } finally { setBusy(false); }
   }
 
+  async function saveMedia() {
+    if (!selected || busy) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/catalog/products/${encodeURIComponent(selected.id)}`, { method: "PUT", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), "X-Expected-Version": String(selected.version) }, body: JSON.stringify({ media: mediaInput(form) }) });
+      const payload = await parseResponse<{ product: CatalogProduct }>(response);
+      setSelected(payload.product); setForm(toForm(payload.product)); setNotice("تم حفظ صور المنتج.");
+    } catch (nextError) {
+      if (nextError && typeof nextError === "object" && (nextError as { status?: number }).status === 409) {
+        setError("تغير المنتج قبل حفظ الصور. أُعيدت قراءة السجل الحالي؛ راجع الصور ثم أعد المحاولة.");
+        await load();
+      } else {
+        setError(nextError instanceof Error ? nextError.message : "تعذر حفظ صور المنتج.");
+      }
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="central-catalog-grid">
       <section className="access-card central-catalog-list" aria-labelledby="central-catalog-list-title">
@@ -124,9 +151,10 @@ export function CentralCatalog() {
           <label className="field-label" htmlFor="catalog-base-unit">الوحدة الأساسية<select id="catalog-base-unit" disabled={busy || selected !== null} value={form.baseUnit} onChange={(event) => setForm({ ...form, baseUnit: event.target.value as BaseUnit })}><option value="COUNT">قطعة</option><option value="GRAM">غرام</option><option value="MILLILITER">مل</option></select></label>
           <label className="field-label" htmlFor="catalog-identifier">نوع المعرّف<input id="catalog-identifier" disabled={busy || selected !== null} value={form.identifierType} onChange={(event) => setForm({ ...form, identifierType: event.target.value.toUpperCase() })} /></label>
           <label className="field-label" htmlFor="catalog-identifier-value">قيمة المعرّف<input id="catalog-identifier-value" disabled={busy || selected !== null} value={form.identifierValue} onChange={(event) => setForm({ ...form, identifierValue: event.target.value })} /></label>
-          <label className="field-label" htmlFor="catalog-image">رابط الوسيط الأساسي<input id="catalog-image" disabled={busy || selected !== null} inputMode="url" value={form.imageUri} onChange={(event) => setForm({ ...form, imageUri: event.target.value })} placeholder="https://…" /></label>
+          {selected ? <><label className="field-label" htmlFor="catalog-image">رابط الصورة الأساسية<input id="catalog-image" disabled={busy} inputMode="url" value={form.imageUri} onChange={(event) => setForm({ ...form, imageUri: event.target.value })} placeholder="https://…" /></label><label className="field-label" htmlFor="catalog-gallery">صور المعرض<textarea id="catalog-gallery" disabled={busy} rows={4} value={form.galleryImageUris} onChange={(event) => setForm({ ...form, galleryImageUris: event.target.value })} placeholder="رابط صورة في كل سطر" /></label><p className="muted">الصورة الأساسية إلزامية عند وجود صور، وكل رابط معرض يظهر بعده حسب الترتيب.</p></> : <label className="field-label" htmlFor="catalog-image">رابط الصورة الأساسية<input id="catalog-image" disabled={busy} inputMode="url" value={form.imageUri} onChange={(event) => setForm({ ...form, imageUri: event.target.value })} placeholder="https://…" /></label>}
           {selected ? <label className="central-active-toggle"><input type="checkbox" disabled={busy} checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} /> المنتج نشط وقابل للاختيار</label> : null}
           <button type="button" className="button button-primary" disabled={busy || form.scope !== "SHARED" || !form.canonicalName.trim() || !form.verticalId || !form.categoryId} onClick={() => void saveProduct()}>{busy ? "جارٍ الحفظ…" : selected ? "حفظ التعديل" : "إنشاء المنتج"}</button>
+          {selected ? <button type="button" className="button button-secondary" disabled={busy} onClick={() => void saveMedia()}>حفظ الصور</button> : null}
           {selected ? <button type="button" className="button button-secondary" disabled={busy} onClick={startCreate}>إلغاء التعديل</button> : null}
         </div>
         {notice ? <p className="success-inline" role="status">{notice}</p> : null}{error ? <p className="identity-error" role="alert">{error}</p> : null}

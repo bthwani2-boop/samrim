@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -211,6 +212,21 @@ func (s *Service) UpdateCatalogProduct(ctx context.Context, actingActorID, produ
 	return postgres.UpdateCatalogProduct(ctx, s.db, strings.TrimSpace(productID), normalized, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogProductUpdateRequest(productID, normalized, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 }
 
+func (s *Service) ReplaceCatalogProductMedia(ctx context.Context, actingActorID, productID string, media []postgres.CatalogMediaInput, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductResult, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	normalized, err := normalizeCatalogMedia(media)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	productID = strings.TrimSpace(productID)
+	if productID == "" || expectedVersion < 1 {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogVersionConflict
+	}
+	return postgres.ReplaceCatalogProductMedia(ctx, s.db, productID, normalized, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogMediaReplaceRequest(productID, normalized, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+}
+
 func (s *Service) ReadCatalogProduct(ctx context.Context, actingActorID, productID string) (postgres.CatalogProductRecord, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogProductRecord{}, err
@@ -304,6 +320,49 @@ func normalizeCatalogProductUpdateInput(input postgres.CatalogProductUpdateInput
 		return postgres.CatalogProductUpdateInput{}, ErrCatalogProductScopeInvalid
 	}
 	return postgres.CatalogProductUpdateInput{VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Brand: brand, Active: input.Active}, nil
+}
+
+func normalizeCatalogMedia(input []postgres.CatalogMediaInput) ([]postgres.CatalogMediaInput, error) {
+	if len(input) > 21 {
+		return nil, ErrCatalogProductImageInvalid
+	}
+	normalized := make([]postgres.CatalogMediaInput, 0, len(input))
+	ordinals := make(map[int]struct{}, len(input))
+	uris := make(map[string]struct{}, len(input))
+	primaryCount := 0
+	for _, item := range input {
+		uri := strings.TrimSpace(item.URI)
+		role := strings.ToLower(strings.TrimSpace(item.Role))
+		if (role != "primary" && role != "gallery") || item.Ordinal < 0 || item.Ordinal > 20 || uri == "" || len(uri) > 2048 {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		parsed, parseErr := url.ParseRequestURI(uri)
+		if parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		if _, exists := ordinals[item.Ordinal]; exists {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		if _, exists := uris[uri]; exists {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		ordinals[item.Ordinal] = struct{}{}
+		uris[uri] = struct{}{}
+		if role == "primary" {
+			primaryCount++
+			if item.Ordinal != 0 {
+				return nil, ErrCatalogProductImageInvalid
+			}
+		} else if item.Ordinal == 0 {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		normalized = append(normalized, postgres.CatalogMediaInput{URI: uri, Role: role, Ordinal: item.Ordinal})
+	}
+	if len(normalized) > 0 && primaryCount != 1 {
+		return nil, ErrCatalogProductImageInvalid
+	}
+	sort.Slice(normalized, func(left, right int) bool { return normalized[left].Ordinal < normalized[right].Ordinal })
+	return normalized, nil
 }
 
 func normalizeProductName(value string) (string, error) {

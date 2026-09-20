@@ -144,6 +144,8 @@ function cleanup() {
     sql(`DELETE FROM dsh.catalog_variant_mutation_idempotency WHERE variant_id IN (SELECT id FROM dsh.catalog_product_variants WHERE product_id='${value}')`);
     sql(`DELETE FROM dsh.catalog_product_audit WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_product_mutation_idempotency WHERE product_id='${value}'`);
+    sql(`DELETE FROM dsh.catalog_media_audit WHERE product_id='${value}'`);
+    sql(`DELETE FROM dsh.catalog_media_mutation_idempotency WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_product_attribute_values WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_product_categories WHERE product_id='${value}'`);
     sql(`DELETE FROM dsh.catalog_media WHERE product_id='${value}'`);
@@ -290,7 +292,7 @@ if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is inva
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "22", "DSH migration history is not v22");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "23", "DSH migration history is not v23");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -304,10 +306,12 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=19", "019_captai
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=20", "020_field_standing_admission_and_joining_scope.sql", "DSH Field admission migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=21", "021_joining_case_store_origin.sql", "DSH JoiningCase Store-origin migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_payment_intents.sql", "DSH payment-intent migration is not canonical");
+expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=23", "023_catalog_media_management.sql", "DSH catalog media management migration is not canonical");
 for (const table of ["commerce_carts", "commerce_cart_lines", "commerce_cart_mutation_idempotency", "commerce_cart_audit", "commerce_orders", "commerce_order_lines", "commerce_order_checkout_idempotency", "commerce_order_transition_idempotency", "commerce_order_audit", "commerce_order_payment_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required commerce relation is missing: ${table}`);
 for (const table of ["central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NULL`, "t", `retired catalog relation remains: ${table}`);
 for (const table of ["catalog_attribute_enum_options", "catalog_category_attribute_rules", "catalog_variant_attribute_values", "catalog_storefront_sections", "catalog_modifier_groups", "catalog_modifier_options", "catalog_variant_mutation_idempotency", "catalog_variant_audit", "catalog_attribute_mutation_idempotency", "commerce_order_line_modifier_snapshots", "commerce_order_line_attribute_snapshots"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v12/v13 relation is missing: ${table}`);
 for (const table of ["catalog_import_mutation_idempotency", "catalog_import_run_items", "catalog_import_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v14 relation is missing: ${table}`);
+for (const table of ["catalog_media_mutation_idempotency", "catalog_media_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v23 relation is missing: ${table}`);
 for (const table of ["captain_admissions", "captain_admission_idempotency", "captain_admission_audit", "captain_dispatch_offers", "captain_assignments", "captain_handoffs", "captain_operation_idempotency", "captain_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required Captain relation is missing: ${table}`);
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_phone_chk'", "CHECK (((contact_phone_e164 IS NULL) OR (contact_phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'::text)))", "Captain phone constraint is not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='captain_admissions_suspended_availability_chk'", "CHECK (((state <> 'suspended'::text) OR (availability_state = 'unavailable'::text)))", "Captain suspended availability invariant is not canonical");
@@ -321,7 +325,7 @@ expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='fi
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "CHECK (((originating_field_actor_id IS NULL) OR (length(btrim(originating_field_actor_id)) > 0)))", "Field joining-case origin invariant is not canonical");
 expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name='originating_field_actor_id')", "t", "Field joining-case origin column is missing");
-console.log("DSH_SCHEMA_V22=PASS");
+console.log("DSH_SCHEMA_V23=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -464,6 +468,16 @@ const productID = String(productCreate.body.product.id); productIDs.add(productI
 const productRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
 if (productRead.status !== 200 || productRead.body?.products?.length !== 1 || productRead.body.products[0].variants?.length !== 1 || productRead.body.products[0].variants[0].identifiers?.[0]?.value !== productInput.identifierValue || !productRead.body.products[0].media?.some((media) => media.role === "primary" && media.uri === productInput.imageUri)) fail("catalog Product/Variant/media canonical readback failed", JSON.stringify(productRead));
 const variantID = String(productRead.body.products[0].variants[0].id);
+const replacementMedia = { media: [{ uri: "https://example.com/runtime-coffee-updated.jpg", role: "primary", ordinal: 0 }, { uri: "https://example.com/runtime-coffee-gallery.jpg", role: "gallery", ordinal: 1 }] };
+const mediaKey = `product-media-${suffix}`;
+const productMediaReplaceHeaders = serviceHeaders(actingOperatorID, mediaKey, crypto.randomUUID(), 1);
+const productMediaReplace = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: replacementMedia });
+const productMediaReplay = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: productMediaReplaceHeaders, body: replacementMedia });
+const productMediaStale = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/media`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `product-media-stale-${suffix}`, crypto.randomUUID(), 1), body: replacementMedia });
+const productMediaRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const mediaReadback = productMediaRead.body?.products?.[0]?.media;
+if (productMediaReplace.status !== 200 || productMediaReplace.body?.product?.version !== 2 || productMediaReplace.body?.product?.media?.length !== 2 || productMediaReplay.status !== 200 || productMediaReplay.body?.idempotentReplay !== true || productMediaReplay.body?.product?.version !== 2 || productMediaStale.status !== 409 || productMediaRead.status !== 200 || productMediaRead.body?.products?.[0]?.id !== productID || productMediaRead.body?.products?.[0]?.version !== 2 || JSON.stringify(mediaReadback) !== JSON.stringify(replacementMedia.media)) fail("catalog product media replacement, idempotency, or version guard failed", JSON.stringify({ productMediaReplace, productMediaReplay, productMediaStale, productMediaRead }));
+console.log("DSH_CATALOG_MEDIA_MANAGEMENT=PASS");
 const productMeasurement = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/attributes/${measurementAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "MEASUREMENT", decimalValue: "0.25", measurementUnit: "kg" } });
 const productExpiry = await request(dshBase, "PUT", `/dsh/catalog/products/${productID}/attributes/${dateAttributeID}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID }, body: { valueKind: "DATE", dateValue: "2026-12-31" } });
 const typedProductRead = await request(dshBase, "GET", `/dsh/catalog/products?q=${encodeURIComponent(runtimeCoffeeName)}&verticalId=${encodeURIComponent(verticalID)}&limit=50`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
@@ -600,7 +614,7 @@ if (publishA.status !== 200 || publishB.status !== 200) fail("Store publication 
 const publicCatalog = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(childCategoryID)}&q=${encodeURIComponent(productInput.canonicalName)}`);
 const publicWrongCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(categoryID)}`);
 const publicWrongCity = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityB)}`);
-if (publicCatalog.status !== 200 || publicCatalog.body?.offers?.length !== 1 || publicCatalog.body.offers[0].offerId !== offerAID || publicCatalog.body.offers[0].productName !== productInput.canonicalName || !publicCatalog.body.offers[0].media?.some((media) => media.role === "primary" && media.uri === productInput.imageUri) || !publicCatalog.body.sections?.some((section) => section.id === sectionID && section.offerIds?.includes(offerAID)) || publicWrongCategory.status !== 200 || publicWrongCategory.body?.offers?.length !== 0 || publicWrongCity.status !== 404) fail("customer-visible catalog evaluator, media, or city/category scope failed", JSON.stringify({ publicCatalog, publicWrongCategory, publicWrongCity }));
+if (publicCatalog.status !== 200 || publicCatalog.body?.offers?.length !== 1 || publicCatalog.body.offers[0].offerId !== offerAID || publicCatalog.body.offers[0].productName !== productInput.canonicalName || !publicCatalog.body.offers[0].media?.some((media) => media.role === "primary" && media.uri === "https://example.com/runtime-coffee-updated.jpg") || !publicCatalog.body.offers[0].media?.some((media) => media.role === "gallery" && media.uri === "https://example.com/runtime-coffee-gallery.jpg") || !publicCatalog.body.sections?.some((section) => section.id === sectionID && section.offerIds?.includes(offerAID)) || publicWrongCategory.status !== 200 || publicWrongCategory.body?.offers?.length !== 0 || publicWrongCity.status !== 404) fail("customer-visible catalog evaluator, media, or city/category scope failed", JSON.stringify({ publicCatalog, publicWrongCategory, publicWrongCity }));
 const publicStores = await request(dshBase, "GET", `/dsh/public/stores?serviceCityId=${encodeURIComponent(cityA)}`);
 if (publicStores.status !== 200 || !publicStores.body?.stores?.some((store) => store.id === first.storeID) || publicStores.body.stores.find((store) => store.id === first.storeID)?.partnerActorId) fail("public Store projection leaked or omitted the eligible store", JSON.stringify(publicStores));
 console.log("DSH_CUSTOMER_VISIBLE_CATALOG=PASS");
@@ -620,18 +634,18 @@ if (wrongRole.status !== 403) fail("serviceability accepted partner role", JSON.
 console.log("DSH_SERVICEABILITY=PASS");
 
 const renameBody = { canonicalName: "Runtime Coffee Renamed", verticalId: verticalID, scope: "SHARED", active: true };
-const renamed = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `rename-${suffix}`, crypto.randomUUID(), 1), body: renameBody });
-if (renamed.status !== 200 || renamed.body?.product?.version !== 2) fail("catalog Product versioned update failed", JSON.stringify(renamed));
+const renamed = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `rename-${suffix}`, crypto.randomUUID(), 2), body: renameBody });
+if (renamed.status !== 200 || renamed.body?.product?.version !== 3) fail("catalog Product versioned update failed", JSON.stringify(renamed));
 const renamedCatalog = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 if (renamedCatalog.status !== 200 || renamedCatalog.body?.offers?.[0]?.productName !== renameBody.canonicalName) fail("StoreOffer readback retained stale Product identity", JSON.stringify(renamedCatalog));
-const disabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `disable-${suffix}`, crypto.randomUUID(), 2), body: { ...renameBody, active: false } });
-if (disabled.status !== 200 || disabled.body?.product?.active !== false || disabled.body.product.version !== 3) fail("catalog Product disable failed", JSON.stringify(disabled));
+const disabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `disable-${suffix}`, crypto.randomUUID(), 3), body: { ...renameBody, active: false } });
+if (disabled.status !== 200 || disabled.body?.product?.active !== false || disabled.body.product.version !== 4) fail("catalog Product disable failed", JSON.stringify(disabled));
 const disabledPublic = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
 if (disabledPublic.status !== 404 || disabledPublic.body?.error?.code !== "NOT_FOUND") fail("disabled Product remained customer-visible", JSON.stringify(disabledPublic));
 const disabledOfferPublish = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`disabled-offer-${suffix}`, 2), body: discreteOffer(1250, "published") });
 if (disabledOfferPublish.status !== 409 || disabledOfferPublish.body?.error?.code !== "PRODUCT_NOT_ELIGIBLE") fail("disabled Product could be published", JSON.stringify(disabledOfferPublish));
-const enabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enable-${suffix}`, crypto.randomUUID(), 3), body: renameBody });
-if (enabled.status !== 200 || enabled.body?.product?.active !== true || enabled.body.product.version !== 4) fail("catalog Product re-enable failed", JSON.stringify(enabled));
+const enabled = await request(dshBase, "PATCH", `/dsh/catalog/products/${productID}`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `enable-${suffix}`, crypto.randomUUID(), 4), body: renameBody });
+if (enabled.status !== 200 || enabled.body?.product?.active !== true || enabled.body.product.version !== 5) fail("catalog Product re-enable failed", JSON.stringify(enabled));
 const changedPrice = await request(dshBase, "PATCH", `/dsh/stores/${first.storeID}/offers/${offerAID}`, { token: first.accessToken, headers: partnerHeaders(`price-${suffix}`, 2), body: discreteOffer(1800, "published") });
 if (changedPrice.status !== 200 || changedPrice.body?.offer?.priceMinor !== 1800 || changedPrice.body.offer.version !== 3) fail("StoreOffer price update failed", JSON.stringify(changedPrice));
 const secondCatalog = await request(dshBase, "GET", `/dsh/public/stores/${second.storeID}/catalog?serviceCityId=${encodeURIComponent(cityB)}`);

@@ -487,6 +487,55 @@ test("operator creates a product category under its commerce vertical", async ({
   expect(requestBody).toEqual({ verticalId: "vertical_0123456789abcdef0123456789abcdef", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true });
 });
 
+test("operator replaces a product primary image and gallery through the canonical media mutation", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const product = {
+    id: "product_media_test",
+    verticalId: "grocery",
+    scope: "SHARED",
+    canonicalName: "قهوة الصور",
+    brand: null,
+    storeId: null,
+    active: true,
+    version: 1,
+    createdAt: "2026-09-12T00:00:00.000Z",
+    updatedAt: "2026-09-12T00:00:00.000Z",
+    variants: [{ id: "variant_media_test", productId: "product_media_test", title: "الافتراضي", measurementKind: "DISCRETE", baseUnit: "COUNT", active: true, version: 1, identifiers: [{ type: "SKU", value: "MEDIA-TEST" }], attributes: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }],
+    categoryIds: ["coffee"],
+    attributes: [],
+    media: [{ uri: "https://example.com/coffee.jpg", role: "primary", ordinal: 0 }],
+  } as const;
+  let mediaRequest: unknown;
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
+  });
+  await page.route("**/api/catalog/categories**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ categories: [{ id: "coffee", verticalId: "grocery", parentCategoryId: null, nameAr: "قهوة", nameEn: "Coffee", active: true, version: 1, createdAt: product.createdAt, updatedAt: product.updatedAt }] }) });
+  });
+  await page.route("**/api/catalog/products**", async (route) => {
+    if (route.request().method() === "PUT") {
+      mediaRequest = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ product: { ...product, version: 2, media: mediaRequest && typeof mediaRequest === "object" && "media" in mediaRequest ? (mediaRequest as { media: unknown }).media : product.media }, idempotentReplay: false }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [product], nextCursor: "" }) });
+  });
+
+  await page.goto("/catalog/products");
+  await page.getByRole("button", { name: /قهوة الصور/ }).click();
+  await expect(page.getByLabel("رابط الصورة الأساسية")).toHaveValue("https://example.com/coffee.jpg");
+  await page.getByLabel("رابط الصورة الأساسية").fill("https://example.com/coffee-updated.jpg");
+  await page.getByLabel("صور المعرض").fill("https://example.com/coffee-gallery-1.jpg\nhttps://example.com/coffee-gallery-2.jpg");
+  await page.getByRole("button", { name: "حفظ الصور" }).click();
+
+  await expect(page.getByRole("status")).toContainText("تم حفظ صور المنتج.");
+  expect(mediaRequest).toEqual({ media: [
+    { uri: "https://example.com/coffee-updated.jpg", role: "primary", ordinal: 0 },
+    { uri: "https://example.com/coffee-gallery-1.jpg", role: "gallery", ordinal: 1 },
+    { uri: "https://example.com/coffee-gallery-2.jpg", role: "gallery", ordinal: 2 },
+  ] });
+});
+
 test("operator resumes a canonical joining case from the DSH queue", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.route("**/api/partners/joining-cases?limit=50", async (route) => {
