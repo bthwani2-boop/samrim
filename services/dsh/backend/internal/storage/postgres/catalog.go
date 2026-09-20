@@ -969,7 +969,7 @@ func ListCatalogMediaAssetsForCleanup(ctx context.Context, db *sql.DB, limit int
 }
 
 func MarkCatalogMediaAssetDeleted(ctx context.Context, db *sql.DB, assetID string) error {
-	_, err := db.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET state='deleted', cleaned_at=clock_timestamp(), cleanup_attempts=cleanup_attempts+1, last_cleanup_error=NULL WHERE id=$1 AND state IN ('retired','failed','pending')", assetID)
+	_, err := db.ExecContext(ctx, "UPDATE dsh.catalog_media_assets SET state='deleted', retired_at=COALESCE(retired_at,clock_timestamp()), cleaned_at=clock_timestamp(), cleanup_attempts=cleanup_attempts+1, last_cleanup_error=NULL WHERE id=$1 AND state IN ('retired','failed','pending')", assetID)
 	return err
 }
 
