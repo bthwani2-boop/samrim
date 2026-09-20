@@ -1,10 +1,10 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, paymentMethodLabel, paymentStateLabel, type DeliveryProofResponse, type Order, type OrderTrackingResponse, orderStateLabel } from "@bthwani/dsh";
+import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, paymentMethodLabel, paymentStateLabel, type DeliveryProofResponse, type Order, type OrderRatingResponse, type OrderTrackingResponse, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken, subscribeIdentitySession } from "../../bootstrap/identity";
 
 function baseUrl(): string {
@@ -29,6 +29,11 @@ export default function ClientOrderDetail() {
   const [cancelError, setCancelError] = useState("");
   const [tracking, setTracking] = useState<{ kind: "loading" } | { kind: "ready"; value: OrderTrackingResponse } | { kind: "error" }>({ kind: "loading" });
   const [deliveryProof, setDeliveryProof] = useState<{ kind: "loading" } | { kind: "ready"; value: DeliveryProofResponse } | { kind: "error" }>({ kind: "loading" });
+  const [orderRating, setOrderRating] = useState<{ kind: "hidden" | "loading" } | { kind: "ready"; value: OrderRatingResponse } | { kind: "empty" } | { kind: "error" }>({ kind: "hidden" });
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [review, setReview] = useState("");
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [ratingError, setRatingError] = useState("");
 
   const refreshTracking = useCallback(async () => {
     if (!orderId.trim()) return;
@@ -52,6 +57,31 @@ export default function ClientOrderDetail() {
     }
   }, [orderId]);
 
+  const refreshRating = useCallback(async (orderState: Order["state"]) => {
+    if (!orderId.trim() || orderState !== "DELIVERED") {
+      setOrderRating({ kind: "hidden" });
+      return;
+    }
+    setOrderRating({ kind: "loading" });
+    setRatingError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const value = await client().readClientOrderRating(token, orderId);
+      setSelectedRating(value.rating.rating);
+      setReview(value.rating.review);
+      setOrderRating({ kind: "ready", value });
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "status" in error && (error as { status?: unknown }).status === 404) {
+        setSelectedRating(0);
+        setReview("");
+        setOrderRating({ kind: "empty" });
+        return;
+      }
+      console.error("DSH client order rating read failed", error);
+      setOrderRating({ kind: "error" });
+    }
+  }, [orderId]);
+
   const load = useCallback(async (preserveCurrent = false) => {
     if (!orderId.trim()) { setState({ kind: "error" }); return; }
     if (preserveCurrent) setRefreshing(true);
@@ -60,12 +90,14 @@ export default function ClientOrderDetail() {
     setCancelError("");
     setTracking({ kind: "loading" });
     setDeliveryProof({ kind: "loading" });
+    setOrderRating({ kind: "loading" });
     try {
       const token = await getUsableIdentityAccessToken();
       const order = (await client().readOrder(token, orderId)).order;
       setState({ kind: "ready", order });
       await refreshDeliveryProof();
       await refreshTracking();
+      await refreshRating(order.state);
     } catch (error) {
       console.error("DSH client order detail read failed", error);
       if (preserveCurrent) setRefreshError("تعذر تحديث الحالة. ما زالت التفاصيل الحالية معروضة.");
@@ -73,7 +105,24 @@ export default function ClientOrderDetail() {
     } finally {
       setRefreshing(false);
     }
-  }, [orderId, refreshDeliveryProof, refreshTracking]);
+  }, [orderId, refreshDeliveryProof, refreshRating, refreshTracking]);
+
+  const submitRating = useCallback(async () => {
+    if (state.kind !== "ready" || state.order.state !== "DELIVERED" || selectedRating < 1 || ratingSubmitting) return;
+    setRatingSubmitting(true);
+    setRatingError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const value = await client().createClientOrderRating(token, state.order.id, { rating: selectedRating, review }, state.order.version);
+      setOrderRating({ kind: "ready", value });
+      setReview(value.rating.review);
+    } catch (error) {
+      console.error("DSH client order rating create failed", error);
+      setRatingError("تعذر حفظ التقييم. قد تكون العملية سُجلت بالفعل؛ حدّث الحالة للتحقق.");
+    } finally {
+      setRatingSubmitting(false);
+    }
+  }, [ratingSubmitting, review, selectedRating, state]);
 
   const cancelOrder = useCallback(async () => {
     if (state.kind !== "ready" || state.order.state !== "CREATED" || cancelling) return;
@@ -138,6 +187,21 @@ export default function ClientOrderDetail() {
         {deliveryProof.kind === "ready" && deliveryProof.value.state === "PENDING" ? <><Text style={styles.proofTitle}>رمز التسليم</Text><Text accessibilityLabel="رمز التسليم" style={styles.proofCode}>{deliveryProof.value.code ?? "—"}</Text><Text style={styles.muted}>لا تشارك الرمز إلا مع الكابتن عند وصول الطلب.</Text></> : null}
         {deliveryProof.kind === "ready" && deliveryProof.value.state === "VERIFIED" ? <><BthwaniStatusBadge icon="success" label="تم إثبات التسليم" tone="success" /><Text style={styles.muted}>تم قبول رمز التسليم وتسجيل الاستلام.</Text></> : null}
       </BthwaniSurface>
+      {order.state === "DELIVERED" ? <>
+        <BthwaniSectionHeader title="قيّم تجربتك" subtitle="رأيك يساعدنا على تحسين جودة التوصيل" />
+        <BthwaniSurface tone="base" style={styles.ratingSurface}>
+          {orderRating.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة التقييم…</Text> : null}
+          {orderRating.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة التقييم الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
+          {orderRating.kind === "ready" ? <><BthwaniStatusBadge icon="success" label="تم حفظ تقييمك" tone="success" /><Text style={styles.muted}>{"★".repeat(orderRating.value.rating.rating)}{"☆".repeat(5 - orderRating.value.rating.rating)}</Text>{orderRating.value.rating.review ? <Text style={styles.reviewText}>{orderRating.value.rating.review}</Text> : null}</> : null}
+          {orderRating.kind === "empty" ? <>
+            <Text style={styles.muted}>اختر من نجمة إلى خمس نجوم، ويمكنك إضافة ملاحظة قصيرة.</Text>
+            <View accessibilityLabel="اختيار تقييم من نجمة إلى خمس نجوم" style={styles.ratingStars}>{[1, 2, 3, 4, 5].map((value) => <Pressable key={value} accessibilityRole="button" accessibilityLabel={`${value} نجوم`} onPress={() => setSelectedRating(value)} style={styles.ratingStar}><Text style={[styles.ratingStarText, value <= selectedRating ? styles.ratingStarSelected : null]}>{value <= selectedRating ? "★" : "☆"}</Text></Pressable>)}</View>
+            <TextInput accessibilityLabel="مراجعة اختيارية" multiline maxLength={1000} onChangeText={setReview} placeholder="اكتب ملاحظتك (اختياري)" placeholderTextColor={theme.colorMuted} style={styles.reviewInput} textAlign="right" value={review} />
+            {ratingError ? <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.refreshError}>{ratingError}</Text> : null}
+            <BthwaniButton busy={ratingSubmitting} disabled={selectedRating < 1 || ratingSubmitting} label="حفظ التقييم" onPress={() => void submitRating()} />
+          </> : null}
+        </BthwaniSurface>
+      </> : null}
       <BthwaniSectionHeader title="التتبع المباشر" subtitle="يظهر الموقع أثناء عهدة الكابتن فقط" />
       <BthwaniSurface tone="base" style={styles.trackingSurface}>
         {tracking.kind === "loading" ? <Text style={styles.muted}>جارٍ قراءة حالة التتبع…</Text> : null}
@@ -187,6 +251,13 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     proofSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[4] },
     proofTitle: { ...typography.bodyStrong, color: theme.color },
     proofCode: { ...typography.titleLg, color: theme.interactiveText, letterSpacing: 6, textAlign: "center" },
+    ratingSurface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
+    ratingStars: { alignItems: "center", flexDirection: "row", justifyContent: "center" },
+    ratingStar: { minHeight: sizing.controlMd, minWidth: sizing.controlMd, alignItems: "center", justifyContent: "center" },
+    ratingStarText: { ...typography.titleLg, color: theme.colorMuted },
+    ratingStarSelected: { color: theme.interactiveText },
+    reviewInput: { ...typography.body, backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 120, padding: spacing[3] },
+    reviewText: { ...typography.body, color: theme.color, textAlign: "right" },
   });
 }
 

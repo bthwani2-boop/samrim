@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, JoiningCaseListResponse, JoiningCaseResponse, NotificationListResponse, NotificationReadResponse, OrderListResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, JoiningCaseListResponse, JoiningCaseResponse, NotificationListResponse, NotificationReadResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -285,6 +285,19 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalized) throw new Error("DSH_ORDER_ID_REQUIRED");
       const path = dshOperationPaths.readClientDeliveryProof.path.replace("{orderId}", encodeURIComponent(normalized));
       return userRequest<DeliveryProofResponse>(accessToken, path, dshOperationPaths.readClientDeliveryProof.method);
+    },
+    async readClientOrderRating(accessToken: string, orderID: string): Promise<OrderRatingResponse> {
+      const normalized = orderID.trim();
+      if (!normalized) throw new Error("DSH_ORDER_ID_REQUIRED");
+      const path = dshOperationPaths.readClientOrderRating.path.replace("{orderId}", encodeURIComponent(normalized));
+      return userRequest<OrderRatingResponse>(accessToken, path, dshOperationPaths.readClientOrderRating.method);
+    },
+    async createClientOrderRating(accessToken: string, orderID: string, input: CreateOrderRatingRequest, expectedVersion: number): Promise<OrderRatingResponse> {
+      const normalized = orderID.trim();
+      const review = input.review?.trim() ?? "";
+      if (!normalized || !Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5 || review.length > 1000 || expectedVersion < 1) throw new Error("DSH_ORDER_RATING_INPUT_INVALID");
+      const path = dshOperationPaths.createClientOrderRating.path.replace("{orderId}", encodeURIComponent(normalized));
+      return userRequest<OrderRatingResponse>(accessToken, path, dshOperationPaths.createClientOrderRating.method, { rating: input.rating, review }, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async readClientOrderTracking(accessToken: string, orderID: string): Promise<OrderTrackingResponse> {
       const normalized = orderID.trim();

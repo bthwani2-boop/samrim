@@ -110,6 +110,8 @@ function cleanup() {
     sql(`DELETE FROM dsh.captain_handoffs WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.captain_assignments WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.captain_dispatch_offers WHERE order_id='${value}'`);
+    sql(`DELETE FROM dsh.commerce_order_rating_audit WHERE order_id='${value}'`);
+    sql(`DELETE FROM dsh.commerce_order_ratings WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_order_payment_audit WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_order_audit WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_order_transition_idempotency WHERE order_id='${value}'`);
@@ -315,7 +317,7 @@ if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is inva
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "29", "DSH migration history is not v29");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "30", "DSH migration history is not v30");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -336,6 +338,7 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=27", "027_notification_read_state.sql", "DSH notification read-state migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=28", "028_client_favorite_stores.sql", "DSH client favorite-store migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=29", "029_order_delivery_proof.sql", "DSH order delivery-proof migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=30", "030_order_ratings.sql", "DSH order-ratings migration is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_orders_state_chk'", "t", "DSH Order cancellation state is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_order_transition_state_chk'", "t", "DSH Order cancellation transition is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%order_cancelled%' FROM pg_constraint WHERE conname='commerce_order_audit_event_type_chk'", "t", "DSH Order cancellation audit is not canonical");
@@ -360,7 +363,7 @@ expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='fi
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='field_admission_audit_event_type_chk'", "CHECK ((event_type = ANY (ARRAY['field_admission_created'::text, 'field_admission_bound'::text, 'field_admission_suspended'::text, 'field_admission_restored'::text])))", "Field admission audit events are not canonical");
 expectSQL("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='joining_cases_field_actor_chk'", "CHECK (((originating_field_actor_id IS NULL) OR (length(btrim(originating_field_actor_id)) > 0)))", "Field joining-case origin invariant is not canonical");
 expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='dsh' AND table_name='joining_cases' AND column_name='originating_field_actor_id')", "t", "Field joining-case origin column is missing");
-  console.log("DSH_SCHEMA_V29=PASS");
+  console.log("DSH_SCHEMA_V30=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -907,6 +910,19 @@ const locationIdempotencyCount = sql(`SELECT count(*) FROM dsh.captain_location_
 if (locationAuditCount !== "1" || locationIdempotencyCount !== "1") fail("Captain live-location audit/idempotency readback is incomplete", JSON.stringify({ locationAuditCount, locationIdempotencyCount }));
 console.log("DSH_LIVE_TRACKING=PASS");
 console.log("DSH_PAYMENT_COLLECTION=PASS");
+const ratingBefore = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: client.accessToken });
+const partnerRatingBefore = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: first.accessToken });
+const ratingKey = `order-rating-${suffix}`;
+const createdRating = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: client.accessToken, headers: partnerHeaders(ratingKey, deliveredOrder.body?.order?.version), body: { rating: 5, review: `تجربة ممتازة ${suffix}` } });
+const ratingReplay = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: client.accessToken, headers: partnerHeaders(ratingKey, deliveredOrder.body?.order?.version), body: { rating: 5, review: `تجربة ممتازة ${suffix}` } });
+const ratingKeyConflict = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: client.accessToken, headers: partnerHeaders(ratingKey, deliveredOrder.body?.order?.version), body: { rating: 4, review: "تغيير غير مسموح" } });
+const duplicateRating = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: client.accessToken, headers: partnerHeaders(`order-rating-duplicate-${suffix}`, deliveredOrder.body?.order?.version), body: { rating: 4, review: "تقييم مكرر" } });
+const clientRating = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: client.accessToken });
+const partnerRating = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(orderID)}/rating`, { token: first.accessToken, headers: partnerHeaders(`partner-rating-${suffix}`, deliveredOrder.body?.order?.version), body: { rating: 5, review: "تجاوز ملكية" } });
+const ratingAuditCount = sql(`SELECT count(*) FROM dsh.commerce_order_rating_audit WHERE order_id='${sqlLiteral(orderID)}' AND event_type='order_rated' AND idempotency_key='${sqlLiteral(ratingKey)}' AND rating=5`);
+const ratingStoreReadCount = sql(`SELECT count(*) FROM dsh.commerce_order_ratings WHERE order_id='${sqlLiteral(orderID)}' AND client_actor_id='${sqlLiteral(client.actorID)}' AND store_id='${sqlLiteral(first.storeID)}' AND rating=5`);
+if (ratingBefore.status !== 404 || partnerRatingBefore.status !== 403 || createdRating.status !== 201 || createdRating.body?.rating?.orderId !== orderID || createdRating.body.rating.storeId !== first.storeID || createdRating.body.rating.rating !== 5 || createdRating.body.rating.review !== `تجربة ممتازة ${suffix}` || ratingReplay.status !== 200 || ratingReplay.body?.idempotentReplay !== true || ratingReplay.body.rating.createdAt !== createdRating.body.rating.createdAt || ratingKeyConflict.status !== 409 || ratingKeyConflict.body?.error?.code !== "IDEMPOTENCY_CONFLICT" || duplicateRating.status !== 409 || duplicateRating.body?.error?.code !== "ORDER_RATING_EXISTS" || clientRating.status !== 200 || clientRating.body?.rating?.rating !== 5 || clientRating.body.rating.review !== `تجربة ممتازة ${suffix}` || partnerRating.status !== 403 || ratingAuditCount !== "1" || ratingStoreReadCount !== "1") fail("post-delivery order rating ownership, idempotency, or audit boundary failed", JSON.stringify({ ratingBefore, partnerRatingBefore, createdRating, ratingReplay, ratingKeyConflict, duplicateRating, clientRating, partnerRating, ratingAuditCount, ratingStoreReadCount }));
+console.log("DSH_ORDER_RATING=PASS");
 const captainAuditCount = sql(`SELECT count(*) FROM dsh.captain_audit WHERE order_id='${sqlLiteral(orderID)}'`);
 const captainOperationCount = sql(`SELECT count(*) FROM dsh.captain_operation_idempotency WHERE order_id='${sqlLiteral(orderID)}'`);
 if (captainAuditCount !== "9" || captainOperationCount !== "9" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='delivery_failed' AND order_id='${sqlLiteral(orderID)}'`) !== "1" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='delivery_recovered' AND order_id='${sqlLiteral(orderID)}'`) !== "1") fail("Captain audit/idempotency readback is incomplete", JSON.stringify({ captainAuditCount, captainOperationCount }));

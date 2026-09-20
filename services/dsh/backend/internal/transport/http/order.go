@@ -37,6 +37,8 @@ func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders", s.listClient)
 	mux.HandleFunc("GET /dsh/orders/{orderId}", s.read)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/delivery-proof", s.readDeliveryProof)
+	mux.HandleFunc("GET /dsh/orders/{orderId}/rating", s.readRating)
+	mux.HandleFunc("POST /dsh/orders/{orderId}/rating", s.createRating)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/tracking", s.readTracking)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/cancel", s.cancel)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
@@ -181,6 +183,51 @@ func (s *OrderServer) readDeliveryProof(w http.ResponseWriter, r *http.Request) 
 	response := contract.DeliveryProofResponse{OrderID: proof.OrderID, State: proof.State, VerifiedAt: proof.VerifiedAt}
 	response.Code = proof.Code
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *OrderServer) readRating(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	rating, err := s.service.ReadClientOrderRating(r.Context(), bearerToken(r), r.PathValue("orderId"))
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.OrderRatingResponse{Rating: toOrderRating(rating), IdempotentReplay: false})
+}
+
+func (s *OrderServer) createRating(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	var input contract.CreateOrderRatingRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 || err != nil || expected < 1 || input.Rating < 1 || input.Rating > 5 || len([]rune(strings.TrimSpace(input.Review))) > 1000 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "rating, review, attribution, idempotency, and a positive expected version are required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "rating ownership comes from the canonical client session")
+		return
+	}
+	rating, replayed, err := s.service.CreateClientOrderRating(r.Context(), bearerToken(r), r.PathValue("orderId"), input.Rating, input.Review, expected, idempotency, correlation)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, contract.OrderRatingResponse{Rating: toOrderRating(rating), IdempotentReplay: replayed})
 }
 
 func (s *OrderServer) cancel(w http.ResponseWriter, r *http.Request) {
@@ -337,6 +384,10 @@ func toOrder(item postgres.OrderRecord) contract.Order {
 	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CartID: item.CartID, AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
+func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {
+	return contract.OrderRating{OrderID: item.OrderID, StoreID: item.StoreID, Rating: item.Rating, Review: item.Review, CreatedAt: item.CreatedAt}
+}
+
 func snapshotStringValue(value *string) string {
 	if value == nil {
 		return ""
@@ -366,6 +417,16 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session is not permitted for this Order")
 	case errors.Is(err, postgres.ErrOrderNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order was not found")
+	case errors.Is(err, postgres.ErrOrderRatingNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "order rating was not found")
+	case errors.Is(err, postgres.ErrOrderRatingInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order rating input is invalid")
+	case errors.Is(err, postgres.ErrOrderRatingNotEligible):
+		writeError(w, http.StatusConflict, "ORDER_RATING_NOT_ELIGIBLE", "an order can be rated only after delivery")
+	case errors.Is(err, postgres.ErrOrderRatingAlreadyExists):
+		writeError(w, http.StatusConflict, "ORDER_RATING_EXISTS", "this order already has a rating")
+	case errors.Is(err, postgres.ErrOrderRatingIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different rating facts")
 	case errors.Is(err, postgres.ErrCheckoutEvidenceStale), errors.Is(err, postgres.ErrOrderVersionConflict), errors.Is(err, postgres.ErrOrderStateConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Order evidence, version, or lifecycle state is stale")
 	case errors.Is(err, postgres.ErrPaymentStateConflict):

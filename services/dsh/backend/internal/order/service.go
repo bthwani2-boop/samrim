@@ -77,6 +77,23 @@ func (s *Service) ReadClientDeliveryProof(ctx context.Context, accessToken, orde
 	return postgres.ReadClientDeliveryProof(ctx, s.db, orderID, identity)
 }
 
+func (s *Service) ReadClientOrderRating(ctx context.Context, accessToken, orderID string) (postgres.OrderRatingRecord, error) {
+	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.OrderRatingRecord{}, err
+	}
+	return postgres.ReadClientOrderRating(ctx, s.db, orderID, identity)
+}
+
+func (s *Service) CreateClientOrderRating(ctx context.Context, accessToken, orderID string, rating int, review string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRatingRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.OrderRatingRecord{}, false, err
+	}
+	requestHash := postgres.HashOrderRatingRequest(orderID, rating, review, expectedVersion)
+	return postgres.CreateClientOrderRating(ctx, s.db, orderID, identity, rating, review, expectedVersion, idempotencyKey, requestHash, correlationID)
+}
+
 func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int) ([]postgres.OrderRecord, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
 	if err != nil {

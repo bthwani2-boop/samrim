@@ -189,6 +189,9 @@ paths:
   /dsh/orders/{orderId}/delivery-proof:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1delivery-proof"
 
+  /dsh/orders/{orderId}/rating:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1rating"
+
   /dsh/orders/{orderId}/tracking:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1tracking"
 
@@ -3099,6 +3102,54 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    CreateOrderRatingRequest:
+      type: object
+      required: [rating]
+      additionalProperties: false
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        review:
+          type: string
+          maxLength: 1000
+          default: ''
+
+    OrderRating:
+      type: object
+      required: [orderId, storeId, rating, review, createdAt]
+      additionalProperties: false
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        review:
+          type: string
+          maxLength: 1000
+        createdAt:
+          type: string
+          format: date-time
+
+    OrderRatingResponse:
+      type: object
+      required: [rating, idempotentReplay]
+      additionalProperties: false
+      properties:
+        rating:
+          $ref: "#/components/schemas/OrderRating"
+        idempotentReplay:
+          type: boolean
 
     ManagedRoleMutationRequest:
       type: object
