@@ -42,7 +42,7 @@ type ProvisionedPayment struct {
 	State    string
 }
 
-type PaymentIntentProvisioner func(ctx context.Context, externalReference, payerActorID string, amountMinor int64, idempotencyKey, correlationID string) (ProvisionedPayment, error)
+type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, idempotencyKey, correlationID string) (ProvisionedPayment, error)
 
 type PaymentIntentCanceller func(ctx context.Context, intentID, reason, idempotencyKey, correlationID string) error
 
@@ -615,7 +615,7 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	if err != nil {
 		return OrderRecord{}, false, err
 	}
-	payment, err := input.PaymentProvisioner(ctx, input.PaymentExternalReference, input.ClientActorID, total, input.PaymentIdempotencyKey, input.CorrelationID)
+	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, input.PaymentIdempotencyKey, input.CorrelationID)
 	if err != nil || strings.TrimSpace(payment.IntentID) == "" || payment.State != "REQUIRES_COLLECTION" {
 		if err != nil {
 			return OrderRecord{}, false, fmt.Errorf("%w: %v", ErrPaymentProvisioning, err)

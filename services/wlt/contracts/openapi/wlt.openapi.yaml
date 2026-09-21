@@ -192,9 +192,11 @@ components:
       properties:
         externalReference: { type: string, minLength: 1, maxLength: 128 }
         payerActorId: { type: string, minLength: 1, maxLength: 128 }
+        orderId: { type: string, minLength: 1, maxLength: 128 }
         amountMinor: { type: integer, minimum: 1 }
         currency: { type: string, const: YER }
         method: { type: string, const: CASH_ON_DELIVERY }
+        allocation: { $ref: '#/components/schemas/PaymentAllocationInput' }
     CollectPaymentIntentRequest:
       type: object
       additionalProperties: false
@@ -229,6 +231,34 @@ components:
         cancellationReason: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        allocation: { $ref: '#/components/schemas/PaymentAllocation' }
+    PaymentAllocationInput:
+      type: object
+      additionalProperties: false
+      required: [orderId, currency, subtotalMinor, deliveryFeeMinor, discountMinor, platformSubsidyMinor, internalWalletAmountMinor, externalOfficialWalletAmountMinor, cashAmountMinor, codProductAmountMinor, codDeliveryAmountMinor, totalMinor, policyVersion]
+      properties:
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        currency: { type: string, const: YER }
+        subtotalMinor: { type: integer, minimum: 0 }
+        deliveryFeeMinor: { type: integer, minimum: 0 }
+        discountMinor: { type: integer, minimum: 0 }
+        platformSubsidyMinor: { type: integer, minimum: 0 }
+        internalWalletAmountMinor: { type: integer, minimum: 0 }
+        externalOfficialWalletAmountMinor: { type: integer, minimum: 0 }
+        cashAmountMinor: { type: integer, minimum: 0 }
+        codProductAmountMinor: { type: integer, minimum: 0 }
+        codDeliveryAmountMinor: { type: integer, minimum: 0 }
+        totalMinor: { type: integer, minimum: 1 }
+        policyVersion: { type: string, minLength: 1, maxLength: 128 }
+    PaymentAllocation:
+      allOf:
+        - $ref: '#/components/schemas/PaymentAllocationInput'
+        - type: object
+          required: [id, paymentIntentId, createdAt]
+          properties:
+            id: { type: string }
+            paymentIntentId: { type: string }
+            createdAt: { type: string, format: date-time }
     PaymentIntentResponse:
       type: object
       additionalProperties: false

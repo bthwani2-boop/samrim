@@ -40,14 +40,17 @@ type PaymentIntentRecord struct {
 	CancellationReason   *string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	Allocation           *PaymentAllocationRecord
 }
 
 type CreatePaymentIntentInput struct {
 	ExternalReference string
 	PayerActorID      string
+	OrderID           string
 	AmountMinor       int64
 	Currency          string
 	Method            string
+	Allocation        *PaymentAllocationInput
 	IdempotencyKey    string
 	CorrelationID     string
 }
@@ -71,7 +74,12 @@ type CancelPaymentIntentInput struct {
 }
 
 func HashCreateRequest(input CreatePaymentIntentInput) string {
-	return hashFacts("create", input.ExternalReference, input.PayerActorID, fmt.Sprintf("%d", input.AmountMinor), input.Currency, input.Method)
+	parts := []string{"create", input.ExternalReference, input.PayerActorID, input.OrderID, fmt.Sprintf("%d", input.AmountMinor), input.Currency, input.Method}
+	if input.Allocation != nil {
+		allocation := input.Allocation
+		parts = append(parts, allocation.OrderID, allocation.Currency, fmt.Sprintf("%d", allocation.SubtotalMinor), fmt.Sprintf("%d", allocation.DeliveryFeeMinor), fmt.Sprintf("%d", allocation.DiscountMinor), fmt.Sprintf("%d", allocation.PlatformSubsidyMinor), fmt.Sprintf("%d", allocation.InternalWalletAmountMinor), fmt.Sprintf("%d", allocation.ExternalOfficialWalletAmountMinor), fmt.Sprintf("%d", allocation.CashAmountMinor), fmt.Sprintf("%d", allocation.CODProductAmountMinor), fmt.Sprintf("%d", allocation.CODDeliveryAmountMinor), fmt.Sprintf("%d", allocation.TotalMinor), allocation.PolicyVersion)
+	}
+	return hashFacts(parts...)
 }
 
 func HashCollectRequest(input CollectPaymentIntentInput) string {
@@ -85,11 +93,17 @@ func HashCancelRequest(input CancelPaymentIntentInput) string {
 func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentIntentInput) (PaymentIntentRecord, bool, error) {
 	input.ExternalReference = strings.TrimSpace(input.ExternalReference)
 	input.PayerActorID = strings.TrimSpace(input.PayerActorID)
+	input.OrderID = strings.TrimSpace(input.OrderID)
 	input.Currency = strings.TrimSpace(input.Currency)
 	input.Method = strings.TrimSpace(input.Method)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || domain.ValidateCreate(input.ExternalReference, input.PayerActorID, input.Currency, input.Method, input.AmountMinor) != nil || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+	if input.Allocation != nil {
+		input.Allocation.OrderID = strings.TrimSpace(input.Allocation.OrderID)
+		input.Allocation.Currency = strings.TrimSpace(input.Allocation.Currency)
+		input.Allocation.PolicyVersion = strings.TrimSpace(input.Allocation.PolicyVersion)
+	}
+	if db == nil || domain.ValidateCreate(input.ExternalReference, input.PayerActorID, input.Currency, input.Method, input.AmountMinor) != nil || (input.OrderID != "" && (input.Allocation == nil || input.Allocation.OrderID != input.OrderID)) || (input.Allocation != nil && validatePaymentAllocation(*input.Allocation) != nil) || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
 		return PaymentIntentRecord{}, false, ErrInvalidInput
 	}
 	requestHash := HashCreateRequest(input)
@@ -135,6 +149,14 @@ func CreatePaymentIntent(ctx context.Context, db *sql.DB, input CreatePaymentInt
 	amount := input.AmountMinor
 	if err := insertEvent(ctx, tx, intentID, "PAYMENT_INTENT_CREATED", input.IdempotencyKey, requestHash, nil, input.CorrelationID, "", domain.StateRequiresCollect, &amount, nil); err != nil {
 		return PaymentIntentRecord{}, false, err
+	}
+	if input.Allocation != nil {
+		if err := validatePaymentAllocation(*input.Allocation); err != nil {
+			return PaymentIntentRecord{}, false, err
+		}
+		if _, err := insertPaymentAllocationTx(ctx, tx, *input.Allocation, intentID, input.IdempotencyKey+"-allocation", requestHash, input.CorrelationID); err != nil {
+			return PaymentIntentRecord{}, false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return PaymentIntentRecord{}, false, err
@@ -284,6 +306,14 @@ func readPaymentIntent(ctx context.Context, source interface {
 	err := scanPaymentIntent(source.QueryRowContext(ctx, `SELECT id,external_reference,payer_actor_id,amount_minor,currency,method,state,version,collected_amount_minor,collected_by_actor_id,collection_reference,collected_at,cancellation_reason,created_at,updated_at FROM wlt.payment_intents WHERE id=$1`, intentID), &result)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PaymentIntentRecord{}, ErrNotFound
+	}
+	if err == nil {
+		allocation, allocationErr := readPaymentAllocation(ctx, source, result.ID)
+		if allocationErr == nil {
+			result.Allocation = &allocation
+		} else if !errors.Is(allocationErr, ErrPaymentAllocationNotFound) {
+			return PaymentIntentRecord{}, allocationErr
+		}
 	}
 	return result, err
 }

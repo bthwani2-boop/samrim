@@ -104,8 +104,9 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		PaymentIdempotencyKey:    wlt.DerivedIdempotencyKey("create", idempotencyKey),
 		PaymentCancellationKey:   wlt.DerivedIdempotencyKey("cancel-checkout", idempotencyKey),
 	}
-	input.PaymentProvisioner = func(provisionContext context.Context, externalReference, payerActorID string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
-		intent, _, provisionErr := s.payment.Create(provisionContext, externalReference, payerActorID, amountMinor, paymentIdempotencyKey, paymentCorrelationID)
+	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
+		allocation := wlt.PaymentAllocation{OrderID: orderID, Currency: "YER", SubtotalMinor: amountMinor, CashAmountMinor: amountMinor, CODProductAmountMinor: amountMinor, TotalMinor: amountMinor, PolicyVersion: "cod-current-v1"}
+		intent, _, provisionErr := s.payment.CreateForOrder(provisionContext, orderID, externalReference, payerActorID, amountMinor, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
 			return postgres.ProvisionedPayment{}, provisionErr
 		}

@@ -40,11 +40,29 @@ func (s *Server) Register(mux *http.ServeMux) {
 }
 
 type createRequest struct {
-	ExternalReference string `json:"externalReference"`
-	PayerActorID      string `json:"payerActorId"`
-	AmountMinor       int64  `json:"amountMinor"`
-	Currency          string `json:"currency"`
-	Method            string `json:"method"`
+	ExternalReference string                    `json:"externalReference"`
+	PayerActorID      string                    `json:"payerActorId"`
+	OrderID           string                    `json:"orderId"`
+	AmountMinor       int64                     `json:"amountMinor"`
+	Currency          string                    `json:"currency"`
+	Method            string                    `json:"method"`
+	Allocation        *paymentAllocationRequest `json:"allocation"`
+}
+
+type paymentAllocationRequest struct {
+	OrderID                           string `json:"orderId"`
+	Currency                          string `json:"currency"`
+	SubtotalMinor                     int64  `json:"subtotalMinor"`
+	DeliveryFeeMinor                  int64  `json:"deliveryFeeMinor"`
+	DiscountMinor                     int64  `json:"discountMinor"`
+	PlatformSubsidyMinor              int64  `json:"platformSubsidyMinor"`
+	InternalWalletAmountMinor         int64  `json:"internalWalletAmountMinor"`
+	ExternalOfficialWalletAmountMinor int64  `json:"externalOfficialWalletAmountMinor"`
+	CashAmountMinor                   int64  `json:"cashAmountMinor"`
+	CODProductAmountMinor             int64  `json:"codProductAmountMinor"`
+	CODDeliveryAmountMinor            int64  `json:"codDeliveryAmountMinor"`
+	TotalMinor                        int64  `json:"totalMinor"`
+	PolicyVersion                     string `json:"policyVersion"`
 }
 
 type collectRequest struct {
@@ -79,21 +97,41 @@ type paymentIntentResponse struct {
 }
 
 type paymentIntentJSON struct {
-	ID                   string  `json:"id"`
-	ExternalReference    string  `json:"externalReference"`
-	PayerActorID         string  `json:"payerActorId"`
-	AmountMinor          int64   `json:"amountMinor"`
-	Currency             string  `json:"currency"`
-	Method               string  `json:"method"`
-	State                string  `json:"state"`
-	Version              int     `json:"version"`
-	CollectedAmountMinor *int64  `json:"collectedAmountMinor"`
-	CollectedByActorID   *string `json:"collectedByActorId"`
-	CollectionReference  *string `json:"collectionReference"`
-	CollectedAt          *string `json:"collectedAt"`
-	CancellationReason   *string `json:"cancellationReason"`
-	CreatedAt            string  `json:"createdAt"`
-	UpdatedAt            string  `json:"updatedAt"`
+	ID                   string                 `json:"id"`
+	ExternalReference    string                 `json:"externalReference"`
+	PayerActorID         string                 `json:"payerActorId"`
+	AmountMinor          int64                  `json:"amountMinor"`
+	Currency             string                 `json:"currency"`
+	Method               string                 `json:"method"`
+	State                string                 `json:"state"`
+	Version              int                    `json:"version"`
+	CollectedAmountMinor *int64                 `json:"collectedAmountMinor"`
+	CollectedByActorID   *string                `json:"collectedByActorId"`
+	CollectionReference  *string                `json:"collectionReference"`
+	CollectedAt          *string                `json:"collectedAt"`
+	CancellationReason   *string                `json:"cancellationReason"`
+	CreatedAt            string                 `json:"createdAt"`
+	UpdatedAt            string                 `json:"updatedAt"`
+	Allocation           *paymentAllocationJSON `json:"allocation,omitempty"`
+}
+
+type paymentAllocationJSON struct {
+	ID                                string `json:"id"`
+	OrderID                           string `json:"orderId"`
+	PaymentIntentID                   string `json:"paymentIntentId"`
+	Currency                          string `json:"currency"`
+	SubtotalMinor                     int64  `json:"subtotalMinor"`
+	DeliveryFeeMinor                  int64  `json:"deliveryFeeMinor"`
+	DiscountMinor                     int64  `json:"discountMinor"`
+	PlatformSubsidyMinor              int64  `json:"platformSubsidyMinor"`
+	InternalWalletAmountMinor         int64  `json:"internalWalletAmountMinor"`
+	ExternalOfficialWalletAmountMinor int64  `json:"externalOfficialWalletAmountMinor"`
+	CashAmountMinor                   int64  `json:"cashAmountMinor"`
+	CODProductAmountMinor             int64  `json:"codProductAmountMinor"`
+	CODDeliveryAmountMinor            int64  `json:"codDeliveryAmountMinor"`
+	TotalMinor                        int64  `json:"totalMinor"`
+	PolicyVersion                     string `json:"policyVersion"`
+	CreatedAt                         string `json:"createdAt"`
 }
 
 type cashLiabilityItemJSON struct {
@@ -159,7 +197,12 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, replayed, err := postgres.CreatePaymentIntent(r.Context(), s.db, postgres.CreatePaymentIntentInput{ExternalReference: input.ExternalReference, PayerActorID: input.PayerActorID, AmountMinor: input.AmountMinor, Currency: input.Currency, Method: input.Method, IdempotencyKey: idempotency, CorrelationID: correlation})
+	var allocation *postgres.PaymentAllocationInput
+	if input.Allocation != nil {
+		value := postgres.PaymentAllocationInput{OrderID: input.Allocation.OrderID, Currency: input.Allocation.Currency, SubtotalMinor: input.Allocation.SubtotalMinor, DeliveryFeeMinor: input.Allocation.DeliveryFeeMinor, DiscountMinor: input.Allocation.DiscountMinor, PlatformSubsidyMinor: input.Allocation.PlatformSubsidyMinor, InternalWalletAmountMinor: input.Allocation.InternalWalletAmountMinor, ExternalOfficialWalletAmountMinor: input.Allocation.ExternalOfficialWalletAmountMinor, CashAmountMinor: input.Allocation.CashAmountMinor, CODProductAmountMinor: input.Allocation.CODProductAmountMinor, CODDeliveryAmountMinor: input.Allocation.CODDeliveryAmountMinor, TotalMinor: input.Allocation.TotalMinor, PolicyVersion: input.Allocation.PolicyVersion}
+		allocation = &value
+	}
+	result, replayed, err := postgres.CreatePaymentIntent(r.Context(), s.db, postgres.CreatePaymentIntentInput{ExternalReference: input.ExternalReference, PayerActorID: input.PayerActorID, OrderID: input.OrderID, AmountMinor: input.AmountMinor, Currency: input.Currency, Method: input.Method, Allocation: allocation, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writePaymentError(w, err)
 		return
@@ -399,6 +442,10 @@ func toPaymentIntent(item postgres.PaymentIntentRecord) paymentIntentJSON {
 		value := item.CollectedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 		result.CollectedAt = &value
 	}
+	if item.Allocation != nil {
+		allocation := item.Allocation
+		result.Allocation = &paymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, PlatformSubsidyMinor: allocation.PlatformSubsidyMinor, InternalWalletAmountMinor: allocation.InternalWalletAmountMinor, ExternalOfficialWalletAmountMinor: allocation.ExternalOfficialWalletAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CODProductAmountMinor: allocation.CODProductAmountMinor, CODDeliveryAmountMinor: allocation.CODDeliveryAmountMinor, TotalMinor: allocation.TotalMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+	}
 	return result
 }
 
@@ -439,6 +486,8 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cash remittance input is invalid")
 	case errors.Is(err, postgres.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payment input is invalid")
+	case errors.Is(err, postgres.ErrPaymentAllocationInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "payment allocation is invalid")
 	default:
 		log.Printf("WLT partner financial profile persistence error: %T %v", err, err)
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")

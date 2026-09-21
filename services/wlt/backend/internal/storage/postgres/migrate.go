@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 3
+const SchemaVersion = 4
 
 type MigrationRecord struct {
 	Version int
@@ -42,7 +42,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if directory == "" {
 		return nil, nil, errors.New("WLT_MIGRATION_DIR is required")
 	}
-	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql"}
+	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql", "004_payment_allocations.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {
@@ -139,7 +139,7 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 			return fmt.Errorf("WLT migration history does not match canonical v%d", record.Version)
 		}
 	}
-	for _, relation := range []string{"wlt.payment_intents", "wlt.payment_intent_events", "wlt.cash_remittances", "wlt.cash_remittance_events", "wlt.partner_financial_profiles", "wlt.partner_financial_profile_events"} {
+	for _, relation := range []string{"wlt.payment_intents", "wlt.payment_intent_events", "wlt.cash_remittances", "wlt.cash_remittance_events", "wlt.partner_financial_profiles", "wlt.partner_financial_profile_events", "wlt.payment_allocations", "wlt.payment_allocation_events"} {
 		var exists bool
 		if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", relation).Scan(&exists); err != nil {
 			return fmt.Errorf("WLT relation check %s: %w", relation, err)

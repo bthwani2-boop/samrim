@@ -129,6 +129,8 @@ function cleanup() {
     const value = sqlLiteral(paymentIntentID);
     sql(`DELETE FROM wlt.cash_remittance_events WHERE payment_intent_id='${value}'`);
     sql(`DELETE FROM wlt.cash_remittances WHERE payment_intent_id='${value}'`);
+    sql(`DELETE FROM wlt.payment_allocation_events WHERE payment_intent_id='${value}'`);
+    sql(`DELETE FROM wlt.payment_allocations WHERE payment_intent_id='${value}'`);
     sql(`DELETE FROM wlt.payment_intent_events WHERE intent_id='${value}'`);
     sql(`DELETE FROM wlt.payment_intents WHERE id='${value}'`);
   }
@@ -383,7 +385,9 @@ expectSQL("SELECT to_regclass('dsh.joining_cases') IS NOT NULL AND EXISTS (SELEC
 console.log("DSH_SCHEMA_V33=PASS");
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=2", "002_cash_remittances.sql", "WLT cash-remittance migration is not canonical");
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=3", "003_partner_financial_profiles.sql", "WLT partner financial profile migration is not canonical");
-console.log("WLT_SCHEMA_V3=PASS");
+expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=4", "004_payment_allocations.sql", "WLT payment allocation migration is not canonical");
+expectSQL("SELECT to_regclass('wlt.payment_allocations') IS NOT NULL AND to_regclass('wlt.payment_allocation_events') IS NOT NULL", "t", "WLT payment allocation relations are missing");
+console.log("WLT_SCHEMA_V4=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -829,7 +833,11 @@ const deliveryProofCode = String(deliveryProof.body.code);
 const paymentIntentID = String(checkout.body.order.paymentIntentId); paymentIntentIDs.add(paymentIntentID);
 const linkedPaymentRead = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(paymentIntentID)}`, { token: wltToken });
 const linkedPaymentAuditCount = sql(`SELECT count(*) FROM dsh.commerce_order_payment_audit WHERE order_id='${sqlLiteral(orderID)}' AND event_type='payment_intent_linked' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND amount_minor=4200`);
-if (linkedPaymentRead.status !== 200 || linkedPaymentRead.body?.paymentIntent?.state !== "REQUIRES_COLLECTION" || linkedPaymentRead.body.paymentIntent.amountMinor !== 4200 || linkedPaymentRead.body.paymentIntent.currency !== "YER" || linkedPaymentRead.body.paymentIntent.method !== "CASH_ON_DELIVERY" || linkedPaymentAuditCount !== "1") fail("checkout did not link a canonical WLT payment intent", JSON.stringify({ checkout, linkedPaymentRead, linkedPaymentAuditCount }));
+const linkedAllocation = linkedPaymentRead.body?.paymentIntent?.allocation;
+const linkedAllocationDBCount = sql(`SELECT count(*) FROM wlt.payment_allocations WHERE order_id='${sqlLiteral(orderID)}' AND payment_intent_id='${sqlLiteral(paymentIntentID)}' AND currency='YER' AND subtotal_minor=4200 AND delivery_fee_minor=0 AND discount_minor=0 AND platform_subsidy_minor=0 AND internal_wallet_amount_minor=0 AND external_official_wallet_amount_minor=0 AND cash_amount_minor=4200 AND cod_product_amount_minor=4200 AND cod_delivery_amount_minor=0 AND total_minor=4200 AND policy_version='cod-current-v1'`);
+const linkedAllocationEventCount = sql(`SELECT count(*) FROM wlt.payment_allocation_events WHERE payment_intent_id='${sqlLiteral(paymentIntentID)}' AND event_type='PAYMENT_ALLOCATION_CREATED'`);
+if (linkedPaymentRead.status !== 200 || linkedPaymentRead.body?.paymentIntent?.state !== "REQUIRES_COLLECTION" || linkedPaymentRead.body.paymentIntent.amountMinor !== 4200 || linkedPaymentRead.body.paymentIntent.currency !== "YER" || linkedPaymentRead.body.paymentIntent.method !== "CASH_ON_DELIVERY" || linkedPaymentAuditCount !== "1" || linkedAllocation?.orderId !== orderID || linkedAllocation?.paymentIntentId !== paymentIntentID || linkedAllocation?.currency !== "YER" || linkedAllocation?.subtotalMinor !== 4200 || linkedAllocation?.deliveryFeeMinor !== 0 || linkedAllocation?.discountMinor !== 0 || linkedAllocation?.platformSubsidyMinor !== 0 || linkedAllocation?.internalWalletAmountMinor !== 0 || linkedAllocation?.externalOfficialWalletAmountMinor !== 0 || linkedAllocation?.cashAmountMinor !== 4200 || linkedAllocation?.codProductAmountMinor !== 4200 || linkedAllocation?.codDeliveryAmountMinor !== 0 || linkedAllocation?.totalMinor !== 4200 || linkedAllocation?.policyVersion !== "cod-current-v1" || linkedAllocationDBCount !== "1" || linkedAllocationEventCount !== "1") fail("checkout did not link a canonical WLT payment allocation", JSON.stringify({ checkout, linkedPaymentRead, linkedPaymentAuditCount, linkedAllocationDBCount, linkedAllocationEventCount }));
+console.log("DSH_PAYMENT_ALLOCATION=PASS");
 expectSQL(`SELECT count(*) FROM dsh.commerce_order_line_modifier_snapshots WHERE order_line_id='${sqlLiteral(checkoutLineID)}' AND option_id='${sqlLiteral(modifierOptionID)}' AND option_name_ar='حليب ${sqlLiteral(suffix)}'`, "1", "Order modifier snapshot readback is not immutable canonical evidence");
 expectSQL(`SELECT count(*) FROM dsh.commerce_order_line_attribute_snapshots WHERE order_line_id='${sqlLiteral(checkoutLineID)}'`, "3", "Order typed Attribute snapshot readback is incomplete");
 const checkoutReplay = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(checkoutKey, 3), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID } });
