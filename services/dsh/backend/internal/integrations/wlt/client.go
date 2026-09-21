@@ -119,12 +119,12 @@ type CaptainCODReservation struct {
 	CaptainActorID      string  `json:"captainActorId"`
 	AmountMinor         int64   `json:"amountMinor"`
 	Currency            string  `json:"currency"`
-	State               string  `json:"state"`
-	LedgerTransactionID *string `json:"ledgerTransactionId,omitempty"`
-	CreatedAt           string  `json:"createdAt"`
-	UpdatedAt           string  `json:"updatedAt"`
-	ReleasedAt          *string `json:"releasedAt,omitempty"`
-	FinalizedAt         *string `json:"finalizedAt,omitempty"`
+	State       string  `json:"state"`
+	CreatedAt   string  `json:"createdAt"`
+	UpdatedAt   string  `json:"updatedAt"`
+	ReleasedAt  *string `json:"releasedAt,omitempty"`
+	FinalizedAt *string `json:"finalizedAt,omitempty"`
+	RemittedAt  *string `json:"remittedAt,omitempty"`
 }
 
 type PartnerFinancialProfile struct {

@@ -148,6 +148,12 @@ func RemitCash(ctx context.Context, db *sql.DB, input RemitCashInput) (CashRemit
 	if payment.State != "COLLECTED" || payment.CollectedByActorID == nil || *payment.CollectedByActorID != input.CaptainActorID || payment.CollectedAmountMinor == nil || *payment.CollectedAmountMinor != input.AmountMinor || payment.Version != input.ExpectedPaymentVersion {
 		return CashRemittanceRecord{}, false, ErrRemittanceInvalidInput
 	}
+	var reservationID string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1 AND captain_actor_id=$2 AND state='FINALIZED' FOR UPDATE`, input.PaymentIntentID, input.CaptainActorID).Scan(&reservationID); errors.Is(err, sql.ErrNoRows) {
+		return CashRemittanceRecord{}, false, ErrRemittanceInvalidInput
+	} else if err != nil {
+		return CashRemittanceRecord{}, false, err
+	}
 	var duplicateID string
 	if err := tx.QueryRowContext(ctx, "SELECT id FROM wlt.cash_remittances WHERE payment_intent_id=$1 FOR UPDATE", input.PaymentIntentID).Scan(&duplicateID); err == nil {
 		return CashRemittanceRecord{}, false, ErrRemittanceExists
@@ -162,6 +168,22 @@ func RemitCash(ctx context.Context, db *sql.DB, input RemitCashInput) (CashRemit
 		return CashRemittanceRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.cash_remittance_events(remittance_id,payment_intent_id,event_type,idempotency_key,request_hash,correlation_id,captain_actor_id,amount_minor) VALUES($1,$2,'CASH_REMITTED',$3,$4,$5,$6,$7)`, remittanceID, input.PaymentIntentID, input.IdempotencyKey, requestHash, input.CorrelationID, input.CaptainActorID, input.AmountMinor); err != nil {
+		return CashRemittanceRecord{}, false, err
+	}
+	ledgerTransactionID, err := newID("ledger")
+	if err != nil {
+		return CashRemittanceRecord{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'CAPTAIN_CASH_REMITTED','CASH_REMITTANCE',$2,$3,$4,$5,$6)`, ledgerTransactionID, remittanceID, payment.Currency, "ledger-"+remittanceID, requestHash, input.CorrelationID); err != nil {
+		return CashRemittanceRecord{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,1,'asset','EXTERNAL_SETTLEMENT_CASH',NULL,NULL,'DEBIT',$2,$3),($1,2,'asset','CAPTAIN_CASH_RECEIVABLE',NULL,NULL,'CREDIT',$2,$3)`, ledgerTransactionID, input.AmountMinor, payment.Currency); err != nil {
+		return CashRemittanceRecord{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE wlt.captain_cod_reservations SET state='REMITTED',remitted_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND state='FINALIZED'`, reservationID); err != nil {
+		return CashRemittanceRecord{}, false, err
+	}
+	if err := insertCaptainCODReservationEvent(ctx, tx, reservationID, "CAPTAIN_COD_REMITTED", input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
 		return CashRemittanceRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {

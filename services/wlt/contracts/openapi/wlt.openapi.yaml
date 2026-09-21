@@ -1318,12 +1318,12 @@ components:
         captainActorId: { type: string }
         amountMinor: { type: integer, minimum: 1 }
         currency: { type: string, const: YER }
-        state: { type: string, enum: [ACTIVE, RELEASED, FINALIZED] }
-        ledgerTransactionId: { type: string, nullable: true }
+        state: { type: string, enum: [ACTIVE, RELEASED, FINALIZED, REMITTED] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         releasedAt: { type: string, format: date-time, nullable: true }
         finalizedAt: { type: string, format: date-time, nullable: true }
+        remittedAt: { type: string, format: date-time, nullable: true }
     CaptainCODReservationResponse:
       type: object
       additionalProperties: false

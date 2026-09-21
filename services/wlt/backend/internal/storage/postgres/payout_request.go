@@ -116,6 +116,13 @@ func CreatePayoutIntent(ctx context.Context, db *sql.DB, input PayoutIntentInput
 	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.payout_holds WHERE actor_type=$1 AND actor_id=$2 AND status='ACTIVE'", input.ActorType, input.ActorID).Scan(&held); err != nil {
 		return PayoutRequestRecord{}, false, err
 	}
+	if input.ActorType == "captain" {
+		var codHeld int64
+		if err := tx.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.captain_cod_reservations WHERE captain_actor_id=$1 AND state IN ('ACTIVE','FINALIZED')", input.ActorID).Scan(&codHeld); err != nil {
+			return PayoutRequestRecord{}, false, err
+		}
+		held += codHeld
+	}
 	eligible := grossAvailable - held
 	if eligible <= 0 {
 		return PayoutRequestRecord{}, false, ErrPayoutNoFunds
@@ -168,6 +175,13 @@ func ReadPayoutState(ctx context.Context, db *sql.DB, actorType, actorID string)
 	}
 	if err := db.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.payout_holds WHERE actor_type=$1 AND actor_id=$2 AND status='ACTIVE'", actorType, actorID).Scan(&held); err != nil {
 		return PayoutStateRecord{}, err
+	}
+	if actorType == "captain" {
+		var codHeld int64
+		if err := db.QueryRowContext(ctx, "SELECT COALESCE(SUM(amount_minor),0) FROM wlt.captain_cod_reservations WHERE captain_actor_id=$1 AND state IN ('ACTIVE','FINALIZED')", actorID).Scan(&codHeld); err != nil {
+			return PayoutStateRecord{}, err
+		}
+		held += codHeld
 	}
 	result.HeldMinor = held
 	result.EligibleAvailableMinor = gross - held
