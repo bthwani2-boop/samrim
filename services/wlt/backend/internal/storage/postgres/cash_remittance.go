@@ -148,16 +148,16 @@ func RemitCash(ctx context.Context, db *sql.DB, input RemitCashInput) (CashRemit
 	if payment.State != "COLLECTED" || payment.CollectedByActorID == nil || *payment.CollectedByActorID != input.CaptainActorID || payment.CollectedAmountMinor == nil || *payment.CollectedAmountMinor != input.AmountMinor || payment.Version != input.ExpectedPaymentVersion {
 		return CashRemittanceRecord{}, false, ErrRemittanceInvalidInput
 	}
-	var reservationID string
-	if err := tx.QueryRowContext(ctx, `SELECT id FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1 AND captain_actor_id=$2 AND state='FINALIZED' FOR UPDATE`, input.PaymentIntentID, input.CaptainActorID).Scan(&reservationID); errors.Is(err, sql.ErrNoRows) {
-		return CashRemittanceRecord{}, false, ErrRemittanceInvalidInput
-	} else if err != nil {
-		return CashRemittanceRecord{}, false, err
-	}
 	var duplicateID string
 	if err := tx.QueryRowContext(ctx, "SELECT id FROM wlt.cash_remittances WHERE payment_intent_id=$1 FOR UPDATE", input.PaymentIntentID).Scan(&duplicateID); err == nil {
 		return CashRemittanceRecord{}, false, ErrRemittanceExists
 	} else if !errors.Is(err, sql.ErrNoRows) {
+		return CashRemittanceRecord{}, false, err
+	}
+	var reservationID string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM wlt.captain_cod_reservations WHERE payment_intent_id=$1 AND captain_actor_id=$2 AND state='FINALIZED' FOR UPDATE`, input.PaymentIntentID, input.CaptainActorID).Scan(&reservationID); errors.Is(err, sql.ErrNoRows) {
+		return CashRemittanceRecord{}, false, ErrRemittanceInvalidInput
+	} else if err != nil {
 		return CashRemittanceRecord{}, false, err
 	}
 	remittanceID, err := newID("cash_remit")
