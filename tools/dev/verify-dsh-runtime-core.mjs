@@ -367,15 +367,15 @@ async function createClientSession(phone) {
 async function waitForIdentityReady(timeoutMs = 30_000) { const deadline = Date.now() + timeoutMs; while (Date.now() < deadline) { const health = await request(identityBase, "GET", "/identity/health", { timeoutMs: 1_000, allowNetworkError: true }); if (health.status === 200) return; await new Promise((resolve) => setTimeout(resolve, 250)); } fail("Identity did not become ready after restart"); }
 async function waitForSQL(query, expected, message, timeoutMs = 20_000) { const deadline = Date.now() + timeoutMs; let actual = ""; while (Date.now() < deadline) { actual = sql(query); if (actual === expected) return; await new Promise((resolve) => setTimeout(resolve, 250)); } fail(message, `expected=${expected} actual=${actual}`); }
 
-let actingOperatorID = sql("SELECT actor_id FROM identity_actor_roles WHERE role='operator' AND enabled AND activated_at IS NOT NULL ORDER BY activated_at DESC, actor_id LIMIT 1");
-if (!actingOperatorID) actingOperatorID = sql("SELECT COALESCE(initial_operator_actor_id,'') FROM identity_bootstrap_state WHERE id=1");
+let actingOperatorID = sql("SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL ORDER BY r.activated_at DESC, r.actor_id LIMIT 1");
+if (!actingOperatorID) actingOperatorID = sql("SELECT b.initial_operator_actor_id FROM identity_bootstrap_state b JOIN identity_actor_roles r ON r.actor_id=b.initial_operator_actor_id AND r.role='operator' JOIN identity_actors a ON a.id=r.actor_id WHERE b.id=1 AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL");
 if (!actingOperatorID) {
   const bootstrapped = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role: "operator" } });
   if (bootstrapped.status !== 201 || !bootstrapped.body?.actorId) fail("operator bootstrap failed", JSON.stringify(bootstrapped));
   actingOperatorID = String(bootstrapped.body.actorId);
 }
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
-let checkerOperatorID = sql(`SELECT actor_id FROM identity_actor_roles WHERE role='operator' AND enabled AND activated_at IS NOT NULL AND actor_id<>'' AND actor_id<> '${sqlLiteral(actingOperatorID)}' ORDER BY activated_at DESC, actor_id LIMIT 1`);
+let checkerOperatorID = sql(`SELECT r.actor_id FROM identity_actor_roles r JOIN identity_actors a ON a.id=r.actor_id WHERE r.role='operator' AND r.enabled AND a.security_enabled AND r.activated_at IS NOT NULL AND r.actor_id<>'' AND r.actor_id<> '${sqlLiteral(actingOperatorID)}' ORDER BY r.activated_at DESC, r.actor_id LIMIT 1`);
 if (!checkerOperatorID) {
   const checkerBootstrapped = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: dshToken, headers: serviceHeaders(actingOperatorID, `checker-operator-provision-${suffix}`), body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role: "operator" } });
   if (checkerBootstrapped.status !== 201 || !checkerBootstrapped.body?.actorId) fail("checker operator bootstrap failed", JSON.stringify(checkerBootstrapped));
