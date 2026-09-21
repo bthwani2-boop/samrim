@@ -17,6 +17,6 @@ Interactive surfaces are package-owned foreground processes:
 
 Mobile apps are opened manually. Application-source edits reuse the running Metro process and Fast Refresh; Control uses Next HMR. Native rebuilds are not part of the source-edit loop.
 
-`infra/local/.env.example` is the tracked local configuration template. `infra/local/.env` is ignored and preserved after creation.
+`infra/local/.env.example` is the tracked local configuration template. The ignored local runtime projection is created beside it and preserved after creation.
 
 There is no Docker JavaScript runtime, persistent synthetic world, global fixture registry, parallel surface runtime owner or automatic mobile-app opener.
