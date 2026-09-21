@@ -84,23 +84,19 @@ type createRequest struct {
 	AmountMinor       int64                     `json:"amountMinor"`
 	Currency          string                    `json:"currency"`
 	Method            string                    `json:"method"`
-	Allocation        *paymentAllocationRequest `json:"allocation"`
+	CustomerPaymentAllocation *customerPaymentAllocationRequest `json:"customerPaymentAllocation"`
 }
 
-type paymentAllocationRequest struct {
-	OrderID                           string `json:"orderId"`
-	Currency                          string `json:"currency"`
-	SubtotalMinor                     int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor                  int64  `json:"deliveryFeeMinor"`
-	DiscountMinor                     int64  `json:"discountMinor"`
-	PlatformSubsidyMinor              int64  `json:"platformSubsidyMinor"`
-	InternalWalletAmountMinor         int64  `json:"internalWalletAmountMinor"`
-	ExternalOfficialWalletAmountMinor int64  `json:"externalOfficialWalletAmountMinor"`
-	CashAmountMinor                   int64  `json:"cashAmountMinor"`
-	CODProductAmountMinor             int64  `json:"codProductAmountMinor"`
-	CODDeliveryAmountMinor            int64  `json:"codDeliveryAmountMinor"`
-	TotalMinor                        int64  `json:"totalMinor"`
-	PolicyVersion                     string `json:"policyVersion"`
+type customerPaymentAllocationRequest struct {
+	OrderID                    string `json:"orderId"`
+	Currency                   string `json:"currency"`
+	SubtotalMinor              int64  `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
+	DiscountMinor              int64  `json:"discountMinor"`
+	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64  `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
+	PolicyVersion              string `json:"policyVersion"`
 }
 
 type collectRequest struct {
@@ -361,26 +357,22 @@ type paymentIntentJSON struct {
 	CancellationReason   *string                `json:"cancellationReason"`
 	CreatedAt            string                 `json:"createdAt"`
 	UpdatedAt            string                 `json:"updatedAt"`
-	Allocation           *paymentAllocationJSON `json:"allocation,omitempty"`
+	CustomerPaymentAllocation *customerPaymentAllocationJSON `json:"customerPaymentAllocation,omitempty"`
 }
 
-type paymentAllocationJSON struct {
-	ID                                string `json:"id"`
-	OrderID                           string `json:"orderId"`
-	PaymentIntentID                   string `json:"paymentIntentId"`
-	Currency                          string `json:"currency"`
-	SubtotalMinor                     int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor                  int64  `json:"deliveryFeeMinor"`
-	DiscountMinor                     int64  `json:"discountMinor"`
-	PlatformSubsidyMinor              int64  `json:"platformSubsidyMinor"`
-	InternalWalletAmountMinor         int64  `json:"internalWalletAmountMinor"`
-	ExternalOfficialWalletAmountMinor int64  `json:"externalOfficialWalletAmountMinor"`
-	CashAmountMinor                   int64  `json:"cashAmountMinor"`
-	CODProductAmountMinor             int64  `json:"codProductAmountMinor"`
-	CODDeliveryAmountMinor            int64  `json:"codDeliveryAmountMinor"`
-	TotalMinor                        int64  `json:"totalMinor"`
-	PolicyVersion                     string `json:"policyVersion"`
-	CreatedAt                         string `json:"createdAt"`
+type customerPaymentAllocationJSON struct {
+	ID                         string `json:"id"`
+	OrderID                    string `json:"orderId"`
+	PaymentIntentID            string `json:"paymentIntentId"`
+	Currency                   string `json:"currency"`
+	SubtotalMinor              int64  `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
+	DiscountMinor              int64  `json:"discountMinor"`
+	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64  `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
+	PolicyVersion              string `json:"policyVersion"`
+	CreatedAt                  string `json:"createdAt"`
 }
 
 type cashLiabilityItemJSON struct {
@@ -484,12 +476,12 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	var allocation *postgres.PaymentAllocationInput
-	if input.Allocation != nil {
-		value := postgres.PaymentAllocationInput{OrderID: input.Allocation.OrderID, Currency: input.Allocation.Currency, SubtotalMinor: input.Allocation.SubtotalMinor, DeliveryFeeMinor: input.Allocation.DeliveryFeeMinor, DiscountMinor: input.Allocation.DiscountMinor, PlatformSubsidyMinor: input.Allocation.PlatformSubsidyMinor, InternalWalletAmountMinor: input.Allocation.InternalWalletAmountMinor, ExternalOfficialWalletAmountMinor: input.Allocation.ExternalOfficialWalletAmountMinor, CashAmountMinor: input.Allocation.CashAmountMinor, CODProductAmountMinor: input.Allocation.CODProductAmountMinor, CODDeliveryAmountMinor: input.Allocation.CODDeliveryAmountMinor, TotalMinor: input.Allocation.TotalMinor, PolicyVersion: input.Allocation.PolicyVersion}
+	var allocation *postgres.CustomerPaymentAllocationInput
+	if input.CustomerPaymentAllocation != nil {
+		value := postgres.CustomerPaymentAllocationInput{OrderID: input.CustomerPaymentAllocation.OrderID, Currency: input.CustomerPaymentAllocation.Currency, SubtotalMinor: input.CustomerPaymentAllocation.SubtotalMinor, DeliveryFeeMinor: input.CustomerPaymentAllocation.DeliveryFeeMinor, DiscountMinor: input.CustomerPaymentAllocation.DiscountMinor, InternalBalanceAmountMinor: input.CustomerPaymentAllocation.InternalBalanceAmountMinor, CashAmountMinor: input.CustomerPaymentAllocation.CashAmountMinor, CustomerPayableMinor: input.CustomerPaymentAllocation.CustomerPayableMinor, PolicyVersion: input.CustomerPaymentAllocation.PolicyVersion}
 		allocation = &value
 	}
-	result, replayed, err := postgres.CreatePaymentIntent(r.Context(), s.db, postgres.CreatePaymentIntentInput{ExternalReference: input.ExternalReference, PayerActorID: input.PayerActorID, OrderID: input.OrderID, AmountMinor: input.AmountMinor, Currency: input.Currency, Method: input.Method, Allocation: allocation, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.CreatePaymentIntent(r.Context(), s.db, postgres.CreatePaymentIntentInput{ExternalReference: input.ExternalReference, PayerActorID: input.PayerActorID, OrderID: input.OrderID, AmountMinor: input.AmountMinor, Currency: input.Currency, Method: input.Method, CustomerPaymentAllocation: allocation, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
 		writePaymentError(w, err)
 		return
@@ -1022,9 +1014,9 @@ func toPaymentIntent(item postgres.PaymentIntentRecord) paymentIntentJSON {
 		value := item.CollectedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
 		result.CollectedAt = &value
 	}
-	if item.Allocation != nil {
-		allocation := item.Allocation
-		result.Allocation = &paymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, PlatformSubsidyMinor: allocation.PlatformSubsidyMinor, InternalWalletAmountMinor: allocation.InternalWalletAmountMinor, ExternalOfficialWalletAmountMinor: allocation.ExternalOfficialWalletAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CODProductAmountMinor: allocation.CODProductAmountMinor, CODDeliveryAmountMinor: allocation.CODDeliveryAmountMinor, TotalMinor: allocation.TotalMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+	if item.CustomerPaymentAllocation != nil {
+		allocation := item.CustomerPaymentAllocation
+		result.CustomerPaymentAllocation = &customerPaymentAllocationJSON{ID: allocation.ID, OrderID: allocation.OrderID, PaymentIntentID: allocation.PaymentIntentID, Currency: allocation.Currency, SubtotalMinor: allocation.SubtotalMinor, DeliveryFeeMinor: allocation.DeliveryFeeMinor, DiscountMinor: allocation.DiscountMinor, InternalBalanceAmountMinor: allocation.InternalBalanceAmountMinor, CashAmountMinor: allocation.CashAmountMinor, CustomerPayableMinor: allocation.CustomerPayableMinor, PolicyVersion: allocation.PolicyVersion, CreatedAt: allocation.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
 	}
 	return result
 }

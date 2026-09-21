@@ -113,7 +113,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		return postgres.DeliveryFeeQuote{FeeMinor: quote.FeeMinor, PolicyVersion: quote.PolicyVersion}, nil
 	}
 	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
-		allocation := wlt.PaymentAllocation{OrderID: orderID, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, CashAmountMinor: amountMinor, CODProductAmountMinor: subtotalMinor, CODDeliveryAmountMinor: deliveryFeeMinor, TotalMinor: amountMinor, PolicyVersion: fmt.Sprintf("cod-current-v1;delivery=%s", deliveryPolicyVersion)}
+		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, CashAmountMinor: amountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: fmt.Sprintf("cod-current-v2;delivery=%s", deliveryPolicyVersion)}
 		intent, _, provisionErr := s.payment.CreateForOrder(provisionContext, orderID, externalReference, payerActorID, amountMinor, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
 			return postgres.ProvisionedPayment{}, provisionErr

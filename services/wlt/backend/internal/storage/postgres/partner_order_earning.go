@@ -114,17 +114,17 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 
 	var paymentState, currency string
 	var paymentAmount int64
-	var allocation PaymentAllocationRecord
-	err = tx.QueryRowContext(ctx, `SELECT p.state,p.amount_minor,p.currency,a.id,a.order_id,a.payment_intent_id,a.currency,a.subtotal_minor,a.delivery_fee_minor,a.discount_minor,a.platform_subsidy_minor,a.internal_wallet_amount_minor,a.external_official_wallet_amount_minor,a.cash_amount_minor,a.cod_product_amount_minor,a.cod_delivery_amount_minor,a.total_minor,a.policy_version,a.created_at
-		FROM wlt.payment_intents p JOIN wlt.payment_allocations a ON a.payment_intent_id=p.id
-		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &paymentAmount, &currency, &allocation.ID, &allocation.OrderID, &allocation.PaymentIntentID, &allocation.Currency, &allocation.SubtotalMinor, &allocation.DeliveryFeeMinor, &allocation.DiscountMinor, &allocation.PlatformSubsidyMinor, &allocation.InternalWalletAmountMinor, &allocation.ExternalOfficialWalletAmountMinor, &allocation.CashAmountMinor, &allocation.CODProductAmountMinor, &allocation.CODDeliveryAmountMinor, &allocation.TotalMinor, &allocation.PolicyVersion, &allocation.CreatedAt)
+	var allocation CustomerPaymentAllocationRecord
+	err = tx.QueryRowContext(ctx, `SELECT p.state,p.amount_minor,p.currency,a.id,a.order_id,a.payment_intent_id,a.currency,a.subtotal_minor,a.delivery_fee_minor,a.discount_minor,a.internal_balance_amount_minor,a.cash_amount_minor,a.customer_payable_minor,a.policy_version,a.created_at
+		FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id
+		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &paymentAmount, &currency, &allocation.ID, &allocation.OrderID, &allocation.PaymentIntentID, &allocation.Currency, &allocation.SubtotalMinor, &allocation.DeliveryFeeMinor, &allocation.DiscountMinor, &allocation.InternalBalanceAmountMinor, &allocation.CashAmountMinor, &allocation.CustomerPayableMinor, &allocation.PolicyVersion, &allocation.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return PartnerOrderEarningRecord{}, false, ErrPaymentAllocationNotFound
+		return PartnerOrderEarningRecord{}, false, ErrCustomerPaymentAllocationNotFound
 	}
 	if err != nil {
 		return PartnerOrderEarningRecord{}, false, err
 	}
-	if paymentState != domain.StateCollected || allocation.OrderID != input.OrderID || currency != allocation.Currency || paymentAmount != allocation.TotalMinor {
+	if paymentState != domain.StateCollected || allocation.OrderID != input.OrderID || currency != allocation.Currency || paymentAmount != allocation.CustomerPayableMinor {
 		return PartnerOrderEarningRecord{}, false, ErrPartnerEarningPaymentState
 	}
 
@@ -162,7 +162,7 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'PARTNER_ORDER_EARNING_POSTED','ORDER_DELIVERED',$2,$3,$4,$5,$6)`, transactionID, input.OrderID, allocation.Currency, input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
 		return PartnerOrderEarningRecord{}, false, err
 	}
-	entries := []ledgerEntryInput{{"asset", "CAPTAIN_CASH_RECEIVABLE", "DEBIT", allocation.CashAmountMinor}, {"asset", "CUSTOMER_PAYMENT_CLEARING", "DEBIT", allocation.TotalMinor - allocation.CashAmountMinor}, {"liability", "PARTNER_WALLET", "CREDIT", partnerNet}, {"income", "PLATFORM_COMMISSION_INCOME", "CREDIT", commission}, {"liability", "CAPTAIN_WALLET", "CREDIT", allocation.DeliveryFeeMinor}}
+	entries := []ledgerEntryInput{{"asset", "CAPTAIN_CASH_RECEIVABLE", "DEBIT", allocation.CashAmountMinor}, {"asset", "CUSTOMER_PAYMENT_CLEARING", "DEBIT", allocation.CustomerPayableMinor - allocation.CashAmountMinor}, {"liability", "PARTNER_WALLET", "CREDIT", partnerNet}, {"income", "PLATFORM_COMMISSION_INCOME", "CREDIT", commission}, {"liability", "CAPTAIN_WALLET", "CREDIT", allocation.DeliveryFeeMinor}}
 	debitTotal, creditTotal := int64(0), int64(0)
 	sequence := 1
 	for _, entry := range entries {
@@ -186,7 +186,7 @@ func FinalizePartnerOrderEarning(ctx context.Context, db *sql.DB, input Finalize
 		}
 		sequence++
 	}
-	if debitTotal != creditTotal || debitTotal != allocation.TotalMinor {
+	if debitTotal != creditTotal || debitTotal != allocation.CustomerPayableMinor {
 		return PartnerOrderEarningRecord{}, false, ErrLedgerUnbalanced
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_order_earnings(order_id,payment_intent_id,partner_actor_id,captain_actor_id,currency,gross_product_minor,delivery_fee_minor,commission_minor,partner_net_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, input.CaptainActorID, allocation.Currency, chargeableProduct, allocation.DeliveryFeeMinor, commission, partnerNet, profileID, profileVersion, fmt.Sprintf("partner-commission-products-v1;profile=%s;settlement=%s", profileID, settlementPeriod), transactionID, input.IdempotencyKey, requestHash); err != nil {

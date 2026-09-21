@@ -40,25 +40,21 @@ type PaymentIntent struct {
 	CollectedByActorID   *string            `json:"collectedByActorId"`
 	CollectionReference  *string            `json:"collectionReference"`
 	CancellationReason   *string            `json:"cancellationReason"`
-	Allocation           *PaymentAllocation `json:"allocation,omitempty"`
+	CustomerPaymentAllocation *CustomerPaymentAllocation `json:"customerPaymentAllocation,omitempty"`
 }
 
-type PaymentAllocation struct {
-	ID                                string `json:"id,omitempty"`
-	OrderID                           string `json:"orderId"`
-	PaymentIntentID                   string `json:"paymentIntentId,omitempty"`
-	Currency                          string `json:"currency"`
-	SubtotalMinor                     int64  `json:"subtotalMinor"`
-	DeliveryFeeMinor                  int64  `json:"deliveryFeeMinor"`
-	DiscountMinor                     int64  `json:"discountMinor"`
-	PlatformSubsidyMinor              int64  `json:"platformSubsidyMinor"`
-	InternalWalletAmountMinor         int64  `json:"internalWalletAmountMinor"`
-	ExternalOfficialWalletAmountMinor int64  `json:"externalOfficialWalletAmountMinor"`
-	CashAmountMinor                   int64  `json:"cashAmountMinor"`
-	CODProductAmountMinor             int64  `json:"codProductAmountMinor"`
-	CODDeliveryAmountMinor            int64  `json:"codDeliveryAmountMinor"`
-	TotalMinor                        int64  `json:"totalMinor"`
-	PolicyVersion                     string `json:"policyVersion"`
+type CustomerPaymentAllocation struct {
+	ID                         string `json:"id,omitempty"`
+	OrderID                    string `json:"orderId"`
+	PaymentIntentID            string `json:"paymentIntentId,omitempty"`
+	Currency                   string `json:"currency"`
+	SubtotalMinor              int64  `json:"subtotalMinor"`
+	DeliveryFeeMinor           int64  `json:"deliveryFeeMinor"`
+	DiscountMinor              int64  `json:"discountMinor"`
+	InternalBalanceAmountMinor int64  `json:"internalBalanceAmountMinor"`
+	CashAmountMinor            int64  `json:"cashAmountMinor"`
+	CustomerPayableMinor       int64  `json:"customerPayableMinor"`
+	PolicyVersion              string `json:"policyVersion"`
 }
 
 type paymentIntentResponse struct {
@@ -466,7 +462,7 @@ func (c *Client) Create(ctx context.Context, externalReference, payerActorID str
 	return response.PaymentIntent, response.IdempotentReplay, err
 }
 
-func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, allocation PaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
+func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, allocation CustomerPaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	body := map[string]any{
 		"orderId":           strings.TrimSpace(orderID),
 		"externalReference": strings.TrimSpace(externalReference),
@@ -474,7 +470,7 @@ func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference,
 		"amountMinor":       amountMinor,
 		"currency":          "YER",
 		"method":            methodCashOnDelivery,
-		"allocation":        allocation,
+		"customerPaymentAllocation": allocation,
 	}
 	var response paymentIntentResponse
 	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents", body, idempotencyKey, correlationID, 0, &response)
