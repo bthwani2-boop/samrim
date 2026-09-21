@@ -42,7 +42,10 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",
+    "@expo/metro-config": "57.0.12",
+    "expo": "~57.0.24",
     "knip": "6.34.0",
+    "next": "16.3.4",
     "nx": "23.2.0",
     "typescript": "6.0.2"
   }

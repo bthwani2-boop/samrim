@@ -1,6 +1,7 @@
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
+
+import { createSamrimMetroConfig, getSamrimMetroCacheRoot } from "./create-samrim-metro-config.cjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const appsRoot = path.join(repoRoot, "apps");
@@ -8,7 +9,6 @@ const envExamplePath = path.join(repoRoot, "infra/local/.env.example");
 const rootPackagePath = path.join(repoRoot, "package.json");
 const localRuntimePath = path.join(repoRoot, "tools/dev/dev.ps1");
 const metroOwnerPath = path.join(repoRoot, "tools/mobile/create-samrim-metro-config.cjs");
-const requireFromTools = createRequire(import.meta.url);
 const requiredStringFields = [
   "name",
   "slug",
@@ -61,13 +61,6 @@ if (!fs.existsSync(localRuntimePath)) {
 }
 if (!fs.existsSync(metroOwnerPath)) {
   console.error("Canonical Metro cache owner is missing: tools/mobile/create-samrim-metro-config.cjs");
-  process.exit(1);
-}
-let metroOwner;
-try {
-  metroOwner = requireFromTools(metroOwnerPath);
-} catch (error) {
-  console.error(`Canonical Metro cache owner cannot load: ${error.message}`);
   process.exit(1);
 }
 for (const retired of [
@@ -130,12 +123,12 @@ for (const app of apps) {
   }
 
   try {
-    const metroRuntimeConfig = metroOwner.createSamrimMetroConfig(appRoot);
+    const metroRuntimeConfig = createSamrimMetroConfig(appRoot);
     if (!Array.isArray(metroRuntimeConfig.cacheStores) || metroRuntimeConfig.cacheStores.length !== 1) {
       console.error(`${app}: canonical Metro config must expose exactly one cache store`);
       failed = true;
     }
-    const cacheRoot = metroOwner.getSamrimMetroCacheRoot(appRoot);
+    const cacheRoot = getSamrimMetroCacheRoot(appRoot);
     const previous = seenMetroCacheRoots.get(cacheRoot);
     if (previous) {
       console.error(`Metro cache collision: ${cacheRoot} used by ${previous} and ${app}`);
