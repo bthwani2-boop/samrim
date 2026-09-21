@@ -43,7 +43,13 @@ func (s *Service) apply(ctx context.Context,item postgres.FinancialHandoffOutbox
 		if _,_,err:=s.wlt.FinalizePartnerOrderEarning(ctx,item.OrderID,item.PaymentIntentID,item.PartnerActorID,item.CaptainActorID,wltintegration.DerivedIdempotencyKey("partner-earning",item.OrderID),item.CorrelationID);err!=nil{return fmt.Errorf("finalize partner earning: %w",err)}
 		return nil
 	case "CAPTAIN_COD_RELEASE":
-		if _,_,err:=s.wlt.ReleaseCaptainCOD(ctx,item.OrderID,item.PaymentIntentID,item.CaptainActorID,wltintegration.DerivedIdempotencyKey("captain-cod-release-reassign",item.IdempotencyKey),item.CorrelationID);err!=nil{return fmt.Errorf("release captain COD: %w",err)}
+		if _,_,err:=s.wlt.ReleaseCaptainCOD(ctx,item.OrderID,item.PaymentIntentID,item.CaptainActorID,wltintegration.DerivedIdempotencyKey("captain-cod-release-reassign",item.IdempotencyKey),item.CorrelationID);err!=nil{
+			var wltErr *wltintegration.Error
+			if errors.As(err,&wltErr) && wltErr.Status==404 && wltErr.Code=="NOT_FOUND" {
+				return nil
+			}
+			return fmt.Errorf("release captain COD: %w",err)
+		}
 		return nil
 	case "PAYMENT_CANCEL":
 		prefix:="cancel"
