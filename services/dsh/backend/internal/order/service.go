@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -104,24 +103,10 @@ func (s *Service) ListForClient(ctx context.Context, accessToken string, limit i
 
 func (s *Service) CancelForClient(ctx context.Context, accessToken, orderID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
-	if err != nil {
-		return postgres.OrderRecord{}, false, err
-	}
-	if expectedVersion < 1 || strings.TrimSpace(orderID) == "" {
-		return postgres.OrderRecord{}, false, postgres.ErrOrderTransitionInvalid
-	}
-	if _, err := postgres.ReadOrderForClient(ctx, s.db, orderID, identity); err != nil {
-		return postgres.OrderRecord{}, false, err
-	}
-	return postgres.TransitionOrderWithPreparation(ctx, s.db, orderID, "CANCELLED", "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, "CANCELLED", expectedVersion), identity, strings.TrimSpace(correlationID), func(ctx context.Context, current postgres.OrderRecord) (string, error) {
-		if current.State != "CREATED" || current.PaymentIntentID == nil || current.PaymentState != "REQUIRES_COLLECTION" {
-			return "", postgres.ErrOrderStateConflict
-		}
-		if _, err := s.payment.EnsureCancelled(ctx, *current.PaymentIntentID, "client_cancelled", wlt.DerivedIdempotencyKey("cancel-client", idempotencyKey), correlationID); err != nil {
-			return "", fmt.Errorf("%w: %v", ErrPaymentUnavailable, err)
-		}
-		return "CANCELLED", nil
-	})
+	if err != nil { return postgres.OrderRecord{}, false, err }
+	if expectedVersion < 1 || strings.TrimSpace(orderID) == "" { return postgres.OrderRecord{}, false, postgres.ErrOrderTransitionInvalid }
+	if _, err := postgres.ReadOrderForClient(ctx, s.db, orderID, identity); err != nil { return postgres.OrderRecord{}, false, err }
+	return postgres.TransitionOrderWithPaymentCancellation(ctx,s.db,orderID,"CANCELLED",expectedVersion,strings.TrimSpace(idempotencyKey),postgres.HashOrderTransition(orderID,"CANCELLED",expectedVersion),identity,strings.TrimSpace(correlationID),"client_cancelled")
 }
 
 func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID string, limit int) ([]postgres.OrderRecord, error) {
@@ -158,38 +143,16 @@ func (s *Service) ListCashCustodyForOperator(ctx context.Context, actingActorID 
 
 func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID, orderID, state string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
-	if err != nil {
-		return postgres.OrderRecord{}, false, err
-	}
-	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil {
-		return postgres.OrderRecord{}, false, err
-	}
+	if err != nil { return postgres.OrderRecord{}, false, err }
+	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil { return postgres.OrderRecord{}, false, err }
 	current, err := postgres.ReadOrder(ctx, s.db, orderID)
-	if err != nil {
-		return postgres.OrderRecord{}, false, err
+	if err != nil { return postgres.OrderRecord{}, false, err }
+	if current.StoreID != strings.TrimSpace(storeID) { return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden }
+	state=strings.TrimSpace(state)
+	if state=="REJECTED"{
+		return postgres.TransitionOrderWithPaymentCancellation(ctx,s.db,orderID,"REJECTED",expectedVersion,strings.TrimSpace(idempotencyKey),postgres.HashOrderTransition(orderID,state,expectedVersion),identity,strings.TrimSpace(correlationID),"partner_rejected")
 	}
-	if current.StoreID != strings.TrimSpace(storeID) {
-		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
-	}
-	if strings.TrimSpace(state) == "REJECTED" {
-		return postgres.TransitionOrderWithPreparation(ctx, s.db, orderID, "REJECTED", "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), func(ctx context.Context, current postgres.OrderRecord) (string, error) {
-			if current.PaymentIntentID == nil || current.PaymentState == "NOT_LINKED" {
-				return "", nil
-			}
-			switch current.PaymentState {
-			case "REQUIRES_COLLECTION":
-				if _, err := s.payment.EnsureCancelled(ctx, *current.PaymentIntentID, "partner_rejected", wlt.DerivedIdempotencyKey("cancel", idempotencyKey), correlationID); err != nil {
-					return "", fmt.Errorf("%w: %v", ErrPaymentUnavailable, err)
-				}
-				return "CANCELLED", nil
-			case "CANCELLED":
-				return "CANCELLED", nil
-			default:
-				return "", postgres.ErrPaymentStateConflict
-			}
-		})
-	}
-	return postgres.TransitionOrder(ctx, s.db, orderID, strings.TrimSpace(state), "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
+	return postgres.TransitionOrder(ctx,s.db,orderID,state,"",expectedVersion,strings.TrimSpace(idempotencyKey),postgres.HashOrderTransition(orderID,state,expectedVersion),identity,strings.TrimSpace(correlationID))
 }
 
 func (s *Service) requireSession(ctx context.Context, accessToken, role, surface string) (string, error) {

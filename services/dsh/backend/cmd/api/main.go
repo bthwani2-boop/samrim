@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	financialhandoff "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/financialhandoff"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
@@ -47,6 +48,10 @@ func main() {
 		log.Fatal(err)
 	}
 	defer func() { _ = database.Close() }()
+	financialHandoff, err := financialhandoff.New(database, paymentClient)
+	if err != nil {
+		log.Fatal(err)
+	}
 	records, err := loadMigrations()
 	if err != nil {
 		log.Fatal(err)
@@ -155,6 +160,7 @@ func main() {
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
 		go runFieldCommissionReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldCommissions)
+		go runFinancialHandoffReconciliationLoop(ctx, 5*time.Second, financialHandoff.Reconcile)
 		runMediaReconciliationLoop(ctx, time.Minute, catalogServer.ReconcileMediaStorage)
 	}); err != nil {
 		log.Fatal(err)

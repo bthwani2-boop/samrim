@@ -900,99 +900,56 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 		return CaptainOffer{}, false, ErrCaptainOperationConflict
 	}
 	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return CaptainOffer{}, false, err
-	}
+	if err != nil { return CaptainOffer{}, false, err }
 	defer func() { _ = tx.Rollback() }()
-	if err := canonicalizeCaptainOffersTx(ctx, tx, ""); err != nil {
-		return CaptainOffer{}, false, err
-	}
+	if err := canonicalizeCaptainOffersTx(ctx, tx, ""); err != nil { return CaptainOffer{}, false, err }
 	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "reassign")
-	if err != nil {
-		return CaptainOffer{}, false, err
-	}
+	if err != nil { return CaptainOffer{}, false, err }
 	if replay != nil {
 		offer, readErr := readCaptainOfferTx(ctx, tx, "id=$1", replay.OfferID)
-		if readErr != nil {
-			return CaptainOffer{}, false, readErr
-		}
-		if err := tx.Commit(); err != nil {
-			return CaptainOffer{}, false, err
-		}
+		if readErr != nil { return CaptainOffer{}, false, readErr }
+		if err := tx.Commit(); err != nil { return CaptainOffer{}, false, err }
 		return offer, true, nil
 	}
-	var state string
-	if err := tx.QueryRowContext(ctx, "SELECT state FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&state); errors.Is(err, sql.ErrNoRows) {
+	var state, paymentState string
+	var paymentIntentID sql.NullString
+	if err := tx.QueryRowContext(ctx, "SELECT state,payment_intent_id,payment_state FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&state,&paymentIntentID,&paymentState); errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, false, ErrOrderNotFound
-	} else if err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if state != "READY_FOR_DISPATCH" && state != "CAPTAIN_ASSIGNED" {
-		return CaptainOffer{}, false, ErrCaptainCustodyConflict
-	}
+	} else if err != nil { return CaptainOffer{}, false, err }
+	if state != "READY_FOR_DISPATCH" && state != "CAPTAIN_ASSIGNED" { return CaptainOffer{}, false, ErrCaptainCustodyConflict }
 	var currentAssignmentID, oldCaptain, assignmentState string
-	err = tx.QueryRowContext(ctx, "SELECT id,captain_actor_id,state FROM dsh.captain_assignments WHERE order_id=$1 AND state IN ('assigned','in_custody') FOR UPDATE", orderID).Scan(&currentAssignmentID, &oldCaptain, &assignmentState)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return CaptainOffer{}, false, err
-	}
-	if assignmentState == "in_custody" {
-		return CaptainOffer{}, false, ErrCaptainCustodyConflict
-	}
-	if state == "CAPTAIN_ASSIGNED" && currentAssignmentID == "" {
-		return CaptainOffer{}, false, ErrCaptainAssignmentConflict
-	}
+	err = tx.QueryRowContext(ctx, "SELECT id,captain_actor_id,state FROM dsh.captain_assignments WHERE order_id=$1 AND state IN ('assigned','in_custody') FOR UPDATE", orderID).Scan(&currentAssignmentID,&oldCaptain,&assignmentState)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) { return CaptainOffer{}, false, err }
+	if assignmentState == "in_custody" { return CaptainOffer{}, false, ErrCaptainCustodyConflict }
+	if state == "CAPTAIN_ASSIGNED" && currentAssignmentID == "" { return CaptainOffer{}, false, ErrCaptainAssignmentConflict }
 	if oldCaptain == "" {
-		if err := tx.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE order_id=$1 AND state='offered' FOR UPDATE", orderID).Scan(&oldCaptain); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return CaptainOffer{}, false, err
-		}
+		if err := tx.QueryRowContext(ctx, "SELECT captain_actor_id FROM dsh.captain_dispatch_offers WHERE order_id=$1 AND state='offered' FOR UPDATE", orderID).Scan(&oldCaptain); err != nil && !errors.Is(err, sql.ErrNoRows) { return CaptainOffer{}, false, err }
 	}
 	var candidateAdmissionID, captainID string
-	if err := tx.QueryRowContext(ctx, "SELECT id,actor_id FROM dsh.captain_admissions WHERE state='eligible' AND availability_state='available' AND actor_id<>$1 AND NOT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=dsh.captain_admissions.actor_id AND state='offered') AND NOT EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=dsh.captain_admissions.actor_id AND state IN ('assigned','in_custody')) ORDER BY updated_at,actor_id LIMIT 1 FOR UPDATE SKIP LOCKED", oldCaptain).Scan(&candidateAdmissionID, &captainID); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, "SELECT id,actor_id FROM dsh.captain_admissions WHERE state='eligible' AND availability_state='available' AND actor_id<>$1 AND NOT EXISTS (SELECT 1 FROM dsh.captain_dispatch_offers WHERE captain_actor_id=dsh.captain_admissions.actor_id AND state='offered') AND NOT EXISTS (SELECT 1 FROM dsh.captain_assignments WHERE captain_actor_id=dsh.captain_admissions.actor_id AND state IN ('assigned','in_custody')) ORDER BY updated_at,actor_id LIMIT 1 FOR UPDATE SKIP LOCKED", oldCaptain).Scan(&candidateAdmissionID,&captainID); errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, false, ErrCaptainNoAvailable
-	} else if err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_dispatch_offers SET state='superseded',version=version+1,updated_at=clock_timestamp() WHERE order_id=$1 AND state='offered'", orderID); err != nil {
-		return CaptainOffer{}, false, err
-	}
+	} else if err != nil { return CaptainOffer{}, false, err }
+	if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_dispatch_offers SET state='superseded',version=version+1,updated_at=clock_timestamp() WHERE order_id=$1 AND state='offered'", orderID); err != nil { return CaptainOffer{}, false, err }
 	if currentAssignmentID != "" {
-		if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_assignments SET state='reassigned',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='assigned'", currentAssignmentID); err != nil {
-			return CaptainOffer{}, false, err
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_handoffs SET state='superseded',version=version+1,updated_at=clock_timestamp() WHERE assignment_id=$1", currentAssignmentID); err != nil {
-			return CaptainOffer{}, false, err
-		}
+		if paymentState != "REQUIRES_COLLECTION" || !paymentIntentID.Valid { return CaptainOffer{}, false, ErrPaymentStateConflict }
+		if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_assignments SET state='reassigned',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='assigned'", currentAssignmentID); err != nil { return CaptainOffer{}, false, err }
+		if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_handoffs SET state='superseded',version=version+1,updated_at=clock_timestamp() WHERE assignment_id=$1", currentAssignmentID); err != nil { return CaptainOffer{}, false, err }
 		if state == "CAPTAIN_ASSIGNED" {
-			if _, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='READY_FOR_DISPATCH',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='CAPTAIN_ASSIGNED'", orderID); err != nil {
-				return CaptainOffer{}, false, err
-			}
+			if _, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='READY_FOR_DISPATCH',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='CAPTAIN_ASSIGNED'", orderID); err != nil { return CaptainOffer{}, false, err }
 		}
+		if err := enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"CAPTAIN_COD_RELEASE",SourceRef:currentAssignmentID,OrderID:orderID,PaymentIntentID:paymentIntentID.String,CaptainActorID:oldCaptain,IdempotencyKey:idempotencyKey,CorrelationID:correlationID}); err != nil { return CaptainOffer{}, false, err }
 	}
 	if oldCaptain != "" {
-		if err := restoreCaptainAvailabilityTx(ctx, tx, oldCaptain, idempotencyKey, requestHash, actingActorID, correlationID); err != nil {
-			return CaptainOffer{}, false, err
-		}
+		if err := restoreCaptainAvailabilityTx(ctx, tx, oldCaptain, idempotencyKey, requestHash, actingActorID, correlationID); err != nil { return CaptainOffer{}, false, err }
 	}
 	offerID, err := newID("captain-offer")
-	if err != nil {
-		return CaptainOffer{}, false, err
-	}
+	if err != nil { return CaptainOffer{}, false, err }
 	expiresAt := time.Now().UTC().Add(captainOfferTimeout)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES($1,$2,$3,'offered',$4,1,$5,$6)`, offerID, orderID, captainID, expiresAt, idempotencyKey, requestHash); err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if err := reserveCaptainAvailabilityTx(ctx, tx, candidateAdmissionID, captainID, idempotencyKey, requestHash, actingActorID, correlationID); err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,result_version) VALUES($1,$2,'reassign',$3,$4,1)`, idempotencyKey, requestHash, orderID, offerID); err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('captain_assignment_reassigned',$1,$2,$3,$4,$5,$6,$7,'offered',1,$8)`, idempotencyKey, correlationID, actingActorID, orderID, offerID, captainID, state, requestHash); err != nil {
-		return CaptainOffer{}, false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return CaptainOffer{}, false, err
-	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES($1,$2,$3,'offered',$4,1,$5,$6)`, offerID, orderID, captainID, expiresAt, idempotencyKey, requestHash); err != nil { return CaptainOffer{}, false, err }
+	if err := reserveCaptainAvailabilityTx(ctx, tx, candidateAdmissionID, captainID, idempotencyKey, requestHash, actingActorID, correlationID); err != nil { return CaptainOffer{}, false, err }
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,result_version) VALUES($1,$2,'reassign',$3,$4,1)`, idempotencyKey, requestHash, orderID, offerID); err != nil { return CaptainOffer{}, false, err }
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('captain_assignment_reassigned',$1,$2,$3,$4,$5,$6,$7,'offered',1,$8)`, idempotencyKey, correlationID, actingActorID, orderID, offerID, captainID, state, requestHash); err != nil { return CaptainOffer{}, false, err }
+	if err := tx.Commit(); err != nil { return CaptainOffer{}, false, err }
 	offer, err := ReadCaptainOffer(ctx, db, offerID)
 	return offer, false, err
 }
@@ -1114,121 +1071,69 @@ func CompleteCaptainPickup(ctx context.Context, db *sql.DB, assignmentID, captai
 	return assignment, false, err
 }
 
-func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, captainActorID, result, paymentState, deliveryProofCode string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (CaptainAssignment, bool, error) {
+func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, captainActorID, result string, collectedAmountMinor int64, deliveryProofCode string, expectedVersion int, idempotencyKey, requestHash, correlationID string) (CaptainAssignment, bool, error) {
 	result = strings.ToLower(strings.TrimSpace(result))
-	paymentState = strings.TrimSpace(paymentState)
 	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
-	if result != "delivered" && result != "delivery_failed" {
-		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
+	if result != "delivered" && result != "delivery_failed" { return CaptainAssignment{}, false, ErrCaptainTerminalConflict }
+	if collectedAmountMinor < 0 || (result != "delivered" && collectedAmountMinor != 0) { return CaptainAssignment{}, false, ErrPaymentStateConflict }
+	if db == nil || strings.TrimSpace(assignmentID) == "" || strings.TrimSpace(captainActorID) == "" || expectedVersion < 1 { return CaptainAssignment{}, false, ErrCaptainTerminalConflict }
+	tx, err := db.BeginTx(ctx,nil)
+	if err != nil { return CaptainAssignment{}, false, err }
+	defer func(){ _=tx.Rollback() }()
+	replay,err:=captainOperationReplayTx(ctx,tx,idempotencyKey,requestHash,"complete")
+	if err!=nil{return CaptainAssignment{},false,err}
+	if replay!=nil{
+		assignment,readErr:=readCaptainAssignmentTx(ctx,tx,"id=$1",replay.AssignmentID)
+		if readErr!=nil{return CaptainAssignment{},false,readErr}
+		if err:=tx.Commit();err!=nil{return CaptainAssignment{},false,err}
+		return assignment,true,nil
 	}
-	if paymentState != "" && (result != "delivered" || paymentState != "COLLECTED") {
-		return CaptainAssignment{}, false, ErrPaymentStateConflict
-	}
-	if db == nil || strings.TrimSpace(assignmentID) == "" || strings.TrimSpace(captainActorID) == "" || expectedVersion < 1 {
-		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return CaptainAssignment{}, false, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	replay, err := captainOperationReplayTx(ctx, tx, idempotencyKey, requestHash, "complete")
-	if err != nil {
-		return CaptainAssignment{}, false, err
-	}
-	if replay != nil {
-		assignment, readErr := readCaptainAssignmentTx(ctx, tx, "id=$1", replay.AssignmentID)
-		if readErr != nil {
-			return CaptainAssignment{}, false, readErr
-		}
-		if err := tx.Commit(); err != nil {
-			return CaptainAssignment{}, false, err
-		}
-		return assignment, true, nil
-	}
-	assignment, err := readCaptainAssignmentTx(ctx, tx, "id=$1", assignmentID)
-	if err != nil {
-		return CaptainAssignment{}, false, err
-	}
-	if assignment.CaptainActorID != captainActorID {
-		return CaptainAssignment{}, false, ErrCaptainOfferForbidden
-	}
-	if assignment.State != "in_custody" || assignment.Version != expectedVersion || assignment.Handoff.State != "completed" {
-		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
-	}
+	assignment,err:=readCaptainAssignmentTx(ctx,tx,"id=$1",assignmentID)
+	if err!=nil{return CaptainAssignment{},false,err}
+	if assignment.CaptainActorID!=captainActorID{return CaptainAssignment{},false,ErrCaptainOfferForbidden}
+	if assignment.State!="in_custody"||assignment.Version!=expectedVersion||assignment.Handoff.State!="completed"{return CaptainAssignment{},false,ErrCaptainTerminalConflict}
 	var orderID string
-	if err := tx.QueryRowContext(ctx, `UPDATE dsh.captain_assignments SET state=$2,terminal_result=$3,terminal_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='in_custody' AND version=$4 RETURNING order_id`, assignmentID, result, result, expectedVersion).Scan(&orderID); err != nil {
-		return CaptainAssignment{}, false, err
-	}
-	if result == "delivered" {
-		var proofHash, proofState string
-		if err := tx.QueryRowContext(ctx, `SELECT code_hash,state FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1 FOR UPDATE`, orderID).Scan(&proofHash, &proofState); errors.Is(err, sql.ErrNoRows) {
-			return CaptainAssignment{}, false, ErrDeliveryProofInvalid
-		} else if err != nil {
-			return CaptainAssignment{}, false, err
-		}
-		if proofState != "PENDING" || len(deliveryProofCode) != 6 || subtle.ConstantTimeCompare([]byte(proofHash), []byte(HashDeliveryProofCode(orderID, deliveryProofCode))) != 1 {
-			return CaptainAssignment{}, false, ErrDeliveryProofInvalid
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_delivery_proofs SET state='VERIFIED',verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`, orderID, captainActorID); err != nil {
-			return CaptainAssignment{}, false, err
-		}
+	if err:=tx.QueryRowContext(ctx,`UPDATE dsh.captain_assignments SET state=$2,terminal_result=$3,terminal_at=clock_timestamp(),version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='in_custody' AND version=$4 RETURNING order_id`,assignmentID,result,result,expectedVersion).Scan(&orderID);err!=nil{return CaptainAssignment{},false,err}
+	if result=="delivered"{
+		var proofHash,proofState string
+		if err:=tx.QueryRowContext(ctx,`SELECT code_hash,state FROM dsh.commerce_order_delivery_proofs WHERE order_id=$1 FOR UPDATE`,orderID).Scan(&proofHash,&proofState);errors.Is(err,sql.ErrNoRows){return CaptainAssignment{},false,ErrDeliveryProofInvalid}else if err!=nil{return CaptainAssignment{},false,err}
+		if proofState!="PENDING"||len(deliveryProofCode)!=6||subtle.ConstantTimeCompare([]byte(proofHash),[]byte(HashDeliveryProofCode(orderID,deliveryProofCode)))!=1{return CaptainAssignment{},false,ErrDeliveryProofInvalid}
+		if _,err:=tx.ExecContext(ctx,`UPDATE dsh.commerce_order_delivery_proofs SET state='VERIFIED',verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`,orderID,captainActorID);err!=nil{return CaptainAssignment{},false,err}
 	}
 	var paymentIntentID sql.NullString
 	var paymentAmount int64
-	var currentPaymentState string
-	if err := tx.QueryRowContext(ctx, "SELECT payment_intent_id,total_amount_minor,payment_state FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID).Scan(&paymentIntentID, &paymentAmount, &currentPaymentState); err != nil {
-		return CaptainAssignment{}, false, err
-	}
-	if paymentState != "" && !paymentIntentID.Valid {
-		return CaptainAssignment{}, false, ErrPaymentStateConflict
-	}
-	orderState := "DELIVERED"
-	if result == "delivery_failed" {
-		orderState = "DELIVERY_FAILED"
-	}
-	if result, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state=$2,payment_state=CASE WHEN $3='' THEN payment_state ELSE $3 END,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='IN_CUSTODY'", orderID, orderState, paymentState); err != nil {
-		return CaptainAssignment{}, false, err
-	} else if rows, err := result.RowsAffected(); err != nil {
-		return CaptainAssignment{}, false, err
-	} else if rows != 1 {
-		return CaptainAssignment{}, false, ErrCaptainTerminalConflict
-	}
-	if result == "delivered" {
-		if err := consumeOrderInventoryTx(ctx, tx, orderID); err != nil {
-			return CaptainAssignment{}, false, err
+	var currentPaymentState,storeID,fulfillmentMode string
+	if err:=tx.QueryRowContext(ctx,"SELECT payment_intent_id,total_amount_minor,payment_state,store_id,fulfillment_mode FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE",orderID).Scan(&paymentIntentID,&paymentAmount,&currentPaymentState,&storeID,&fulfillmentMode);err!=nil{return CaptainAssignment{},false,err}
+	orderState:="DELIVERED"
+	if result=="delivery_failed"{orderState="DELIVERY_FAILED"}
+	if result=="delivered"{
+		if fulfillmentMode!="BTHWANI_CAPTAIN"{return CaptainAssignment{},false,ErrOrderStateConflict}
+		switch currentPaymentState{
+		case "REQUIRES_COLLECTION":
+			if !paymentIntentID.Valid||collectedAmountMinor<=0||collectedAmountMinor!=paymentAmount{return CaptainAssignment{},false,ErrPaymentStateConflict}
+			var partnerActorID string
+			if err:=tx.QueryRowContext(ctx,"SELECT partner_actor_id FROM dsh.stores WHERE id=$1",storeID).Scan(&partnerActorID);err!=nil{return CaptainAssignment{},false,err}
+			if strings.TrimSpace(partnerActorID)==""{return CaptainAssignment{},false,ErrPaymentStateConflict}
+			if err:=enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"DELIVERY_SETTLEMENT",SourceRef:assignmentID,OrderID:orderID,PaymentIntentID:paymentIntentID.String,CaptainActorID:captainActorID,PartnerActorID:partnerActorID,AmountMinor:paymentAmount,IdempotencyKey:idempotencyKey,CorrelationID:correlationID});err!=nil{return CaptainAssignment{},false,err}
+		case "COLLECTED":
+			if collectedAmountMinor!=0&&collectedAmountMinor!=paymentAmount{return CaptainAssignment{},false,ErrPaymentStateConflict}
+		default:
+			return CaptainAssignment{},false,ErrPaymentStateConflict
 		}
 	}
-	if result == "delivered" {
-		if _, err := tx.ExecContext(ctx, "UPDATE dsh.captain_admissions SET availability_state='available',version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND state='eligible' AND availability_state='unavailable'", captainActorID); err != nil {
-			return CaptainAssignment{}, false, err
-		}
+	if result,err:=tx.ExecContext(ctx,"UPDATE dsh.commerce_orders SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='IN_CUSTODY'",orderID,orderState);err!=nil{return CaptainAssignment{},false,err}else if rows,err:=result.RowsAffected();err!=nil{return CaptainAssignment{},false,err}else if rows!=1{return CaptainAssignment{},false,ErrCaptainTerminalConflict}
+	if result=="delivered"{
+		if err:=consumeOrderInventoryTx(ctx,tx,orderID);err!=nil{return CaptainAssignment{},false,err}
+		if _,err:=tx.ExecContext(ctx,"UPDATE dsh.captain_admissions SET availability_state='available',version=version+1,updated_at=clock_timestamp() WHERE actor_id=$1 AND state='eligible' AND availability_state='unavailable'",captainActorID);err!=nil{return CaptainAssignment{},false,err}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,assignment_id,result_version) VALUES($1,$2,'complete',$3,$4,$5)`, idempotencyKey, requestHash, orderID, assignmentID, assignment.Version+1); err != nil {
-		return CaptainAssignment{}, false, err
-	}
-	auditEvent := "delivery_completed"
-	if result == "delivery_failed" {
-		auditEvent = "delivery_failed"
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,assignment_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,'in_custody',$8,$9,$10)`, auditEvent, idempotencyKey, correlationID, captainActorID, orderID, assignmentID, captainActorID, orderState, assignment.Version+1, requestHash); err != nil {
-		return CaptainAssignment{}, false, err
-	}
-	if paymentState != "" {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor) VALUES('payment_collected',$1,$2,$3,$4,$5,$6,$7,$8)`, idempotencyKey, correlationID, captainActorID, orderID, paymentIntentID.String, currentPaymentState, paymentState, paymentAmount); err != nil {
-			return CaptainAssignment{}, false, err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return CaptainAssignment{}, false, err
-	}
-	assignment, err = ReadCaptainAssignment(ctx, db, assignmentID)
-	return assignment, false, err
+	if _,err:=tx.ExecContext(ctx,`INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,assignment_id,result_version) VALUES($1,$2,'complete',$3,$4,$5)`,idempotencyKey,requestHash,orderID,assignmentID,assignment.Version+1);err!=nil{return CaptainAssignment{},false,err}
+	auditEvent:="delivery_completed";if result=="delivery_failed"{auditEvent="delivery_failed"}
+	if _,err:=tx.ExecContext(ctx,`INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,assignment_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,'in_custody',$8,$9,$10)`,auditEvent,idempotencyKey,correlationID,captainActorID,orderID,assignmentID,captainActorID,orderState,assignment.Version+1,requestHash);err!=nil{return CaptainAssignment{},false,err}
+	if err:=tx.Commit();err!=nil{return CaptainAssignment{},false,err}
+	assignment,err=ReadCaptainAssignment(ctx,db,assignmentID)
+	return assignment,false,err
 }
 
-// RecoverCaptainAssignment is the only legal recovery from a failed delivery.
-// It preserves the current Captain and custody, returning the same assignment
-// to in_custody. Ordinary dispatch/reassignment is intentionally not involved.
 func RecoverCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (CaptainAssignment, bool, error) {
 	if db == nil || strings.TrimSpace(assignmentID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(actingActorID) == "" || strings.TrimSpace(correlationID) == "" {
 		return CaptainAssignment{}, false, ErrCaptainOperationConflict

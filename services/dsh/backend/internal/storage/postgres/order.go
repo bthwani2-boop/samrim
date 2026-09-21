@@ -723,97 +723,47 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	return order, false, err
 }
 
-type TransitionPreparation func(context.Context, OrderRecord) (string, error)
-
 func TransitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState, paymentState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (OrderRecord, bool, error) {
-	return TransitionOrderWithPreparation(ctx, db, orderID, requestedState, paymentState, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, nil)
+	if strings.TrimSpace(paymentState)!="" { return OrderRecord{},false,ErrPaymentStateConflict }
+	return transitionOrder(ctx,db,orderID,requestedState,expectedVersion,idempotencyKey,requestHash,actingActorID,correlationID,"")
 }
 
-func TransitionOrderWithPreparation(ctx context.Context, db *sql.DB, orderID, requestedState, paymentState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string, prepare TransitionPreparation) (OrderRecord, bool, error) {
-	if strings.TrimSpace(orderID) == "" || expectedVersion < 1 || strings.TrimSpace(idempotencyKey) == "" || strings.TrimSpace(requestHash) == "" || strings.TrimSpace(correlationID) == "" {
-		return OrderRecord{}, false, ErrOrderTransitionInvalid
+func TransitionOrderWithPaymentCancellation(ctx context.Context, db *sql.DB, orderID, requestedState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID, cancellationReason string) (OrderRecord, bool, error) {
+	return transitionOrder(ctx,db,orderID,requestedState,expectedVersion,idempotencyKey,requestHash,actingActorID,correlationID,strings.TrimSpace(cancellationReason))
+}
+
+func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID, cancellationReason string) (OrderRecord, bool, error) {
+	if db==nil||strings.TrimSpace(orderID)==""||expectedVersion<1||strings.TrimSpace(idempotencyKey)==""||strings.TrimSpace(requestHash)==""||strings.TrimSpace(correlationID)==""{return OrderRecord{},false,ErrOrderTransitionInvalid}
+	if cancellationReason!=""&&requestedState!="REJECTED"&&requestedState!="CANCELLED"{return OrderRecord{},false,ErrPaymentStateConflict}
+	tx,err:=db.BeginTx(ctx,nil);if err!=nil{return OrderRecord{},false,err};defer func(){_=tx.Rollback()}()
+	if _,err:=tx.ExecContext(ctx,"SELECT pg_advisory_xact_lock(hashtextextended($1,0))","dsh:order-transition:"+idempotencyKey);err!=nil{return OrderRecord{},false,err}
+	var storedHash,storedOrderID,storedState string
+	err=tx.QueryRowContext(ctx,"SELECT request_hash,order_id,requested_state FROM dsh.commerce_order_transition_idempotency WHERE idempotency_key=$1 FOR UPDATE",idempotencyKey).Scan(&storedHash,&storedOrderID,&storedState)
+	if err==nil{
+		if storedHash!=requestHash||storedOrderID!=orderID||storedState!=requestedState{return OrderRecord{},false,ErrOrderTransitionConflict}
+		order,readErr:=readOrder(ctx,tx,"id=$1",orderID);if readErr!=nil{return OrderRecord{},false,readErr}
+		if err:=tx.Commit();err!=nil{return OrderRecord{},false,err}
+		return order,true,nil
 	}
-	paymentState = strings.TrimSpace(paymentState)
-	if paymentState != "" && ((requestedState != "REJECTED" && requestedState != "CANCELLED") || paymentState != "CANCELLED") {
-		return OrderRecord{}, false, ErrPaymentStateConflict
+	if !errors.Is(err,sql.ErrNoRows){return OrderRecord{},false,err}
+	current,err:=scanOrder(tx.QueryRowContext(ctx,"SELECT "+orderSelectColumns+" FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE",orderID))
+	if errors.Is(err,sql.ErrNoRows){return OrderRecord{},false,ErrOrderNotFound};if err!=nil{return OrderRecord{},false,err}
+	if current.Version!=expectedVersion{return OrderRecord{},false,ErrOrderVersionConflict}
+	if !validOrderTransition(current.State,requestedState){return OrderRecord{},false,ErrOrderStateConflict}
+	if cancellationReason!=""{
+		if current.PaymentIntentID==nil||current.PaymentState!="REQUIRES_COLLECTION"{return OrderRecord{},false,ErrPaymentStateConflict}
 	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return OrderRecord{}, false, err
+	if requestedState=="REJECTED"||requestedState=="CANCELLED"{if err:=releaseOrderInventoryTx(ctx,tx,orderID);err!=nil{return OrderRecord{},false,err}}
+	result,err:=scanOrder(tx.QueryRowContext(ctx,"UPDATE dsh.commerce_orders SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$3 RETURNING "+orderSelectColumns,orderID,requestedState,expectedVersion));if err!=nil{return OrderRecord{},false,err}
+	if _,err:=tx.ExecContext(ctx,"INSERT INTO dsh.commerce_order_transition_idempotency(idempotency_key,request_hash,order_id,requested_state,expected_version,result_version) VALUES($1,$2,$3,$4,$5,$6)",idempotencyKey,requestHash,orderID,requestedState,expectedVersion,result.Version);err!=nil{return OrderRecord{},false,err}
+	eventType:="order_"+strings.ToLower(requestedState)
+	if _,err:=tx.ExecContext(ctx,"INSERT INTO dsh.commerce_order_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",eventType,idempotencyKey,correlationID,actingActorID,orderID,current.State,requestedState,expectedVersion,result.Version,requestHash);err!=nil{return OrderRecord{},false,err}
+	if cancellationReason!=""{
+		if err:=enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"PAYMENT_CANCEL",SourceRef:idempotencyKey,OrderID:orderID,PaymentIntentID:*current.PaymentIntentID,AmountMinor:current.TotalAmountMinor,Reason:cancellationReason,IdempotencyKey:idempotencyKey,CorrelationID:correlationID});err!=nil{return OrderRecord{},false,err}
 	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "dsh:order-transition:"+idempotencyKey); err != nil {
-		return OrderRecord{}, false, err
-	}
-	var storedHash, storedOrderID, storedState string
-	err = tx.QueryRowContext(ctx, "SELECT request_hash,order_id,requested_state FROM dsh.commerce_order_transition_idempotency WHERE idempotency_key=$1 FOR UPDATE", idempotencyKey).Scan(&storedHash, &storedOrderID, &storedState)
-	if err == nil {
-		if storedHash != requestHash || storedOrderID != orderID || storedState != requestedState {
-			return OrderRecord{}, false, ErrOrderTransitionConflict
-		}
-		order, readErr := readOrder(ctx, tx, "id=$1", orderID)
-		if readErr != nil {
-			return OrderRecord{}, false, readErr
-		}
-		if err := tx.Commit(); err != nil {
-			return OrderRecord{}, false, err
-		}
-		return order, true, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return OrderRecord{}, false, err
-	}
-	current, err := scanOrder(tx.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID))
-	if errors.Is(err, sql.ErrNoRows) {
-		return OrderRecord{}, false, ErrOrderNotFound
-	}
-	if err != nil {
-		return OrderRecord{}, false, err
-	}
-	if current.Version != expectedVersion {
-		return OrderRecord{}, false, ErrOrderVersionConflict
-	}
-	if !validOrderTransition(current.State, requestedState) {
-		return OrderRecord{}, false, ErrOrderStateConflict
-	}
-	if prepare != nil {
-		paymentState, err = prepare(ctx, current)
-		if err != nil {
-			return OrderRecord{}, false, err
-		}
-	}
-	if paymentState != "" && ((requestedState != "REJECTED" && requestedState != "CANCELLED") || paymentState != "CANCELLED") {
-		return OrderRecord{}, false, ErrPaymentStateConflict
-	}
-	if requestedState == "REJECTED" || requestedState == "CANCELLED" {
-		if err := releaseOrderInventoryTx(ctx, tx, orderID); err != nil {
-			return OrderRecord{}, false, err
-		}
-	}
-	result, err := scanOrder(tx.QueryRowContext(ctx, "UPDATE dsh.commerce_orders SET state=$2,payment_state=CASE WHEN $4='' THEN payment_state ELSE $4 END,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$3 RETURNING "+orderSelectColumns, orderID, requestedState, expectedVersion, paymentState))
-	if err != nil {
-		return OrderRecord{}, false, err
-	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.commerce_order_transition_idempotency(idempotency_key,request_hash,order_id,requested_state,expected_version,result_version) VALUES($1,$2,$3,$4,$5,$6)", idempotencyKey, requestHash, orderID, requestedState, expectedVersion, result.Version); err != nil {
-		return OrderRecord{}, false, err
-	}
-	eventType := "order_" + strings.ToLower(strings.ReplaceAll(requestedState, "_", "_"))
-	if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.commerce_order_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", eventType, idempotencyKey, correlationID, actingActorID, orderID, current.State, requestedState, expectedVersion, result.Version, requestHash); err != nil {
-		return OrderRecord{}, false, err
-	}
-	if paymentState != "" {
-		if current.PaymentIntentID == nil {
-			return OrderRecord{}, false, ErrPaymentStateConflict
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor) VALUES('payment_cancelled',$1,$2,$3,$4,$5,$6,$7,$8)`, idempotencyKey, correlationID, actingActorID, orderID, *current.PaymentIntentID, current.PaymentState, paymentState, current.TotalAmountMinor); err != nil {
-			return OrderRecord{}, false, err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return OrderRecord{}, false, err
-	}
-	order, err := ReadOrder(ctx, db, orderID)
-	return order, false, err
+	if err:=tx.Commit();err!=nil{return OrderRecord{},false,err}
+	order,err:=ReadOrder(ctx,db,orderID)
+	return order,false,err
 }
 
 func validOrderTransition(from, to string) bool {

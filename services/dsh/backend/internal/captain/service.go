@@ -260,81 +260,52 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 	if err != nil {
 		return postgres.CaptainAssignment{}, false, err
 	}
-	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
+	if expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) || collectedAmountMinor < 0 {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	if collectedAmountMinor < 0 {
-		return postgres.CaptainAssignment{}, false, ErrInvalidInput
-	}
+	result = strings.ToLower(strings.TrimSpace(result))
 	deliveryProofCode = strings.TrimSpace(deliveryProofCode)
-	if strings.EqualFold(strings.TrimSpace(result), "delivered") && (len(deliveryProofCode) != 6 || strings.Trim(deliveryProofCode, "0123456789") != "") {
+	if result == "delivered" && (len(deliveryProofCode) != 6 || strings.Trim(deliveryProofCode, "0123456789") != "") {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	if !strings.EqualFold(strings.TrimSpace(result), "delivered") && deliveryProofCode != "" {
+	if result != "delivered" && deliveryProofCode != "" {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
 	assignment, err := postgres.ReadCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID))
 	if err != nil {
 		return postgres.CaptainAssignment{}, false, err
 	}
-	if strings.EqualFold(strings.TrimSpace(result), "delivered") {
+	if result == "delivered" {
 		if err := postgres.ValidateCaptainDeliveryProof(ctx, s.db, assignment.ID, identity.Subject, deliveryProofCode); err != nil {
 			return postgres.CaptainAssignment{}, false, err
 		}
-	}
-	paymentState := ""
-	if strings.ToLower(strings.TrimSpace(result)) == "delivered" {
 		order, orderErr := postgres.ReadOrder(ctx, s.db, assignment.OrderID)
 		if orderErr != nil {
 			return postgres.CaptainAssignment{}, false, orderErr
 		}
-		if order.PaymentState == "REQUIRES_COLLECTION" && order.PaymentIntentID != nil {
-			if collectedAmountMinor <= 0 || collectedAmountMinor != order.TotalAmountMinor {
+		if order.FulfillmentMode != "BTHWANI_CAPTAIN" {
+			return postgres.CaptainAssignment{}, false, postgres.ErrOrderStateConflict
+		}
+		switch order.PaymentState {
+		case "REQUIRES_COLLECTION":
+			if order.PaymentIntentID == nil || collectedAmountMinor <= 0 || collectedAmountMinor != order.TotalAmountMinor {
 				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
 			}
-			intent, collectErr := s.payment.EnsureCollected(ctx, *order.PaymentIntentID, identity.Subject, wlt.DerivedExternalReference("cash", idempotencyKey), collectedAmountMinor, wlt.DerivedIdempotencyKey("collect", idempotencyKey), correlationID)
-			if collectErr != nil || intent.State != "COLLECTED" {
-				if collectErr != nil {
-					return postgres.CaptainAssignment{}, false, fmt.Errorf("%w: %v", ErrPaymentUnavailable, collectErr)
-				}
-				return postgres.CaptainAssignment{}, false, ErrPaymentUnavailable
-			}
-			paymentState = "COLLECTED"
-		} else if order.PaymentState == "COLLECTED" {
+		case "COLLECTED":
 			if collectedAmountMinor != 0 && collectedAmountMinor != order.TotalAmountMinor {
 				return postgres.CaptainAssignment{}, false, ErrCollectionAmountMismatch
 			}
-			paymentState = "COLLECTED"
-		} else if order.PaymentState != "NOT_LINKED" {
+		default:
 			return postgres.CaptainAssignment{}, false, postgres.ErrPaymentStateConflict
 		}
-		if order.PaymentIntentID != nil && paymentState == "COLLECTED" {
-			if _, _, finalizeErr := s.payment.FinalizeCaptainCOD(ctx, order.ID, *order.PaymentIntentID, identity.Subject, wlt.DerivedIdempotencyKey("captain-cod-finalize", assignment.ID), correlationID); finalizeErr != nil {
-				return postgres.CaptainAssignment{}, false, fmt.Errorf("%w: captain COD settlement unavailable: %v", ErrPaymentUnavailable, finalizeErr)
-			}
-			partnerActorID, partnerErr := postgres.ReadStorePartnerActor(ctx, s.db, order.StoreID)
-			if partnerErr != nil {
-				return postgres.CaptainAssignment{}, false, fmt.Errorf("%w: partner store unavailable: %v", ErrPaymentUnavailable, partnerErr)
-			}
-			if strings.TrimSpace(partnerActorID) == "" {
-				return postgres.CaptainAssignment{}, false, ErrPaymentUnavailable
-			}
-			if _, _, earningErr := s.payment.FinalizePartnerOrderEarning(ctx, order.ID, *order.PaymentIntentID, partnerActorID, identity.Subject, wlt.DerivedIdempotencyKey("partner-earning", order.ID), correlationID); earningErr != nil {
-				return postgres.CaptainAssignment{}, false, fmt.Errorf("%w: partner earning unavailable: %v", ErrPaymentUnavailable, earningErr)
-			}
-		}
-	} else if strings.ToLower(strings.TrimSpace(result)) == "delivery_failed" {
-		// A failed delivery remains recoverable on the same assignment. Keep the
-		// order-specific COD authorization held until recovery succeeds or DSH
-		// actually reassigns/cancels the assignment; releasing here would make a
-		// later recovery unable to finalize the already authorized exposure.
+	} else if result == "delivery_failed" {
 		if collectedAmountMinor != 0 {
 			return postgres.CaptainAssignment{}, false, ErrInvalidInput
 		}
-	} else if collectedAmountMinor != 0 {
+	} else {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
-	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, paymentState, deliveryProofCode, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, collectedAmountMinor, deliveryProofCode, expectedVersion), strings.TrimSpace(correlationID))
+	return postgres.CompleteCaptainAssignment(ctx, s.db, strings.TrimSpace(assignmentID), identity.Subject, result, collectedAmountMinor, deliveryProofCode, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainCompletionRequest(assignmentID, result, collectedAmountMinor, deliveryProofCode, expectedVersion), strings.TrimSpace(correlationID))
 }
 
 func (s *Service) Recover(ctx context.Context, assignmentID, actingActorID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
@@ -366,21 +337,7 @@ func (s *Service) Reassign(ctx context.Context, orderID, actingActorID, idempote
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CaptainOffer{}, false, err
 	}
-	order, err := postgres.ReadOrder(ctx, s.db, strings.TrimSpace(orderID))
-	if err != nil {
-		return postgres.CaptainOffer{}, false, err
-	}
-	previousAssignment, previousErr := postgres.ReadLatestCaptainAssignmentForOrder(ctx, s.db, strings.TrimSpace(orderID))
-	offer, replayed, err := postgres.ReassignCaptain(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainReassignmentRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
-	if err != nil {
-		return postgres.CaptainOffer{}, false, err
-	}
-	if previousErr == nil && previousAssignment.CaptainActorID != "" && order.PaymentIntentID != nil {
-		if _, _, releaseErr := s.payment.ReleaseCaptainCOD(ctx, order.ID, *order.PaymentIntentID, previousAssignment.CaptainActorID, wlt.DerivedIdempotencyKey("captain-cod-release-reassign", idempotencyKey), correlationID); releaseErr != nil {
-			return offer, replayed, fmt.Errorf("%w: reassigned captain COD authorization could not be released: %v", ErrPaymentUnavailable, releaseErr)
-		}
-	}
-	return offer, replayed, nil
+	return postgres.ReassignCaptain(ctx, s.db, strings.TrimSpace(orderID), strings.TrimSpace(idempotencyKey), postgres.HashCaptainReassignmentRequest(orderID), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 }
 
 func (s *Service) ConfirmStoreHandoff(ctx context.Context, accessToken, orderID, storeID, assignmentID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.CaptainAssignment, bool, error) {
