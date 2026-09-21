@@ -219,6 +219,9 @@ paths:
   /dsh/operator/cash-custody:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cash-custody"
 
+  /dsh/operator/delivery-fee-policy:
+    $ref: "./paths/delivery-fee.yaml#/paths/~1dsh~1operator~1delivery-fee-policy"
+
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
 
@@ -3464,6 +3467,95 @@ components:
     PaymentState:
       type: string
       enum: [NOT_LINKED, REQUIRES_COLLECTION, COLLECTED, CANCELLED]
+
+    CreateDeliveryFeePolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor]
+      properties:
+        serviceCityId:
+          type: string
+          maxLength: 128
+        baseFeeMinor:
+          type: integer
+          minimum: 0
+        distanceUnitMeters:
+          type: integer
+          minimum: 1
+        distanceRateMinor:
+          type: integer
+          minimum: 0
+        orderSizeUnitBaseUnits:
+          type: integer
+          minimum: 1
+        orderSizeRateMinor:
+          type: integer
+          minimum: 0
+        zoneSurchargeMinor:
+          type: integer
+          minimum: 0
+        roundingUnitMinor:
+          type: integer
+          const: 50
+
+    DeliveryFeePolicy:
+      type: object
+      additionalProperties: false
+      required: [id, serviceCityId, policyVersion, state, baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor, version, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+        serviceCityId:
+          type: string
+          maxLength: 128
+        policyVersion:
+          type: string
+        state:
+          type: string
+          enum: [ACTIVE, RETIRED]
+        baseFeeMinor:
+          type: integer
+          minimum: 0
+        distanceUnitMeters:
+          type: integer
+          minimum: 1
+        distanceRateMinor:
+          type: integer
+          minimum: 0
+        orderSizeUnitBaseUnits:
+          type: integer
+          minimum: 1
+        orderSizeRateMinor:
+          type: integer
+          minimum: 0
+        zoneSurchargeMinor:
+          type: integer
+          minimum: 0
+        roundingUnitMinor:
+          type: integer
+          const: 50
+        version:
+          type: integer
+          minimum: 1
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        retiredAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    DeliveryFeePolicyResponse:
+      type: object
+      additionalProperties: false
+      required: [policy, idempotentReplay]
+      properties:
+        policy:
+          $ref: "#/components/schemas/DeliveryFeePolicy"
+        idempotentReplay:
+          type: boolean
 
     Order:
       type: object

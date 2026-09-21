@@ -107,6 +107,44 @@ type PartnerFinancialProfile struct {
 	UpdatedAt         string  `json:"updatedAt"`
 }
 
+type DeliveryFeePolicy struct {
+	ID                     string  `json:"id"`
+	ServiceCityID          string  `json:"serviceCityId"`
+	PolicyVersion          string  `json:"policyVersion"`
+	State                  string  `json:"state"`
+	BaseFeeMinor           int64   `json:"baseFeeMinor"`
+	DistanceUnitMeters     int64   `json:"distanceUnitMeters"`
+	DistanceRateMinor      int64   `json:"distanceRateMinor"`
+	OrderSizeUnitBaseUnits int64   `json:"orderSizeUnitBaseUnits"`
+	OrderSizeRateMinor     int64   `json:"orderSizeRateMinor"`
+	ZoneSurchargeMinor     int64   `json:"zoneSurchargeMinor"`
+	RoundingUnitMinor      int64   `json:"roundingUnitMinor"`
+	Version                int     `json:"version"`
+	CreatedBy              string  `json:"createdBy"`
+	CreatedAt              string  `json:"createdAt"`
+	RetiredAt              *string `json:"retiredAt"`
+}
+
+type DeliveryFeeQuote struct {
+	FeeMinor           int64  `json:"feeMinor"`
+	PolicyVersion      string `json:"policyVersion"`
+	ServiceCityID      string `json:"serviceCityId"`
+	DistanceMeters     int64  `json:"distanceMeters"`
+	DistanceUnits      int64  `json:"distanceUnits"`
+	OrderSizeBaseUnits int64  `json:"orderSizeBaseUnits"`
+	OrderSizeUnits     int64  `json:"orderSizeUnits"`
+	RoundingUnitMinor  int64  `json:"roundingUnitMinor"`
+}
+
+type DeliveryFeeQuoteInput struct {
+	ServiceCityID        string  `json:"serviceCityId"`
+	OriginLatitude       float64 `json:"originLatitude"`
+	OriginLongitude      float64 `json:"originLongitude"`
+	DestinationLatitude  float64 `json:"destinationLatitude"`
+	DestinationLongitude float64 `json:"destinationLongitude"`
+	OrderSizeBaseUnits   int64   `json:"orderSizeBaseUnits"`
+}
+
 type cashRemittanceResponse struct {
 	CashRemittance   CashRemittance `json:"cashRemittance"`
 	IdempotentReplay bool           `json:"idempotentReplay"`
@@ -115,6 +153,15 @@ type cashRemittanceResponse struct {
 type partnerFinancialProfileResponse struct {
 	Profile          PartnerFinancialProfile `json:"profile"`
 	IdempotentReplay bool                    `json:"idempotentReplay"`
+}
+
+type deliveryFeePolicyResponse struct {
+	Policy           DeliveryFeePolicy `json:"policy"`
+	IdempotentReplay bool              `json:"idempotentReplay"`
+}
+
+type deliveryFeeQuoteResponse struct {
+	Quote DeliveryFeeQuote `json:"quote"`
 }
 
 type Error struct {
@@ -323,6 +370,35 @@ func (c *Client) ActivatePartnerFinancialProfile(ctx context.Context, profileID 
 	var response partnerFinancialProfileResponse
 	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/partner-financial-profiles/"+url.PathEscape(strings.TrimSpace(profileID))+"/activate", map[string]any{}, idempotencyKey, correlationID, expectedVersion, actingActorID, &response)
 	return response.Profile, response.IdempotentReplay, err
+}
+
+func (c *Client) QuoteDeliveryFee(ctx context.Context, input DeliveryFeeQuoteInput) (DeliveryFeeQuote, error) {
+	var response deliveryFeeQuoteResponse
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/delivery-quotes", input, "", "", 0, &response)
+	return response.Quote, err
+}
+
+func (c *Client) ReadDeliveryFeePolicy(ctx context.Context, serviceCityID string) (DeliveryFeePolicy, error) {
+	var response deliveryFeePolicyResponse
+	path := "/wlt/v1/operator/delivery-fee-policies?serviceCityId=" + url.QueryEscape(strings.TrimSpace(serviceCityID))
+	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
+	return response.Policy, err
+}
+
+func (c *Client) CreateDeliveryFeePolicy(ctx context.Context, policy DeliveryFeePolicy, idempotencyKey, correlationID, actingActorID string) (DeliveryFeePolicy, bool, error) {
+	body := map[string]any{
+		"serviceCityId":          strings.TrimSpace(policy.ServiceCityID),
+		"baseFeeMinor":           policy.BaseFeeMinor,
+		"distanceUnitMeters":     policy.DistanceUnitMeters,
+		"distanceRateMinor":      policy.DistanceRateMinor,
+		"orderSizeUnitBaseUnits": policy.OrderSizeUnitBaseUnits,
+		"orderSizeRateMinor":     policy.OrderSizeRateMinor,
+		"zoneSurchargeMinor":     policy.ZoneSurchargeMinor,
+		"roundingUnitMinor":      policy.RoundingUnitMinor,
+	}
+	var response deliveryFeePolicyResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/delivery-fee-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Policy, response.IdempotentReplay, err
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body any, idempotencyKey, correlationID string, expectedVersion int, target any) error {

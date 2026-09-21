@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
@@ -98,14 +99,21 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	facts := serviceabilityResult.Facts
 	input := postgres.CheckoutInput{
 		ClientActorID: actorID, CartID: strings.TrimSpace(cartID), StoreID: strings.TrimSpace(storeID), AddressID: strings.TrimSpace(addressID), ExpectedCartVersion: expectedCartVersion,
-		Evidence:       postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion},
+		Evidence:       postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude},
 		IdempotencyKey: strings.TrimSpace(idempotencyKey), ActingActorID: actorID, CorrelationID: strings.TrimSpace(correlationID),
 		PaymentExternalReference: wlt.DerivedExternalReference("checkout", idempotencyKey),
 		PaymentIdempotencyKey:    wlt.DerivedIdempotencyKey("create", idempotencyKey),
 		PaymentCancellationKey:   wlt.DerivedIdempotencyKey("cancel-checkout", idempotencyKey),
 	}
-	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
-		allocation := wlt.PaymentAllocation{OrderID: orderID, Currency: "YER", SubtotalMinor: amountMinor, CashAmountMinor: amountMinor, CODProductAmountMinor: amountMinor, TotalMinor: amountMinor, PolicyVersion: "cod-current-v1"}
+	input.DeliveryFeeResolver = func(quoteContext context.Context, quoteInput postgres.DeliveryFeeQuoteInput) (postgres.DeliveryFeeQuote, error) {
+		quote, quoteErr := s.payment.QuoteDeliveryFee(quoteContext, wlt.DeliveryFeeQuoteInput{ServiceCityID: quoteInput.ServiceCityID, OriginLatitude: quoteInput.OriginLatitude, OriginLongitude: quoteInput.OriginLongitude, DestinationLatitude: quoteInput.DestinationLatitude, DestinationLongitude: quoteInput.DestinationLongitude, OrderSizeBaseUnits: quoteInput.OrderSizeBaseUnits})
+		if quoteErr != nil {
+			return postgres.DeliveryFeeQuote{}, quoteErr
+		}
+		return postgres.DeliveryFeeQuote{FeeMinor: quote.FeeMinor, PolicyVersion: quote.PolicyVersion}, nil
+	}
+	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
+		allocation := wlt.PaymentAllocation{OrderID: orderID, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, CashAmountMinor: amountMinor, CODProductAmountMinor: subtotalMinor, CODDeliveryAmountMinor: deliveryFeeMinor, TotalMinor: amountMinor, PolicyVersion: fmt.Sprintf("cod-current-v1;delivery=%s", deliveryPolicyVersion)}
 		intent, _, provisionErr := s.payment.CreateForOrder(provisionContext, orderID, externalReference, payerActorID, amountMinor, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
 			return postgres.ProvisionedPayment{}, provisionErr

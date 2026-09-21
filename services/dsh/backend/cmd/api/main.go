@@ -88,6 +88,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	deliveryFeeServer, err := transporthttp.NewDeliveryFee(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient)
+	if err != nil {
+		log.Fatal(err)
+	}
 	cartServer, err := transporthttp.NewCart(identityClient, database, serviceabilityService, paymentClient)
 	if err != nil {
 		log.Fatal(err)
@@ -119,6 +123,7 @@ func main() {
 		locationCoreServer.Register(mux)
 		serviceCityServer.Register(mux)
 		serviceabilityServer.Register(mux)
+		deliveryFeeServer.Register(mux)
 		cartServer.Register(mux)
 		orderServer.Register(mux)
 		captainServer.Register(mux)

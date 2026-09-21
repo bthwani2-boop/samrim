@@ -2,6 +2,7 @@
 
 import { useSession } from "../../../src/session/session-provider";
 import { CashCustodyWorkspace } from "../../../src/features/finance/cash-custody-workspace";
+import { DeliveryFeePolicyWorkspace } from "../../../src/features/finance/delivery-fee-policy-workspace";
 
 export default function FinancePage() {
   const { state } = useSession();
@@ -17,6 +18,7 @@ export default function FinancePage() {
         <p className="lead">اعرض النقد المحصل عند الاستلام الذي ما زال في عهدة الكباتن. هذه القراءة لا تمثل تسوية تاجر أو عمولة أو دفعة منصة.</p>
       </div>
       <CashCustodyWorkspace />
+      <DeliveryFeePolicyWorkspace />
     </section>
   );
 }

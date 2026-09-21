@@ -26,15 +26,20 @@ var (
 	ErrOrderTransitionConflict     = errors.New("order transition idempotency key was already used with different facts")
 	ErrOrderTransitionInvalid      = errors.New("order transition is invalid")
 	ErrPaymentProvisioning         = errors.New("payment intent could not be provisioned")
+	ErrDeliveryFeeUnavailable      = errors.New("delivery fee could not be resolved")
 	ErrPaymentStateConflict        = errors.New("order payment state is stale or invalid")
 )
 
 type CheckoutEvidence struct {
-	ServiceCityID  string
-	PolicyVersion  string
-	Status         string
-	StoreVersion   int
-	AddressVersion int
+	ServiceCityID        string
+	PolicyVersion        string
+	Status               string
+	StoreVersion         int
+	AddressVersion       int
+	StoreOriginLatitude  float64
+	StoreOriginLongitude float64
+	AddressLatitude      float64
+	AddressLongitude     float64
 }
 
 type ProvisionedPayment struct {
@@ -42,7 +47,23 @@ type ProvisionedPayment struct {
 	State    string
 }
 
-type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, idempotencyKey, correlationID string) (ProvisionedPayment, error)
+type DeliveryFeeQuoteInput struct {
+	ServiceCityID        string
+	OriginLatitude       float64
+	OriginLongitude      float64
+	DestinationLatitude  float64
+	DestinationLongitude float64
+	OrderSizeBaseUnits   int64
+}
+
+type DeliveryFeeQuote struct {
+	FeeMinor      int64
+	PolicyVersion string
+}
+
+type DeliveryFeeResolver func(ctx context.Context, input DeliveryFeeQuoteInput) (DeliveryFeeQuote, error)
+
+type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, subtotalMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, idempotencyKey, correlationID string) (ProvisionedPayment, error)
 
 type PaymentIntentCanceller func(ctx context.Context, intentID, reason, idempotencyKey, correlationID string) error
 
@@ -60,6 +81,7 @@ type CheckoutInput struct {
 	PaymentExternalReference string
 	PaymentIdempotencyKey    string
 	PaymentCancellationKey   string
+	DeliveryFeeResolver      DeliveryFeeResolver
 	PaymentProvisioner       PaymentIntentProvisioner
 	PaymentCanceller         PaymentIntentCanceller
 }
@@ -558,6 +580,7 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	}
 	lines := make([]checkoutLine, 0)
 	var total int64
+	var orderSizeBaseUnits int64
 	for _, rawLine := range cartLines {
 		line := checkoutLine{id: rawLine.id, offerID: rawLine.offerID, variantID: rawLine.variantID, quantity: rawLine.quantity, modifiers: rawLine.modifiers}
 		if line.variantID == "" {
@@ -602,11 +625,28 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 			return OrderRecord{}, false, ErrCheckoutEvidenceStale
 		}
 		total = combined.Int64()
+		combinedSize := new(big.Int).Add(big.NewInt(orderSizeBaseUnits), big.NewInt(line.quantity))
+		if !combinedSize.IsInt64() {
+			return OrderRecord{}, false, ErrCheckoutEvidenceStale
+		}
+		orderSizeBaseUnits = combinedSize.Int64()
 		lines = append(lines, line)
 	}
 	if len(lines) == 0 || total <= 0 {
 		return OrderRecord{}, false, ErrCartEmpty
 	}
+	if input.DeliveryFeeResolver == nil || orderSizeBaseUnits <= 0 {
+		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
+	}
+	feeQuote, err := input.DeliveryFeeResolver(ctx, DeliveryFeeQuoteInput{ServiceCityID: input.Evidence.ServiceCityID, OriginLatitude: input.Evidence.StoreOriginLatitude, OriginLongitude: input.Evidence.StoreOriginLongitude, DestinationLatitude: input.Evidence.AddressLatitude, DestinationLongitude: input.Evidence.AddressLongitude, OrderSizeBaseUnits: orderSizeBaseUnits})
+	if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
+		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
+	}
+	orderTotal := new(big.Int).Add(big.NewInt(total), big.NewInt(feeQuote.FeeMinor))
+	if !orderTotal.IsInt64() || orderTotal.Int64() <= 0 {
+		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
+	}
+	totalWithDelivery := orderTotal.Int64()
 	newOrderID, err := newID("order")
 	if err != nil {
 		return OrderRecord{}, false, err
@@ -615,7 +655,7 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	if err != nil {
 		return OrderRecord{}, false, err
 	}
-	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, input.PaymentIdempotencyKey, input.CorrelationID)
+	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, feeQuote.FeeMinor, feeQuote.PolicyVersion, totalWithDelivery, input.PaymentIdempotencyKey, input.CorrelationID)
 	if err != nil || strings.TrimSpace(payment.IntentID) == "" || payment.State != "REQUIRES_COLLECTION" {
 		if err != nil {
 			return OrderRecord{}, false, fmt.Errorf("%w: %v", ErrPaymentProvisioning, err)
@@ -623,13 +663,13 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 		return OrderRecord{}, false, ErrPaymentProvisioning
 	}
 	paymentIntentID = strings.TrimSpace(payment.IntentID)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_intent_id,payment_method,payment_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'CREATED',$15,$16,'CASH_ON_DELIVERY',$17)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.AddressID, addressVersion, addressText, latitude, longitude, input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, storeVersion, addressVersion, total, payment.IntentID, payment.State); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_intent_id,payment_method,payment_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'CREATED',$15,$16,'CASH_ON_DELIVERY',$17)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.AddressID, addressVersion, addressText, latitude, longitude, input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, storeVersion, addressVersion, totalWithDelivery, payment.IntentID, payment.State); err != nil {
 		return OrderRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_delivery_proofs(order_id,client_actor_id,code,code_hash) VALUES($1,$2,$3,$4)`, newOrderID, input.ClientActorID, deliveryProofCode, HashDeliveryProofCode(newOrderID, deliveryProofCode)); err != nil {
 		return OrderRecord{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor) VALUES('payment_intent_linked',$1,$2,$3,$4,$5,'NOT_LINKED',$6,$7)`, input.IdempotencyKey, input.CorrelationID, input.ActingActorID, newOrderID, payment.IntentID, payment.State, total); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor) VALUES('payment_intent_linked',$1,$2,$3,$4,$5,'NOT_LINKED',$6,$7)`, input.IdempotencyKey, input.CorrelationID, input.ActingActorID, newOrderID, payment.IntentID, payment.State, totalWithDelivery); err != nil {
 		return OrderRecord{}, false, err
 	}
 	for _, line := range lines {

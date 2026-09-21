@@ -16,10 +16,15 @@ type ServiceabilityFacts struct {
 	StoreVersion          int
 	StoreServiceCityID    string
 	StorePublicationState string
+	StoreOriginLatitude   float64
+	StoreOriginLongitude  float64
+	StoreOriginAvailable  bool
 	AddressID             string
 	AddressFound          bool
 	AddressVersion        int
 	AddressServiceCityID  string
+	AddressLatitude       float64
+	AddressLongitude      float64
 	ServiceCityID         string
 	ServiceCityVersion    int
 	ServiceCityActive     bool
@@ -46,11 +51,13 @@ func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientAct
 	var storeVersion, addressVersion, serviceCityVersion, addressCityVersion sql.NullInt64
 	var storeState sql.NullString
 	var serviceCityActive, addressCityActive sql.NullBool
+	var storeOriginLatitude, storeOriginLongitude, addressLatitude, addressLongitude sql.NullFloat64
 	var addressCityFound, hasPublishedOffer bool
 	visibleOfferConditions := strings.Join(customerVisibleOfferConditionsForAliases("co", "cv", "cp", "s"), " AND ")
 	err := db.QueryRowContext(ctx, `
 		SELECT s.id, s.partner_actor_id, s.version, s.service_city_id, s.publication_state,
-		       a.id, a.version, a.service_city_id,
+		       s.delivery_origin_latitude, s.delivery_origin_longitude,
+		       a.id, a.version, a.service_city_id, a.latitude, a.longitude,
 		       sc.id, sc.version, sc.active,
 		       ac.id IS NOT NULL, ac.version, ac.active,
 		       EXISTS (
@@ -65,8 +72,8 @@ func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientAct
 		LEFT JOIN dsh.delivery_addresses a ON a.id=input.address_id AND a.client_actor_id=input.client_actor_id
 		LEFT JOIN dsh.service_cities sc ON sc.id=s.service_city_id
 		LEFT JOIN dsh.service_cities ac ON ac.id=a.service_city_id`, storeID, addressID, clientActorID).Scan(
-		&storeIDValue, &partnerActorID, &storeVersion, &storeCityID, &storeState,
-		&addressIDValue, &addressVersion, &addressCityID,
+		&storeIDValue, &partnerActorID, &storeVersion, &storeCityID, &storeState, &storeOriginLatitude, &storeOriginLongitude,
+		&addressIDValue, &addressVersion, &addressCityID, &addressLatitude, &addressLongitude,
 		&serviceCityID, &serviceCityVersion, &serviceCityActive,
 		&addressCityFound, &addressCityVersion, &addressCityActive,
 		&hasPublishedOffer)
@@ -80,12 +87,25 @@ func ReadServiceabilityFacts(ctx context.Context, db *sql.DB, storeID, clientAct
 		facts.StoreVersion = int(storeVersion.Int64)
 		facts.StoreServiceCityID = storeCityID.String
 		facts.StorePublicationState = storeState.String
+		facts.StoreOriginAvailable = storeOriginLatitude.Valid && storeOriginLongitude.Valid
+		if storeOriginLatitude.Valid {
+			facts.StoreOriginLatitude = storeOriginLatitude.Float64
+		}
+		if storeOriginLongitude.Valid {
+			facts.StoreOriginLongitude = storeOriginLongitude.Float64
+		}
 	}
 	if addressIDValue.Valid {
 		facts.AddressFound = true
 		facts.AddressID = addressIDValue.String
 		facts.AddressVersion = int(addressVersion.Int64)
 		facts.AddressServiceCityID = addressCityID.String
+		if addressLatitude.Valid {
+			facts.AddressLatitude = addressLatitude.Float64
+		}
+		if addressLongitude.Valid {
+			facts.AddressLongitude = addressLongitude.Float64
+		}
 	}
 	if serviceCityID.Valid {
 		facts.ServiceCityID = serviceCityID.String

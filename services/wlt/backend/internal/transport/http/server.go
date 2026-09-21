@@ -34,6 +34,9 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/captains/{captainActorId}/cash-liability", s.cashLiability)
 	mux.HandleFunc("GET /wlt/v1/operator/cash-liability", s.operatorCashLiability)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/remit", s.remitCash)
+	mux.HandleFunc("POST /wlt/v1/delivery-quotes", s.deliveryQuote)
+	mux.HandleFunc("GET /wlt/v1/operator/delivery-fee-policies", s.readDeliveryFeePolicy)
+	mux.HandleFunc("POST /wlt/v1/operator/delivery-fee-policies", s.createDeliveryFeePolicy)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
 	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
@@ -90,6 +93,26 @@ type preparePartnerFinancialProfileRequest struct {
 }
 
 type activatePartnerFinancialProfileRequest struct{}
+
+type deliveryFeeQuoteRequest struct {
+	ServiceCityID        string  `json:"serviceCityId"`
+	OriginLatitude       float64 `json:"originLatitude"`
+	OriginLongitude      float64 `json:"originLongitude"`
+	DestinationLatitude  float64 `json:"destinationLatitude"`
+	DestinationLongitude float64 `json:"destinationLongitude"`
+	OrderSizeBaseUnits   int64   `json:"orderSizeBaseUnits"`
+}
+
+type createDeliveryFeePolicyRequest struct {
+	ServiceCityID          string `json:"serviceCityId"`
+	BaseFeeMinor           int64  `json:"baseFeeMinor"`
+	DistanceUnitMeters     int64  `json:"distanceUnitMeters"`
+	DistanceRateMinor      int64  `json:"distanceRateMinor"`
+	OrderSizeUnitBaseUnits int64  `json:"orderSizeUnitBaseUnits"`
+	OrderSizeRateMinor     int64  `json:"orderSizeRateMinor"`
+	ZoneSurchargeMinor     int64  `json:"zoneSurchargeMinor"`
+	RoundingUnitMinor      int64  `json:"roundingUnitMinor"`
+}
 
 type paymentIntentResponse struct {
 	PaymentIntent    paymentIntentJSON `json:"paymentIntent"`
@@ -183,6 +206,44 @@ type partnerFinancialProfileJSON struct {
 	ActivatedAt       *string `json:"activatedAt"`
 	CreatedAt         string  `json:"createdAt"`
 	UpdatedAt         string  `json:"updatedAt"`
+}
+
+type deliveryFeePolicyResponse struct {
+	Policy           deliveryFeePolicyJSON `json:"policy"`
+	IdempotentReplay bool                  `json:"idempotentReplay"`
+}
+
+type deliveryFeePolicyJSON struct {
+	ID                     string  `json:"id"`
+	ServiceCityID          string  `json:"serviceCityId"`
+	PolicyVersion          string  `json:"policyVersion"`
+	State                  string  `json:"state"`
+	BaseFeeMinor           int64   `json:"baseFeeMinor"`
+	DistanceUnitMeters     int64   `json:"distanceUnitMeters"`
+	DistanceRateMinor      int64   `json:"distanceRateMinor"`
+	OrderSizeUnitBaseUnits int64   `json:"orderSizeUnitBaseUnits"`
+	OrderSizeRateMinor     int64   `json:"orderSizeRateMinor"`
+	ZoneSurchargeMinor     int64   `json:"zoneSurchargeMinor"`
+	RoundingUnitMinor      int64   `json:"roundingUnitMinor"`
+	Version                int     `json:"version"`
+	CreatedBy              string  `json:"createdBy"`
+	CreatedAt              string  `json:"createdAt"`
+	RetiredAt              *string `json:"retiredAt"`
+}
+
+type deliveryFeeQuoteResponse struct {
+	Quote deliveryFeeQuoteJSON `json:"quote"`
+}
+
+type deliveryFeeQuoteJSON struct {
+	FeeMinor           int64  `json:"feeMinor"`
+	PolicyVersion      string `json:"policyVersion"`
+	ServiceCityID      string `json:"serviceCityId"`
+	DistanceMeters     int64  `json:"distanceMeters"`
+	DistanceUnits      int64  `json:"distanceUnits"`
+	OrderSizeBaseUnits int64  `json:"orderSizeBaseUnits"`
+	OrderSizeUnits     int64  `json:"orderSizeUnits"`
+	RoundingUnitMinor  int64  `json:"roundingUnitMinor"`
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -316,6 +377,63 @@ func (s *Server) remitCash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cashRemittanceResponse{CashRemittance: toCashRemittance(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) deliveryQuote(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	var input deliveryFeeQuoteRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	quote, err := postgres.ResolveDeliveryFeeQuote(r.Context(), s.db, postgres.DeliveryFeeQuoteInput{ServiceCityID: input.ServiceCityID, OriginLatitude: input.OriginLatitude, OriginLongitude: input.OriginLongitude, DestinationLatitude: input.DestinationLatitude, DestinationLongitude: input.DestinationLongitude, OrderSizeBaseUnits: input.OrderSizeBaseUnits})
+	if err != nil {
+		writeDeliveryFeeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, deliveryFeeQuoteResponse{Quote: toDeliveryFeeQuote(quote)})
+}
+
+func (s *Server) readDeliveryFeePolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	policy, err := postgres.ReadDeliveryFeePolicy(r.Context(), s.db, r.URL.Query().Get("serviceCityId"))
+	if err != nil {
+		writeDeliveryFeeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, deliveryFeePolicyResponse{Policy: toDeliveryFeePolicy(policy)})
+}
+
+func (s *Server) createDeliveryFeePolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	var input createDeliveryFeePolicyRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	policy, replayed, err := postgres.CreateDeliveryFeePolicy(r.Context(), s.db, postgres.CreateDeliveryFeePolicyInput{ServiceCityID: input.ServiceCityID, BaseFeeMinor: input.BaseFeeMinor, DistanceUnitMeters: input.DistanceUnitMeters, DistanceRateMinor: input.DistanceRateMinor, OrderSizeUnitBaseUnits: input.OrderSizeUnitBaseUnits, OrderSizeRateMinor: input.OrderSizeRateMinor, ZoneSurchargeMinor: input.ZoneSurchargeMinor, RoundingUnitMinor: input.RoundingUnitMinor, ActingActorID: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writeDeliveryFeeError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, deliveryFeePolicyResponse{Policy: toDeliveryFeePolicy(policy), IdempotentReplay: replayed})
 }
 
 func (s *Server) preparePartnerFinancialProfile(w http.ResponseWriter, r *http.Request) {
@@ -453,6 +571,19 @@ func toCashRemittance(item postgres.CashRemittanceRecord) cashRemittanceJSON {
 	return cashRemittanceJSON{ID: item.ID, PaymentIntentID: item.PaymentIntentID, CaptainActorID: item.CaptainActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, RemittanceReference: item.RemittanceReference, State: item.State, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
 }
 
+func toDeliveryFeePolicy(item postgres.DeliveryFeePolicyRecord) deliveryFeePolicyJSON {
+	result := deliveryFeePolicyJSON{ID: item.ID, ServiceCityID: item.ServiceCityID, PolicyVersion: item.PolicyVersion, State: item.State, BaseFeeMinor: item.BaseFeeMinor, DistanceUnitMeters: item.DistanceUnitMeters, DistanceRateMinor: item.DistanceRateMinor, OrderSizeUnitBaseUnits: item.OrderSizeUnitBaseUnits, OrderSizeRateMinor: item.OrderSizeRateMinor, ZoneSurchargeMinor: item.ZoneSurchargeMinor, RoundingUnitMinor: item.RoundingUnitMinor, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+	if item.RetiredAt != nil {
+		value := item.RetiredAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
+		result.RetiredAt = &value
+	}
+	return result
+}
+
+func toDeliveryFeeQuote(item postgres.DeliveryFeeQuoteRecord) deliveryFeeQuoteJSON {
+	return deliveryFeeQuoteJSON{FeeMinor: item.FeeMinor, PolicyVersion: item.PolicyVersion, ServiceCityID: item.ServiceCityID, DistanceMeters: item.DistanceMeters, DistanceUnits: item.DistanceUnits, OrderSizeBaseUnits: item.OrderSizeBaseUnits, OrderSizeUnits: item.OrderSizeUnits, RoundingUnitMinor: item.RoundingUnitMinor}
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -490,6 +621,20 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "payment allocation is invalid")
 	default:
 		log.Printf("WLT partner financial profile persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
+	}
+}
+
+func writeDeliveryFeeError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrDeliveryFeePolicyNotFound):
+		writeError(w, http.StatusNotFound, "DELIVERY_FEE_POLICY_NOT_FOUND", "no active delivery fee policy is available")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different delivery fee policy facts")
+	case errors.Is(err, postgres.ErrDeliveryFeePolicyInvalidInput), errors.Is(err, postgres.ErrDeliveryFeeQuoteInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_DELIVERY_FEE", "delivery fee policy or quote is invalid")
+	default:
+		log.Printf("WLT delivery fee persistence error: %T %v", err, err)
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
 	}
 }
