@@ -179,7 +179,7 @@ async function readBrowserSession(page: Page): Promise<{ status: number; body: R
 test.afterEach(() => {
   const operator = preparedOperatorForCleanup;
   preparedOperatorForCleanup = undefined;
-  if (process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci") return;
+  if (process.env.CI === "true") return;
   if (operator) cleanupPreparedOperator(operator);
 });
 
