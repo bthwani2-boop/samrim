@@ -4,6 +4,7 @@ import { useSession } from "../../../src/session/session-provider";
 import { CashCustodyWorkspace } from "../../../src/features/finance/cash-custody-workspace";
 import { DeliveryFeePolicyWorkspace } from "../../../src/features/finance/delivery-fee-policy-workspace";
 import { FieldCommissionPolicyWorkspace } from "../../../src/features/finance/field-commission-policy-workspace";
+import { FieldEarningsWorkspace } from "../../../src/features/finance/field-earnings-workspace";
 import { PartnerEarningsWorkspace } from "../../../src/features/finance/partner-earnings-workspace";
 import { BeneficiarySettlementWorkspace } from "../../../src/features/finance/beneficiary-settlement-workspace";
 
@@ -23,6 +24,7 @@ export default function FinancePage() {
       <CashCustodyWorkspace />
       <DeliveryFeePolicyWorkspace />
       <FieldCommissionPolicyWorkspace />
+      <FieldEarningsWorkspace />
       <PartnerEarningsWorkspace />
       <BeneficiarySettlementWorkspace />
     </section>
