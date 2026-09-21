@@ -73,9 +73,29 @@ type CashRemittance struct {
 	CreatedAt           string `json:"createdAt"`
 }
 
+type PartnerFinancialProfile struct {
+	ID                string  `json:"id"`
+	JoiningCaseID     string  `json:"joiningCaseId"`
+	PartnerActorID    string  `json:"partnerActorId"`
+	Origin            string  `json:"origin"`
+	CommissionRateBps int     `json:"commissionRateBps"`
+	SettlementPeriod  string  `json:"settlementPeriod"`
+	RoundingUnitMinor int64   `json:"roundingUnitMinor"`
+	State             string  `json:"state"`
+	Version           int     `json:"version"`
+	ActivatedAt       *string `json:"activatedAt"`
+	CreatedAt         string  `json:"createdAt"`
+	UpdatedAt         string  `json:"updatedAt"`
+}
+
 type cashRemittanceResponse struct {
 	CashRemittance   CashRemittance `json:"cashRemittance"`
 	IdempotentReplay bool           `json:"idempotentReplay"`
+}
+
+type partnerFinancialProfileResponse struct {
+	Profile          PartnerFinancialProfile `json:"profile"`
+	IdempotentReplay bool                    `json:"idempotentReplay"`
 }
 
 type Error struct {
@@ -246,7 +266,36 @@ func (c *Client) RemitCash(ctx context.Context, intentID, captainActorID string,
 	return response.CashRemittance, response.IdempotentReplay, err
 }
 
+func (c *Client) PreparePartnerFinancialProfile(ctx context.Context, joiningCaseID, partnerActorID, origin string, commissionRateBps int, settlementPeriod, idempotencyKey, correlationID string) (PartnerFinancialProfile, bool, error) {
+	body := map[string]any{
+		"joiningCaseId":     joiningCaseID,
+		"partnerActorId":    partnerActorID,
+		"origin":            origin,
+		"commissionRateBps": commissionRateBps,
+		"settlementPeriod":  settlementPeriod,
+	}
+	var response partnerFinancialProfileResponse
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/partner-financial-profiles", body, idempotencyKey, correlationID, 0, &response)
+	return response.Profile, response.IdempotentReplay, err
+}
+
+func (c *Client) ReadPartnerFinancialProfile(ctx context.Context, profileID string) (PartnerFinancialProfile, error) {
+	var response partnerFinancialProfileResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/partner-financial-profiles/"+url.PathEscape(strings.TrimSpace(profileID)), nil, "", "", 0, &response)
+	return response.Profile, err
+}
+
+func (c *Client) ActivatePartnerFinancialProfile(ctx context.Context, profileID string, expectedVersion int, idempotencyKey, correlationID, actingActorID string) (PartnerFinancialProfile, bool, error) {
+	var response partnerFinancialProfileResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/partner-financial-profiles/"+url.PathEscape(strings.TrimSpace(profileID))+"/activate", map[string]any{}, idempotencyKey, correlationID, expectedVersion, actingActorID, &response)
+	return response.Profile, response.IdempotentReplay, err
+}
+
 func (c *Client) request(ctx context.Context, method, path string, body any, idempotencyKey, correlationID string, expectedVersion int, target any) error {
+	return c.requestWithActor(ctx, method, path, body, idempotencyKey, correlationID, expectedVersion, "", target)
+}
+
+func (c *Client) requestWithActor(ctx context.Context, method, path string, body any, idempotencyKey, correlationID string, expectedVersion int, actingActorID string, target any) error {
 	if c == nil || c.httpClient == nil || strings.TrimSpace(c.baseURL) == "" || strings.TrimSpace(c.serviceToken) == "" {
 		return errors.New("WLT client is not configured")
 	}
@@ -275,6 +324,9 @@ func (c *Client) request(ctx context.Context, method, path string, body any, ide
 	}
 	if expectedVersion > 0 {
 		request.Header.Set("X-Expected-Version", fmt.Sprintf("%d", expectedVersion))
+	}
+	if strings.TrimSpace(actingActorID) != "" {
+		request.Header.Set("X-Acting-Actor-ID", strings.TrimSpace(actingActorID))
 	}
 	response, err := c.httpClient.Do(request)
 	if err != nil {

@@ -32,6 +32,7 @@ type StorePublicationBlockedReason = Exclude<StorePublicationReadiness["blockedR
 
 const publicationReadinessBlockedReasonLabels: Record<StorePublicationBlockedReason, string> = {
   PARTNER_IDENTITY_NOT_ELIGIBLE: "هوية الشريك أو صلاحية دوره غير جاهزة للنشر",
+  FINANCIAL_PROFILE_NOT_READY: "الشروط المالية للشريك لم تُثبت بعد في النظام المالي",
   SERVICE_CITY_NOT_ELIGIBLE: "مدينة خدمة المتجر غير مؤهلة للنشر",
   CATALOG_NOT_READY: "لا يوجد كتالوج أو عرض منشور صالح يجعل المتجر جاهزًا",
 };

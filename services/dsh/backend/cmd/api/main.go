@@ -55,7 +55,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	joiningCaseServer, err := transporthttp.NewJoiningCase(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication)
+	joiningCaseServer, err := transporthttp.NewJoiningCase(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, storePublication, paymentClient)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -133,6 +133,7 @@ func main() {
 		return nil
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
+		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
 		runMediaReconciliationLoop(ctx, time.Minute, catalogServer.ReconcileMediaStorage)
 	}); err != nil {
 		log.Fatal(err)

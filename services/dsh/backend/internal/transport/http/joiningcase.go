@@ -1,9 +1,11 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
@@ -24,12 +27,12 @@ type JoiningCaseServer struct {
 	db          *sql.DB
 }
 
-func NewJoiningCase(identityClient *identityintegration.Client, accessToken string, db *sql.DB, publication *storepublication.Service) (*JoiningCaseServer, error) {
+func NewJoiningCase(identityClient *identityintegration.Client, accessToken string, db *sql.DB, publication *storepublication.Service, wltClient *wlt.Client) (*JoiningCaseServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := joiningcase.New(identityClient, db)
+	service, err := joiningcase.New(identityClient, db, wltClient)
 	if err != nil {
 		return nil, err
 	}
@@ -37,6 +40,10 @@ func NewJoiningCase(identityClient *identityintegration.Client, accessToken stri
 		return nil, errors.New("joining case publication readiness is invalid")
 	}
 	return &JoiningCaseServer{auth: authorizer, service: service, publication: publication, db: db}, nil
+}
+
+func (s *JoiningCaseServer) ReconcileFinancialProfiles(ctx context.Context) error {
+	return s.service.ReconcileFinancialProfiles(ctx, 25)
 }
 
 func (s *JoiningCaseServer) Register(mux *http.ServeMux) {
@@ -161,8 +168,9 @@ func (s *JoiningCaseServer) review(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	decision := string(input.Decision)
-	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, expected, idempotency, acting, correlation)
+	result, err := s.service.Review(r.Context(), r.PathValue("caseId"), decision, input.CorrectionReason, input.CommissionRateBps, input.SettlementPeriod, expected, idempotency, acting, correlation)
 	if err != nil {
+		log.Printf("joining case review failed case=%s: %v", r.PathValue("caseId"), err)
 		writeJoiningCaseError(w, err)
 		return
 	}
@@ -189,16 +197,22 @@ func (s *JoiningCaseServer) correctAndResubmitForPartner(w http.ResponseWriter, 
 func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request, status int, result postgres.JoiningCaseResult) {
 	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
 	view.PartnerActorID = result.Case.PartnerActorID
+	view.CommissionRateBps = result.Case.CommissionRateBps
+	view.SettlementPeriod = nullableStringPointer(result.Case.SettlementPeriod)
+	view.FinancialProfileID = nullableStringPointer(result.Case.FinancialProfileID)
+	view.FinancialProfileState = result.Case.FinancialProfileState
 	view.CorrectionReason = result.Case.CorrectionReason
 	view.ReviewedBy = result.Case.ReviewedBy
 	if result.Case.Store != nil {
 		readiness, err := s.publication.ReadinessForStore(ctx.Context(), *result.Case.Store)
 		if err != nil {
+			log.Printf("joining case response readiness failed case=%s store=%s: %v", result.Case.ID, result.Case.Store.ID, err)
 			writeStorePublicationError(w, err)
 			return
 		}
 		offers, err := postgres.ListCatalogOffers(ctx.Context(), s.db, result.Case.Store.ID, false)
 		if err != nil {
+			log.Printf("joining case response offers failed case=%s store=%s: %v", result.Case.ID, result.Case.Store.ID, err)
 			writeStorageError(w, err)
 			return
 		}

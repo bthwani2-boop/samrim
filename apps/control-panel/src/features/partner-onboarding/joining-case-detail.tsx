@@ -11,6 +11,8 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
   const [cities, setCities] = useState<ReadonlyArray<ServiceCity>>([]);
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [correctionReason, setCorrectionReason] = useState("");
+  const [commissionRatePercent, setCommissionRatePercent] = useState("");
+  const [settlementPeriod, setSettlementPeriod] = useState<"DAILY" | "WEEKLY" | "MONTHLY" | "">("");
   const [publication, setPublication] = useState<StorePublicationResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -86,13 +88,29 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
       setError("أدخل سبب التصحيح قبل إعادة الحالة.");
       return;
     }
+    if (decision === "approved") {
+      const commission = Number(commissionRatePercent);
+      if (commissionRatePercent.trim() === "" || !Number.isFinite(commission) || commission < 0 || commission > 100) {
+        setError("أدخل نسبة عمولة المنصة بين 0 و100 بالمائة.");
+        return;
+      }
+      if (!settlementPeriod) {
+        setError("اختر فترة تسوية الشريك قبل الاعتماد.");
+        return;
+      }
+    }
     setBusy(true);
     setError("");
     try {
       const response = await fetch(`/api/partners/joining-cases/${encodeURIComponent(caseId)}/review`, {
         method: "POST",
         headers: partnerMutationHeaders(),
-        body: JSON.stringify({ expectedVersion: current.version, decision, ...(correctionReason.trim() ? { correctionReason: correctionReason.trim() } : {}) }),
+        body: JSON.stringify({
+          expectedVersion: current.version,
+          decision,
+          ...(correctionReason.trim() ? { correctionReason: correctionReason.trim() } : {}),
+          ...(decision === "approved" ? { commissionRateBps: Math.round(Number(commissionRatePercent) * 100), settlementPeriod } : {}),
+        }),
       });
       if (!response.ok) {
         await reconcileMutationError(response, "تعذر تسجيل قرار المراجعة.");
@@ -100,6 +118,8 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
       }
       setResult(await response.json() as JoiningCaseResponse);
       setCorrectionReason("");
+      setCommissionRatePercent("");
+      setSettlementPeriod("");
     } catch {
       setError("تعذر تسجيل قرار المراجعة. أعد قراءة الحالة قبل التكرار.");
     } finally {
@@ -184,6 +204,9 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>خط العرض</dt><dd dir="ltr">{current.firstStoreLatitude ?? "غير مسجل"}</dd></div>
               <div><dt>خط الطول</dt><dd dir="ltr">{current.firstStoreLongitude ?? "غير مسجل"}</dd></div>
               <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : "لوحة التحكم"}</dd></div>
+              <div><dt>عمولة المنصة</dt><dd>{current.commissionRateBps === null || current.commissionRateBps === undefined ? "لم تُثبت بعد" : `${(current.commissionRateBps / 100).toFixed(2)}%`}</dd></div>
+              <div><dt>فترة التسوية</dt><dd>{current.settlementPeriod ?? "لم تُثبت بعد"}</dd></div>
+              <div><dt>الحالة المالية</dt><dd>{current.financialProfileState}</dd></div>
               <div><dt>نسخة الحالة</dt><dd>{current.version}</dd></div>
             </dl>
             {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
@@ -193,6 +216,8 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
             {current.state === "draft" && current.origin === "field" ? <p>المسودة قيد استكمال تطبيق الميداني، وهو المسار الوحيد المسموح بإرسالها للمراجعة.</p> : null}
             {current.state === "draft" && current.origin === "control_panel" ? <button type="button" className="button button-primary" disabled={busy} onClick={() => void submitCase()}>إرسال للمراجعة</button> : null}
             {current.state === "submitted" ? <>
+              <label className="field-label" htmlFor="joining-commission">عمولة المنصة (%)<input id="joining-commission" inputMode="decimal" type="number" min="0" max="100" step="0.01" disabled={busy} value={commissionRatePercent} onChange={(event) => setCommissionRatePercent(event.target.value)} /></label>
+              <label className="field-label" htmlFor="joining-settlement-period">فترة تسوية الشريك<select id="joining-settlement-period" disabled={busy} value={settlementPeriod} onChange={(event) => setSettlementPeriod(event.target.value as typeof settlementPeriod)}><option value="">اختر الفترة</option><option value="DAILY">يومية</option><option value="WEEKLY">أسبوعية</option><option value="MONTHLY">شهرية</option></select></label>
               <label className="field-label" htmlFor="joining-correction">سبب التصحيح عند الحاجة<textarea className="resize-none" id="joining-correction" disabled={busy} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} /></label>
               <button type="button" className="button button-primary" disabled={busy} onClick={() => void reviewCase("approved")}>اعتماد الحالة وإنشاء المتجر</button>
               <button type="button" className="button button-secondary" disabled={busy} onClick={() => void reviewCase("needs_correction")}>إعادة للتصحيح</button>

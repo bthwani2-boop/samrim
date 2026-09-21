@@ -626,6 +626,33 @@ test("operator resumes a canonical joining case from the DSH queue", async ({ pa
   await expect(page.getByRole("status")).toContainText("نشاط مستعاد");
 });
 
+test("operator approves joining terms with commission and settlement cadence", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let reviewBody: unknown;
+  await page.route("**/api/service-cities**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "sanaa", displayNameAr: "صنعاء", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/catalog/verticals**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verticals: [{ id: "grocery", nameAr: "بقالة", nameEn: "Grocery", active: true, version: 1, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }] }) });
+  });
+  await page.route("**/api/partners/joining-cases/join_financial", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ case: { id: "join_financial", contactPhoneE164: "+96777000109", businessName: "نشاط مالي", firstStoreName: "متجر مالي", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_financial", origin: "field", state: "submitted", financialProfileState: "PENDING_BINDING", version: 2, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
+  });
+  await page.route("**/api/partners/joining-cases/join_financial/review", async (route) => {
+    reviewBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ case: { id: "join_financial", contactPhoneE164: "+96777000109", businessName: "نشاط مالي", firstStoreName: "متجر مالي", serviceCityId: "sanaa", firstStoreVerticalId: "grocery", firstStoreLatitude: 15.369445, firstStoreLongitude: 44.191006, partnerActorId: "act_financial", origin: "field", state: "approved", commissionRateBps: 1250, settlementPeriod: "WEEKLY", financialProfileId: "financial_profile_test", financialProfileState: "ACTIVE", version: 3, createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z" }, idempotentReplay: false }) });
+  });
+
+  await page.goto("/partners/join_financial");
+  await expect(page.getByRole("heading", { name: "تفاصيل حالة انضمام الشريك" })).toBeVisible();
+  await page.getByLabel("عمولة المنصة (%)").fill("12.5");
+  await page.getByLabel("فترة تسوية الشريك").selectOption("WEEKLY");
+  await page.getByRole("button", { name: "اعتماد الحالة وإنشاء المتجر" }).click();
+
+  await expect(page.getByText("تم اعتماد الحالة. انتقل إلى قراءة النشر إن كان المتجر متاحًا.")).toBeVisible();
+  expect(reviewBody).toMatchObject({ decision: "approved", commissionRateBps: 1250, settlementPeriod: "WEEKLY", expectedVersion: 2 });
+});
+
 test("partner Store publication exposes the canonical readiness block", async ({ page }) => {
   await stubAuthenticatedSession(page);
   const publicationReasons = [

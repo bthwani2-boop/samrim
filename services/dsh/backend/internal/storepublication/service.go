@@ -17,6 +17,7 @@ var (
 	ErrPublicationReadinessBlocked   = errors.New("store publication readiness is blocked")
 	ErrPartnerIdentityUnavailable    = errors.New("partner Identity eligibility is unavailable")
 	PartnerIdentityNotEligibleReason = "PARTNER_IDENTITY_NOT_ELIGIBLE"
+	FinancialProfileNotReadyReason   = "FINANCIAL_PROFILE_NOT_READY"
 	ServiceCityNotEligibleReason     = "SERVICE_CITY_NOT_ELIGIBLE"
 	CatalogNotReadyReason            = "CATALOG_NOT_READY"
 )
@@ -159,7 +160,18 @@ func (s *Service) ReadinessForPartner(ctx context.Context, partnerActorID string
 		}
 		return PublicationReadiness{}, fmt.Errorf("%w: %w", ErrPartnerIdentityUnavailable, err)
 	}
-	return evaluatePartnerReadiness(partner), nil
+	readiness := evaluatePartnerReadiness(partner)
+	if !readiness.Ready {
+		return readiness, nil
+	}
+	financialProfileActive, err := postgres.HasActiveFinancialProfileForPartner(ctx, s.db, partnerActorID)
+	if err != nil {
+		return PublicationReadiness{}, fmt.Errorf("read partner financial profile readiness: %w", err)
+	}
+	if !financialProfileActive {
+		return blockedReadiness(FinancialProfileNotReadyReason), nil
+	}
+	return readiness, nil
 }
 
 func blockedReadiness(reason string) PublicationReadiness {

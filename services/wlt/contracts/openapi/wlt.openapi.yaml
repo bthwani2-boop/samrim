@@ -111,6 +111,58 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/CashRemittanceResponse' }
+  /wlt/v1/partner-financial-profiles:
+    post:
+      operationId: preparePartnerFinancialProfile
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreparePartnerFinancialProfileRequest' }
+      responses:
+        '201':
+          description: Prepared financial profile awaiting DSH binding.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
+  /wlt/v1/partner-financial-profiles/{profileId}:
+    get:
+      operationId: readPartnerFinancialProfile
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ProfileId' }
+      responses:
+        '200':
+          description: Partner financial profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
+  /wlt/v1/partner-financial-profiles/{profileId}/activate:
+    post:
+      operationId: activatePartnerFinancialProfile
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ProfileId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+      responses:
+        '200':
+          description: Activated financial profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
 components:
   securitySchemes:
     serviceToken:
@@ -124,6 +176,11 @@ components:
       schema: { type: string, minLength: 1, maxLength: 128 }
     CaptainActorId:
       name: captainActorId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    ProfileId:
+      name: profileId
       in: path
       required: true
       schema: { type: string, minLength: 1, maxLength: 128 }
@@ -227,4 +284,38 @@ components:
       required: [cashRemittance, idempotentReplay]
       properties:
         cashRemittance: { $ref: '#/components/schemas/CashRemittance' }
+        idempotentReplay: { type: boolean }
+    PreparePartnerFinancialProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [joiningCaseId, partnerActorId, origin, commissionRateBps, settlementPeriod]
+      properties:
+        joiningCaseId: { type: string, minLength: 1, maxLength: 128 }
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        origin: { type: string, enum: [field, control_panel] }
+        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+    PartnerFinancialProfile:
+      type: object
+      additionalProperties: false
+      required: [id, joiningCaseId, partnerActorId, origin, commissionRateBps, settlementPeriod, roundingUnitMinor, state, version, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        joiningCaseId: { type: string }
+        partnerActorId: { type: string }
+        origin: { type: string, enum: [field, control_panel] }
+        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+        roundingUnitMinor: { type: integer, const: 50 }
+        state: { type: string, enum: [PENDING_BINDING, ACTIVE] }
+        version: { type: integer, minimum: 1 }
+        activatedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PartnerFinancialProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [profile, idempotentReplay]
+      properties:
+        profile: { $ref: '#/components/schemas/PartnerFinancialProfile' }
         idempotentReplay: { type: boolean }

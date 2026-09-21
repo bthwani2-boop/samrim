@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,6 +34,9 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/captains/{captainActorId}/cash-liability", s.cashLiability)
 	mux.HandleFunc("GET /wlt/v1/operator/cash-liability", s.operatorCashLiability)
 	mux.HandleFunc("POST /wlt/v1/payment-intents/{intentId}/remit", s.remitCash)
+	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
+	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
+	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
 }
 
 type createRequest struct {
@@ -58,6 +62,16 @@ type remitCashRequest struct {
 	AmountMinor         int64  `json:"amountMinor"`
 	RemittanceReference string `json:"remittanceReference"`
 }
+
+type preparePartnerFinancialProfileRequest struct {
+	JoiningCaseID     string `json:"joiningCaseId"`
+	PartnerActorID    string `json:"partnerActorId"`
+	Origin            string `json:"origin"`
+	CommissionRateBps int    `json:"commissionRateBps"`
+	SettlementPeriod  string `json:"settlementPeriod"`
+}
+
+type activatePartnerFinancialProfileRequest struct{}
 
 type paymentIntentResponse struct {
 	PaymentIntent    paymentIntentJSON `json:"paymentIntent"`
@@ -111,6 +125,26 @@ type cashRemittanceJSON struct {
 type cashRemittanceResponse struct {
 	CashRemittance   cashRemittanceJSON `json:"cashRemittance"`
 	IdempotentReplay bool               `json:"idempotentReplay"`
+}
+
+type partnerFinancialProfileResponse struct {
+	Profile          partnerFinancialProfileJSON `json:"profile"`
+	IdempotentReplay bool                        `json:"idempotentReplay"`
+}
+
+type partnerFinancialProfileJSON struct {
+	ID                string  `json:"id"`
+	JoiningCaseID     string  `json:"joiningCaseId"`
+	PartnerActorID    string  `json:"partnerActorId"`
+	Origin            string  `json:"origin"`
+	CommissionRateBps int     `json:"commissionRateBps"`
+	SettlementPeriod  string  `json:"settlementPeriod"`
+	RoundingUnitMinor int64   `json:"roundingUnitMinor"`
+	State             string  `json:"state"`
+	Version           int     `json:"version"`
+	ActivatedAt       *string `json:"activatedAt"`
+	CreatedAt         string  `json:"createdAt"`
+	UpdatedAt         string  `json:"updatedAt"`
 }
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +275,76 @@ func (s *Server) remitCash(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cashRemittanceResponse{CashRemittance: toCashRemittance(result), IdempotentReplay: replayed})
 }
 
+func (s *Server) preparePartnerFinancialProfile(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input preparePartnerFinancialProfileRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.PreparePartnerFinancialProfile(r.Context(), s.db, postgres.PreparePartnerFinancialProfileInput{
+		JoiningCaseID:     input.JoiningCaseID,
+		PartnerActorID:    input.PartnerActorID,
+		Origin:            input.Origin,
+		CommissionRateBps: input.CommissionRateBps,
+		SettlementPeriod:  input.SettlementPeriod,
+		IdempotencyKey:    idempotency,
+		CorrelationID:     correlation,
+	})
+	if err != nil {
+		writeFinancialProfileError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, partnerFinancialProfileResponse{Profile: toPartnerFinancialProfile(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) readPartnerFinancialProfile(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadPartnerFinancialProfile(r.Context(), s.db, r.PathValue("profileId"))
+	if err != nil {
+		writeFinancialProfileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, partnerFinancialProfileResponse{Profile: toPartnerFinancialProfile(result)})
+}
+
+func (s *Server) activatePartnerFinancialProfile(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, expected, ok := versionedMutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input activatePartnerFinancialProfileRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.ActivatePartnerFinancialProfile(r.Context(), s.db, postgres.ActivatePartnerFinancialProfileInput{
+		ProfileID:       r.PathValue("profileId"),
+		ExpectedVersion: expected,
+		IdempotencyKey:  idempotency,
+		CorrelationID:   correlation,
+		ActorID:         strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID")),
+	})
+	if err != nil {
+		writeFinancialProfileError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, partnerFinancialProfileResponse{Profile: toPartnerFinancialProfile(result), IdempotentReplay: replayed})
+}
+
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
 	provided := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(r.Header.Get("Authorization")), "Bearer "))
 	if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.serviceToken)) != 1 {
@@ -335,6 +439,47 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cash remittance input is invalid")
 	case errors.Is(err, postgres.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payment input is invalid")
+	default:
+		log.Printf("WLT partner financial profile persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
+	}
+}
+
+func toPartnerFinancialProfile(item postgres.PartnerFinancialProfileRecord) partnerFinancialProfileJSON {
+	result := partnerFinancialProfileJSON{
+		ID:                item.ID,
+		JoiningCaseID:     item.JoiningCaseID,
+		PartnerActorID:    item.PartnerActorID,
+		Origin:            item.Origin,
+		CommissionRateBps: item.CommissionRateBps,
+		SettlementPeriod:  item.SettlementPeriod,
+		RoundingUnitMinor: item.RoundingUnitMinor,
+		State:             item.State,
+		Version:           item.Version,
+		CreatedAt:         item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
+		UpdatedAt:         item.UpdatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00"),
+	}
+	if item.ActivatedAt != nil {
+		value := item.ActivatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
+		result.ActivatedAt = &value
+	}
+	return result
+}
+
+func writeFinancialProfileError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrFinancialProfileNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "partner financial profile was not found")
+	case errors.Is(err, postgres.ErrFinancialProfileExists):
+		writeError(w, http.StatusConflict, "PROFILE_EXISTS", "partner financial profile already exists")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different financial profile facts")
+	case errors.Is(err, postgres.ErrVersionConflict):
+		writeError(w, http.StatusConflict, "VERSION_CONFLICT", "financial profile version is stale")
+	case errors.Is(err, postgres.ErrFinancialProfileState):
+		writeError(w, http.StatusConflict, "STATE_CONFLICT", "financial profile state does not allow this operation")
+	case errors.Is(err, postgres.ErrFinancialProfileInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "financial profile input is invalid")
 	default:
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
 	}

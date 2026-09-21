@@ -131,6 +131,14 @@ func nullableString(value string) string {
 	return strings.TrimSpace(value)
 }
 
+func nullableStringPointer(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
 func nullableFloatValue(value *float64) float64 {
 	if value == nil {
 		return 0
