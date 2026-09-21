@@ -136,6 +136,53 @@ type PartnerFinancialSummary struct {
 	LastEarningAt    *string `json:"lastEarningAt"`
 }
 
+type OfficialWalletDestination struct {
+	ID                            string  `json:"id"`
+	ActorType                     string  `json:"actorType"`
+	ActorID                       string  `json:"actorId"`
+	ProviderKey                   string  `json:"providerKey"`
+	WalletIdentifierMasked        string  `json:"walletIdentifierMasked"`
+	BeneficiaryName               string  `json:"beneficiaryName"`
+	VerificationStatus            string  `json:"verificationStatus"`
+	Status                        string  `json:"status"`
+	Version                       int     `json:"version"`
+	ChangeReason                  string  `json:"changeReason"`
+	SubmittedBy                   string  `json:"submittedBy"`
+	SubmittedAt                   string  `json:"submittedAt"`
+	VerifiedBy                    *string `json:"verifiedBy"`
+	VerifiedAt                    *string `json:"verifiedAt"`
+	ApprovedBy                    *string `json:"approvedBy"`
+	ApprovedAt                    *string `json:"approvedAt"`
+	VerificationEvidenceReference string  `json:"verificationEvidenceReference"`
+	ChangeEvidenceReference       string  `json:"changeEvidenceReference"`
+	CreatedAt                     string  `json:"createdAt"`
+	UpdatedAt                     string  `json:"updatedAt"`
+}
+
+type PayoutRequest struct {
+	ID                   string `json:"id"`
+	ActorType            string `json:"actorType"`
+	ActorID              string `json:"actorId"`
+	AmountMode           string `json:"amountMode"`
+	RequestedAmountMinor *int64 `json:"requestedAmountMinor"`
+	ResolvedAmountMinor  int64  `json:"resolvedAmountMinor"`
+	Currency             string `json:"currency"`
+	DestinationID        string `json:"destinationId"`
+	DestinationVersion   int    `json:"destinationVersion"`
+	Status               string `json:"status"`
+	PolicyVersion        string `json:"policyVersion"`
+	CreatedAt            string `json:"createdAt"`
+}
+
+type PartnerPayoutState struct {
+	PartnerActorID         string                     `json:"partnerActorId"`
+	Currency               string                     `json:"currency"`
+	EligibleAvailableMinor int64                      `json:"eligibleAvailableMinor"`
+	HeldMinor              int64                      `json:"heldMinor"`
+	Destination            *OfficialWalletDestination `json:"destination"`
+	LatestPayout           *PayoutRequest             `json:"latestPayout"`
+}
+
 type DeliveryFeePolicy struct {
 	ID                     string  `json:"id"`
 	ServiceCityID          string  `json:"serviceCityId"`
@@ -191,6 +238,20 @@ type partnerOrderEarningResponse struct {
 
 type partnerFinancialSummaryResponse struct {
 	Summary PartnerFinancialSummary `json:"summary"`
+}
+
+type officialWalletDestinationResponse struct {
+	Destination      OfficialWalletDestination `json:"destination"`
+	IdempotentReplay bool                      `json:"idempotentReplay"`
+}
+
+type payoutRequestResponse struct {
+	Payout           PayoutRequest `json:"payout"`
+	IdempotentReplay bool          `json:"idempotentReplay"`
+}
+
+type partnerPayoutStateResponse struct {
+	State PartnerPayoutState `json:"state"`
 }
 
 type deliveryFeePolicyResponse struct {
@@ -421,6 +482,48 @@ func (c *Client) ReadPartnerFinancialSummary(ctx context.Context, partnerActorID
 	var response partnerFinancialSummaryResponse
 	err := c.request(ctx, http.MethodGet, "/wlt/v1/partners/"+url.PathEscape(strings.TrimSpace(partnerActorID))+"/financial-summary", nil, "", "", 0, &response)
 	return response.Summary, err
+}
+
+func (c *Client) CreateOfficialWalletDestination(ctx context.Context, destination OfficialWalletDestination, walletIdentifier, changeReason, verificationEvidenceReference, changeEvidenceReference, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, bool, error) {
+	body := map[string]any{"actorType": strings.TrimSpace(destination.ActorType), "actorId": strings.TrimSpace(destination.ActorID), "providerKey": strings.TrimSpace(destination.ProviderKey), "walletIdentifier": strings.TrimSpace(walletIdentifier), "beneficiaryName": strings.TrimSpace(destination.BeneficiaryName), "changeReason": strings.TrimSpace(changeReason), "verificationEvidenceReference": strings.TrimSpace(verificationEvidenceReference), "changeEvidenceReference": strings.TrimSpace(changeEvidenceReference)}
+	var response officialWalletDestinationResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/official-wallet-destinations", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Destination, response.IdempotentReplay, err
+}
+
+func (c *Client) VerifyOfficialWalletDestination(ctx context.Context, destinationID, evidenceReference, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, error) {
+	var response officialWalletDestinationResponse
+	body := map[string]any{"evidenceReference": strings.TrimSpace(evidenceReference)}
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/official-wallet-destinations/"+url.PathEscape(strings.TrimSpace(destinationID))+"/verify", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Destination, err
+}
+
+func (c *Client) ActivateOfficialWalletDestination(ctx context.Context, destinationID, idempotencyKey, correlationID, actingActorID string) (OfficialWalletDestination, error) {
+	var response officialWalletDestinationResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/official-wallet-destinations/"+url.PathEscape(strings.TrimSpace(destinationID))+"/activate", map[string]any{}, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Destination, err
+}
+
+func (c *Client) ReadOfficialWalletDestination(ctx context.Context, actorType, actorID string) (OfficialWalletDestination, error) {
+	var response officialWalletDestinationResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/official-wallet-destinations/"+url.PathEscape(strings.TrimSpace(actorType))+"/"+url.PathEscape(strings.TrimSpace(actorID)), nil, "", "", 0, &response)
+	return response.Destination, err
+}
+
+func (c *Client) CreatePayoutIntent(ctx context.Context, actorType, actorID, amountMode string, amountMinor *int64, idempotencyKey, correlationID string) (PayoutRequest, bool, error) {
+	body := map[string]any{"actorType": strings.TrimSpace(actorType), "actorId": strings.TrimSpace(actorID), "amountMode": strings.TrimSpace(amountMode)}
+	if amountMinor != nil {
+		body["amountMinor"] = *amountMinor
+	}
+	var response payoutRequestResponse
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/payout-intents", body, idempotencyKey, correlationID, 0, &response)
+	return response.Payout, response.IdempotentReplay, err
+}
+
+func (c *Client) ReadPartnerPayoutState(ctx context.Context, partnerActorID string) (PartnerPayoutState, error) {
+	var response partnerPayoutStateResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/partners/"+url.PathEscape(strings.TrimSpace(partnerActorID))+"/payout-state", nil, "", "", 0, &response)
+	return response.State, err
 }
 
 func (c *Client) QuoteDeliveryFee(ctx context.Context, input DeliveryFeeQuoteInput) (DeliveryFeeQuote, error) {

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
 	"os"
 	"path/filepath"
@@ -22,7 +24,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	server, err := transporthttp.New(database, os.Getenv("WLT_DSH_SERVICE_TOKEN"))
+	destinationKey := strings.TrimSpace(os.Getenv("WLT_DESTINATION_ENCRYPTION_KEY"))
+	if destinationKey == "" && strings.EqualFold(strings.TrimSpace(os.Getenv("BTHWANI_ENV")), "development") {
+		digest := sha256.Sum256([]byte("wlt-official-wallet-destination:" + os.Getenv("WLT_DSH_SERVICE_TOKEN")))
+		destinationKey = hex.EncodeToString(digest[:])
+	}
+	server, err := transporthttp.New(database, os.Getenv("WLT_DSH_SERVICE_TOKEN"), destinationKey)
 	if err != nil {
 		log.Fatal(err)
 	}

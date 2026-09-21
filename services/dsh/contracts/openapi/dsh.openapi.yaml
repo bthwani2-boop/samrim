@@ -228,6 +228,24 @@ paths:
   /dsh/operator/partners/{partnerActorId}/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
 
+  /dsh/partners/me/payout-state:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1payout-state"
+
+  /dsh/operator/partners/{partnerActorId}/payout-state:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1payout-state"
+
+  /dsh/partners/me/payout-intents:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1payout-intents"
+
+  /dsh/operator/partners/{partnerActorId}/official-wallet-destination:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1official-wallet-destination"
+
+  /dsh/operator/partners/{partnerActorId}/official-wallet-destination/{destinationId}/verify:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1official-wallet-destination~1{destinationId}~1verify"
+
+  /dsh/operator/partners/{partnerActorId}/official-wallet-destination/{destinationId}/activate:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1official-wallet-destination~1{destinationId}~1activate"
+
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
 
@@ -3603,6 +3621,135 @@ components:
       properties:
         summary:
           $ref: "#/components/schemas/PartnerFinancialSummary"
+
+    OfficialWalletDestination:
+      type: object
+      additionalProperties: false
+      required: [id, actorType, actorId, providerKey, walletIdentifierMasked, beneficiaryName, verificationStatus, status, version, changeReason, submittedBy, submittedAt, verifiedBy, verifiedAt, approvedBy, approvedAt, verificationEvidenceReference, changeEvidenceReference, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        actorType:
+          type: string
+          enum: [partner]
+        actorId:
+          type: string
+        providerKey:
+          type: string
+        walletIdentifierMasked:
+          type: string
+        beneficiaryName:
+          type: string
+        verificationStatus:
+          type: string
+          enum: [PENDING_VERIFICATION, VERIFIED, REJECTED]
+        status:
+          type: string
+          enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED]
+        version:
+          type: integer
+          minimum: 1
+        changeReason:
+          type: string
+        submittedBy:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        verifiedBy:
+          type: string
+          nullable: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        approvedBy:
+          type: string
+          nullable: true
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        verificationEvidenceReference:
+          type: string
+        changeEvidenceReference:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PayoutRequest:
+      type: object
+      additionalProperties: false
+      required: [id, actorType, actorId, amountMode, requestedAmountMinor, resolvedAmountMinor, currency, destinationId, destinationVersion, status, policyVersion, createdAt]
+      properties:
+        id:
+          type: string
+        actorType:
+          type: string
+          enum: [partner]
+        actorId:
+          type: string
+        amountMode:
+          type: string
+          enum: [FULL_AVAILABLE, SPECIFIED]
+        requestedAmountMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+        resolvedAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        destinationId:
+          type: string
+        destinationVersion:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [HELD, CANCELLED, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION]
+        policyVersion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PartnerPayoutState:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, currency, eligibleAvailableMinor, heldMinor, destination, latestPayout]
+      properties:
+        partnerActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        eligibleAvailableMinor:
+          type: integer
+          minimum: 0
+        heldMinor:
+          type: integer
+          minimum: 0
+        destination:
+          $ref: "#/components/schemas/OfficialWalletDestination"
+          nullable: true
+        latestPayout:
+          $ref: "#/components/schemas/PayoutRequest"
+          nullable: true
+
+    PartnerPayoutStateResponse:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state:
+          $ref: "#/components/schemas/PartnerPayoutState"
 
     Order:
       type: object

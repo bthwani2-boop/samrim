@@ -36,7 +36,7 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-  const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set();
+  const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -127,6 +127,15 @@ function cleanup() {
     sql(`DELETE FROM dsh.commerce_order_line_attribute_snapshots WHERE order_line_id IN (SELECT id FROM dsh.commerce_order_lines WHERE order_id='${value}')`);
     sql(`DELETE FROM dsh.commerce_order_lines WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_orders WHERE id='${value}'`);
+  }
+  for (const payoutID of payoutIDs) {
+    const value = sqlLiteral(payoutID);
+    sql(`DELETE FROM wlt.payout_holds WHERE payout_id='${value}'`);
+    sql(`DELETE FROM wlt.payout_requests WHERE id='${value}'`);
+  }
+  for (const destinationID of destinationIDs) {
+    sql(`DELETE FROM wlt.official_wallet_destination_transitions WHERE destination_id='${sqlLiteral(destinationID)}'`);
+    sql(`DELETE FROM wlt.official_wallet_destinations WHERE id='${sqlLiteral(destinationID)}'`);
   }
   for (const paymentIntentID of paymentIntentIDs) {
     const value = sqlLiteral(paymentIntentID);
@@ -394,12 +403,14 @@ console.log("DSH_SCHEMA_V33=PASS");
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=2", "002_cash_remittances.sql", "WLT cash-remittance migration is not canonical");
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=3", "003_partner_financial_profiles.sql", "WLT partner financial profile migration is not canonical");
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=6", "006_partner_order_earnings_ledger.sql", "WLT partner order earnings ledger migration is not canonical");
+expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=7", "007_official_wallet_destinations_and_payout_intents.sql", "WLT official-wallet destination and payout migration is not canonical");
 expectSQL("SELECT to_regclass('wlt.ledger_transactions') IS NOT NULL AND to_regclass('wlt.ledger_entries') IS NOT NULL AND to_regclass('wlt.partner_order_earnings') IS NOT NULL", "t", "WLT partner order earnings ledger relations are missing");
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=4", "004_payment_allocations.sql", "WLT payment allocation migration is not canonical");
 expectSQL("SELECT to_regclass('wlt.payment_allocations') IS NOT NULL AND to_regclass('wlt.payment_allocation_events') IS NOT NULL", "t", "WLT payment allocation relations are missing");
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=5", "005_delivery_fee_policies.sql", "WLT delivery-fee policy migration is not canonical");
 expectSQL("SELECT to_regclass('wlt.delivery_fee_policies') IS NOT NULL AND to_regclass('wlt.delivery_fee_policy_events') IS NOT NULL", "t", "WLT delivery-fee policy relations are missing");
-console.log("WLT_SCHEMA_V6=PASS");
+expectSQL("SELECT to_regclass('wlt.official_wallet_destinations') IS NOT NULL AND to_regclass('wlt.official_wallet_destination_transitions') IS NOT NULL AND to_regclass('wlt.payout_requests') IS NOT NULL AND to_regclass('wlt.payout_holds') IS NOT NULL", "t", "WLT official-wallet destination and payout relations are missing");
+console.log("WLT_SCHEMA_V7=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -1009,6 +1020,30 @@ if (verifiedDeliveryProof.status !== 200 || verifiedDeliveryProof.body?.state !=
 if (inventoryAtZero.status !== 200 || inventoryAtZero.body?.offer?.inventoryOnHandBaseUnits !== 0 || inventoryPublicEmpty.status !== 404 || inventoryRestored.status !== 200 || inventoryRestored.body?.offer?.inventoryOnHandBaseUnits !== 8 || inventoryPublicRestored.status !== 200) fail("quantity inventory delivery consumption or customer visibility fail-closed lifecycle failed", JSON.stringify({ inventoryAtZero, inventoryPublicEmpty, inventoryRestored, inventoryPublicRestored }));
 console.log("DSH_QUANTITY_INVENTORY=PASS");
 console.log("WLT_PARTNER_ORDER_EARNING=PASS");
+const destinationWalletIdentifier = `96777000${crypto.randomInt(1000, 9999)}`;
+const destinationCreate = await request(dshBase, "POST", `/dsh/operator/partners/${encodeURIComponent(first.actorID)}/official-wallet-destination`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-${suffix}`), body: { providerKey: "official_wallet", walletIdentifier: destinationWalletIdentifier, beneficiaryName: "Catalog Runtime A business", changeReason: "runtime proof destination", verificationEvidenceReference: `destination-proof-${suffix}`, changeEvidenceReference: `destination-proof-${suffix}` } });
+const destinationID = String(destinationCreate.body?.destination?.id || "");
+if (destinationID) destinationIDs.add(destinationID);
+const destinationVerify = await request(dshBase, "POST", `/dsh/operator/partners/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/verify`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-verify-${suffix}`), body: { evidenceReference: `destination-proof-verified-${suffix}` } });
+const destinationVerifyReplay = await request(dshBase, "POST", `/dsh/operator/partners/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/verify`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-verify-${suffix}`), body: { evidenceReference: `destination-proof-verified-${suffix}` } });
+const destinationActivate = await request(dshBase, "POST", `/dsh/operator/partners/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-activate-${suffix}`), body: {} });
+const destinationActivateReplay = await request(dshBase, "POST", `/dsh/operator/partners/${encodeURIComponent(first.actorID)}/official-wallet-destination/${encodeURIComponent(destinationID)}/activate`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `partner-destination-activate-${suffix}`), body: {} });
+const ownPayoutStateBefore = await request(dshBase, "GET", "/dsh/partners/me/payout-state", { token: first.accessToken });
+const payoutOversized = await request(dshBase, "POST", "/dsh/partners/me/payout-intents", { token: first.accessToken, headers: partnerHeaders(`partner-payout-over-${suffix}`), body: { amountMode: "SPECIFIED", amountMinor: 4000 } });
+const payoutSpecifiedKey = `partner-payout-specified-${suffix}`;
+const payoutSpecified = await request(dshBase, "POST", "/dsh/partners/me/payout-intents", { token: first.accessToken, headers: partnerHeaders(payoutSpecifiedKey), body: { amountMode: "SPECIFIED", amountMinor: 1000 } });
+const payoutSpecifiedID = String(payoutSpecified.body?.payout?.id || "");
+if (payoutSpecifiedID) payoutIDs.add(payoutSpecifiedID);
+const payoutSpecifiedReplay = await request(dshBase, "POST", "/dsh/partners/me/payout-intents", { token: first.accessToken, headers: partnerHeaders(payoutSpecifiedKey), body: { amountMode: "SPECIFIED", amountMinor: 1000 } });
+const ownPayoutStateAfterSpecified = await request(dshBase, "GET", "/dsh/partners/me/payout-state", { token: first.accessToken });
+const payoutFull = await request(dshBase, "POST", "/dsh/partners/me/payout-intents", { token: first.accessToken, headers: partnerHeaders(`partner-payout-full-${suffix}`), body: { amountMode: "FULL_AVAILABLE" } });
+const payoutFullID = String(payoutFull.body?.payout?.id || "");
+if (payoutFullID) payoutIDs.add(payoutFullID);
+const ownPayoutStateAfterFull = await request(dshBase, "GET", "/dsh/partners/me/payout-state", { token: first.accessToken });
+const operatorDestinationRead = await request(dshBase, "GET", `/dsh/operator/partners/${encodeURIComponent(first.actorID)}/official-wallet-destination`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const operatorPayoutState = await request(dshBase, "GET", `/dsh/operator/partners/${encodeURIComponent(first.actorID)}/payout-state`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (destinationCreate.status !== 201 || destinationCreate.body?.destination?.actorId !== first.actorID || destinationCreate.body.destination.status !== "CANDIDATE" || destinationCreate.body.destination.verificationStatus !== "PENDING_VERIFICATION" || destinationCreate.body.destination.walletIdentifierMasked === destinationWalletIdentifier || destinationVerify.status !== 200 || destinationVerify.body?.destination?.status !== "PENDING_APPROVAL" || destinationVerify.body.destination.verificationStatus !== "VERIFIED" || destinationVerifyReplay.status !== 200 || destinationVerifyReplay.body?.destination?.status !== "PENDING_APPROVAL" || destinationActivate.status !== 200 || destinationActivate.body?.destination?.status !== "ACTIVE_FOR_PAYOUT" || destinationActivate.body.destination.verificationStatus !== "VERIFIED" || destinationActivateReplay.status !== 200 || destinationActivateReplay.body?.destination?.status !== "ACTIVE_FOR_PAYOUT" || ownPayoutStateBefore.status !== 200 || ownPayoutStateBefore.body?.state?.eligibleAvailableMinor !== 3550 || ownPayoutStateBefore.body.state.heldMinor !== 0 || ownPayoutStateBefore.body.state.destination?.status !== "ACTIVE_FOR_PAYOUT" || payoutOversized.status !== 409 || payoutOversized.body?.error?.code !== "AMOUNT_EXCEEDS_ELIGIBLE_FUNDS" || payoutSpecified.status !== 201 || payoutSpecified.body?.payout?.status !== "HELD" || payoutSpecified.body.payout.resolvedAmountMinor !== 1000 || payoutSpecified.body.payout.destinationVersion !== 1 || payoutSpecifiedReplay.status !== 200 || payoutSpecifiedReplay.body?.idempotentReplay !== true || payoutSpecifiedReplay.body.payout.id !== payoutSpecifiedID || ownPayoutStateAfterSpecified.status !== 200 || ownPayoutStateAfterSpecified.body?.state?.eligibleAvailableMinor !== 2550 || ownPayoutStateAfterSpecified.body.state.heldMinor !== 1000 || payoutFull.status !== 201 || payoutFull.body?.payout?.status !== "HELD" || payoutFull.body.payout.amountMode !== "FULL_AVAILABLE" || payoutFull.body.payout.resolvedAmountMinor !== 2550 || ownPayoutStateAfterFull.status !== 200 || ownPayoutStateAfterFull.body?.state?.eligibleAvailableMinor !== 0 || ownPayoutStateAfterFull.body.state.heldMinor !== 3550 || ownPayoutStateAfterFull.body.state.latestPayout?.resolvedAmountMinor !== 2550 || operatorDestinationRead.status !== 200 || operatorDestinationRead.body?.destination?.id !== destinationID || operatorPayoutState.status !== 200 || operatorPayoutState.body?.state?.eligibleAvailableMinor !== 0 || operatorPayoutState.body.state.heldMinor !== 3550) fail("Finance-managed official-wallet destination, server-resolved payout intent, hold, and idempotency journey failed", JSON.stringify({ destinationCreate, destinationVerify, destinationVerifyReplay, destinationActivate, destinationActivateReplay, ownPayoutStateBefore, payoutOversized, payoutSpecified, payoutSpecifiedReplay, ownPayoutStateAfterSpecified, payoutFull, ownPayoutStateAfterFull, operatorDestinationRead, operatorPayoutState }));
+console.log("WLT_PARTNER_PAYOUT_INTENT=PASS");
 const locationAuditCount = sql(`SELECT count(*) FROM dsh.captain_location_audit WHERE order_id='${sqlLiteral(orderID)}'`);
 const locationIdempotencyCount = sql(`SELECT count(*) FROM dsh.captain_location_mutation_idempotency WHERE order_id='${sqlLiteral(orderID)}'`);
 if (locationAuditCount !== "1" || locationIdempotencyCount !== "1") fail("Captain live-location audit/idempotency readback is incomplete", JSON.stringify({ locationAuditCount, locationIdempotencyCount }));

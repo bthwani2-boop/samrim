@@ -10,20 +10,26 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/storage/postgres"
 )
 
 type Server struct {
-	db           *sql.DB
-	serviceToken string
+	db                       *sql.DB
+	serviceToken             string
+	destinationEncryptionKey *postgres.DestinationCipher
 }
 
-func New(db *sql.DB, serviceToken string) (*Server, error) {
+func New(db *sql.DB, serviceToken, destinationEncryptionKey string) (*Server, error) {
 	if db == nil || strings.TrimSpace(serviceToken) == "" {
 		return nil, errors.New("WLT HTTP server configuration is invalid")
 	}
-	return &Server{db: db, serviceToken: strings.TrimSpace(serviceToken)}, nil
+	cipher, err := postgres.NewDestinationCipher(destinationEncryptionKey)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{db: db, serviceToken: strings.TrimSpace(serviceToken), destinationEncryptionKey: cipher}, nil
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
@@ -42,6 +48,12 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-order-earnings/finalize", s.finalizePartnerOrderEarning)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
+	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations", s.createOfficialWalletDestination)
+	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/verify", s.verifyOfficialWalletDestination)
+	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/activate", s.activateOfficialWalletDestination)
+	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/{actorType}/{actorId}", s.readOfficialWalletDestination)
+	mux.HandleFunc("POST /wlt/v1/payout-intents", s.createPayoutIntent)
+	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/payout-state", s.readPartnerPayoutState)
 }
 
 type createRequest struct {
@@ -101,6 +113,89 @@ type finalizePartnerOrderEarningRequest struct {
 	PaymentIntentID string `json:"paymentIntentId"`
 	PartnerActorID  string `json:"partnerActorId"`
 	CaptainActorID  string `json:"captainActorId"`
+}
+
+type createOfficialWalletDestinationRequest struct {
+	ActorType                     string `json:"actorType"`
+	ActorID                       string `json:"actorId"`
+	ProviderKey                   string `json:"providerKey"`
+	WalletIdentifier              string `json:"walletIdentifier"`
+	BeneficiaryName               string `json:"beneficiaryName"`
+	ChangeReason                  string `json:"changeReason"`
+	VerificationEvidenceReference string `json:"verificationEvidenceReference"`
+	ChangeEvidenceReference       string `json:"changeEvidenceReference"`
+}
+
+type transitionOfficialWalletDestinationRequest struct {
+	EvidenceReference string `json:"evidenceReference"`
+}
+
+type payoutIntentRequest struct {
+	ActorType   string `json:"actorType"`
+	ActorID     string `json:"actorId"`
+	AmountMode  string `json:"amountMode"`
+	AmountMinor *int64 `json:"amountMinor"`
+}
+
+type officialWalletDestinationResponse struct {
+	Destination      officialWalletDestinationJSON `json:"destination"`
+	IdempotentReplay bool                          `json:"idempotentReplay,omitempty"`
+}
+
+type officialWalletDestinationJSON struct {
+	ID                            string  `json:"id"`
+	ActorType                     string  `json:"actorType"`
+	ActorID                       string  `json:"actorId"`
+	ProviderKey                   string  `json:"providerKey"`
+	WalletIdentifierMasked        string  `json:"walletIdentifierMasked"`
+	BeneficiaryName               string  `json:"beneficiaryName"`
+	VerificationStatus            string  `json:"verificationStatus"`
+	Status                        string  `json:"status"`
+	Version                       int     `json:"version"`
+	ChangeReason                  string  `json:"changeReason"`
+	SubmittedBy                   string  `json:"submittedBy"`
+	SubmittedAt                   string  `json:"submittedAt"`
+	VerifiedBy                    *string `json:"verifiedBy"`
+	VerifiedAt                    *string `json:"verifiedAt"`
+	ApprovedBy                    *string `json:"approvedBy"`
+	ApprovedAt                    *string `json:"approvedAt"`
+	VerificationEvidenceReference string  `json:"verificationEvidenceReference"`
+	ChangeEvidenceReference       string  `json:"changeEvidenceReference"`
+	CreatedAt                     string  `json:"createdAt"`
+	UpdatedAt                     string  `json:"updatedAt"`
+}
+
+type payoutRequestResponse struct {
+	Payout           payoutRequestJSON `json:"payout"`
+	IdempotentReplay bool              `json:"idempotentReplay"`
+}
+
+type payoutRequestJSON struct {
+	ID                   string `json:"id"`
+	ActorType            string `json:"actorType"`
+	ActorID              string `json:"actorId"`
+	AmountMode           string `json:"amountMode"`
+	RequestedAmountMinor *int64 `json:"requestedAmountMinor"`
+	ResolvedAmountMinor  int64  `json:"resolvedAmountMinor"`
+	Currency             string `json:"currency"`
+	DestinationID        string `json:"destinationId"`
+	DestinationVersion   int    `json:"destinationVersion"`
+	Status               string `json:"status"`
+	PolicyVersion        string `json:"policyVersion"`
+	CreatedAt            string `json:"createdAt"`
+}
+
+type partnerPayoutStateResponse struct {
+	State partnerPayoutStateJSON `json:"state"`
+}
+
+type partnerPayoutStateJSON struct {
+	PartnerActorID         string                         `json:"partnerActorId"`
+	Currency               string                         `json:"currency"`
+	EligibleAvailableMinor int64                          `json:"eligibleAvailableMinor"`
+	HeldMinor              int64                          `json:"heldMinor"`
+	Destination            *officialWalletDestinationJSON `json:"destination"`
+	LatestPayout           *payoutRequestJSON             `json:"latestPayout"`
 }
 
 type partnerOrderEarningResponse struct {
@@ -589,6 +684,129 @@ func (s *Server) readPartnerFinancialSummary(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, partnerFinancialSummaryResponse{Summary: toPartnerFinancialSummary(result)})
 }
 
+func (s *Server) createOfficialWalletDestination(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input createOfficialWalletDestinationRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actor == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	result, replayed, err := postgres.CreateOfficialWalletDestination(r.Context(), s.db, s.destinationEncryptionKey, postgres.CreateOfficialWalletDestinationInput{ActorType: input.ActorType, ActorID: input.ActorID, ProviderKey: input.ProviderKey, WalletIdentifier: input.WalletIdentifier, BeneficiaryName: input.BeneficiaryName, ChangeReason: input.ChangeReason, VerificationEvidenceReference: input.VerificationEvidenceReference, ChangeEvidenceReference: input.ChangeEvidenceReference, SubmittedBy: actor, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writeDestinationError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, officialWalletDestinationResponse{Destination: toOfficialWalletDestination(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) verifyOfficialWalletDestination(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actor == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	var input transitionOfficialWalletDestinationRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := postgres.VerifyOfficialWalletDestination(r.Context(), s.db, r.PathValue("destinationId"), actor, input.EvidenceReference, idempotency, correlation)
+	if err != nil {
+		writeDestinationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, officialWalletDestinationResponse{Destination: toOfficialWalletDestination(result)})
+}
+
+func (s *Server) activateOfficialWalletDestination(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	actor := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actor == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	result, err := postgres.ActivateOfficialWalletDestination(r.Context(), s.db, r.PathValue("destinationId"), actor, idempotency, correlation)
+	if err != nil {
+		writeDestinationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, officialWalletDestinationResponse{Destination: toOfficialWalletDestination(result)})
+}
+
+func (s *Server) readOfficialWalletDestination(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadOfficialWalletDestination(r.Context(), s.db, r.PathValue("actorType"), r.PathValue("actorId"))
+	if err != nil {
+		writeDestinationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, officialWalletDestinationResponse{Destination: toOfficialWalletDestination(result)})
+}
+
+func (s *Server) createPayoutIntent(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input payoutIntentRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.CreatePayoutIntent(r.Context(), s.db, postgres.PayoutIntentInput{ActorType: input.ActorType, ActorID: input.ActorID, AmountMode: input.AmountMode, AmountMinor: input.AmountMinor, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writePayoutError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, payoutRequestResponse{Payout: toPayoutRequest(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) readPartnerPayoutState(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadPartnerPayoutState(r.Context(), s.db, r.PathValue("partnerActorId"))
+	if err != nil {
+		writePayoutError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, partnerPayoutStateResponse{State: toPartnerPayoutState(result)})
+}
+
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
 	provided := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(r.Header.Get("Authorization")), "Bearer "))
 	if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.serviceToken)) != 1 {
@@ -676,6 +894,63 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+func toOfficialWalletDestination(item postgres.OfficialWalletDestinationRecord) officialWalletDestinationJSON {
+	return officialWalletDestinationJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, ProviderKey: item.ProviderKey, WalletIdentifierMasked: item.WalletIdentifierMasked, BeneficiaryName: item.BeneficiaryName, VerificationStatus: item.VerificationStatus, Status: item.Status, Version: item.Version, ChangeReason: item.ChangeReason, SubmittedBy: item.SubmittedBy, SubmittedAt: item.SubmittedAt.UTC().Format(time.RFC3339Nano), VerifiedBy: item.VerifiedBy, VerifiedAt: formatNullableTime(item.VerifiedAt), ApprovedBy: item.ApprovedBy, ApprovedAt: formatNullableTime(item.ApprovedAt), VerificationEvidenceReference: item.VerificationEvidenceReference, ChangeEvidenceReference: item.ChangeEvidenceReference, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: item.UpdatedAt.UTC().Format(time.RFC3339Nano)}
+}
+
+func toPayoutRequest(item postgres.PayoutRequestRecord) payoutRequestJSON {
+	return payoutRequestJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, AmountMode: item.AmountMode, RequestedAmountMinor: item.RequestedAmountMinor, ResolvedAmountMinor: item.ResolvedAmountMinor, Currency: item.Currency, DestinationID: item.DestinationID, DestinationVersion: item.DestinationVersion, Status: item.Status, PolicyVersion: item.PolicyVersion, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+}
+
+func toPartnerPayoutState(item postgres.PartnerPayoutStateRecord) partnerPayoutStateJSON {
+	result := partnerPayoutStateJSON{PartnerActorID: item.PartnerActorID, Currency: item.Currency, EligibleAvailableMinor: item.EligibleAvailableMinor, HeldMinor: item.HeldMinor}
+	if item.Destination != nil {
+		destination := toOfficialWalletDestination(*item.Destination)
+		result.Destination = &destination
+	}
+	if item.LatestPayout != nil {
+		payout := toPayoutRequest(*item.LatestPayout)
+		result.LatestPayout = &payout
+	}
+	return result
+}
+
+func formatNullableTime(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.UTC().Format(time.RFC3339Nano)
+	return &formatted
+}
+
+func writeDestinationError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrDestinationNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "official wallet destination was not found")
+	case errors.Is(err, postgres.ErrDestinationState):
+		writeError(w, http.StatusConflict, "STATE_CONFLICT", "official wallet destination state does not allow this operation")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different destination facts")
+	default:
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "official wallet destination input is invalid")
+	}
+}
+
+func writePayoutError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrPayoutDestination):
+		writeError(w, http.StatusConflict, "DESTINATION_UNAVAILABLE", "a verified active official wallet destination is required")
+	case errors.Is(err, postgres.ErrPayoutNoFunds):
+		writeError(w, http.StatusConflict, "NO_ELIGIBLE_FUNDS", "no eligible funds are available for settlement")
+	case errors.Is(err, postgres.ErrPayoutAmountExceeded):
+		writeError(w, http.StatusConflict, "AMOUNT_EXCEEDS_ELIGIBLE_FUNDS", "requested amount exceeds eligible funds")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different payout facts")
+	default:
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payout intent input is invalid")
+	}
 }
 
 func writePaymentError(w http.ResponseWriter, err error) {

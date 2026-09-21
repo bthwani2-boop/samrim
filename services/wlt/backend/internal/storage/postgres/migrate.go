@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 6
+const SchemaVersion = 7
 
 type MigrationRecord struct {
 	Version int
@@ -42,7 +42,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if directory == "" {
 		return nil, nil, errors.New("WLT_MIGRATION_DIR is required")
 	}
-	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql", "004_payment_allocations.sql", "005_delivery_fee_policies.sql", "006_partner_order_earnings_ledger.sql"}
+	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql", "004_payment_allocations.sql", "005_delivery_fee_policies.sql", "006_partner_order_earnings_ledger.sql", "007_official_wallet_destinations_and_payout_intents.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {
@@ -139,7 +139,7 @@ func VerifySchema(ctx context.Context, db *sql.DB, records []MigrationRecord) er
 			return fmt.Errorf("WLT migration history does not match canonical v%d", record.Version)
 		}
 	}
-	for _, relation := range []string{"wlt.payment_intents", "wlt.payment_intent_events", "wlt.cash_remittances", "wlt.cash_remittance_events", "wlt.partner_financial_profiles", "wlt.partner_financial_profile_events", "wlt.payment_allocations", "wlt.payment_allocation_events", "wlt.delivery_fee_policies", "wlt.delivery_fee_policy_events", "wlt.ledger_transactions", "wlt.ledger_entries", "wlt.partner_order_earnings"} {
+	for _, relation := range []string{"wlt.payment_intents", "wlt.payment_intent_events", "wlt.cash_remittances", "wlt.cash_remittance_events", "wlt.partner_financial_profiles", "wlt.partner_financial_profile_events", "wlt.payment_allocations", "wlt.payment_allocation_events", "wlt.delivery_fee_policies", "wlt.delivery_fee_policy_events", "wlt.ledger_transactions", "wlt.ledger_entries", "wlt.partner_order_earnings", "wlt.official_wallet_destinations", "wlt.official_wallet_destination_transitions", "wlt.payout_requests", "wlt.payout_holds"} {
 		var exists bool
 		if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", relation).Scan(&exists); err != nil {
 			return fmt.Errorf("WLT relation check %s: %w", relation, err)

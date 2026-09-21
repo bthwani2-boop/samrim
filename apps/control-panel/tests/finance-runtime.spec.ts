@@ -34,3 +34,14 @@ test("@live operator reads the WLT-owned delivery-fee policy workspace", async (
   expect(policyRead.body.policy?.state).toBe("ACTIVE");
   expect(policyRead.body.policy?.roundingUnitMinor).toBe(50);
 });
+
+test("@live operator reads the WLT-managed partner settlement workspace", async ({ page }) => {
+  test.setTimeout(30_000);
+  await page.goto("/finance");
+  const workspace = page.getByRole("region", { name: "وجهة وتسوية الشريك" });
+  await expect(workspace.getByRole("heading", { name: "وجهة وتسوية الشريك" })).toBeVisible();
+  await expect(page.getByText("إدارة الوجهة الرسمية تتم من المالية فقط")).toBeVisible();
+  await workspace.getByLabel("معرّف الشريك").fill(`partner-live-read-${Date.now()}`);
+  await workspace.getByRole("button", { name: "قراءة الحالة" }).click();
+  await expect(workspace.getByText(/المتاح:.*YER/)).toBeVisible();
+});
