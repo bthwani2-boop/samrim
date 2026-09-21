@@ -1,26 +1,25 @@
 import { createHash, randomUUID } from "node:crypto";
-import { cookies } from "next/headers";
-
 import {
-  createIdentityClient,
-  createIdentityInternalClient,
-  identityAuthorizesSurface,
-  isIdentityClientError,
-  type ActorType,
   type ActorIdentity,
   type ActorRoleView,
-  type Challenge,
-  type PasskeyOptions,
-  type WebAuthnJSON,
-  type OperatorPasskeyRegistrationResponse,
-  type IdentityClientError,
-  type OperatorEnrollmentToken,
+  type ActorType,
   type AttributedMutationContext,
-  type VersionedMutationContext,
+  type Challenge,
   type ControlPanelRole,
+  createIdentityClient,
+  createIdentityInternalClient,
+  type IdentityClientError,
+  identityAuthorizesSurface,
+  isIdentityClientError,
+  type OperatorEnrollmentToken,
+  type OperatorPasskeyRegistrationResponse,
+  type PasskeyOptions,
   type TokenPair,
+  type VersionedMutationContext,
   validateServiceUrl,
+  type WebAuthnJSON,
 } from "@bthwani/identity";
+import { cookies } from "next/headers";
 
 const cookiePrefix = process.env.NODE_ENV === "production" ? "__Host-" : "";
 const accessCookie = `${cookiePrefix}bt_identity_access`;
@@ -33,8 +32,8 @@ type DevelopmentGlobal = typeof globalThis & {
 };
 const developmentGlobal = globalThis as DevelopmentGlobal;
 const developmentOperatorLogoutSuppressions =
-  developmentGlobal.__bthwaniDevelopmentOperatorLogoutSuppressions ??
-  (developmentGlobal.__bthwaniDevelopmentOperatorLogoutSuppressions = new Set<string>());
+  developmentGlobal.__bthwaniDevelopmentOperatorLogoutSuppressions ?? new Set<string>();
+developmentGlobal.__bthwaniDevelopmentOperatorLogoutSuppressions = developmentOperatorLogoutSuppressions;
 
 function identityBaseUrl(): string {
   const explicit = process.env.IDENTITY_API_BASE_URL?.trim();
