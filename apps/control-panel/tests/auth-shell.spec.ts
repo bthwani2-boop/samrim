@@ -316,7 +316,7 @@ test("operator finance reads only the bounded COD cash-custody projection", asyn
   await expect(page.getByRole("heading", { name: "المالية" })).toBeVisible();
   await expect(page.getByText("12,500 ريال يمني").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "النقد المحصل عند الاستلام" })).toBeVisible();
-  await expect(page.getByText("لا توجد هنا تسوية للتجار أو عمولات أو استردادات أو وسائل دفع إلكترونية.")).toBeVisible();
+  await expect(page.getByText("طلبات التسوية والوجهات الرسمية تظهر في مساحة التسوية الموحدة أدناه.")).toBeVisible();
   await expect(page.getByText("dsh-order-1")).toBeVisible();
 });
 

@@ -208,8 +208,9 @@ type PayoutRequest struct {
 	CreatedAt            string `json:"createdAt"`
 }
 
-type PartnerPayoutState struct {
-	PartnerActorID         string                     `json:"partnerActorId"`
+type PayoutState struct {
+	ActorType              string                     `json:"actorType"`
+	ActorID                string                     `json:"actorId"`
 	Currency               string                     `json:"currency"`
 	EligibleAvailableMinor int64                      `json:"eligibleAvailableMinor"`
 	HeldMinor              int64                      `json:"heldMinor"`
@@ -298,8 +299,8 @@ type payoutRequestResponse struct {
 	IdempotentReplay bool          `json:"idempotentReplay"`
 }
 
-type partnerPayoutStateResponse struct {
-	State PartnerPayoutState `json:"state"`
+type payoutStateResponse struct {
+	State PayoutState `json:"state"`
 }
 
 type deliveryFeePolicyResponse struct {
@@ -594,9 +595,10 @@ func (c *Client) CreatePayoutIntent(ctx context.Context, actorType, actorID, amo
 	return response.Payout, response.IdempotentReplay, err
 }
 
-func (c *Client) ReadPartnerPayoutState(ctx context.Context, partnerActorID string) (PartnerPayoutState, error) {
-	var response partnerPayoutStateResponse
-	err := c.request(ctx, http.MethodGet, "/wlt/v1/partners/"+url.PathEscape(strings.TrimSpace(partnerActorID))+"/payout-state", nil, "", "", 0, &response)
+func (c *Client) ReadPayoutState(ctx context.Context, actorType, actorID string) (PayoutState, error) {
+	var response payoutStateResponse
+	path := "/wlt/v1/payout-state/" + url.PathEscape(strings.ToLower(strings.TrimSpace(actorType))) + "/" + url.PathEscape(strings.TrimSpace(actorID))
+	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
 	return response.State, err
 }
 

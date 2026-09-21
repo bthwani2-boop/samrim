@@ -52,7 +52,7 @@ export function CashCustodyWorkspace() {
 
       <div className="finance-boundary-note" role="note">
         <strong>حدود هذه المساحة</strong>
-        <p>البيانات مصدرها WLT، والقراءة تخص حفظ النقد فقط. لا توجد هنا تسوية للتجار أو عمولات أو استردادات أو وسائل دفع إلكترونية.</p>
+        <p>البيانات مصدرها WLT، والقراءة هنا تخص حفظ النقد فقط. طلبات التسوية والوجهات الرسمية تظهر في مساحة التسوية الموحدة أدناه.</p>
       </div>
 
       <div className="finance-toolbar">

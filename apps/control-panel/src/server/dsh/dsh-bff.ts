@@ -1,5 +1,5 @@
 import { validateServiceUrl } from "@bthwani/identity";
-import { type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogImportCommitResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type ReviewCatalogProductProposalRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ReplaceCatalogProductMediaRequest, type ManagedRoleMutationRequest, type CashLiabilityResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type CreateDeliveryFeePolicyRequest, type DeliveryFeePolicyResponse, type OfficialWalletDestination, type PartnerFinancialSummaryResponse, type PartnerPayoutStateResponse, dshOperationPaths } from "@bthwani/dsh";
+import { type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogImportCommitResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type ReviewCatalogProductProposalRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ReplaceCatalogProductMediaRequest, type ManagedRoleMutationRequest, type CashLiabilityResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type CreateDeliveryFeePolicyRequest, type DeliveryFeePolicyResponse, type OfficialWalletDestination, type PartnerFinancialSummaryResponse, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -200,37 +200,39 @@ export async function readOperatorPartnerFinancialSummary(partnerActorId: string
   return (await requestDshJson<PartnerFinancialSummaryResponse>(dshOperationPaths.readOperatorPartnerFinancialSummary.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-type OperatorPartnerDestinationResponse = Readonly<{ destination: OfficialWalletDestination; idempotentReplay?: boolean }>;
-export async function readOperatorPartnerPayoutState(partnerActorId: string, context: DshOperatorReadContext): Promise<PartnerPayoutStateResponse> {
-  if (!partnerActorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_PARTNER_PAYOUT_STATE_INPUT_INVALID");
-  const path = `/dsh/operator/partners/${encodeURIComponent(partnerActorId.trim())}/payout-state`;
-  return (await requestDshJson<PartnerPayoutStateResponse>("GET", path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+type BeneficiaryActorType = "partner" | "captain" | "field";
+type OperatorDestinationResponse = Readonly<{ destination: OfficialWalletDestination; idempotentReplay?: boolean }>;
+export async function readOperatorPayoutState(actorType: BeneficiaryActorType, actorId: string, context: DshOperatorReadContext): Promise<BeneficiaryPayoutStateResponse> {
+  if (!("partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_PAYOUT_STATE_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorPayoutState.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim()));
+  return (await requestDshJson<BeneficiaryPayoutStateResponse>(dshOperationPaths.readOperatorPayoutState.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function readOperatorPartnerDestination(partnerActorId: string, context: DshOperatorReadContext): Promise<OperatorPartnerDestinationResponse> {
-  if (!partnerActorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_PARTNER_DESTINATION_INPUT_INVALID");
-  const path = dshOperationPaths.readOperatorPartnerWalletDestination.path.replace("{partnerActorId}", encodeURIComponent(partnerActorId.trim()));
-  return (await requestDshJson<OperatorPartnerDestinationResponse>("GET", path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+export async function readOperatorDestination(actorType: BeneficiaryActorType, actorId: string, context: DshOperatorReadContext): Promise<OperatorDestinationResponse> {
+  if (!("partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !context.operatorActorId.trim()) throw new Error("DSH_DESTINATION_INPUT_INVALID");
+  const path = dshOperationPaths.readOperatorOfficialWalletDestination.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim()));
+  return (await requestDshJson<OperatorDestinationResponse>(dshOperationPaths.readOperatorOfficialWalletDestination.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
 }
 
-export async function createOperatorPartnerDestination(partnerActorId: string, input: Readonly<{ providerKey: string; walletIdentifier: string; beneficiaryName: string; changeReason: string; verificationEvidenceReference: string; changeEvidenceReference: string }>, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: OperatorPartnerDestinationResponse }>> {
-  if (!partnerActorId.trim() || !input.providerKey.trim() || !input.walletIdentifier.trim() || !input.beneficiaryName.trim() || !input.changeReason.trim() || !input.verificationEvidenceReference.trim() || !input.changeEvidenceReference.trim()) throw new Error("DSH_PARTNER_DESTINATION_INPUT_INVALID");
+export async function createOperatorDestination(actorType: BeneficiaryActorType, actorId: string, input: Readonly<{ providerKey: string; walletIdentifier: string; beneficiaryName: string; changeReason: string; verificationEvidenceReference: string; changeEvidenceReference: string }>, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: OperatorDestinationResponse }>> {
+  if (!("partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !input.providerKey.trim() || !input.walletIdentifier.trim() || !input.beneficiaryName.trim() || !input.changeReason.trim() || !input.verificationEvidenceReference.trim() || !input.changeEvidenceReference.trim()) throw new Error("DSH_DESTINATION_INPUT_INVALID");
   validateAttributedMutationContext(context);
-  return requestDshJson<OperatorPartnerDestinationResponse>("POST", dshOperationPaths.createOperatorPartnerWalletDestination.path.replace("{partnerActorId}", encodeURIComponent(partnerActorId.trim())), input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+  const path = dshOperationPaths.createOperatorOfficialWalletDestination.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim()));
+  return requestDshJson<OperatorDestinationResponse>(dshOperationPaths.createOperatorOfficialWalletDestination.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
-export async function verifyOperatorPartnerDestination(partnerActorId: string, destinationId: string, evidenceReference: string, context: JoiningCaseMutationContext): Promise<OperatorPartnerDestinationResponse> {
-  if (!partnerActorId.trim() || !destinationId.trim() || !evidenceReference.trim()) throw new Error("DSH_PARTNER_DESTINATION_INPUT_INVALID");
+export async function verifyOperatorDestination(actorType: BeneficiaryActorType, actorId: string, destinationId: string, evidenceReference: string, context: JoiningCaseMutationContext): Promise<OperatorDestinationResponse> {
+  if (!("partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !destinationId.trim() || !evidenceReference.trim()) throw new Error("DSH_DESTINATION_INPUT_INVALID");
   validateAttributedMutationContext(context);
-  const path = dshOperationPaths.verifyOperatorPartnerWalletDestination.path.replace("{partnerActorId}", encodeURIComponent(partnerActorId.trim())).replace("{destinationId}", encodeURIComponent(destinationId.trim()));
-  return (await requestDshJson<OperatorPartnerDestinationResponse>("POST", path, { evidenceReference }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+  const path = dshOperationPaths.verifyOperatorOfficialWalletDestination.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim())).replace("{destinationId}", encodeURIComponent(destinationId.trim()));
+  return (await requestDshJson<OperatorDestinationResponse>(dshOperationPaths.verifyOperatorOfficialWalletDestination.method, path, { evidenceReference }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
 }
 
-export async function activateOperatorPartnerDestination(partnerActorId: string, destinationId: string, context: JoiningCaseMutationContext): Promise<OperatorPartnerDestinationResponse> {
-  if (!partnerActorId.trim() || !destinationId.trim()) throw new Error("DSH_PARTNER_DESTINATION_INPUT_INVALID");
+export async function activateOperatorDestination(actorType: BeneficiaryActorType, actorId: string, destinationId: string, context: JoiningCaseMutationContext): Promise<OperatorDestinationResponse> {
+  if (!("partner" === actorType || "captain" === actorType || "field" === actorType) || !actorId.trim() || !destinationId.trim()) throw new Error("DSH_DESTINATION_INPUT_INVALID");
   validateAttributedMutationContext(context);
-  const path = dshOperationPaths.activateOperatorPartnerWalletDestination.path.replace("{partnerActorId}", encodeURIComponent(partnerActorId.trim())).replace("{destinationId}", encodeURIComponent(destinationId.trim()));
-  return (await requestDshJson<OperatorPartnerDestinationResponse>("POST", path, {}, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+  const path = dshOperationPaths.activateOperatorOfficialWalletDestination.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim())).replace("{destinationId}", encodeURIComponent(destinationId.trim()));
+  return (await requestDshJson<OperatorDestinationResponse>(dshOperationPaths.activateOperatorOfficialWalletDestination.method, path, {}, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
 }
 
 export async function readOperatorDeliveryFeePolicy(serviceCityId: string, context: DshOperatorReadContext): Promise<DeliveryFeePolicyResponse> {

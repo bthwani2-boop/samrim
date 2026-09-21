@@ -42,7 +42,7 @@ func (s *FieldFinanceServer) readOwnSummary(w http.ResponseWriter, r *http.Reque
 	}
 	summary, err := s.payment.ReadFieldFinancialSummary(r.Context(), identity.Subject)
 	if err != nil {
-		writeWLTPartnerFinanceError(w, err)
+		writeWLTFinanceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
@@ -63,7 +63,7 @@ func (s *FieldFinanceServer) readOperatorSummary(w http.ResponseWriter, r *http.
 	}
 	summary, err := s.payment.ReadFieldFinancialSummary(r.Context(), fieldActorID)
 	if err != nil {
-		writeWLTPartnerFinanceError(w, err)
+		writeWLTFinanceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"summary": summary})
@@ -88,7 +88,7 @@ func (s *FieldFinanceServer) createPolicy(w http.ResponseWriter, r *http.Request
 	}
 	policy, replayed, err := s.payment.CreateFieldCommissionPolicy(r.Context(), input.ScopeType, input.ScopeID, input.RewardMinor, input.RoundingUnitMinor, idempotency, correlation, acting)
 	if err != nil {
-		writeWLTPartnerFinanceError(w, err)
+		writeWLTFinanceError(w, err)
 		return
 	}
 	status := http.StatusCreated
@@ -108,7 +108,7 @@ func (s *FieldFinanceServer) readPolicy(w http.ResponseWriter, r *http.Request) 
 	}
 	policy, err := s.payment.ReadFieldCommissionPolicy(r.Context(), r.PathValue("policyId"))
 	if err != nil {
-		writeWLTPartnerFinanceError(w, err)
+		writeWLTFinanceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"policy": policy})

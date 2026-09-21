@@ -5,7 +5,7 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
   await page.goto("/finance");
   await expect(page.getByRole("heading", { name: "المالية" })).toBeVisible();
   await expect(page.getByText("التزامات نقدية محصلة ضمن الإسقاط الحالي")).toBeVisible();
-  await expect(page.getByText("لا توجد هنا تسوية للتجار أو عمولات أو استردادات أو وسائل دفع إلكترونية.")).toBeVisible();
+  await expect(page.getByText("طلبات التسوية والوجهات الرسمية تظهر في مساحة التسوية الموحدة أدناه.")).toBeVisible();
 
   const cashCustodyRead = await page.evaluate(async () => {
     const response = await fetch("/api/finance/cash-custody", { cache: "no-store" });
@@ -35,12 +35,13 @@ test("@live operator reads the WLT-owned delivery-fee policy workspace", async (
   expect(policyRead.body.policy?.roundingUnitMinor).toBe(50);
 });
 
-test("@live operator reads the WLT-managed partner settlement workspace", async ({ page }) => {
+test("@live operator reads the WLT-managed unified beneficiary settlement workspace", async ({ page }) => {
   test.setTimeout(30_000);
   await page.goto("/finance");
-  const workspace = page.getByRole("region", { name: "وجهة وتسوية الشريك" });
-  await expect(workspace.getByRole("heading", { name: "وجهة وتسوية الشريك" })).toBeVisible();
+  const workspace = page.getByRole("region", { name: "وجهة وتسوية المستفيد" });
+  await expect(workspace.getByRole("heading", { name: "وجهة وتسوية المستفيد" })).toBeVisible();
   await expect(page.getByText("إدارة الوجهة الرسمية تتم من المالية فقط")).toBeVisible();
+  await workspace.getByLabel("نوع المستفيد").selectOption("partner");
   await workspace.getByLabel("معرّف الشريك").fill(`partner-live-read-${Date.now()}`);
   await workspace.getByRole("button", { name: "قراءة الحالة" }).click();
   await expect(workspace.getByText(/المتاح:.*YER/)).toBeVisible();

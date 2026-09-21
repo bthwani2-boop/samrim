@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashLiabilityResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, NotificationListResponse, NotificationReadResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerFinancialSummaryResponse, PartnerPayoutStateResponse, PayoutRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { BeneficiaryPayoutStateResponse, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashLiabilityResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, NotificationListResponse, NotificationReadResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerFinancialSummaryResponse, PayoutRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -10,7 +10,7 @@ export type DshMobileClientOptions = Readonly<{
   cryptoRandomUUID?: () => string;
 }>;
 
-export type PartnerPayoutIntentResponse = Readonly<{ payout: PayoutRequest; idempotentReplay: boolean }>;
+export type PayoutIntentResponse = Readonly<{ payout: PayoutRequest; idempotentReplay: boolean }>;
 
 export type DshNativeMultipartUpload = (request: Readonly<{
   url: string;
@@ -161,13 +161,13 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     async readOwnFieldFinancialSummary(accessToken: string): Promise<FieldFinancialSummaryResponse> {
       return userRequest<FieldFinancialSummaryResponse>(accessToken, dshOperationPaths.readOwnFieldFinancialSummary.path, dshOperationPaths.readOwnFieldFinancialSummary.method);
     },
-    async readOwnPartnerPayoutState(accessToken: string): Promise<PartnerPayoutStateResponse> {
-      return userRequest<PartnerPayoutStateResponse>(accessToken, dshOperationPaths.readOwnPartnerPayoutState.path, dshOperationPaths.readOwnPartnerPayoutState.method);
+    async readOwnPayoutState(accessToken: string): Promise<BeneficiaryPayoutStateResponse> {
+      return userRequest<BeneficiaryPayoutStateResponse>(accessToken, dshOperationPaths.readOwnPayoutState.path, dshOperationPaths.readOwnPayoutState.method);
     },
-    async createOwnPartnerPayoutIntent(accessToken: string, amountMode: "FULL_AVAILABLE" | "SPECIFIED", amountMinor?: number): Promise<PartnerPayoutIntentResponse> {
+    async createOwnPayoutIntent(accessToken: string, amountMode: "FULL_AVAILABLE" | "SPECIFIED", amountMinor?: number): Promise<PayoutIntentResponse> {
       if (amountMode === "SPECIFIED" && (!Number.isSafeInteger(amountMinor) || (amountMinor ?? 0) <= 0)) throw new Error("DSH_PAYOUT_AMOUNT_INVALID");
       if (amountMode === "FULL_AVAILABLE" && amountMinor !== undefined) throw new Error("DSH_PAYOUT_AMOUNT_INVALID");
-      return userRequest<PartnerPayoutIntentResponse>(accessToken, dshOperationPaths.createOwnPartnerPayoutIntent.path, dshOperationPaths.createOwnPartnerPayoutIntent.method, { amountMode, ...(amountMinor === undefined ? {} : { amountMinor }) }, mutationHeaders());
+      return userRequest<PayoutIntentResponse>(accessToken, dshOperationPaths.createOwnPayoutIntent.path, dshOperationPaths.createOwnPayoutIntent.method, { amountMode, ...(amountMinor === undefined ? {} : { amountMinor }) }, mutationHeaders());
     },
     async correctAndResubmitJoiningCase(accessToken: string, caseID: string, input: CorrectJoiningCaseRequest, expectedVersion: number): Promise<JoiningCaseResponse> {
       const normalized = caseID.trim();

@@ -228,23 +228,23 @@ paths:
   /dsh/operator/partners/{partnerActorId}/financial-summary:
     $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
 
-  /dsh/partners/me/payout-state:
-    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1payout-state"
+  /dsh/me/payout-state:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-state"
 
-  /dsh/operator/partners/{partnerActorId}/payout-state:
-    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1payout-state"
+  /dsh/me/payout-intents:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-intents"
 
-  /dsh/partners/me/payout-intents:
-    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1payout-intents"
+  /dsh/operator/{actorType}/{actorId}/payout-state:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1{actorType}~1{actorId}~1payout-state"
 
-  /dsh/operator/partners/{partnerActorId}/official-wallet-destination:
-    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1official-wallet-destination"
+  /dsh/operator/{actorType}/{actorId}/official-wallet-destination:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1{actorType}~1{actorId}~1official-wallet-destination"
 
-  /dsh/operator/partners/{partnerActorId}/official-wallet-destination/{destinationId}/verify:
-    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1official-wallet-destination~1{destinationId}~1verify"
+  /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/verify:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1{actorType}~1{actorId}~1official-wallet-destination~1{destinationId}~1verify"
 
-  /dsh/operator/partners/{partnerActorId}/official-wallet-destination/{destinationId}/activate:
-    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1official-wallet-destination~1{destinationId}~1activate"
+  /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/activate:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1{actorType}~1{actorId}~1official-wallet-destination~1{destinationId}~1activate"
 
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
@@ -3709,7 +3709,7 @@ components:
           type: string
         actorType:
           type: string
-          enum: [partner]
+          enum: [partner, captain, field]
         actorId:
           type: string
         providerKey:
@@ -3768,7 +3768,7 @@ components:
           type: string
         actorType:
           type: string
-          enum: [partner]
+          enum: [partner, captain, field]
         actorId:
           type: string
         amountMode:
@@ -3798,12 +3798,15 @@ components:
           type: string
           format: date-time
 
-    PartnerPayoutState:
+    BeneficiaryPayoutState:
       type: object
       additionalProperties: false
-      required: [partnerActorId, currency, eligibleAvailableMinor, heldMinor, destination, latestPayout]
+      required: [actorType, actorId, currency, eligibleAvailableMinor, heldMinor, destination, latestPayout]
       properties:
-        partnerActorId:
+        actorType:
+          type: string
+          enum: [partner, captain, field]
+        actorId:
           type: string
         currency:
           type: string
@@ -3821,13 +3824,13 @@ components:
           $ref: "#/components/schemas/PayoutRequest"
           nullable: true
 
-    PartnerPayoutStateResponse:
+    BeneficiaryPayoutStateResponse:
       type: object
       additionalProperties: false
       required: [state]
       properties:
         state:
-          $ref: "#/components/schemas/PartnerPayoutState"
+          $ref: "#/components/schemas/BeneficiaryPayoutState"
 
     Order:
       type: object

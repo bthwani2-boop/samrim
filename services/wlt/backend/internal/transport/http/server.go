@@ -57,7 +57,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/activate", s.activateOfficialWalletDestination)
 	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/{actorType}/{actorId}", s.readOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/payout-intents", s.createPayoutIntent)
-	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/payout-state", s.readPartnerPayoutState)
+	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
 }
 
 type createRequest struct {
@@ -202,12 +202,13 @@ type payoutRequestJSON struct {
 	CreatedAt            string `json:"createdAt"`
 }
 
-type partnerPayoutStateResponse struct {
-	State partnerPayoutStateJSON `json:"state"`
+type payoutStateResponse struct {
+	State payoutStateJSON `json:"state"`
 }
 
-type partnerPayoutStateJSON struct {
-	PartnerActorID         string                         `json:"partnerActorId"`
+type payoutStateJSON struct {
+	ActorType              string                         `json:"actorType"`
+	ActorID                string                         `json:"actorId"`
 	Currency               string                         `json:"currency"`
 	EligibleAvailableMinor int64                          `json:"eligibleAvailableMinor"`
 	HeldMinor              int64                          `json:"heldMinor"`
@@ -937,16 +938,16 @@ func (s *Server) createPayoutIntent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, payoutRequestResponse{Payout: toPayoutRequest(result), IdempotentReplay: replayed})
 }
 
-func (s *Server) readPartnerPayoutState(w http.ResponseWriter, r *http.Request) {
+func (s *Server) readPayoutState(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
-	result, err := postgres.ReadPartnerPayoutState(r.Context(), s.db, r.PathValue("partnerActorId"))
+	result, err := postgres.ReadPayoutState(r.Context(), s.db, r.PathValue("actorType"), r.PathValue("actorId"))
 	if err != nil {
 		writePayoutError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, partnerPayoutStateResponse{State: toPartnerPayoutState(result)})
+	writeJSON(w, http.StatusOK, payoutStateResponse{State: toPayoutState(result)})
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
@@ -1046,8 +1047,8 @@ func toPayoutRequest(item postgres.PayoutRequestRecord) payoutRequestJSON {
 	return payoutRequestJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, AmountMode: item.AmountMode, RequestedAmountMinor: item.RequestedAmountMinor, ResolvedAmountMinor: item.ResolvedAmountMinor, Currency: item.Currency, DestinationID: item.DestinationID, DestinationVersion: item.DestinationVersion, Status: item.Status, PolicyVersion: item.PolicyVersion, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
-func toPartnerPayoutState(item postgres.PartnerPayoutStateRecord) partnerPayoutStateJSON {
-	result := partnerPayoutStateJSON{PartnerActorID: item.PartnerActorID, Currency: item.Currency, EligibleAvailableMinor: item.EligibleAvailableMinor, HeldMinor: item.HeldMinor}
+func toPayoutState(item postgres.PayoutStateRecord) payoutStateJSON {
+	result := payoutStateJSON{ActorType: item.ActorType, ActorID: item.ActorID, Currency: item.Currency, EligibleAvailableMinor: item.EligibleAvailableMinor, HeldMinor: item.HeldMinor}
 	if item.Destination != nil {
 		destination := toOfficialWalletDestination(*item.Destination)
 		result.Destination = &destination

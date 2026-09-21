@@ -5,7 +5,7 @@ import { CashCustodyWorkspace } from "../../../src/features/finance/cash-custody
 import { DeliveryFeePolicyWorkspace } from "../../../src/features/finance/delivery-fee-policy-workspace";
 import { FieldCommissionPolicyWorkspace } from "../../../src/features/finance/field-commission-policy-workspace";
 import { PartnerEarningsWorkspace } from "../../../src/features/finance/partner-earnings-workspace";
-import { PartnerSettlementWorkspace } from "../../../src/features/finance/partner-settlement-workspace";
+import { BeneficiarySettlementWorkspace } from "../../../src/features/finance/beneficiary-settlement-workspace";
 
 export default function FinancePage() {
   const { state } = useSession();
@@ -24,7 +24,7 @@ export default function FinancePage() {
       <DeliveryFeePolicyWorkspace />
       <FieldCommissionPolicyWorkspace />
       <PartnerEarningsWorkspace />
-      <PartnerSettlementWorkspace />
+      <BeneficiarySettlementWorkspace />
     </section>
   );
 }
