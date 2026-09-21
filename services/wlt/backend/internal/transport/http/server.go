@@ -48,6 +48,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-order-earnings/finalize", s.finalizePartnerOrderEarning)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
+	mux.HandleFunc("POST /wlt/v1/operator/field-commission-policies", s.createFieldCommissionPolicy)
+	mux.HandleFunc("GET /wlt/v1/field-commission-policies/{policyId}", s.readFieldCommissionPolicy)
+	mux.HandleFunc("POST /wlt/v1/field-commission-earnings/finalize", s.finalizeFieldCommission)
+	mux.HandleFunc("GET /wlt/v1/fields/{fieldActorId}/financial-summary", s.readFieldFinancialSummary)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations", s.createOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/verify", s.verifyOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/operator/official-wallet-destinations/{destinationId}/activate", s.activateOfficialWalletDestination)
@@ -104,6 +108,19 @@ type preparePartnerFinancialProfileRequest struct {
 	Origin            string `json:"origin"`
 	CommissionRateBps int    `json:"commissionRateBps"`
 	SettlementPeriod  string `json:"settlementPeriod"`
+}
+
+type createFieldCommissionPolicyRequest struct {
+	ScopeType         string `json:"scopeType"`
+	ScopeID           string `json:"scopeId"`
+	RewardMinor       int64  `json:"rewardMinor"`
+	RoundingUnitMinor int64  `json:"roundingUnitMinor"`
+}
+
+type finalizeFieldCommissionRequest struct {
+	StoreID      string `json:"storeId"`
+	FieldActorID string `json:"fieldActorId"`
+	VerticalID   string `json:"verticalId"`
 }
 
 type activatePartnerFinancialProfileRequest struct{}
@@ -222,6 +239,54 @@ type partnerOrderEarningJSON struct {
 
 type partnerFinancialSummaryResponse struct {
 	Summary partnerFinancialSummaryJSON `json:"summary"`
+}
+
+type fieldCommissionPolicyResponse struct {
+	Policy           fieldCommissionPolicyJSON `json:"policy"`
+	IdempotentReplay bool                      `json:"idempotentReplay,omitempty"`
+}
+
+type fieldCommissionPolicyJSON struct {
+	ID                string  `json:"id"`
+	ScopeType         string  `json:"scopeType"`
+	ScopeID           string  `json:"scopeId"`
+	RewardMinor       int64   `json:"rewardMinor"`
+	RoundingUnitMinor int64   `json:"roundingUnitMinor"`
+	State             string  `json:"state"`
+	Version           int     `json:"version"`
+	CreatedBy         string  `json:"createdBy"`
+	CreatedAt         string  `json:"createdAt"`
+	RetiredAt         *string `json:"retiredAt"`
+}
+
+type fieldCommissionEarningResponse struct {
+	Earning          fieldCommissionEarningJSON `json:"earning"`
+	IdempotentReplay bool                       `json:"idempotentReplay"`
+}
+
+type fieldCommissionEarningJSON struct {
+	StoreID             string `json:"storeId"`
+	FieldActorID        string `json:"fieldActorId"`
+	VerticalID          string `json:"verticalId"`
+	PolicyID            string `json:"policyId"`
+	PolicyVersion       int    `json:"policyVersion"`
+	RewardMinor         int64  `json:"rewardMinor"`
+	Currency            string `json:"currency"`
+	LedgerTransactionID string `json:"ledgerTransactionId"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type fieldFinancialSummaryResponse struct {
+	Summary fieldFinancialSummaryJSON `json:"summary"`
+}
+
+type fieldFinancialSummaryJSON struct {
+	FieldActorID    string  `json:"fieldActorId"`
+	Currency        string  `json:"currency"`
+	EarnedMinor     int64   `json:"earnedMinor"`
+	CommissionMinor int64   `json:"commissionMinor"`
+	StoreCount      int64   `json:"storeCount"`
+	LastEarningAt   *string `json:"lastEarningAt"`
 }
 
 type partnerFinancialSummaryJSON struct {
@@ -684,6 +749,83 @@ func (s *Server) readPartnerFinancialSummary(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, partnerFinancialSummaryResponse{Summary: toPartnerFinancialSummary(result)})
 }
 
+func (s *Server) createFieldCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	acting := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if acting == "" || len(acting) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	var input createFieldCommissionPolicyRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.CreateFieldCommissionPolicy(r.Context(), s.db, postgres.CreateFieldCommissionPolicyInput{ScopeType: input.ScopeType, ScopeID: input.ScopeID, RewardMinor: input.RewardMinor, RoundingUnitMinor: input.RoundingUnitMinor, CreatedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writeFieldCommissionError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, fieldCommissionPolicyResponse{Policy: toFieldCommissionPolicy(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) readFieldCommissionPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadFieldCommissionPolicy(r.Context(), s.db, r.PathValue("policyId"))
+	if err != nil {
+		writeFieldCommissionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, fieldCommissionPolicyResponse{Policy: toFieldCommissionPolicy(result)})
+}
+
+func (s *Server) finalizeFieldCommission(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input finalizeFieldCommissionRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.FinalizeFieldCommission(r.Context(), s.db, postgres.FinalizeFieldCommissionInput{StoreID: input.StoreID, FieldActorID: input.FieldActorID, VerticalID: input.VerticalID, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writeFieldCommissionError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, fieldCommissionEarningResponse{Earning: toFieldCommissionEarning(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) readFieldFinancialSummary(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadFieldFinancialSummary(r.Context(), s.db, r.PathValue("fieldActorId"))
+	if err != nil {
+		writeFieldCommissionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, fieldFinancialSummaryResponse{Summary: toFieldFinancialSummary(result)})
+}
+
 func (s *Server) createOfficialWalletDestination(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
@@ -1048,6 +1190,44 @@ func toPartnerFinancialSummary(item postgres.PartnerFinancialSummaryRecord) part
 		result.LastEarningAt = &value
 	}
 	return result
+}
+
+func toFieldCommissionPolicy(item postgres.FieldCommissionPolicyRecord) fieldCommissionPolicyJSON {
+	result := fieldCommissionPolicyJSON{ID: item.ID, ScopeType: item.ScopeType, ScopeID: item.ScopeID, RewardMinor: item.RewardMinor, RoundingUnitMinor: item.RoundingUnitMinor, State: item.State, Version: item.Version, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+	if item.RetiredAt != nil {
+		value := item.RetiredAt.UTC().Format(time.RFC3339Nano)
+		result.RetiredAt = &value
+	}
+	return result
+}
+
+func toFieldCommissionEarning(item postgres.FieldCommissionEarningRecord) fieldCommissionEarningJSON {
+	return fieldCommissionEarningJSON{StoreID: item.StoreID, FieldActorID: item.FieldActorID, VerticalID: item.VerticalID, PolicyID: item.PolicyID, PolicyVersion: item.PolicyVersion, RewardMinor: item.RewardMinor, Currency: item.Currency, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+}
+
+func toFieldFinancialSummary(item postgres.FieldFinancialSummaryRecord) fieldFinancialSummaryJSON {
+	result := fieldFinancialSummaryJSON{FieldActorID: item.FieldActorID, Currency: item.Currency, EarnedMinor: item.EarnedMinor, CommissionMinor: item.CommissionMinor, StoreCount: item.StoreCount}
+	if item.LastEarningAt != nil {
+		value := item.LastEarningAt.UTC().Format(time.RFC3339Nano)
+		result.LastEarningAt = &value
+	}
+	return result
+}
+
+func writeFieldCommissionError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrFieldCommissionPolicyNotFound):
+		writeError(w, http.StatusConflict, "FIELD_COMMISSION_POLICY_NOT_FOUND", "no active Field commission policy is available")
+	case errors.Is(err, postgres.ErrFieldCommissionPolicyInvalidInput), errors.Is(err, postgres.ErrFieldCommissionEarningInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Field commission facts are invalid")
+	case errors.Is(err, postgres.ErrFieldCommissionPolicyExists), errors.Is(err, postgres.ErrFieldCommissionEarningExists):
+		writeError(w, http.StatusConflict, "FIELD_COMMISSION_EXISTS", "the Field commission already exists")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Field commission facts")
+	default:
+		log.Printf("WLT Field commission persistence error: %T %v", err, err)
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT Field commission persistence is unavailable")
+	}
 }
 
 func writePartnerEarningError(w http.ResponseWriter, err error) {

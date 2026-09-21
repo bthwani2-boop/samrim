@@ -230,6 +230,11 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, eventType, idempotencyKey, correlationID, actingActorID, storeID, store.PublicationState, updated.PublicationState, expectedVersion, updated.Version, requestHash, requestedState); err != nil {
 		return PublicationResult{}, fmt.Errorf("record store publication audit: %w", err)
 	}
+	if requestedState == "published" && store.PublicationState != "published" {
+		if err := enqueueFieldCommissionPublicationTx(ctx, tx, storeID, correlationID); err != nil {
+			return PublicationResult{}, fmt.Errorf("enqueue Field commission publication: %w", err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return PublicationResult{}, fmt.Errorf("commit store publication: %w", err)
 	}

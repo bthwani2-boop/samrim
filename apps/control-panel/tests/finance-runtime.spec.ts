@@ -45,3 +45,13 @@ test("@live operator reads the WLT-managed partner settlement workspace", async 
   await workspace.getByRole("button", { name: "قراءة الحالة" }).click();
   await expect(workspace.getByText(/المتاح:.*YER/)).toBeVisible();
 });
+
+test("@live operator sees the WLT-managed Field commission policy workspace", async ({ page }) => {
+  test.setTimeout(30_000);
+  await page.goto("/finance");
+  await expect(page.getByRole("heading", { name: "مكافأة الميداني" })).toBeVisible();
+  await expect(page.getByText("تُستحق المكافأة مرة واحدة عند ظهور المتجر في تطبيق العميل.")).toBeVisible();
+  await expect(page.getByLabel("نطاق السياسة")).toBeVisible();
+  await expect(page.getByLabel("المكافأة (ريال)")).toBeEnabled();
+  await expect(page.getByText("وحدة التقريب: 50 ريال — لا يمكن تغييرها من الواجهة.")).toBeVisible();
+});

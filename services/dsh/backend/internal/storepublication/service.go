@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	wltintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -30,13 +31,33 @@ type PublicationReadiness struct {
 type Service struct {
 	identity *identityintegration.Client
 	db       *sql.DB
+	wlt      *wltintegration.Client
 }
 
-func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
-	if identity == nil || db == nil {
+func New(identity *identityintegration.Client, db *sql.DB, wlt *wltintegration.Client) (*Service, error) {
+	if identity == nil || db == nil || wlt == nil {
 		return nil, errors.New("store publication configuration is invalid")
 	}
-	return &Service{identity: identity, db: db}, nil
+	return &Service{identity: identity, db: db, wlt: wlt}, nil
+}
+
+func (s *Service) ReconcileFieldCommissions(ctx context.Context) error {
+	items, err := postgres.ListPendingFieldCommissionPublications(ctx, s.db, 100)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if _, _, finalizeErr := s.wlt.FinalizeFieldCommission(ctx, item.StoreID, item.FieldActorID, item.VerticalID, item.IdempotencyKey, item.CorrelationID); finalizeErr != nil {
+			if markErr := postgres.MarkFieldCommissionPublicationFailure(ctx, s.db, item.ID, finalizeErr.Error()); markErr != nil {
+				return markErr
+			}
+			continue
+		}
+		if err := postgres.MarkFieldCommissionPublicationPosted(ctx, s.db, item.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) Publish(ctx context.Context, storeID, requestedState string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.PublicationResult, PublicationReadiness, error) {

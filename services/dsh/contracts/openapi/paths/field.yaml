@@ -39,6 +39,161 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/fields/me/financial-summary:
+    get:
+      operationId: readOwnFieldFinancialSummary
+      summary: Read the WLT-derived Field commission summary
+      security:
+        - userBearer: []
+      responses:
+        "200":
+          description: Field financial summary.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/FieldFinancialSummaryResponse"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/operator/fields/{fieldActorId}/financial-summary:
+    get:
+      operationId: readOperatorFieldFinancialSummary
+      summary: Read a WLT-derived Field commission summary for Finance
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: fieldActorId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Field financial summary.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/FieldFinancialSummaryResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/operator/field-commission-policies:
+    post:
+      operationId: createFieldCommissionPolicy
+      summary: Create or replace one Finance-managed Field commission policy
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [scopeType, rewardMinor, roundingUnitMinor]
+              properties:
+                scopeType:
+                  type: string
+                  enum: [DEFAULT, VERTICAL, STORE]
+                scopeId:
+                  type: string
+                  nullable: true
+                rewardMinor:
+                  type: integer
+                  minimum: 50
+                roundingUnitMinor:
+                  type: integer
+                  const: 50
+      responses:
+        "201":
+          description: Field commission policy created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [policy, idempotentReplay]
+                properties:
+                  policy:
+                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldCommissionPolicy"
+                  idempotentReplay:
+                    type: boolean
+        "200":
+          description: Idempotent policy replay.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [policy, idempotentReplay]
+                properties:
+                  policy:
+                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldCommissionPolicy"
+                  idempotentReplay:
+                    type: boolean
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/operator/field-commission-policies/{policyId}:
+    get:
+      operationId: readFieldCommissionPolicy
+      summary: Read a Finance-managed Field commission policy
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: policyId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Field commission policy.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [policy]
+                properties:
+                  policy:
+                    $ref: "../dsh.openapi.yaml#/components/schemas/FieldCommissionPolicy"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
   /dsh/fields/admissions/{admissionId}:
     get:
       operationId: readFieldAdmission

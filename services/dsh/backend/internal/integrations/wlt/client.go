@@ -136,6 +136,40 @@ type PartnerFinancialSummary struct {
 	LastEarningAt    *string `json:"lastEarningAt"`
 }
 
+type FieldCommissionPolicy struct {
+	ID                string  `json:"id"`
+	ScopeType         string  `json:"scopeType"`
+	ScopeID           string  `json:"scopeId"`
+	RewardMinor       int64   `json:"rewardMinor"`
+	RoundingUnitMinor int64   `json:"roundingUnitMinor"`
+	State             string  `json:"state"`
+	Version           int     `json:"version"`
+	CreatedBy         string  `json:"createdBy"`
+	CreatedAt         string  `json:"createdAt"`
+	RetiredAt         *string `json:"retiredAt"`
+}
+
+type FieldCommissionEarning struct {
+	StoreID             string `json:"storeId"`
+	FieldActorID        string `json:"fieldActorId"`
+	VerticalID          string `json:"verticalId"`
+	PolicyID            string `json:"policyId"`
+	PolicyVersion       int    `json:"policyVersion"`
+	RewardMinor         int64  `json:"rewardMinor"`
+	Currency            string `json:"currency"`
+	LedgerTransactionID string `json:"ledgerTransactionId"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type FieldFinancialSummary struct {
+	FieldActorID    string  `json:"fieldActorId"`
+	Currency        string  `json:"currency"`
+	EarnedMinor     int64   `json:"earnedMinor"`
+	CommissionMinor int64   `json:"commissionMinor"`
+	StoreCount      int64   `json:"storeCount"`
+	LastEarningAt   *string `json:"lastEarningAt"`
+}
+
 type OfficialWalletDestination struct {
 	ID                            string  `json:"id"`
 	ActorType                     string  `json:"actorType"`
@@ -238,6 +272,20 @@ type partnerOrderEarningResponse struct {
 
 type partnerFinancialSummaryResponse struct {
 	Summary PartnerFinancialSummary `json:"summary"`
+}
+
+type fieldCommissionPolicyResponse struct {
+	Policy           FieldCommissionPolicy `json:"policy"`
+	IdempotentReplay bool                  `json:"idempotentReplay"`
+}
+
+type fieldCommissionEarningResponse struct {
+	Earning          FieldCommissionEarning `json:"earning"`
+	IdempotentReplay bool                   `json:"idempotentReplay"`
+}
+
+type fieldFinancialSummaryResponse struct {
+	Summary FieldFinancialSummary `json:"summary"`
 }
 
 type officialWalletDestinationResponse struct {
@@ -481,6 +529,32 @@ func (c *Client) FinalizePartnerOrderEarning(ctx context.Context, orderID, payme
 func (c *Client) ReadPartnerFinancialSummary(ctx context.Context, partnerActorID string) (PartnerFinancialSummary, error) {
 	var response partnerFinancialSummaryResponse
 	err := c.request(ctx, http.MethodGet, "/wlt/v1/partners/"+url.PathEscape(strings.TrimSpace(partnerActorID))+"/financial-summary", nil, "", "", 0, &response)
+	return response.Summary, err
+}
+
+func (c *Client) CreateFieldCommissionPolicy(ctx context.Context, scopeType, scopeID string, rewardMinor, roundingUnitMinor int64, idempotencyKey, correlationID, actingActorID string) (FieldCommissionPolicy, bool, error) {
+	body := map[string]any{"scopeType": strings.TrimSpace(scopeType), "scopeId": strings.TrimSpace(scopeID), "rewardMinor": rewardMinor, "roundingUnitMinor": roundingUnitMinor}
+	var response fieldCommissionPolicyResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/field-commission-policies", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Policy, response.IdempotentReplay, err
+}
+
+func (c *Client) ReadFieldCommissionPolicy(ctx context.Context, policyID string) (FieldCommissionPolicy, error) {
+	var response fieldCommissionPolicyResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/field-commission-policies/"+url.PathEscape(strings.TrimSpace(policyID)), nil, "", "", 0, &response)
+	return response.Policy, err
+}
+
+func (c *Client) FinalizeFieldCommission(ctx context.Context, storeID, fieldActorID, verticalID, idempotencyKey, correlationID string) (FieldCommissionEarning, bool, error) {
+	body := map[string]any{"storeId": strings.TrimSpace(storeID), "fieldActorId": strings.TrimSpace(fieldActorID), "verticalId": strings.TrimSpace(verticalID)}
+	var response fieldCommissionEarningResponse
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/field-commission-earnings/finalize", body, idempotencyKey, correlationID, 0, &response)
+	return response.Earning, response.IdempotentReplay, err
+}
+
+func (c *Client) ReadFieldFinancialSummary(ctx context.Context, fieldActorID string) (FieldFinancialSummary, error) {
+	var response fieldFinancialSummaryResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/fields/"+url.PathEscape(strings.TrimSpace(fieldActorID))+"/financial-summary", nil, "", "", 0, &response)
 	return response.Summary, err
 }
 

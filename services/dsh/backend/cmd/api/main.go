@@ -51,7 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	storePublication, err := storepublication.New(identityClient, database)
+	storePublication, err := storepublication.New(identityClient, database, paymentClient)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func main() {
 		log.Printf("catalog media reconciliation deferred: %v", err)
 	}
 	cleanupCancel()
-	storePublicationServer, err := transporthttp.NewStorePublication(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	storePublicationServer, err := transporthttp.NewStorePublication(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -93,6 +93,10 @@ func main() {
 		log.Fatal(err)
 	}
 	partnerFinanceServer, err := transporthttp.NewPartnerFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fieldFinanceServer, err := transporthttp.NewFieldFinance(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), paymentClient)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -129,6 +133,7 @@ func main() {
 		serviceabilityServer.Register(mux)
 		deliveryFeeServer.Register(mux)
 		partnerFinanceServer.Register(mux)
+		fieldFinanceServer.Register(mux)
 		cartServer.Register(mux)
 		orderServer.Register(mux)
 		captainServer.Register(mux)
@@ -144,6 +149,7 @@ func main() {
 	}
 	if err := serviceruntime.RunWithRoutesAndReadinessAndWorker("dsh", "/dsh", "18080", register, readiness, func(ctx context.Context) {
 		go runFinancialProfileReconciliationLoop(ctx, time.Minute, joiningCaseServer.ReconcileFinancialProfiles)
+		go runFieldCommissionReconciliationLoop(ctx, time.Minute, storePublication.ReconcileFieldCommissions)
 		runMediaReconciliationLoop(ctx, time.Minute, catalogServer.ReconcileMediaStorage)
 	}); err != nil {
 		log.Fatal(err)

@@ -3,6 +3,7 @@
 import { useSession } from "../../../src/session/session-provider";
 import { CashCustodyWorkspace } from "../../../src/features/finance/cash-custody-workspace";
 import { DeliveryFeePolicyWorkspace } from "../../../src/features/finance/delivery-fee-policy-workspace";
+import { FieldCommissionPolicyWorkspace } from "../../../src/features/finance/field-commission-policy-workspace";
 import { PartnerEarningsWorkspace } from "../../../src/features/finance/partner-earnings-workspace";
 import { PartnerSettlementWorkspace } from "../../../src/features/finance/partner-settlement-workspace";
 
@@ -15,12 +16,13 @@ export default function FinancePage() {
   return (
     <section className="workspace-page" aria-labelledby="finance-page-title">
       <div className="workspace-page-heading">
-        <p className="eyebrow">قراءة مالية تشغيلية</p>
+        <p className="eyebrow">قراءة وسياسات مالية مملوكة لـ WLT</p>
         <h1 id="finance-page-title">المالية</h1>
-        <p className="lead">اعرض النقد المحصل عند الاستلام الذي ما زال في عهدة الكباتن. هذه القراءة لا تمثل تسوية تاجر أو عمولة أو دفعة منصة.</p>
+        <p className="lead">اعرض الحقيقة المالية المحسوبة خادميًا واضبط السياسات المسموح بها من لوحة التحكم. لا تنشئ هذه المساحة أرصدة أو عمولات أو تسويات يدوية.</p>
       </div>
       <CashCustodyWorkspace />
       <DeliveryFeePolicyWorkspace />
+      <FieldCommissionPolicyWorkspace />
       <PartnerEarningsWorkspace />
       <PartnerSettlementWorkspace />
     </section>

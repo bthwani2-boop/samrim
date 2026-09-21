@@ -11,6 +11,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storepublication"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -22,12 +23,12 @@ type StorePublicationServer struct {
 	db      *sql.DB
 }
 
-func NewStorePublication(identityClient *identity.Client, accessToken string, db *sql.DB) (*StorePublicationServer, error) {
+func NewStorePublication(identityClient *identity.Client, accessToken string, db *sql.DB, wltClient *wlt.Client) (*StorePublicationServer, error) {
 	authorizer, err := auth.NewServiceToken(accessToken)
 	if err != nil {
 		return nil, err
 	}
-	service, err := storepublication.New(identityClient, db)
+	service, err := storepublication.New(identityClient, db, wltClient)
 	if err != nil {
 		return nil, err
 	}

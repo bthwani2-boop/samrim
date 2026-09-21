@@ -36,7 +36,7 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-  const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set();
+  const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -201,6 +201,10 @@ function cleanup() {
   }
   for (const storeID of storeIDs) {
     const value = sqlLiteral(storeID);
+    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id IN (SELECT ledger_transaction_id FROM wlt.field_commission_earnings WHERE store_id='${value}')`);
+    sql(`DELETE FROM wlt.field_commission_earnings WHERE store_id='${value}'`);
+    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='STORE_CLIENT_VISIBLE' AND source_id='${value}'`);
+    sql(`DELETE FROM dsh.field_commission_publication_outbox WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.client_favorite_store_audit WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.client_favorite_store_mutation_idempotency WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.client_favorite_stores WHERE store_id='${value}'`);
@@ -217,6 +221,9 @@ function cleanup() {
     sql(`DELETE FROM dsh.store_publication_audit WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.store_publication_idempotency WHERE store_id='${value}'`);
     sql(`DELETE FROM dsh.stores WHERE id='${value}'`);
+  }
+  for (const policyID of fieldCommissionPolicyIDs) {
+    sql(`DELETE FROM wlt.field_commission_policies WHERE id='${sqlLiteral(policyID)}'`);
   }
   for (const cityID of cityIDs) {
     const value = sqlLiteral(cityID);
@@ -346,7 +353,7 @@ if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is inva
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "33", "DSH migration history is not v33");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "34", "DSH migration history is not v34");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -371,7 +378,9 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=31", "031_field_joining_writer_cutover.sql", "DSH Field joining writer cutover migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=32", "032_catalog_quantity_inventory.sql", "DSH catalog quantity inventory migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=33", "033_partner_financial_terms_binding.sql", "DSH partner financial terms migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=34", "034_field_commission_publication_outbox.sql", "DSH field commission publication outbox migration is not canonical");
   expectSQL("SELECT to_regclass('dsh.joining_case_financial_profile_outbox') IS NOT NULL", "t", "DSH financial profile outbox is missing");
+  expectSQL("SELECT to_regclass('dsh.field_commission_publication_outbox') IS NOT NULL", "t", "DSH field commission publication outbox is missing");
   expectSQL("SELECT to_regclass('wlt.partner_financial_profiles') IS NOT NULL AND to_regclass('wlt.partner_financial_profile_events') IS NOT NULL", "t", "WLT partner financial profile relations are missing");
   expectSQL("SELECT count(*) FROM pg_constraint WHERE conname IN ('catalog_store_offers_inventory_on_hand_chk','catalog_store_offers_inventory_reserved_chk','catalog_store_offers_inventory_mode_chk','commerce_order_lines_inventory_reserved_chk')", "4", "DSH quantity inventory constraints are incomplete");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_orders_state_chk'", "t", "DSH Order cancellation state is not canonical");
@@ -410,7 +419,8 @@ expectSQL("SELECT to_regclass('wlt.payment_allocations') IS NOT NULL AND to_regc
 expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=5", "005_delivery_fee_policies.sql", "WLT delivery-fee policy migration is not canonical");
 expectSQL("SELECT to_regclass('wlt.delivery_fee_policies') IS NOT NULL AND to_regclass('wlt.delivery_fee_policy_events') IS NOT NULL", "t", "WLT delivery-fee policy relations are missing");
 expectSQL("SELECT to_regclass('wlt.official_wallet_destinations') IS NOT NULL AND to_regclass('wlt.official_wallet_destination_transitions') IS NOT NULL AND to_regclass('wlt.payout_requests') IS NOT NULL AND to_regclass('wlt.payout_holds') IS NOT NULL", "t", "WLT official-wallet destination and payout relations are missing");
-console.log("WLT_SCHEMA_V7=PASS");
+expectSQL("SELECT to_regclass('wlt.field_commission_policies') IS NOT NULL AND to_regclass('wlt.field_commission_earnings') IS NOT NULL", "t", "WLT field commission relations are missing");
+console.log("WLT_SCHEMA_V8=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));
@@ -754,9 +764,36 @@ console.log("DSH_CATALOG_IMPORT=PASS");
 console.log("DSH_STORE_OFFER=PASS");
 console.log("DSH_PROPOSAL_LIFECYCLE=PASS");
 
+const defaultFieldCommissionPolicy = await request(dshBase, "POST", "/dsh/operator/field-commission-policies", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-policy-default-${suffix}`), body: { scopeType: "DEFAULT", scopeId: "", rewardMinor: 5000, roundingUnitMinor: 50 } });
+const verticalFieldCommissionPolicy = await request(dshBase, "POST", "/dsh/operator/field-commission-policies", { token: dshToken, headers: serviceHeaders(actingOperatorID, `field-policy-vertical-${suffix}`), body: { scopeType: "VERTICAL", scopeId: verticalID, rewardMinor: 7500, roundingUnitMinor: 50 } });
+if (defaultFieldCommissionPolicy.status !== 201 || defaultFieldCommissionPolicy.body?.policy?.scopeType !== "DEFAULT" || defaultFieldCommissionPolicy.body?.policy?.rewardMinor !== 5000 || verticalFieldCommissionPolicy.status !== 201 || verticalFieldCommissionPolicy.body?.policy?.scopeType !== "VERTICAL" || verticalFieldCommissionPolicy.body?.policy?.scopeId !== verticalID || verticalFieldCommissionPolicy.body?.policy?.rewardMinor !== 7500 || verticalFieldCommissionPolicy.body?.policy?.roundingUnitMinor !== 50) fail("Field commission policy activation did not preserve Finance-owned scope and rounding", JSON.stringify({ defaultFieldCommissionPolicy, verticalFieldCommissionPolicy }));
+fieldCommissionPolicyIDs.add(String(defaultFieldCommissionPolicy.body.policy.id));
+fieldCommissionPolicyIDs.add(String(verticalFieldCommissionPolicy.body.policy.id));
+const verticalFieldCommissionPolicyRead = await request(dshBase, "GET", `/dsh/operator/field-commission-policies/${encodeURIComponent(verticalFieldCommissionPolicy.body.policy.id)}`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+if (verticalFieldCommissionPolicyRead.status !== 200 || verticalFieldCommissionPolicyRead.body?.policy?.id !== verticalFieldCommissionPolicy.body.policy.id || verticalFieldCommissionPolicyRead.body.policy?.state !== "ACTIVE") fail("Field commission policy readback did not return the active vertical policy", JSON.stringify({ verticalFieldCommissionPolicy, verticalFieldCommissionPolicyRead }));
+console.log("DSH_FIELD_COMMISSION_POLICY=PASS");
 const publishA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const publishB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 if (publishA.status !== 200 || publishB.status !== 200) fail("Store publication failed after catalog readiness", JSON.stringify({ publishA, publishB }));
+const fieldSummaryDeadline = Date.now() + 95_000;
+let fieldFinancialSummary = null;
+while (Date.now() < fieldSummaryDeadline) {
+  const response = await request(dshBase, "GET", `/dsh/operator/fields/${encodeURIComponent(fieldActorID)}/financial-summary`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+  if (response.status === 200 && response.body?.summary?.earnedMinor === 7500 && response.body?.summary?.commissionMinor === 7500 && response.body?.summary?.storeCount === 1) {
+    fieldFinancialSummary = response;
+    break;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 2_000));
+}
+const fieldEarningCount = sql(`SELECT count(*) FROM wlt.field_commission_earnings WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id='${sqlLiteral(second.storeID)}'`);
+if (!fieldFinancialSummary || fieldEarningCount !== "1") fail("Field commission was not posted exactly once after customer-visible publication", JSON.stringify({ fieldFinancialSummary, fieldEarningCount, publishB }));
+const fieldHidden = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-hide-${suffix}`, crypto.randomUUID(), publishB.body.store.version), body: { state: "hidden" } });
+const fieldPublicAfterHide = await request(dshBase, "GET", `/dsh/public/stores/${second.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}`);
+const fieldRepublished = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-republish-${suffix}`, crypto.randomUUID(), fieldHidden.body.store.version), body: { state: "published" } });
+const fieldSummaryAfterRepublish = await request(dshBase, "GET", `/dsh/operator/fields/${encodeURIComponent(fieldActorID)}/financial-summary`, { token: dshToken, headers: { "X-Acting-Actor-ID": actingOperatorID } });
+const fieldEarningCountAfterRepublish = sql(`SELECT count(*) FROM wlt.field_commission_earnings WHERE field_actor_id='${sqlLiteral(fieldActorID)}' AND store_id='${sqlLiteral(second.storeID)}'`);
+if (fieldHidden.status !== 200 || fieldPublicAfterHide.status !== 404 || fieldRepublished.status !== 200 || fieldSummaryAfterRepublish.status !== 200 || fieldSummaryAfterRepublish.body?.summary?.earnedMinor !== 7500 || fieldSummaryAfterRepublish.body?.summary?.storeCount !== 1 || fieldEarningCountAfterRepublish !== "1") fail("Field commission was reversed or duplicated across hide and republish", JSON.stringify({ fieldHidden, fieldPublicAfterHide, fieldRepublished, fieldSummaryAfterRepublish, fieldEarningCountAfterRepublish }));
+console.log("DSH_FIELD_COMMISSION_PUBLICATION=PASS");
 const publicCatalog = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(childCategoryID)}&q=${encodeURIComponent(productInput.canonicalName)}`);
 const publicWrongCategory = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityA)}&categoryId=${encodeURIComponent(categoryID)}`);
 const publicWrongCity = await request(dshBase, "GET", `/dsh/public/stores/${first.storeID}/catalog?serviceCityId=${encodeURIComponent(cityB)}`);

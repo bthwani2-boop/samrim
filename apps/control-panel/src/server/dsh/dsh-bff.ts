@@ -1,5 +1,5 @@
 import { validateServiceUrl } from "@bthwani/identity";
-import { type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogImportCommitResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type ReviewCatalogProductProposalRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ReplaceCatalogProductMediaRequest, type ManagedRoleMutationRequest, type CashLiabilityResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type CreateDeliveryFeePolicyRequest, type DeliveryFeePolicyResponse, type OfficialWalletDestination, type PartnerFinancialSummaryResponse, type PartnerPayoutStateResponse, dshOperationPaths } from "@bthwani/dsh";
+import { type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogImportCommitResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type ReviewCatalogProductProposalRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ReplaceCatalogProductMediaRequest, type ManagedRoleMutationRequest, type CashLiabilityResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type CreateDeliveryFeePolicyRequest, type DeliveryFeePolicyResponse, type OfficialWalletDestination, type PartnerFinancialSummaryResponse, type PartnerPayoutStateResponse, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -27,6 +27,14 @@ export type DshOperatorReadContext = Readonly<{
 export type CatalogProductMutationContext = JoiningCaseMutationContext;
 export type CatalogVerticalMutationContext = JoiningCaseMutationContext;
 export type CatalogCategoryMutationContext = JoiningCaseMutationContext;
+
+export type CreateFieldCommissionPolicyRequest = Readonly<{
+  scopeType: "DEFAULT" | "VERTICAL" | "STORE";
+  scopeId?: string;
+  rewardMinor: number;
+  roundingUnitMinor: 50;
+}>;
+type FieldCommissionPolicyResponse = Readonly<{ policy: FieldCommissionPolicy; idempotentReplay: boolean }>;
 
 function dshBaseUrl(): string {
   const explicit = process.env.DSH_API_BASE_URL?.trim();
@@ -237,6 +245,13 @@ export async function createOperatorDeliveryFeePolicy(input: CreateDeliveryFeePo
   validateAttributedMutationContext(context);
   if (!context.idempotencyKey.trim()) throw new Error("DSH_DELIVERY_FEE_POLICY_IDEMPOTENCY_INVALID");
   return requestDshJson<DeliveryFeePolicyResponse>(dshOperationPaths.createOperatorDeliveryFeePolicy.method, dshOperationPaths.createOperatorDeliveryFeePolicy.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function createOperatorFieldCommissionPolicy(input: CreateFieldCommissionPolicyRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: FieldCommissionPolicyResponse }>> {
+  if (!(["DEFAULT", "VERTICAL", "STORE"] as const).includes(input.scopeType) || (input.scopeType === "DEFAULT" && Boolean(input.scopeId?.trim())) || (input.scopeType !== "DEFAULT" && !input.scopeId?.trim()) || !Number.isInteger(input.rewardMinor) || input.rewardMinor < 50 || input.roundingUnitMinor !== 50) throw new Error("DSH_FIELD_COMMISSION_POLICY_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_FIELD_COMMISSION_POLICY_IDEMPOTENCY_INVALID");
+  return requestDshJson<FieldCommissionPolicyResponse>(dshOperationPaths.createFieldCommissionPolicy.method, dshOperationPaths.createFieldCommissionPolicy.path, { ...input, scopeId: input.scopeId?.trim() || "" }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
 }
 
 export async function listJoiningCases(state: string, limit: number, cursor: string, context: DshOperatorReadContext): Promise<JoiningCaseListResponse> {

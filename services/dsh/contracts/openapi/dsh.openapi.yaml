@@ -343,6 +343,18 @@ paths:
   /dsh/field/joining-cases/{caseId}/correct-and-resubmit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1correct-and-resubmit"
 
+  /dsh/fields/me/financial-summary:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"
+
+  /dsh/operator/fields/{fieldActorId}/financial-summary:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1financial-summary"
+
+  /dsh/operator/field-commission-policies:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-commission-policies"
+
+  /dsh/operator/field-commission-policies/{policyId}:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-commission-policies~1{policyId}"
+
 components:
   securitySchemes:
     serviceBearer:
@@ -3621,6 +3633,72 @@ components:
       properties:
         summary:
           $ref: "#/components/schemas/PartnerFinancialSummary"
+
+    FieldCommissionPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, scopeType, scopeId, rewardMinor, roundingUnitMinor, state, version, createdBy, createdAt, retiredAt]
+      properties:
+        id:
+          type: string
+        scopeType:
+          type: string
+          enum: [DEFAULT, VERTICAL, STORE]
+        scopeId:
+          type: string
+        rewardMinor:
+          type: integer
+          minimum: 50
+        roundingUnitMinor:
+          type: integer
+          const: 50
+        state:
+          type: string
+          enum: [ACTIVE, RETIRED]
+        version:
+          type: integer
+          minimum: 1
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        retiredAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FieldFinancialSummary:
+      type: object
+      additionalProperties: false
+      required: [fieldActorId, currency, earnedMinor, commissionMinor, storeCount, lastEarningAt]
+      properties:
+        fieldActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+          minimum: 0
+        commissionMinor:
+          type: integer
+          minimum: 0
+        storeCount:
+          type: integer
+          minimum: 0
+        lastEarningAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FieldFinancialSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/FieldFinancialSummary"
 
     OfficialWalletDestination:
       type: object
