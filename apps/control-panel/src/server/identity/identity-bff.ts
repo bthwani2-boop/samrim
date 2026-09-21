@@ -281,7 +281,7 @@ async function refreshOperatorSession(store: Awaited<ReturnType<typeof cookies>>
     }
     if (isTerminalIdentityFailure(error)) {
       await clearOperatorCookiesBestEffort();
-      return createDevelopmentOperatorSession();
+      return null;
     }
     if (isIdentityClientError(error)) throw error;
     throw localSessionError(503, "IDENTITY_SESSION_RECOVERY_UNKNOWN", "identity session recovery could not be classified");

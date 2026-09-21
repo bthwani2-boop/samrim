@@ -17,6 +17,7 @@ export default defineConfig({
   globalSetup: "./playwright.global-setup.ts",
   timeout: 30_000,
   expect: { timeout: expectTimeout },
+  ...(liveIdentityProof ? { workers: 1 } : {}),
   fullyParallel: true,
   ...(liveIdentityProof ? { grep: /@live/ } : { grepInvert: /@live/ }),
   reporter: "list",
