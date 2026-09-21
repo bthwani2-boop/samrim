@@ -246,6 +246,31 @@ paths:
   /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/activate:
     $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1{actorType}~1{actorId}~1official-wallet-destination~1{destinationId}~1activate"
 
+  /dsh/operator/payout-requests:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests"
+  /dsh/operator/payout-requests/{payoutId}:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}"
+  /dsh/operator/payout-requests/{payoutId}/prepare:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}~1prepare"
+  /dsh/operator/payout-requests/{payoutId}/approve:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}~1approve"
+  /dsh/operator/payout-requests/{payoutId}/cancel:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}~1cancel"
+  /dsh/operator/settlement-batches:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches"
+  /dsh/operator/settlement-batches/{batchId}:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}"
+  /dsh/operator/settlement-batches/{batchId}/approve:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}~1approve"
+  /dsh/operator/settlement-batches/{batchId}/freeze:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}~1freeze"
+  /dsh/operator/settlement-batches/{batchId}/transfers:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}~1transfers"
+  /dsh/operator/transfers/{transferId}/verify:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1transfers~1{transferId}~1verify"
+  /dsh/operator/transfers/{transferId}/reconcile:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1transfers~1{transferId}~1reconcile"
+
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
 
@@ -3794,9 +3819,112 @@ components:
           enum: [HELD, CANCELLED, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION]
         policyVersion:
           type: string
+        ledgerTransactionId:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
+
+    SettlementBatch:
+      type: object
+      additionalProperties: false
+      required: [id, providerKey, currency, status, rowCount, totalAmountMinor, createdBy, createdAt, approvedBy, approvedAt, frozenBy, frozenAt, batchHash]
+      properties:
+        id:
+          type: string
+        providerKey:
+          type: string
+        currency:
+          type: string
+          const: YER
+        status:
+          type: string
+          enum: [DRAFT, PREPARED, APPROVED, FROZEN, EXECUTION_IN_PROGRESS, AWAITING_VERIFICATION, AWAITING_RECONCILIATION, COMPLETED, CANCELLED, EXCEPTION]
+        rowCount:
+          type: integer
+          minimum: 1
+        totalAmountMinor:
+          type: integer
+          minimum: 1
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        approvedBy:
+          type: string
+          nullable: true
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        frozenBy:
+          type: string
+          nullable: true
+        frozenAt:
+          type: string
+          format: date-time
+          nullable: true
+        batchHash:
+          type: string
+          nullable: true
+
+    ManualTransferExecution:
+      type: object
+      additionalProperties: false
+      required: [id, batchId, payoutId, approvedSnapshotHash, executedBy, executedAt, providerKey, externalTransferReference, amountMinor, currency, destinationId, destinationVersion, evidenceReference, executionStatus, verifiedBy, verifiedAt, statementReference, reconciledBy, reconciledAt]
+      properties:
+        id:
+          type: string
+        batchId:
+          type: string
+        payoutId:
+          type: string
+        approvedSnapshotHash:
+          type: string
+        executedBy:
+          type: string
+        executedAt:
+          type: string
+          format: date-time
+        providerKey:
+          type: string
+        externalTransferReference:
+          type: string
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        destinationId:
+          type: string
+        destinationVersion:
+          type: integer
+          minimum: 1
+        evidenceReference:
+          type: string
+        executionStatus:
+          type: string
+          enum: [EXECUTED, VERIFIED, RECONCILED]
+        verifiedBy:
+          type: string
+          nullable: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        statementReference:
+          type: string
+          nullable: true
+        reconciledBy:
+          type: string
+          nullable: true
+        reconciledAt:
+          type: string
+          format: date-time
+          nullable: true
 
     BeneficiaryPayoutState:
       type: object

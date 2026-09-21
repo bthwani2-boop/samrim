@@ -1,5 +1,5 @@
 import { validateServiceUrl } from "@bthwani/identity";
-import { type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogImportCommitResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type ReviewCatalogProductProposalRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ReplaceCatalogProductMediaRequest, type ManagedRoleMutationRequest, type CashLiabilityResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type CreateDeliveryFeePolicyRequest, type DeliveryFeePolicyResponse, type OfficialWalletDestination, type PartnerFinancialSummaryResponse, dshOperationPaths } from "@bthwani/dsh";
+import { type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogProductListResponse, type CatalogProductResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogImportCommitResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateJoiningCaseRequest, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type JoiningCaseListResponse, type JoiningCaseResponse, type CreateServiceCityRequest, type ServiceCityListResponse, type ServiceCityResponse, type UpdateServiceCityRequest, type PublicationAction, type ReviewJoiningCaseRequest, type ReviewCatalogProductProposalRequest, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type ReplaceCatalogProductMediaRequest, type ManagedRoleMutationRequest, type CashLiabilityResponse, type OperatorOperationResponse, type OperatorOperationsResponse, type CreateDeliveryFeePolicyRequest, type DeliveryFeePolicyResponse, type OfficialWalletDestination, type PartnerFinancialSummaryResponse, type PayoutRequest, type SettlementBatch, type ManualTransferExecution, dshOperationPaths } from "@bthwani/dsh";
 
 type DshClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -233,6 +233,79 @@ export async function activateOperatorDestination(actorType: BeneficiaryActorTyp
   validateAttributedMutationContext(context);
   const path = dshOperationPaths.activateOperatorOfficialWalletDestination.path.replace("{actorType}", encodeURIComponent(actorType)).replace("{actorId}", encodeURIComponent(actorId.trim())).replace("{destinationId}", encodeURIComponent(destinationId.trim()));
   return (await requestDshJson<OperatorDestinationResponse>(dshOperationPaths.activateOperatorOfficialWalletDestination.method, path, {}, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+type OperatorPayoutListResponse = Readonly<{ payouts: ReadonlyArray<PayoutRequest> }>;
+type OperatorPayoutResponse = Readonly<{ payout: PayoutRequest }>;
+type OperatorSettlementBatchResponse = Readonly<{ batch: SettlementBatch }>;
+type OperatorTransferResponse = Readonly<{ transfer: ManualTransferExecution }>;
+
+export async function listOperatorPayoutRequests(status: string, context: DshOperatorReadContext): Promise<OperatorPayoutListResponse> {
+  if (!context.operatorActorId.trim()) throw new Error("DSH_PAYOUT_QUEUE_INPUT_INVALID");
+  const query = status.trim() ? `?status=${encodeURIComponent(status.trim())}` : "";
+  return (await requestDshJson<OperatorPayoutListResponse>(dshOperationPaths.listOperatorPayoutRequests.method, `${dshOperationPaths.listOperatorPayoutRequests.path}${query}`, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function prepareOperatorPayout(payoutId: string, input: Readonly<{ reason: string; evidenceReference: string }>, context: JoiningCaseMutationContext): Promise<OperatorPayoutResponse> {
+  if (!payoutId.trim() || !input.reason.trim() || !input.evidenceReference.trim()) throw new Error("DSH_PAYOUT_PREPARE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.prepareOperatorPayout.path.replace("{payoutId}", encodeURIComponent(payoutId.trim()));
+  return (await requestDshJson<OperatorPayoutResponse>(dshOperationPaths.prepareOperatorPayout.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function approveOperatorPayout(payoutId: string, reason: string, context: JoiningCaseMutationContext): Promise<OperatorPayoutResponse> {
+  if (!payoutId.trim() || !reason.trim()) throw new Error("DSH_PAYOUT_APPROVE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.approveOperatorPayout.path.replace("{payoutId}", encodeURIComponent(payoutId.trim()));
+  return (await requestDshJson<OperatorPayoutResponse>(dshOperationPaths.approveOperatorPayout.method, path, { reason }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function cancelOperatorPayout(payoutId: string, reason: string, context: JoiningCaseMutationContext): Promise<OperatorPayoutResponse> {
+  if (!payoutId.trim() || !reason.trim()) throw new Error("DSH_PAYOUT_CANCEL_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.cancelOperatorPayout.path.replace("{payoutId}", encodeURIComponent(payoutId.trim()));
+  return (await requestDshJson<OperatorPayoutResponse>(dshOperationPaths.cancelOperatorPayout.method, path, { reason }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function createOperatorSettlementBatch(payoutIds: ReadonlyArray<string>, context: JoiningCaseMutationContext): Promise<OperatorSettlementBatchResponse> {
+  if (payoutIds.length < 1 || payoutIds.some((id) => !id.trim())) throw new Error("DSH_SETTLEMENT_BATCH_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  return (await requestDshJson<OperatorSettlementBatchResponse>(dshOperationPaths.createOperatorSettlementBatch.method, dshOperationPaths.createOperatorSettlementBatch.path, { payoutIds }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function approveOperatorSettlementBatch(batchId: string, reason: string, context: JoiningCaseMutationContext): Promise<OperatorSettlementBatchResponse> {
+  if (!batchId.trim() || !reason.trim()) throw new Error("DSH_SETTLEMENT_BATCH_APPROVE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.approveOperatorSettlementBatch.path.replace("{batchId}", encodeURIComponent(batchId.trim()));
+  return (await requestDshJson<OperatorSettlementBatchResponse>(dshOperationPaths.approveOperatorSettlementBatch.method, path, { reason }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function freezeOperatorSettlementBatch(batchId: string, reason: string, context: JoiningCaseMutationContext): Promise<OperatorSettlementBatchResponse> {
+  if (!batchId.trim() || !reason.trim()) throw new Error("DSH_SETTLEMENT_BATCH_FREEZE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.freezeOperatorSettlementBatch.path.replace("{batchId}", encodeURIComponent(batchId.trim()));
+  return (await requestDshJson<OperatorSettlementBatchResponse>(dshOperationPaths.freezeOperatorSettlementBatch.method, path, { reason }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function recordOperatorManualTransfer(batchId: string, input: Readonly<{ payoutId: string; externalTransferReference: string; evidenceReference: string }>, context: JoiningCaseMutationContext): Promise<OperatorTransferResponse> {
+  if (!batchId.trim() || !input.payoutId.trim() || !input.externalTransferReference.trim() || !input.evidenceReference.trim()) throw new Error("DSH_MANUAL_TRANSFER_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.recordOperatorManualTransfer.path.replace("{batchId}", encodeURIComponent(batchId.trim()));
+  return (await requestDshJson<OperatorTransferResponse>(dshOperationPaths.recordOperatorManualTransfer.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function verifyOperatorManualTransfer(transferId: string, evidenceReference: string, context: JoiningCaseMutationContext): Promise<OperatorTransferResponse> {
+  if (!transferId.trim()) throw new Error("DSH_MANUAL_TRANSFER_VERIFY_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.verifyOperatorManualTransfer.path.replace("{transferId}", encodeURIComponent(transferId.trim()));
+  return (await requestDshJson<OperatorTransferResponse>(dshOperationPaths.verifyOperatorManualTransfer.method, path, { evidenceReference }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
+}
+
+export async function reconcileOperatorManualTransfer(transferId: string, statementReference: string, context: JoiningCaseMutationContext): Promise<OperatorTransferResponse> {
+  if (!transferId.trim() || !statementReference.trim()) throw new Error("DSH_MANUAL_TRANSFER_RECONCILE_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  const path = dshOperationPaths.reconcileOperatorManualTransfer.path.replace("{transferId}", encodeURIComponent(transferId.trim()));
+  return (await requestDshJson<OperatorTransferResponse>(dshOperationPaths.reconcileOperatorManualTransfer.method, path, { statementReference }, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() })).payload;
 }
 
 export async function readOperatorDeliveryFeePolicy(serviceCityId: string, context: DshOperatorReadContext): Promise<DeliveryFeePolicyResponse> {

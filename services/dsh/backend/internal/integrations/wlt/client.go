@@ -205,7 +205,46 @@ type PayoutRequest struct {
 	DestinationVersion   int    `json:"destinationVersion"`
 	Status               string `json:"status"`
 	PolicyVersion        string `json:"policyVersion"`
+	LedgerTransactionID  string `json:"ledgerTransactionId,omitempty"`
 	CreatedAt            string `json:"createdAt"`
+}
+
+type SettlementBatch struct {
+	ID               string  `json:"id"`
+	ProviderKey      string  `json:"providerKey"`
+	Currency         string  `json:"currency"`
+	Status           string  `json:"status"`
+	RowCount         int     `json:"rowCount"`
+	TotalAmountMinor int64   `json:"totalAmountMinor"`
+	CreatedBy        string  `json:"createdBy"`
+	CreatedAt        string  `json:"createdAt"`
+	ApprovedBy       *string `json:"approvedBy,omitempty"`
+	ApprovedAt       *string `json:"approvedAt,omitempty"`
+	FrozenBy         *string `json:"frozenBy,omitempty"`
+	FrozenAt         *string `json:"frozenAt,omitempty"`
+	BatchHash        string  `json:"batchHash,omitempty"`
+}
+
+type ManualTransferExecution struct {
+	ID                   string  `json:"id"`
+	BatchID              string  `json:"batchId"`
+	PayoutID             string  `json:"payoutId"`
+	ApprovedSnapshotHash string  `json:"approvedSnapshotHash"`
+	ExecutedBy           string  `json:"executedBy"`
+	ExecutedAt           string  `json:"executedAt"`
+	ProviderKey          string  `json:"providerKey"`
+	ExternalReference    string  `json:"externalTransferReference"`
+	AmountMinor          int64   `json:"amountMinor"`
+	Currency             string  `json:"currency"`
+	DestinationID        string  `json:"destinationId"`
+	DestinationVersion   int     `json:"destinationVersion"`
+	EvidenceReference    string  `json:"evidenceReference"`
+	ExecutionStatus      string  `json:"executionStatus"`
+	VerifiedBy           *string `json:"verifiedBy,omitempty"`
+	VerifiedAt           *string `json:"verifiedAt,omitempty"`
+	StatementReference   *string `json:"statementReference,omitempty"`
+	ReconciledBy         *string `json:"reconciledBy,omitempty"`
+	ReconciledAt         *string `json:"reconciledAt,omitempty"`
 }
 
 type PayoutState struct {
@@ -301,6 +340,18 @@ type payoutRequestResponse struct {
 
 type payoutStateResponse struct {
 	State PayoutState `json:"state"`
+}
+
+type payoutListResponse struct {
+	Payouts []PayoutRequest `json:"payouts"`
+}
+
+type settlementBatchResponse struct {
+	Batch SettlementBatch `json:"batch"`
+}
+
+type transferResponse struct {
+	Transfer ManualTransferExecution `json:"transfer"`
 }
 
 type deliveryFeePolicyResponse struct {
@@ -600,6 +651,87 @@ func (c *Client) ReadPayoutState(ctx context.Context, actorType, actorID string)
 	path := "/wlt/v1/payout-state/" + url.PathEscape(strings.ToLower(strings.TrimSpace(actorType))) + "/" + url.PathEscape(strings.TrimSpace(actorID))
 	err := c.request(ctx, http.MethodGet, path, nil, "", "", 0, &response)
 	return response.State, err
+}
+
+func (c *Client) ListPayoutRequests(ctx context.Context, status, actingActorID string) ([]PayoutRequest, error) {
+	path := "/wlt/v1/operator/payout-requests"
+	if strings.TrimSpace(status) != "" {
+		path += "?status=" + url.QueryEscape(strings.TrimSpace(status))
+	}
+	var response payoutListResponse
+	err := c.requestWithActor(ctx, http.MethodGet, path, nil, "", "", 0, actingActorID, &response)
+	return response.Payouts, err
+}
+
+func (c *Client) ReadOperatorPayoutRequest(ctx context.Context, payoutID, actingActorID string) (PayoutRequest, error) {
+	var response payoutRequestResponse
+	err := c.requestWithActor(ctx, http.MethodGet, "/wlt/v1/operator/payout-requests/"+url.PathEscape(strings.TrimSpace(payoutID)), nil, "", "", 0, actingActorID, &response)
+	return response.Payout, err
+}
+
+func (c *Client) PreparePayout(ctx context.Context, payoutID, reason, evidenceReference, idempotencyKey, correlationID, actingActorID string) (PayoutRequest, error) {
+	body := map[string]any{"reason": strings.TrimSpace(reason), "evidenceReference": strings.TrimSpace(evidenceReference)}
+	var response payoutRequestResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/payout-requests/"+url.PathEscape(strings.TrimSpace(payoutID))+"/prepare", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Payout, err
+}
+
+func (c *Client) ApprovePayout(ctx context.Context, payoutID, reason, idempotencyKey, correlationID, actingActorID string) (PayoutRequest, error) {
+	body := map[string]any{"reason": strings.TrimSpace(reason)}
+	var response payoutRequestResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/payout-requests/"+url.PathEscape(strings.TrimSpace(payoutID))+"/approve", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Payout, err
+}
+
+func (c *Client) CancelPayout(ctx context.Context, payoutID, reason, idempotencyKey, correlationID, actingActorID string) (PayoutRequest, error) {
+	body := map[string]any{"reason": strings.TrimSpace(reason)}
+	var response payoutRequestResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/payout-requests/"+url.PathEscape(strings.TrimSpace(payoutID))+"/cancel", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Payout, err
+}
+
+func (c *Client) CreateSettlementBatch(ctx context.Context, payoutIDs []string, idempotencyKey, correlationID, actingActorID string) (SettlementBatch, error) {
+	body := map[string]any{"payoutIds": payoutIDs}
+	var response settlementBatchResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/settlement-batches", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Batch, err
+}
+
+func (c *Client) ReadSettlementBatch(ctx context.Context, batchID, actingActorID string) (SettlementBatch, error) {
+	var response settlementBatchResponse
+	err := c.requestWithActor(ctx, http.MethodGet, "/wlt/v1/operator/settlement-batches/"+url.PathEscape(strings.TrimSpace(batchID)), nil, "", "", 0, actingActorID, &response)
+	return response.Batch, err
+}
+
+func (c *Client) ApproveSettlementBatch(ctx context.Context, batchID, reason, idempotencyKey, correlationID, actingActorID string) (SettlementBatch, error) {
+	var response settlementBatchResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/settlement-batches/"+url.PathEscape(strings.TrimSpace(batchID))+"/approve", map[string]any{"reason": strings.TrimSpace(reason)}, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Batch, err
+}
+
+func (c *Client) FreezeSettlementBatch(ctx context.Context, batchID, reason, idempotencyKey, correlationID, actingActorID string) (SettlementBatch, error) {
+	var response settlementBatchResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/settlement-batches/"+url.PathEscape(strings.TrimSpace(batchID))+"/freeze", map[string]any{"reason": strings.TrimSpace(reason)}, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Batch, err
+}
+
+func (c *Client) RecordManualTransfer(ctx context.Context, batchID, payoutID, externalReference, evidenceReference, idempotencyKey, correlationID, actingActorID string) (ManualTransferExecution, error) {
+	body := map[string]any{"payoutId": strings.TrimSpace(payoutID), "externalTransferReference": strings.TrimSpace(externalReference), "evidenceReference": strings.TrimSpace(evidenceReference)}
+	var response transferResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/settlement-batches/"+url.PathEscape(strings.TrimSpace(batchID))+"/transfers", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Transfer, err
+}
+
+func (c *Client) VerifyManualTransfer(ctx context.Context, transferID, evidenceReference, idempotencyKey, correlationID, actingActorID string) (ManualTransferExecution, error) {
+	var response transferResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/transfers/"+url.PathEscape(strings.TrimSpace(transferID))+"/verify", map[string]any{"evidenceReference": strings.TrimSpace(evidenceReference)}, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Transfer, err
+}
+
+func (c *Client) ReconcileManualTransfer(ctx context.Context, transferID, statementReference, idempotencyKey, correlationID, actingActorID string) (ManualTransferExecution, error) {
+	var response transferResponse
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/transfers/"+url.PathEscape(strings.TrimSpace(transferID))+"/reconcile", map[string]any{"statementReference": strings.TrimSpace(statementReference)}, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Transfer, err
 }
 
 func (c *Client) QuoteDeliveryFee(ctx context.Context, input DeliveryFeeQuoteInput) (DeliveryFeeQuote, error) {

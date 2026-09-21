@@ -58,6 +58,18 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/official-wallet-destinations/{actorType}/{actorId}", s.readOfficialWalletDestination)
 	mux.HandleFunc("POST /wlt/v1/payout-intents", s.createPayoutIntent)
 	mux.HandleFunc("GET /wlt/v1/payout-state/{actorType}/{actorId}", s.readPayoutState)
+	mux.HandleFunc("GET /wlt/v1/operator/payout-requests", s.listPayoutRequests)
+	mux.HandleFunc("GET /wlt/v1/operator/payout-requests/{payoutId}", s.readOperatorPayoutRequest)
+	mux.HandleFunc("POST /wlt/v1/operator/payout-requests/{payoutId}/prepare", s.preparePayout)
+	mux.HandleFunc("POST /wlt/v1/operator/payout-requests/{payoutId}/approve", s.approvePayout)
+	mux.HandleFunc("POST /wlt/v1/operator/payout-requests/{payoutId}/cancel", s.cancelPayout)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches", s.createSettlementBatch)
+	mux.HandleFunc("GET /wlt/v1/operator/settlement-batches/{batchId}", s.readSettlementBatch)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/approve", s.approveSettlementBatch)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/freeze", s.freezeSettlementBatch)
+	mux.HandleFunc("POST /wlt/v1/operator/settlement-batches/{batchId}/transfers", s.recordManualTransfer)
+	mux.HandleFunc("POST /wlt/v1/operator/transfers/{transferId}/verify", s.verifyManualTransfer)
+	mux.HandleFunc("POST /wlt/v1/operator/transfers/{transferId}/reconcile", s.reconcileManualTransfer)
 }
 
 type createRequest struct {
@@ -199,6 +211,7 @@ type payoutRequestJSON struct {
 	DestinationVersion   int    `json:"destinationVersion"`
 	Status               string `json:"status"`
 	PolicyVersion        string `json:"policyVersion"`
+	LedgerTransactionID  string `json:"ledgerTransactionId,omitempty"`
 	CreatedAt            string `json:"createdAt"`
 }
 
@@ -1044,7 +1057,7 @@ func toOfficialWalletDestination(item postgres.OfficialWalletDestinationRecord) 
 }
 
 func toPayoutRequest(item postgres.PayoutRequestRecord) payoutRequestJSON {
-	return payoutRequestJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, AmountMode: item.AmountMode, RequestedAmountMinor: item.RequestedAmountMinor, ResolvedAmountMinor: item.ResolvedAmountMinor, Currency: item.Currency, DestinationID: item.DestinationID, DestinationVersion: item.DestinationVersion, Status: item.Status, PolicyVersion: item.PolicyVersion, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+	return payoutRequestJSON{ID: item.ID, ActorType: item.ActorType, ActorID: item.ActorID, AmountMode: item.AmountMode, RequestedAmountMinor: item.RequestedAmountMinor, ResolvedAmountMinor: item.ResolvedAmountMinor, Currency: item.Currency, DestinationID: item.DestinationID, DestinationVersion: item.DestinationVersion, Status: item.Status, PolicyVersion: item.PolicyVersion, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 func toPayoutState(item postgres.PayoutStateRecord) payoutStateJSON {

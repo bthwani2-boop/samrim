@@ -39,6 +39,7 @@ func (s *BeneficiaryFinanceServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dsh/operator/{actorType}/{actorId}/official-wallet-destination", s.createOperatorDestination)
 	mux.HandleFunc("POST /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/verify", s.verifyOperatorDestination)
 	mux.HandleFunc("POST /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/activate", s.activateOperatorDestination)
+	s.RegisterSettlementGovernance(mux)
 }
 
 func (s *BeneficiaryFinanceServer) readOwnPayoutState(w http.ResponseWriter, r *http.Request) {

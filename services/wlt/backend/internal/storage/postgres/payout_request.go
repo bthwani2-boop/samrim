@@ -37,6 +37,7 @@ type PayoutRequestRecord struct {
 	DestinationVersion   int
 	Status               string
 	PolicyVersion        string
+	LedgerTransactionID  string
 	CreatedAt            time.Time
 }
 
@@ -200,7 +201,8 @@ func readPayoutRequest(ctx context.Context, source interface {
 }, payoutID string) (PayoutRequestRecord, error) {
 	var item PayoutRequestRecord
 	var requested sql.NullInt64
-	err := source.QueryRowContext(ctx, "SELECT id,actor_type,actor_id,amount_mode,requested_amount_minor,resolved_amount_minor,currency,destination_id,destination_version,status,policy_version,created_at FROM wlt.payout_requests WHERE id=$1", payoutID).Scan(&item.ID, &item.ActorType, &item.ActorID, &item.AmountMode, &requested, &item.ResolvedAmountMinor, &item.Currency, &item.DestinationID, &item.DestinationVersion, &item.Status, &item.PolicyVersion, &item.CreatedAt)
+	var ledgerTransactionID sql.NullString
+	err := source.QueryRowContext(ctx, "SELECT id,actor_type,actor_id,amount_mode,requested_amount_minor,resolved_amount_minor,currency,destination_id,destination_version,status,policy_version,ledger_transaction_id,created_at FROM wlt.payout_requests WHERE id=$1", payoutID).Scan(&item.ID, &item.ActorType, &item.ActorID, &item.AmountMode, &requested, &item.ResolvedAmountMinor, &item.Currency, &item.DestinationID, &item.DestinationVersion, &item.Status, &item.PolicyVersion, &ledgerTransactionID, &item.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PayoutRequestRecord{}, ErrPayoutInvalidInput
 	}
@@ -209,6 +211,9 @@ func readPayoutRequest(ctx context.Context, source interface {
 	}
 	if requested.Valid {
 		item.RequestedAmountMinor = &requested.Int64
+	}
+	if ledgerTransactionID.Valid {
+		item.LedgerTransactionID = ledgerTransactionID.String
 	}
 	return item, nil
 }
