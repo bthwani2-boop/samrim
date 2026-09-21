@@ -109,7 +109,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().checkoutCart(token, { cartId: state.cart.id, storeId, addressId: serviceableAddressId }, state.cart.version);
+      const result = await client().checkoutCart(token, { cartId: state.cart.id, storeId, addressId: serviceableAddressId, fulfillmentMode: "BTHWANI_CAPTAIN" }, state.cart.version);
       setOrder(result.order);
       setOrders((await client().listClientOrders(token, 20)).orders);
       setState({ kind: "empty" });
@@ -146,6 +146,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
           </View>;
         })}</View>
         <Text style={styles.total}>الإجمالي المستحق: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
+        <View accessibilityLabel="طريقة التوصيل" style={styles.fulfillmentCard}><Text style={styles.fulfillmentTitle}>طريقة التوصيل</Text><Text style={styles.fulfillmentChoice}>توصيل عبر كابتن بتهواني</Text><Text style={styles.muted}>يُسند الطلب إلى كابتن مؤهل بعد جاهزية المتجر.</Text></View>
         <Text style={styles.payment}>طريقة الدفع: الدفع نقدًا عند الاستلام. لا يتم إنهاء الرحلة إلا بعد تحصيل المبلغ المطابق للإجمالي.</Text>
         {serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : <Text style={styles.warning}>اختر عنوانًا مؤهلًا من قسم الأهلية قبل الإتمام.</Text>}
         <BthwaniButton accessibilityLabel="إتمام الطلب" busy={busy} disabled={mutationBusy || !serviceableAddressId} label="إتمام الطلب" onPress={() => void checkout()} />
@@ -169,6 +170,9 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     lineTitle: { ...typography.bodyStrong, color: theme.color },
     modifiers: { ...typography.bodySm, color: theme.interactiveText },
     lineActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2], marginTop: spacing[2] },
+    fulfillmentCard: { backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
+    fulfillmentTitle: { ...typography.label, color: theme.interactiveText },
+    fulfillmentChoice: { ...typography.bodyStrong, color: theme.color },
     total: { ...typography.bodyStrong, color: theme.color },
     payment: { ...typography.bodySm, color: theme.interactiveText, lineHeight: 19 },
     orderBox: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },

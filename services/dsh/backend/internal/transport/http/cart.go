@@ -117,11 +117,11 @@ func (s *CartServer) checkout(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	if strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || strings.TrimSpace(input.AddressID) == "" {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId and addressId are required")
+	if strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || strings.TrimSpace(input.AddressID) == "" || strings.TrimSpace(string(input.FulfillmentMode)) == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId and fulfillmentMode are required")
 		return
 	}
-	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, expected, idempotency, correlation)
+	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), expected, idempotency, correlation)
 	if err != nil {
 		writeCartError(w, err)
 		return
@@ -189,6 +189,8 @@ func writeCartError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "the payment service is temporarily unavailable; the order was not created")
 	case errors.Is(err, cart.ErrCheckoutNotServiceable):
 		writeError(w, http.StatusConflict, "UNSERVICEABLE", "the selected address is not serviceable for this Store")
+	case errors.Is(err, cart.ErrFulfillmentModeUnavailable):
+		writeError(w, http.StatusConflict, "FULFILLMENT_MODE_UNAVAILABLE", "the requested fulfillment mode is not available for checkout")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {

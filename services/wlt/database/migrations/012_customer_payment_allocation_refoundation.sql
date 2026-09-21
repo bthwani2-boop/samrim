@@ -10,7 +10,8 @@ ALTER TABLE wlt.customer_payment_allocations
   DROP CONSTRAINT payment_allocations_nonnegative_chk,
   DROP CONSTRAINT payment_allocations_total_chk,
   DROP CONSTRAINT payment_allocations_conservation_chk,
-  DROP CONSTRAINT payment_allocations_cod_split_chk,
+  DROP CONSTRAINT payment_allocations_cod_split_chk;
+ALTER TABLE wlt.customer_payment_allocations
   RENAME COLUMN internal_wallet_amount_minor TO internal_balance_amount_minor;
 ALTER TABLE wlt.customer_payment_allocations RENAME COLUMN total_minor TO customer_payable_minor;
 ALTER TABLE wlt.customer_payment_allocations

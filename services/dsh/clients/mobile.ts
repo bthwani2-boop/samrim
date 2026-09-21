@@ -342,7 +342,7 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       return userRequest<CartResponse>(accessToken, path, dshOperationPaths.removeCartLine.method, undefined, { ...mutationHeaders(), "X-Expected-Version": String(expectedVersion) });
     },
     async checkoutCart(accessToken: string, input: CheckoutRequest, expectedCartVersion: number): Promise<OrderResponse> {
-      if (!input.cartId.trim() || !input.storeId.trim() || !input.addressId.trim() || expectedCartVersion < 1) throw new Error("DSH_CHECKOUT_INPUT_INVALID");
+      if (!input.cartId.trim() || !input.storeId.trim() || !input.addressId.trim() || !input.fulfillmentMode || expectedCartVersion < 1) throw new Error("DSH_CHECKOUT_INPUT_INVALID");
       return userRequest<OrderResponse>(accessToken, dshOperationPaths.checkoutCart.path, dshOperationPaths.checkoutCart.method, { ...input, cartId: input.cartId.trim(), storeId: input.storeId.trim(), addressId: input.addressId.trim() }, { ...mutationHeaders(), "X-Expected-Version": String(expectedCartVersion) });
     },
     async listClientOrders(accessToken: string, limit = 50): Promise<OrderListResponse> {

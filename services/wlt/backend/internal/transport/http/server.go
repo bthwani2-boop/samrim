@@ -1128,7 +1128,7 @@ func writePaymentError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cash remittance input is invalid")
 	case errors.Is(err, postgres.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "payment input is invalid")
-	case errors.Is(err, postgres.ErrPaymentAllocationInvalidInput):
+	case errors.Is(err, postgres.ErrCustomerPaymentAllocationInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_PAYMENT_ALLOCATION", "payment allocation is invalid")
 	default:
 		log.Printf("WLT partner financial profile persistence error: %T %v", err, err)
@@ -1245,7 +1245,7 @@ func writePartnerEarningError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, postgres.ErrPartnerEarningInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner earning input is invalid")
-	case errors.Is(err, postgres.ErrPaymentAllocationNotFound), errors.Is(err, postgres.ErrPartnerEarningNotFound), errors.Is(err, postgres.ErrFinancialProfileNotFound):
+	case errors.Is(err, postgres.ErrCustomerPaymentAllocationNotFound), errors.Is(err, postgres.ErrPartnerEarningNotFound), errors.Is(err, postgres.ErrFinancialProfileNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "partner financial record was not found")
 	case errors.Is(err, postgres.ErrPartnerEarningPaymentState):
 		writeError(w, http.StatusConflict, "PAYMENT_NOT_COLLECTED", "partner earning requires a collected payment")

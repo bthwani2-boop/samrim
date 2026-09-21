@@ -14,9 +14,12 @@ import (
 )
 
 var (
-	ErrClientSessionForbidden = errors.New("an active app-client session is required")
-	ErrCheckoutNotServiceable = errors.New("address is not serviceable for this Store")
+	ErrClientSessionForbidden     = errors.New("an active app-client session is required")
+	ErrCheckoutNotServiceable     = errors.New("address is not serviceable for this Store")
+	ErrFulfillmentModeUnavailable = errors.New("the requested fulfillment mode is not available")
 )
+
+const FulfillmentModeBthwaniCaptain = "BTHWANI_CAPTAIN"
 
 type Service struct {
 	identity       *identityintegration.Client
@@ -81,10 +84,14 @@ func (s *Service) RemoveLine(ctx context.Context, accessToken, lineID string, ex
 	return postgres.RemoveCartLine(ctx, s.db, actorID, lineID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCartLineMutation("line_remove", "", lineID, 0, nil, expectedVersion), actorID, strings.TrimSpace(correlationID))
 }
 
-func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID string, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode string, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	actorID, err := s.requireClient(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
+	}
+	fulfillmentMode = strings.TrimSpace(fulfillmentMode)
+	if fulfillmentMode != FulfillmentModeBthwaniCaptain {
+		return postgres.OrderRecord{}, false, ErrFulfillmentModeUnavailable
 	}
 	if strings.TrimSpace(cartID) == "" || strings.TrimSpace(storeID) == "" || strings.TrimSpace(addressID) == "" || expectedCartVersion < 1 {
 		return postgres.OrderRecord{}, false, postgres.ErrCheckoutEvidenceStale
@@ -98,7 +105,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	}
 	facts := serviceabilityResult.Facts
 	input := postgres.CheckoutInput{
-		ClientActorID: actorID, CartID: strings.TrimSpace(cartID), StoreID: strings.TrimSpace(storeID), AddressID: strings.TrimSpace(addressID), ExpectedCartVersion: expectedCartVersion,
+		ClientActorID: actorID, CartID: strings.TrimSpace(cartID), StoreID: strings.TrimSpace(storeID), AddressID: strings.TrimSpace(addressID), FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion,
 		Evidence:       postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude},
 		IdempotencyKey: strings.TrimSpace(idempotencyKey), ActingActorID: actorID, CorrelationID: strings.TrimSpace(correlationID),
 		PaymentExternalReference: wlt.DerivedExternalReference("checkout", idempotencyKey),

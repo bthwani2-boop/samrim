@@ -251,7 +251,7 @@ paths:
               $ref: "../dsh.openapi.yaml#/components/schemas/CheckoutRequest"
       responses:
         "201":
-          description: Canonical Order created from the cart with a linked CASH_ON_DELIVERY payment intent requiring collection at delivery.
+          description: Canonical Order created from the cart with an explicit fulfillment mode and a linked CASH_ON_DELIVERY payment intent requiring collection at delivery.
           content:
             application/json:
               schema:
