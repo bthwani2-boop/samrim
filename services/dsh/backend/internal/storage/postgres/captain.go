@@ -46,14 +46,20 @@ type CaptainAdmission struct {
 }
 
 type CaptainOffer struct {
-	ID             string
-	OrderID        string
-	CaptainActorID string
-	State          string
-	ExpiresAt      time.Time
-	Version        int
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                  string
+	OrderID             string
+	CaptainActorID      string
+	State               string
+	ExpiresAt           time.Time
+	Version             int
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	StoreName           string
+	CustomerAddressText string
+	AmountDueMinor      int64
+	Currency            string
+	PaymentMethod       string
+	PaymentState        string
 }
 
 type CaptainHandoff struct {
@@ -628,7 +634,7 @@ func createCaptainDispatchOffer(ctx context.Context, db *sql.DB, orderID, exclud
 		return CaptainOffer{}, false, err
 	}
 	if replay != nil {
-		offer, readErr := readCaptainOfferTx(ctx, tx, "id=$1", replay.OfferID)
+		offer, readErr := readCaptainOfferTx(ctx, tx, "offer.id=$1", replay.OfferID)
 		if readErr != nil {
 			return CaptainOffer{}, false, readErr
 		}
@@ -711,7 +717,7 @@ func ReadCaptainOffer(ctx context.Context, db *sql.DB, offerID string) (CaptainO
 	if err := canonicalizeCaptainOffersTx(ctx, tx, actorID); err != nil {
 		return CaptainOffer{}, err
 	}
-	offer, err := readCaptainOfferTx(ctx, tx, "id=$1", strings.TrimSpace(offerID))
+	offer, err := readCaptainOfferTx(ctx, tx, "offer.id=$1", strings.TrimSpace(offerID))
 	if err != nil {
 		return CaptainOffer{}, err
 	}
@@ -733,7 +739,12 @@ func ListCaptainOffers(ctx context.Context, db *sql.DB, actorID string, limit in
 	if err := canonicalizeCaptainOffersTx(ctx, tx, strings.TrimSpace(actorID)); err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id,order_id,captain_actor_id,state,expires_at,version,created_at,updated_at FROM dsh.captain_dispatch_offers WHERE captain_actor_id=$1 AND state<>'superseded' ORDER BY created_at DESC,id DESC LIMIT $2`, actorID, limit)
+	rows, err := tx.QueryContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
+		FROM dsh.captain_dispatch_offers offer
+		JOIN dsh.commerce_orders o ON o.id=offer.order_id
+		JOIN dsh.stores s ON s.id=o.store_id
+		WHERE offer.captain_actor_id=$1 AND offer.state<>'superseded'
+		ORDER BY offer.created_at DESC,offer.id DESC LIMIT $2`, actorID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +752,7 @@ func ListCaptainOffers(ctx context.Context, db *sql.DB, actorID string, limit in
 	items := make([]CaptainOffer, 0)
 	for rows.Next() {
 		var item CaptainOffer
-		if err := rows.Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.CustomerAddressText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -773,7 +784,7 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		return CaptainOfferResult{}, err
 	}
 	if replay != nil {
-		offer, readErr := readCaptainOfferTx(ctx, tx, "id=$1", offerID)
+		offer, readErr := readCaptainOfferTx(ctx, tx, "offer.id=$1", offerID)
 		if readErr != nil {
 			return CaptainOfferResult{}, readErr
 		}
@@ -794,7 +805,11 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 		return CaptainOfferResult{Offer: offer, Assignment: assignment, Replayed: true}, nil
 	}
 	var offer CaptainOffer
-	err = tx.QueryRowContext(ctx, `SELECT id,order_id,captain_actor_id,state,expires_at,version,created_at,updated_at FROM dsh.captain_dispatch_offers WHERE id=$1 FOR UPDATE`, offerID).Scan(&offer.ID, &offer.OrderID, &offer.CaptainActorID, &offer.State, &offer.ExpiresAt, &offer.Version, &offer.CreatedAt, &offer.UpdatedAt)
+	err = tx.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
+		FROM dsh.captain_dispatch_offers offer
+		JOIN dsh.commerce_orders o ON o.id=offer.order_id
+		JOIN dsh.stores s ON s.id=o.store_id
+		WHERE offer.id=$1 FOR UPDATE OF offer`, offerID).Scan(&offer.ID, &offer.OrderID, &offer.CaptainActorID, &offer.State, &offer.ExpiresAt, &offer.Version, &offer.CreatedAt, &offer.UpdatedAt, &offer.StoreName, &offer.CustomerAddressText, &offer.AmountDueMinor, &offer.Currency, &offer.PaymentMethod, &offer.PaymentState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainOfferResult{}, ErrCaptainOfferNotFound
 	}
@@ -952,7 +967,7 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 		return CaptainOffer{}, false, err
 	}
 	if replay != nil {
-		offer, readErr := readCaptainOfferTx(ctx, tx, "id=$1", replay.OfferID)
+		offer, readErr := readCaptainOfferTx(ctx, tx, "offer.id=$1", replay.OfferID)
 		if readErr != nil {
 			return CaptainOffer{}, false, readErr
 		}
@@ -1763,7 +1778,11 @@ func readCaptainOfferTx(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, where string, args ...any) (CaptainOffer, error) {
 	var item CaptainOffer
-	err := source.QueryRowContext(ctx, `SELECT id,order_id,captain_actor_id,state,expires_at,version,created_at,updated_at FROM dsh.captain_dispatch_offers WHERE `+where, args...).Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt)
+	err := source.QueryRowContext(ctx, `SELECT offer.id,offer.order_id,offer.captain_actor_id,offer.state,offer.expires_at,offer.version,offer.created_at,offer.updated_at,s.name,o.address_text,o.total_amount_minor,o.currency,o.payment_method,o.payment_state
+		FROM dsh.captain_dispatch_offers offer
+		JOIN dsh.commerce_orders o ON o.id=offer.order_id
+		JOIN dsh.stores s ON s.id=o.store_id
+		WHERE `+where, args...).Scan(&item.ID, &item.OrderID, &item.CaptainActorID, &item.State, &item.ExpiresAt, &item.Version, &item.CreatedAt, &item.UpdatedAt, &item.StoreName, &item.CustomerAddressText, &item.AmountDueMinor, &item.Currency, &item.PaymentMethod, &item.PaymentState)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CaptainOffer{}, ErrCaptainOfferNotFound
 	}

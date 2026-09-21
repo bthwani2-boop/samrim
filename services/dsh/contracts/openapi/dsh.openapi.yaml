@@ -2931,7 +2931,7 @@ components:
 
     CaptainOffer:
       type: object
-      required: [id, orderId, captainActorId, state, expiresAt, version, createdAt, updatedAt]
+      required: [id, orderId, captainActorId, state, expiresAt, version, createdAt, updatedAt, storeName, customerAddressText, amountDueMinor, currency, paymentMethod, paymentState]
       additionalProperties: false
       properties:
         id:
@@ -2955,6 +2955,22 @@ components:
         updatedAt:
           type: string
           format: date-time
+        storeName:
+          type: string
+          minLength: 1
+        customerAddressText:
+          type: string
+          minLength: 1
+        amountDueMinor:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: YER
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        paymentState:
+          $ref: "#/components/schemas/PaymentState"
 
     CaptainOfferListResponse:
       type: object
