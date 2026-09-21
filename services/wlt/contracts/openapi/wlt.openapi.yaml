@@ -93,7 +93,95 @@ paths:
           description: Bounded read of unremitted COD cash collected by Captains
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CashLiabilityResponse' }
+               schema: { $ref: '#/components/schemas/CashLiabilityResponse' }
+  /wlt/v1/captains/{captainActorId}/wallet-state:
+    get:
+      operationId: readCaptainWalletState
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/CaptainActorId' }
+      responses:
+        '200':
+          description: Canonical Captain internal wallet projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainWalletStateResponse' }
+  /wlt/v1/operator/captains/{captainActorId}/opening-funding:
+    post:
+      operationId: createCaptainOpeningFunding
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/CaptainActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptainOpeningFundingRequest' }
+      responses:
+        '201':
+          description: Operator-governed opening funding posted to the WLT ledger.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainWalletFundingResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainWalletFundingResponse' }
+  /wlt/v1/captain-cod-reservations:
+    post:
+      operationId: reserveCaptainCOD
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptainCODReservationRequest' }
+      responses:
+        '201':
+          description: Order-specific COD exposure reserved atomically.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainCODReservationResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainCODReservationResponse' }
+  /wlt/v1/captain-cod-reservations/{orderId}/release:
+    post:
+      operationId: releaseCaptainCOD
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptainCODTransitionRequest' }
+      responses:
+        '200':
+          description: COD reservation released.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainCODReservationResponse' }
+  /wlt/v1/captain-cod-reservations/{orderId}/finalize:
+    post:
+      operationId: finalizeCaptainCOD
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptainCODTransitionRequest' }
+      responses:
+        '200':
+          description: COD reservation converted to the final ledger debit.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainCODReservationResponse' }
   /wlt/v1/payment-intents/{intentId}/remit:
     post:
       operationId: remitCashForPaymentIntent
@@ -225,6 +313,11 @@ components:
       schema: { type: string, minLength: 1, maxLength: 128 }
     CaptainActorId:
       name: captainActorId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    OrderId:
+      name: orderId
       in: path
       required: true
       schema: { type: string, minLength: 1, maxLength: 128 }
@@ -363,6 +456,90 @@ components:
       required: [cashRemittance, idempotentReplay]
       properties:
         cashRemittance: { $ref: '#/components/schemas/CashRemittance' }
+        idempotentReplay: { type: boolean }
+    CaptainOpeningFundingRequest:
+      type: object
+      additionalProperties: false
+      required: [amountMinor, fundingReason, evidenceReference]
+      properties:
+        amountMinor: { type: integer, minimum: 1 }
+        fundingReason: { type: string, minLength: 1, maxLength: 256 }
+        evidenceReference: { type: string, minLength: 1, maxLength: 256 }
+    CaptainWalletFunding:
+      type: object
+      additionalProperties: false
+      required: [id, captainActorId, amountMinor, currency, fundingReason, evidenceReference, createdBy, ledgerTransactionId, createdAt]
+      properties:
+        id: { type: string }
+        captainActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        fundingReason: { type: string }
+        evidenceReference: { type: string }
+        createdBy: { type: string }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    CaptainWalletFundingResponse:
+      type: object
+      additionalProperties: false
+      required: [funding, idempotentReplay]
+      properties:
+        funding: { $ref: '#/components/schemas/CaptainWalletFunding' }
+        idempotentReplay: { type: boolean }
+    CaptainWalletState:
+      type: object
+      additionalProperties: false
+      required: [captainActorId, currency, ledgerBalanceMinor, heldMinor, availableMinor]
+      properties:
+        captainActorId: { type: string }
+        currency: { type: string, const: YER }
+        ledgerBalanceMinor: { type: integer, minimum: 0 }
+        heldMinor: { type: integer, minimum: 0 }
+        availableMinor: { type: integer, minimum: 0 }
+    CaptainWalletStateResponse:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { $ref: '#/components/schemas/CaptainWalletState' }
+    CaptainCODReservationRequest:
+      type: object
+      additionalProperties: false
+      required: [orderId, paymentIntentId, captainActorId]
+      properties:
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        paymentIntentId: { type: string, minLength: 1, maxLength: 128 }
+        captainActorId: { type: string, minLength: 1, maxLength: 128 }
+    CaptainCODTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [paymentIntentId, captainActorId]
+      properties:
+        paymentIntentId: { type: string, minLength: 1, maxLength: 128 }
+        captainActorId: { type: string, minLength: 1, maxLength: 128 }
+    CaptainCODReservation:
+      type: object
+      additionalProperties: false
+      required: [id, orderId, paymentIntentId, captainActorId, amountMinor, currency, state, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        paymentIntentId: { type: string }
+        captainActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        state: { type: string, enum: [ACTIVE, RELEASED, FINALIZED] }
+        ledgerTransactionId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        releasedAt: { type: string, format: date-time, nullable: true }
+        finalizedAt: { type: string, format: date-time, nullable: true }
+    CaptainCODReservationResponse:
+      type: object
+      additionalProperties: false
+      required: [reservation, idempotentReplay]
+      properties:
+        reservation: { $ref: '#/components/schemas/CaptainCODReservation' }
         idempotentReplay: { type: boolean }
     PreparePartnerFinancialProfileRequest:
       type: object

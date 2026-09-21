@@ -92,6 +92,41 @@ type CashRemittance struct {
 	CreatedAt           string `json:"createdAt"`
 }
 
+type CaptainWalletState struct {
+	CaptainActorID     string `json:"captainActorId"`
+	Currency           string `json:"currency"`
+	LedgerBalanceMinor int64  `json:"ledgerBalanceMinor"`
+	HeldMinor          int64  `json:"heldMinor"`
+	AvailableMinor     int64  `json:"availableMinor"`
+}
+
+type CaptainWalletFunding struct {
+	ID                  string `json:"id"`
+	CaptainActorID      string `json:"captainActorId"`
+	AmountMinor         int64  `json:"amountMinor"`
+	Currency            string `json:"currency"`
+	FundingReason       string `json:"fundingReason"`
+	EvidenceReference   string `json:"evidenceReference"`
+	CreatedBy           string `json:"createdBy"`
+	LedgerTransactionID string `json:"ledgerTransactionId"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type CaptainCODReservation struct {
+	ID                  string  `json:"id"`
+	OrderID             string  `json:"orderId"`
+	PaymentIntentID     string  `json:"paymentIntentId"`
+	CaptainActorID      string  `json:"captainActorId"`
+	AmountMinor         int64   `json:"amountMinor"`
+	Currency            string  `json:"currency"`
+	State               string  `json:"state"`
+	LedgerTransactionID *string `json:"ledgerTransactionId,omitempty"`
+	CreatedAt           string  `json:"createdAt"`
+	UpdatedAt           string  `json:"updatedAt"`
+	ReleasedAt          *string `json:"releasedAt,omitempty"`
+	FinalizedAt         *string `json:"finalizedAt,omitempty"`
+}
+
 type PartnerFinancialProfile struct {
 	ID                string  `json:"id"`
 	JoiningCaseID     string  `json:"joiningCaseId"`
@@ -544,6 +579,52 @@ func (c *Client) RemitCash(ctx context.Context, intentID, captainActorID string,
 	var response cashRemittanceResponse
 	err := c.request(ctx, http.MethodPost, "/wlt/v1/payment-intents/"+url.PathEscape(strings.TrimSpace(intentID))+"/remit", body, idempotencyKey, correlationID, expectedPaymentVersion, &response)
 	return response.CashRemittance, response.IdempotentReplay, err
+}
+
+func (c *Client) CreateCaptainOpeningFunding(ctx context.Context, captainActorID string, amountMinor int64, fundingReason, evidenceReference, idempotencyKey, correlationID, actingActorID string) (CaptainWalletFunding, bool, error) {
+	body := map[string]any{"amountMinor": amountMinor, "fundingReason": strings.TrimSpace(fundingReason), "evidenceReference": strings.TrimSpace(evidenceReference)}
+	var response struct {
+		Funding          CaptainWalletFunding `json:"funding"`
+		IdempotentReplay bool                 `json:"idempotentReplay"`
+	}
+	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/operator/captains/"+url.PathEscape(strings.TrimSpace(captainActorID))+"/opening-funding", body, idempotencyKey, correlationID, 0, actingActorID, &response)
+	return response.Funding, response.IdempotentReplay, err
+}
+
+func (c *Client) ReadCaptainWalletState(ctx context.Context, captainActorID string) (CaptainWalletState, error) {
+	var response struct {
+		State CaptainWalletState `json:"state"`
+	}
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/captains/"+url.PathEscape(strings.TrimSpace(captainActorID))+"/wallet-state", nil, "", "", 0, &response)
+	return response.State, err
+}
+
+func (c *Client) ReserveCaptainCOD(ctx context.Context, orderID, paymentIntentID, captainActorID, idempotencyKey, correlationID string) (CaptainCODReservation, bool, error) {
+	body := map[string]any{"orderId": strings.TrimSpace(orderID), "paymentIntentId": strings.TrimSpace(paymentIntentID), "captainActorId": strings.TrimSpace(captainActorID)}
+	var response struct {
+		Reservation      CaptainCODReservation `json:"reservation"`
+		IdempotentReplay bool                  `json:"idempotentReplay"`
+	}
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/captain-cod-reservations", body, idempotencyKey, correlationID, 0, &response)
+	return response.Reservation, response.IdempotentReplay, err
+}
+
+func (c *Client) ReleaseCaptainCOD(ctx context.Context, orderID, paymentIntentID, captainActorID, idempotencyKey, correlationID string) (CaptainCODReservation, bool, error) {
+	return c.transitionCaptainCOD(ctx, "release", orderID, paymentIntentID, captainActorID, idempotencyKey, correlationID)
+}
+
+func (c *Client) FinalizeCaptainCOD(ctx context.Context, orderID, paymentIntentID, captainActorID, idempotencyKey, correlationID string) (CaptainCODReservation, bool, error) {
+	return c.transitionCaptainCOD(ctx, "finalize", orderID, paymentIntentID, captainActorID, idempotencyKey, correlationID)
+}
+
+func (c *Client) transitionCaptainCOD(ctx context.Context, operation, orderID, paymentIntentID, captainActorID, idempotencyKey, correlationID string) (CaptainCODReservation, bool, error) {
+	body := map[string]any{"paymentIntentId": strings.TrimSpace(paymentIntentID), "captainActorId": strings.TrimSpace(captainActorID)}
+	var response struct {
+		Reservation      CaptainCODReservation `json:"reservation"`
+		IdempotentReplay bool                  `json:"idempotentReplay"`
+	}
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/captain-cod-reservations/"+url.PathEscape(strings.TrimSpace(orderID))+"/"+operation, body, idempotencyKey, correlationID, 0, &response)
+	return response.Reservation, response.IdempotentReplay, err
 }
 
 func (c *Client) PreparePartnerFinancialProfile(ctx context.Context, joiningCaseID, partnerActorID, origin string, commissionRateBps int, settlementPeriod, idempotencyKey, correlationID string) (PartnerFinancialProfile, bool, error) {

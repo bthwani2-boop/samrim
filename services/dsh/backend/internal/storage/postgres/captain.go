@@ -1384,6 +1384,34 @@ func ReadCaptainAssignmentForOrder(ctx context.Context, db *sql.DB, orderID stri
 	return assignment, nil
 }
 
+// ReadLatestCaptainAssignmentForOrder includes reassigned history so a
+// cross-service compensation can release the former captain's COD hold after
+// DSH has atomically moved the order to a new offer.
+func ReadLatestCaptainAssignmentForOrder(ctx context.Context, db *sql.DB, orderID string) (CaptainAssignment, error) {
+	if db == nil || strings.TrimSpace(orderID) == "" {
+		return CaptainAssignment{}, ErrCaptainAssignmentNotFound
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return CaptainAssignment{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var assignmentID string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM dsh.captain_assignments WHERE order_id=$1 ORDER BY created_at DESC,updated_at DESC LIMIT 1`, strings.TrimSpace(orderID)).Scan(&assignmentID); errors.Is(err, sql.ErrNoRows) {
+		return CaptainAssignment{}, ErrCaptainAssignmentNotFound
+	} else if err != nil {
+		return CaptainAssignment{}, err
+	}
+	assignment, err := readCaptainAssignmentTx(ctx, tx, "id=$1", assignmentID)
+	if err != nil {
+		return CaptainAssignment{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CaptainAssignment{}, err
+	}
+	return assignment, nil
+}
+
 // ReadCaptainDeliveryTask is the bounded Captain projection. Its joins are
 // intentionally server-side so a client cannot compose a task from generic
 // order, store, or address reads.
