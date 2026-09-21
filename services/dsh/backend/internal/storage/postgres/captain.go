@@ -479,6 +479,16 @@ func SuspendCaptainAdmission(ctx context.Context, db *sql.DB, actorID, idempoten
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,assignment_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('captain_assignment_reassigned',$1,$2,$3,$4,$5,$6,'assigned','reassigned',$7,$8)`, assignmentKey, correlationID, actingActorID, orderID, assignmentID, actorID, assignmentVersion, requestHash); err != nil {
 			return CaptainAdmission{}, err
 		}
+		var paymentIntentID sql.NullString
+		var paymentState string
+		if err := tx.QueryRowContext(ctx, `SELECT payment_intent_id,payment_state FROM dsh.commerce_orders WHERE id=$1`, orderID).Scan(&paymentIntentID,&paymentState); err != nil {
+			return CaptainAdmission{}, err
+		}
+		if paymentIntentID.Valid && paymentState=="REQUIRES_COLLECTION" {
+			if err := enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"CAPTAIN_COD_RELEASE",SourceRef:assignmentID,OrderID:orderID,PaymentIntentID:paymentIntentID.String,CaptainActorID:actorID,IdempotencyKey:assignmentKey,CorrelationID:correlationID,ActingActorID:actingActorID}); err != nil {
+				return CaptainAdmission{}, err
+			}
+		}
 	}
 
 	if offerID != "" {
@@ -489,6 +499,16 @@ func SuspendCaptainAdmission(ctx context.Context, db *sql.DB, actorID, idempoten
 		offerKey := idempotencyKey + ":offer:" + offerID
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('captain_offer_superseded_by_access',$1,$2,$3,$4,$5,$6,'offered','superseded',$7,$8)`, offerKey, correlationID, actingActorID, offerOrderID, offerID, actorID, supersededVersion, requestHash); err != nil {
 			return CaptainAdmission{}, err
+		}
+		var paymentIntentID sql.NullString
+		var paymentState string
+		if err := tx.QueryRowContext(ctx, `SELECT payment_intent_id,payment_state FROM dsh.commerce_orders WHERE id=$1`, offerOrderID).Scan(&paymentIntentID,&paymentState); err != nil {
+			return CaptainAdmission{}, err
+		}
+		if paymentIntentID.Valid && paymentState=="REQUIRES_COLLECTION" {
+			if err := enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"CAPTAIN_COD_RELEASE",SourceRef:offerID,OrderID:offerOrderID,PaymentIntentID:paymentIntentID.String,CaptainActorID:actorID,IdempotencyKey:offerKey,CorrelationID:correlationID,ActingActorID:actingActorID}); err != nil {
+				return CaptainAdmission{}, err
+			}
 		}
 	}
 	if admission.State == "suspended" {
@@ -797,6 +817,16 @@ func RespondToCaptainOffer(ctx context.Context, db *sql.DB, offerID, captainActo
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,offer_id,captain_actor_id,from_state,to_state,result_version,request_hash) VALUES('dispatch_offer_expired',$1,$2,$3,$4,$5,$6,'offered','expired',$7,$8) ON CONFLICT (event_type,idempotency_key) DO NOTHING`, key, key, "system:captain-timeout", offer.OrderID, offer.ID, offer.CaptainActorID, expiredVersion, hash); err != nil {
 				return CaptainOfferResult{}, err
+			}
+			var paymentIntentID sql.NullString
+			var paymentState string
+			if err := tx.QueryRowContext(ctx, `SELECT payment_intent_id,payment_state FROM dsh.commerce_orders WHERE id=$1`, offer.OrderID).Scan(&paymentIntentID,&paymentState); err != nil {
+				return CaptainOfferResult{}, err
+			}
+			if paymentIntentID.Valid && paymentState=="REQUIRES_COLLECTION" {
+				if err := enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"CAPTAIN_COD_RELEASE",SourceRef:offer.ID,OrderID:offer.OrderID,PaymentIntentID:paymentIntentID.String,CaptainActorID:offer.CaptainActorID,IdempotencyKey:key,CorrelationID:key,ActingActorID:"system:captain-timeout"}); err != nil {
+					return CaptainOfferResult{}, err
+				}
 			}
 			offer.State = "expired"
 			offer.Version = expiredVersion
