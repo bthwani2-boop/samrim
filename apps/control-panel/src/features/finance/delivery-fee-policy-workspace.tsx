@@ -1,10 +1,11 @@
 "use client";
 
 import { financialPolicyStateLabel } from "@bthwani/dsh";
+import type { DeliveryFeePolicy } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 
 type City = Readonly<{ id: string; displayNameAr: string; active: boolean }>;
-type Policy = Readonly<{ id: string; serviceCityId: string; policyVersion: string; state: string; baseFeeMinor: number; distanceUnitMeters: number; distanceRateMinor: number; orderSizeUnitBaseUnits: number; orderSizeRateMinor: number; zoneSurchargeMinor: number; roundingUnitMinor: number; version: number }>;
+type Policy = Readonly<{ id: string; serviceCityId: string; policyVersion: string; state: DeliveryFeePolicy["state"]; baseFeeMinor: number; distanceUnitMeters: number; distanceRateMinor: number; orderSizeUnitBaseUnits: number; orderSizeRateMinor: number; zoneSurchargeMinor: number; roundingUnitMinor: number; version: number }>;
 
 const emptyForm = { baseFeeMinor: "0", distanceUnitMeters: "1000", distanceRateMinor: "0", orderSizeUnitBaseUnits: "1", orderSizeRateMinor: "0", zoneSurchargeMinor: "0" };
 
