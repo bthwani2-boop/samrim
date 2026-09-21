@@ -28,6 +28,7 @@ func NewCart(identityClient *identityintegration.Client, db *sql.DB, serviceabil
 
 func (s *CartServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/cart", s.read)
+	mux.HandleFunc("POST /dsh/cart/quote", s.quote)
 	mux.HandleFunc("POST /dsh/cart/lines", s.upsertLine)
 	mux.HandleFunc("PATCH /dsh/cart/lines/{lineId}", s.updateLine)
 	mux.HandleFunc("DELETE /dsh/cart/lines/{lineId}", s.removeLine)
@@ -50,6 +51,27 @@ func (s *CartServer) read(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.CartResponse{Cart: toCart(result)})
+}
+
+func (s *CartServer) quote(w http.ResponseWriter, r *http.Request) {
+	expected, ok := requiredCartQuoteHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.CheckoutRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if strings.TrimSpace(input.CartID) == "" || strings.TrimSpace(input.StoreID) == "" || strings.TrimSpace(input.AddressID) == "" || strings.TrimSpace(string(input.FulfillmentMode)) == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId and fulfillmentMode are required")
+		return
+	}
+	result, err := s.service.Quote(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), expected)
+	if err != nil {
+		writeCartError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CheckoutQuoteResponse{Quote: toCheckoutQuote(result)})
 }
 
 func (s *CartServer) upsertLine(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +173,23 @@ func requiredCartHeaders(w http.ResponseWriter, r *http.Request, allowZero bool)
 	return correlation, idempotency, expected, true
 }
 
+func requiredCartQuoteHeaders(w http.ResponseWriter, r *http.Request) (int, bool) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return 0, false
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cart ownership comes from the canonical client session")
+		return 0, false
+	}
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if err != nil || expected < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "expected cart version is required")
+		return 0, false
+	}
+	return expected, true
+}
+
 func toCart(item postgres.CartRecord) contract.Cart {
 	lines := make([]contract.CartLine, 0, len(item.Lines))
 	for _, line := range item.Lines {
@@ -161,6 +200,10 @@ func toCart(item postgres.CartRecord) contract.Cart {
 		lines = append(lines, contract.CartLine{ID: line.ID, CartID: line.CartID, StoreOfferID: line.StoreOfferID, VariantID: line.VariantID, ProductID: line.ProductID, ProductName: line.ProductName, VariantTitle: line.VariantTitle, MeasurementKind: contract.MeasurementKind(line.MeasurementKind), BaseUnit: contract.BaseUnit(line.BaseUnit), PricingBasis: line.PricingBasis, QuantityPolicy: line.QuantityPolicy, QuantityMinBaseUnits: int(line.QuantityMinBaseUnits), QuantityMaxBaseUnits: int(line.QuantityMaxBaseUnits), QuantityStepBaseUnits: int(line.QuantityStepBaseUnits), PricingUnitBaseUnits: int(line.PricingUnitBaseUnits), QuantityBaseUnits: int(line.QuantityBaseUnits), SelectedModifierOptionIds: line.SelectedModifierOptionIDs, SelectedModifiers: modifiers, UnitPriceMinor: int(line.UnitPriceMinor), ModifierAmountMinor: int(line.ModifierAmountMinor), LineAmountMinor: int(line.LineAmountMinor), Currency: line.Currency, OfferVersion: line.OfferVersion, CreatedAt: line.CreatedAt, UpdatedAt: line.UpdatedAt})
 	}
 	return contract.Cart{ID: item.ID, StoreID: item.StoreID, State: contract.CartState(item.State), Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+
+func toCheckoutQuote(item cart.CheckoutQuote) contract.CheckoutQuote {
+	return contract.CheckoutQuote{CartID: item.CartID, StoreID: item.StoreID, AddressID: item.AddressID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), CartVersion: item.CartVersion, SubtotalMinor: int(item.SubtotalMinor), DeliveryFeeMinor: int(item.DeliveryFeeMinor), TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, DeliveryPolicyVersion: item.DeliveryPolicyVersion, ServiceCityID: item.ServiceCityID, QuotedAt: item.QuotedAt}
 }
 
 func writeCartError(w http.ResponseWriter, err error) {
@@ -187,6 +230,8 @@ func writeCartError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "CART_CLOSED", "cart is no longer open")
 	case errors.Is(err, postgres.ErrPaymentProvisioning):
 		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "the payment service is temporarily unavailable; the order was not created")
+	case errors.Is(err, postgres.ErrDeliveryFeeUnavailable):
+		writeError(w, http.StatusBadGateway, "WLT_DELIVERY_FEE_UNAVAILABLE", "the delivery fee service is temporarily unavailable; no checkout quote was created")
 	case errors.Is(err, cart.ErrCheckoutNotServiceable):
 		writeError(w, http.StatusConflict, "UNSERVICEABLE", "the selected address is not serviceable for this Store")
 	case errors.Is(err, cart.ErrFulfillmentModeUnavailable):

@@ -107,6 +107,38 @@ paths:
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
 
+  /dsh/cart/quote:
+    post:
+      operationId: quoteCheckout
+      summary: Revalidate the open cart and serviceability, then return the WLT delivery fee and expected checkout total without creating an Order
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../dsh.openapi.yaml#/components/schemas/CheckoutRequest"
+      responses:
+        "200":
+          description: Current customer-visible checkout quote.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/CheckoutQuoteResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "502":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
   /dsh/cart/lines:
     post:
       operationId: upsertCartLine

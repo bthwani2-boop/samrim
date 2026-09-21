@@ -177,6 +177,9 @@ paths:
   /dsh/cart:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart"
 
+  /dsh/cart/quote:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart~1quote"
+
   /dsh/cart/lines:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart~1lines"
 
@@ -2782,6 +2785,54 @@ components:
           maxLength: 128
         fulfillmentMode:
           $ref: "#/components/schemas/FulfillmentMode"
+
+    CheckoutQuote:
+      type: object
+      required: [cartId, storeId, addressId, fulfillmentMode, cartVersion, subtotalMinor, deliveryFeeMinor, totalAmountMinor, currency, deliveryPolicyVersion, serviceCityId, quotedAt]
+      additionalProperties: false
+      properties:
+        cartId:
+          type: string
+        storeId:
+          type: string
+        addressId:
+          type: string
+        fulfillmentMode:
+          $ref: "#/components/schemas/FulfillmentMode"
+        cartVersion:
+          type: integer
+          minimum: 1
+        subtotalMinor:
+          type: integer
+          minimum: 1
+        deliveryFeeMinor:
+          type: integer
+          minimum: 0
+        totalAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        deliveryPolicyVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        serviceCityId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        quotedAt:
+          type: string
+          format: date-time
+
+    CheckoutQuoteResponse:
+      type: object
+      required: [quote]
+      additionalProperties: false
+      properties:
+        quote:
+          $ref: "#/components/schemas/CheckoutQuote"
 
     CaptainAdmissionRequest:
       type: object

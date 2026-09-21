@@ -1,13 +1,14 @@
 import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type Cart, createDshMobileClient, type DeliveryAddress, formatMoney, formatQuantity, paymentMethodLabel, paymentStateLabel, type Order, orderStateLabel } from "@bthwani/dsh";
+import { type Cart, createDshMobileClient, type CheckoutQuote, type DeliveryAddress, formatMoney, formatQuantity, paymentMethodLabel, paymentStateLabel, type Order, orderStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, Link } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
+type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "error" };
 
 function baseUrl(): string {
   const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
@@ -42,15 +43,19 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartState>({ kind: "loading" });
+  const [quote, setQuote] = useState<QuoteState>({ kind: "idle" });
   const [busy, setBusy] = useState(false);
   const [busyLineId, setBusyLineId] = useState("");
   const [error, setError] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
+  const quoteRequestID = useRef(0);
   const mutationBusy = busy || Boolean(busyLineId);
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
+    quoteRequestID.current += 1;
+    setQuote({ kind: "idle" });
     setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -63,6 +68,33 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
   }, [storeId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const refreshQuote = useCallback(async (cart: Cart) => {
+    if (!serviceableAddressId) {
+      quoteRequestID.current += 1;
+      setQuote({ kind: "idle" });
+      return;
+    }
+    const requestID = ++quoteRequestID.current;
+    setQuote({ kind: "loading" });
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const result = await client().quoteCheckout(token, { cartId: cart.id, storeId, addressId: serviceableAddressId, fulfillmentMode: "BTHWANI_CAPTAIN" }, cart.version);
+      if (requestID === quoteRequestID.current) setQuote({ kind: "ready", quote: result.quote });
+    } catch (cause) {
+      console.error("DSH checkout quote failed", cause);
+      if (requestID === quoteRequestID.current) setQuote({ kind: "error" });
+    }
+  }, [serviceableAddressId, storeId]);
+
+  const readyCart = state.kind === "ready" ? state.cart : null;
+  useEffect(() => {
+    if (readyCart) void refreshQuote(readyCart);
+    else {
+      quoteRequestID.current += 1;
+      setQuote({ kind: "idle" });
+    }
+  }, [readyCart, refreshQuote]);
 
   async function refreshAfterConflict(message: string) {
     await load();
@@ -105,7 +137,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
   }
 
   async function checkout() {
-    if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || !serviceableAddressId) return;
+    if (mutationBusy || state.kind !== "ready" || !state.cart.lines.length || !serviceableAddressId || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== serviceableAddressId) return;
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
@@ -145,11 +177,21 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
             </View>
           </View>;
         })}</View>
-        <Text style={styles.total}>الإجمالي المستحق: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
+        <View accessibilityLabel="ملخص الدفع" style={styles.totals}>
+          <Text style={styles.muted}>مجموع المنتجات: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
+          {quote.kind === "ready" ? <>
+            <Text style={styles.muted}>رسوم التوصيل: {formatMoney(quote.quote.deliveryFeeMinor, quote.quote.currency)}</Text>
+            <Text style={styles.total}>الإجمالي المتوقع عند الإتمام: {formatMoney(quote.quote.totalAmountMinor, quote.quote.currency)}</Text>
+          </> : null}
+          {quote.kind === "loading" ? <Text accessibilityLiveRegion="polite" style={styles.muted}>جارٍ حساب رسوم التوصيل والإجمالي النهائي…</Text> : null}
+          {quote.kind === "error" ? <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.error}>تعذر حساب رسوم التوصيل. حدّث السلة أو أعد المحاولة قبل إتمام الطلب.</Text> : null}
+          {quote.kind === "idle" && !serviceableAddressId ? <Text style={styles.warning}>اختر عنوانًا مؤهلًا لعرض رسوم التوصيل والإجمالي النهائي.</Text> : null}
+          {quote.kind === "error" ? <BthwaniButton label="إعادة حساب الإجمالي" onPress={() => void refreshQuote(state.cart)} variant="secondary" /> : null}
+        </View>
         <View accessibilityLabel="طريقة التوصيل" style={styles.fulfillmentCard}><Text style={styles.fulfillmentTitle}>طريقة التوصيل</Text><Text style={styles.fulfillmentChoice}>توصيل عبر كابتن بتهواني</Text><Text style={styles.muted}>يُسند الطلب إلى كابتن مؤهل بعد جاهزية المتجر.</Text></View>
         <Text style={styles.payment}>طريقة الدفع: الدفع نقدًا عند الاستلام. لا يتم إنهاء الرحلة إلا بعد تحصيل المبلغ المطابق للإجمالي.</Text>
         {serviceableAddressId && selectedAddress ? <Text style={styles.success}>العنوان مؤهل: {selectedAddress.addressText}</Text> : <Text style={styles.warning}>اختر عنوانًا مؤهلًا من قسم الأهلية قبل الإتمام.</Text>}
-        <BthwaniButton accessibilityLabel="إتمام الطلب" busy={busy} disabled={mutationBusy || !serviceableAddressId} label="إتمام الطلب" onPress={() => void checkout()} />
+        <BthwaniButton accessibilityLabel="إتمام الطلب" busy={busy} disabled={mutationBusy || !serviceableAddressId || quote.kind !== "ready" || quote.quote.cartVersion !== state.cart.version || quote.quote.addressId !== serviceableAddressId} label="إتمام الطلب" onPress={() => void checkout()} />
       </> : null}
       {order ? <View style={styles.orderBox}><Text style={styles.success}>تم إنشاء الطلب</Text><Text style={styles.muted}>الحالة: {orderStateLabel(order.state)} · الإجمالي: {formatMoney(order.totalAmountMinor, order.currency)}</Text><Text style={styles.payment}>{paymentMethodLabel(order.paymentMethod)} · {paymentStateLabel(order.paymentState)}</Text><Link href={`/orders/${encodeURIComponent(order.id)}` as Href} asChild><BthwaniButton label="فتح تفاصيل الطلب" variant="secondary" /></Link></View> : null}
       {orders.length ? <View style={styles.orderBox}><Text style={styles.lineTitle}>طلباتك الأخيرة</Text>{orders.map((item) => <Text key={item.id} style={styles.muted}>{orderStateLabel(item.state)} · {formatMoney(item.totalAmountMinor, item.currency)}</Text>)}</View> : null}
@@ -174,6 +216,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     fulfillmentTitle: { ...typography.label, color: theme.interactiveText },
     fulfillmentChoice: { ...typography.bodyStrong, color: theme.color },
     total: { ...typography.bodyStrong, color: theme.color },
+    totals: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[1], padding: spacing[3] },
     payment: { ...typography.bodySm, color: theme.interactiveText, lineHeight: 19 },
     orderBox: { backgroundColor: theme.actionSoft, borderRadius: radius.sm, gap: spacing[1], padding: spacing[3] },
     success: { ...typography.bodyStrong, color: theme.success },
