@@ -3960,9 +3960,13 @@ components:
         state:
           $ref: "#/components/schemas/BeneficiaryPayoutState"
 
+    FulfillmentMode:
+      type: string
+      enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
+
     Order:
       type: object
-      required: [id, clientActorId, storeId, cartId, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -3973,6 +3977,8 @@ components:
           type: string
         cartId:
           type: string
+        fulfillmentMode:
+          $ref: "#/components/schemas/FulfillmentMode"
         addressId:
           type: string
         addressVersion:
