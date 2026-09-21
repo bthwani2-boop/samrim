@@ -167,8 +167,8 @@ function cleanup() {
   for (const fundingID of captainFundingIDs) {
     const value = sqlLiteral(fundingID);
     sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id=(SELECT ledger_transaction_id FROM wlt.captain_wallet_funding WHERE id='${value}')`);
-    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='CAPTAIN_OPENING_FUNDING' AND source_id='${value}'`);
     sql(`DELETE FROM wlt.captain_wallet_funding WHERE id='${value}'`);
+    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='CAPTAIN_OPENING_FUNDING' AND source_id='${value}'`);
   }
   for (const policyID of deliveryFeePolicyIDs) {
     const value = sqlLiteral(policyID);
@@ -375,9 +375,9 @@ if (!actingOperatorID) {
   actingOperatorID = String(bootstrapped.body.actorId);
 }
 if (!actingOperatorID.startsWith("act_")) fail("acting operator identity is invalid", actingOperatorID);
-let checkerOperatorID = sql("SELECT actor_id FROM identity_actor_roles WHERE role='operator' AND enabled AND activated_at IS NOT NULL AND actor_id<>'' AND actor_id<> '" + sqlLiteral(actingOperatorID) + "' ORDER BY activated_at DESC, actor_id LIMIT 1");
+let checkerOperatorID = sql(`SELECT actor_id FROM identity_actor_roles WHERE role='operator' AND enabled AND activated_at IS NOT NULL AND actor_id<>'' AND actor_id<> '${sqlLiteral(actingOperatorID)}' ORDER BY activated_at DESC, actor_id LIMIT 1`);
 if (!checkerOperatorID) {
-  const checkerBootstrapped = await request(identityBase, "POST", "/internal/bootstrap/operator", { token: bootstrapToken, body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role: "operator" } });
+  const checkerBootstrapped = await request(identityBase, "POST", "/internal/actor-roles/provision", { token: dshToken, headers: serviceHeaders(actingOperatorID, `checker-operator-provision-${suffix}`), body: { phoneE164: `+9677${crypto.randomInt(10_000_000, 99_999_999)}`, role: "operator" } });
   if (checkerBootstrapped.status !== 201 || !checkerBootstrapped.body?.actorId) fail("checker operator bootstrap failed", JSON.stringify(checkerBootstrapped));
   checkerOperatorID = String(checkerBootstrapped.body.actorId);
   actorIDs.add(checkerOperatorID);

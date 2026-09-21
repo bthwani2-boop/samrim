@@ -1,6 +1,6 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniStatusBadge, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, paymentMethodLabel, paymentStateLabel, type DeliveryProofResponse, type Order, type OrderRatingResponse, type OrderTrackingResponse, orderStateLabel } from "@bthwani/dsh";
+import { createDshMobileClient, type DeliveryProofResponse, formatMoney, formatOrderDate, formatQuantity, type Order, type OrderRatingResponse, type OrderTrackingResponse, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -208,7 +208,7 @@ export default function ClientOrderDetail() {
         {tracking.kind === "error" ? <Text style={styles.refreshError}>تعذر قراءة التتبع الآن. حدّث الحالة لإعادة المحاولة.</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "NOT_ASSIGNED" ? <Text style={styles.muted}>سيظهر التتبع بعد إسناد الطلب إلى كابتن.</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "AWAITING_LOCATION" ? <Text style={styles.muted}>تم إسناد الطلب، وبانتظار أول تحديث موقع من الكابتن.</Text> : null}
-        {tracking.kind === "ready" && tracking.value.trackingState === "COMPLETED" ? <Text style={styles.muted}>انتهت رحلة التوصيل، وتم إيقاف عرض الموقع.</Text> : null}
+        {tracking.kind === "ready" && tracking.value.trackingState === "COMPLETED" ? <Text style={styles.muted}>{order.state === "DELIVERY_FAILED" ? "تعذرت محاولة التوصيل، فأوقفنا التتبع المباشر إلى أن يعالج المشغل الحالة." : order.state === "CANCELLED" ? "أُلغي الطلب، لذلك أوقفنا التتبع المباشر." : "اكتملت رحلة التوصيل، وتم إيقاف عرض الموقع."}</Text> : null}
         {tracking.kind === "ready" && tracking.value.trackingState === "LIVE" && tracking.value.captainLocation ? <><Text style={styles.trackingTitle}>الكابتن في الطريق</Text><Text style={styles.muted}>آخر تحديث: {formatTrackingTime(tracking.value.captainLocation.updatedAt)}</Text><BthwaniButton label="فتح الموقع على الخريطة" onPress={() => void Linking.openURL(`geo:${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}?q=${tracking.value.captainLocation?.latitude},${tracking.value.captainLocation?.longitude}`)} variant="secondary" /></> : null}
       </BthwaniSurface>
       <BthwaniSectionHeader title="عنوان التوصيل" />
