@@ -59,18 +59,18 @@ type CaptainCODReservationInput struct {
 }
 
 type CaptainCODReservationRecord struct {
-	ID                  string
-	OrderID             string
-	PaymentIntentID     string
-	CaptainActorID      string
-	AmountMinor         int64
-	Currency            string
-	State               string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	ReleasedAt  *time.Time
-	FinalizedAt *time.Time
-	RemittedAt  *time.Time
+	ID              string
+	OrderID         string
+	PaymentIntentID string
+	CaptainActorID  string
+	AmountMinor     int64
+	Currency        string
+	State           string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	ReleasedAt      *time.Time
+	FinalizedAt     *time.Time
+	RemittedAt      *time.Time
 }
 
 func HashCaptainWalletFunding(input CaptainWalletFundingInput) string {

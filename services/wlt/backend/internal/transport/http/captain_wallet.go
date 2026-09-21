@@ -41,18 +41,18 @@ type captainWalletStateJSON struct {
 }
 
 type captainCODReservationJSON struct {
-	ID                  string  `json:"id"`
-	OrderID             string  `json:"orderId"`
-	PaymentIntentID     string  `json:"paymentIntentId"`
-	CaptainActorID      string  `json:"captainActorId"`
-	AmountMinor         int64   `json:"amountMinor"`
-	Currency            string  `json:"currency"`
-	State       string  `json:"state"`
-	CreatedAt   string  `json:"createdAt"`
-	UpdatedAt   string  `json:"updatedAt"`
-	ReleasedAt  *string `json:"releasedAt,omitempty"`
-	FinalizedAt *string `json:"finalizedAt,omitempty"`
-	RemittedAt  *string `json:"remittedAt,omitempty"`
+	ID              string  `json:"id"`
+	OrderID         string  `json:"orderId"`
+	PaymentIntentID string  `json:"paymentIntentId"`
+	CaptainActorID  string  `json:"captainActorId"`
+	AmountMinor     int64   `json:"amountMinor"`
+	Currency        string  `json:"currency"`
+	State           string  `json:"state"`
+	CreatedAt       string  `json:"createdAt"`
+	UpdatedAt       string  `json:"updatedAt"`
+	ReleasedAt      *string `json:"releasedAt,omitempty"`
+	FinalizedAt     *string `json:"finalizedAt,omitempty"`
+	RemittedAt      *string `json:"remittedAt,omitempty"`
 }
 
 type captainWalletFundingResponse struct {

@@ -103,10 +103,16 @@ func (s *Service) ListForClient(ctx context.Context, accessToken string, limit i
 
 func (s *Service) CancelForClient(ctx context.Context, accessToken, orderID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
-	if err != nil { return postgres.OrderRecord{}, false, err }
-	if expectedVersion < 1 || strings.TrimSpace(orderID) == "" { return postgres.OrderRecord{}, false, postgres.ErrOrderTransitionInvalid }
-	if _, err := postgres.ReadOrderForClient(ctx, s.db, orderID, identity); err != nil { return postgres.OrderRecord{}, false, err }
-	return postgres.TransitionOrderWithPaymentCancellation(ctx,s.db,orderID,"CANCELLED",expectedVersion,strings.TrimSpace(idempotencyKey),postgres.HashOrderTransition(orderID,"CANCELLED",expectedVersion),identity,strings.TrimSpace(correlationID),"client_cancelled")
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if expectedVersion < 1 || strings.TrimSpace(orderID) == "" {
+		return postgres.OrderRecord{}, false, postgres.ErrOrderTransitionInvalid
+	}
+	if _, err := postgres.ReadOrderForClient(ctx, s.db, orderID, identity); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "CANCELLED", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, "CANCELLED", expectedVersion), identity, strings.TrimSpace(correlationID), "client_cancelled")
 }
 
 func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID string, limit int) ([]postgres.OrderRecord, error) {
@@ -143,16 +149,24 @@ func (s *Service) ListCashCustodyForOperator(ctx context.Context, actingActorID 
 
 func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID, orderID, state string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
-	if err != nil { return postgres.OrderRecord{}, false, err }
-	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil { return postgres.OrderRecord{}, false, err }
-	current, err := postgres.ReadOrder(ctx, s.db, orderID)
-	if err != nil { return postgres.OrderRecord{}, false, err }
-	if current.StoreID != strings.TrimSpace(storeID) { return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden }
-	state=strings.TrimSpace(state)
-	if state=="REJECTED"{
-		return postgres.TransitionOrderWithPaymentCancellation(ctx,s.db,orderID,"REJECTED",expectedVersion,strings.TrimSpace(idempotencyKey),postgres.HashOrderTransition(orderID,state,expectedVersion),identity,strings.TrimSpace(correlationID),"partner_rejected")
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
 	}
-	return postgres.TransitionOrder(ctx,s.db,orderID,state,"",expectedVersion,strings.TrimSpace(idempotencyKey),postgres.HashOrderTransition(orderID,state,expectedVersion),identity,strings.TrimSpace(correlationID))
+	if err := s.requireOwnedStore(ctx, identity, storeID); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	current, err := postgres.ReadOrder(ctx, s.db, orderID)
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if current.StoreID != strings.TrimSpace(storeID) {
+		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
+	}
+	state = strings.TrimSpace(state)
+	if state == "REJECTED" {
+		return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "REJECTED", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), "partner_rejected")
+	}
+	return postgres.TransitionOrder(ctx, s.db, orderID, state, "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
 }
 
 func (s *Service) requireSession(ctx context.Context, accessToken, role, surface string) (string, error) {

@@ -13,7 +13,7 @@ func runFinancialHandoffReconciliationLoop(ctx context.Context, interval time.Du
 		}
 	}
 	run()
-	ticker:=time.NewTicker(interval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {

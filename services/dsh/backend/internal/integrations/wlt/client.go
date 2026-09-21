@@ -28,18 +28,18 @@ type Client struct {
 }
 
 type PaymentIntent struct {
-	ID                   string             `json:"id"`
-	ExternalReference    string             `json:"externalReference"`
-	PayerActorID         string             `json:"payerActorId"`
-	AmountMinor          int64              `json:"amountMinor"`
-	Currency             string             `json:"currency"`
-	Method               string             `json:"method"`
-	State                string             `json:"state"`
-	Version              int                `json:"version"`
-	CollectedAmountMinor *int64             `json:"collectedAmountMinor"`
-	CollectedByActorID   *string            `json:"collectedByActorId"`
-	CollectionReference  *string            `json:"collectionReference"`
-	CancellationReason   *string            `json:"cancellationReason"`
+	ID                        string                     `json:"id"`
+	ExternalReference         string                     `json:"externalReference"`
+	PayerActorID              string                     `json:"payerActorId"`
+	AmountMinor               int64                      `json:"amountMinor"`
+	Currency                  string                     `json:"currency"`
+	Method                    string                     `json:"method"`
+	State                     string                     `json:"state"`
+	Version                   int                        `json:"version"`
+	CollectedAmountMinor      *int64                     `json:"collectedAmountMinor"`
+	CollectedByActorID        *string                    `json:"collectedByActorId"`
+	CollectionReference       *string                    `json:"collectionReference"`
+	CancellationReason        *string                    `json:"cancellationReason"`
 	CustomerPaymentAllocation *CustomerPaymentAllocation `json:"customerPaymentAllocation,omitempty"`
 }
 
@@ -109,18 +109,18 @@ type CaptainWalletFunding struct {
 }
 
 type CaptainCODReservation struct {
-	ID                  string  `json:"id"`
-	OrderID             string  `json:"orderId"`
-	PaymentIntentID     string  `json:"paymentIntentId"`
-	CaptainActorID      string  `json:"captainActorId"`
-	AmountMinor         int64   `json:"amountMinor"`
-	Currency            string  `json:"currency"`
-	State       string  `json:"state"`
-	CreatedAt   string  `json:"createdAt"`
-	UpdatedAt   string  `json:"updatedAt"`
-	ReleasedAt  *string `json:"releasedAt,omitempty"`
-	FinalizedAt *string `json:"finalizedAt,omitempty"`
-	RemittedAt  *string `json:"remittedAt,omitempty"`
+	ID              string  `json:"id"`
+	OrderID         string  `json:"orderId"`
+	PaymentIntentID string  `json:"paymentIntentId"`
+	CaptainActorID  string  `json:"captainActorId"`
+	AmountMinor     int64   `json:"amountMinor"`
+	Currency        string  `json:"currency"`
+	State           string  `json:"state"`
+	CreatedAt       string  `json:"createdAt"`
+	UpdatedAt       string  `json:"updatedAt"`
+	ReleasedAt      *string `json:"releasedAt,omitempty"`
+	FinalizedAt     *string `json:"finalizedAt,omitempty"`
+	RemittedAt      *string `json:"remittedAt,omitempty"`
 }
 
 type PartnerFinancialProfile struct {
@@ -464,12 +464,12 @@ func (c *Client) Create(ctx context.Context, externalReference, payerActorID str
 
 func (c *Client) CreateForOrder(ctx context.Context, orderID, externalReference, payerActorID string, amountMinor int64, allocation CustomerPaymentAllocation, idempotencyKey, correlationID string) (PaymentIntent, bool, error) {
 	body := map[string]any{
-		"orderId":           strings.TrimSpace(orderID),
-		"externalReference": strings.TrimSpace(externalReference),
-		"payerActorId":      strings.TrimSpace(payerActorID),
-		"amountMinor":       amountMinor,
-		"currency":          "YER",
-		"method":            methodCashOnDelivery,
+		"orderId":                   strings.TrimSpace(orderID),
+		"externalReference":         strings.TrimSpace(externalReference),
+		"payerActorId":              strings.TrimSpace(payerActorID),
+		"amountMinor":               amountMinor,
+		"currency":                  "YER",
+		"method":                    methodCashOnDelivery,
 		"customerPaymentAllocation": allocation,
 	}
 	var response paymentIntentResponse

@@ -1341,31 +1341,31 @@ type BeneficiaryPayoutStateResponse struct {
 type FulfillmentMode string
 
 type Order struct {
-	ID                           string        `json:"id"`
-	ClientActorID                string        `json:"clientActorId"`
-	StoreID                      string        `json:"storeId"`
+	ID                           string          `json:"id"`
+	ClientActorID                string          `json:"clientActorId"`
+	StoreID                      string          `json:"storeId"`
 	CartID                       string          `json:"cartId"`
 	FulfillmentMode              FulfillmentMode `json:"fulfillmentMode"`
 	AddressID                    string          `json:"addressId"`
-	AddressVersion               int           `json:"addressVersion"`
-	AddressText                  string        `json:"addressText"`
-	AddressLatitude              float64       `json:"addressLatitude"`
-	AddressLongitude             float64       `json:"addressLongitude"`
-	ServiceCityID                string        `json:"serviceCityId"`
-	ServiceabilityPolicyVersion  string        `json:"serviceabilityPolicyVersion"`
-	ServiceabilityStatus         string        `json:"serviceabilityStatus"`
-	ServiceabilityStoreVersion   int           `json:"serviceabilityStoreVersion"`
-	ServiceabilityAddressVersion int           `json:"serviceabilityAddressVersion"`
-	State                        OrderState    `json:"state"`
-	TotalAmountMinor             int           `json:"totalAmountMinor"`
-	Currency                     string        `json:"currency"`
-	PaymentMethod                PaymentMethod `json:"paymentMethod"`
-	PaymentState                 PaymentState  `json:"paymentState"`
-	PaymentIntentID              string        `json:"paymentIntentId"`
-	Version                      int           `json:"version"`
-	Lines                        []OrderLine   `json:"lines"`
-	CreatedAt                    time.Time     `json:"createdAt"`
-	UpdatedAt                    time.Time     `json:"updatedAt"`
+	AddressVersion               int             `json:"addressVersion"`
+	AddressText                  string          `json:"addressText"`
+	AddressLatitude              float64         `json:"addressLatitude"`
+	AddressLongitude             float64         `json:"addressLongitude"`
+	ServiceCityID                string          `json:"serviceCityId"`
+	ServiceabilityPolicyVersion  string          `json:"serviceabilityPolicyVersion"`
+	ServiceabilityStatus         string          `json:"serviceabilityStatus"`
+	ServiceabilityStoreVersion   int             `json:"serviceabilityStoreVersion"`
+	ServiceabilityAddressVersion int             `json:"serviceabilityAddressVersion"`
+	State                        OrderState      `json:"state"`
+	TotalAmountMinor             int             `json:"totalAmountMinor"`
+	Currency                     string          `json:"currency"`
+	PaymentMethod                PaymentMethod   `json:"paymentMethod"`
+	PaymentState                 PaymentState    `json:"paymentState"`
+	PaymentIntentID              string          `json:"paymentIntentId"`
+	Version                      int             `json:"version"`
+	Lines                        []OrderLine     `json:"lines"`
+	CreatedAt                    time.Time       `json:"createdAt"`
+	UpdatedAt                    time.Time       `json:"updatedAt"`
 }
 
 type OrderResponse struct {

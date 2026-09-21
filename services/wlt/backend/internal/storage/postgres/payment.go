@@ -25,34 +25,34 @@ var (
 )
 
 type PaymentIntentRecord struct {
-	ID                   string
-	ExternalReference    string
-	PayerActorID         string
-	AmountMinor          int64
-	Currency             string
-	Method               string
-	State                string
-	Version              int
-	CollectedAmountMinor *int64
-	CollectedByActorID   *string
-	CollectionReference  *string
-	CollectedAt          *time.Time
-	CancellationReason   *string
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                        string
+	ExternalReference         string
+	PayerActorID              string
+	AmountMinor               int64
+	Currency                  string
+	Method                    string
+	State                     string
+	Version                   int
+	CollectedAmountMinor      *int64
+	CollectedByActorID        *string
+	CollectionReference       *string
+	CollectedAt               *time.Time
+	CancellationReason        *string
+	CreatedAt                 time.Time
+	UpdatedAt                 time.Time
 	CustomerPaymentAllocation *CustomerPaymentAllocationRecord
 }
 
 type CreatePaymentIntentInput struct {
-	ExternalReference string
-	PayerActorID      string
-	OrderID           string
-	AmountMinor       int64
-	Currency          string
-	Method            string
+	ExternalReference         string
+	PayerActorID              string
+	OrderID                   string
+	AmountMinor               int64
+	Currency                  string
+	Method                    string
 	CustomerPaymentAllocation *CustomerPaymentAllocationInput
-	IdempotencyKey    string
-	CorrelationID     string
+	IdempotencyKey            string
+	CorrelationID             string
 }
 
 type CollectPaymentIntentInput struct {

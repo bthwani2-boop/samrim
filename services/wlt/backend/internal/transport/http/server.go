@@ -78,12 +78,12 @@ func (s *Server) Register(mux *http.ServeMux) {
 }
 
 type createRequest struct {
-	ExternalReference string                    `json:"externalReference"`
-	PayerActorID      string                    `json:"payerActorId"`
-	OrderID           string                    `json:"orderId"`
-	AmountMinor       int64                     `json:"amountMinor"`
-	Currency          string                    `json:"currency"`
-	Method            string                    `json:"method"`
+	ExternalReference         string                            `json:"externalReference"`
+	PayerActorID              string                            `json:"payerActorId"`
+	OrderID                   string                            `json:"orderId"`
+	AmountMinor               int64                             `json:"amountMinor"`
+	Currency                  string                            `json:"currency"`
+	Method                    string                            `json:"method"`
 	CustomerPaymentAllocation *customerPaymentAllocationRequest `json:"customerPaymentAllocation"`
 }
 
@@ -342,21 +342,21 @@ type paymentIntentResponse struct {
 }
 
 type paymentIntentJSON struct {
-	ID                   string                 `json:"id"`
-	ExternalReference    string                 `json:"externalReference"`
-	PayerActorID         string                 `json:"payerActorId"`
-	AmountMinor          int64                  `json:"amountMinor"`
-	Currency             string                 `json:"currency"`
-	Method               string                 `json:"method"`
-	State                string                 `json:"state"`
-	Version              int                    `json:"version"`
-	CollectedAmountMinor *int64                 `json:"collectedAmountMinor"`
-	CollectedByActorID   *string                `json:"collectedByActorId"`
-	CollectionReference  *string                `json:"collectionReference"`
-	CollectedAt          *string                `json:"collectedAt"`
-	CancellationReason   *string                `json:"cancellationReason"`
-	CreatedAt            string                 `json:"createdAt"`
-	UpdatedAt            string                 `json:"updatedAt"`
+	ID                        string                         `json:"id"`
+	ExternalReference         string                         `json:"externalReference"`
+	PayerActorID              string                         `json:"payerActorId"`
+	AmountMinor               int64                          `json:"amountMinor"`
+	Currency                  string                         `json:"currency"`
+	Method                    string                         `json:"method"`
+	State                     string                         `json:"state"`
+	Version                   int                            `json:"version"`
+	CollectedAmountMinor      *int64                         `json:"collectedAmountMinor"`
+	CollectedByActorID        *string                        `json:"collectedByActorId"`
+	CollectionReference       *string                        `json:"collectionReference"`
+	CollectedAt               *string                        `json:"collectedAt"`
+	CancellationReason        *string                        `json:"cancellationReason"`
+	CreatedAt                 string                         `json:"createdAt"`
+	UpdatedAt                 string                         `json:"updatedAt"`
 	CustomerPaymentAllocation *customerPaymentAllocationJSON `json:"customerPaymentAllocation,omitempty"`
 }
 
