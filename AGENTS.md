@@ -41,7 +41,9 @@ NONE means durable meaning cannot materially change; REVALIDATE_ONLY means the r
 
 Use the pinned Governance only when durable meaning can materially affect the current decision. Relevant durable owners include GOVERNANCE-STANDARDS.md for governance/agent integrity, governance/policy/QUALITY.md for material quality/proof, governance/policy/EXPERIENCE.md for IA/navigation/interaction/RTL/accessibility/recovery, and governance/policy/DESIGN.md for durable visual identity/design language. Load other Product/System/Policy owners only when material.
 
-If UPDATE_REQUIRED or DEFECT_FOUND, correct and merge the canonical Governance owner first, then deliberately repin knowledge.sources.json to the resulting immutable SHA and re-prove the affected implementation cone. A Governance pin change can never be NONE, and normal promotion must not move the pin backward from its previously bound canonical ancestry. Do not duplicate durable Governance meaning into this file or another repository-local Markdown authority.
+If UPDATE_REQUIRED or DEFECT_FOUND, correct and merge the canonical Governance owner first, then deliberately repin knowledge.sources.json to the resulting immutable SHA and re-prove the affected implementation cone.
+
+Pinned Governance may intentionally be broader than the current implementation slice; missing admitted breadth is not a defect unless the authorized objective or current delivery gate requires it. Implemented durable meaning that contradicts the pinned model is GOVERNANCE_IMPACT=DEFECT_FOUND and blocks further semantic expansion of that affected capability until Governance and implementation converge. A Governance pin change can never be NONE, and normal promotion must not move the pin backward from its previously bound canonical ancestry. Do not duplicate durable Governance meaning into this file or another repository-local Markdown authority.
 
 Donor/history, OSS/product exemplars, Yemen-market evidence, primary technology sources and assurance/experience sources are evidence only. Inspect them only when they can change the current decision, and revalidate mutable external facts at use.
 
