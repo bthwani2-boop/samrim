@@ -44,7 +44,7 @@ export function FieldCommissionPolicyWorkspace() {
   };
 
   return <section className="access-card" aria-labelledby="field-commission-policy-title">
-    <div className="finance-toolbar"><div><p className="eyebrow">سياسة مالية مملوكة لـ WLT</p><h2 id="field-commission-policy-title">مكافأة الميداني</h2></div></div>
+    <div className="finance-toolbar"><div><p className="eyebrow">سياسة مالية مركزية</p><h2 id="field-commission-policy-title">مكافأة الميداني</h2></div></div>
     <p className="muted">تُستحق المكافأة مرة واحدة عند ظهور المتجر في تطبيق العميل. إخفاء المتجر لاحقًا لا يعكس الاستحقاق، والتقريب المالي ثابت عند 50 ريال.</p>
     <div className="form-grid">
       <label className="field-label" htmlFor="field-commission-scope">نطاق السياسة<select id="field-commission-scope" value={scopeType} onChange={(event) => setScopeType(event.target.value as Policy["scopeType"])} disabled={busy}><option value="DEFAULT">افتراضي</option><option value="VERTICAL">مجال تجاري</option><option value="STORE">متجر</option></select></label>

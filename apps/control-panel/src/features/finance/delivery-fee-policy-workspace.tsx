@@ -65,7 +65,7 @@ export function DeliveryFeePolicyWorkspace() {
   };
 
   return <section className="access-card" aria-labelledby="delivery-fee-policy-title">
-    <div className="finance-toolbar"><div><p className="eyebrow">سياسة مالية مملوكة لـ WLT</p><h2 id="delivery-fee-policy-title">رسوم التوصيل</h2></div><button className="button button-secondary" type="button" onClick={() => void read(serviceCityId)} disabled={loading || busy}>تحديث</button></div>
+    <div className="finance-toolbar"><div><p className="eyebrow">سياسة مالية مركزية</p><h2 id="delivery-fee-policy-title">رسوم التوصيل</h2></div><button className="button button-secondary" type="button" onClick={() => void read(serviceCityId)} disabled={loading || busy}>تحديث</button></div>
     <p className="muted">تُحسب الرسوم خادميًا من المسافة، ومدينة الخدمة كمنطقة، ووحدات السلة. كل تغيير يُنشئ إصدارًا جديدًا، والتقريب ثابت عند 50 ريال.</p>
     <label className="field-label" htmlFor="delivery-fee-city">المنطقة / مدينة الخدمة<select id="delivery-fee-city" value={serviceCityId} onChange={(event) => { setServiceCityId(event.target.value); void read(event.target.value); }} disabled={busy || loading}><option value="">السياسة العامة</option>{cities.filter((city) => city.active).map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
     {loading ? <p role="status">جارٍ قراءة سياسة رسوم التوصيل…</p> : null}

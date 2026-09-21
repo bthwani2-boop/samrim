@@ -146,7 +146,7 @@ export function CatalogProposalReview() {
         <div className="access-card-heading">
           <p className="eyebrow">تفاصيل القرار</p>
           <h2 id="catalog-proposal-detail-title">{selected ? selected.proposedName : "اختر مقترحًا"}</h2>
-          <p className="muted">النسخة الحالية: {selected ? selected.version : "—"}. القرار محمي بإصدار المقترح ويُعاد قراءته بعد التنفيذ.</p>
+          <p className="muted">القرار محمي من التعارض تلقائيًا، وتُعاد قراءة الحالة الحالية بعد التنفيذ.</p>
         </div>
         {selected ? (
           <>

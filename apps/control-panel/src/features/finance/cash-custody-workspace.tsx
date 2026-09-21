@@ -52,7 +52,7 @@ export function CashCustodyWorkspace() {
 
       <div className="finance-boundary-note" role="note">
         <strong>حدود هذه المساحة</strong>
-        <p>البيانات مصدرها WLT، والقراءة هنا تخص حفظ النقد فقط. طلبات التسوية والوجهات الرسمية تظهر في مساحة التسوية الموحدة أدناه.</p>
+        <p>البيانات مصدرها السجل المالي الكانوني، والقراءة هنا تخص حفظ النقد فقط. طلبات التسوية والوجهات الرسمية تظهر في مساحة التسوية الموحدة أدناه.</p>
       </div>
 
       <div className="finance-toolbar">
@@ -61,7 +61,7 @@ export function CashCustodyWorkspace() {
       </div>
 
       {error ? <div className="managed-status managed-status-warning" role="alert"><strong>تعذر قراءة حفظ النقد</strong><p>{error}</p><button type="button" className="button button-secondary" onClick={() => void load()} disabled={loading}>إعادة المحاولة</button></div> : null}
-      {loading && items.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة حفظ النقد</strong><p>نطلب الإسقاط التشغيلي من WLT عبر DSH.</p></div> : null}
+      {loading && items.length === 0 ? <div className="collection-state" role="status"><span className="loading-mark" aria-hidden="true" /><strong>جارٍ قراءة حفظ النقد</strong><p>نطلب القراءة المالية الكانونية المخصصة لهذه المساحة.</p></div> : null}
       {!loading && !error && items.length === 0 ? <div className="collection-state"><strong>لا يوجد نقد مفتوح في عهدة الكباتن</strong><p>تظهر هنا فقط حالات COD التي تم تحصيلها ولم تسجل لها حوالة نقدية.</p></div> : null}
       {items.length > 0 ? (
         <div className="finance-table-wrap">
