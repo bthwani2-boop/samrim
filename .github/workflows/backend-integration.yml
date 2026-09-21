@@ -42,7 +42,7 @@ jobs:
             base="$(git rev-parse HEAD^)"
           fi
           changed="$(git diff --name-only "${base}" HEAD)"
-          if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|services/wlt/|infra/local/(compose/|\.env\.example$)|tools/dev/(mailpit-challenge|run-playwright-live|verify-(identity-migrations|identity-runtime|dsh-baseline|dsh-runtime-core))\.mjs$|apps/control-panel/(package\.json|playwright\.config\.ts|playwright\.global-setup\.ts|tests/live-identity\.spec\.ts)$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
+          if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|services/wlt/|infra/local/(compose/|\.env\.example$)|tools/dev/(mailpit-challenge|run-playwright-live|verify-(identity-migrations|identity-runtime|dsh-baseline|dsh-runtime-core))\.mjs$|apps/control-panel/(package\.json|playwright\.config\.ts|playwright\.global-setup\.ts|tests/00-live-identity\.spec\.ts)$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then
             echo "run=true" >> "${GITHUB_OUTPUT}"
             echo "BACKEND_INTEGRATION_SCOPE=AFFECTED"
           else

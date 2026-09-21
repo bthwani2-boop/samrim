@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { expect, request, test, type Page } from "@playwright/test";
+import { expect, type Page, request, test } from "@playwright/test";
 
 type PreparedOperator = {
   actorId: string;

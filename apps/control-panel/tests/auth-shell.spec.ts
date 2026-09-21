@@ -45,7 +45,7 @@ test("authenticated operator discovers access and partner responsibilities throu
   await expect(accessLink).toBeVisible();
   await accessLink.click();
   await expect(page).toHaveURL(/\/access$/);
-  await expect(accessLink).toHaveAttribute("aria-current", "page");
+  await expect(page.locator('#workspace-navigation a[href="/access"][aria-current="page"]')).toHaveAttribute("href", "/access");
   await expect(page.getByRole("heading", { name: "الحسابات والأدوار" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "تهيئة أو إيقاف الحساب" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
