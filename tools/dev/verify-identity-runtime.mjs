@@ -182,7 +182,7 @@ assert(typeof authOptions.ceremonyId === "string" && authOptions.publicKey?.chal
 assert(!authOptions.accessToken && !authOptions.refreshToken, "passkey options created a session");
 const operatorProofPhone = phone();
 generatedPhones.add(operatorProofPhone);
-const operatorProof = await expect("POST", "/internal/actor-roles/provision", 201, { token: dshToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: operatorProofPhone, role: "operator" } });
+const operatorProof = await expect("POST", "/internal/actor-roles/provision", 201, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: operatorProofPhone, role: "operator" } });
 assert(operatorProof?.actorId && operatorProof?.role === "operator", "disposable operator proof fixture was not provisioned");
 const operatorEnrollment = await expect("POST", "/internal/operator-enrollment-tokens", 201, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: operatorProofPhone, role: "operator" } });
 assert(/^[A-Za-z0-9_-]{24,256}$/.test(operatorEnrollment.code), "operator enrollment token is not high entropy");
