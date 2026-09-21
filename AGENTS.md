@@ -28,6 +28,24 @@ One material meaning has one semantic owner; one mutable fact has one canonical 
 
 For every plausibly material quality dimension, resolve it as affected, proven unaffected, or not applicable with reason using the pinned Quality taxonomy. Do not silently omit a plausibly material dimension or apply a lower correctness standard because another layer is the visible focus.
 
+### Program progression
+
+When explicit user authority permits continued Product/Core development, derive the active delivery gate from current user authority, pinned Governance and exact implementation truth. Do not hard-code a journey inventory, feature backlog or implementation sequence into this file.
+
+Progress through the smallest dependency-valid journey/increment that closes the earliest unresolved material shared boundary:
+
+CURRENT AUTHORIZED DELIVERY GATE
+→ EARLIEST UNRESOLVED MATERIAL JOURNEY / SHARED BOUNDARY
+→ PROVEN AFFECTED CONE
+→ FIXED-POINT CLOSURE
+→ NEXT DEPENDENCY-VALID JOURNEY / INCREMENT
+
+A materially dependent increment must not advance through an unclosed prerequisite. Proven-independent lanes may continue only when they neither consume unproven prerequisite state nor invalidate evidence for the blocked lane.
+
+After the material journeys/increments in the current delivery gate close individually, perform one proportional integration recensus across their shared boundaries before advancing to a dependent gate. Reuse still-valid claim-specific evidence and rerun only what shared-boundary integration can materially invalidate. Discovery of unrelated possible work does not enlarge the current delivery gate.
+
+Journey closure and program progression never imply that broader Governance-approved Product breadth is already implemented, that all admitted capabilities belong to the current gate, or that the domain is permanently final.
+
 ## 2. Durable meaning and Governance
 
 Every material task classifies exactly one:
@@ -107,6 +125,8 @@ During implementation run the nearest direct/affected checks needed for feedback
 pnpm safe:push is an objective-closure or explicit remote-checkpoint operation. It owns one final local exact-candidate verification for the complete unpushed branch delta, then fast-forward/first-push safety and exact remote SHA confirmation. Multiple coherent local commits may therefore share one final safe:push when they belong to the same authorized objective. If the exact SHA is already remote it is a no-op and must not repeat heavy proof.
 
 The local verifier remains affected-aware and non-runtime-owning. Heavy mobile export/deployability proof is required locally only when the affected change can alter bundling/deployable configuration or when the current claim explicitly requires it; normal source iteration uses targeted checks plus real Metro/device proof when user-facing behavior is claimed. CI remains independent integration/promotion assurance and may be broader.
+
+Prefer an existing reusable boundary-owned proof lane over a journey-specific verifier. Extend an existing canonical proof owner when it can prove the claim cleanly; add a new proof mechanism only when no existing owner can do so without conflating materially different responsibilities and the new mechanism has a unique current responsibility. Proof lanes are selected by the claims and boundaries they prove, not by a requirement to exercise the whole system.
 
 Cache is evidence only when its inputs cover every material computation input. Prefer Nx's canonical cache/project graph; do not build a parallel cache or dependency engine.
 
