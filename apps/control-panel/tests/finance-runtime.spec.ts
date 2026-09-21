@@ -44,7 +44,7 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
   await workspace.getByLabel("نوع المستفيد").selectOption("partner");
   await workspace.getByLabel("معرّف الشريك").fill(`partner-live-read-${Date.now()}`);
   await workspace.getByRole("button", { name: "قراءة الحالة" }).click();
-  await expect(workspace.getByText(/المتاح:.*YER/)).toBeVisible();
+  await expect(workspace.getByText(/المتاح:.*ريال يمني/)).toBeVisible();
 });
 
 test("@live operator sees the WLT-managed Field commission policy workspace", async ({ page }) => {
