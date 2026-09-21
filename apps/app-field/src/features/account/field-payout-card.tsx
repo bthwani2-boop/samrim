@@ -1,6 +1,6 @@
 import { borders, radius, resolveTheme, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type BeneficiaryPayoutState } from "@bthwani/dsh";
+import { formatMoney, type BeneficiaryPayoutState } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState, getUsableIdentityAccessToken } from "../../bootstrap/identity";
@@ -28,10 +28,14 @@ export function FieldPayoutCard() {
   }, [authenticated]);
   useEffect(() => { void load(); }, [load]);
   const request = async (mode: "FULL_AVAILABLE" | "SPECIFIED") => {
+    const parsed = mode === "SPECIFIED" ? Number(amount.trim()) : undefined;
+    if (mode === "SPECIFIED" && (!Number.isSafeInteger(parsed) || (parsed ?? 0) <= 0)) {
+      setError("أدخل مبلغ تسوية صحيحًا أكبر من صفر.");
+      return;
+    }
     setBusy(true); setError(""); setNotice("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const parsed = mode === "SPECIFIED" ? Number(amount.trim()) : undefined;
       await fieldClient().createOwnPayoutIntent(token, mode, parsed);
       setNotice("تم تسجيل طلب التسوية ووضع المبلغ في الحجز للمراجعة.");
       setAmount("");
@@ -43,7 +47,7 @@ export function FieldPayoutCard() {
     }
   };
   const destinationReady = state?.destination?.status === "ACTIVE_FOR_PAYOUT" && state.destination.verificationStatus === "VERIFIED";
-  return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب تسوية الميداني"><Text style={styles.eyebrow}>WLT · طلب نية فقط</Text><Text style={styles.title}>تسوية مستحقات الميداني</Text>{busy && !state ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التسوية…</Text></View> : null}{state ? <><Text style={styles.muted}>{destinationReady ? `الوجهة المعتمدة: ${state.destination?.walletIdentifierMasked}` : "لا توجد وجهة محفظة رسمية معتمدة بعد؛ تتم إدارتها من لوحة التحكم."}</Text><View style={styles.metrics}><Text style={styles.metric}>المتاح للتسوية: {state.eligibleAvailableMinor.toLocaleString("ar-YE")} {state.currency}</Text><Text style={styles.metric}>المحجوز: {state.heldMinor.toLocaleString("ar-YE")} {state.currency}</Text></View>{destinationReady && state.eligibleAvailableMinor > 0 ? <><BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => void request("FULL_AVAILABLE")} variant="secondary" /><TextInput accessibilityLabel="مبلغ تسوية الميداني المحدد" keyboardType="number-pad" value={amount} onChangeText={setAmount} placeholder="مبلغ محدد عند الحاجة" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} label="طلب المبلغ المحدد" onPress={() => void request("SPECIFIED")} variant="secondary" /></> : null}</> : null}{notice ? <Text style={styles.notice}>{notice}</Text> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{authenticated ? <BthwaniButton busy={busy} label="تحديث حالة التسوية" onPress={() => void load()} variant="secondary" /> : null}</BthwaniSurface>;
+  return <BthwaniSurface tone="base" style={styles.card} accessibilityLabel="طلب تسوية الميداني"><Text style={styles.eyebrow}>التسوية المالية</Text><Text style={styles.title}>تسوية مستحقات الميداني</Text>{busy && !state ? <View style={styles.loading}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة حالة التسوية…</Text></View> : null}{state ? <><Text style={styles.muted}>{destinationReady ? `الوجهة المعتمدة: ${state.destination?.walletIdentifierMasked}` : "لا توجد وجهة محفظة رسمية معتمدة بعد؛ تتم إدارتها من لوحة التحكم."}</Text><View style={styles.metrics}><Text style={styles.metric}>المتاح للتسوية: {formatMoney(state.eligibleAvailableMinor, state.currency)}</Text><Text style={styles.metric}>المحجوز: {formatMoney(state.heldMinor, state.currency)}</Text></View>{destinationReady && state.eligibleAvailableMinor > 0 ? <><BthwaniButton busy={busy} label="طلب تسوية كامل المتاح" onPress={() => void request("FULL_AVAILABLE")} variant="secondary" /><TextInput accessibilityLabel="مبلغ تسوية الميداني المحدد" keyboardType="number-pad" value={amount} onChangeText={setAmount} placeholder="مبلغ محدد عند الحاجة" placeholderTextColor={theme.colorMuted} style={styles.input} /><BthwaniButton busy={busy} label="طلب المبلغ المحدد" onPress={() => void request("SPECIFIED")} variant="secondary" /></> : null}</> : null}{notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{notice}</Text> : null}{error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}{authenticated ? <BthwaniButton busy={busy} label="تحديث حالة التسوية" onPress={() => void load()} variant="secondary" /> : null}</BthwaniSurface>;
 }
 
-function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, eyebrow: { ...typography.label, color: theme.interactiveText }, title: { ...typography.titleSm, color: theme.color }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, metrics: { gap: spacing[1] }, metric: { ...typography.bodySm, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "right" }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }
+function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({ card: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] }, eyebrow: { ...typography.label, color: theme.interactiveText }, title: { ...typography.titleSm, color: theme.color }, loading: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, metrics: { gap: spacing[1] }, metric: { ...typography.bodySm, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, input: { ...typography.bodySm, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, padding: spacing[3], textAlign: "left", writingDirection: "ltr" }, notice: { ...typography.bodySm, color: theme.interactiveText }, error: { ...typography.bodySm, color: theme.warning } }); }

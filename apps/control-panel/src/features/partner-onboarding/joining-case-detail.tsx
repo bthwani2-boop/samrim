@@ -1,6 +1,6 @@
 "use client";
 
-import { type CommerceVertical, type JoiningCaseResponse, joiningCaseStateLabel, publicationReadinessBlockedReasonLabel, publicationStateLabel, type ServiceCity, type StorePublicationResponse } from "@bthwani/dsh";
+import { type CommerceVertical, financialProfileStateLabel, type JoiningCaseResponse, joiningCaseStateLabel, publicationReadinessBlockedReasonLabel, publicationStateLabel, type ServiceCity, settlementPeriodLabel, type StorePublicationResponse } from "@bthwani/dsh";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { partnerErrorMessage } from "./partner-error-message";
@@ -205,9 +205,8 @@ export function JoiningCaseDetail({ caseId }: { caseId: string }) {
               <div><dt>خط الطول</dt><dd dir="ltr">{current.firstStoreLongitude ?? "غير مسجل"}</dd></div>
               <div><dt>مصدر الحالة</dt><dd>{current.origin === "field" ? "تطبيق الميداني" : "لوحة التحكم"}</dd></div>
               <div><dt>عمولة المنصة</dt><dd>{current.commissionRateBps === null || current.commissionRateBps === undefined ? "لم تُثبت بعد" : `${(current.commissionRateBps / 100).toFixed(2)}%`}</dd></div>
-              <div><dt>فترة التسوية</dt><dd>{current.settlementPeriod ?? "لم تُثبت بعد"}</dd></div>
-              <div><dt>الحالة المالية</dt><dd>{current.financialProfileState}</dd></div>
-              <div><dt>نسخة الحالة</dt><dd>{current.version}</dd></div>
+              <div><dt>فترة التسوية</dt><dd>{current.settlementPeriod ? settlementPeriodLabel(current.settlementPeriod) : "لم تُثبت بعد"}</dd></div>
+              <div><dt>الحالة المالية</dt><dd>{financialProfileStateLabel(current.financialProfileState)}</dd></div>
             </dl>
             {current.correctionReason ? <p role="alert">سبب التصحيح: {current.correctionReason}</p> : null}
           </div>

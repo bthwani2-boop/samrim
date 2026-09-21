@@ -1,6 +1,6 @@
 "use client";
 
-import { formatMoney, formatOrderDate, orderStateLabel, paymentMethodLabel, paymentStateLabel, type OperatorOperation } from "@bthwani/dsh";
+import { captainAssignmentStateLabel, captainHandoffStateLabel, formatMoney, formatOrderDate, orderStateLabel, paymentMethodLabel, paymentStateLabel, type OperatorOperation } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { identityFetch, isRequestFailure } from "../../session/identity-fetch";
 import { responseMessage } from "../access/identity-error-message";
@@ -151,12 +151,12 @@ export function OperationsWorkspace() {
                           <span>{detail.order.lines.length} عناصر · {formatMoney(detail.order.totalAmountMinor, detail.order.currency)}</span>
                           <span>الدفع: {paymentMethodLabel(detail.order.paymentMethod)} · {paymentStateLabel(detail.order.paymentState)}</span>
                           <span>العنوان: {detail.order.addressText}</span>
-                          <span>مدينة الخدمة: <bdi dir="ltr">{detail.order.serviceCityId}</bdi> · قابلية الخدمة: {detail.order.serviceabilityStatus}</span>
+                          <span>قابلية الخدمة مثبتة ضمن لقطة الطلب المعتمدة.</span>
                           <ul>
                             {detail.order.lines.map((line) => <li key={line.id}>{line.productName}{line.variantTitle ? ` · ${line.variantTitle}` : ""} · {line.finalQuantityBaseUnits} · {formatMoney(line.lineAmountMinor, line.currency)}</li>)}
                           </ul>
-                          {detail.assignment ? <span>التكليف: <bdi dir="ltr">{detail.assignment.id}</bdi> · {detail.assignment.state} · {detail.assignment.handoffState} · الإصدار {detail.assignment.version}</span> : <span>لا يوجد تكليف كابتن حالي.</span>}
-                          <span>إصدار الطلب {detail.order.version} · آخر تحديث <time dateTime={detail.order.updatedAt}>{formatOrderDate(detail.order.updatedAt)}</time></span>
+                          {detail.assignment ? <span>التكليف: {captainAssignmentStateLabel(detail.assignment.state)} · تسليم المتجر: {captainHandoffStateLabel(detail.assignment.handoffState)}</span> : <span>لا يوجد تكليف كابتن حالي.</span>}
+                          <span>آخر تحديث <time dateTime={detail.order.updatedAt}>{formatOrderDate(detail.order.updatedAt)}</time></span>
                         </div>
                       </details>
                     </th>

@@ -2,7 +2,7 @@ import { borders, radius, type resolveTheme, spacing, typography } from "@bthwan
 import { BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { useCallback, useEffect, useState } from "react";
 import { Text, View, StyleSheet } from "react-native";
-import { type FieldFinancialSummary } from "@bthwani/dsh";
+import { formatMoney, type FieldFinancialSummary } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "../field-operations/field-client";
 
@@ -22,7 +22,7 @@ export function FieldFinancialSummaryCard() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  return <BthwaniSurface tone="base" style={styles.card}><Text style={styles.eyebrow}>المحفظة المستحقة</Text><Text style={styles.title}>مكافآت الميداني</Text>{summary ? <View style={styles.grid}><View><Text style={styles.label}>المتاح المكتسب</Text><Text style={styles.value}>{summary.earnedMinor.toLocaleString("ar-YE")} {summary.currency}</Text></View><View><Text style={styles.label}>المتاجر المكتملة</Text><Text style={styles.value}>{summary.storeCount.toLocaleString("ar-YE")}</Text></View></View> : <Text style={styles.muted}>{error || "جارٍ قراءة الاستحقاق…"}</Text>}<Text style={styles.muted}>تُثبت المكافأة بعد نشر متجر الشريك وظهوره للعميل، ولا تتأثر بإخفائه لاحقًا.</Text></BthwaniSurface>;
+  return <BthwaniSurface tone="base" style={styles.card}><Text style={styles.eyebrow}>المحفظة المستحقة</Text><Text style={styles.title}>مكافآت الميداني</Text>{summary ? <View style={styles.grid}><View><Text style={styles.label}>المتاح المكتسب</Text><Text style={styles.value}>{formatMoney(summary.earnedMinor, summary.currency)}</Text></View><View><Text style={styles.label}>المتاجر المكتملة</Text><Text style={styles.value}>{summary.storeCount.toLocaleString("ar-YE")}</Text></View></View> : error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : <Text style={styles.muted}>جارٍ قراءة الاستحقاق…</Text>}<Text style={styles.muted}>تُثبت المكافأة بعد نشر متجر الشريك وظهوره للعميل، ولا تتأثر بإخفائه لاحقًا.</Text></BthwaniSurface>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -34,5 +34,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     label: { ...typography.caption, color: theme.colorMuted },
     value: { ...typography.bodyStrong, color: theme.color, marginTop: spacing[1] },
     muted: { ...typography.bodySm, color: theme.colorMuted },
+    error: { ...typography.bodySm, color: theme.warning },
   });
 }

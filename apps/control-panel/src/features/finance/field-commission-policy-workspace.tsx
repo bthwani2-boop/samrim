@@ -1,5 +1,6 @@
 "use client";
 
+import { fieldCommissionScopeLabel, financialPolicyStateLabel, formatMoney } from "@bthwani/dsh";
 import { useState } from "react";
 
 type Policy = Readonly<{
@@ -34,7 +35,7 @@ export function FieldCommissionPolicyWorkspace() {
       const body = await response.json() as { policy?: Policy; error?: { message?: string } };
       if (!response.ok || !body.policy) throw new Error(body.error?.message || "تعذر تفعيل سياسة مكافأة الميداني");
       setPolicy(body.policy);
-      setMessage(`تم تفعيل الإصدار ${body.policy.version} للمكافأة`);
+      setMessage("تم تفعيل سياسة مكافأة الميداني بنجاح.");
     } catch (value) {
       setError(value instanceof Error ? value.message : "تعذر تفعيل سياسة مكافأة الميداني");
     } finally {
@@ -53,7 +54,7 @@ export function FieldCommissionPolicyWorkspace() {
     </div>
     {error ? <p className="validation-error" role="alert">{error}</p> : null}
     {message ? <p className="success" role="status">{message}</p> : null}
-    {policy ? <p className="muted">الإصدار النشط: <strong>{policy.version}</strong> · النطاق: {policy.scopeType} · المكافأة: {policy.rewardMinor} ريال</p> : null}
+    {policy ? <p className="muted">الحالة: {financialPolicyStateLabel(policy.state)} · النطاق: {fieldCommissionScopeLabel(policy.scopeType)} · المكافأة: {formatMoney(policy.rewardMinor, "YER")}</p> : null}
     <button className="button button-primary" type="button" onClick={() => void save()} disabled={busy || (scopeType !== "DEFAULT" && !scopeId.trim()) || !Number.isInteger(Number(rewardMinor)) || Number(rewardMinor) < 50}>{busy ? "جارٍ تفعيل الإصدار…" : "تفعيل إصدار سياسة جديد"}</button>
   </section>;
 }

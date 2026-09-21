@@ -1,5 +1,6 @@
 "use client";
 
+import { financialPolicyStateLabel } from "@bthwani/dsh";
 import { useCallback, useEffect, useState } from "react";
 
 type City = Readonly<{ id: string; displayNameAr: string; active: boolean }>;
@@ -55,7 +56,7 @@ export function DeliveryFeePolicyWorkspace() {
       const body = await response.json() as { policy?: Policy; error?: { message?: string } };
       if (!response.ok || !body.policy) throw new Error(body.error?.message || "تعذر تفعيل سياسة رسوم التوصيل");
       setPolicy(body.policy);
-      setMessage(`تم تفعيل الإصدار ${body.policy.policyVersion}`);
+      setMessage("تم تفعيل سياسة رسوم التوصيل بنجاح.");
     } catch (value) {
       setError(value instanceof Error ? value.message : "تعذر تفعيل سياسة رسوم التوصيل");
     } finally {
@@ -66,11 +67,11 @@ export function DeliveryFeePolicyWorkspace() {
   return <section className="access-card" aria-labelledby="delivery-fee-policy-title">
     <div className="finance-toolbar"><div><p className="eyebrow">سياسة مالية مملوكة لـ WLT</p><h2 id="delivery-fee-policy-title">رسوم التوصيل</h2></div><button className="button button-secondary" type="button" onClick={() => void read(serviceCityId)} disabled={loading || busy}>تحديث</button></div>
     <p className="muted">تُحسب الرسوم خادميًا من المسافة، ومدينة الخدمة كمنطقة، ووحدات السلة. كل تغيير يُنشئ إصدارًا جديدًا، والتقريب ثابت عند 50 ريال.</p>
-    <label className="field-label" htmlFor="delivery-fee-city">المنطقة / مدينة الخدمة<select id="delivery-fee-city" value={serviceCityId} onChange={(event) => { setServiceCityId(event.target.value); void read(event.target.value); }} disabled={busy || loading}><option value="">السياسة العامة</option>{cities.filter((city) => city.active).map((city) => <option key={city.id} value={city.id}>{city.displayNameAr} ({city.id})</option>)}</select></label>
+    <label className="field-label" htmlFor="delivery-fee-city">المنطقة / مدينة الخدمة<select id="delivery-fee-city" value={serviceCityId} onChange={(event) => { setServiceCityId(event.target.value); void read(event.target.value); }} disabled={busy || loading}><option value="">السياسة العامة</option>{cities.filter((city) => city.active).map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
     {loading ? <p role="status">جارٍ قراءة سياسة رسوم التوصيل…</p> : null}
     {error ? <p className="validation-error" role="alert">{error}</p> : null}
     {message ? <p className="success" role="status">{message}</p> : null}
-    {policy ? <p className="muted">الإصدار النشط: <strong>{policy.policyVersion}</strong> · الحالة: {policy.state} · التقريب: {policy.roundingUnitMinor} ريال</p> : null}
+    {policy ? <p className="muted">الحالة: {financialPolicyStateLabel(policy.state)} · التقريب: {policy.roundingUnitMinor} ريال</p> : null}
     <div className="form-grid">
       <label className="field-label" htmlFor="delivery-base">الرسوم الأساسية (ريال)<input id="delivery-base" type="number" min="0" value={form.baseFeeMinor} onChange={(event) => update("baseFeeMinor", event.target.value)} disabled={busy || loading} /></label>
       <label className="field-label" htmlFor="delivery-distance-unit">وحدة المسافة (متر)<input id="delivery-distance-unit" type="number" min="1" value={form.distanceUnitMeters} onChange={(event) => update("distanceUnitMeters", event.target.value)} disabled={busy || loading} /></label>
