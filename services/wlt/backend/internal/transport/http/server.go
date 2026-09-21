@@ -40,6 +40,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles", s.preparePartnerFinancialProfile)
 	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
+	mux.HandleFunc("POST /wlt/v1/partner-order-earnings/finalize", s.finalizePartnerOrderEarning)
+	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
 }
 
 type createRequest struct {
@@ -93,6 +95,51 @@ type preparePartnerFinancialProfileRequest struct {
 }
 
 type activatePartnerFinancialProfileRequest struct{}
+
+type finalizePartnerOrderEarningRequest struct {
+	OrderID         string `json:"orderId"`
+	PaymentIntentID string `json:"paymentIntentId"`
+	PartnerActorID  string `json:"partnerActorId"`
+	CaptainActorID  string `json:"captainActorId"`
+}
+
+type partnerOrderEarningResponse struct {
+	Earning          partnerOrderEarningJSON `json:"earning"`
+	IdempotentReplay bool                    `json:"idempotentReplay"`
+}
+
+type partnerOrderEarningJSON struct {
+	OrderID             string `json:"orderId"`
+	PaymentIntentID     string `json:"paymentIntentId"`
+	PartnerActorID      string `json:"partnerActorId"`
+	CaptainActorID      string `json:"captainActorId"`
+	Currency            string `json:"currency"`
+	GrossProductMinor   int64  `json:"grossProductMinor"`
+	DeliveryFeeMinor    int64  `json:"deliveryFeeMinor"`
+	CommissionMinor     int64  `json:"commissionMinor"`
+	PartnerNetMinor     int64  `json:"partnerNetMinor"`
+	ProfileID           string `json:"profileId"`
+	ProfileVersion      int    `json:"profileVersion"`
+	PolicyVersion       string `json:"policyVersion"`
+	LedgerTransactionID string `json:"ledgerTransactionId"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type partnerFinancialSummaryResponse struct {
+	Summary partnerFinancialSummaryJSON `json:"summary"`
+}
+
+type partnerFinancialSummaryJSON struct {
+	PartnerActorID   string  `json:"partnerActorId"`
+	Currency         string  `json:"currency"`
+	EarnedMinor      int64   `json:"earnedMinor"`
+	CommissionMinor  int64   `json:"commissionMinor"`
+	OrderCount       int64   `json:"orderCount"`
+	SettlementPeriod string  `json:"settlementPeriod"`
+	ProfileState     string  `json:"profileState"`
+	ProfileVersion   int     `json:"profileVersion"`
+	LastEarningAt    *string `json:"lastEarningAt"`
+}
 
 type deliveryFeeQuoteRequest struct {
 	ServiceCityID        string  `json:"serviceCityId"`
@@ -506,6 +553,42 @@ func (s *Server) activatePartnerFinancialProfile(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, partnerFinancialProfileResponse{Profile: toPartnerFinancialProfile(result), IdempotentReplay: replayed})
 }
 
+func (s *Server) finalizePartnerOrderEarning(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	correlation, idempotency, ok := mutationHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input finalizePartnerOrderEarningRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, replayed, err := postgres.FinalizePartnerOrderEarning(r.Context(), s.db, postgres.FinalizePartnerOrderEarningInput{OrderID: input.OrderID, PaymentIntentID: input.PaymentIntentID, PartnerActorID: input.PartnerActorID, CaptainActorID: input.CaptainActorID, IdempotencyKey: idempotency, CorrelationID: correlation})
+	if err != nil {
+		writePartnerEarningError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, partnerOrderEarningResponse{Earning: toPartnerOrderEarning(result), IdempotentReplay: replayed})
+}
+
+func (s *Server) readPartnerFinancialSummary(w http.ResponseWriter, r *http.Request) {
+	if !s.authorize(w, r) {
+		return
+	}
+	result, err := postgres.ReadPartnerFinancialSummary(r.Context(), s.db, r.PathValue("partnerActorId"))
+	if err != nil {
+		writePartnerEarningError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, partnerFinancialSummaryResponse{Summary: toPartnerFinancialSummary(result)})
+}
+
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) bool {
 	provided := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(r.Header.Get("Authorization")), "Bearer "))
 	if provided == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(s.serviceToken)) != 1 {
@@ -675,6 +758,41 @@ func writeFinancialProfileError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrFinancialProfileInvalidInput):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "financial profile input is invalid")
 	default:
+		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
+	}
+}
+
+func toPartnerOrderEarning(item postgres.PartnerOrderEarningRecord) partnerOrderEarningJSON {
+	return partnerOrderEarningJSON{OrderID: item.OrderID, PaymentIntentID: item.PaymentIntentID, PartnerActorID: item.PartnerActorID, CaptainActorID: item.CaptainActorID, Currency: item.Currency, GrossProductMinor: item.GrossProductMinor, DeliveryFeeMinor: item.DeliveryFeeMinor, CommissionMinor: item.CommissionMinor, PartnerNetMinor: item.PartnerNetMinor, ProfileID: item.ProfileID, ProfileVersion: item.ProfileVersion, PolicyVersion: item.PolicyVersion, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")}
+}
+
+func toPartnerFinancialSummary(item postgres.PartnerFinancialSummaryRecord) partnerFinancialSummaryJSON {
+	result := partnerFinancialSummaryJSON{PartnerActorID: item.PartnerActorID, Currency: item.Currency, EarnedMinor: item.EarnedMinor, CommissionMinor: item.CommissionMinor, OrderCount: item.OrderCount, SettlementPeriod: item.SettlementPeriod, ProfileState: item.ProfileState, ProfileVersion: item.ProfileVersion}
+	if item.LastEarningAt != nil {
+		value := item.LastEarningAt.UTC().Format("2006-01-02T15:04:05.999Z07:00")
+		result.LastEarningAt = &value
+	}
+	return result
+}
+
+func writePartnerEarningError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, postgres.ErrPartnerEarningInvalidInput):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner earning input is invalid")
+	case errors.Is(err, postgres.ErrPaymentAllocationNotFound), errors.Is(err, postgres.ErrPartnerEarningNotFound), errors.Is(err, postgres.ErrFinancialProfileNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "partner financial record was not found")
+	case errors.Is(err, postgres.ErrPartnerEarningPaymentState):
+		writeError(w, http.StatusConflict, "PAYMENT_NOT_COLLECTED", "partner earning requires a collected payment")
+	case errors.Is(err, postgres.ErrPartnerEarningProfile):
+		writeError(w, http.StatusConflict, "PROFILE_NOT_ACTIVE", "an active partner financial profile is required")
+	case errors.Is(err, postgres.ErrPartnerEarningExists):
+		writeError(w, http.StatusConflict, "EARNING_EXISTS", "the order earning is already finalized")
+	case errors.Is(err, postgres.ErrLedgerUnbalanced):
+		writeError(w, http.StatusConflict, "LEDGER_UNBALANCED", "the derived ledger transaction is not balanced")
+	case errors.Is(err, postgres.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different partner earning facts")
+	default:
+		log.Printf("WLT partner earning persistence error: %T %v", err, err)
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT persistence is unavailable")
 	}
 }

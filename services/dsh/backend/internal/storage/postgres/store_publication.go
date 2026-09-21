@@ -113,6 +113,18 @@ func ReadStoreOwnedByPartner(ctx context.Context, db *sql.DB, storeID, partnerAc
 	return store, nil
 }
 
+func ReadStorePartnerActor(ctx context.Context, db *sql.DB, storeID string) (string, error) {
+	if db == nil || strings.TrimSpace(storeID) == "" {
+		return "", ErrStoreNotFound
+	}
+	var partnerActorID string
+	err := db.QueryRowContext(ctx, "SELECT partner_actor_id FROM dsh.stores WHERE id=$1", strings.TrimSpace(storeID)).Scan(&partnerActorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrStoreNotFound
+	}
+	return partnerActorID, err
+}
+
 func SetStorePublication(ctx context.Context, db *sql.DB, storeID, requestedState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (PublicationResult, error) {
 	return setStorePublication(ctx, db, storeID, requestedState, expectedVersion, idempotencyKey, requestHash, actingActorID, correlationID, nil)
 }

@@ -222,6 +222,12 @@ paths:
   /dsh/operator/delivery-fee-policy:
     $ref: "./paths/delivery-fee.yaml#/paths/~1dsh~1operator~1delivery-fee-policy"
 
+  /dsh/partners/me/financial-summary:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-summary"
+
+  /dsh/operator/partners/{partnerActorId}/financial-summary:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
+
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
 
@@ -3556,6 +3562,47 @@ components:
           $ref: "#/components/schemas/DeliveryFeePolicy"
         idempotentReplay:
           type: boolean
+
+    PartnerFinancialSummary:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, currency, earnedMinor, commissionMinor, orderCount, settlementPeriod, profileState, profileVersion, lastEarningAt]
+      properties:
+        partnerActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+          minimum: 0
+        commissionMinor:
+          type: integer
+          minimum: 0
+        orderCount:
+          type: integer
+          minimum: 0
+        settlementPeriod:
+          type: string
+          enum: [DAILY, WEEKLY, MONTHLY]
+        profileState:
+          type: string
+          enum: [ACTIVE]
+        profileVersion:
+          type: integer
+          minimum: 1
+        lastEarningAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PartnerFinancialSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/PartnerFinancialSummary"
 
     Order:
       type: object

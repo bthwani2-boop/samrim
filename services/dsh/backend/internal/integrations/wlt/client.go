@@ -107,6 +107,35 @@ type PartnerFinancialProfile struct {
 	UpdatedAt         string  `json:"updatedAt"`
 }
 
+type PartnerOrderEarning struct {
+	OrderID             string `json:"orderId"`
+	PaymentIntentID     string `json:"paymentIntentId"`
+	PartnerActorID      string `json:"partnerActorId"`
+	CaptainActorID      string `json:"captainActorId"`
+	Currency            string `json:"currency"`
+	GrossProductMinor   int64  `json:"grossProductMinor"`
+	DeliveryFeeMinor    int64  `json:"deliveryFeeMinor"`
+	CommissionMinor     int64  `json:"commissionMinor"`
+	PartnerNetMinor     int64  `json:"partnerNetMinor"`
+	ProfileID           string `json:"profileId"`
+	ProfileVersion      int    `json:"profileVersion"`
+	PolicyVersion       string `json:"policyVersion"`
+	LedgerTransactionID string `json:"ledgerTransactionId"`
+	CreatedAt           string `json:"createdAt"`
+}
+
+type PartnerFinancialSummary struct {
+	PartnerActorID   string  `json:"partnerActorId"`
+	Currency         string  `json:"currency"`
+	EarnedMinor      int64   `json:"earnedMinor"`
+	CommissionMinor  int64   `json:"commissionMinor"`
+	OrderCount       int64   `json:"orderCount"`
+	SettlementPeriod string  `json:"settlementPeriod"`
+	ProfileState     string  `json:"profileState"`
+	ProfileVersion   int     `json:"profileVersion"`
+	LastEarningAt    *string `json:"lastEarningAt"`
+}
+
 type DeliveryFeePolicy struct {
 	ID                     string  `json:"id"`
 	ServiceCityID          string  `json:"serviceCityId"`
@@ -153,6 +182,15 @@ type cashRemittanceResponse struct {
 type partnerFinancialProfileResponse struct {
 	Profile          PartnerFinancialProfile `json:"profile"`
 	IdempotentReplay bool                    `json:"idempotentReplay"`
+}
+
+type partnerOrderEarningResponse struct {
+	Earning          PartnerOrderEarning `json:"earning"`
+	IdempotentReplay bool                `json:"idempotentReplay"`
+}
+
+type partnerFinancialSummaryResponse struct {
+	Summary PartnerFinancialSummary `json:"summary"`
 }
 
 type deliveryFeePolicyResponse struct {
@@ -370,6 +408,19 @@ func (c *Client) ActivatePartnerFinancialProfile(ctx context.Context, profileID 
 	var response partnerFinancialProfileResponse
 	err := c.requestWithActor(ctx, http.MethodPost, "/wlt/v1/partner-financial-profiles/"+url.PathEscape(strings.TrimSpace(profileID))+"/activate", map[string]any{}, idempotencyKey, correlationID, expectedVersion, actingActorID, &response)
 	return response.Profile, response.IdempotentReplay, err
+}
+
+func (c *Client) FinalizePartnerOrderEarning(ctx context.Context, orderID, paymentIntentID, partnerActorID, captainActorID, idempotencyKey, correlationID string) (PartnerOrderEarning, bool, error) {
+	body := map[string]any{"orderId": strings.TrimSpace(orderID), "paymentIntentId": strings.TrimSpace(paymentIntentID), "partnerActorId": strings.TrimSpace(partnerActorID), "captainActorId": strings.TrimSpace(captainActorID)}
+	var response partnerOrderEarningResponse
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/partner-order-earnings/finalize", body, idempotencyKey, correlationID, 0, &response)
+	return response.Earning, response.IdempotentReplay, err
+}
+
+func (c *Client) ReadPartnerFinancialSummary(ctx context.Context, partnerActorID string) (PartnerFinancialSummary, error) {
+	var response partnerFinancialSummaryResponse
+	err := c.request(ctx, http.MethodGet, "/wlt/v1/partners/"+url.PathEscape(strings.TrimSpace(partnerActorID))+"/financial-summary", nil, "", "", 0, &response)
+	return response.Summary, err
 }
 
 func (c *Client) QuoteDeliveryFee(ctx context.Context, input DeliveryFeeQuoteInput) (DeliveryFeeQuote, error) {

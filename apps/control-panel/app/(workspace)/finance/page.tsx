@@ -3,6 +3,7 @@
 import { useSession } from "../../../src/session/session-provider";
 import { CashCustodyWorkspace } from "../../../src/features/finance/cash-custody-workspace";
 import { DeliveryFeePolicyWorkspace } from "../../../src/features/finance/delivery-fee-policy-workspace";
+import { PartnerEarningsWorkspace } from "../../../src/features/finance/partner-earnings-workspace";
 
 export default function FinancePage() {
   const { state } = useSession();
@@ -19,6 +20,7 @@ export default function FinancePage() {
       </div>
       <CashCustodyWorkspace />
       <DeliveryFeePolicyWorkspace />
+      <PartnerEarningsWorkspace />
     </section>
   );
 }

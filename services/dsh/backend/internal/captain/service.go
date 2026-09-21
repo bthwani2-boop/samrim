@@ -276,6 +276,18 @@ func (s *Service) Complete(ctx context.Context, accessToken, assignmentID, resul
 		} else if order.PaymentState != "NOT_LINKED" {
 			return postgres.CaptainAssignment{}, false, postgres.ErrPaymentStateConflict
 		}
+		if order.PaymentIntentID != nil && paymentState == "COLLECTED" {
+			partnerActorID, partnerErr := postgres.ReadStorePartnerActor(ctx, s.db, order.StoreID)
+			if partnerErr != nil {
+				return postgres.CaptainAssignment{}, false, fmt.Errorf("%w: partner store unavailable: %v", ErrPaymentUnavailable, partnerErr)
+			}
+			if strings.TrimSpace(partnerActorID) == "" {
+				return postgres.CaptainAssignment{}, false, ErrPaymentUnavailable
+			}
+			if _, _, earningErr := s.payment.FinalizePartnerOrderEarning(ctx, order.ID, *order.PaymentIntentID, partnerActorID, identity.Subject, wlt.DerivedIdempotencyKey("partner-earning", order.ID), correlationID); earningErr != nil {
+				return postgres.CaptainAssignment{}, false, fmt.Errorf("%w: partner earning unavailable: %v", ErrPaymentUnavailable, earningErr)
+			}
+		}
 	} else if collectedAmountMinor != 0 {
 		return postgres.CaptainAssignment{}, false, ErrInvalidInput
 	}
