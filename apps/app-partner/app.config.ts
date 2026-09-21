@@ -1,3 +1,3 @@
 import { defineSamrimExpoApp } from "../../tools/mobile/define-samrim-expo-app.cjs";
 
-export default defineSamrimExpoApp("app-partner", { locationMode: "foreground" });
+export default defineSamrimExpoApp("app-partner");
