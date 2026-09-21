@@ -5,7 +5,7 @@ go 1.27.1
 require (
 	github.com/go-webauthn/webauthn v0.17.1
 	github.com/lib/pq v1.12.3
-	golang.org/x/crypto v0.50.0
+	golang.org/x/crypto v0.51.0
 )
 
 require (
