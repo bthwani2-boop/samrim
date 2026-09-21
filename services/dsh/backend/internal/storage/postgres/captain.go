@@ -1039,7 +1039,7 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 		}
 	}
 	if oldCaptain != "" {
-		if err := restoreCaptainAvailabilityTx(ctx, tx, oldCaptain, idempotencyKey, requestHash, actingActorID, correlationID); err != nil {
+		if err := restoreCaptainAvailabilityTx(ctx, tx, oldCaptain, idempotencyKey+":restore", requestHash, actingActorID, correlationID); err != nil {
 			return CaptainOffer{}, false, err
 		}
 	}
@@ -1051,7 +1051,7 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_dispatch_offers(id,order_id,captain_actor_id,state,expires_at,version,idempotency_key,request_hash) VALUES($1,$2,$3,'offered',$4,1,$5,$6)`, offerID, orderID, captainID, expiresAt, idempotencyKey, requestHash); err != nil {
 		return CaptainOffer{}, false, err
 	}
-	if err := reserveCaptainAvailabilityTx(ctx, tx, candidateAdmissionID, captainID, idempotencyKey, requestHash, actingActorID, correlationID); err != nil {
+	if err := reserveCaptainAvailabilityTx(ctx, tx, candidateAdmissionID, captainID, idempotencyKey+":reserve", requestHash, actingActorID, correlationID); err != nil {
 		return CaptainOffer{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.captain_operation_idempotency(idempotency_key,request_hash,operation,order_id,offer_id,result_version) VALUES($1,$2,'reassign',$3,$4,1)`, idempotencyKey, requestHash, orderID, offerID); err != nil {
