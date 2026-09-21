@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -138,6 +139,7 @@ type OrderRecord struct {
 	ClientActorID                string
 	StoreID                      string
 	CartID                       string
+	FulfillmentMode              string
 	AddressID                    string
 	AddressVersion               int
 	AddressText                  string
@@ -178,6 +180,11 @@ func newDeliveryProofCode() (string, error) {
 func HashDeliveryProofCode(orderID, code string) string {
 	digest := sha256.Sum256([]byte(strings.TrimSpace(orderID) + "|" + strings.TrimSpace(code)))
 	return fmt.Sprintf("%x", digest[:])
+}
+
+func stableCheckoutOrderID(clientActorID, cartID, idempotencyKey string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(clientActorID) + "|" + strings.TrimSpace(cartID) + "|" + strings.TrimSpace(idempotencyKey)))
+	return "order_" + hex.EncodeToString(digest[:16])
 }
 
 func ReadClientDeliveryProof(ctx context.Context, db *sql.DB, orderID, clientActorID string) (DeliveryProofRecord, error) {
@@ -332,13 +339,13 @@ func decodeOperatorOperationsCursor(raw, state string) (operatorOperationsCursor
 	return cursor, nil
 }
 
-const orderSelectColumns = `id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,currency,payment_intent_id,payment_method,payment_state,version,created_at,updated_at`
+const orderSelectColumns = `id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,currency,payment_intent_id,payment_method,payment_state,version,created_at,updated_at`
 
 func scanOrder(row rowScanner) (OrderRecord, error) {
 	var order OrderRecord
 	var paymentIntentID sql.NullString
 	if err := row.Scan(
-		&order.ID, &order.ClientActorID, &order.StoreID, &order.CartID, &order.AddressID, &order.AddressVersion, &order.AddressText,
+		&order.ID, &order.ClientActorID, &order.StoreID, &order.CartID, &order.FulfillmentMode, &order.AddressID, &order.AddressVersion, &order.AddressText,
 		&order.AddressLatitude, &order.AddressLongitude, &order.ServiceCityID, &order.ServiceabilityPolicyVersion, &order.ServiceabilityStatus,
 		&order.ServiceabilityStoreVersion, &order.ServiceabilityAddressVersion, &order.State, &order.TotalAmountMinor, &order.Currency,
 		&paymentIntentID, &order.PaymentMethod, &order.PaymentState, &order.Version, &order.CreatedAt, &order.UpdatedAt,
@@ -647,10 +654,7 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 	}
 	totalWithDelivery := orderTotal.Int64()
-	newOrderID, err := newID("order")
-	if err != nil {
-		return OrderRecord{}, false, err
-	}
+	newOrderID := stableCheckoutOrderID(input.ClientActorID, input.CartID, input.IdempotencyKey)
 	deliveryProofCode, err := newDeliveryProofCode()
 	if err != nil {
 		return OrderRecord{}, false, err
@@ -663,7 +667,7 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 		return OrderRecord{}, false, ErrPaymentProvisioning
 	}
 	paymentIntentID = strings.TrimSpace(payment.IntentID)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_intent_id,payment_method,payment_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'CREATED',$15,$16,'CASH_ON_DELIVERY',$17)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.AddressID, addressVersion, addressText, latitude, longitude, input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, storeVersion, addressVersion, totalWithDelivery, payment.IntentID, payment.State); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_intent_id,payment_method,payment_state) VALUES($1,$2,$3,$4,'BTHWANI_CAPTAIN',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'CREATED',$15,$16,'CASH_ON_DELIVERY',$17)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.AddressID, addressVersion, addressText, latitude, longitude, input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, storeVersion, addressVersion, totalWithDelivery, payment.IntentID, payment.State); err != nil {
 		return OrderRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_delivery_proofs(order_id,client_actor_id,code,code_hash) VALUES($1,$2,$3,$4)`, newOrderID, input.ClientActorID, deliveryProofCode, HashDeliveryProofCode(newOrderID, deliveryProofCode)); err != nil {
