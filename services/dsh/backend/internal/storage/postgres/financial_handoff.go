@@ -20,11 +20,12 @@ type FinancialHandoffOutbox struct {
 	Reason          string
 	IdempotencyKey  string
 	CorrelationID   string
+	ActingActorID   string
 	Attempts        int
 }
 
 func enqueueFinancialHandoffTx(ctx context.Context, tx *sql.Tx, item FinancialHandoffOutbox) error {
-	if tx == nil || strings.TrimSpace(item.EffectType) == "" || strings.TrimSpace(item.SourceRef) == "" || strings.TrimSpace(item.OrderID) == "" || strings.TrimSpace(item.PaymentIntentID) == "" || strings.TrimSpace(item.IdempotencyKey) == "" || strings.TrimSpace(item.CorrelationID) == "" {
+	if tx == nil || strings.TrimSpace(item.EffectType) == "" || strings.TrimSpace(item.SourceRef) == "" || strings.TrimSpace(item.OrderID) == "" || strings.TrimSpace(item.PaymentIntentID) == "" || strings.TrimSpace(item.IdempotencyKey) == "" || strings.TrimSpace(item.CorrelationID) == "" || strings.TrimSpace(item.ActingActorID) == "" {
 		return errors.New("financial handoff input is invalid")
 	}
 	id, err := newID("financial_handoff")
@@ -32,12 +33,12 @@ func enqueueFinancialHandoffTx(ctx context.Context, tx *sql.Tx, item FinancialHa
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO dsh.commerce_financial_handoff_outbox
-		(id,effect_type,source_ref,order_id,payment_intent_id,captain_actor_id,partner_actor_id,amount_minor,reason,idempotency_key,correlation_id)
-		VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8,NULLIF($9,''),$10,$11)
+		(id,effect_type,source_ref,order_id,payment_intent_id,captain_actor_id,partner_actor_id,amount_minor,reason,idempotency_key,correlation_id,acting_actor_id)
+		VALUES($1,$2,$3,$4,$5,NULLIF($6,''),NULLIF($7,''),$8,NULLIF($9,''),$10,$11,$12)
 		ON CONFLICT (effect_type,order_id,source_ref) DO NOTHING`,
 		id, strings.TrimSpace(item.EffectType), strings.TrimSpace(item.SourceRef), strings.TrimSpace(item.OrderID), strings.TrimSpace(item.PaymentIntentID),
 		strings.TrimSpace(item.CaptainActorID), strings.TrimSpace(item.PartnerActorID), item.AmountMinor, strings.TrimSpace(item.Reason),
-		strings.TrimSpace(item.IdempotencyKey), strings.TrimSpace(item.CorrelationID))
+		strings.TrimSpace(item.IdempotencyKey), strings.TrimSpace(item.CorrelationID), strings.TrimSpace(item.ActingActorID))
 	return err
 }
 
@@ -45,7 +46,7 @@ func ListPendingFinancialHandoffs(ctx context.Context, db *sql.DB, limit int) ([
 	if db == nil || limit < 1 || limit > 100 {
 		return nil, errors.New("financial handoff input is invalid")
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id,effect_type,source_ref,order_id,payment_intent_id,COALESCE(captain_actor_id,''),COALESCE(partner_actor_id,''),amount_minor,COALESCE(reason,''),idempotency_key,correlation_id,attempts
+	rows, err := db.QueryContext(ctx, `SELECT id,effect_type,source_ref,order_id,payment_intent_id,COALESCE(captain_actor_id,''),COALESCE(partner_actor_id,''),amount_minor,COALESCE(reason,''),idempotency_key,correlation_id,acting_actor_id,attempts
 		FROM dsh.commerce_financial_handoff_outbox
 		WHERE state<>'POSTED' AND next_attempt_at<=clock_timestamp()
 		ORDER BY next_attempt_at ASC,created_at ASC,id ASC LIMIT $1`, limit)
@@ -56,7 +57,7 @@ func ListPendingFinancialHandoffs(ctx context.Context, db *sql.DB, limit int) ([
 	items := make([]FinancialHandoffOutbox, 0, limit)
 	for rows.Next() {
 		var item FinancialHandoffOutbox
-		if err := rows.Scan(&item.ID,&item.EffectType,&item.SourceRef,&item.OrderID,&item.PaymentIntentID,&item.CaptainActorID,&item.PartnerActorID,&item.AmountMinor,&item.Reason,&item.IdempotencyKey,&item.CorrelationID,&item.Attempts); err != nil {
+		if err := rows.Scan(&item.ID,&item.EffectType,&item.SourceRef,&item.OrderID,&item.PaymentIntentID,&item.CaptainActorID,&item.PartnerActorID,&item.AmountMinor,&item.Reason,&item.IdempotencyKey,&item.CorrelationID,&item.ActingActorID,&item.Attempts); err != nil {
 			return nil, fmt.Errorf("scan financial handoff: %w", err)
 		}
 		items = append(items,item)
@@ -103,7 +104,7 @@ func MarkFinancialHandoffPosted(ctx context.Context, db *sql.DB, item FinancialH
 		}
 		if _,err:=tx.ExecContext(ctx,`INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor)
 			VALUES('payment_collected',$1,$2,$3,$4,$5,'REQUIRES_COLLECTION','COLLECTED',$6)
-			ON CONFLICT (event_type,idempotency_key) DO NOTHING`,item.IdempotencyKey,item.CorrelationID,item.CaptainActorID,item.OrderID,item.PaymentIntentID,item.AmountMinor);err!=nil{return err}
+			ON CONFLICT (event_type,idempotency_key) DO NOTHING`,item.IdempotencyKey,item.CorrelationID,item.ActingActorID,item.OrderID,item.PaymentIntentID,item.AmountMinor);err!=nil{return err}
 	case "PAYMENT_CANCEL":
 		var current string
 		if err := tx.QueryRowContext(ctx,`SELECT payment_state FROM dsh.commerce_orders WHERE id=$1 AND payment_intent_id=$2 FOR UPDATE`,item.OrderID,item.PaymentIntentID).Scan(&current); err != nil {
@@ -120,8 +121,8 @@ func MarkFinancialHandoffPosted(ctx context.Context, db *sql.DB, item FinancialH
 			return ErrPaymentStateConflict
 		}
 		if _,err:=tx.ExecContext(ctx,`INSERT INTO dsh.commerce_order_payment_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,payment_intent_id,from_state,to_state,amount_minor)
-			VALUES('payment_cancelled',$1,$2,'financial-handoff',$3,$4,'REQUIRES_COLLECTION','CANCELLED',$5)
-			ON CONFLICT (event_type,idempotency_key) DO NOTHING`,item.IdempotencyKey,item.CorrelationID,item.OrderID,item.PaymentIntentID,item.AmountMinor);err!=nil{return err}
+			VALUES('payment_cancelled',$1,$2,$3,$4,$5,'REQUIRES_COLLECTION','CANCELLED',$6)
+			ON CONFLICT (event_type,idempotency_key) DO NOTHING`,item.IdempotencyKey,item.CorrelationID,item.ActingActorID,item.OrderID,item.PaymentIntentID,item.AmountMinor);err!=nil{return err}
 	case "CAPTAIN_COD_RELEASE":
 	default:
 		return errors.New("unknown financial handoff effect")

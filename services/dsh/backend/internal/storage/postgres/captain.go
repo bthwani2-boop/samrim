@@ -937,7 +937,7 @@ func ReassignCaptain(ctx context.Context, db *sql.DB, orderID, idempotencyKey, r
 		if state == "CAPTAIN_ASSIGNED" {
 			if _, err := tx.ExecContext(ctx, "UPDATE dsh.commerce_orders SET state='READY_FOR_DISPATCH',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND state='CAPTAIN_ASSIGNED'", orderID); err != nil { return CaptainOffer{}, false, err }
 		}
-		if err := enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"CAPTAIN_COD_RELEASE",SourceRef:currentAssignmentID,OrderID:orderID,PaymentIntentID:paymentIntentID.String,CaptainActorID:oldCaptain,IdempotencyKey:idempotencyKey,CorrelationID:correlationID}); err != nil { return CaptainOffer{}, false, err }
+		if err := enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"CAPTAIN_COD_RELEASE",SourceRef:currentAssignmentID,OrderID:orderID,PaymentIntentID:paymentIntentID.String,CaptainActorID:oldCaptain,IdempotencyKey:idempotencyKey,CorrelationID:correlationID,ActingActorID:actingActorID}); err != nil { return CaptainOffer{}, false, err }
 	}
 	if oldCaptain != "" {
 		if err := restoreCaptainAvailabilityTx(ctx, tx, oldCaptain, idempotencyKey, requestHash, actingActorID, correlationID); err != nil { return CaptainOffer{}, false, err }
@@ -1114,7 +1114,7 @@ func CompleteCaptainAssignment(ctx context.Context, db *sql.DB, assignmentID, ca
 			var partnerActorID string
 			if err:=tx.QueryRowContext(ctx,"SELECT partner_actor_id FROM dsh.stores WHERE id=$1",storeID).Scan(&partnerActorID);err!=nil{return CaptainAssignment{},false,err}
 			if strings.TrimSpace(partnerActorID)==""{return CaptainAssignment{},false,ErrPaymentStateConflict}
-			if err:=enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"DELIVERY_SETTLEMENT",SourceRef:assignmentID,OrderID:orderID,PaymentIntentID:paymentIntentID.String,CaptainActorID:captainActorID,PartnerActorID:partnerActorID,AmountMinor:paymentAmount,IdempotencyKey:idempotencyKey,CorrelationID:correlationID});err!=nil{return CaptainAssignment{},false,err}
+			if err:=enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"DELIVERY_SETTLEMENT",SourceRef:assignmentID,OrderID:orderID,PaymentIntentID:paymentIntentID.String,CaptainActorID:captainActorID,PartnerActorID:partnerActorID,AmountMinor:paymentAmount,IdempotencyKey:idempotencyKey,CorrelationID:correlationID,ActingActorID:captainActorID});err!=nil{return CaptainAssignment{},false,err}
 		case "COLLECTED":
 			if collectedAmountMinor!=0&&collectedAmountMinor!=paymentAmount{return CaptainAssignment{},false,ErrPaymentStateConflict}
 		default:

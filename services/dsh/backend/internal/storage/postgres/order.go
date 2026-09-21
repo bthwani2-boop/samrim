@@ -759,7 +759,7 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 	eventType:="order_"+strings.ToLower(requestedState)
 	if _,err:=tx.ExecContext(ctx,"INSERT INTO dsh.commerce_order_audit(event_type,idempotency_key,correlation_id,acting_actor_id,order_id,from_state,to_state,from_version,result_version,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",eventType,idempotencyKey,correlationID,actingActorID,orderID,current.State,requestedState,expectedVersion,result.Version,requestHash);err!=nil{return OrderRecord{},false,err}
 	if cancellationReason!=""{
-		if err:=enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"PAYMENT_CANCEL",SourceRef:idempotencyKey,OrderID:orderID,PaymentIntentID:*current.PaymentIntentID,AmountMinor:current.TotalAmountMinor,Reason:cancellationReason,IdempotencyKey:idempotencyKey,CorrelationID:correlationID});err!=nil{return OrderRecord{},false,err}
+		if err:=enqueueFinancialHandoffTx(ctx,tx,FinancialHandoffOutbox{EffectType:"PAYMENT_CANCEL",SourceRef:idempotencyKey,OrderID:orderID,PaymentIntentID:*current.PaymentIntentID,AmountMinor:current.TotalAmountMinor,Reason:cancellationReason,IdempotencyKey:idempotencyKey,CorrelationID:correlationID,ActingActorID:actingActorID});err!=nil{return OrderRecord{},false,err}
 	}
 	if err:=tx.Commit();err!=nil{return OrderRecord{},false,err}
 	order,err:=ReadOrder(ctx,db,orderID)
