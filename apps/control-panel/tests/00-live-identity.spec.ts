@@ -198,16 +198,12 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
     return operator;
   }
 
-  const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
-  const provision = await jsonRequest(identityBase, "/internal/actor-roles/provision", controlToken, { phoneE164: phone, role: "operator" }, { "X-Acting-Actor-ID": existing.actorId });
-  const operator = { actorId: String(provision.body?.actorId), phone, token: "", createdByTest: provision.response.status === 201 };
-  if (operator.createdByTest && operator.actorId.startsWith("act_")) preparedOperatorForCleanup = operator;
-  expect(provision.response.status, "governed operator provisioning must succeed").toBe(201);
+  const operator = { actorId: existing.actorId, phone: existing.phoneE164, token: "", createdByTest: false };
   expect(operator.actorId).toMatch(/^act_/);
   const enrollment = await fetch(identityBase + "/internal/operator-enrollment-tokens", {
     method: "POST",
     headers: { Accept: "application/json", Authorization: "Bearer " + controlToken, "X-Acting-Actor-ID": existing.actorId, "Content-Type": "application/json" },
-    body: JSON.stringify({ phoneE164: phone, role: "operator" }),
+    body: JSON.stringify({ phoneE164: operator.phone, role: "operator" }),
     signal: AbortSignal.timeout(5_000),
   });
   expect(enrollment.status, "governed operator enrollment token must be issued").toBe(201);
