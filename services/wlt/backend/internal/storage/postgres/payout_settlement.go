@@ -628,7 +628,7 @@ func VerifyManualTransfer(ctx context.Context, db *sql.DB, input VerifyTransferI
 	if _, err := tx.ExecContext(ctx, "UPDATE wlt.manual_transfer_executions SET execution_status='VERIFIED',verified_by=$2,verified_at=clock_timestamp() WHERE id=$1", input.TransferID, input.ActorID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE wlt.settlement_batches SET status=CASE WHEN (SELECT COUNT(*) FROM manual_transfer_executions WHERE batch_id=$1 AND execution_status='VERIFIED')=row_count THEN 'AWAITING_RECONCILIATION' ELSE 'AWAITING_VERIFICATION' END,updated_at=clock_timestamp() WHERE id=$1", transfer.BatchID); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE wlt.settlement_batches SET status=CASE WHEN (SELECT COUNT(*) FROM wlt.manual_transfer_executions WHERE batch_id=$1 AND execution_status='VERIFIED')=row_count THEN 'AWAITING_RECONCILIATION' ELSE 'AWAITING_VERIFICATION' END,updated_at=clock_timestamp() WHERE id=$1", transfer.BatchID); err != nil {
 		return ManualTransferExecutionRecord{}, err
 	}
 	if err := insertPayoutAudit(ctx, tx, "TRANSFER_VERIFIED", transfer.PayoutID, transfer.BatchID, input.ActorID, "", input.Evidence, input.IdempotencyKey, hash, input.CorrelationID); err != nil {
