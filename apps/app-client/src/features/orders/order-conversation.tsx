@@ -1,0 +1,90 @@
+import { borders, radius, type resolveTheme, spacing, typography } from "@bthwani/design-system";
+import { BthwaniButton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { createDshMobileClient } from "@bthwani/dsh";
+import * as Crypto from "expo-crypto";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
+import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+
+function client() {
+  const value = process.env.EXPO_PUBLIC_DSH_API_URL?.trim();
+  if (!value) throw new Error("DSH_BASE_URL_REQUIRED");
+  return createDshMobileClient(value, { cryptoRandomUUID: () => Crypto.randomUUID() });
+}
+
+function senderLabel(role: string): string {
+  return role === "client" ? "العميل" : role === "partner" ? "المتجر" : "الكابتن";
+}
+
+export function OrderConversation({ orderId }: { orderId: string }) {
+  const theme = useAppearanceTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const [state, setState] = useState<{ kind: "loading" } | { kind: "ready"; value: Awaited<ReturnType<ReturnType<typeof client>["readOrderConversation"]>> } | { kind: "error" }>({ kind: "loading" });
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    if (!orderId.trim()) return;
+    setState((current) => current.kind === "ready" ? current : { kind: "loading" });
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      setState({ kind: "ready", value: await client().readOrderConversation(token, orderId, 100) });
+    } catch (cause) {
+      console.error("DSH client order conversation read failed", cause);
+      setState({ kind: "error" });
+    }
+  }, [orderId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function send() {
+    const normalized = body.trim();
+    if (!normalized || busy || state.kind !== "ready" || !state.value.canSend) return;
+    setBusy(true); setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      await client().sendOrderConversationMessage(token, orderId, { body: normalized });
+      setBody("");
+      await load();
+    } catch (cause) {
+      console.error("DSH client order conversation send failed", cause);
+      setError("تعذر إرسال الرسالة. حدّث المحادثة وحاول مرة أخرى.");
+    } finally { setBusy(false); }
+  }
+
+  async function markRead() {
+    if (busy || state.kind !== "ready") return;
+    const last = state.value.messages.at(-1);
+    if (!last || state.value.unreadCount < 1) return;
+    setBusy(true); setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      await client().markOrderConversationRead(token, orderId, { messageId: last.id });
+      await load();
+    } catch (cause) {
+      console.error("DSH client order conversation read-state write failed", cause);
+      setError("تعذر تحديث حالة القراءة.");
+    } finally { setBusy(false); }
+  }
+
+  return <BthwaniSurface tone="base" style={styles.surface} accessibilityLabel="محادثة الطلب">
+    <View style={styles.header}><View><Text style={styles.title}>محادثة الطلب</Text><Text style={styles.muted}>تواصل تشغيلي مرتبط بهذا الطلب فقط.</Text></View>{state.kind === "ready" && state.value.unreadCount > 0 ? <Text style={styles.unread}>{state.value.unreadCount} غير مقروء</Text> : null}</View>
+    {state.kind === "loading" ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ قراءة المحادثة…</Text></View> : null}
+    {state.kind === "error" ? <View style={styles.state}><Text style={styles.error}>تعذر قراءة المحادثة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} variant="secondary" /></View> : null}
+    {state.kind === "ready" ? <>
+      {!state.value.messages.length ? <Text style={styles.muted}>لا توجد رسائل بعد.</Text> : <View style={styles.messages}>{state.value.messages.map((message) => <View key={message.id} style={[styles.message, message.mine ? styles.mine : null]}><Text style={styles.sender}>{message.mine ? "أنت" : senderLabel(message.senderRole)}</Text><Text style={styles.body}>{message.body}</Text><Text style={styles.time}>{new Date(message.createdAt).toLocaleString("ar-YE")}</Text></View>)}</View>}
+      {state.value.unreadCount > 0 ? <BthwaniButton busy={busy} disabled={busy} label="تحديد الرسائل كمقروءة" onPress={() => void markRead()} variant="secondary" /> : null}
+      {state.value.canSend ? <><TextInput accessibilityLabel="رسالة المحادثة" editable={!busy} maxLength={2000} multiline onChangeText={setBody} placeholder="اكتب رسالة تشغيلية قصيرة" placeholderTextColor={theme.colorMuted} style={styles.input} textAlign="right" value={body} /><BthwaniButton busy={busy} disabled={busy || !body.trim()} label="إرسال الرسالة" onPress={() => void send()} /></> : <Text style={styles.muted}>أُغلقت المحادثة للكتابة، ويمكنك قراءة سجلها فقط.</Text>}
+    </> : null}
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+  </BthwaniSurface>;
+}
+
+function createStyles(theme: ReturnType<typeof resolveTheme>) { return StyleSheet.create({
+  surface: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[3], padding: spacing[4] },
+  header: { alignItems: "flex-start", flexDirection: "row", gap: spacing[2], justifyContent: "space-between" },
+  title: { ...typography.titleSm, color: theme.color }, muted: { ...typography.bodySm, color: theme.colorMuted }, unread: { ...typography.label, color: theme.interactiveText },
+  messages: { gap: spacing[2] }, message: { alignSelf: "flex-start", backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, gap: spacing[1], maxWidth: "92%", padding: spacing[3] }, mine: { alignSelf: "flex-end", backgroundColor: theme.actionSoft }, sender: { ...typography.label, color: theme.interactiveText }, body: { ...typography.body, color: theme.color }, time: { ...typography.caption, color: theme.colorMuted }, input: { ...typography.body, backgroundColor: theme.background, borderColor: theme.borderColor, borderRadius: radius.md, borderWidth: borders.hairline, color: theme.color, minHeight: 72, padding: spacing[3] }, state: { alignItems: "center", gap: spacing[2], padding: spacing[3] }, error: { ...typography.bodySm, color: theme.warning },
+}); }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
@@ -12,11 +13,12 @@ import (
 )
 
 var (
-	ErrClientSessionForbidden  = errors.New("an active app-client session is required")
-	ErrPartnerSessionForbidden = errors.New("an active app-partner session is required")
-	ErrStoreOwnershipForbidden = errors.New("partner does not own this Store")
-	ErrOperatorNotActive       = errors.New("operator is not active")
-	ErrPaymentUnavailable      = errors.New("payment operation is unavailable")
+	ErrClientSessionForbidden       = errors.New("an active app-client session is required")
+	ErrPartnerSessionForbidden      = errors.New("an active app-partner session is required")
+	ErrConversationSessionForbidden = errors.New("an active order conversation session is required")
+	ErrStoreOwnershipForbidden      = errors.New("partner does not own this Store")
+	ErrOperatorNotActive            = errors.New("operator is not active")
+	ErrPaymentUnavailable           = errors.New("payment operation is unavailable")
 )
 
 type Service struct {
@@ -91,6 +93,36 @@ func (s *Service) CreateClientOrderRating(ctx context.Context, accessToken, orde
 	}
 	requestHash := postgres.HashOrderRatingRequest(orderID, rating, review, expectedVersion)
 	return postgres.CreateClientOrderRating(ctx, s.db, orderID, identity, rating, review, expectedVersion, idempotencyKey, requestHash, correlationID)
+}
+
+func (s *Service) ReadOrderConversation(ctx context.Context, accessToken, orderID string, limit int) (postgres.OrderConversationRecord, error) {
+	actorID, role, err := s.requireConversationSession(ctx, accessToken)
+	if err != nil {
+		return postgres.OrderConversationRecord{}, err
+	}
+	conversation, err := postgres.ReadOrderConversation(ctx, s.db, orderID, actorID, role, limit)
+	if err != nil {
+		return postgres.OrderConversationRecord{}, err
+	}
+	conversation.OrderID = strings.TrimSpace(orderID)
+	return conversation, nil
+}
+
+func (s *Service) SendOrderConversationMessage(ctx context.Context, accessToken, orderID, body, idempotencyKey, correlationID string) (postgres.OrderConversationMessageRecord, bool, error) {
+	actorID, role, err := s.requireConversationSession(ctx, accessToken)
+	if err != nil {
+		return postgres.OrderConversationMessageRecord{}, false, err
+	}
+	requestHash := postgres.HashOrderConversationMessageRequest(orderID, body)
+	return postgres.SendOrderConversationMessage(ctx, s.db, orderID, actorID, role, body, idempotencyKey, requestHash, correlationID)
+}
+
+func (s *Service) MarkOrderConversationRead(ctx context.Context, accessToken, orderID, messageID string) (time.Time, error) {
+	actorID, role, err := s.requireConversationSession(ctx, accessToken)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return postgres.MarkOrderConversationRead(ctx, s.db, orderID, actorID, role, messageID)
 }
 
 func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int) ([]postgres.OrderRecord, error) {
@@ -181,6 +213,19 @@ func (s *Service) requireSession(ctx context.Context, accessToken, role, surface
 		return "", ErrClientSessionForbidden
 	}
 	return identity.Subject, nil
+}
+
+func (s *Service) requireConversationSession(ctx context.Context, accessToken string) (string, string, error) {
+	identity, err := s.identity.ReadSession(ctx, strings.TrimSpace(accessToken))
+	if err != nil {
+		return "", "", err
+	}
+	role := string(identity.Role)
+	surface := identity.Surface
+	if strings.TrimSpace(identity.Subject) == "" || (role != "client" && role != "partner" && role != "captain") || surface != "app-"+role {
+		return "", "", ErrConversationSessionForbidden
+	}
+	return strings.TrimSpace(identity.Subject), role, nil
 }
 
 func (s *Service) requireOwnedStore(ctx context.Context, partnerActorID, storeID string) error {

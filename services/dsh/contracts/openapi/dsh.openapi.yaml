@@ -195,6 +195,15 @@ paths:
   /dsh/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}"
 
+  /dsh/orders/{orderId}/conversation:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1conversation"
+
+  /dsh/orders/{orderId}/conversation/messages:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1conversation~1messages"
+
+  /dsh/orders/{orderId}/conversation/read:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1conversation~1read"
+
   /dsh/orders/{orderId}/delivery-proof:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1delivery-proof"
 
@@ -3292,6 +3301,110 @@ components:
       properties:
         notificationId:
           type: string
+        readAt:
+          type: string
+          format: date-time
+
+    OrderConversationMessage:
+      type: object
+      required: [id, orderId, senderRole, body, createdAt, readAt, mine]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        orderId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        senderRole:
+          type: string
+          enum: [client, partner, captain]
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+          x-go-pointer: true
+        mine:
+          type: boolean
+
+    OrderConversationResponse:
+      type: object
+      required: [orderId, orderState, readOnlyAt, canSend, messages, unreadCount]
+      additionalProperties: false
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        orderState:
+          $ref: "#/components/schemas/OrderState"
+        readOnlyAt:
+          type: string
+          format: date-time
+          nullable: true
+          x-go-pointer: true
+        canSend:
+          type: boolean
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderConversationMessage"
+        unreadCount:
+          type: integer
+          minimum: 0
+
+    CreateOrderConversationMessageRequest:
+      type: object
+      required: [body]
+      additionalProperties: false
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    OrderConversationMessageResponse:
+      type: object
+      required: [message, idempotentReplay]
+      additionalProperties: false
+      properties:
+        message:
+          $ref: "#/components/schemas/OrderConversationMessage"
+        idempotentReplay:
+          type: boolean
+
+    MarkOrderConversationReadRequest:
+      type: object
+      required: [messageId]
+      additionalProperties: false
+      properties:
+        messageId:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    OrderConversationReadResponse:
+      type: object
+      required: [orderId, messageId, readAt]
+      additionalProperties: false
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        messageId:
+          type: string
+          minLength: 1
+          maxLength: 128
         readAt:
           type: string
           format: date-time

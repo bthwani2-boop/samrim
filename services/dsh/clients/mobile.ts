@@ -1,5 +1,5 @@
 import { dshOperationPaths } from "./generated/dsh-operations";
-import type { BeneficiaryPayoutStateResponse, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashLiabilityResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, NotificationListResponse, NotificationReadResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerFinancialSummaryResponse, PayoutRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
+import type { BeneficiaryPayoutStateResponse, CaptainAdmissionResponse, CaptainAssignmentListResponse, CaptainAssignmentResponse, CaptainAvailabilityRequest, CaptainCashRemittanceRequest, CaptainCashRemittanceResponse, CaptainCompletionRequest, CaptainDeliveryTaskResponse, CaptainLocationResponse, CaptainOfferDecisionRequest, CaptainOfferListResponse, CaptainOfferResponse, CartResponse, CashLiabilityResponse, CatalogCategoryListResponse, CatalogModifierGroupResponse, CatalogModifierOptionResponse, CatalogProduct, CatalogProductListResponse, CatalogProductProposalListResponse, CatalogProductProposalResponse, CatalogStorefrontSectionResponse, CatalogStoreOffer, CatalogStoreOfferListResponse, CatalogStoreOfferResponse, CatalogVariantResponse, CheckoutQuoteResponse, CheckoutRequest, CommerceVerticalListResponse, CorrectJoiningCaseRequest, CreateCatalogModifierGroupRequest, CreateCatalogModifierOptionRequest, CreateCatalogProductProposalRequest, CreateCatalogProductRequest, CreateCatalogStorefrontSectionRequest, CreateCatalogVariantRequest, CreateDeliveryAddressRequest, CreateJoiningCaseRequest, CreateOrderConversationMessageRequest, CreateOrderRatingRequest, DeliveryAddressListResponse, DeliveryAddressResponse, DeliveryProofResponse, FavoriteStoreListResponse, FavoriteStoreResponse, FieldAdmissionResponse, FieldFinancialSummaryResponse, JoiningCaseListResponse, JoiningCaseResponse, MarkOrderConversationReadRequest, NotificationListResponse, NotificationReadResponse, OrderConversationMessageResponse, OrderConversationReadResponse, OrderConversationResponse, OrderListResponse, OrderRatingResponse, OrderResponse, OrderTrackingResponse, OrderTransitionRequest, PartnerFinancialSummaryResponse, PayoutRequest, PublicCatalogResponse, PublicStoreView, PublishedStoreListResponse, ReplaceCatalogProductMediaRequest, ServiceabilityResponse, ServiceCity, ServiceCityListResponse, StoreDeliveryOriginResponse, UpdateCartLineRequest, UpdateCatalogProductProposalRequest, UpdateCatalogProductRequest, UpdateCatalogVariantRequest, UpdateDeliveryAddressRequest, UpsertCartLineRequest } from "./generated/dsh-types";
 
 export type DshMobileClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -135,6 +135,12 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
     const randomUUID = options.cryptoRandomUUID;
     if (!randomUUID) throw new Error("DSH_IDEMPOTENCY_KEY_GENERATOR_REQUIRED");
     return { "X-Correlation-ID": randomUUID(), "Idempotency-Key": randomUUID() };
+  }
+
+  function correlationHeaders(): Record<string, string> {
+    const randomUUID = options.cryptoRandomUUID;
+    if (!randomUUID) throw new Error("DSH_CORRELATION_ID_GENERATOR_REQUIRED");
+    return { "X-Correlation-ID": randomUUID() };
   }
 
   function assertCoordinates(latitude: number, longitude: number): void {
@@ -368,6 +374,26 @@ export function createDshMobileClient(rawBaseUrl: string, options: DshMobileClie
       if (!normalized) throw new Error("DSH_ORDER_ID_REQUIRED");
       const path = dshOperationPaths.readOrder.path.replace("{orderId}", encodeURIComponent(normalized));
       return userRequest<OrderResponse>(accessToken, path, dshOperationPaths.readOrder.method);
+    },
+    async readOrderConversation(accessToken: string, orderID: string, limit = 50): Promise<OrderConversationResponse> {
+      const normalized = orderID.trim();
+      if (!normalized || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("DSH_ORDER_CONVERSATION_INPUT_INVALID");
+      const path = `${dshOperationPaths.readOrderConversation.path.replace("{orderId}", encodeURIComponent(normalized))}?${new URLSearchParams({ limit: String(limit) }).toString()}`;
+      return userRequest<OrderConversationResponse>(accessToken, path, dshOperationPaths.readOrderConversation.method);
+    },
+    async sendOrderConversationMessage(accessToken: string, orderID: string, input: CreateOrderConversationMessageRequest): Promise<OrderConversationMessageResponse> {
+      const normalized = orderID.trim();
+      const body = input.body.trim();
+      if (!normalized || Array.from(body).length < 1 || Array.from(body).length > 2000) throw new Error("DSH_ORDER_CONVERSATION_BODY_INVALID");
+      const path = dshOperationPaths.sendOrderConversationMessage.path.replace("{orderId}", encodeURIComponent(normalized));
+      return userRequest<OrderConversationMessageResponse>(accessToken, path, dshOperationPaths.sendOrderConversationMessage.method, { body }, mutationHeaders());
+    },
+    async markOrderConversationRead(accessToken: string, orderID: string, input: MarkOrderConversationReadRequest): Promise<OrderConversationReadResponse> {
+      const normalized = orderID.trim();
+      const messageID = input.messageId.trim();
+      if (!normalized || !messageID) throw new Error("DSH_ORDER_CONVERSATION_READ_INPUT_INVALID");
+      const path = dshOperationPaths.markOrderConversationRead.path.replace("{orderId}", encodeURIComponent(normalized));
+      return userRequest<OrderConversationReadResponse>(accessToken, path, dshOperationPaths.markOrderConversationRead.method, { messageId: messageID }, correlationHeaders());
     },
     async readClientDeliveryProof(accessToken: string, orderID: string): Promise<DeliveryProofResponse> {
       const normalized = orderID.trim();
