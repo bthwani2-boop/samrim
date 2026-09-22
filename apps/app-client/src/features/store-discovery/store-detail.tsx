@@ -13,7 +13,7 @@ type DetailState =
   | { kind: "ready"; store: PublicStoreView; catalog: PublicCatalogResponse }
   | { kind: "error" };
 
-export default function ClientStoreDetail({ storeId }: { storeId: string }) {
+export default function ClientStoreDetail({ storeId, categoryId = "", productId = "" }: { storeId: string; categoryId?: string; productId?: string }) {
   const router = useRouter();
   const { selectedCityID } = useServiceCityScope();
   const theme = useAppearanceTheme();
@@ -38,7 +38,7 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     const requestID = catalogRequestID.current + 1;
     catalogRequestID.current = requestID;
     setSelectedSectionID(null);
-    setSelectedCategoryID(null);
+    setSelectedCategoryID(categoryId.trim() || null);
     setCatalogQuery("");
     setCatalogRefreshing(false);
     setLoadingMore(false);
@@ -48,7 +48,8 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     }
     setState({ kind: "loading" });
     try {
-      const [store, catalog] = await Promise.all([readPublishedStore(storeId, selectedCityID), readPublicStoreCatalog(storeId, selectedCityID, "", "", 20)]);
+      const [store, rawCatalog] = await Promise.all([readPublishedStore(storeId, selectedCityID), readPublicStoreCatalog(storeId, selectedCityID, categoryId.trim(), "", 20)]);
+      const catalog = productId.trim() ? filterCatalogToProduct(rawCatalog, productId.trim()) : rawCatalog;
       let favorite = false;
       if (currentIdentityState().kind === "authenticated") {
         try {
@@ -64,7 +65,7 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
       if (requestID !== catalogRequestID.current) return;
       setState({ kind: "error" });
     }
-  }, [selectedCityID, storeId]);
+  }, [categoryId, productId, selectedCityID, storeId]);
 
   const reloadCatalog = useCallback(async (categoryID: string | null, query: string) => {
     if (!storeId.trim() || !selectedCityID) return;
@@ -219,7 +220,7 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     <View style={styles.container} accessibilityLabel={`كتالوج ${state.store.name}`}>
       <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتاجر" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>المتاجر المتاحة</Text></Pressable>
       <BthwaniSurface tone="raised" style={styles.merchantHero}>
-        <View style={styles.merchantIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>
+        {state.store.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${state.store.name}`} source={{ uri: state.store.storeProfileImage.uri }} style={styles.merchantImage} resizeMode="cover" /> : <View style={styles.merchantIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>}
         <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متاح للطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{state.store.serviceCity.displayNameAr} · كتالوج منشور</Text><Text accessibilityLabel="تقييم المتجر" style={styles.rating}>{state.store.ratingCount > 0 ? `★ ${state.store.ratingAverage.toFixed(1)} من 5 · ${state.store.ratingCount} تقييم` : "لا توجد تقييمات بعد"}</Text></View>
         <BthwaniIconButton
           disabled={favoriteBusy}
@@ -288,6 +289,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     muted: { ...typography.bodySm, color: theme.colorMuted, lineHeight: 20 },
     merchantHero: { alignItems: "center", borderRadius: radius.xl, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
     merchantIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
+    merchantImage: { borderRadius: radius.lg, height: sizing.avatarLg, width: sizing.avatarLg },
     merchantCopy: { flex: 1, gap: spacing[1] },
     rating: { ...typography.bodySm, color: theme.warning },
     sectionChips: { gap: spacing[2], paddingVertical: spacing[1] },
@@ -319,6 +321,12 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     error: { ...typography.bodySm, color: theme.danger, lineHeight: 19 },
     loadMoreButton: { width: "100%" },
   });
+}
+
+function filterCatalogToProduct(catalog: PublicCatalogResponse, productID: string): PublicCatalogResponse {
+  const offers = catalog.offers.filter((offer) => offer.productId === productID);
+  const offerIDs = new Set(offers.map((offer) => offer.offerId));
+  return { ...catalog, offers, sections: catalog.sections.map((section) => ({ ...section, offerIds: section.offerIds.filter((offerID) => offerIDs.has(offerID)) })).filter((section) => section.offerIds.length > 0) };
 }
 
 function mergeCatalog(current: PublicCatalogResponse, next: PublicCatalogResponse): PublicCatalogResponse {

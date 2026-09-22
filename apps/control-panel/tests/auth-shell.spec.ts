@@ -31,7 +31,7 @@ test("signed-out access to a protected workspace route returns to the identity s
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
 });
 
-test("authenticated operator discovers access and partner responsibilities through workspace navigation", async ({ page }) => {
+test("authenticated operator discovers the platform centers through workspace navigation", async ({ page }) => {
   await stubAuthenticatedSession(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
@@ -41,7 +41,7 @@ test("authenticated operator discovers access and partner responsibilities throu
   const navigationToggle = page.getByRole("button", { name: "فتح مسارات العمل" });
   await navigationToggle.click();
   await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" })).toHaveAttribute("data-open", "true");
-  const accessLink = page.getByRole("link", { name: "الوصول والأمان" });
+  const accessLink = page.getByRole("link", { name: "إعدادات المنصة والصلاحيات" });
   await expect(accessLink).toBeVisible();
   await accessLink.click();
   await expect(page).toHaveURL(/\/access$/);
@@ -74,9 +74,72 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     await expect(page.locator("#workspace-main")).toHaveCount(1, { timeout: 30_000 });
     await expect(page.locator("#workspace-main > main")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 30_000 });
-    const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "الوصول والأمان" : path === "/partners" ? "الشركاء والمتاجر" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج";
+    const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "إعدادات المنصة والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج";
     await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
   }
+});
+
+test("workspace navigation keeps captain operations and field partners in their owning centers", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+
+  await page.goto("/captains");
+  await expect(navigation.getByRole("link", { name: "العمليات", exact: true })).toHaveAttribute("aria-current", "location");
+  await expect(navigation.getByRole("link", { name: "الكباتن", exact: true })).toHaveAttribute("aria-current", "page");
+
+  await page.goto("/fields");
+  await expect(navigation.getByRole("link", { name: "الشركاء", exact: true })).toHaveAttribute("aria-current", "location");
+  await expect(navigation.getByRole("link", { name: "الميدان", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(navigation.getByRole("link", { name: "الشركاء", exact: true })).toHaveCount(1);
+});
+
+test("finance and marketing centers expose only real independent resource routes", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  const navigation = page.getByRole("navigation", { name: "تنقل مساحة المشغل" });
+
+  await page.goto("/finance");
+  await expect(page.getByRole("heading", { name: "المالية", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "حفظ النقد", exact: true })).toHaveAttribute("href", "/finance/cash-custody");
+  await expect(navigation.getByRole("link", { name: "سياسة رسوم التوصيل", exact: true })).toHaveAttribute("href", "/finance/delivery-fee-policy");
+
+  await page.goto("/finance/cash-custody");
+  await expect(page.getByRole("heading", { name: "حفظ النقد", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "المالية", exact: true })).toHaveAttribute("aria-current", "location");
+  await expect(navigation.getByRole("link", { name: "حفظ النقد", exact: true })).toHaveAttribute("aria-current", "page");
+
+  await page.goto("/marketing/promotions");
+  await expect(page.getByRole("heading", { name: "العروض", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "التسويق والمحتوى", exact: true })).toHaveAttribute("aria-current", "location");
+  await expect(navigation.getByRole("link", { name: "محتوى الاكتشاف", exact: true })).toHaveAttribute("href", "/marketing/content");
+});
+
+test("marketing resource pages keep promotions and discovery content separate", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/marketing/promotions", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ promotions: [{ id: "promotion-1", code: "WELCOME10", nameAr: "خصم البداية", kind: "PERCENTAGE", valueMinor: 10, state: "DRAFT", version: 1 }] }) });
+  });
+  await page.route("**/api/marketing/content", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ id: "content-1", kind: "BANNER", titleAr: "مختارات الأسبوع", bodyAr: "اكتشف الجديد", state: "DRAFT", version: 1 }] }) });
+  });
+  await page.route("**/api/marketing/analytics", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) });
+  });
+  await page.route("**/api/service-cities", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cities: [{ id: "city-sanaa", displayNameAr: "صنعاء", active: true, version: 1 }] }) });
+  });
+
+  await page.goto("/marketing/promotions");
+  await expect(page.getByTestId("marketing-promotions-workspace")).toBeVisible();
+  await expect(page.getByText("خصم البداية")).toBeVisible();
+  await expect(page.getByTestId("marketing-content-workspace")).toHaveCount(0);
+
+  await page.goto("/marketing/content");
+  await expect(page.getByTestId("marketing-content-workspace")).toBeVisible();
+  await expect(page.getByText("مختارات الأسبوع")).toBeVisible();
+  await expect(page.getByLabel("ملف صورة المحتوى")).toHaveAttribute("required", "");
+  await expect(page.getByLabel("نوع وجهة المحتوى")).toHaveValue("INFO");
+  await expect(page.getByLabel("مدينة خدمة المحتوى")).toContainText("صنعاء");
+  await expect(page.getByTestId("marketing-promotions-workspace")).toHaveCount(0);
 });
 
 test("workspace shell exposes nested breadcrumbs and the current resource", async ({ page }) => {
@@ -312,8 +375,8 @@ test("operator finance reads only the bounded COD cash-custody projection", asyn
       body: JSON.stringify({ items: [{ paymentIntentId: "payment-1", externalReference: "dsh-order-1", captainActorId: "act-captain-1", amountMinor: 12500, currency: "YER", paymentVersion: 3, collectedAt: "2026-09-20T08:00:00.000Z" }], totalAmountMinor: 12500 }),
     });
   });
-  await page.goto("/finance");
-  await expect(page.getByRole("heading", { name: "المالية" })).toBeVisible();
+  await page.goto("/finance/cash-custody");
+  await expect(page.getByRole("heading", { name: "حفظ النقد" })).toBeVisible();
   await expect(page.getByText("12,500 ريال يمني").first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "النقد المحصل عند الاستلام" })).toBeVisible();
   await expect(page.getByText("طلبات التسوية والوجهات الرسمية تظهر في مساحة التسوية الموحدة أدناه.")).toBeVisible();
@@ -714,14 +777,14 @@ test("authenticated workspace keeps navigation meaning across light and dark the
   await page.goto("/workspace");
 
   const lightBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  await expect(page.getByRole("link", { name: "الوصول والأمان" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "إعدادات المنصة والصلاحيات" })).toBeVisible();
   await expect(page.getByRole("main")).toHaveAttribute("id", "workspace-main");
 
   await page.emulateMedia({ colorScheme: "dark" });
   await page.reload();
   const darkBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(darkBackground).not.toBe(lightBackground);
-  await expect(page.getByRole("link", { name: "الوصول والأمان" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "إعدادات المنصة والصلاحيات" })).toBeVisible();
 });
 
 test("operator access exposes passkey-first sign-in and no human-role selector", async ({ page }) => {

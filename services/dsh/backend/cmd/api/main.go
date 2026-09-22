@@ -117,6 +117,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	multiStoreCheckoutServer, err := transporthttp.NewMultiStoreCheckout(identityClient, database, cartServer.Service(), orderServer.Service())
+	if err != nil {
+		log.Fatal(err)
+	}
 	captainServer, err := transporthttp.NewCaptain(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, paymentClient)
 	if err != nil {
 		log.Fatal(err)
@@ -125,11 +129,15 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
 	}
 	clientFavoritesServer, err := transporthttp.NewClientFavorites(identityClient, database)
+	if err != nil {
+		log.Fatal(err)
+	}
+	marketingServer, err := transporthttp.NewMarketingWithDependencies(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -146,10 +154,12 @@ func main() {
 		beneficiaryFinanceServer.Register(mux)
 		cartServer.Register(mux)
 		orderServer.Register(mux)
+		multiStoreCheckoutServer.Register(mux)
 		captainServer.Register(mux)
 		notificationServer.Register(mux)
 		fieldServer.Register(mux)
 		clientFavoritesServer.Register(mux)
+		marketingServer.Register(mux)
 	}
 	readiness := func(ctx context.Context) error {
 		if err := postgres.VerifySchema(ctx, database, records); err != nil {

@@ -1,0 +1,20 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src", "app"],
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Select/Listbox", "Date", "Scrollbar", "Form", "CRUD"],
+  "ownership": {
+    "Select/Listbox": "native",
+    "Date": "native"
+  },
+  "requiredCommands": ["typecheck", "lint", "theme"],
+  "commands": {
+    "typecheck": "pnpm --filter @bthwani/control-panel typecheck",
+    "lint": "pnpm exec biome lint apps/control-panel --diagnostic-level=error",
+    "theme": "pnpm theme:verify"
+  },
+  "evidence": {
+    "navigation": "tests/auth-shell.spec.ts",
+    "catalog": "tests/catalog-workspace.spec.ts"
+  }
+}

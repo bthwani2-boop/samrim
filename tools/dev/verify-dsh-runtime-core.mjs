@@ -36,7 +36,7 @@ if (dshToken.length < 24 || identityDshToken.length < 24 || bootstrapToken.lengt
 const composeArgs = ["compose", "--project-name", "samrim-local", "--env-file", envPath, "-f", path.join(root, "infra/local/compose/compose.yaml")];
 const suffix = `${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}`;
 const citySuffix = String(Date.now());
-  const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), captainFundingIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set();
+const caseIDs = new Set(), storeIDs = new Set(), actorIDs = new Set(), challengeIDs = new Set(), productIDs = new Set(), categoryIDs = new Set(), cityIDs = new Set(), addressIDs = new Set(), offerIDs = new Set(), cartIDs = new Set(), orderIDs = new Set(), paymentIntentIDs = new Set(), deliveryFeePolicyIDs = new Set(), fieldCommissionPolicyIDs = new Set(), proposalIDs = new Set(), importRunIDs = new Set(), modifierGroupIDs = new Set(), sectionIDs = new Set(), attributeIDs = new Set(), captainAdmissionIDs = new Set(), captainOfferIDs = new Set(), captainAssignmentIDs = new Set(), captainFundingIDs = new Set(), fieldAdmissionIDs = new Set(), destinationIDs = new Set(), payoutIDs = new Set(), settlementBatchIDs = new Set(), promotionIDs = new Set(), contentIDs = new Set(), multiStoreCheckoutIDs = new Set();
 let cityA = "";
 let cityB = "";
 let verticalID = "";
@@ -104,6 +104,12 @@ function cleanup() {
     sql(`DELETE FROM dsh.field_admission_idempotency WHERE admission_id='${value}'`);
     sql(`DELETE FROM dsh.field_admissions WHERE id='${value}'`);
   }
+  for (const checkoutID of multiStoreCheckoutIDs) {
+    const value = sqlLiteral(checkoutID);
+    sql(`DELETE FROM dsh.commerce_multi_store_checkout_idempotency WHERE checkout_id='${value}'`);
+    sql(`DELETE FROM dsh.commerce_multi_store_checkout_children WHERE checkout_id='${value}'`);
+    sql(`DELETE FROM dsh.commerce_multi_store_checkouts WHERE id='${value}'`);
+  }
   for (const orderID of orderIDs) {
     const value = sqlLiteral(orderID);
     sql(`DELETE FROM wlt.captain_cod_reservation_events WHERE reservation_id IN (SELECT id FROM wlt.captain_cod_reservations WHERE order_id='${value}')`);
@@ -128,6 +134,7 @@ function cleanup() {
     sql(`DELETE FROM dsh.commerce_order_checkout_idempotency WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_order_line_modifier_snapshots WHERE order_line_id IN (SELECT id FROM dsh.commerce_order_lines WHERE order_id='${value}')`);
     sql(`DELETE FROM dsh.commerce_order_line_attribute_snapshots WHERE order_line_id IN (SELECT id FROM dsh.commerce_order_lines WHERE order_id='${value}')`);
+    sql(`DELETE FROM dsh.commerce_promotion_redemptions WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_order_lines WHERE order_id='${value}'`);
     sql(`DELETE FROM dsh.commerce_orders WHERE id='${value}'`);
   }
@@ -228,6 +235,17 @@ function cleanup() {
     sql(`DELETE FROM dsh.joining_case_audit WHERE case_id='${value}'`);
     sql(`DELETE FROM dsh.joining_case_mutation_idempotency WHERE case_id='${value}'`);
     sql(`DELETE FROM dsh.joining_cases WHERE id='${value}'`);
+  }
+  for (const contentID of contentIDs) {
+    const value = sqlLiteral(contentID);
+    sql(`DELETE FROM dsh.commerce_marketing_mutation_idempotency WHERE resource_id='${value}'`);
+    sql(`DELETE FROM dsh.discovery_content WHERE id='${value}'`);
+  }
+  for (const promotionID of promotionIDs) {
+    const value = sqlLiteral(promotionID);
+    sql(`DELETE FROM dsh.commerce_promotion_redemptions WHERE promotion_id='${value}'`);
+    sql(`DELETE FROM dsh.commerce_marketing_mutation_idempotency WHERE resource_id='${value}'`);
+    sql(`DELETE FROM dsh.commerce_promotions WHERE id='${value}'`);
   }
   for (const storeID of storeIDs) {
     const value = sqlLiteral(storeID);
@@ -393,7 +411,7 @@ if (!checkerOperatorID.startsWith("act_") || checkerOperatorID === actingOperato
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-  expectSQL("SELECT count(*) FROM dsh.schema_migrations", "38", "DSH migration history is not v38");
+  expectSQL("SELECT count(*) FROM dsh.schema_migrations", "43", "DSH migration history is not v43");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -423,6 +441,11 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=36", "036_commerce_financial_handoff_outbox.sql", "DSH financial handoff outbox migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=37", "037_financial_handoff_actor_provenance.sql", "DSH financial handoff provenance migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=38", "038_order_conversation.sql", "DSH order-conversation migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=39", "039_promotions_discovery_content.sql", "DSH promotions/discovery migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=40", "040_multi_store_checkout.sql", "DSH multi-store checkout migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=41", "041_store_profile_media.sql", "DSH store profile media migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=42", "042_field_notifications.sql", "DSH field notifications migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=43", "043_discovery_content_analytics.sql", "DSH discovery analytics migration is not canonical");
   expectSQL("SELECT to_regclass('dsh.joining_case_financial_profile_outbox') IS NOT NULL", "t", "DSH financial profile outbox is missing");
   expectSQL("SELECT to_regclass('dsh.field_commission_publication_outbox') IS NOT NULL", "t", "DSH field commission publication outbox is missing");
   expectSQL("SELECT to_regclass('dsh.commerce_financial_handoff_outbox') IS NOT NULL", "t", "DSH financial handoff outbox is missing");
@@ -432,7 +455,9 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_orders_state_chk'", "t", "DSH Order cancellation state is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%CANCELLED%' FROM pg_constraint WHERE conname='commerce_order_transition_state_chk'", "t", "DSH Order cancellation transition is not canonical");
   expectSQL("SELECT pg_get_constraintdef(oid) LIKE '%order_cancelled%' FROM pg_constraint WHERE conname='commerce_order_audit_event_type_chk'", "t", "DSH Order cancellation audit is not canonical");
-  for (const table of ["commerce_carts", "commerce_cart_lines", "commerce_cart_mutation_idempotency", "commerce_cart_audit", "commerce_orders", "commerce_order_lines", "commerce_order_checkout_idempotency", "commerce_order_transition_idempotency", "commerce_order_audit", "commerce_order_payment_audit", "commerce_order_delivery_proofs", "commerce_order_conversation_messages", "commerce_order_conversation_read_state"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required commerce relation is missing: ${table}`);
+for (const table of ["commerce_carts", "commerce_cart_lines", "commerce_cart_mutation_idempotency", "commerce_cart_audit", "commerce_orders", "commerce_order_lines", "commerce_order_checkout_idempotency", "commerce_order_transition_idempotency", "commerce_order_audit", "commerce_order_payment_audit", "commerce_order_delivery_proofs", "commerce_order_conversation_messages", "commerce_order_conversation_read_state"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required commerce relation is missing: ${table}`);
+for (const table of ["commerce_promotions", "commerce_promotion_redemptions", "discovery_content", "commerce_marketing_mutation_idempotency"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required marketing relation is missing: ${table}`);
+for (const table of ["commerce_multi_store_checkouts", "commerce_multi_store_checkout_children", "commerce_multi_store_checkout_idempotency"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required multi-store checkout relation is missing: ${table}`);
 for (const table of ["central_products", "central_product_mutation_idempotency", "central_product_audit", "store_assortments", "store_assortment_mutation_idempotency", "store_assortment_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NULL`, "t", `retired catalog relation remains: ${table}`);
 for (const table of ["catalog_attribute_enum_options", "catalog_category_attribute_rules", "catalog_variant_attribute_values", "catalog_storefront_sections", "catalog_modifier_groups", "catalog_modifier_options", "catalog_variant_mutation_idempotency", "catalog_variant_audit", "catalog_attribute_mutation_idempotency", "commerce_order_line_modifier_snapshots", "commerce_order_line_attribute_snapshots"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v12/v13 relation is missing: ${table}`);
 for (const table of ["catalog_import_mutation_idempotency", "catalog_import_run_items", "catalog_import_audit"]) expectSQL(`SELECT to_regclass('dsh.${table}') IS NOT NULL`, "t", `required v14 relation is missing: ${table}`);
@@ -927,6 +952,7 @@ const modifierOptionID = String(modifierOptionCreate.body.option.id);
 const modifierAttach = await request(dshBase, "PUT", `/dsh/stores/${first.storeID}/offers/${offerAID}/modifier-groups/${modifierGroupID}`, { token: first.accessToken, headers: partnerHeaders(`modifier-attach-${suffix}`), body: { ordinal: 0 } });
 const modifierOfferRead = await request(dshBase, "GET", `/dsh/stores/${first.storeID}/offers`, { token: first.accessToken });
 if (modifierAttach.status !== 200 || !modifierOfferRead.body?.offers?.some((offer) => offer.offerId === offerAID && offer.modifierGroups?.some((group) => group.id === modifierGroupID && group.options?.some((option) => option.id === modifierOptionID)))) fail("modifier offer attachment/readback failed", JSON.stringify({ modifierAttach, modifierOfferRead }));
+
 const missingFulfillmentModeCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`checkout-missing-fulfillment-mode-${suffix}`, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID } });
 const unavailableFulfillmentModeCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`checkout-unavailable-fulfillment-mode-${suffix}`, 2), body: { cartId: cartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "PARTNER_CAPTAIN" } });
 if (missingFulfillmentModeCheckout.status !== 400 || missingFulfillmentModeCheckout.body?.error?.code !== "INVALID_INPUT" || unavailableFulfillmentModeCheckout.status !== 409 || unavailableFulfillmentModeCheckout.body?.error?.code !== "FULFILLMENT_MODE_UNAVAILABLE") fail("checkout did not fail closed for missing or unavailable fulfillment intent", JSON.stringify({ missingFulfillmentModeCheckout, unavailableFulfillmentModeCheckout }));
@@ -948,6 +974,82 @@ const checkout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: c
 if (checkout.status !== 201 || checkout.body?.order?.state !== "CREATED" || checkout.body.order.version !== 1 || checkout.body.order.fulfillmentMode !== "BTHWANI_CAPTAIN" || checkout.body.order.totalAmountMinor !== mainOrderTotal || checkout.body.order.paymentMethod !== "CASH_ON_DELIVERY" || checkout.body.order.paymentState !== "REQUIRES_COLLECTION" || typeof checkout.body.order.paymentIntentId !== "string" || checkout.body.order.lines?.[0]?.requestedQuantityBaseUnits !== 2 || checkout.body.order.lines?.[0]?.unitPriceMinor !== 1800 || checkout.body.order.lines?.[0]?.modifierAmountMinor !== 600 || !checkout.body.order.lines?.[0]?.modifierSnapshots?.some((snapshot) => snapshot.optionId === modifierOptionID && snapshot.optionNameAr === `حليب ${suffix}` && snapshot.priceDeltaMinor === 300) || checkout.body.order.lines?.[0]?.attributeSnapshots?.length !== 3 || !checkout.body.order.lines?.[0]?.attributeSnapshots?.some((snapshot) => snapshot.attributeId === enumAttributeID && snapshot.valueKind === "ENUM" && snapshot.enumValue === "Dark")) fail("cart checkout did not create an immutable Order/payment snapshot", JSON.stringify(checkout));
 const checkoutLineID = String(checkout.body.order.lines?.[0]?.id || "");
 const orderID = String(checkout.body.order.id); orderIDs.add(orderID);
+
+const promotionCode = `SAVE${suffix.replace(/[^A-Za-z0-9]/g, "").slice(-12).toUpperCase()}`;
+const promotionCreate = await request(dshBase, "POST", "/dsh/operator/promotions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-create-${suffix}`), body: { id: `promotion-${suffix}`, code: promotionCode, nameAr: `خصم تجريبي ${suffix}`, descriptionAr: "خصم على الطلب التجريبي", kind: "FIXED", valueMinor: 300, fundingSource: "MERCHANT", storeId: first.storeID, serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString() } });
+if (promotionCreate.status !== 201 || promotionCreate.body?.promotion?.state !== "DRAFT" || promotionCreate.body.promotion.code !== promotionCode) fail("promotion draft creation failed", JSON.stringify(promotionCreate));
+const promotionID = String(promotionCreate.body.promotion.id); promotionIDs.add(promotionID);
+const promotionPublish = await request(dshBase, "POST", `/dsh/operator/promotions/${encodeURIComponent(promotionID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-promotion-publish-${suffix}`, crypto.randomUUID(), promotionCreate.body.promotion.version), body: { state: "PUBLISHED" } });
+const promotionPublic = await request(dshBase, "GET", `/dsh/public/promotions?serviceCityId=${encodeURIComponent(cityA)}&storeId=${encodeURIComponent(first.storeID)}`);
+if (promotionPublish.status !== 201 || promotionPublish.body?.promotion?.state !== "PUBLISHED" || promotionPublic.status !== 200 || !promotionPublic.body?.promotions?.some((item) => item.id === promotionID && item.code === promotionCode && item.state === "PUBLISHED")) fail("promotion publication/public readback failed", JSON.stringify({ promotionCreate, promotionPublish, promotionPublic }));
+const contentCreate = await request(dshBase, "POST", "/dsh/operator/discovery-content", { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-content-create-${suffix}`), body: { id: `content-${suffix}`, kind: "BANNER", titleAr: `اكتشاف ${suffix}`, bodyAr: "محتوى تجريبي منشور", targetType: "INFO", serviceCityId: cityA, startsAt: new Date(Date.now() - 60_000).toISOString(), ordinal: 0 } });
+if (contentCreate.status !== 201 || contentCreate.body?.content?.state !== "DRAFT") fail("discovery content draft creation failed", JSON.stringify(contentCreate));
+const contentID = String(contentCreate.body.content.id); contentIDs.add(contentID);
+const contentPublish = await request(dshBase, "POST", `/dsh/operator/discovery-content/${encodeURIComponent(contentID)}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `marketing-content-publish-${suffix}`, crypto.randomUUID(), contentCreate.body.content.version), body: { state: "PUBLISHED" } });
+const contentPublic = await request(dshBase, "GET", `/dsh/public/discovery-content?serviceCityId=${encodeURIComponent(cityA)}`);
+if (contentPublish.status !== 201 || contentPublish.body?.content?.state !== "PUBLISHED" || contentPublic.status !== 200 || !contentPublic.body?.items?.some((item) => item.id === contentID && item.titleAr === `اكتشاف ${suffix}` && item.state === "PUBLISHED")) fail("discovery content publication/public readback failed", JSON.stringify({ contentCreate, contentPublish, contentPublic }));
+
+const promotionCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`marketing-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [modifierOptionID] } });
+if (promotionCartCreate.status !== 201 || !promotionCartCreate.body?.cart?.id) fail("promotion checkout cart fixture failed", JSON.stringify(promotionCartCreate));
+const promotionCartID = String(promotionCartCreate.body.cart.id); cartIDs.add(promotionCartID);
+const promotionQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": "1" }, body: { cartId: promotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode } });
+if (promotionQuote.status !== 200 || promotionQuote.body?.quote?.subtotalMinor !== 2100 || promotionQuote.body.quote.discountMinor !== 300 || promotionQuote.body.quote.promotionCode !== promotionCode || promotionQuote.body.quote.totalAmountMinor !== 1900) fail("promotion checkout quote did not apply the canonical discount", JSON.stringify(promotionQuote));
+const promotionCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`marketing-checkout-${suffix}`, 1), body: { cartId: promotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode } });
+if (promotionCheckout.status !== 201 || promotionCheckout.body?.order?.subtotalAmountMinor !== 2100 || promotionCheckout.body.order.discountMinor !== 300 || promotionCheckout.body.order.promotionCode !== promotionCode || promotionCheckout.body.order.totalAmountMinor !== 1900) fail("promotion checkout did not snapshot the canonical discount", JSON.stringify(promotionCheckout));
+const promotionOrderID = String(promotionCheckout.body.order.id); orderIDs.add(promotionOrderID);
+const promotionPaymentIntentID = String(promotionCheckout.body.order.paymentIntentId); paymentIntentIDs.add(promotionPaymentIntentID);
+const promotionPayment = await request(wltBase, "GET", `/wlt/v1/payment-intents/${encodeURIComponent(promotionPaymentIntentID)}`, { token: wltToken });
+const promotionAllocationCount = sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id='${sqlLiteral(promotionOrderID)}' AND subtotal_minor=2100 AND discount_minor=300 AND customer_payable_minor=1900 AND cash_amount_minor=1900`);
+const promotionRedemptionCount = sql(`SELECT count(*) FROM dsh.commerce_promotion_redemptions WHERE promotion_id='${sqlLiteral(promotionID)}' AND order_id='${sqlLiteral(promotionOrderID)}' AND discount_minor=300`);
+const reusedPromotionCart = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-cart-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [modifierOptionID] } });
+if (reusedPromotionCart.status !== 201 || !reusedPromotionCart.body?.cart?.id) fail("promotion reuse cart fixture failed", JSON.stringify(reusedPromotionCart));
+const reusedPromotionCartID = String(reusedPromotionCart.body.cart.id); cartIDs.add(reusedPromotionCartID);
+const reusedPromotionQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": "1" }, body: { cartId: reusedPromotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN", promotionCode } });
+const reusedPromotionFallbackCheckout = await request(dshBase, "POST", "/dsh/cart/checkout", { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-fallback-${suffix}`, 1), body: { cartId: reusedPromotionCartID, storeId: first.storeID, addressId: addressAID, fulfillmentMode: "BTHWANI_CAPTAIN" } });
+const reusedPromotionFallbackOrderID = String(reusedPromotionFallbackCheckout.body?.order?.id || "");
+if (reusedPromotionFallbackOrderID) orderIDs.add(reusedPromotionFallbackOrderID);
+const reusedPromotionFallbackPaymentID = String(reusedPromotionFallbackCheckout.body?.order?.paymentIntentId || "");
+if (reusedPromotionFallbackPaymentID) paymentIntentIDs.add(reusedPromotionFallbackPaymentID);
+const reusedPromotionFallbackCancellation = reusedPromotionFallbackOrderID ? await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(reusedPromotionFallbackOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(`marketing-reuse-fallback-cancel-${suffix}`, 1) }) : null;
+if (reusedPromotionFallbackOrderID) await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(reusedPromotionFallbackOrderID)}'`, "POSTED", "promotion reuse fallback cancellation did not reconcile");
+if (promotionPayment.status !== 200 || promotionPayment.body?.paymentIntent?.amountMinor !== 1900 || promotionAllocationCount !== "1" || promotionRedemptionCount !== "1" || reusedPromotionQuote.status !== 409 || reusedPromotionQuote.body?.error?.code !== "PROMOTION_UNAVAILABLE" || reusedPromotionFallbackCheckout.status !== 201 || reusedPromotionFallbackCancellation?.status !== 201 || reusedPromotionFallbackCancellation.body?.order?.state !== "CANCELLED") fail("promotion funding, redemption, or reuse boundary failed", JSON.stringify({ promotionCheckout, promotionPayment, promotionAllocationCount, promotionRedemptionCount, reusedPromotionQuote, reusedPromotionFallbackCheckout, reusedPromotionFallbackCancellation }));
+const promotionCancellation = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(promotionOrderID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(`marketing-cancel-${suffix}`, 1) });
+await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(promotionOrderID)}'`, "POSTED", "promotion cancellation financial handoff did not reconcile");
+if (promotionCancellation.status !== 201 || promotionCancellation.body?.order?.state !== "CANCELLED") fail("promotion cancellation did not release the temporary proof order", JSON.stringify(promotionCancellation));
+console.log("DSH_PROMOTIONS_DISCOVERY=PASS");
+
+const multiCartAResponse = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`multi-store-cart-a-${suffix}`, 0), body: { storeId: first.storeID, storeOfferId: offerAID, quantityBaseUnits: 1, selectedModifierOptionIds: [modifierOptionID] } });
+const multiCartBResponse = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders(`multi-store-cart-b-${suffix}`, 0), body: { storeId: second.storeID, storeOfferId: offerBID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
+if (multiCartAResponse.status !== 201 || multiCartBResponse.status !== 201 || !multiCartAResponse.body?.cart?.id || !multiCartBResponse.body?.cart?.id) fail("multi-store child cart fixtures failed", JSON.stringify({ multiCartAResponse, multiCartBResponse }));
+const multiCartAID = String(multiCartAResponse.body.cart.id); const multiCartBID = String(multiCartBResponse.body.cart.id); cartIDs.add(multiCartAID); cartIDs.add(multiCartBID);
+const multiCheckoutID = `multi-store-${suffix}`; const multiCheckoutKey = `multi-store-create-${suffix}`;
+const multiCheckoutBody = { id: multiCheckoutID, children: [
+  { cartId: multiCartAID, storeId: first.storeID, addressId: addressAID, cartVersion: multiCartAResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
+  { cartId: multiCartBID, storeId: second.storeID, addressId: addressAID, cartVersion: multiCartBResponse.body.cart.version, fulfillmentMode: "BTHWANI_CAPTAIN" },
+] };
+const multiCheckout = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
+if (multiCheckout.body?.checkout?.id) multiStoreCheckoutIDs.add(String(multiCheckout.body.checkout.id));
+const multiChildSuccess = multiCheckout.body?.checkout?.children?.find((child) => child.storeId === first.storeID);
+const multiChildFailure = multiCheckout.body?.checkout?.children?.find((child) => child.storeId === second.storeID);
+const multiChildOrderID = String(multiChildSuccess?.orderId || "");
+if (multiChildOrderID) orderIDs.add(multiChildOrderID);
+const multiChildPaymentID = multiChildOrderID ? String((await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(multiChildOrderID)}`, { token: client.accessToken })).body?.order?.paymentIntentId || "") : "";
+if (multiChildPaymentID) paymentIntentIDs.add(multiChildPaymentID);
+const multiCheckoutReplay = await request(dshBase, "POST", "/dsh/multi-store-checkouts", { token: client.accessToken, headers: partnerHeaders(multiCheckoutKey), body: multiCheckoutBody });
+const multiCheckoutRead = await request(dshBase, "GET", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}`, { token: client.accessToken });
+const multiChildReadbackCount = sql(`SELECT count(*) FROM dsh.commerce_multi_store_checkout_children c JOIN dsh.commerce_multi_store_checkouts p ON p.id=c.checkout_id WHERE p.id='${sqlLiteral(multiCheckoutID)}' AND c.state IN ('SUCCEEDED','FAILED') AND c.store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`);
+const multiChildAllocationCount = multiChildOrderID ? sql(`SELECT count(*) FROM wlt.customer_payment_allocations WHERE order_id='${sqlLiteral(multiChildOrderID)}'`) : "0";
+if (multiCheckout.status !== 201 || multiCheckout.body?.checkout?.state !== "PARTIAL_FAILURE" || multiCheckout.body.checkout.successfulChildCount !== 1 || multiCheckout.body.checkout.failedChildCount !== 1 || multiChildSuccess?.state !== "SUCCEEDED" || multiChildFailure?.state !== "FAILED" || multiChildFailure?.failureCode !== "UNSERVICEABLE" || multiCheckoutReplay.status !== 200 || multiCheckoutReplay.body?.idempotentReplay !== true || multiCheckoutReplay.body.checkout.id !== multiCheckoutID || multiCheckoutRead.status !== 200 || multiCheckoutRead.body?.checkout?.state !== "PARTIAL_FAILURE" || multiChildReadbackCount !== "2" || multiChildAllocationCount !== "1") fail("multi-store checkout did not preserve independent child success/failure, idempotency, or WLT allocation", JSON.stringify({ multiCheckout, multiCheckoutReplay, multiCheckoutRead, multiChildReadbackCount, multiChildAllocationCount }));
+const multiCancelKey = `multi-store-cancel-${suffix}`;
+const multiCancel = await request(dshBase, "POST", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(multiCancelKey, multiCheckout.body.checkout.version) });
+await waitForSQL(`SELECT state FROM dsh.commerce_financial_handoff_outbox WHERE effect_type='PAYMENT_CANCEL' AND order_id='${sqlLiteral(multiChildOrderID)}'`, "POSTED", "multi-store child payment cancellation did not reconcile");
+const multiCancelReplay = await request(dshBase, "POST", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}/cancel`, { token: client.accessToken, headers: partnerHeaders(multiCancelKey, multiCheckout.body.checkout.version) });
+const multiCancelRead = await request(dshBase, "GET", `/dsh/multi-store-checkouts/${encodeURIComponent(multiCheckoutID)}`, { token: client.accessToken });
+const multiParentState = sql(`SELECT state || '|' || successful_child_count::text || '|' || failed_child_count::text FROM dsh.commerce_multi_store_checkouts WHERE id='${sqlLiteral(multiCheckoutID)}'`);
+const multiChildState = sql(`SELECT string_agg(store_id || ':' || state, ',' ORDER BY child_index) FROM dsh.commerce_multi_store_checkout_children WHERE checkout_id='${sqlLiteral(multiCheckoutID)}'`);
+if (multiCancel.status !== 201 || multiCancel.body?.checkout?.state !== "CANCELLED" || multiCancel.body.checkout.children?.find((child) => child.storeId === first.storeID)?.state !== "CANCELLED" || multiCancel.body.checkout.children?.find((child) => child.storeId === second.storeID)?.state !== "FAILED" || multiCancelReplay.status !== 200 || multiCancelReplay.body?.idempotentReplay !== true || multiCancelRead.status !== 200 || multiCancelRead.body?.checkout?.state !== "CANCELLED" || multiParentState !== "CANCELLED|1|1" || !multiChildState.includes(`${first.storeID}:CANCELLED`) || !multiChildState.includes(`${second.storeID}:FAILED`)) fail("multi-store parent cancellation or child outcome reconciliation failed", JSON.stringify({ multiCancel, multiCancelReplay, multiCancelRead, multiParentState, multiChildState }));
+console.log("DSH_MULTI_STORE_CHECKOUT=PASS");
+
 expectSQL(`SELECT inventory_on_hand_base_units || '|' || inventory_reserved_base_units FROM dsh.catalog_store_offers WHERE id='${sqlLiteral(offerAID)}'`, "10|2", "quantity inventory was not reserved atomically at checkout");
 const deliveryProof = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/delivery-proof`, { token: client.accessToken });
 const partnerDeliveryProof = await request(dshBase, "GET", `/dsh/orders/${encodeURIComponent(orderID)}/delivery-proof`, { token: first.accessToken });

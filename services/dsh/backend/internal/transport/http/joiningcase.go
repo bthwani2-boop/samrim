@@ -201,6 +201,7 @@ func (s *JoiningCaseServer) writeResult(w http.ResponseWriter, ctx *http.Request
 	view.SettlementPeriod = nullableStringPointer(result.Case.SettlementPeriod)
 	view.FinancialProfileID = nullableStringPointer(result.Case.FinancialProfileID)
 	view.FinancialProfileState = result.Case.FinancialProfileState
+	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)
 	view.CorrectionReason = result.Case.CorrectionReason
 	view.ReviewedBy = result.Case.ReviewedBy
 	if result.Case.Store != nil {

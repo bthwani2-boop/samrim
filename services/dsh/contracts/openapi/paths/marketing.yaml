@@ -1,0 +1,189 @@
+paths:
+  /dsh/public/promotions:
+    get:
+      operationId: listPublicPromotions
+      summary: List currently eligible merchant-funded promotions for a service city and optional Store
+      parameters:
+        - name: serviceCityId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: storeId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+      responses:
+        "200":
+          description: Customer-safe published promotion readback.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionListResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/public/discovery-content:
+    get:
+      operationId: listPublicDiscoveryContent
+      summary: List currently published discovery content with canonical target relations
+      parameters:
+        - name: serviceCityId
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Customer-safe published discovery content.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentListResponse" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/public/discovery-content/events:
+    post:
+      operationId: recordPublicDiscoveryContentEvent
+      summary: Record one idempotent discovery-content impression, click, or conversion
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentEventRequest" } } }
+      responses:
+        "204": { description: Event accepted or idempotently replayed. }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+
+  /dsh/public/discovery-content/{contentId}/target:
+    get:
+      operationId: resolvePublicDiscoveryContentTarget
+      summary: Resolve a published discovery target into a client-safe navigation destination
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ContentId" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired" }
+      responses:
+        "200":
+          description: Client-safe target resolution.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentTargetResolution" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
+  /dsh/operator/promotions:
+    get:
+      operationId: listOperatorPromotions
+      summary: Read the operator-owned promotion registry
+      security: [{ serviceBearer: [] }]
+      parameters: [{ $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }]
+      responses:
+        "200":
+          description: Operator promotion registry.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionListResponse" } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: createOperatorPromotion
+      summary: Create one merchant-funded promotion in DRAFT state
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreatePromotionRequest" } } }
+      responses:
+        "201": { description: Promotion created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/operator/promotions/{promotionId}/publication:
+    post:
+      operationId: setOperatorPromotionPublication
+      summary: Publish or pause one promotion with versioned operator attribution
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/PromotionId" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingPublicationRequest" } } }
+      responses:
+        "200": { description: Promotion publication readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/PromotionResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/operator/discovery-content:
+    get:
+      operationId: listOperatorDiscoveryContent
+      summary: Read the operator-owned discovery content registry
+      security: [{ serviceBearer: [] }]
+      parameters: [{ $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }]
+      responses:
+        "200":
+          description: Operator discovery content registry.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentListResponse" } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: createOperatorDiscoveryContent
+      summary: Create one discovery content item in DRAFT state
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/CreateDiscoveryContentRequest" } } }
+      responses:
+        "201": { description: Discovery content created., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentResponse" } } } }
+        "200": { description: Idempotent replay., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+
+  /dsh/operator/discovery-content/{contentId}/publication:
+    post:
+      operationId: setOperatorDiscoveryContentPublication
+      summary: Publish or pause one discovery item after target validation
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ContentId" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired" }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/MarketingPublicationRequest" } } }
+      responses:
+        "200": { description: Discovery content publication readback., content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentResponse" } } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/operator/discovery-content/analytics:
+    get:
+      operationId: listOperatorDiscoveryContentAnalytics
+      summary: Read aggregated discovery-content impression, click, and conversion counts
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: contentId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+      responses:
+        "200":
+          description: Operator-owned analytics readback.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentAnalyticsListResponse" } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

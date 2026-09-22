@@ -17,15 +17,17 @@ export default function ClientAppLayout() {
     router.replace(pathname === "/" ? "/" : `/?returnTo=${encodeURIComponent(pathname)}` as Href);
   }, [pathname, router]);
   const tabs = (
-    <Tabs screenOptions={tabOptions} screenListeners={({ route }) => ({ tabPress: (event) => { const path = route.name === "home" ? "/(app)/home" : route.name === "orders" ? "/(app)/orders" : route.name === "account" ? "/(app)/account" : null; if (!path) return; event.preventDefault(); router.replace(path as Href); } })}>
+    <Tabs screenOptions={tabOptions} screenListeners={({ route }) => ({ tabPress: (event) => { const path = route.name === "home" ? "/(app)/home" : route.name === "orders" ? "/(app)/orders" : route.name === "wallet" ? "/(app)/wallet" : route.name === "account" ? "/(app)/account" : null; if (!path) return; event.preventDefault(); router.replace(path as Href); } })}>
       <Tabs.Screen name="home" options={{ title: "الرئيسية", tabBarAccessibilityLabel: "الرئيسية" }} />
       <Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
+      <Tabs.Screen name="wallet" options={{ title: "المحفظة", tabBarAccessibilityLabel: "المحفظة" }} />
       <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "الحساب" }} />
       <Tabs.Screen name="cart/[storeId]" options={{ href: null }} />
+      <Tabs.Screen name="multi-store-checkout" options={{ href: null }} />
       <Tabs.Screen name="orders/[orderId]" options={{ href: null }} />
     </Tabs>
   );
-  const requiresAuthentication = pathname === "/orders" || pathname.startsWith("/orders/") || pathname.startsWith("/cart/");
+  const requiresAuthentication = pathname === "/orders" || pathname.startsWith("/orders/") || pathname.startsWith("/cart/") || pathname === "/multi-store-checkout" || pathname === "/wallet";
   return (
     <ServiceCityScope>
       {requiresAuthentication ? <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>{tabs}</AuthenticatedMobileBoundary> : tabs}

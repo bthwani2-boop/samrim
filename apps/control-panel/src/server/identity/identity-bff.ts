@@ -322,7 +322,8 @@ export async function logoutOperator(): Promise<void> {
       }
     }
   } finally {
-    const preserveDevice = suppressDevelopmentOperatorSession(clientInstanceId);
+    const preserveDevice = Boolean(clientInstanceId) &&
+      (!developmentSessionEnabled() || suppressDevelopmentOperatorSession(clientInstanceId));
     await clearOperatorCookiesBestEffort(preserveDevice);
   }
   if (remoteError) throw remoteError;

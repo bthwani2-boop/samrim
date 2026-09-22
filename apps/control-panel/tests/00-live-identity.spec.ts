@@ -249,8 +249,9 @@ test("@live operator passkey registration, authentication and governed recovery 
   await page.getByRole("button", { name: "استرداد الوصول" }).click();
   await page.getByLabel("رقم الهاتف").fill(operator.phone);
   await page.getByLabel("اعتماد الاسترداد").fill(String(firstRecoveryCredential));
+  const recoveryChallengeSentAt = Date.now();
   await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
-  const recoveryCode = await waitForMailpitCode(mailpitBase, operator.phone, "operator_recover");
+  const recoveryCode = await waitForMailpitCode(mailpitBase, operator.phone, "operator_recover", recoveryChallengeSentAt);
   await page.getByLabel("رمز إثبات الهاتف").fill(recoveryCode);
   await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح مرور بديل" }).click();
   await expect(page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" })).toBeVisible();

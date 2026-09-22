@@ -1,8 +1,11 @@
 package field
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"math"
 	"regexp"
@@ -10,6 +13,7 @@ import (
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/joiningcase"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -28,13 +32,74 @@ var phoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 type Service struct {
 	identity *identityintegration.Client
 	db       *sql.DB
+	media    media.Store
 }
 
-func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
-	if identity == nil || db == nil {
+func New(identity *identityintegration.Client, db *sql.DB, mediaStore media.Store) (*Service, error) {
+	if identity == nil || db == nil || mediaStore == nil {
 		return nil, errors.New("Field configuration is invalid")
 	}
-	return &Service{identity: identity, db: db}, nil
+	return &Service{identity: identity, db: db, media: mediaStore}, nil
+}
+
+func (s *Service) UploadJoiningCaseStoreImage(ctx context.Context, accessToken, caseID, idempotencyKey, correlationID string, expectedVersion int, contentType string, data []byte) (postgres.JoiningCaseResult, error) {
+	identity, err := s.requireEligibleField(ctx, accessToken)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	caseID = strings.TrimSpace(caseID)
+	if caseID == "" || expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	current, err := postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	if current.Case.State != "draft" && current.Case.State != "needs_correction" {
+		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
+	}
+	if current.Case.Version != expectedVersion {
+		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseVersion
+	}
+	actualType, _, _, err := media.ValidateImageBytes(data)
+	if err != nil || (strings.TrimSpace(contentType) != "" && strings.TrimSpace(contentType) != actualType) {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	digest := sha256.Sum256(data)
+	sha := hex.EncodeToString(digest[:])
+	hash := postgres.HashStoreProfileMediaUploadRequest(caseID, sha, expectedVersion)
+	assetHash := sha256.Sum256([]byte(caseID + "\x00" + strings.TrimSpace(idempotencyKey)))
+	assetID := "store_profile_media_" + hex.EncodeToString(assetHash[:])
+	objectKey, err := media.KeyForStoreProfileUpload(assetID, idempotencyKey, sha, actualType)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	uri := s.media.PublicURL(objectKey)
+	if uri == "" {
+		return postgres.JoiningCaseResult{}, errors.New("store profile media storage is unavailable")
+	}
+	asset, replayed, err := postgres.RegisterStoreProfileMediaAssetPending(ctx, s.db, postgres.StoreProfileMediaAssetInput{ID: assetID, JoiningCaseID: caseID, IdempotencyKey: strings.TrimSpace(idempotencyKey), RequestHash: hash, ExpectedCaseVersion: expectedVersion, ObjectKey: objectKey, URI: uri, ContentSHA256: sha, ContentType: actualType, ByteSize: int64(len(data)), ActingActorID: identity.Subject, CorrelationID: strings.TrimSpace(correlationID)})
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	if replayed {
+		switch asset.State {
+		case "active", "retired":
+			return postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
+		case "failed":
+			return postgres.JoiningCaseResult{}, postgres.ErrStoreProfileMediaFailed
+		}
+	}
+	if err := s.media.Put(ctx, objectKey, bytes.NewReader(data), int64(len(data)), actualType); err != nil {
+		_ = postgres.MarkStoreProfileMediaAssetFailed(ctx, s.db, asset.ID, err.Error())
+		return postgres.JoiningCaseResult{}, errors.New("store profile media storage is unavailable")
+	}
+	if _, err := postgres.ActivateStoreProfileMediaAsset(ctx, s.db, asset.ID, caseID, expectedVersion, strings.TrimSpace(idempotencyKey), hash, identity.Subject, strings.TrimSpace(correlationID)); err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	result, err := postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
+	result.Replayed = replayed
+	return result, err
 }
 
 func (s *Service) Admit(ctx context.Context, phone, idempotencyKey, actingActorID, correlationID string) (postgres.FieldAdmission, bool, error) {

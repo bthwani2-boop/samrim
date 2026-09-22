@@ -4,8 +4,9 @@ import { type Cart, createDshMobileClient, type CheckoutQuote, type DeliveryAddr
 import * as Crypto from "expo-crypto";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-analytics";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
 type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "error" };
@@ -49,6 +50,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
   const [error, setError] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
+  const [promotionCode, setPromotionCode] = useState("");
   const quoteRequestID = useRef(0);
   const mutationBusy = busy || Boolean(busyLineId);
 
@@ -79,13 +81,13 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
     setQuote({ kind: "loading" });
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().quoteCheckout(token, { cartId: cart.id, storeId, addressId: serviceableAddressId, fulfillmentMode: "BTHWANI_CAPTAIN" }, cart.version);
+      const result = await client().quoteCheckout(token, { cartId: cart.id, storeId, addressId: serviceableAddressId, fulfillmentMode: "BTHWANI_CAPTAIN", ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) }, cart.version);
       if (requestID === quoteRequestID.current) setQuote({ kind: "ready", quote: result.quote });
     } catch (cause) {
       console.error("DSH checkout quote failed", cause);
       if (requestID === quoteRequestID.current) setQuote({ kind: "error" });
     }
-  }, [serviceableAddressId, storeId]);
+  }, [promotionCode, serviceableAddressId, storeId]);
 
   const readyCart = state.kind === "ready" ? state.cart : null;
   useEffect(() => {
@@ -141,8 +143,9 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
     setBusy(true); setError("");
     try {
       const token = await getUsableIdentityAccessToken();
-      const result = await client().checkoutCart(token, { cartId: state.cart.id, storeId, addressId: serviceableAddressId, fulfillmentMode: "BTHWANI_CAPTAIN" }, state.cart.version);
+      const result = await client().checkoutCart(token, { cartId: state.cart.id, storeId, addressId: serviceableAddressId, fulfillmentMode: "BTHWANI_CAPTAIN", ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) }, state.cart.version);
       setOrder(result.order);
+      void recordPendingDiscoveryConversion(result.order.id);
       setOrders((await client().listClientOrders(token, 20)).orders);
       setState({ kind: "empty" });
     } catch (cause) {
@@ -179,7 +182,12 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
         })}</View>
         <View accessibilityLabel="ملخص الدفع" style={styles.totals}>
           <Text style={styles.muted}>مجموع المنتجات: {formatMoney(state.cart.lines.reduce((sum, line) => sum + line.lineAmountMinor, 0), state.cart.lines[0]?.currency ?? "YER")}</Text>
+          <View style={styles.promotionBox}>
+            <Text style={styles.fulfillmentTitle}>رمز العرض</Text>
+            <View style={styles.promotionRow}><TextInput accessibilityLabel="رمز العرض" autoCapitalize="characters" editable={!mutationBusy} onChangeText={setPromotionCode} placeholder="مثال: WELCOME10" placeholderTextColor={theme.colorMuted} style={styles.promotionInput} value={promotionCode} /><BthwaniButton disabled={mutationBusy || !serviceableAddressId} label="تطبيق" onPress={() => { if (readyCart) void refreshQuote(readyCart); }} variant="secondary" /></View>
+          </View>
           {quote.kind === "ready" ? <>
+            {quote.quote.discountMinor > 0 ? <Text style={styles.success}>الخصم: -{formatMoney(quote.quote.discountMinor, quote.quote.currency)}{quote.quote.promotionCode ? ` · ${quote.quote.promotionCode}` : ""}</Text> : null}
             <Text style={styles.muted}>رسوم التوصيل: {formatMoney(quote.quote.deliveryFeeMinor, quote.quote.currency)}</Text>
             <Text style={styles.total}>الإجمالي المتوقع عند الإتمام: {formatMoney(quote.quote.totalAmountMinor, quote.quote.currency)}</Text>
           </> : null}
@@ -222,5 +230,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     success: { ...typography.bodyStrong, color: theme.success },
     warning: { ...typography.bodyStrong, color: theme.warning },
     error: { ...typography.bodySm, color: theme.danger },
+    promotionBox: { borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[2] },
+    promotionRow: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
+    promotionInput: { ...typography.bodySm, backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.color, flex: 1, minHeight: 42, paddingHorizontal: spacing[2] },
   });
 }

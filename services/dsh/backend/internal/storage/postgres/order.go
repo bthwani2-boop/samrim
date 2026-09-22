@@ -64,7 +64,7 @@ type DeliveryFeeQuote struct {
 
 type DeliveryFeeResolver func(ctx context.Context, input DeliveryFeeQuoteInput) (DeliveryFeeQuote, error)
 
-type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, subtotalMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, idempotencyKey, correlationID string) (ProvisionedPayment, error)
+type PaymentIntentProvisioner func(ctx context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, idempotencyKey, correlationID string) (ProvisionedPayment, error)
 
 type PaymentIntentCanceller func(ctx context.Context, intentID, reason, idempotencyKey, correlationID string) error
 
@@ -83,6 +83,7 @@ type CheckoutInput struct {
 	PaymentExternalReference string
 	PaymentIdempotencyKey    string
 	PaymentCancellationKey   string
+	PromotionCode            string
 	DeliveryFeeResolver      DeliveryFeeResolver
 	PaymentProvisioner       PaymentIntentProvisioner
 	PaymentCanceller         PaymentIntentCanceller
@@ -152,6 +153,10 @@ type OrderRecord struct {
 	ServiceabilityStoreVersion   int
 	ServiceabilityAddressVersion int
 	State                        string
+	SubtotalAmountMinor          int64
+	DiscountMinor                int64
+	PromotionID                  string
+	PromotionCode                string
 	TotalAmountMinor             int64
 	Currency                     string
 	PaymentIntentID              *string
@@ -213,7 +218,7 @@ type OperatorOperationsResult struct {
 }
 
 func HashCheckoutRequest(input CheckoutInput) string {
-	return hashFacts(strings.TrimSpace(input.ClientActorID), strings.TrimSpace(input.CartID), strings.TrimSpace(input.StoreID), strings.TrimSpace(input.AddressID), strings.TrimSpace(input.FulfillmentMode), strconv.Itoa(input.ExpectedCartVersion), input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, strconv.Itoa(input.Evidence.StoreVersion), strconv.Itoa(input.Evidence.AddressVersion))
+	return hashFacts(strings.TrimSpace(input.ClientActorID), strings.TrimSpace(input.CartID), strings.TrimSpace(input.StoreID), strings.TrimSpace(input.AddressID), strings.TrimSpace(input.FulfillmentMode), strconv.Itoa(input.ExpectedCartVersion), input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, strconv.Itoa(input.Evidence.StoreVersion), strconv.Itoa(input.Evidence.AddressVersion), strings.TrimSpace(input.PromotionCode))
 }
 
 func HashOrderTransition(orderID, state string, expectedVersion int) string {
@@ -340,18 +345,24 @@ func decodeOperatorOperationsCursor(raw, state string) (operatorOperationsCursor
 	return cursor, nil
 }
 
-const orderSelectColumns = `id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,currency,payment_intent_id,payment_method,payment_state,version,created_at,updated_at`
+const orderSelectColumns = `id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,subtotal_amount_minor,discount_minor,promotion_id,promotion_code,total_amount_minor,currency,payment_intent_id,payment_method,payment_state,version,created_at,updated_at`
 
 func scanOrder(row rowScanner) (OrderRecord, error) {
 	var order OrderRecord
-	var paymentIntentID sql.NullString
+	var paymentIntentID, promotionID, promotionCode sql.NullString
 	if err := row.Scan(
 		&order.ID, &order.ClientActorID, &order.StoreID, &order.CartID, &order.FulfillmentMode, &order.AddressID, &order.AddressVersion, &order.AddressText,
 		&order.AddressLatitude, &order.AddressLongitude, &order.ServiceCityID, &order.ServiceabilityPolicyVersion, &order.ServiceabilityStatus,
-		&order.ServiceabilityStoreVersion, &order.ServiceabilityAddressVersion, &order.State, &order.TotalAmountMinor, &order.Currency,
+		&order.ServiceabilityStoreVersion, &order.ServiceabilityAddressVersion, &order.State, &order.SubtotalAmountMinor, &order.DiscountMinor, &promotionID, &promotionCode, &order.TotalAmountMinor, &order.Currency,
 		&paymentIntentID, &order.PaymentMethod, &order.PaymentState, &order.Version, &order.CreatedAt, &order.UpdatedAt,
 	); err != nil {
 		return OrderRecord{}, err
+	}
+	if promotionID.Valid {
+		order.PromotionID = promotionID.String
+	}
+	if promotionCode.Valid {
+		order.PromotionCode = promotionCode.String
 	}
 	if paymentIntentID.Valid {
 		value := paymentIntentID.String
@@ -643,6 +654,15 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	if len(lines) == 0 || total <= 0 {
 		return OrderRecord{}, false, ErrCartEmpty
 	}
+	promotionCode := strings.ToUpper(strings.TrimSpace(input.PromotionCode))
+	var promotion PromotionRecord
+	var discountMinor int64
+	if promotionCode != "" {
+		promotion, discountMinor, err = EvaluatePromotion(ctx, tx, promotionCode, input.StoreID, input.ClientActorID, total, true)
+		if err != nil {
+			return OrderRecord{}, false, err
+		}
+	}
 	if input.DeliveryFeeResolver == nil || orderSizeBaseUnits <= 0 {
 		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 	}
@@ -650,7 +670,8 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
 		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 	}
-	orderTotal := new(big.Int).Add(big.NewInt(total), big.NewInt(feeQuote.FeeMinor))
+	chargeableSubtotal := new(big.Int).Sub(big.NewInt(total), big.NewInt(discountMinor))
+	orderTotal := new(big.Int).Add(chargeableSubtotal, big.NewInt(feeQuote.FeeMinor))
 	if !orderTotal.IsInt64() || orderTotal.Int64() <= 0 {
 		return OrderRecord{}, false, ErrDeliveryFeeUnavailable
 	}
@@ -660,7 +681,7 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 	if err != nil {
 		return OrderRecord{}, false, err
 	}
-	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, feeQuote.FeeMinor, feeQuote.PolicyVersion, totalWithDelivery, input.PaymentIdempotencyKey, input.CorrelationID)
+	payment, err := input.PaymentProvisioner(ctx, newOrderID, input.PaymentExternalReference, input.ClientActorID, total, discountMinor, feeQuote.FeeMinor, feeQuote.PolicyVersion, totalWithDelivery, input.PaymentIdempotencyKey, input.CorrelationID)
 	if err != nil || strings.TrimSpace(payment.IntentID) == "" || payment.State != "REQUIRES_COLLECTION" {
 		if err != nil {
 			return OrderRecord{}, false, fmt.Errorf("%w: %v", ErrPaymentProvisioning, err)
@@ -668,8 +689,13 @@ WHERE s.id=$1 AND s.publication_state='published'`, input.StoreID, input.Address
 		return OrderRecord{}, false, ErrPaymentProvisioning
 	}
 	paymentIntentID = strings.TrimSpace(payment.IntentID)
-	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,total_amount_minor,payment_intent_id,payment_method,payment_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'CREATED',$16,$17,'CASH_ON_DELIVERY',$18)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.FulfillmentMode, input.AddressID, addressVersion, addressText, latitude, longitude, input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, storeVersion, addressVersion, totalWithDelivery, payment.IntentID, payment.State); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_orders(id,client_actor_id,store_id,cart_id,fulfillment_mode,address_id,address_version,address_text,address_latitude,address_longitude,service_city_id,serviceability_policy_version,serviceability_status,serviceability_store_version,serviceability_address_version,state,subtotal_amount_minor,discount_minor,promotion_id,promotion_code,total_amount_minor,payment_intent_id,payment_method,payment_state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'CREATED',$16,$17,NULLIF($18,''),NULLIF($19,''),$20,$21,'CASH_ON_DELIVERY',$22)`, newOrderID, input.ClientActorID, input.StoreID, input.CartID, input.FulfillmentMode, input.AddressID, addressVersion, addressText, latitude, longitude, input.Evidence.ServiceCityID, input.Evidence.PolicyVersion, input.Evidence.Status, storeVersion, addressVersion, total, discountMinor, promotion.ID, promotion.Code, totalWithDelivery, payment.IntentID, payment.State); err != nil {
 		return OrderRecord{}, false, err
+	}
+	if promotion.ID != "" {
+		if err := RedeemPromotion(ctx, tx, promotion, input.ClientActorID, newOrderID, discountMinor); err != nil {
+			return OrderRecord{}, false, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO dsh.commerce_order_delivery_proofs(order_id,client_actor_id,code,code_hash) VALUES($1,$2,$3,$4)`, newOrderID, input.ClientActorID, deliveryProofCode, HashDeliveryProofCode(newOrderID, deliveryProofCode)); err != nil {
 		return OrderRecord{}, false, err

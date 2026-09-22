@@ -18,6 +18,8 @@ import (
 
 type CartServer struct{ service *cart.Service }
 
+func (s *CartServer) Service() *cart.Service { return s.service }
+
 func NewCart(identityClient *identityintegration.Client, db *sql.DB, serviceabilityService *serviceability.Service, payment *wlt.Client) (*CartServer, error) {
 	service, err := cart.New(identityClient, db, serviceabilityService, payment)
 	if err != nil {
@@ -66,7 +68,7 @@ func (s *CartServer) quote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId and fulfillmentMode are required")
 		return
 	}
-	result, err := s.service.Quote(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), expected)
+	result, err := s.service.Quote(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, expected)
 	if err != nil {
 		writeCartError(w, err)
 		return
@@ -143,7 +145,7 @@ func (s *CartServer) checkout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cartId, storeId, addressId and fulfillmentMode are required")
 		return
 	}
-	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), expected, idempotency, correlation)
+	result, replayed, err := s.service.Checkout(r.Context(), bearerToken(r), input.CartID, input.StoreID, input.AddressID, string(input.FulfillmentMode), input.PromotionCode, expected, idempotency, correlation)
 	if err != nil {
 		writeCartError(w, err)
 		return
@@ -203,7 +205,7 @@ func toCart(item postgres.CartRecord) contract.Cart {
 }
 
 func toCheckoutQuote(item cart.CheckoutQuote) contract.CheckoutQuote {
-	return contract.CheckoutQuote{CartID: item.CartID, StoreID: item.StoreID, AddressID: item.AddressID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), CartVersion: item.CartVersion, SubtotalMinor: int(item.SubtotalMinor), DeliveryFeeMinor: int(item.DeliveryFeeMinor), TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, DeliveryPolicyVersion: item.DeliveryPolicyVersion, ServiceCityID: item.ServiceCityID, QuotedAt: item.QuotedAt}
+	return contract.CheckoutQuote{CartID: item.CartID, StoreID: item.StoreID, AddressID: item.AddressID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), CartVersion: item.CartVersion, SubtotalMinor: int(item.SubtotalMinor), DiscountMinor: int(item.DiscountMinor), PromotionID: item.PromotionID, PromotionCode: item.PromotionCode, DeliveryFeeMinor: int(item.DeliveryFeeMinor), TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, DeliveryPolicyVersion: item.DeliveryPolicyVersion, ServiceCityID: item.ServiceCityID, QuotedAt: item.QuotedAt}
 }
 
 func writeCartError(w http.ResponseWriter, err error) {
@@ -228,6 +230,10 @@ func writeCartError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cart quantity or modifier selection is invalid")
 	case errors.Is(err, postgres.ErrCartStateConflict):
 		writeError(w, http.StatusConflict, "CART_CLOSED", "cart is no longer open")
+	case errors.Is(err, postgres.ErrPromotionInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "promotion code or promotion configuration is invalid")
+	case errors.Is(err, postgres.ErrPromotionUnavailable), errors.Is(err, postgres.ErrPromotionAlreadyRedeemed), errors.Is(err, postgres.ErrPromotionLimitReached):
+		writeError(w, http.StatusConflict, "PROMOTION_UNAVAILABLE", "promotion is not currently eligible")
 	case errors.Is(err, postgres.ErrPaymentProvisioning):
 		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "the payment service is temporarily unavailable; the order was not created")
 	case errors.Is(err, postgres.ErrDeliveryFeeUnavailable):

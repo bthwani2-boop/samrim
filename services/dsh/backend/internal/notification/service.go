@@ -75,12 +75,25 @@ func (s *Service) requireSession(ctx context.Context, accessToken string) (strin
 		return stringIdentity{}, "", err
 	}
 	role := string(identity.Role)
-	if identity.Subject == "" || (role == "client" && identity.Surface == "app-client") || (role == "partner" && identity.Surface == "app-partner") || (role == "captain" && identity.Surface == "app-captain") {
-		if identity.Subject != "" {
-			return stringIdentity{Subject: identity.Subject}, role, nil
-		}
+	if validNotificationSession(identity.Subject, role, identity.Surface) {
+		return stringIdentity{Subject: identity.Subject}, role, nil
 	}
 	return stringIdentity{}, "", ErrSessionForbidden
+}
+
+func validNotificationSession(subject, role, surface string) bool {
+	if strings.TrimSpace(subject) == "" {
+		return false
+	}
+	switch {
+	case role == "client" && surface == "app-client":
+	case role == "partner" && surface == "app-partner":
+	case role == "captain" && surface == "app-captain":
+	case role == "field" && surface == "app-field":
+	default:
+		return false
+	}
+	return true
 }
 
 type stringIdentity struct{ Subject string }
@@ -91,6 +104,20 @@ func present(event postgres.NotificationEvent, role string) View {
 }
 
 func message(eventType, role, orderID string) (string, string, string) {
+	if role == "field" {
+		switch eventType {
+		case "joining_case_created":
+			return "FIELD_CASE_CREATED", "تم إنشاء ملف الانضمام", "تم إنشاء ملف انضمام جديد لمتابعته ميدانيًا."
+		case "joining_case_submitted":
+			return "FIELD_CASE_SUBMITTED", "تم إرسال ملف الانضمام", "تم إرسال ملف الانضمام للمراجعة."
+		case "joining_case_needs_correction", "joining_case_corrected_and_resubmitted":
+			return "FIELD_CASE_NEEDS_CORRECTION", "تحديث على ملف الانضمام", "يوجد تحديث يحتاج إلى متابعتك في ملف الانضمام."
+		case "joining_case_approved":
+			return "FIELD_CASE_APPROVED", "تم اعتماد ملف الانضمام", "تم اعتماد ملف الانضمام وأصبح جاهزًا للخطوة التالية."
+		default:
+			return "FIELD_CASE_STATUS", "تحديث على ملف الانضمام", "يوجد تحديث جديد على ملف انضمام تتابعه."
+		}
+	}
 	orderRef := strings.TrimSpace(orderID)
 	if orderRef == "" {
 		orderRef = "الطلب"

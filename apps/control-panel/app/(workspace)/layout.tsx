@@ -7,50 +7,13 @@ import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/pu
 import { useSession } from "../../src/session/session-provider";
 import { AppearanceControl } from "../../src/shell/appearance-control";
 import { IdentitySurface } from "../../src/features/access/identity-surface";
+import { currentWorkspaceChild, currentWorkspaceDestination, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceDestinations } from "../../src/navigation/workspace-registry";
 import "../../src/features/access/access-surface.module.css";
 import "../../src/shell/workspace-shell.module.css";
 import "../../src/shell/responsive-shell.module.css";
 
-const workspaceDestinations = [
-  { href: "/workspace", label: "الرئيسية", section: "مسارات العمل", children: [] },
-  { href: "/operations", label: "العمليات", section: "مسارات العمل", children: [] },
-  {
-    href: "/partners",
-    label: "الشركاء والمتاجر",
-    section: "مسارات العمل",
-    children: [
-      { href: "/partners/new", label: "طلب جديد" },
-      { href: "/partners/service-cities", label: "مدن الخدمة" }
-    ]
-  },
-  { href: "/captains", label: "الكباتن", section: "مسارات العمل", children: [] },
-  { href: "/fields", label: "الميدان", section: "مسارات العمل", children: [] },
-  { href: "/finance", label: "المالية", section: "المال", children: [] },
-  {
-    href: "/catalog",
-    label: "الكتالوج",
-    section: "مسارات العمل",
-    children: [
-      { href: "/catalog/products", label: "المنتجات" },
-      { href: "/catalog/categories", label: "التصنيفات" },
-      { href: "/catalog/verticals", label: "المجالات" },
-      { href: "/catalog/proposals", label: "المقترحات" },
-      { href: "/catalog/import", label: "الاستيراد" }
-    ]
-  },
-  { href: "/access", label: "الوصول والأمان", section: "الحماية", children: [] }
-] as const;
-
-function isCurrentDestination(pathname: string, href: string) {
-  return href === "/workspace" ? pathname === href : pathname === href || pathname.startsWith(href + "/");
-}
-
-function currentDestination(pathname: string) {
-  return workspaceDestinations.find(({ href }) => isCurrentDestination(pathname, href)) ?? workspaceDestinations[0];
-}
-
 function currentChild(pathname: string, destination: (typeof workspaceDestinations)[number]) {
-  const child = destination.children.find(({ href }) => isCurrentDestination(pathname, href));
+  const child = currentWorkspaceChild(pathname, destination);
   if (child) return child;
   return destination.href === "/partners" && pathname.startsWith("/partners/")
     ? { href: pathname, label: "تفاصيل طلب الانضمام" }
@@ -58,7 +21,7 @@ function currentChild(pathname: string, destination: (typeof workspaceDestinatio
 }
 
 function WorkspaceBreadcrumbs({ pathname }: Readonly<{ pathname: string }>) {
-  const current = currentDestination(pathname);
+  const current = currentWorkspaceDestination(pathname);
   const child = currentChild(pathname, current);
   const isHome = current.href === "/workspace";
 
@@ -151,19 +114,36 @@ function WorkspaceNavigation({
       </div>
       {workspaceDestinations.map((destination, index) => {
         const previous = workspaceDestinations[index - 1];
-        const current = isCurrentDestination(pathname, destination.href);
+        const current = isCurrentWorkspaceDestination(pathname, destination);
+        const activeChild = currentWorkspaceChild(pathname, destination);
         return (
           <Fragment key={destination.href}>
             {index === 0 || destination.section !== previous?.section ? <p className="workspace-nav-label workspace-nav-section-label">{destination.section}</p> : null}
-            <Link
-              ref={index === 0 ? firstLinkRef : undefined}
-              className="workspace-nav-link"
-              href={destination.href}
-              aria-current={current ? "page" : undefined}
-              onClick={onClose}
-            >
-              {destination.label}
-            </Link>
+            <div className="workspace-nav-group">
+              <Link
+                ref={index === 0 ? firstLinkRef : undefined}
+                className="workspace-nav-link"
+                href={destination.href}
+                aria-current={current ? (activeChild ? "location" : "page") : undefined}
+                onClick={onClose}
+              >
+                {destination.label}
+              </Link>
+              {destination.children.length > 0 ? (
+                <ul className="workspace-nav-children" aria-label={`مسارات ${destination.label}`}>
+                  {destination.children.map((child) => {
+                    const childCurrent = isCurrentWorkspacePath(pathname, child.href);
+                    return (
+                      <li key={child.href}>
+                        <Link className="workspace-nav-child-link" href={child.href} aria-current={childCurrent ? "page" : undefined} onClick={onClose}>
+                          {child.label}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </div>
           </Fragment>
         );
       })}

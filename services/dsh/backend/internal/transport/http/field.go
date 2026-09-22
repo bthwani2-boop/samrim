@@ -3,6 +3,8 @@ package transporthttp
 import (
 	"database/sql"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,12 +23,12 @@ type FieldServer struct {
 	service *field.Service
 }
 
-func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*FieldServer, error) {
+func NewField(identityClient *identityintegration.Client, accessToken string, db *sql.DB, mediaStore media.Store) (*FieldServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := field.New(identityClient, db)
+	service, err := field.New(identityClient, db, mediaStore)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +46,7 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitJoiningCase)
+	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/store-image", s.uploadJoiningCaseStoreImage)
 }
 
 func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
@@ -228,6 +231,43 @@ func (s *FieldServer) correctAndResubmitJoiningCase(w http.ResponseWriter, r *ht
 	writeFieldCaseResult(w, http.StatusOK, result)
 }
 
+func (s *FieldServer) uploadJoiningCaseStoreImage(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
+		return
+	}
+	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+1)
+	if err := r.ParseMultipartForm(media.MaxUploadBytes + 1); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil || header == nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
+		return
+	}
+	defer file.Close()
+	if header.Size < 1 || header.Size > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
+	if err != nil || int64(len(data)) > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return
+	}
+	result, err := s.service.UploadJoiningCaseStoreImage(r.Context(), bearerToken(r), r.PathValue("caseId"), idempotency, correlation, expected, header.Header.Get("Content-Type"), data)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeFieldCaseResult(w, responseStatus(result.Replayed), result)
+}
+
 func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) bool {
 	if s.auth.Authorized(r) {
 		return true
@@ -240,6 +280,7 @@ func writeFieldCaseResult(w http.ResponseWriter, status int, result postgres.Joi
 	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
 	view.PartnerActorID = result.Case.PartnerActorID
 	view.ReviewedBy = result.Case.ReviewedBy
+	view.StoreProfileImage = toStoreProfileImage(result.Case.StoreProfileImage)
 	writeJSON(w, status, contract.JoiningCaseResponse{Case: view, IdempotentReplay: result.Replayed})
 }
 
@@ -269,6 +310,8 @@ func writeFieldError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Field or joining-case state is stale or not actionable")
 	case errors.Is(err, postgres.ErrJoiningCaseNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "joining case was not found")
+	case errors.Is(err, postgres.ErrStoreProfileMediaFailed):
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "the previous store image upload failed; choose the image again")
 	default:
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {

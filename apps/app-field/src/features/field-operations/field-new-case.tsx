@@ -1,8 +1,9 @@
 import { BthwaniButton, BthwaniChip, useAppearanceTheme } from "@bthwani/design-system/native";
-import { type CommerceVertical, type CreateJoiningCaseRequest, type FieldAdmission, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity } from "@bthwani/dsh";
+import { type CommerceVertical, type CreateJoiningCaseRequest, type DshImageUploadInput, type FieldAdmission, type JoiningCaseResponse, joiningCaseStateLabel, type ServiceCity } from "@bthwani/dsh";
+import * as ImagePicker from "expo-image-picker";
 import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { fieldClient } from "./field-client";
@@ -23,6 +24,7 @@ const theme = useAppearanceTheme();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [storeImage, setStoreImage] = useState<DshImageUploadInput | null>(null);
 
   const loadAdmission = useCallback(async () => {
     setLoading(true);
@@ -62,8 +64,8 @@ const theme = useAppearanceTheme();
     if (busy) return;
     const latitude = Number(storeLatitude.trim());
     const longitude = Number(storeLongitude.trim());
-    if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-		setError("أكمل الهاتف والأسماء والاختيارات، ثم أدخل إحداثيات موقع المتجر الثابتة الصحيحة.");
+    if (!input.contactPhoneE164.trim() || !input.businessName.trim() || !input.firstStoreName.trim() || !input.serviceCityId || !input.firstStoreVerticalId || !storeImage || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+		setError("أكمل الهاتف والأسماء والاختيارات والإحداثيات، ثم اختر صورة المتجر.");
       return;
     }
     setBusy(true);
@@ -72,6 +74,16 @@ const theme = useAppearanceTheme();
       const token = await getUsableIdentityAccessToken();
       const response = await fieldClient().createFieldJoiningCase(token, { ...input, firstStoreLatitude: latitude, firstStoreLongitude: longitude });
       setCreatedCase(response);
+      if (storeImage) {
+        try {
+          const uploaded = await fieldClient().uploadFieldJoiningCaseStoreImage(token, response.case.id, storeImage, response.case.version);
+          setCreatedCase(uploaded);
+          setStoreImage(null);
+        } catch (uploadError) {
+          console.error("DSH Field store image upload failed", uploadError);
+          setError("تم حفظ الملف، لكن تعذر رفع صورة المتجر. أعد المحاولة من بطاقة الملف.");
+        }
+      }
       setStoreLatitude("");
       setStoreLongitude("");
       setInput({ contactPhoneE164: "", businessName: "", firstStoreName: "", serviceCityId: "", firstStoreVerticalId: "", firstStoreLatitude: 0, firstStoreLongitude: 0 });
@@ -79,6 +91,42 @@ const theme = useAppearanceTheme();
     } catch (cause) {
       console.error("DSH Field joining-case creation failed", cause);
       setError("تعذر حفظ الملف. تحقق من الهاتف والأسماء والاختيارات ثم أعد المحاولة.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pickStoreImage() {
+    if (busy) return;
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { setError("يلزم السماح بالوصول إلى الصور لاختيار صورة المتجر."); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
+    if (result.canceled || !result.assets[0]?.uri) return;
+    const asset = result.assets[0];
+    try {
+      const response = await fetch(asset.uri);
+      if (!response.ok) throw new Error("STORE_IMAGE_READ_FAILED");
+      const blob = await response.blob();
+      setStoreImage({ uri: asset.uri, name: asset.fileName ?? "store-image.jpg", type: asset.mimeType ?? "image/jpeg", blob });
+      setError("");
+    } catch (cause) {
+      console.error("Field store image preparation failed", cause);
+      setError("تعذر تجهيز صورة المتجر. اختر الصورة مرة أخرى.");
+    }
+  }
+
+  async function retryStoreImage() {
+    if (!createdCase || !storeImage || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const token = await getUsableIdentityAccessToken();
+      const uploaded = await fieldClient().uploadFieldJoiningCaseStoreImage(token, createdCase.case.id, storeImage, createdCase.case.version);
+      setCreatedCase(uploaded);
+      setStoreImage(null);
+    } catch (cause) {
+      console.error("DSH Field store image retry failed", cause);
+      setError("تعذر رفع صورة المتجر. أعد المحاولة بعد التحقق من الاتصال.");
     } finally {
       setBusy(false);
     }
@@ -110,12 +158,17 @@ const theme = useAppearanceTheme();
         <Text style={styles.muted}>أدخل إحداثيات موقع المتجر مع ملف الانضمام؛ تنتقل إلى المتجر عند الاعتماد ولا تُعدّل من شاشة إدارة المتجر.</Text>
         <TextInput accessibilityLabel="خط عرض موقع المتجر" keyboardType="numbers-and-punctuation" placeholder="خط العرض، مثال: 15.369445" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLatitude} onChangeText={setStoreLatitude} />
         <TextInput accessibilityLabel="خط طول موقع المتجر" keyboardType="numbers-and-punctuation" placeholder="خط الطول، مثال: 44.191006" placeholderTextColor={theme.colorMuted} style={[styles.input, styles.phoneInput]} value={storeLongitude} onChangeText={setStoreLongitude} />
+        <Text style={styles.label}>صورة المتجر</Text>
+        <Text style={styles.muted}>أضف صورة واضحة للواجهة أو الهوية البصرية؛ تحفظ مركزيًا وتظهر بعد اعتماد المتجر.</Text>
+        {storeImage ? <Image accessibilityLabel="معاينة صورة المتجر" source={{ uri: storeImage.uri }} style={{ borderRadius: 12, height: 160, width: "100%" }} resizeMode="cover" /> : null}
+        <BthwaniButton disabled={busy} label={storeImage ? "تغيير صورة المتجر" : "اختيار صورة المتجر"} onPress={() => void pickStoreImage()} variant="secondary" />
         <BthwaniButton busy={busy} disabled={optionsLoading || Boolean(optionsError)} label="حفظ الملف" onPress={() => void createCase()} />
       </View> : null}
       {createdCase ? <View accessibilityLiveRegion="polite" style={styles.successCard}>
         <Text style={styles.cardTitle}>تم حفظ ملف الانضمام</Text>
         <Text style={styles.muted}>{createdCase.case.businessName} · {createdCase.case.firstStoreName}</Text>
         <Text style={styles.successText}>الحالة: {joiningCaseStateLabel(createdCase.case.state)}</Text>
+        {storeImage ? <BthwaniButton busy={busy} disabled={busy} label="إعادة رفع صورة المتجر" onPress={() => void retryStoreImage()} variant="secondary" /> : null}
         <Link href={"/cases" as Href} asChild><BthwaniButton label="فتح ملفات الانضمام" variant="secondary" /></Link>
       </View> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}

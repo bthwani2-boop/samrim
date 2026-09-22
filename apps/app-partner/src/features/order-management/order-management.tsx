@@ -2,8 +2,9 @@ import { borders, radius, type resolveTheme, spacing, typography } from "@bthwan
 import { BthwaniButton, BthwaniChip, BthwaniSearchField, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/design-system/native";
 import { type CaptainAssignment, captainHandoffStateLabel, createDshMobileClient, formatMoney, formatOrderDate, formatQuantity, type Order, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { OrderConversation } from "./order-conversation";
 
@@ -54,6 +55,8 @@ function matchesQuery(order: Order, query: string): boolean {
 export function OrderManagement({ storeId }: { storeId: string }) {
 const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const { focus } = useLocalSearchParams<{ focus?: string | string[] }>();
+  const searchInputRef = useRef<TextInput>(null);
   const [orders, setOrders] = useState<ReadonlyArray<Order>>([]);
   const [assignments, setAssignments] = useState<Readonly<Record<string, CaptainAssignment>>>({});
   const [loading, setLoading] = useState(true);
@@ -81,6 +84,7 @@ const theme = useAppearanceTheme();
   }, [storeId]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (focus !== "search") return; const timer = setTimeout(() => searchInputRef.current?.focus(), 80); return () => clearTimeout(timer); }, [focus]);
 
   const filteredOrders = useMemo(() => orders.filter((order) => (filter === "ALL" || queueForOrder(order) === filter) && matchesQuery(order, searchQuery)), [filter, orders, searchQuery]);
   const queueCounts = useMemo(() => Object.fromEntries(queueFilters.map(({ key }) => [key, key === "ALL" ? orders.length : orders.filter((order) => queueForOrder(order) === key).length])) as Record<QueueFilter, number>, [orders]);
@@ -114,7 +118,7 @@ const theme = useAppearanceTheme();
         </View>
       ) : null}
 
-      <BthwaniSearchField accessibilityLabel="البحث في طلبات المتجر" editable={!loading && !busy} onChangeText={setSearchQuery} onClear={() => setSearchQuery("")} placeholder="ابحث برقم الطلب أو العنوان أو المنتج" value={searchQuery} />
+      <BthwaniSearchField accessibilityLabel="البحث في طلبات المتجر" editable={!loading && !busy} inputRef={searchInputRef} onChangeText={setSearchQuery} onClear={() => setSearchQuery("")} placeholder="ابحث برقم الطلب أو العنوان أو المنتج" value={searchQuery} />
       <View style={styles.filterRow} accessibilityLabel="تصفية طلبات المتجر">
         {queueFilters.map(({ key, label }) => <BthwaniChip key={key} disabled={loading || Boolean(busy)} label={`${label} (${queueCounts[key]})`} onPress={() => setFilter(key)} selected={filter === key} />)}
       </View>

@@ -108,7 +108,18 @@ func (s *StorePublicationServer) listPublic(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId is required for scoped discovery")
 		return
 	}
-	stores, err := s.service.ListPublished(r.Context(), serviceCityID)
+	var latitude, longitude *float64
+	rawLatitude, rawLongitude := strings.TrimSpace(r.URL.Query().Get("latitude")), strings.TrimSpace(r.URL.Query().Get("longitude"))
+	if rawLatitude != "" || rawLongitude != "" {
+		parsedLatitude, latitudeErr := strconv.ParseFloat(rawLatitude, 64)
+		parsedLongitude, longitudeErr := strconv.ParseFloat(rawLongitude, 64)
+		if latitudeErr != nil || longitudeErr != nil || parsedLatitude < -90 || parsedLatitude > 90 || parsedLongitude < -180 || parsedLongitude > 180 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "latitude and longitude must be valid coordinates")
+			return
+		}
+		latitude, longitude = &parsedLatitude, &parsedLongitude
+	}
+	stores, err := s.service.ListPublished(r.Context(), serviceCityID, latitude, longitude)
 	if err != nil {
 		writeStorePublicationError(w, err)
 		return
@@ -256,8 +267,17 @@ func toPublicStoreView(store postgres.PublicStoreRecord) contract.PublicStoreVie
 		ID: store.ID, Name: store.Name, Version: store.Version, PublishedAt: store.PublishedAt,
 		RatingAverage:     store.RatingAverage,
 		RatingCount:       store.RatingCount,
+		StoreProfileImage: toStoreProfileImage(store.StoreProfileImage),
 		ServiceCity:       toServiceCityRecord(store.ServiceCity),
 		PrimaryVerticalID: store.PrimaryVerticalID,
+		DistanceMeters:    optionalDistanceValue(store.DistanceMeters),
 		CreatedAt:         store.CreatedAt, UpdatedAt: store.UpdatedAt,
 	}
+}
+
+func optionalDistanceValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
