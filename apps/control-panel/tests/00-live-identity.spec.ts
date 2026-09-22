@@ -259,6 +259,14 @@ test("@live operator passkey registration, authentication and governed recovery 
   const operator = await prepareOperator(identityBase, controlToken, bootstrapToken);
   const independentOperator = await provisionIndependentOperator(identityBase, controlToken, operator.actorId);
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
+  await enableVirtualAuthenticator(page);
+  const firstRecoveryCredential = await registerOperator(page, operator, baseUrl, mailpitBase);
+  const firstSession = await readBrowserSession(page);
+  expect(firstSession.status).toBe(200);
+  expect(firstSession.body.identity.subject).toBe(operator.actorId);
+  expect(firstSession.body.identity.role).toBe("operator");
+  expect(firstSession.body.identity.surface).toBe("control-panel");
+
   const browser = page.context().browser();
   if (!browser) throw new Error("live Identity proof requires a browser instance for the independent operator fixture");
   const independentContext = await browser.newContext();
@@ -269,13 +277,6 @@ test("@live operator passkey registration, authentication and governed recovery 
   } finally {
     await independentContext.close();
   }
-  await enableVirtualAuthenticator(page);
-  const firstRecoveryCredential = await registerOperator(page, operator, baseUrl, mailpitBase);
-  const firstSession = await readBrowserSession(page);
-  expect(firstSession.status).toBe(200);
-  expect(firstSession.body.identity.subject).toBe(operator.actorId);
-  expect(firstSession.body.identity.role).toBe("operator");
-  expect(firstSession.body.identity.surface).toBe("control-panel");
 
   // Expired access + dropped response: the next independent browser request
   // sends the old cookies and receives the same canonical refresh generation.
