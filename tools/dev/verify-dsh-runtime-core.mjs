@@ -1334,19 +1334,33 @@ for (const [next, expectedVersion] of [["PARTNER_ACCEPTED", 1], ["PREPARING", 2]
   const transition = await request(dshBase, "POST", `/dsh/stores/${encodeURIComponent(first.storeID)}/orders/${encodeURIComponent(expiryOrderID)}/transition`, { token: first.accessToken, headers: partnerHeaders(`captain-expiry-transition-${next}-${suffix}`, expectedVersion), body: { state: next } });
   if (transition.status !== 200 || transition.body?.order?.state !== next) fail("Captain expiry order did not reach READY_FOR_DISPATCH", JSON.stringify({ next, transition }));
 }
+const firstCaptainBeforeExpiry = await request(dshBase, "GET", "/dsh/captains/me", { token: captainAccessToken });
+const firstCaptainUnavailable = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: captainAccessToken, headers: partnerHeaders(`captain-expiry-hide-first-${suffix}`, firstCaptainBeforeExpiry.body?.admission?.version), body: { available: false } });
+const activeCaptainBeforeExpiry = await request(dshBase, "GET", "/dsh/captains/me", { token: activeCaptainAccessToken });
+const activeCaptainUnavailable = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: activeCaptainAccessToken, headers: partnerHeaders(`captain-expiry-hide-active-${suffix}`, activeCaptainBeforeExpiry.body?.admission?.version), body: { available: false } });
+const expiryCaptainPhone = `+96779${crypto.randomInt(1_000_000, 9_999_999)}`;
+const expiryCaptainAdmission = await request(dshBase, "POST", "/dsh/captains/admissions", { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-expiry-admit-${suffix}`), body: { contactPhoneE164: expiryCaptainPhone } });
+if (expiryCaptainAdmission.status !== 201 || expiryCaptainAdmission.body?.admission?.state !== "eligible" || !expiryCaptainAdmission.body.admission.actorId) fail("Captain expiry actor admission failed", JSON.stringify({ firstCaptainBeforeExpiry, firstCaptainUnavailable, activeCaptainBeforeExpiry, activeCaptainUnavailable, expiryCaptainAdmission }));
+const expiryCaptainAdmissionID = String(expiryCaptainAdmission.body.admission.id);
+const expiryCaptainActorID = String(expiryCaptainAdmission.body.admission.actorId);
+captainAdmissionIDs.add(expiryCaptainAdmissionID); actorIDs.add(expiryCaptainActorID);
+const expiryCaptainAccessToken = await activateCaptain(expiryCaptainPhone, `ExpC${suffix.slice(0, 4)}`);
+const expiryCaptainSelf = await request(dshBase, "GET", "/dsh/captains/me", { token: expiryCaptainAccessToken });
+const expiryCaptainAvailable = await request(dshBase, "POST", "/dsh/captains/me/availability", { token: expiryCaptainAccessToken, headers: partnerHeaders(`captain-expiry-availability-${suffix}`, expiryCaptainSelf.body?.admission?.version), body: { available: true } });
+if (firstCaptainBeforeExpiry.status !== 200 || firstCaptainUnavailable.status !== 200 || activeCaptainBeforeExpiry.status !== 200 || activeCaptainUnavailable.status !== 200 || expiryCaptainSelf.status !== 200 || expiryCaptainAvailable.status !== 200 || expiryCaptainAvailable.body?.admission?.availabilityState !== "available") fail("Captain expiry actor availability fixture was not isolated", JSON.stringify({ firstCaptainBeforeExpiry, firstCaptainUnavailable, activeCaptainBeforeExpiry, activeCaptainUnavailable, expiryCaptainSelf, expiryCaptainAvailable }));
 const expiryDispatch = await request(dshBase, "POST", `/dsh/orders/${encodeURIComponent(expiryOrderID)}/dispatch`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `captain-expiry-dispatch-${suffix}`) });
-if (expiryDispatch.status !== 201 || expiryDispatch.body?.offer?.state !== "offered") fail("Captain expiry offer fixture failed", JSON.stringify(expiryDispatch));
+if (expiryDispatch.status !== 201 || expiryDispatch.body?.offer?.state !== "offered" || expiryDispatch.body.offer.captainActorId !== expiryCaptainActorID) fail("Captain expiry offer fixture failed", JSON.stringify({ expiryDispatch, expiryCaptainActorID }));
 const expiryOfferID = String(expiryDispatch.body.offer.id); captainOfferIDs.add(expiryOfferID);
- // Claim-specific database-time fault injection; not business-state setup.
- sql(`UPDATE dsh.captain_dispatch_offers SET expires_at=clock_timestamp()-interval '1 second' WHERE id='${sqlLiteral(expiryOfferID)}'`);
+  // Claim-specific database-time fault injection; not business-state setup.
+  sql(`UPDATE dsh.captain_dispatch_offers SET expires_at=clock_timestamp()-interval '1 second' WHERE id='${sqlLiteral(expiryOfferID)}'`);
 const [expiredOfferRead, captainAfterExpiry, concurrentExpiryRead] = await Promise.all([
-  request(dshBase, "GET", "/dsh/captains/me/offers", { token: activeCaptainAccessToken }),
-  request(dshBase, "GET", "/dsh/captains/me", { token: activeCaptainAccessToken }),
-  request(dshBase, "GET", "/dsh/captains/me/offers", { token: activeCaptainAccessToken }),
+  request(dshBase, "GET", "/dsh/captains/me/offers", { token: expiryCaptainAccessToken }),
+  request(dshBase, "GET", "/dsh/captains/me", { token: expiryCaptainAccessToken }),
+  request(dshBase, "GET", "/dsh/captains/me/offers", { token: expiryCaptainAccessToken }),
 ]);
-const expiredOfferRepeat = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: activeCaptainAccessToken });
-const expiredOffer = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(expiryOfferID)}/respond`, { token: activeCaptainAccessToken, headers: partnerHeaders(`captain-expiry-respond-${suffix}`, 1), body: { decision: "accept" } });
-const expiredOfferReplay = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(expiryOfferID)}/respond`, { token: activeCaptainAccessToken, headers: partnerHeaders(`captain-expiry-respond-${suffix}`, 1), body: { decision: "accept" } });
+const expiredOfferRepeat = await request(dshBase, "GET", "/dsh/captains/me/offers", { token: expiryCaptainAccessToken });
+const expiredOffer = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(expiryOfferID)}/respond`, { token: expiryCaptainAccessToken, headers: partnerHeaders(`captain-expiry-respond-${suffix}`, 1), body: { decision: "accept" } });
+const expiredOfferReplay = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(expiryOfferID)}/respond`, { token: expiryCaptainAccessToken, headers: partnerHeaders(`captain-expiry-respond-${suffix}`, 1), body: { decision: "accept" } });
 if (expiredOffer.status !== 409 || expiredOfferReplay.status !== 409 || expiredOfferRead.status !== 200 || !expiredOfferRead.body?.offers?.some((offer) => offer.id === expiryOfferID && offer.state === "expired") || concurrentExpiryRead.status !== 200 || expiredOfferRepeat.status !== 200 || expiredOfferRepeat.body?.offers?.some((offer) => offer.id === expiryOfferID && offer.state === "offered") || captainAfterExpiry.status !== 200 || captainAfterExpiry.body?.admission?.availabilityState !== "available" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='dispatch_offer_expired' AND offer_id='${sqlLiteral(expiryOfferID)}'`) !== "1" || sql(`SELECT count(*) FROM dsh.captain_operation_idempotency WHERE idempotency_key='captain-expiry-respond-${suffix}'`) !== "1") fail("Captain offer expiry was not durable and idempotent", JSON.stringify({ expiredOffer, expiredOfferReplay, expiredOfferRead, concurrentExpiryRead, expiredOfferRepeat, captainAfterExpiry }));
 console.log("DSH_CAPTAIN_OFFER_REJECT_EXPIRY=PASS");
 
