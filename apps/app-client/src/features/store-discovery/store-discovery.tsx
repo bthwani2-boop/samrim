@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSear
 import type { CommerceVertical, DiscoveryContentView, PromotionView, PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, type TextInput, View } from "react-native";
+import { I18nManager, Image, Pressable, ScrollView, StyleSheet, Text, type TextInput, useWindowDimensions, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
 import { listCatalogVerticals, listFavoriteStoreIDs, listOwnDeliveryAddresses, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, setFavoriteStore } from "./store-discovery-client";
 import { recordDiscoveryClick, recordDiscoveryImpression } from "./discovery-analytics";
@@ -18,6 +18,9 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const router = useRouter();
   const { cities, selectedCityID } = useServiceCityScope();
   const theme = useAppearanceTheme();
+  const { width: viewportWidth } = useWindowDimensions();
+  const [discoveryContainerWidth, setDiscoveryContainerWidth] = useState(0);
+  const carouselCardWidth = Math.max(200, Math.min((discoveryContainerWidth || viewportWidth) - spacing[4], 560));
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
   const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
@@ -147,7 +150,14 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   }
 
   return (
-    <View style={styles.container} accessibilityLabel="اكتشاف المتاجر">
+    <View
+      style={styles.container}
+      accessibilityLabel="اكتشاف المتاجر"
+      onLayout={(event) => {
+        const nextWidth = event.nativeEvent.layout.width;
+        setDiscoveryContainerWidth((current) => Math.abs(current - nextWidth) < 1 ? current : nextWidth);
+      }}
+    >
       <BthwaniSurface tone="raised" style={styles.hero}>
         <View style={styles.heroIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>
         <View style={styles.heroCopy}>
@@ -159,10 +169,18 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
       {isAuthenticated ? <BthwaniSurface tone="inset" style={styles.multiStoreCta}><View style={styles.multiStoreCopy}><Text style={styles.eyebrow}>تجربة موحّدة</Text><Text style={styles.cardTitle}>اطلب من عدة متاجر</Text><Text style={styles.muted}>اجمع السلال، وأنشئ طلبًا مستقلًا لكل متجر مع نتيجة واضحة.</Text></View><BthwaniButton label="فتح الطلب المتعدد" onPress={() => router.push("/multi-store-checkout" as Href)} variant="secondary" /></BthwaniSurface> : null}
 
+      {visibleVerticals.length ? <View style={styles.verticalShortcutBlock}>
+        <BthwaniSectionHeader title="تسوق حسب النشاط" />
+        <ScrollView accessibilityLabel="اختصارات قطاعات المتاجر" contentContainerStyle={styles.verticalShortcutContent} horizontal showsHorizontalScrollIndicator={false}>
+          <BthwaniChip label="كل المجالات" selected={!selectedVerticalID} onPress={() => setSelectedVerticalID("")} />
+          {visibleVerticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} selected={selectedVerticalID === vertical.id} onPress={() => setSelectedVerticalID(vertical.id)} />)}
+        </ScrollView>
+      </View> : null}
+
       {marketing.content.length || marketing.promotions.length ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
         {mediaContent.length ? <>
-          <BthwaniSectionHeader title="العروض والاختيارات" subtitle="اسحب لاكتشاف المزيد" />
-          <DiscoveryMediaCarousel items={mediaContent} styles={styles} theme={theme} onOpen={(item) => {
+          {mediaContent.length > 1 ? <BthwaniSectionHeader title="العروض والاختيارات" subtitle="اسحب أو اختر إحدى الشرائح" /> : <BthwaniSectionHeader title="العروض والاختيارات" />}
+          <DiscoveryMediaCarousel cardWidth={carouselCardWidth} items={mediaContent} styles={styles} theme={theme} onOpen={(item) => {
             void recordDiscoveryClick(item.id);
             if (item.targetType === "STORE" && item.targetId) router.push(`/store/${encodeURIComponent(item.targetId)}` as Href);
             else router.push(`/discovery-content/${encodeURIComponent(item.id)}` as Href);
@@ -213,7 +231,6 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
           }}
         />
       </View>
-      {visibleVerticals.length ? <View accessibilityLabel="تصفية حسب المجال التجاري" style={styles.filterRow}><BthwaniChip label="كل المجالات" selected={!selectedVerticalID} onPress={() => setSelectedVerticalID("")} />{visibleVerticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} selected={selectedVerticalID === vertical.id} onPress={() => setSelectedVerticalID(vertical.id)} />)}</View> : null}
       {favoriteError ? <Text accessibilityRole="alert" style={styles.error}>{favoriteError}</Text> : null}
 
       <BthwaniSectionHeader title={`متاجر في ${cityName}`} subtitle={`${filteredStores.length} متجر متاح للطلب`} />
@@ -291,17 +308,23 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     title: { ...typography.titleLg, color: theme.color, textAlign: "center" },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
     error: { ...typography.bodySm, color: theme.danger },
+    verticalShortcutBlock: { gap: spacing[1] },
+    verticalShortcutContent: { alignItems: "center", gap: spacing[2], paddingHorizontal: spacing[1] },
     marketingBlock: { gap: spacing[3] },
     marketingList: { gap: spacing[2] },
     marketingCard: { borderRadius: radius.lg, gap: spacing[1], padding: spacing[3] },
     mediaCarousel: { gap: spacing[2] },
     mediaScroll: { marginHorizontal: -spacing[1] },
-    mediaCard: { backgroundColor: theme.color, borderRadius: radius.lg, height: 128, overflow: "hidden", width: 320, ...elevation.raised },
+    mediaScrollContent: { gap: spacing[2] },
+    mediaCard: { backgroundColor: theme.surface, borderRadius: radius.lg, height: 168, overflow: "hidden", ...elevation.raised },
     mediaImage: { height: "100%", width: "100%" },
+    mediaCaption: { backgroundColor: theme.actionBackground, bottom: 0, gap: spacing[1], left: 0, paddingHorizontal: spacing[3], paddingVertical: spacing[2], position: "absolute", right: 0 },
+    mediaCaptionTitle: { ...typography.titleSm, color: theme.onAction, textAlign: "right" },
+    mediaCaptionBody: { ...typography.caption, color: theme.onAction, textAlign: "right" },
     mediaFallback: { alignItems: "center", backgroundColor: theme.actionSoft, height: "100%", justifyContent: "center", padding: spacing[4], width: "100%" },
     carouselDots: { alignItems: "center", flexDirection: "row", gap: spacing[1], justifyContent: "center" },
     carouselDot: { backgroundColor: theme.borderColorStrong, borderRadius: radius.round, height: 6, width: 6 },
-    carouselDotActive: { backgroundColor: theme.actionBackground, width: 18 },
+    carouselDotActive: { backgroundColor: theme.actionBackground, height: 8, width: 18 },
     promotionCard: { alignItems: "center", borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], padding: spacing[3] },
     promotionCopy: { flex: 1, gap: spacing[1] },
     promotionCode: { ...typography.label, backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.interactiveText, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
@@ -310,25 +333,35 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
   });
 }
 
-function DiscoveryMediaCarousel({ items, styles, theme, onOpen }: { items: ReadonlyArray<DiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: DiscoveryContentView) => void }) {
+function DiscoveryMediaCarousel({ cardWidth, items, styles, theme, onOpen }: { cardWidth: number; items: ReadonlyArray<DiscoveryContentView>; styles: ReturnType<typeof createStyles>; theme: ReturnType<typeof resolveTheme>; onOpen: (item: DiscoveryContentView) => void }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [failedMedia, setFailedMedia] = useState<ReadonlySet<string>>(() => new Set());
+  const scrollRef = useRef<ScrollView>(null);
   const impressionedContentIDs = useRef<Set<string>>(new Set());
-  const snapInterval = 320 + spacing[2];
+  const snapInterval = cardWidth + spacing[2];
+  const activeItem = items[activeIndex];
 
   useEffect(() => {
-    for (const item of items) {
-      if (impressionedContentIDs.current.has(item.id)) continue;
-      impressionedContentIDs.current.add(item.id);
-      void recordDiscoveryImpression(item.id);
-    }
-  }, [items]);
+    if (!activeItem || impressionedContentIDs.current.has(activeItem.id)) return;
+    impressionedContentIDs.current.add(activeItem.id);
+    void recordDiscoveryImpression(activeItem.id);
+  }, [activeItem]);
+
+  useEffect(() => {
+    setActiveIndex((current) => Math.min(current, Math.max(0, items.length - 1)));
+  }, [items.length]);
+
+  function selectSlide(index: number) {
+    const direction = I18nManager.isRTL ? -1 : 1;
+    scrollRef.current?.scrollTo({ x: direction * snapInterval * index, animated: true });
+  }
 
   return (
-    <View accessibilityLabel={`كاروسيل العروض، الشريحة ${activeIndex + 1} من ${items.length}`} style={styles.mediaCarousel}>
+    <View accessibilityLabel={activeItem ? `العروض، ${activeItem.titleAr}، ${activeIndex + 1} من ${items.length}` : "العروض"} style={styles.mediaCarousel}>
       <ScrollView
+        ref={scrollRef}
         accessibilityLabel="شرائح العروض"
-        contentContainerStyle={{ gap: spacing[2], paddingHorizontal: spacing[1] }}
+        contentContainerStyle={styles.mediaScrollContent}
         horizontal
         onMomentumScrollEnd={(event) => {
           setActiveIndex(Math.min(items.length - 1, Math.max(0, Math.round(Math.abs(event.nativeEvent.contentOffset.x) / snapInterval))));
@@ -342,14 +375,20 @@ function DiscoveryMediaCarousel({ items, styles, theme, onOpen }: { items: Reado
         {items.map((item) => {
           const actionable = item.targetType !== "INFO";
           const card = (
-            <View key={`media-card-${item.id}`} style={styles.mediaCard}>
-              {failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.muted}>تعذر تحميل الصورة، افتح المحتوى النصي بدلًا منها.</Text></View> : <Image accessibilityLabel={`صورة ${item.titleAr}`} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={styles.mediaImage} resizeMode="contain" />}
+            <View style={[styles.mediaCard, { width: cardWidth }]}>
+              {failedMedia.has(item.id) ? <View style={styles.mediaFallback}><BthwaniIcon name="warning" color={theme.interactiveText} size={sizing.iconXl} /><Text style={styles.cardTitle}>{item.titleAr}</Text><Text style={styles.muted}>تعذر تحميل الصورة، افتح المحتوى النصي بدلًا منها.</Text></View> : <>
+                <Image accessibilityLabel={`صورة ${item.titleAr}`} onError={() => setFailedMedia((current) => new Set(current).add(item.id))} source={{ uri: item.mediaUri }} style={styles.mediaImage} resizeMode="cover" />
+                <View pointerEvents="none" style={styles.mediaCaption}>
+                  <Text numberOfLines={1} style={styles.mediaCaptionTitle}>{item.titleAr}</Text>
+                  {item.bodyAr ? <Text numberOfLines={1} style={styles.mediaCaptionBody}>{item.bodyAr}</Text> : null}
+                </View>
+              </>}
             </View>
           );
           return actionable ? <Pressable accessibilityHint="يفتح الوجهة المرتبطة بالمحتوى" accessibilityLabel={`فتح ${item.titleAr}`} accessibilityRole="button" key={item.id} onPress={() => onOpen(item)}>{card}</Pressable> : <View accessibilityLabel={item.titleAr} key={item.id}>{card}</View>;
         })}
       </ScrollView>
-      {items.length > 1 ? <View accessibilityLabel={`مؤشر الشرائح ${activeIndex + 1} من ${items.length}`} style={styles.carouselDots}>{items.map((item, index) => <View key={item.id} style={[styles.carouselDot, index === activeIndex && styles.carouselDotActive]} />)}</View> : null}
+      {items.length > 1 ? <View accessibilityLabel={`اختيار شريحة العرض، ${activeIndex + 1} من ${items.length}`} style={styles.carouselDots}>{items.map((item, index) => <Pressable accessibilityLabel={`عرض الشريحة ${index + 1}: ${item.titleAr}`} accessibilityRole="button" accessibilityState={{ selected: index === activeIndex }} hitSlop={8} key={item.id} onPress={() => selectSlide(index)}><View style={[styles.carouselDot, index === activeIndex && styles.carouselDotActive]} /></Pressable>)}</View> : null}
     </View>
   );
 }

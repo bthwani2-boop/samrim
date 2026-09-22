@@ -176,7 +176,13 @@ export function MarketingContentWorkspace() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [contentForm, setContentForm] = useState({ titleAr: "", bodyAr: "", kind: "BANNER" as "BANNER" | "CAROUSEL" | "SHORT_FORM", targetType: "INFO" as "STORE" | "PRODUCT" | "CATEGORY" | "PROMOTION" | "INFO", targetId: "", serviceCityId: "", ordinal: "0" });
+  const [targetOptions, setTargetOptions] = useState<ReadonlyArray<{ id: string; label: string; detail?: string }>>([]);
+  const [targetSearch, setTargetSearch] = useState("");
+  const [targetLoading, setTargetLoading] = useState(false);
+  const [targetMessage, setTargetMessage] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState("");
+  const productSearch = contentForm.targetType === "PRODUCT" ? targetSearch.trim() : "";
 
   const load = useCallback(async () => {
     const response = await fetch("/api/marketing/content", { cache: "no-store" });
@@ -194,7 +200,53 @@ export function MarketingContentWorkspace() {
 
   useEffect(() => { void load().catch(() => setMessage("تعذر قراءة سجل محتوى الاكتشاف.")); }, [load]);
   useEffect(() => { void loadAnalytics().catch(() => setMessage("تعذر قراءة تحليلات المحتوى.")); }, [loadAnalytics]);
+  useEffect(() => {
+    if (!mediaPreviewUrl) return;
+    return () => URL.revokeObjectURL(mediaPreviewUrl);
+  }, [mediaPreviewUrl]);
   useEffect(() => { void readActiveServiceCities().then(setCities).catch(() => setMessage("تعذر قراءة مدن الخدمة؛ يمكنك نشر المحتوى على كل المدن.")); }, []);
+  useEffect(() => {
+    if (contentForm.targetType === "INFO") {
+      setTargetOptions([]);
+      setTargetMessage("");
+      setTargetLoading(false);
+      return;
+    }
+    if (contentForm.targetType === "STORE" && !contentForm.serviceCityId) {
+      setTargetOptions([]);
+      setTargetMessage("اختر مدينة الخدمة أولًا لعرض المتاجر المنشورة فيها.");
+      setTargetLoading(false);
+      return;
+    }
+    if (contentForm.targetType === "PRODUCT" && productSearch.length < 2) {
+      setTargetOptions([]);
+      setTargetMessage("اكتب حرفين على الأقل للبحث في المنتجات النشطة.");
+      setTargetLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({ targetType: contentForm.targetType });
+    if (contentForm.serviceCityId) params.set("serviceCityId", contentForm.serviceCityId);
+    if (contentForm.targetType === "PRODUCT") params.set("query", productSearch);
+    setTargetLoading(true);
+    setTargetMessage("");
+    void fetch(`/api/marketing/content/targets?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null) as { options?: ReadonlyArray<{ id: string; label: string; detail?: string }>; error?: { message?: string } } | null;
+        if (!response.ok) throw new Error(body?.error?.message ?? "تعذر تحميل الوجهات.");
+        setTargetOptions(body?.options ?? []);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setTargetOptions([]);
+        setTargetMessage(error instanceof Error ? error.message : "تعذر تحميل الوجهات.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setTargetLoading(false);
+      });
+    return () => controller.abort();
+  }, [contentForm.serviceCityId, contentForm.targetType, productSearch]);
 
   async function createContent() {
     setBusy(true);
@@ -206,7 +258,7 @@ export function MarketingContentWorkspace() {
       if (!mediaFile) throw new Error("اختر صورة JPEG أو PNG للمحتوى.");
       if (mediaFile.size > 10 * 1024 * 1024) throw new Error("حجم الصورة يجب ألا يتجاوز 10 ميجابايت.");
       if (!["image/jpeg", "image/png"].includes(mediaFile.type.toLowerCase())) throw new Error("الصورة يجب أن تكون JPEG أو PNG.");
-      if (contentForm.targetType !== "INFO" && !contentForm.targetId.trim()) throw new Error("معرّف الهدف مطلوب لهذا النوع من المحتوى.");
+      if (contentForm.targetType !== "INFO" && !targetOptions.some((option) => option.id === contentForm.targetId)) throw new Error("اختر وجهة من نتائج DSH الحالية قبل إنشاء المحتوى.");
       if (ends && (Number.isNaN(ends.getTime()) || ends <= starts)) throw new Error("نهاية المحتوى يجب أن تكون بعد بدايته.");
       const form = new FormData();
       form.append("id", `content-${crypto.randomUUID()}`);
@@ -224,7 +276,9 @@ export function MarketingContentWorkspace() {
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(apiMessage(body));
       setContentForm({ titleAr: "", bodyAr: "", kind: "BANNER", targetType: "INFO", targetId: "", serviceCityId: "", ordinal: String(content.length + 1) });
+      setTargetSearch("");
       setMediaFile(null);
+      setMediaPreviewUrl("");
       await load();
       await loadAnalytics();
       setMessage("تم إنشاء المحتوى كمسودة. انشره من السجل عندما يصبح جاهزًا.");
@@ -258,11 +312,20 @@ export function MarketingContentWorkspace() {
           <input aria-label="عنوان المحتوى" placeholder="مختارات الأسبوع" value={contentForm.titleAr} onChange={(event) => setContentForm((current) => ({ ...current, titleAr: event.target.value }))} />
           <input aria-label="نص المحتوى" placeholder="اكتشف الجديد في مدينتك" value={contentForm.bodyAr} onChange={(event) => setContentForm((current) => ({ ...current, bodyAr: event.target.value }))} />
           <label className="field-label" htmlFor="marketing-content-kind">نوع المحتوى<select id="marketing-content-kind" aria-label="نوع المحتوى" value={contentForm.kind} onChange={(event) => setContentForm((current) => ({ ...current, kind: event.target.value as typeof current.kind }))}><option value="BANNER">بنر رئيسي</option><option value="CAROUSEL">شريحة كاروسيل</option><option value="SHORT_FORM">قصة قصيرة</option></select></label>
-          <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} /></label>
+          <label className="field-label" htmlFor="marketing-content-media">صورة المحتوى<input id="marketing-content-media" aria-label="ملف صورة المحتوى" type="file" accept="image/jpeg,image/png" required onChange={(event) => { const file = event.target.files?.[0] ?? null; setMediaFile(file); setMediaPreviewUrl(file ? URL.createObjectURL(file) : ""); }} /></label>
           {mediaFile ? <p className="muted" data-testid="marketing-content-file">{mediaFile.name} · {(mediaFile.size / 1024).toFixed(0)} كيلوبايت</p> : <p className="muted">JPEG أو PNG، حتى 10 ميجابايت.</p>}
-          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" value={contentForm.targetType} onChange={(event) => setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType }))}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">تصنيف</option><option value="PROMOTION">عرض</option></select></label>
-          <input aria-label="معرّف الوجهة" placeholder={contentForm.targetType === "INFO" ? "غير مطلوب للمعلومات" : "معرّف السجل"} disabled={contentForm.targetType === "INFO"} value={contentForm.targetId} onChange={(event) => setContentForm((current) => ({ ...current, targetId: event.target.value }))} />
-          <label className="field-label" htmlFor="marketing-content-city">مدينة الخدمة<select id="marketing-content-city" aria-label="مدينة خدمة المحتوى" value={contentForm.serviceCityId} onChange={(event) => setContentForm((current) => ({ ...current, serviceCityId: event.target.value }))}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
+          {mediaPreviewUrl ? <div><p className="muted">معاينة تقريبية لاقتصاص الصورة في بطاقة الهاتف:</p><img className="workspace-discovery-preview" src={mediaPreviewUrl} alt="معاينة صورة محتوى الاكتشاف" /></div> : null}
+          <label className="field-label" htmlFor="marketing-content-target">نوع الوجهة<select id="marketing-content-target" aria-label="نوع وجهة المحتوى" value={contentForm.targetType} onChange={(event) => { setTargetSearch(""); setTargetOptions([]); setContentForm((current) => ({ ...current, targetType: event.target.value as typeof current.targetType, targetId: "" })); }}><option value="INFO">معلومات فقط</option><option value="STORE">متجر</option><option value="PRODUCT">منتج</option><option value="CATEGORY">تصنيف</option><option value="PROMOTION">عرض</option></select></label>
+          {contentForm.targetType !== "INFO" ? <>
+            <input aria-label="بحث في الوجهات" placeholder={contentForm.targetType === "PRODUCT" ? "ابحث باسم المنتج" : "اكتب لتصفية الوجهات"} value={targetSearch} onChange={(event) => { setTargetSearch(event.target.value); if (contentForm.targetType === "PRODUCT") setContentForm((current) => ({ ...current, targetId: "" })); }} />
+            <label className="field-label" htmlFor="marketing-content-target-option">الوجهة المعتمدة<select id="marketing-content-target-option" aria-label="الوجهة المعتمدة" value={contentForm.targetId} disabled={targetLoading || targetOptions.length === 0} onChange={(event) => setContentForm((current) => ({ ...current, targetId: event.target.value }))}>
+              <option value="">{targetLoading ? "جارٍ تحميل الوجهات…" : "اختر وجهة من بيانات DSH"}</option>
+              {targetOptions.filter((option) => contentForm.targetType === "PRODUCT" || !targetSearch.trim() || `${option.label} ${option.detail ?? ""}`.toLocaleLowerCase().includes(targetSearch.trim().toLocaleLowerCase())).map((option) => <option key={option.id} value={option.id}>{option.detail ? `${option.label} · ${option.detail}` : option.label}</option>)}
+            </select></label>
+            {targetMessage ? <p className="muted" role="status">{targetMessage}</p> : null}
+            <p className="muted">تُختار الوجهة من السجلات المعتمدة، ويعيد DSH التحقق من صلاحيتها حسب المدينة ووقت العرض.</p>
+          </> : null}
+          <label className="field-label" htmlFor="marketing-content-city">مدينة الخدمة<select id="marketing-content-city" aria-label="مدينة خدمة المحتوى" value={contentForm.serviceCityId} onChange={(event) => { setTargetOptions([]); setContentForm((current) => ({ ...current, serviceCityId: event.target.value, targetId: "" })); }}><option value="">كل المدن</option>{cities.map((city) => <option key={city.id} value={city.id}>{city.displayNameAr}</option>)}</select></label>
           <input aria-label="بداية المحتوى" type="datetime-local" value={contentStartsAt} onChange={(event) => setContentStartsAt(event.target.value)} />
           <input aria-label="نهاية المحتوى" type="datetime-local" value={contentEndsAt} onChange={(event) => setContentEndsAt(event.target.value)} />
           <input aria-label="ترتيب المحتوى" inputMode="numeric" type="number" min="0" value={contentForm.ordinal} onChange={(event) => setContentForm((current) => ({ ...current, ordinal: event.target.value }))} />
