@@ -27,6 +27,14 @@ test("@live provision and activate an independent operator for downstream DSH se
   const independentPage = await independentContext.newPage();
   try {
     await enableVirtualAuthenticator(independentPage);
+    // Development fallback may select the sole ready primary Operator before the
+    // disposable role is activated. End that real session in this context so its
+    // device is explicitly suppressed before the enrollment journey starts.
+    await independentPage.goto(baseUrl + "/");
+    await expect(independentPage).toHaveURL(/\/workspace$/);
+    await independentPage.getByText("حساب المشغل", { exact: true }).click();
+    await independentPage.getByRole("button", { name: "تسجيل الخروج" }).click();
+    await expect(independentPage.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
     await registerOperator(independentPage, independentOperator, baseUrl, mailpitBase);
     await expect(independentPage.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
   } finally {
