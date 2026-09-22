@@ -7,8 +7,7 @@ const LAST_CLICK_KEY = "bthwani.discovery.analytics.last-click.v1";
 let volatileSessionID = "";
 
 function analyticsID(): string {
-  if (typeof Crypto.randomUUID === "function") return Crypto.randomUUID();
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  return Crypto.randomUUID();
 }
 
 async function clientSessionID(): Promise<string> {
