@@ -37,6 +37,9 @@ func NewOrder(identityClient *identityintegration.Client, accessToken string, db
 func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders", s.listClient)
 	mux.HandleFunc("GET /dsh/orders/{orderId}", s.read)
+	mux.HandleFunc("GET /dsh/orders/{orderId}/conversation", s.readConversation)
+	mux.HandleFunc("POST /dsh/orders/{orderId}/conversation/messages", s.sendConversationMessage)
+	mux.HandleFunc("POST /dsh/orders/{orderId}/conversation/read", s.markConversationRead)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/delivery-proof", s.readDeliveryProof)
 	mux.HandleFunc("GET /dsh/orders/{orderId}/rating", s.readRating)
 	mux.HandleFunc("POST /dsh/orders/{orderId}/rating", s.createRating)
@@ -175,6 +178,96 @@ func (s *OrderServer) read(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item)})
+}
+
+func (s *OrderServer) readConversation(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Order conversation session is required")
+		return
+	}
+	limit, ok := orderLimit(w, r)
+	if !ok {
+		return
+	}
+	conversation, err := s.service.ReadOrderConversation(r.Context(), token, r.PathValue("orderId"), limit)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	messages := make([]contract.OrderConversationMessage, 0, len(conversation.Messages))
+	for _, message := range conversation.Messages {
+		messages = append(messages, toOrderConversationMessage(message))
+	}
+	writeJSON(w, http.StatusOK, contract.OrderConversationResponse{OrderID: conversation.OrderID, OrderState: contract.OrderState(conversation.OrderState), ReadOnlyAt: conversation.ReadOnlyAt, CanSend: conversation.CanSend, Messages: messages, UnreadCount: conversation.UnreadCount})
+}
+
+func (s *OrderServer) sendConversationMessage(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Order conversation session is required")
+		return
+	}
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation attribution and idempotency are required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation ownership comes from the canonical session")
+		return
+	}
+	var input contract.CreateOrderConversationMessageRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	if len([]rune(strings.TrimSpace(input.Body))) < 1 || len([]rune(strings.TrimSpace(input.Body))) > 2000 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation body must contain between 1 and 2000 characters")
+		return
+	}
+	message, replayed, err := s.service.SendOrderConversationMessage(r.Context(), token, r.PathValue("orderId"), input.Body, idempotency, correlation)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, contract.OrderConversationMessageResponse{Message: toOrderConversationMessage(message), IdempotentReplay: replayed})
+}
+
+func (s *OrderServer) markConversationRead(w http.ResponseWriter, r *http.Request) {
+	token := bearerToken(r)
+	if token == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "an active Order conversation session is required")
+		return
+	}
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	if len(correlation) < 8 || len(correlation) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation read attribution is required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "conversation read ownership comes from the canonical session")
+		return
+	}
+	var input contract.MarkOrderConversationReadRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	messageID := strings.TrimSpace(input.MessageID)
+	if messageID == "" || len(messageID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "messageId is required")
+		return
+	}
+	readAt, err := s.service.MarkOrderConversationRead(r.Context(), token, r.PathValue("orderId"), messageID)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.OrderConversationReadResponse{OrderID: strings.TrimSpace(r.PathValue("orderId")), MessageID: messageID, ReadAt: readAt})
 }
 
 func (s *OrderServer) readTracking(w http.ResponseWriter, r *http.Request) {
@@ -417,6 +510,10 @@ func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {
 	return contract.OrderRating{OrderID: item.OrderID, StoreID: item.StoreID, Rating: item.Rating, Review: item.Review, CreatedAt: item.CreatedAt}
 }
 
+func toOrderConversationMessage(item postgres.OrderConversationMessageRecord) contract.OrderConversationMessage {
+	return contract.OrderConversationMessage{ID: item.ID, OrderID: item.OrderID, SenderRole: item.SenderRole, Body: item.Body, CreatedAt: item.CreatedAt, ReadAt: item.ReadAt, Mine: item.Mine}
+}
+
 func snapshotStringValue(value *string) string {
 	if value == nil {
 		return ""
@@ -446,6 +543,8 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session is not permitted for this Order")
 	case errors.Is(err, postgres.ErrOrderNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order was not found")
+	case errors.Is(err, postgres.ErrOrderConversationNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "order conversation was not found")
 	case errors.Is(err, postgres.ErrOrderRatingNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order rating was not found")
 	case errors.Is(err, postgres.ErrOrderRatingInvalid):
@@ -456,6 +555,16 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "ORDER_RATING_EXISTS", "this order already has a rating")
 	case errors.Is(err, postgres.ErrOrderRatingIdempotency):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different rating facts")
+	case errors.Is(err, postgres.ErrOrderConversationInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order conversation input is invalid")
+	case errors.Is(err, postgres.ErrOrderConversationForbidden), errors.Is(err, orderdomain.ErrConversationSessionForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not a participant in this Order conversation")
+	case errors.Is(err, postgres.ErrOrderConversationMessageNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "order conversation message was not found")
+	case errors.Is(err, postgres.ErrOrderConversationReadOnly):
+		writeError(w, http.StatusConflict, "ORDER_CONVERSATION_READ_ONLY", "this Order conversation is read-only")
+	case errors.Is(err, postgres.ErrOrderConversationIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different conversation facts")
 	case errors.Is(err, postgres.ErrCheckoutEvidenceStale), errors.Is(err, postgres.ErrOrderVersionConflict), errors.Is(err, postgres.ErrOrderStateConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Order evidence, version, or lifecycle state is stale")
 	case errors.Is(err, postgres.ErrPaymentStateConflict):

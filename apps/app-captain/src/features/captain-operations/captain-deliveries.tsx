@@ -8,6 +8,7 @@ import { ActivityIndicator, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
 import { createCaptainOperationStyles } from "./captain-operation-styles";
+import { OrderConversation } from "./order-conversation";
 
 export function CaptainDeliveries() {
   const theme = useAppearanceTheme();
@@ -168,7 +169,59 @@ export function CaptainDeliveries() {
       {loading ? <View style={styles.state}><ActivityIndicator color={theme.actionBackground} /><Text style={styles.muted}>جارٍ القراءة…</Text></View> : null}
       {!loading ? <Text style={styles.sectionTitle}>التكليفات ({assignments.length})</Text> : null}
       {!loading && !assignments.length ? <Text style={styles.muted}>لا توجد تكليفات.</Text> : null}
-      {!loading ? assignments.map((assignment) => { const task = tasks[assignment.id]; const assignmentLabel = task ? captainAssignmentStateLabel(task.deliveryState) : captainAssignmentStateLabel(assignment.state); const handoffLabel = task ? captainHandoffStateLabel(task.handoffState) : captainHandoffStateLabel(assignment.handoff.state); const requiresCollection = task?.paymentState === "REQUIRES_COLLECTION"; const collectionAmountText = collectionAmounts[assignment.id] ?? (requiresCollection ? String(task.amountDueMinor) : ""); const parsedCollectionAmount = Number(collectionAmountText); const collectionAmountInvalid = requiresCollection && (!Number.isSafeInteger(parsedCollectionAmount) || parsedCollectionAmount !== task.amountDueMinor); const deliveryProofCode = deliveryProofCodes[assignment.id] ?? ""; const deliveryProofInvalid = assignment.state === "in_custody" && !/^[0-9]{6}$/.test(deliveryProofCode); return <View key={assignment.id} style={styles.card}><View style={styles.orderHeader}><Text style={styles.cardTitle}>{task?.orderReference ? `مهمة التوصيل ${task.orderReference}` : "مهمة توصيل"}</Text><BthwaniStatusBadge icon={assignment.state === "delivery_failed" ? "warning" : "deliveries"} label={assignmentLabel} tone={assignment.state === "delivery_failed" ? "danger" : assignment.state === "in_custody" ? "success" : "info"} /></View><BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "store"} label={`التسليم من المتجر: ${handoffLabel}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />{task ? <View style={styles.task}><Text style={styles.muted}>المتجر: {task.storeName}</Text><Text style={styles.muted}>عنوان العميل: {task.customerAddressText}</Text><Text style={styles.muted}>حالة الطلب: {orderStateLabel(task.orderState)}</Text><Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod)} · {paymentStateLabel(task.paymentState)}</Text>{requiresCollection ? <><Text style={styles.warning}>المطلوب تحصيله عند التسليم: {formatMoney(task.amountDueMinor, task.currency)}</Text><TextInput accessibilityLabel={`المبلغ المحصل للمهمة ${task.orderReference}`} keyboardType="number-pad" onChangeText={(value) => setCollectionAmounts((current) => ({ ...current, [assignment.id]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={collectionAmountText} style={styles.input} /><Text style={collectionAmountInvalid ? styles.error : styles.muted}>{collectionAmountInvalid ? "يجب أن يساوي المبلغ المحصل إجمالي الطلب قبل تأكيد التسليم." : "أكّد المبلغ الذي استلمه الكابتن نقدًا."}</Text></> : null}{assignment.state === "in_custody" ? <><Text style={styles.warning}>اطلب رمز التسليم الظاهر لدى العميل وأدخله قبل إتمام الرحلة.</Text><TextInput accessibilityLabel={`رمز التسليم للمهمة ${task.orderReference}`} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setDeliveryProofCodes((current) => ({ ...current, [assignment.id]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={deliveryProofCode} style={styles.input} /><Text style={deliveryProofInvalid ? styles.error : styles.muted}>{deliveryProofInvalid ? "أدخل رمز التسليم المكوّن من ستة أرقام." : "سيتم التحقق من الرمز قبل إعلان التسليم."}</Text></> : null}<Text style={task.deliveryState === "delivery_failed" ? styles.warning : styles.progress}>{captainTaskProgressLabel(task)}</Text></View> : <Text style={styles.muted}>جارٍ تجهيز تفاصيل المهمة.</Text>}{assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy)} label="تأكيد استلام الطلب" onPress={() => void pickup(assignment)} /> : null}{assignment.state === "assigned" && assignment.handoff.state === "pending" ? <Text style={styles.muted}>بانتظار تأكيد المتجر قبل الاستلام.</Text> : null}{assignment.state === "in_custody" ? <View style={styles.row}><BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || collectionAmountInvalid || deliveryProofInvalid} label={requiresCollection ? "تحصيل المبلغ وتأكيد التسليم" : "تأكيد التسليم"} onPress={() => void complete(assignment, "delivered", requiresCollection ? parsedCollectionAmount : undefined)} style={styles.actionButton} /><BthwaniButton disabled={Boolean(busy)} label="تعذر التسليم" onPress={() => void complete(assignment, "delivery_failed")} style={styles.actionButton} variant="danger" /></View> : null}{assignment.state === "delivery_failed" ? <View style={styles.warningBox}><Text style={styles.warning}>يبقى الطلب في عهدتك حتى يعالج المشغل التعذر؛ لن تُفتح لك مهمة جديدة قبل الاسترداد.</Text></View> : null}</View>; }) : null}
+      {!loading ? assignments.map((assignment) => {
+        const task = tasks[assignment.id];
+        const assignmentLabel = task ? captainAssignmentStateLabel(task.deliveryState) : captainAssignmentStateLabel(assignment.state);
+        const handoffLabel = task ? captainHandoffStateLabel(task.handoffState) : captainHandoffStateLabel(assignment.handoff.state);
+        const requiresCollection = task?.paymentState === "REQUIRES_COLLECTION";
+        const collectionAmountText = collectionAmounts[assignment.id] ?? (requiresCollection ? String(task.amountDueMinor) : "");
+        const parsedCollectionAmount = Number(collectionAmountText);
+        const collectionAmountInvalid = requiresCollection && (!Number.isSafeInteger(parsedCollectionAmount) || parsedCollectionAmount !== task.amountDueMinor);
+        const deliveryProofCode = deliveryProofCodes[assignment.id] ?? "";
+        const deliveryProofInvalid = assignment.state === "in_custody" && !/^[0-9]{6}$/.test(deliveryProofCode);
+        return (
+          <View key={assignment.id} style={styles.card}>
+            <View style={styles.orderHeader}>
+              <Text style={styles.cardTitle}>{task?.orderReference ? `مهمة التوصيل ${task.orderReference}` : "مهمة توصيل"}</Text>
+              <BthwaniStatusBadge icon={assignment.state === "delivery_failed" ? "warning" : "deliveries"} label={assignmentLabel} tone={assignment.state === "delivery_failed" ? "danger" : assignment.state === "in_custody" ? "success" : "info"} />
+            </View>
+            <BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "store"} label={`التسليم من المتجر: ${handoffLabel}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />
+            {task ? (
+              <View style={styles.task}>
+                <Text style={styles.muted}>المتجر: {task.storeName}</Text>
+                <Text style={styles.muted}>عنوان العميل: {task.customerAddressText}</Text>
+                <Text style={styles.muted}>حالة الطلب: {orderStateLabel(task.orderState)}</Text>
+                <Text style={styles.payment}>{paymentMethodLabel(task.paymentMethod)} · {paymentStateLabel(task.paymentState)}</Text>
+                {requiresCollection ? (
+                  <>
+                    <Text style={styles.warning}>المطلوب تحصيله عند التسليم: {formatMoney(task.amountDueMinor, task.currency)}</Text>
+                    <TextInput accessibilityLabel={`المبلغ المحصل للمهمة ${task.orderReference}`} keyboardType="number-pad" onChangeText={(value) => setCollectionAmounts((current) => ({ ...current, [assignment.id]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={collectionAmountText} style={styles.input} />
+                    <Text style={collectionAmountInvalid ? styles.error : styles.muted}>{collectionAmountInvalid ? "يجب أن يساوي المبلغ المحصل إجمالي الطلب قبل تأكيد التسليم." : "أكّد المبلغ الذي استلمه الكابتن نقدًا."}</Text>
+                  </>
+                ) : null}
+                {assignment.state === "in_custody" ? (
+                  <>
+                    <Text style={styles.warning}>اطلب رمز التسليم الظاهر لدى العميل وأدخله قبل إتمام الرحلة.</Text>
+                    <TextInput accessibilityLabel={`رمز التسليم للمهمة ${task.orderReference}`} keyboardType="number-pad" maxLength={6} onChangeText={(value) => setDeliveryProofCodes((current) => ({ ...current, [assignment.id]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={deliveryProofCode} style={styles.input} />
+                    <Text style={deliveryProofInvalid ? styles.error : styles.muted}>{deliveryProofInvalid ? "أدخل رمز التسليم المكوّن من ستة أرقام." : "سيتم التحقق من الرمز قبل إعلان التسليم."}</Text>
+                  </>
+                ) : null}
+                <Text style={task.deliveryState === "delivery_failed" ? styles.warning : styles.progress}>{captainTaskProgressLabel(task)}</Text>
+              </View>
+            ) : <Text style={styles.muted}>جارٍ تجهيز تفاصيل المهمة.</Text>}
+            {assignment.state === "assigned" && assignment.handoff.state === "store_confirmed" ? <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy)} label="تأكيد استلام الطلب" onPress={() => void pickup(assignment)} /> : null}
+            {assignment.state === "assigned" && assignment.handoff.state === "pending" ? <Text style={styles.muted}>بانتظار تأكيد المتجر قبل الاستلام.</Text> : null}
+            {assignment.state === "in_custody" ? (
+              <View style={styles.row}>
+                <BthwaniButton busy={busy === assignment.id} disabled={Boolean(busy) || collectionAmountInvalid || deliveryProofInvalid} label={requiresCollection ? "تحصيل المبلغ وتأكيد التسليم" : "تأكيد التسليم"} onPress={() => void complete(assignment, "delivered", requiresCollection ? parsedCollectionAmount : undefined)} style={styles.actionButton} />
+                <BthwaniButton disabled={Boolean(busy)} label="تعذر التسليم" onPress={() => void complete(assignment, "delivery_failed")} style={styles.actionButton} variant="danger" />
+              </View>
+            ) : null}
+            {assignment.state === "delivery_failed" ? <View style={styles.warningBox}><Text style={styles.warning}>يبقى الطلب في عهدتك حتى يعالج المشغل التعذر؛ لن تُفتح لك مهمة جديدة قبل الاسترداد.</Text></View> : null}
+          </View>
+        );
+      }) : null}
+       {!loading ? assignments.map((assignment) => <OrderConversation key={`conversation-${assignment.id}`} orderId={assignment.orderId} />) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <BthwaniButton busy={Boolean(busy)} disabled={Boolean(busy)} label="تحديث التوصيلات" onPress={() => void load()} variant="secondary" />
     </View>
