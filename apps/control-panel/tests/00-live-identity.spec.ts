@@ -3,13 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, request, test } from "@playwright/test";
-
-type PreparedOperator = {
-  actorId: string;
-  phone: string;
-  token: string;
-  createdByTest: boolean;
-};
+import { enableVirtualAuthenticator, jsonRequest, type PreparedOperator, registerOperator, requiredEnv, waitForMailpitCode } from "./live-identity-proof-helpers";
 
 let preparedOperatorForCleanup: PreparedOperator | undefined;
 
@@ -18,41 +12,6 @@ test.beforeAll(() => {
     throw new Error("live Identity proof requires explicitly disposable CI state");
   }
 });
-
-function requiredEnv(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) throw new Error(name + " is required for live Identity browser proof");
-  return value;
-}
-
-async function jsonRequest(base: string, pathname: string, token: string, body?: unknown, extraHeaders: Record<string, string> = {}) {
-  const response = await fetch(base + pathname, {
-    method: "POST",
-    headers: { Accept: "application/json", Authorization: "Bearer " + token, ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...extraHeaders },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(5_000),
-  });
-  return { response, body: await response.json().catch(() => null) as Record<string, any> | null };
-}
-
-async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose: string): Promise<string> {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    try {
-      const response = await fetch(mailpitBaseUrl + "/view/latest.txt", { signal: AbortSignal.timeout(2_000) });
-      if (response.ok) {
-        const message = await response.text();
-        if (message.includes("Phone: " + phone) && message.includes("Purpose: " + purpose)) {
-          const match = message.match(/Code:\s*(\d{6})/);
-          if (match?.[1]) return match[1];
-        }
-      }
-    } catch {
-      // Delivery is asynchronous; continue through the bounded proof window.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error(purpose + " challenge was not delivered to Mailpit");
-}
 
 function readCanonicalRuntime(): { envFile: string; repoRoot: string; postgresUser: string; postgresDatabase: string } {
   const repoRoots = [
@@ -212,44 +171,6 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
   return operator;
 }
 
-async function provisionIndependentOperator(identityBase: string, controlToken: string, actingOperatorID: string): Promise<PreparedOperator> {
-  const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
-  const provision = await jsonRequest(identityBase, "/internal/actor-roles/provision", controlToken, { phoneE164: phone, role: "operator" }, { "X-Acting-Actor-ID": actingOperatorID });
-  expect(provision.response.status, "independent operator provisioning must succeed").toBe(201);
-  const actorId = String(provision.body?.actorId || "");
-  expect(actorId).toMatch(/^act_/);
-  const enrollment = await jsonRequest(identityBase, "/internal/operator-enrollment-tokens", controlToken, { phoneE164: phone, role: "operator" }, { "X-Acting-Actor-ID": actingOperatorID });
-  expect(enrollment.response.status, "independent operator enrollment token must be issued").toBe(201);
-  const token = String(enrollment.body?.code || "");
-  expect(token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
-  return { actorId, phone, token, createdByTest: true };
-}
-
-async function enableVirtualAuthenticator(page: Page): Promise<void> {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send("WebAuthn.enable");
-  await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
-}
-
-async function registerOperator(page: Page, operator: PreparedOperator, baseUrl: string, mailpitBase: string): Promise<string> {
-  await page.goto(baseUrl + "/");
-  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
-  await page.getByRole("button", { name: "تفعيل حساب موظف" }).click();
-  await page.getByLabel("رقم الهاتف").fill(operator.phone);
-  await page.getByLabel("دعوة التفعيل عالية الأمان").fill(operator.token);
-  await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
-  const enrollmentCode = await waitForMailpitCode(mailpitBase, operator.phone, "operator_enroll");
-  await page.getByLabel("رمز إثبات الهاتف").fill(enrollmentCode);
-  await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح المرور" }).click();
-  await expect(page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" })).toBeVisible();
-  const recoveryCredential = await page.locator(".code-output").textContent();
-  expect(recoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
-  await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
-  await expect(page).toHaveURL(/\/workspace$/);
-  await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
-  return String(recoveryCredential);
-}
-
 test("@live operator passkey registration, authentication and governed recovery survive browser readback", async ({ page }) => {
   test.setTimeout(90_000);
   const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
@@ -257,7 +178,6 @@ test("@live operator passkey registration, authentication and governed recovery 
   const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
   const bootstrapToken = requiredEnv("PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN");
   const operator = await prepareOperator(identityBase, controlToken, bootstrapToken);
-  const independentOperator = await provisionIndependentOperator(identityBase, controlToken, operator.actorId);
   const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
   await enableVirtualAuthenticator(page);
   const firstRecoveryCredential = await registerOperator(page, operator, baseUrl, mailpitBase);
@@ -266,17 +186,6 @@ test("@live operator passkey registration, authentication and governed recovery 
   expect(firstSession.body.identity.subject).toBe(operator.actorId);
   expect(firstSession.body.identity.role).toBe("operator");
   expect(firstSession.body.identity.surface).toBe("control-panel");
-
-  const browser = page.context().browser();
-  if (!browser) throw new Error("live Identity proof requires a browser instance for the independent operator fixture");
-  const independentContext = await browser.newContext();
-  const independentPage = await independentContext.newPage();
-  try {
-    await enableVirtualAuthenticator(independentPage);
-    await registerOperator(independentPage, independentOperator, baseUrl, mailpitBase);
-  } finally {
-    await independentContext.close();
-  }
 
   // Expired access + dropped response: the next independent browser request
   // sends the old cookies and receives the same canonical refresh generation.
