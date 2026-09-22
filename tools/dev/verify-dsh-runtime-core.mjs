@@ -387,7 +387,7 @@ if (!checkerOperatorID.startsWith("act_") || checkerOperatorID === actingOperato
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "38", "DSH migration history is not v38");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "37", "DSH migration history is not v37");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -416,7 +416,6 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=35", "035_order_fulfillment_mode.sql", "DSH fulfillment-mode migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=36", "036_commerce_financial_handoff_outbox.sql", "DSH financial handoff outbox migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=37", "037_financial_handoff_actor_provenance.sql", "DSH financial handoff provenance migration is not canonical");
-  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=38", "038_captain_cod_reassignment_reservations.sql", "DSH Captain COD reassignment migration is not canonical");
   expectSQL("SELECT to_regclass('dsh.joining_case_financial_profile_outbox') IS NOT NULL", "t", "DSH financial profile outbox is missing");
   expectSQL("SELECT to_regclass('dsh.field_commission_publication_outbox') IS NOT NULL", "t", "DSH field commission publication outbox is missing");
   expectSQL("SELECT to_regclass('dsh.commerce_financial_handoff_outbox') IS NOT NULL", "t", "DSH financial handoff outbox is missing");
@@ -460,7 +459,8 @@ expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=5", "005_deliver
 expectSQL("SELECT to_regclass('wlt.delivery_fee_policies') IS NOT NULL AND to_regclass('wlt.delivery_fee_policy_events') IS NOT NULL", "t", "WLT delivery-fee policy relations are missing");
 expectSQL("SELECT to_regclass('wlt.official_wallet_destinations') IS NOT NULL AND to_regclass('wlt.official_wallet_destination_transitions') IS NOT NULL AND to_regclass('wlt.payout_requests') IS NOT NULL AND to_regclass('wlt.payout_holds') IS NOT NULL", "t", "WLT official-wallet destination and payout relations are missing");
 expectSQL("SELECT to_regclass('wlt.field_commission_policies') IS NOT NULL AND to_regclass('wlt.field_commission_earnings') IS NOT NULL", "t", "WLT field commission relations are missing");
-console.log("WLT_SCHEMA_V8=PASS");
+  expectSQL("SELECT name FROM wlt.schema_migrations WHERE version=13", "013_captain_cod_reassignment_reservations.sql", "WLT Captain COD reassignment migration is not canonical");
+  console.log("WLT_SCHEMA_V13=PASS");
 const cityAResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-a-${suffix}`), body: { displayNameAr: `مدينة أ ${citySuffix}`, active: true } });
 const cityBResponse = await request(dshBase, "POST", "/dsh/service-cities", { token: dshToken, headers: serviceHeaders(actingOperatorID, `city-b-${suffix}`), body: { displayNameAr: `مدينة ب ${citySuffix}`, active: true } });
 if (cityAResponse.status !== 201 || cityBResponse.status !== 201 || typeof cityAResponse.body?.city?.id !== "string" || typeof cityBResponse.body?.city?.id !== "string") fail("service city fixtures could not be created", JSON.stringify({ cityAResponse, cityBResponse }));

@@ -15,7 +15,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const SchemaVersion = 12
+const SchemaVersion = 13
 
 type MigrationRecord struct {
 	Version int
@@ -42,7 +42,7 @@ func LoadMigrations(directory string) ([]MigrationRecord, []string, error) {
 	if directory == "" {
 		return nil, nil, errors.New("WLT_MIGRATION_DIR is required")
 	}
-	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql", "004_payment_allocations.sql", "005_delivery_fee_policies.sql", "006_partner_order_earnings_ledger.sql", "007_official_wallet_destinations_and_payout_intents.sql", "008_field_commission_policies_and_earnings.sql", "009_manual_settlement_governance.sql", "010_captain_wallet_cod_reservations.sql", "011_captain_cod_collateral_settlement.sql", "012_customer_payment_allocation_refoundation.sql"}
+	names := []string{"001_payment_intents.sql", "002_cash_remittances.sql", "003_partner_financial_profiles.sql", "004_payment_allocations.sql", "005_delivery_fee_policies.sql", "006_partner_order_earnings_ledger.sql", "007_official_wallet_destinations_and_payout_intents.sql", "008_field_commission_policies_and_earnings.sql", "009_manual_settlement_governance.sql", "010_captain_wallet_cod_reservations.sql", "011_captain_cod_collateral_settlement.sql", "012_customer_payment_allocation_refoundation.sql", "013_captain_cod_reassignment_reservations.sql"}
 	records := make([]MigrationRecord, 0, len(names))
 	sqls := make([]string, 0, len(names))
 	for version, name := range names {
