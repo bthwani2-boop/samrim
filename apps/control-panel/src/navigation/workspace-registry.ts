@@ -1,4 +1,4 @@
-export type WorkspaceChild = Readonly<{
+type WorkspaceChild = Readonly<{
   href: string;
   label: string;
 }>;

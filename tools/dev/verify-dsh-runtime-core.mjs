@@ -411,7 +411,7 @@ if (!checkerOperatorID.startsWith("act_") || checkerOperatorID === actingOperato
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-  expectSQL("SELECT count(*) FROM dsh.schema_migrations", "40", "DSH migration history is not v40");
+  expectSQL("SELECT count(*) FROM dsh.schema_migrations", "43", "DSH migration history is not v43");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -443,6 +443,9 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=38", "038_order_conversation.sql", "DSH order-conversation migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=39", "039_promotions_discovery_content.sql", "DSH promotions/discovery migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=40", "040_multi_store_checkout.sql", "DSH multi-store checkout migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=41", "041_store_profile_media.sql", "DSH store profile media migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=42", "042_field_notifications.sql", "DSH field notifications migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=43", "043_discovery_content_analytics.sql", "DSH discovery analytics migration is not canonical");
   expectSQL("SELECT to_regclass('dsh.joining_case_financial_profile_outbox') IS NOT NULL", "t", "DSH financial profile outbox is missing");
   expectSQL("SELECT to_regclass('dsh.field_commission_publication_outbox') IS NOT NULL", "t", "DSH field commission publication outbox is missing");
   expectSQL("SELECT to_regclass('dsh.commerce_financial_handoff_outbox') IS NOT NULL", "t", "DSH financial handoff outbox is missing");
