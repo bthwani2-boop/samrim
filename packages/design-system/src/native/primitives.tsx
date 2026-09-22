@@ -41,7 +41,7 @@ export function BthwaniIconButton({ icon, label, tone = "surface", size = sizing
   const iconColor = tone === "primary" ? theme.onAction : theme.interactiveText;
   const toneStyle = tone === "soft" ? styles.iconButtonSoft : tone === "primary" ? styles.iconButtonPrimary : styles.iconButtonSurface;
   return (
-    <Pressable {...props} accessibilityLabel={label} accessibilityRole={props.accessibilityRole ?? "button"} style={(state) => [styles.iconButton, toneStyle, { height: size, width: size }, state.pressed && styles.buttonPressed, resolvePressableStyle(style, state)]}>
+    <Pressable {...props} accessibilityLabel={label} accessibilityRole={props.accessibilityRole ?? "button"} hitSlop={props.hitSlop ?? 4} style={(state) => [styles.iconButton, toneStyle, { height: size, width: size }, state.pressed && styles.buttonPressed, resolvePressableStyle(style, state)]}>
       <BthwaniIcon name={icon} color={iconColor} size={sizing.iconMd} />
     </Pressable>
   );

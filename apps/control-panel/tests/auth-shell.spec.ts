@@ -55,11 +55,48 @@ test("authenticated operator discovers the platform centers through workspace na
   await expect(page.getByRole("heading", { name: "الحسابات والأدوار" })).toBeVisible();
 });
 
+test("authenticated operator can open the notification center from the workspace header", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  await page.route("**/api/notifications**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ notifications: [], unreadCount: 0 }) });
+  });
+  await page.goto("/workspace");
+
+  const notificationLink = page.getByRole("link", { name: "الإشعارات", exact: true }).first();
+  await expect(notificationLink).toBeVisible();
+  await notificationLink.click();
+  await expect(page).toHaveURL(/\/notifications$/);
+  await expect(page.getByRole("heading", { name: "الإشعارات", exact: true })).toBeVisible();
+  await expect(page.getByText("لا توجد إشعارات حالياً", { exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الإشعارات", exact: true })).toHaveAttribute("aria-current", "page");
+});
+
+test("operator notification cards write back read state and update the unread summary", async ({ page }) => {
+  await stubAuthenticatedSession(page);
+  let read = false;
+  await page.route("**/api/notifications**", async (route) => {
+    if (route.request().method() === "POST") {
+      read = true;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ notificationId: "order:1", readAt: "2026-09-22T11:00:00.000Z" }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ notifications: [{ id: "order:1", kind: "ORDER_CREATED", title: "وصل طلب جديد", body: "وصل طلب جديد إلى متجرك.", orderId: "order_1", createdAt: "2026-09-22T10:00:00.000Z", readAt: read ? "2026-09-22T11:00:00.000Z" : null }], unreadCount: read ? 0 : 1 }) });
+  });
+  await page.goto("/notifications");
+
+  await expect(page.getByRole("button", { name: "وصل طلب جديد، جديد" })).toBeVisible();
+  await page.getByRole("button", { name: "وصل طلب جديد، جديد" }).click();
+  await expect(page.getByRole("button", { name: "وصل طلب جديد، مقروء" })).toBeVisible();
+  await expect(page.getByText("0 إشعارات غير مقروءة", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "المقروءة", exact: true })).toBeVisible();
+});
+
 test("workspace routes keep one main landmark and an actor-specific page hierarchy", async ({ page }) => {
   test.setTimeout(120_000);
   await stubAuthenticatedSession(page);
   const routes = [
     ["/workspace", "الرئيسية"],
+    ["/notifications", "الإشعارات"],
     ["/access", "الحسابات والأدوار"],
     ["/partners", "انضمام الشركاء"],
     ["/operations", "العمليات"],
@@ -74,7 +111,7 @@ test("workspace routes keep one main landmark and an actor-specific page hierarc
     await expect(page.locator("#workspace-main")).toHaveCount(1, { timeout: 30_000 });
     await expect(page.locator("#workspace-main > main")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 30_000 });
-    const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : path === "/access" ? "إعدادات المنصة والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج";
+    const navigationLabel = heading === "الرئيسية" ? "الرئيسية" : heading === "الإشعارات" ? "الإشعارات" : path === "/access" ? "إعدادات المنصة والصلاحيات" : path === "/partners" ? "الشركاء" : path === "/operations" ? "العمليات" : path === "/finance" ? "المالية" : path === "/captains" ? "الكباتن" : path === "/fields" ? "الميدان" : "الكتالوج";
     await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: navigationLabel, exact: true })).toHaveAttribute("aria-current", "page", { timeout: 30_000 });
   }
 });

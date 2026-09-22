@@ -32,7 +32,7 @@ export function createCaptainTabOptions(theme: ReturnType<typeof resolveTheme>) 
 
 function CaptainHeader({ styles }: { styles: ReturnType<typeof createStyles> }) {
   const router = useRouter();
-  return <View style={styles.header}><View><Text style={styles.brand}>بثواني · الكابتن</Text><Text style={styles.context}>الجاهزية والتوصيل</Text></View><View style={styles.headerActions}><BthwaniIconButton icon="search" label="البحث في العروض" onPress={() => router.push("/offers?focus=search" as Href)} size={sizing.controlSm} tone="soft" /><BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" /><BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" /></View></View>;
+  return <View style={styles.header}><View><Text style={styles.brand}>بثواني · الكابتن</Text><Text style={styles.context}>الجاهزية والتوصيل</Text></View><View style={styles.headerActions}><BthwaniIconButton icon="search" label="البحث في العروض" onPress={() => router.push("/offers?focus=search" as Href)} size={sizing.controlMd} tone="soft" /><BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" /><BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" /></View></View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {
@@ -41,7 +41,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     header: { alignItems: "center", backgroundColor: theme.surface, borderBottomColor: theme.borderColor, borderBottomWidth: borders.hairline, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: spacing[5], paddingVertical: spacing[3] },
     brand: { ...typography.titleMd, color: theme.color },
     context: { ...typography.caption, color: theme.colorMuted, marginTop: spacing[1] },
-    headerActions: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
+    headerActions: { alignItems: "center", flexDirection: "row", gap: spacing[2] },
     scene: { backgroundColor: theme.background },
     screenContent: { flexGrow: 1, paddingBottom: spacing[5], paddingHorizontal: spacing[5], width: "100%" },
     navigation: { backgroundColor: theme.surface, borderTopColor: theme.borderColor, borderTopWidth: borders.hairline, elevation: 8, paddingHorizontal: spacing[2], paddingTop: spacing[2], zIndex: 8 },

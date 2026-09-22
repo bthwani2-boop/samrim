@@ -46,7 +46,18 @@ func (s *Service) List(ctx context.Context, accessToken string, limit int) (List
 	if err != nil {
 		return ListResult{}, err
 	}
-	result, err := postgres.ListNotifications(ctx, s.db, identity.Subject, role, limit)
+	return s.listForSubject(ctx, identity.Subject, role, limit)
+}
+
+func (s *Service) ListForOperator(ctx context.Context, operatorActorID string, limit int) (ListResult, error) {
+	return s.listForSubject(ctx, strings.TrimSpace(operatorActorID), "operator", limit)
+}
+
+func (s *Service) listForSubject(ctx context.Context, subject, role string, limit int) (ListResult, error) {
+	if strings.TrimSpace(subject) == "" {
+		return ListResult{}, ErrSessionForbidden
+	}
+	result, err := postgres.ListNotifications(ctx, s.db, subject, role, limit)
 	if err != nil {
 		return ListResult{}, err
 	}
@@ -66,7 +77,18 @@ func (s *Service) MarkRead(ctx context.Context, accessToken, notificationID stri
 	if err != nil {
 		return time.Time{}, err
 	}
-	return postgres.MarkNotificationRead(ctx, s.db, identity.Subject, role, notificationID)
+	return s.markReadForSubject(ctx, identity.Subject, role, notificationID)
+}
+
+func (s *Service) MarkReadForOperator(ctx context.Context, operatorActorID, notificationID string) (time.Time, error) {
+	return s.markReadForSubject(ctx, strings.TrimSpace(operatorActorID), "operator", notificationID)
+}
+
+func (s *Service) markReadForSubject(ctx context.Context, subject, role, notificationID string) (time.Time, error) {
+	if strings.TrimSpace(subject) == "" {
+		return time.Time{}, ErrSessionForbidden
+	}
+	return postgres.MarkNotificationRead(ctx, s.db, subject, role, notificationID)
 }
 
 func (s *Service) requireSession(ctx context.Context, accessToken string) (stringIdentity, string, error) {
@@ -90,6 +112,7 @@ func validNotificationSession(subject, role, surface string) bool {
 	case role == "partner" && surface == "app-partner":
 	case role == "captain" && surface == "app-captain":
 	case role == "field" && surface == "app-field":
+	case role == "operator" && surface == "control-panel":
 	default:
 		return false
 	}
@@ -104,7 +127,7 @@ func present(event postgres.NotificationEvent, role string) View {
 }
 
 func message(eventType, role, orderID string) (string, string, string) {
-	if role == "field" {
+	if role == "field" || (role == "operator" && strings.HasPrefix(eventType, "joining_case_")) {
 		switch eventType {
 		case "joining_case_created":
 			return "FIELD_CASE_CREATED", "تم إنشاء ملف الانضمام", "تم إنشاء ملف انضمام جديد لمتابعته ميدانيًا."

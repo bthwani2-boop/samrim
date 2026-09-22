@@ -1,13 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
-import { useSession } from "../../src/session/session-provider";
-import { AppearanceControl } from "../../src/shell/appearance-control";
+import { Fragment, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { IdentitySurface } from "../../src/features/access/identity-surface";
 import { currentWorkspaceChild, currentWorkspaceDestination, isCurrentWorkspaceDestination, isCurrentWorkspacePath, workspaceDestinations } from "../../src/navigation/workspace-registry";
+import { useSession } from "../../src/session/session-provider";
+import { AppearanceControl } from "../../src/shell/appearance-control";
+import { ControlShell, LoadingState, UnavailableState } from "../../src/shell/public-shell";
 import "../../src/features/access/access-surface.module.css";
 import "../../src/shell/workspace-shell.module.css";
 import "../../src/shell/responsive-shell.module.css";
@@ -69,26 +69,29 @@ function WorkspaceHeader({
         <WorkspaceBreadcrumbs pathname={pathname} />
         <span className="actor-context">لوحة التحكم · جلسة موثقة</span>
       </div>
-      <button
-        ref={navTriggerRef}
-        className="workspace-nav-toggle"
-        type="button"
-        aria-controls="workspace-navigation"
-        aria-expanded={navOpen}
-        onClick={onOpenNavigation}
-      >
-        <span aria-hidden="true">☰</span>
-        <span className="visually-hidden">فتح مسارات العمل</span>
-      </button>
-      <details className="account-menu">
-        <summary>حساب المشغل</summary>
-        <div className="account-menu-panel">
-          <AppearanceControl />
-          <button type="button" className="button button-secondary workspace-logout" disabled={busy} onClick={onLogout}>
-            {busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}
-          </button>
-        </div>
-      </details>
+      <div className="workspace-header-tools">
+        <Link className="workspace-notifications-link" href="/notifications" aria-current={pathname === "/notifications" ? "page" : undefined}>الإشعارات</Link>
+        <details className="account-menu">
+          <summary>حساب المشغل</summary>
+          <div className="account-menu-panel">
+            <AppearanceControl />
+            <button type="button" className="button button-secondary workspace-logout" disabled={busy} onClick={onLogout}>
+              {busy ? "جارٍ إنهاء الجلسة…" : "تسجيل الخروج"}
+            </button>
+          </div>
+        </details>
+        <button
+          ref={navTriggerRef}
+          className="workspace-nav-toggle"
+          type="button"
+          aria-controls="workspace-navigation"
+          aria-expanded={navOpen}
+          onClick={onOpenNavigation}
+        >
+          <span aria-hidden="true">☰</span>
+          <span className="visually-hidden">فتح مسارات العمل</span>
+        </button>
+      </div>
     </header>
   );
 }

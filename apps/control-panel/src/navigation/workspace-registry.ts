@@ -49,6 +49,7 @@ const marketingChildren: readonly WorkspaceChild[] = workspaceMarketingResources
 
 export const workspaceDestinations: readonly WorkspaceDestination[] = [
   { href: "/workspace", label: "الرئيسية", section: "نظرة عامة", children: [] },
+  { href: "/notifications", label: "الإشعارات", section: "نظرة عامة", children: [] },
   {
     href: "/operations",
     label: "العمليات",

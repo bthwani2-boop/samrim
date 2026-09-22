@@ -39,9 +39,9 @@ function ClientHeader({ context, searchHref, styles }: { context: string; search
         </View>
       </View>
       <View style={styles.headerActions}>
-        <BthwaniIconButton icon="search" label="البحث عن متجر" onPress={() => router.push(searchHref)} size={sizing.controlSm} tone="soft" />
-        <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" />
-        <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" />
+        <BthwaniIconButton icon="search" label="البحث عن متجر" onPress={() => router.push(searchHref)} size={sizing.controlMd} tone="soft" />
+        <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/notifications" as Href)} size={sizing.controlMd} tone="soft" />
+        <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlMd} tone="soft" />
       </View>
     </View>
   );

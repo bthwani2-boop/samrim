@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { currentIdentityState, logoutIdentity } from "../../bootstrap/identity";
 import LocationCore from "../location-core/location-core";
-import { NotificationsInbox } from "../notifications/notifications-inbox";
 
 export default function ClientAccount() {
   const router = useRouter();
@@ -33,8 +32,6 @@ export default function ClientAccount() {
       <Text style={styles.eyebrow}>مساحتك</Text>
       <Text style={styles.title}>إدارة حسابك</Text>
       <Text style={styles.description}>كل ما تحتاجه لإدارة التوصيل، العناوين، ومظهر تطبيق بثواني.</Text>
-
-      <NotificationsInbox />
 
       <BthwaniSectionHeader title="مظهر التطبيق" subtitle="غيّر المظهر في أي وقت؛ ويُحفظ اختيارك على هذا الجهاز." />
       <BthwaniSurface tone="raised" style={styles.appearancePanel}>

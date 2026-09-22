@@ -18,8 +18,17 @@ func TestFieldNotificationQueryUsesOriginatingFieldActor(t *testing.T) {
 	}
 }
 
+func TestOperatorNotificationQueryIncludesAllOperationalAudits(t *testing.T) {
+	query := visibleNotificationEvents("operator")
+	for _, table := range []string{"commerce_order_audit", "captain_audit", "joining_case_audit"} {
+		if !strings.Contains(query, table) {
+			t.Fatalf("operator notification query does not include %s: %q", table, query)
+		}
+	}
+}
+
 func TestUnknownNotificationRoleHasNoVisibleEvents(t *testing.T) {
-	if query := visibleNotificationEvents("operator"); query != "" {
+	if query := visibleNotificationEvents("unknown"); query != "" {
 		t.Fatalf("expected unknown notification role to have no query, got %q", query)
 	}
 }

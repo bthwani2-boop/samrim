@@ -31,8 +31,9 @@
   :global(.workspace-resource-grid) { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
-  :global(.workspace-header) { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; }
+  :global(.workspace-header) { gap: 12px; }
   :global(.workspace-actor-context) { justify-items: start; text-align: start; }
+  :global(.workspace-header-tools) { gap: 6px; }
   :global(.account-menu) { min-width: 0; }
   :global(.account-menu-panel) { inset-inline-end: 0; }
   :global(.appearance-control) { min-width: 0; }
@@ -53,7 +54,12 @@
   :global(.workspace-breadcrumbs li) { min-width: 0; }
   :global(.workspace-breadcrumbs li:last-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   :global(.actor-context) { font-size: 11px; }
-  :global(.workspace-header) { grid-template-columns: auto 1fr auto; }
+  :global(.workspace-header) { gap: 8px; }
+  :global(.workspace-header-tools) { min-width: 0; }
+  :global(.workspace-notifications-link) { padding-inline: 8px; font-size: 11px; }
+  :global(.workspace-header-tools .account-menu) { min-width: 0 !important; width: min(120px, 31vw); }
+  :global(.account-menu > summary) { width: 100%; overflow: hidden; padding-inline: 8px; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  :global(.workspace-nav-toggle) { width: var(--size-controlMd); min-width: var(--size-controlMd); padding: 0; }
   :global(.admission-form) { grid-template-columns: 1fr; }
   :global(.admission-form .button) { width: 100%; }
 }

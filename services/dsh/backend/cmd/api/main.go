@@ -125,7 +125,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	notificationServer, err := transporthttp.NewNotification(identityClient, database)
+	notificationServer, err := transporthttp.NewNotification(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
 	if err != nil {
 		log.Fatal(err)
 	}

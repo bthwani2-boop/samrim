@@ -138,6 +138,21 @@ func visibleNotificationEvents(role string) string {
 		FROM dsh.joining_case_audit audit
 		JOIN dsh.joining_cases cases ON cases.id = audit.case_id
 		WHERE cases.originating_field_actor_id = $1`
+	const operator = `
+		SELECT 'order:' || audit.id::text AS notification_id, audit.event_type, audit.order_id,
+		       audit.to_state, audit.created_at
+		FROM dsh.commerce_order_audit audit
+		WHERE audit.order_id IS NOT NULL
+		UNION ALL
+		SELECT 'captain:' || audit.id::text AS notification_id, audit.event_type, audit.order_id,
+		       audit.to_state, audit.created_at
+		FROM dsh.captain_audit audit
+		WHERE audit.order_id IS NOT NULL
+		UNION ALL
+		SELECT 'field:' || audit.id::text AS notification_id, audit.event_type, ''::text AS order_id,
+		       audit.to_state, audit.created_at
+		FROM dsh.joining_case_audit audit
+		WHERE audit.case_id IS NOT NULL`
 	switch role {
 	case "client":
 		return fmt.Sprintf(clientOrPartner, "WHERE orders.client_actor_id = $1", "WHERE orders.client_actor_id = $1")
@@ -147,6 +162,8 @@ func visibleNotificationEvents(role string) string {
 		return captain
 	case "field":
 		return field
+	case "operator":
+		return operator
 	default:
 		return ""
 	}
