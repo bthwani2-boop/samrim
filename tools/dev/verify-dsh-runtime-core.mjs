@@ -140,14 +140,20 @@ function cleanup() {
   }
   for (const payoutID of payoutIDs) {
     const value = sqlLiteral(payoutID);
+    const ledgerTransactionID = sql(`SELECT COALESCE(ledger_transaction_id,'') FROM wlt.payout_requests WHERE id='${value}'`);
     sql(`DELETE FROM wlt.payout_audit_events WHERE payout_id='${value}'`);
     sql(`DELETE FROM wlt.manual_transfer_executions WHERE payout_id='${value}'`);
     sql(`DELETE FROM wlt.settlement_batch_items WHERE payout_id='${value}'`);
     sql(`DELETE FROM wlt.approved_payout_snapshots WHERE payout_id='${value}'`);
-    sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id=(SELECT ledger_transaction_id FROM wlt.payout_requests WHERE id='${value}')`);
-    sql(`DELETE FROM wlt.ledger_transactions WHERE source_type='MANUAL_EXTERNAL_TRANSFER' AND source_id='${value}'`);
+    if (ledgerTransactionID) {
+      const ledgerValue = sqlLiteral(ledgerTransactionID);
+      sql(`DELETE FROM wlt.ledger_entries WHERE transaction_id='${ledgerValue}'`);
+    }
     sql(`DELETE FROM wlt.payout_holds WHERE payout_id='${value}'`);
     sql(`DELETE FROM wlt.payout_requests WHERE id='${value}'`);
+    if (ledgerTransactionID) {
+      sql(`DELETE FROM wlt.ledger_transactions WHERE id='${sqlLiteral(ledgerTransactionID)}'`);
+    }
   }
   for (const destinationID of destinationIDs) {
     sql(`DELETE FROM wlt.official_wallet_destination_transitions WHERE destination_id='${sqlLiteral(destinationID)}'`);
@@ -1291,7 +1297,9 @@ console.log("DSH_PUBLIC_STORE_RATING=PASS");
 console.log("DSH_ORDER_RATING=PASS");
 const captainAuditCount = sql(`SELECT count(*) FROM dsh.captain_audit WHERE order_id='${sqlLiteral(orderID)}'`);
 const captainOperationCount = sql(`SELECT count(*) FROM dsh.captain_operation_idempotency WHERE order_id='${sqlLiteral(orderID)}'`);
-if (captainAuditCount !== "9" || captainOperationCount !== "9" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='delivery_failed' AND order_id='${sqlLiteral(orderID)}'`) !== "1" || sql(`SELECT count(*) FROM dsh.captain_audit WHERE event_type='delivery_recovered' AND order_id='${sqlLiteral(orderID)}'`) !== "1") fail("Captain audit/idempotency readback is incomplete", JSON.stringify({ captainAuditCount, captainOperationCount }));
+const captainAuditEventCounts = sql(`SELECT string_agg(event_type || ':' || event_count::text, ',' ORDER BY event_type) FROM (SELECT event_type, count(*) AS event_count FROM dsh.captain_audit WHERE order_id='${sqlLiteral(orderID)}' GROUP BY event_type) events`);
+const captainOperationCounts = sql(`SELECT string_agg(operation || ':' || operation_count::text, ',' ORDER BY operation) FROM (SELECT operation, count(*) AS operation_count FROM dsh.captain_operation_idempotency WHERE order_id='${sqlLiteral(orderID)}' GROUP BY operation) operations`);
+if (captainAuditCount !== "11" || captainOperationCount !== "11" || captainAuditEventCounts !== "captain_assignment_reassigned:1,captain_pickup_completed:1,delivery_completed:1,delivery_failed:1,delivery_recovered:1,dispatch_offer_accepted:2,dispatch_offer_created:2,dispatch_offer_rejected:1,store_handoff_confirmed:1" || captainOperationCounts !== "complete:2,dispatch:2,reassign:1,recover:1,respond_offer:3,store_confirm:1") fail("Captain audit/idempotency readback is incomplete", JSON.stringify({ captainAuditCount, captainOperationCount, captainAuditEventCounts, captainOperationCounts }));
 console.log("DSH_CAPTAIN_DISPATCH_HANDOFF_DELIVERY=PASS");
 
 const clientNotifications = await request(dshBase, "GET", "/dsh/notifications?limit=50", { token: client.accessToken });
