@@ -83,7 +83,6 @@ func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId 
 	return pair, nil
 }
 
-type roleSessionReadiness
 type roleSessionReadiness struct {
 	enabled            bool
 	securityEnabled    bool
@@ -108,7 +107,6 @@ func roleSessionReady(role string, readiness roleSessionReadiness) bool {
 	}
 }
 
-func readRoleSessionReadinessTx
 func readRoleSessionReadinessTx(ctx context.Context, tx *sql.Tx, actorID, role string) (roleSessionReadiness, error) {
 	var readiness roleSessionReadiness
 	err := tx.QueryRowContext(ctx, `SELECT r.enabled,
