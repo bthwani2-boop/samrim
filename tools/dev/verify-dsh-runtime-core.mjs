@@ -387,7 +387,7 @@ if (!checkerOperatorID.startsWith("act_") || checkerOperatorID === actingOperato
 
 for (const endpoint of ["/dsh/health", "/dsh/readiness"]) { const response = await request(dshBase, "GET", endpoint); if (response.status !== 200 || response.body?.status !== "ok") fail(`${endpoint} is not ready`, JSON.stringify(response.body)); }
 for (const endpoint of ["/dsh/managed-roles/provision", "/dsh/managed-roles/status", "/dsh/managed-roles/disable", "/dsh/managed-roles/enable", "/dsh/managed-roles/reenrollment"]) { const response = await request(dshBase, endpoint.endsWith("status") ? "GET" : "POST", endpoint, { token: dshToken }); if (response.status !== 404) fail("retired DSH managed-access endpoint remains reachable", JSON.stringify({ endpoint, response })); }
-expectSQL("SELECT count(*) FROM dsh.schema_migrations", "37", "DSH migration history is not v37");
+expectSQL("SELECT count(*) FROM dsh.schema_migrations", "38", "DSH migration history is not v38");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=10", "010_central_catalog_refoundation.sql", "DSH catalog refoundation migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=11", "011_cart_checkout_order.sql", "DSH Cart/Checkout/Order migration is not canonical");
 expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=12", "012_catalog_semantic_correction.sql", "DSH catalog semantic correction migration is not canonical");
@@ -416,6 +416,7 @@ expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=22", "022_order_
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=35", "035_order_fulfillment_mode.sql", "DSH fulfillment-mode migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=36", "036_commerce_financial_handoff_outbox.sql", "DSH financial handoff outbox migration is not canonical");
   expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=37", "037_financial_handoff_actor_provenance.sql", "DSH financial handoff provenance migration is not canonical");
+  expectSQL("SELECT name FROM dsh.schema_migrations WHERE version=38", "038_captain_cod_reassignment_reservations.sql", "DSH Captain COD reassignment migration is not canonical");
   expectSQL("SELECT to_regclass('dsh.joining_case_financial_profile_outbox') IS NOT NULL", "t", "DSH financial profile outbox is missing");
   expectSQL("SELECT to_regclass('dsh.field_commission_publication_outbox') IS NOT NULL", "t", "DSH field commission publication outbox is missing");
   expectSQL("SELECT to_regclass('dsh.commerce_financial_handoff_outbox') IS NOT NULL", "t", "DSH financial handoff outbox is missing");
@@ -1081,10 +1082,8 @@ expectSQL(`SELECT state FROM wlt.captain_cod_reservations WHERE order_id='${sqlL
 const firstCaptainWalletAfterReassign = await request(wltBase, "GET", `/wlt/v1/captains/${encodeURIComponent(captainActorID)}/wallet-state`, { token: wltToken });
 if (firstCaptainWalletAfterReassign.status !== 200 || firstCaptainWalletAfterReassign.body?.state?.availableMinor !== mainOrderTotal || firstCaptainWalletAfterReassign.body?.state?.heldMinor !== 0) fail("reassignment did not restore previous Captain collateral", JSON.stringify(firstCaptainWalletAfterReassign));
 
-const secondCaptainWalletBeforeReassignAccept = await request(wltBase, "GET", `/wlt/v1/captains/${encodeURIComponent(secondCaptainActorID)}/wallet-state`, { token: wltToken });
-const reassignmentFinancialReadback = sql(`SELECT (SELECT p.state || ':' || a.cash_amount_minor::text FROM wlt.payment_intents p JOIN wlt.customer_payment_allocations a ON a.payment_intent_id=p.id WHERE p.id='${sqlLiteral(paymentIntentID)}' AND a.order_id='${sqlLiteral(orderID)}') || '|' || COALESCE((SELECT string_agg(captain_actor_id || ':' || state || ':' || amount_minor::text, ',' ORDER BY captain_actor_id) FROM wlt.captain_cod_reservations WHERE order_id='${sqlLiteral(orderID)}' AND payment_intent_id='${sqlLiteral(paymentIntentID)}'), 'none')`);
 const reassignedAccepted = await request(dshBase, "POST", `/dsh/captains/me/offers/${encodeURIComponent(reassignedOfferID)}/respond`, { token: secondCaptainAccessToken, headers: partnerHeaders(`captain-accept-reassigned-${suffix}`, 1), body: { decision: "accept" } });
-if (reassignedAccepted.status !== 200 || reassignedAccepted.body?.offer?.state !== "accepted" || reassignedAccepted.body?.assignment?.state !== "assigned" || reassignedAccepted.body.assignment.captainActorId !== secondCaptainActorID) fail("reassigned Captain did not accept the replacement offer", JSON.stringify({ reassignedAccepted, secondCaptainWalletBeforeReassignAccept, reassignmentFinancialReadback }));
+if (reassignedAccepted.status !== 200 || reassignedAccepted.body?.offer?.state !== "accepted" || reassignedAccepted.body?.assignment?.state !== "assigned" || reassignedAccepted.body.assignment.captainActorId !== secondCaptainActorID) fail("reassigned Captain did not accept the replacement offer", JSON.stringify(reassignedAccepted));
 const activeCaptainActorID = secondCaptainActorID;
 const activeCaptainAccessToken = secondCaptainAccessToken;
 const activeCaptainAssignmentID = String(reassignedAccepted.body.assignment.id); captainAssignmentIDs.add(activeCaptainAssignmentID);
