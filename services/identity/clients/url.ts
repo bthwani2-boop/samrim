@@ -12,5 +12,7 @@ export function validateServiceUrl(value: string, name = "SERVICE_URL"): string 
   if (process.env.NODE_ENV === "production" && parsed.protocol !== "https:" && !localDevelopment) {
     throw new Error(`${name}_HTTPS_REQUIRED`);
   }
-  return trimmed.replace(/\/+$/, "");
+  let normalized = trimmed;
+  while (normalized.endsWith("/")) normalized = normalized.slice(0, -1);
+  return normalized;
 }
