@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
@@ -152,12 +153,16 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 	}
 	offerID = strings.TrimSpace(offerID)
 	decision = strings.ToLower(strings.TrimSpace(decision))
+	requestHash := postgres.HashCaptainOfferResponse(offerID, decision, expectedVersion)
 	if decision != "accept" {
-		return postgres.RespondToCaptainOffer(ctx, s.db, offerID, identity.Subject, decision, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainOfferResponse(offerID, decision, expectedVersion), strings.TrimSpace(correlationID))
+		return postgres.RespondToCaptainOffer(ctx, s.db, offerID, identity.Subject, decision, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(correlationID))
 	}
 	offer, err := postgres.ReadCaptainOffer(ctx, s.db, offerID)
 	if err != nil {
 		return postgres.CaptainOfferResult{}, err
+	}
+	if offer.State != "offered" || !time.Now().UTC().Before(offer.ExpiresAt) {
+		return postgres.RespondToCaptainOffer(ctx, s.db, offerID, identity.Subject, decision, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(correlationID))
 	}
 	order, err := postgres.ReadOrder(ctx, s.db, offer.OrderID)
 	if err != nil {
@@ -171,7 +176,7 @@ func (s *Service) RespondToOffer(ctx context.Context, accessToken, offerID, deci
 		}
 		reserved = true
 	}
-	result, respondErr := postgres.RespondToCaptainOffer(ctx, s.db, offerID, identity.Subject, decision, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCaptainOfferResponse(offerID, decision, expectedVersion), strings.TrimSpace(correlationID))
+	result, respondErr := postgres.RespondToCaptainOffer(ctx, s.db, offerID, identity.Subject, decision, expectedVersion, strings.TrimSpace(idempotencyKey), requestHash, strings.TrimSpace(correlationID))
 	if respondErr == nil || !reserved {
 		return result, respondErr
 	}
