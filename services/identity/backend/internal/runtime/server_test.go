@@ -28,6 +28,9 @@ func setRuntimeConfigBaseline(t *testing.T) {
 	t.Setenv("IDENTITY_RETENTION_BATCH_SIZE", "500")
 	t.Setenv("IDENTITY_PROVIDER_BUDGET_PER_MINUTE", "60")
 	t.Setenv("IDENTITY_PROVIDER_BUDGET_PER_HOUR", "600")
+	for _, setting := range developmentActorEnvironment {
+		t.Setenv(setting.name, "")
+	}
 }
 
 func TestProductionRejectsMailpit(t *testing.T) {
@@ -108,5 +111,24 @@ func TestDevelopmentRejectsNonLocalChallengeDeliveryMode(t *testing.T) {
 	t.Setenv("IDENTITY_CHALLENGE_DELIVERY_MODE", "nonlocal")
 	if _, err := loadConfig("8082"); err == nil || !strings.Contains(err.Error(), "external challenge delivery modes are forbidden") {
 		t.Fatalf("development external delivery mode was accepted: %v", err)
+	}
+}
+
+func TestDevelopmentActorPinsAreDevelopmentOnly(t *testing.T) {
+	for _, setting := range developmentActorEnvironment {
+		t.Setenv(setting.name, "")
+	}
+	t.Setenv("IDENTITY_DEVELOPMENT_PARTNER_ACTOR_ID", " act_partner_dev ")
+
+	actorIDs, err := loadDevelopmentActorIDs("development")
+	if err != nil {
+		t.Fatalf("development actor pins rejected in development: %v", err)
+	}
+	if got := actorIDs["partner"]; got != "act_partner_dev" {
+		t.Fatalf("partner development actor = %q, want act_partner_dev", got)
+	}
+
+	if _, err := loadDevelopmentActorIDs("staging"); err == nil || !strings.Contains(err.Error(), "IDENTITY_DEVELOPMENT_PARTNER_ACTOR_ID") {
+		t.Fatalf("staging accepted development actor pin: %v", err)
 	}
 }

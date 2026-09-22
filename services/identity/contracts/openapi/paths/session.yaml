@@ -35,7 +35,7 @@ paths:
     post:
       tags: [session]
       operationId: createDevelopmentSession
-      description: Development-only convenience that mints a role-scoped session only when exactly one existing enabled, security-enabled, authentication-ready actor/role has completed its required activation or enrollment. The route is not registered outside BTHWANI_ENV=development, never creates actors or roles, and fails with 409 rather than selecting an actor when more than one candidate is ready.
+      description: Development-only convenience that mints a role-scoped session only for the server-configured development actor of the requested role after verifying that the existing actor/role is enabled, security-enabled and authentication-ready. The client cannot select actor_id. The route is not registered outside BTHWANI_ENV=development, never creates actors or roles, returns 404 when no configured actor exists, and returns 409 when the configured actor is not ready.
       requestBody:
         required: true
         content:

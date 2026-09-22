@@ -164,20 +164,23 @@ func TestRoleSessionReadyRequiresCanonicalEnrollmentFacts(t *testing.T) {
 	}
 }
 
-func TestSelectDevelopmentSessionActorFailsClosedOnAmbiguity(t *testing.T) {
-	unready := roleSessionReadiness{enabled: true, securityEnabled: true, activated: true}
-	ready := roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passkeyCredential: true}
+func TestNewNormalizesDevelopmentActorConfiguration(t *testing.T) {
+	service := New(nil, []byte("01234567890123456789012345678901"), true, map[string]string{
+		" Partner ": " act_partner_dev ",
+		"client":    "   ",
+	})
+	if got := service.developmentActorIDs["partner"]; got != "act_partner_dev" {
+		t.Fatalf("partner development actor = %q, want act_partner_dev", got)
+	}
+	if _, exists := service.developmentActorIDs["client"]; exists {
+		t.Fatal("blank development actor configuration was retained")
+	}
+}
 
-	selected, err := selectDevelopmentSessionActor("operator", "", "act_unready", unready)
-	if err != nil || selected != "" {
-		t.Fatalf("unready candidate selected=%q err=%v, want empty selection without error", selected, err)
-	}
-	selected, err = selectDevelopmentSessionActor("operator", selected, "act_first", ready)
-	if err != nil || selected != "act_first" {
-		t.Fatalf("single ready candidate selected=%q err=%v, want act_first", selected, err)
-	}
-	_, err = selectDevelopmentSessionActor("operator", selected, "act_second", ready)
-	if !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("second ready candidate error=%v, want conflict", err)
+func TestCreateDevelopmentSessionRequiresConfiguredActorBeforeDatabaseAccess(t *testing.T) {
+	service := &Service{development: true, developmentActorIDs: map[string]string{}}
+	_, err := service.CreateDevelopment(context.Background(), "partner", "development-partner-instance")
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("CreateDevelopment() error = %v, want not found when no development actor is configured", err)
 	}
 }

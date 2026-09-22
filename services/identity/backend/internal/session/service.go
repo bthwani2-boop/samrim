@@ -14,18 +14,28 @@ import (
 )
 
 type Service struct {
-	db            *sql.DB
-	now           func() time.Time
-	refreshSecret []byte
-	development   bool
+	db                  *sql.DB
+	now                 func() time.Time
+	refreshSecret       []byte
+	development         bool
+	developmentActorIDs map[string]string
 }
 
 const refreshRaceGrace = 5 * time.Second
 
 const minimumAccessLifetime = time.Second
 
-func New(db *sql.DB, refreshSecret []byte, development bool) *Service {
-	return &Service{db: db, now: time.Now, refreshSecret: append([]byte(nil), refreshSecret...), development: development}
+func New(db *sql.DB, refreshSecret []byte, development bool, developmentActorIDs map[string]string) *Service {
+	normalizedActorIDs := make(map[string]string, len(developmentActorIDs))
+	for role, actorID := range developmentActorIDs {
+		role = strings.ToLower(strings.TrimSpace(role))
+		actorID = strings.TrimSpace(actorID)
+		if role == "" || actorID == "" {
+			continue
+		}
+		normalizedActorIDs[role] = actorID
+	}
+	return &Service{db: db, now: time.Now, refreshSecret: append([]byte(nil), refreshSecret...), development: development, developmentActorIDs: normalizedActorIDs}
 }
 
 func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId string) (domain.TokenPair, error) {
@@ -40,55 +50,31 @@ func (s *Service) CreateDevelopment(ctx context.Context, role, clientInstanceId 
 	if err != nil {
 		return domain.TokenPair{}, domain.ErrInvalidInput
 	}
+	actorID := strings.TrimSpace(s.developmentActorIDs[role])
+	if actorID == "" {
+		return domain.TokenPair{}, domain.ErrNotFound
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	rows, err := tx.QueryContext(ctx, `SELECT r.actor_id,
-r.enabled,
-a.security_enabled,
-(r.activated_at IS NOT NULL),
-EXISTS(SELECT 1 FROM identity_password_credentials c WHERE c.actor_id=r.actor_id AND c.role=r.role),
-EXISTS(SELECT 1 FROM identity_webauthn_credentials w WHERE w.actor_id=r.actor_id AND w.revoked_at IS NULL)
-FROM identity_actor_roles r
-JOIN identity_actors a ON a.id=r.actor_id
-WHERE r.role=$1
-ORDER BY r.created_at,r.actor_id
-FOR UPDATE OF r,a`, role)
+	readiness, err := readRoleSessionReadinessTx(ctx, tx, actorID, role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.TokenPair{}, domain.ErrNotFound
+	}
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	var actorID string
-	for rows.Next() {
-		var candidateActorID string
-		var readiness roleSessionReadiness
-		if err := rows.Scan(&candidateActorID, &readiness.enabled, &readiness.securityEnabled, &readiness.activated, &readiness.passwordCredential, &readiness.passkeyCredential); err != nil {
-			_ = rows.Close()
-			return domain.TokenPair{}, err
-		}
-		actorID, err = selectDevelopmentSessionActor(role, actorID, candidateActorID, readiness)
-		if err != nil {
-			_ = rows.Close()
-			return domain.TokenPair{}, err
-		}
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return domain.TokenPair{}, err
-	}
-	if err := rows.Close(); err != nil {
-		return domain.TokenPair{}, err
-	}
-	if actorID == "" {
-		return domain.TokenPair{}, domain.ErrNotFound
+	if !roleSessionReady(role, readiness) {
+		return domain.TokenPair{}, domain.ErrConflict
 	}
 	pair, err := s.createTx(ctx, tx, actorID, role, device)
 	if err != nil {
 		return domain.TokenPair{}, err
 	}
-	if err := auditTx(ctx, tx, "session.development_created", actorID, "development-local", "success", "", map[string]any{"sessionId": pair.Identity.SessionID, "role": role}); err != nil {
+	if err := auditTx(ctx, tx, "session.development_created", actorID, "development-local", "success", "", map[string]any{"sessionId": pair.Identity.SessionID, "role": role, "configuredActorId": actorID}); err != nil {
 		return domain.TokenPair{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -97,6 +83,7 @@ FOR UPDATE OF r,a`, role)
 	return pair, nil
 }
 
+type roleSessionReadiness
 type roleSessionReadiness struct {
 	enabled            bool
 	securityEnabled    bool
@@ -121,16 +108,7 @@ func roleSessionReady(role string, readiness roleSessionReadiness) bool {
 	}
 }
 
-func selectDevelopmentSessionActor(role, selectedActorID, candidateActorID string, readiness roleSessionReadiness) (string, error) {
-	if !roleSessionReady(role, readiness) {
-		return selectedActorID, nil
-	}
-	if selectedActorID != "" {
-		return "", domain.ErrConflict
-	}
-	return candidateActorID, nil
-}
-
+func readRoleSessionReadinessTx
 func readRoleSessionReadinessTx(ctx context.Context, tx *sql.Tx, actorID, role string) (roleSessionReadiness, error) {
 	var readiness roleSessionReadiness
 	err := tx.QueryRowContext(ctx, `SELECT r.enabled,
