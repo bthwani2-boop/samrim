@@ -37,6 +37,9 @@ type CheckoutQuote struct {
 	FulfillmentMode       string
 	CartVersion           int
 	SubtotalMinor         int64
+	DiscountMinor         int64
+	PromotionID           string
+	PromotionCode         string
 	DeliveryFeeMinor      int64
 	TotalAmountMinor      int64
 	Currency              string
@@ -101,7 +104,7 @@ func (s *Service) RemoveLine(ctx context.Context, accessToken, lineID string, ex
 	return postgres.RemoveCartLine(ctx, s.db, actorID, lineID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCartLineMutation("line_remove", "", lineID, 0, nil, expectedVersion), actorID, strings.TrimSpace(correlationID))
 }
 
-func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode string, expectedCartVersion int) (CheckoutQuote, error) {
+func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, expectedCartVersion int) (CheckoutQuote, error) {
 	actorID, err := s.requireClient(ctx, accessToken)
 	if err != nil {
 		return CheckoutQuote{}, err
@@ -147,13 +150,25 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	if len(cart.Lines) == 0 || subtotal.Sign() <= 0 || orderSize.Sign() <= 0 || !subtotal.IsInt64() || !orderSize.IsInt64() {
 		return CheckoutQuote{}, postgres.ErrCartEmpty
 	}
+	var discountMinor int64
+	var promotionID, normalizedPromotionCode string
+	normalizedPromotionCode = strings.ToUpper(strings.TrimSpace(promotionCode))
+	if normalizedPromotionCode != "" {
+		promotion, discount, promotionErr := postgres.EvaluatePromotion(ctx, s.db, normalizedPromotionCode, storeID, actorID, subtotal.Int64(), false)
+		if promotionErr != nil {
+			return CheckoutQuote{}, promotionErr
+		}
+		discountMinor = discount
+		promotionID = promotion.ID
+	}
 
 	facts := serviceabilityResult.Facts
 	feeQuote, err := s.quoteDeliveryFee(ctx, postgres.DeliveryFeeQuoteInput{ServiceCityID: facts.StoreServiceCityID, OriginLatitude: facts.StoreOriginLatitude, OriginLongitude: facts.StoreOriginLongitude, DestinationLatitude: facts.AddressLatitude, DestinationLongitude: facts.AddressLongitude, OrderSizeBaseUnits: orderSize.Int64()})
 	if err != nil || feeQuote.FeeMinor < 0 || strings.TrimSpace(feeQuote.PolicyVersion) == "" {
 		return CheckoutQuote{}, postgres.ErrDeliveryFeeUnavailable
 	}
-	total := new(big.Int).Add(subtotal, big.NewInt(feeQuote.FeeMinor))
+	total := new(big.Int).Sub(subtotal, big.NewInt(discountMinor))
+	total.Add(total, big.NewInt(feeQuote.FeeMinor))
 	if !total.IsInt64() || total.Sign() <= 0 {
 		return CheckoutQuote{}, postgres.ErrDeliveryFeeUnavailable
 	}
@@ -164,6 +179,9 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 		FulfillmentMode:       fulfillmentMode,
 		CartVersion:           cart.Version,
 		SubtotalMinor:         subtotal.Int64(),
+		DiscountMinor:         discountMinor,
+		PromotionID:           promotionID,
+		PromotionCode:         normalizedPromotionCode,
 		DeliveryFeeMinor:      feeQuote.FeeMinor,
 		TotalAmountMinor:      total.Int64(),
 		Currency:              currency,
@@ -173,7 +191,7 @@ func (s *Service) Quote(ctx context.Context, accessToken, cartID, storeID, addre
 	}, nil
 }
 
-func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode string, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, addressID, fulfillmentMode, promotionCode string, expectedCartVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	actorID, err := s.requireClient(ctx, accessToken)
 	if err != nil {
 		return postgres.OrderRecord{}, false, err
@@ -194,7 +212,7 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 	}
 	facts := serviceabilityResult.Facts
 	input := postgres.CheckoutInput{
-		ClientActorID: actorID, CartID: strings.TrimSpace(cartID), StoreID: strings.TrimSpace(storeID), AddressID: strings.TrimSpace(addressID), FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion,
+		ClientActorID: actorID, CartID: strings.TrimSpace(cartID), StoreID: strings.TrimSpace(storeID), AddressID: strings.TrimSpace(addressID), FulfillmentMode: fulfillmentMode, ExpectedCartVersion: expectedCartVersion, PromotionCode: strings.ToUpper(strings.TrimSpace(promotionCode)),
 		Evidence:       postgres.CheckoutEvidence{ServiceCityID: facts.StoreServiceCityID, PolicyVersion: serviceability.PolicyVersion, Status: serviceabilityResult.Status, StoreVersion: facts.StoreVersion, AddressVersion: facts.AddressVersion, StoreOriginLatitude: facts.StoreOriginLatitude, StoreOriginLongitude: facts.StoreOriginLongitude, AddressLatitude: facts.AddressLatitude, AddressLongitude: facts.AddressLongitude},
 		IdempotencyKey: strings.TrimSpace(idempotencyKey), ActingActorID: actorID, CorrelationID: strings.TrimSpace(correlationID),
 		PaymentExternalReference: wlt.DerivedExternalReference("checkout", idempotencyKey),
@@ -202,8 +220,8 @@ func (s *Service) Checkout(ctx context.Context, accessToken, cartID, storeID, ad
 		PaymentCancellationKey:   wlt.DerivedIdempotencyKey("cancel-checkout", idempotencyKey),
 	}
 	input.DeliveryFeeResolver = s.quoteDeliveryFee
-	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
-		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, CashAmountMinor: amountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: fmt.Sprintf("cod-current-v2;delivery=%s", deliveryPolicyVersion)}
+	input.PaymentProvisioner = func(provisionContext context.Context, orderID, externalReference, payerActorID string, subtotalMinor, discountMinor, deliveryFeeMinor int64, deliveryPolicyVersion string, amountMinor int64, paymentIdempotencyKey, paymentCorrelationID string) (postgres.ProvisionedPayment, error) {
+		allocation := wlt.CustomerPaymentAllocation{OrderID: orderID, Currency: "YER", SubtotalMinor: subtotalMinor, DeliveryFeeMinor: deliveryFeeMinor, DiscountMinor: discountMinor, CashAmountMinor: amountMinor, CustomerPayableMinor: amountMinor, PolicyVersion: fmt.Sprintf("cod-current-v2;delivery=%s", deliveryPolicyVersion)}
 		intent, _, provisionErr := s.payment.CreateForOrder(provisionContext, orderID, externalReference, payerActorID, amountMinor, allocation, paymentIdempotencyKey, paymentCorrelationID)
 		if provisionErr != nil {
 			return postgres.ProvisionedPayment{}, provisionErr

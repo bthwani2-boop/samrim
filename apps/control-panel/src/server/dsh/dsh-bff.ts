@@ -1,4 +1,4 @@
-import { type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashLiabilityResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreateServiceCityRequest, type DeliveryFeePolicyResponse, dshOperationPaths, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type OfficialWalletDestination, type OperatorOperationResponse, type OperatorOperationsResponse, type PartnerFinancialSummaryResponse, type PayoutRequest, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
+import { type BeneficiaryPayoutStateResponse, type CaptainAdmissionRequest, type CaptainAdmissionResponse, type CaptainAssignmentResponse, type CaptainOfferResponse, type CashLiabilityResponse, type CatalogCategoryListResponse, type CatalogCategoryResponse, type CatalogImportCommitResponse, type CatalogImportPreviewRequest, type CatalogImportPreviewResponse, type CatalogImportRunResponse, type CatalogProductListResponse, type CatalogProductProposalListResponse, type CatalogProductProposalResponse, type CatalogProductResponse, type CommerceVerticalListResponse, type CommerceVerticalResponse, type CreateCatalogCategoryRequest, type CreateCatalogProductRequest, type CreateCommerceVerticalRequest, type CreateDeliveryFeePolicyRequest, type CreateJoiningCaseRequest, type CreateServiceCityRequest, type CreateDiscoveryContentRequest, type CreatePromotionRequest, type DeliveryFeePolicyResponse, dshOperationPaths, type DiscoveryContentListResponse, type DiscoveryContentResponse, type FieldAdmissionRequest, type FieldAdmissionResponse, type FieldCommissionPolicy, type FieldFinancialSummaryResponse, type JoiningCaseListResponse, type JoiningCaseResponse, type ManagedRoleMutationRequest, type MarketingPublicationRequest, type OfficialWalletDestination, type OperatorOperationResponse, type OperatorOperationsResponse, type PartnerFinancialSummaryResponse, type PayoutRequest, type PromotionListResponse, type PromotionResponse, type PublicationAction, type ReplaceCatalogProductMediaRequest, type ReviewCatalogProductProposalRequest, type ReviewJoiningCaseRequest, type ServiceCityListResponse, type ServiceCityResponse, type StorePublicationRequest, type StorePublicationResponse, type UpdateCatalogProductRequest, type UpdateServiceCityRequest } from "@bthwani/dsh";
 import { validateServiceUrl } from "@bthwani/identity";
 
 type DshClientError =
@@ -589,4 +589,44 @@ export async function recoverCaptainDelivery(assignmentId: string, context: DshV
   if (!context.idempotencyKey.trim()) throw new Error("DSH_CAPTAIN_RECOVERY_IDEMPOTENCY_INVALID");
   const path = dshOperationPaths.recoverCaptainDelivery.path.replace("{assignmentId}", encodeURIComponent(assignmentId.trim()));
   return requestDshJson<CaptainAssignmentResponse>(dshOperationPaths.recoverCaptainDelivery.method, path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim(), "X-Expected-Version": String(context.expectedVersion) });
+}
+
+export async function listMarketingPromotions(context: DshOperatorReadContext): Promise<PromotionListResponse> {
+  if (!context.operatorActorId.trim()) throw new Error("DSH_MARKETING_READ_INPUT_INVALID");
+  return (await requestDshJson<PromotionListResponse>(dshOperationPaths.listOperatorPromotions.method, dshOperationPaths.listOperatorPromotions.path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function createMarketingPromotion(input: CreatePromotionRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: PromotionResponse }>> {
+  if (!input.id.trim() || !input.code.trim() || !input.nameAr.trim() || !input.startsAt.trim()) throw new Error("DSH_MARKETING_PROMOTION_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_MARKETING_PROMOTION_IDEMPOTENCY_INVALID");
+  return requestDshJson<PromotionResponse>(dshOperationPaths.createOperatorPromotion.method, dshOperationPaths.createOperatorPromotion.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function setMarketingPromotionPublication(promotionId: string, input: MarketingPublicationRequest, context: StorePublicationMutationContext): Promise<Readonly<{ status: number; payload: PromotionResponse }>> {
+  if (!promotionId.trim() || !input.state) throw new Error("DSH_MARKETING_PROMOTION_PUBLICATION_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_MARKETING_PROMOTION_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.setOperatorPromotionPublication.path.replace("{promotionId}", encodeURIComponent(promotionId.trim()));
+  return requestDshJson<PromotionResponse>(dshOperationPaths.setOperatorPromotionPublication.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function listMarketingContent(context: DshOperatorReadContext): Promise<DiscoveryContentListResponse> {
+  if (!context.operatorActorId.trim()) throw new Error("DSH_MARKETING_READ_INPUT_INVALID");
+  return (await requestDshJson<DiscoveryContentListResponse>(dshOperationPaths.listOperatorDiscoveryContent.method, dshOperationPaths.listOperatorDiscoveryContent.path, undefined, { "X-Acting-Actor-ID": context.operatorActorId.trim() })).payload;
+}
+
+export async function createMarketingContent(input: CreateDiscoveryContentRequest, context: JoiningCaseMutationContext): Promise<Readonly<{ status: number; payload: DiscoveryContentResponse }>> {
+  if (!input.id.trim() || !input.titleAr.trim() || !input.startsAt.trim()) throw new Error("DSH_MARKETING_CONTENT_INPUT_INVALID");
+  validateAttributedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_MARKETING_CONTENT_IDEMPOTENCY_INVALID");
+  return requestDshJson<DiscoveryContentResponse>(dshOperationPaths.createOperatorDiscoveryContent.method, dshOperationPaths.createOperatorDiscoveryContent.path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "Idempotency-Key": context.idempotencyKey.trim() });
+}
+
+export async function setMarketingContentPublication(contentId: string, input: MarketingPublicationRequest, context: StorePublicationMutationContext): Promise<Readonly<{ status: number; payload: DiscoveryContentResponse }>> {
+  if (!contentId.trim() || !input.state) throw new Error("DSH_MARKETING_CONTENT_PUBLICATION_INPUT_INVALID");
+  validateVersionedMutationContext(context);
+  if (!context.idempotencyKey.trim()) throw new Error("DSH_MARKETING_CONTENT_IDEMPOTENCY_INVALID");
+  const path = dshOperationPaths.setOperatorDiscoveryContentPublication.path.replace("{contentId}", encodeURIComponent(contentId.trim()));
+  return requestDshJson<DiscoveryContentResponse>(dshOperationPaths.setOperatorDiscoveryContentPublication.method, path, input, { "X-Acting-Actor-ID": context.operatorActorId.trim(), "X-Correlation-ID": context.correlationId.trim(), "X-Expected-Version": String(context.expectedVersion), "Idempotency-Key": context.idempotencyKey.trim() });
 }

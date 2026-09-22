@@ -22,10 +22,11 @@ export default function ClientAppLayout() {
       <Tabs.Screen name="orders" options={{ title: "الطلبات", tabBarAccessibilityLabel: "الطلبات" }} />
       <Tabs.Screen name="account" options={{ title: "الحساب", tabBarAccessibilityLabel: "الحساب" }} />
       <Tabs.Screen name="cart/[storeId]" options={{ href: null }} />
+      <Tabs.Screen name="multi-store-checkout" options={{ href: null }} />
       <Tabs.Screen name="orders/[orderId]" options={{ href: null }} />
     </Tabs>
   );
-  const requiresAuthentication = pathname === "/orders" || pathname.startsWith("/orders/") || pathname.startsWith("/cart/");
+  const requiresAuthentication = pathname === "/orders" || pathname.startsWith("/orders/") || pathname.startsWith("/cart/") || pathname === "/multi-store-checkout";
   return (
     <ServiceCityScope>
       {requiresAuthentication ? <AuthenticatedMobileBoundary binding={identity} onUnauthenticated={onUnauthenticated}>{tabs}</AuthenticatedMobileBoundary> : tabs}

@@ -38,6 +38,7 @@ const workspaceDestinations = [
       { href: "/catalog/import", label: "الاستيراد" }
     ]
   },
+  { href: "/marketing", label: "العروض والاكتشاف", section: "مسارات العمل", children: [] },
   { href: "/access", label: "الوصول والأمان", section: "الحماية", children: [] }
 ] as const;
 

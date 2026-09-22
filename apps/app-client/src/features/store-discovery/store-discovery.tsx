@@ -1,11 +1,11 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { CommerceVertical, PublicStoreView } from "@bthwani/dsh";
+import type { CommerceVertical, DiscoveryContentView, PromotionView, PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, type TextInput, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { listCatalogVerticals, listFavoriteStoreIDs, listPublishedStores, setFavoriteStore } from "./store-discovery-client";
+import { listCatalogVerticals, listFavoriteStoreIDs, listPublicDiscoveryContent, listPublicPromotions, listPublishedStores, setFavoriteStore } from "./store-discovery-client";
 
 type DiscoveryState =
   | { kind: "loading" }
@@ -25,6 +25,7 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const [selectedVerticalID, setSelectedVerticalID] = useState("");
   const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
   const [favoriteError, setFavoriteError] = useState("");
+  const [marketing, setMarketing] = useState<{ content: ReadonlyArray<DiscoveryContentView>; promotions: ReadonlyArray<PromotionView>; error: boolean }>({ content: [], promotions: [], error: false });
   const searchInputRef = useRef<TextInput>(null);
   const shouldAutoFocusSearch = autoFocusSearch && state.kind !== "loading";
 
@@ -39,6 +40,10 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         return;
       }
       const stores = await listPublishedStores(selectedCityID);
+      const marketingResults = await Promise.allSettled([listPublicDiscoveryContent(selectedCityID), listPublicPromotions(selectedCityID)]);
+      const content = marketingResults[0].status === "fulfilled" ? marketingResults[0].value.items : [];
+      const promotions = marketingResults[1].status === "fulfilled" ? marketingResults[1].value.promotions : [];
+      setMarketing({ content, promotions, error: marketingResults.some((result) => result.status === "rejected") });
       let availableVerticals: ReadonlyArray<CommerceVertical> = [];
       try {
         availableVerticals = (await listCatalogVerticals()).filter((vertical) => vertical.active);
@@ -137,6 +142,19 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
         </View>
       </BthwaniSurface>
 
+      {isAuthenticated ? <BthwaniSurface tone="inset" style={styles.multiStoreCta}><View style={styles.multiStoreCopy}><Text style={styles.eyebrow}>تجربة موحّدة</Text><Text style={styles.cardTitle}>اطلب من عدة متاجر</Text><Text style={styles.muted}>اجمع السلال، وأنشئ طلبًا مستقلًا لكل متجر مع نتيجة واضحة.</Text></View><BthwaniButton label="فتح الطلب المتعدد" onPress={() => router.push("/multi-store-checkout" as Href)} variant="secondary" /></BthwaniSurface> : null}
+
+      {marketing.content.length || marketing.promotions.length ? <View accessibilityLabel="العروض ومحتوى الاكتشاف" style={styles.marketingBlock}>
+        {marketing.content.length ? <>
+          <BthwaniSectionHeader title="مختارات لك" subtitle="محتوى منشور من بثواني" />
+          <View style={styles.marketingList}>{marketing.content.slice(0, 4).map((item) => <BthwaniSurface key={item.id} tone="inset" style={styles.marketingCard}><Text style={styles.eyebrow}>{item.kind === "BANNER" ? "إعلان" : item.kind === "CAROUSEL" ? "اختيارات" : "قصة قصيرة"}</Text><Text style={styles.cardTitle}>{item.titleAr}</Text>{item.bodyAr ? <Text style={styles.muted}>{item.bodyAr}</Text> : null}</BthwaniSurface>)}</View>
+        </> : null}
+        {marketing.promotions.length ? <>
+          <BthwaniSectionHeader title="عروض نشطة" subtitle="طبّق الرمز عند إتمام الطلب" />
+          <View style={styles.marketingList}>{marketing.promotions.slice(0, 4).map((promotion) => <BthwaniSurface key={promotion.id} tone="raised" style={styles.promotionCard}><View style={styles.promotionCopy}><Text style={styles.cardTitle}>{promotion.nameAr}</Text><Text style={styles.muted}>{promotion.descriptionAr || (promotion.kind === "PERCENTAGE" ? `خصم ${promotion.valueMinor}%` : `خصم بقيمة ${promotion.valueMinor}`)}</Text></View><Text accessibilityLabel={`رمز العرض ${promotion.code}`} style={styles.promotionCode}>{promotion.code}</Text></BthwaniSurface>)}</View>
+        </> : null}
+      </View> : marketing.error ? <Text accessibilityRole="alert" style={styles.error}>تعذر تحميل بعض العروض والمحتوى. يمكنك متابعة تصفح المتاجر.</Text> : null}
+
       {searchField}
       <View style={styles.filterRow}>
         <BthwaniChip label="كل المتاجر" selected={!favoriteFilter} onPress={() => setFavoriteFilter(false)} />
@@ -230,5 +248,13 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     title: { ...typography.titleLg, color: theme.color, textAlign: "center" },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
     error: { ...typography.bodySm, color: theme.danger },
+    marketingBlock: { gap: spacing[3] },
+    marketingList: { gap: spacing[2] },
+    marketingCard: { borderRadius: radius.lg, gap: spacing[1], padding: spacing[3] },
+    promotionCard: { alignItems: "center", borderRadius: radius.lg, flexDirection: "row", gap: spacing[3], padding: spacing[3] },
+    promotionCopy: { flex: 1, gap: spacing[1] },
+    promotionCode: { ...typography.label, backgroundColor: theme.actionSoft, borderColor: theme.interactiveText, borderRadius: radius.sm, borderWidth: borders.hairline, color: theme.interactiveText, paddingHorizontal: spacing[2], paddingVertical: spacing[1] },
+    multiStoreCta: { borderRadius: radius.lg, gap: spacing[2], padding: spacing[3] },
+    multiStoreCopy: { gap: spacing[1] },
   });
 }

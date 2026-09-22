@@ -44,7 +44,7 @@ function isCredentialFailure(value: unknown): boolean {
 }
 
 function safeReturnTo(value: string | string[] | undefined): Href {
-  return resolveInternalReturnPath(value, "/home", /^\/(?:home|account|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+|cart\/[A-Za-z0-9._~%-]+)$/u) as Href;
+  return resolveInternalReturnPath(value, "/home", /^\/(?:home|account|multi-store-checkout|orders(?:\/[A-Za-z0-9._~%-]+)?|store\/[A-Za-z0-9._~%-]+|cart\/[A-Za-z0-9._~%-]+)$/u) as Href;
 }
 
 export default function IdentityGate() {

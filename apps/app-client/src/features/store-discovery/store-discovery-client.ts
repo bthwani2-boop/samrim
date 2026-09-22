@@ -1,4 +1,4 @@
-import { type CartResponse, type CatalogStoreOffer, createDshMobileClient, type CommerceVertical, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
+import { type CartResponse, type CatalogStoreOffer, createDshMobileClient, type CommerceVertical, type DiscoveryContentListResponse, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
@@ -17,6 +17,14 @@ export async function listPublishedStores(serviceCityID: string): Promise<Readon
 
 export async function listCatalogVerticals(): Promise<ReadonlyArray<CommerceVertical>> {
   return client().listCatalogVerticals();
+}
+
+export async function listPublicPromotions(serviceCityID: string, storeID = ""): Promise<PromotionListResponse> {
+  return client().listPublicPromotions(serviceCityID, storeID);
+}
+
+export async function listPublicDiscoveryContent(serviceCityID: string): Promise<DiscoveryContentListResponse> {
+  return client().listPublicDiscoveryContent(serviceCityID);
 }
 
 export async function listFavoriteStoreIDs(): Promise<ReadonlyArray<string>> {
@@ -41,6 +49,21 @@ export async function readPublicStoreCatalog(storeID: string, serviceCityID: str
 export async function evaluateStoreServiceability(storeID: string, addressID: string): Promise<ServiceabilityResponse> {
   const accessToken = await getUsableIdentityAccessToken();
   return client().evaluateServiceability(accessToken, storeID, addressID);
+}
+
+export async function readOwnOpenCart(storeID: string): Promise<CartResponse> {
+  const accessToken = await getUsableIdentityAccessToken();
+  return client().readOpenCart(accessToken, storeID);
+}
+
+export async function createMultiStoreCheckout(input: MultiStoreCheckoutRequest): Promise<MultiStoreCheckoutResponse> {
+  const accessToken = await getUsableIdentityAccessToken();
+  return client().createMultiStoreCheckout(accessToken, input);
+}
+
+export async function cancelMultiStoreCheckout(checkoutID: string, expectedVersion: number): Promise<MultiStoreCheckoutResponse> {
+  const accessToken = await getUsableIdentityAccessToken();
+  return client().cancelMultiStoreCheckout(accessToken, checkoutID, expectedVersion);
 }
 
 export async function addCatalogOfferToCart(

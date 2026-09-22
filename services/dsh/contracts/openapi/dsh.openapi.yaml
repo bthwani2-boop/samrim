@@ -147,6 +147,24 @@ paths:
   /dsh/public/stores/{storeId}:
     $ref: "./paths/store-publication.yaml#/paths/~1dsh~1public~1stores~1{storeId}"
 
+  /dsh/public/promotions:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1promotions"
+
+  /dsh/public/discovery-content:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content"
+
+  /dsh/operator/promotions:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions"
+
+  /dsh/operator/promotions/{promotionId}/publication:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions~1{promotionId}~1publication"
+
+  /dsh/operator/discovery-content:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1discovery-content"
+
+  /dsh/operator/discovery-content/{contentId}/publication:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1discovery-content~1{contentId}~1publication"
+
   /dsh/addresses:
     $ref: "./paths/location-core.yaml#/paths/~1dsh~1addresses"
 
@@ -188,6 +206,15 @@ paths:
 
   /dsh/cart/checkout:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart~1checkout"
+
+  /dsh/multi-store-checkouts:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1multi-store-checkouts"
+
+  /dsh/multi-store-checkouts/{checkoutId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1multi-store-checkouts~1{checkoutId}"
+
+  /dsh/multi-store-checkouts/{checkoutId}/cancel:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1multi-store-checkouts~1{checkoutId}~1cancel"
 
   /dsh/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders"
@@ -543,6 +570,24 @@ components:
         type: string
         minLength: 1
         maxLength: 160
+
+    PromotionId:
+      name: promotionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+
+    ContentId:
+      name: contentId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
 
     OfferId:
       name: offerId
@@ -2794,10 +2839,13 @@ components:
           maxLength: 128
         fulfillmentMode:
           $ref: "#/components/schemas/FulfillmentMode"
+        promotionCode:
+          type: string
+          maxLength: 64
 
     CheckoutQuote:
       type: object
-      required: [cartId, storeId, addressId, fulfillmentMode, cartVersion, subtotalMinor, deliveryFeeMinor, totalAmountMinor, currency, deliveryPolicyVersion, serviceCityId, quotedAt]
+      required: [cartId, storeId, addressId, fulfillmentMode, cartVersion, subtotalMinor, discountMinor, deliveryFeeMinor, totalAmountMinor, currency, deliveryPolicyVersion, serviceCityId, quotedAt]
       additionalProperties: false
       properties:
         cartId:
@@ -2814,6 +2862,15 @@ components:
         subtotalMinor:
           type: integer
           minimum: 1
+        discountMinor:
+          type: integer
+          minimum: 0
+        promotionId:
+          type: string
+          nullable: true
+        promotionCode:
+          type: string
+          nullable: true
         deliveryFeeMinor:
           type: integer
           minimum: 0
@@ -2842,6 +2899,145 @@ components:
       properties:
         quote:
           $ref: "#/components/schemas/CheckoutQuote"
+
+    MultiStoreCheckoutChildRequest:
+      type: object
+      required: [cartId, storeId, addressId, cartVersion, fulfillmentMode]
+      additionalProperties: false
+      properties:
+        cartId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        addressId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        cartVersion:
+          type: integer
+          minimum: 1
+        fulfillmentMode:
+          $ref: "#/components/schemas/FulfillmentMode"
+        promotionCode:
+          type: string
+          maxLength: 64
+
+    MultiStoreCheckoutRequest:
+      type: object
+      required: [id, children]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        children:
+          type: array
+          minItems: 2
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/MultiStoreCheckoutChildRequest"
+
+    MultiStoreCheckoutState:
+      type: string
+      enum: [PROCESSING, COMPLETE, PARTIAL_FAILURE, FAILED, CANCELLED]
+
+    MultiStoreCheckoutChildState:
+      type: string
+      enum: [PENDING, SUCCEEDED, FAILED, CANCELLED, CANCEL_FAILED]
+
+    MultiStoreCheckoutChild:
+      type: object
+      required: [id, childIndex, cartId, storeId, addressId, cartVersion, fulfillmentMode, state, version, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        childIndex:
+          type: integer
+          minimum: 0
+        cartId:
+          type: string
+        storeId:
+          type: string
+        addressId:
+          type: string
+        cartVersion:
+          type: integer
+          minimum: 1
+        fulfillmentMode:
+          $ref: "#/components/schemas/FulfillmentMode"
+        promotionCode:
+          type: string
+          nullable: true
+        orderId:
+          type: string
+          nullable: true
+        state:
+          $ref: "#/components/schemas/MultiStoreCheckoutChildState"
+        failureCode:
+          type: string
+          nullable: true
+        failureMessage:
+          type: string
+          nullable: true
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MultiStoreCheckout:
+      type: object
+      required: [id, clientActorId, state, version, childCount, successfulChildCount, failedChildCount, children, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        clientActorId:
+          type: string
+        state:
+          $ref: "#/components/schemas/MultiStoreCheckoutState"
+        version:
+          type: integer
+          minimum: 1
+        childCount:
+          type: integer
+          minimum: 2
+        successfulChildCount:
+          type: integer
+          minimum: 0
+        failedChildCount:
+          type: integer
+          minimum: 0
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/MultiStoreCheckoutChild"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MultiStoreCheckoutResponse:
+      type: object
+      required: [checkout, idempotentReplay]
+      additionalProperties: false
+      properties:
+        checkout:
+          $ref: "#/components/schemas/MultiStoreCheckout"
+        idempotentReplay:
+          type: boolean
 
     CaptainAdmissionRequest:
       type: object
@@ -4148,7 +4344,7 @@ components:
 
     Order:
       type: object
-      required: [id, clientActorId, storeId, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, subtotalAmountMinor, discountMinor, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -4192,6 +4388,18 @@ components:
           minimum: 1
         state:
           $ref: "#/components/schemas/OrderState"
+        subtotalAmountMinor:
+          type: integer
+          minimum: 0
+        discountMinor:
+          type: integer
+          minimum: 0
+        promotionId:
+          type: string
+          nullable: true
+        promotionCode:
+          type: string
+          nullable: true
         totalAmountMinor:
           type: integer
           minimum: 1
@@ -4302,6 +4510,267 @@ components:
         state:
           type: string
           enum: [PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, REJECTED]
+
+    PromotionKind:
+      type: string
+      enum: [PERCENTAGE, FIXED]
+
+    PromotionState:
+      type: string
+      enum: [DRAFT, PUBLISHED, PAUSED]
+
+    PromotionView:
+      type: object
+      required: [id, code, nameAr, descriptionAr, kind, valueMinor, fundingSource, state, startsAt, redeemedCount, version, createdByActorId, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        nameAr:
+          type: string
+        descriptionAr:
+          type: string
+        kind:
+          $ref: "#/components/schemas/PromotionKind"
+        valueMinor:
+          type: integer
+          minimum: 1
+        maxDiscountMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+        fundingSource:
+          type: string
+          const: MERCHANT
+        storeId:
+          type: string
+          nullable: true
+        serviceCityId:
+          type: string
+          nullable: true
+        state:
+          $ref: "#/components/schemas/PromotionState"
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+        redemptionLimit:
+          type: integer
+          minimum: 1
+          nullable: true
+        redeemedCount:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 1
+        createdByActorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PromotionListResponse:
+      type: object
+      required: [promotions]
+      additionalProperties: false
+      properties:
+        promotions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromotionView"
+
+    PromotionResponse:
+      type: object
+      required: [promotion, idempotentReplay]
+      additionalProperties: false
+      properties:
+        promotion:
+          $ref: "#/components/schemas/PromotionView"
+        idempotentReplay:
+          type: boolean
+
+    CreatePromotionRequest:
+      type: object
+      required: [id, code, nameAr, kind, valueMinor, fundingSource, startsAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        code:
+          type: string
+          minLength: 3
+          maxLength: 64
+        nameAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        descriptionAr:
+          type: string
+          maxLength: 500
+        kind:
+          $ref: "#/components/schemas/PromotionKind"
+        valueMinor:
+          type: integer
+          minimum: 1
+        maxDiscountMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+        fundingSource:
+          type: string
+          const: MERCHANT
+        storeId:
+          type: string
+          maxLength: 128
+        serviceCityId:
+          type: string
+          maxLength: 128
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+        redemptionLimit:
+          type: integer
+          minimum: 1
+          nullable: true
+
+    MarketingPublicationRequest:
+      type: object
+      required: [state]
+      additionalProperties: false
+      properties:
+        state:
+          type: string
+          enum: [PUBLISHED, PAUSED]
+
+    DiscoveryContentKind:
+      type: string
+      enum: [BANNER, CAROUSEL, SHORT_FORM]
+
+    DiscoveryContentTargetType:
+      type: string
+      enum: [STORE, PRODUCT, CATEGORY, PROMOTION, INFO]
+
+    DiscoveryContentView:
+      type: object
+      required: [id, kind, titleAr, bodyAr, mediaUri, targetType, state, startsAt, ordinal, version, createdByActorId, createdAt, updatedAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/DiscoveryContentKind"
+        titleAr:
+          type: string
+        bodyAr:
+          type: string
+        mediaUri:
+          type: string
+        targetType:
+          $ref: "#/components/schemas/DiscoveryContentTargetType"
+        targetId:
+          type: string
+          nullable: true
+        serviceCityId:
+          type: string
+          nullable: true
+        state:
+          $ref: "#/components/schemas/PromotionState"
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+        ordinal:
+          type: integer
+          minimum: 0
+        version:
+          type: integer
+          minimum: 1
+        createdByActorId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DiscoveryContentListResponse:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiscoveryContentView"
+
+    DiscoveryContentResponse:
+      type: object
+      required: [content, idempotentReplay]
+      additionalProperties: false
+      properties:
+        content:
+          $ref: "#/components/schemas/DiscoveryContentView"
+        idempotentReplay:
+          type: boolean
+
+    CreateDiscoveryContentRequest:
+      type: object
+      required: [id, kind, titleAr, targetType, startsAt, ordinal]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        kind:
+          $ref: "#/components/schemas/DiscoveryContentKind"
+        titleAr:
+          type: string
+          minLength: 2
+          maxLength: 160
+        bodyAr:
+          type: string
+          maxLength: 1000
+        mediaUri:
+          type: string
+          maxLength: 2048
+        targetType:
+          $ref: "#/components/schemas/DiscoveryContentTargetType"
+        targetId:
+          type: string
+          maxLength: 128
+        serviceCityId:
+          type: string
+          maxLength: 128
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+        ordinal:
+          type: integer
+          minimum: 0
 
     ErrorResponse:
       type: object
