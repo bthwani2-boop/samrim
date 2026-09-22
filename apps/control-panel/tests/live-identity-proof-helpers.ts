@@ -50,13 +50,18 @@ export async function provisionIndependentOperator(identityBase: string, control
   return { actorId, phone, token, createdByTest: true };
 }
 
-export async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose: string): Promise<string> {
+export async function waitForMailpitCode(mailpitBaseUrl: string, phone: string, purpose: string, sentAfter: number): Promise<string> {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      const response = await fetch(mailpitBaseUrl + "/view/latest.txt", { signal: AbortSignal.timeout(2_000) });
+      const response = await fetch(mailpitBaseUrl + "/api/v1/messages?limit=50", { signal: AbortSignal.timeout(2_000) });
       if (response.ok) {
-        const message = await response.text();
-        if (message.includes("Phone: " + phone) && message.includes("Purpose: " + purpose)) {
+        const body = await response.json() as { messages?: Array<{ Created?: string; Snippet?: string }> };
+        const message = body.messages?.find((candidate) => {
+          const createdAt = Date.parse(String(candidate.Created || ""));
+          const snippet = String(candidate.Snippet || "");
+          return createdAt >= sentAfter && snippet.includes("Phone: " + phone) && snippet.includes("Purpose: " + purpose);
+        })?.Snippet || "";
+        if (message) {
           const match = message.match(/Code:\s*(\d{6})/);
           if (match?.[1]) return match[1];
         }
@@ -81,8 +86,9 @@ export async function registerOperator(page: Page, operator: PreparedOperator, b
   await page.getByRole("button", { name: "تفعيل حساب موظف" }).click();
   await page.getByLabel("رقم الهاتف").fill(operator.phone);
   await page.getByLabel("دعوة التفعيل عالية الأمان").fill(operator.token);
+  const challengeSentAt = Date.now();
   await page.getByRole("button", { name: "إرسال رمز إثبات الهاتف" }).click();
-  const enrollmentCode = await waitForMailpitCode(mailpitBase, operator.phone, "operator_enroll");
+  const enrollmentCode = await waitForMailpitCode(mailpitBase, operator.phone, "operator_enroll", challengeSentAt);
   await page.getByLabel("رمز إثبات الهاتف").fill(enrollmentCode);
   await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح المرور" }).click();
   await expect(page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" })).toBeVisible();
