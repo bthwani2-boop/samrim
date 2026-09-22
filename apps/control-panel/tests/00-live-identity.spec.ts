@@ -212,18 +212,27 @@ async function prepareOperator(identityBase: string, controlToken: string, boots
   return operator;
 }
 
-test("@live operator passkey registration, authentication and governed recovery survive browser readback", async ({ page }) => {
-  test.setTimeout(90_000);
-  const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
-  const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
-  const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
-  const bootstrapToken = requiredEnv("PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN");
-  const operator = await prepareOperator(identityBase, controlToken, bootstrapToken);
+async function provisionIndependentOperator(identityBase: string, controlToken: string, actingOperatorID: string): Promise<PreparedOperator> {
+  const phone = "+9677" + String(randomInt(10_000_000, 99_999_999));
+  const provision = await jsonRequest(identityBase, "/internal/actor-roles/provision", controlToken, { phoneE164: phone, role: "operator" }, { "X-Acting-Actor-ID": actingOperatorID });
+  expect(provision.response.status, "independent operator provisioning must succeed").toBe(201);
+  const actorId = String(provision.body?.actorId || "");
+  expect(actorId).toMatch(/^act_/);
+  const enrollment = await jsonRequest(identityBase, "/internal/operator-enrollment-tokens", controlToken, { phoneE164: phone, role: "operator" }, { "X-Acting-Actor-ID": actingOperatorID });
+  expect(enrollment.response.status, "independent operator enrollment token must be issued").toBe(201);
+  const token = String(enrollment.body?.code || "");
+  expect(token).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+  return { actorId, phone, token, createdByTest: true };
+}
+
+async function enableVirtualAuthenticator(page: Page): Promise<void> {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("WebAuthn.enable");
   await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+}
 
-  await page.goto("/");
+async function registerOperator(page: Page, operator: PreparedOperator, baseUrl: string, mailpitBase: string): Promise<string> {
+  await page.goto(baseUrl + "/");
   await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
   await page.getByRole("button", { name: "تفعيل حساب موظف" }).click();
   await page.getByLabel("رقم الهاتف").fill(operator.phone);
@@ -233,11 +242,35 @@ test("@live operator passkey registration, authentication and governed recovery 
   await page.getByLabel("رمز إثبات الهاتف").fill(enrollmentCode);
   await page.getByRole("button", { name: "إثبات الهاتف وتسجيل مفتاح المرور" }).click();
   await expect(page.getByRole("heading", { name: "احفظ هذا الاعتماد الآن" })).toBeVisible();
-  const firstRecoveryCredential = await page.locator(".code-output").textContent();
-  expect(firstRecoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
+  const recoveryCredential = await page.locator(".code-output").textContent();
+  expect(recoveryCredential).toMatch(/^[A-Za-z0-9_-]{24,256}$/);
   await page.getByRole("button", { name: "حفظت الاعتماد وفتح لوحة التحكم" }).click();
   await expect(page).toHaveURL(/\/workspace$/);
   await expect(page.getByRole("heading", { name: "الرئيسية" })).toBeVisible();
+  return String(recoveryCredential);
+}
+
+test("@live operator passkey registration, authentication and governed recovery survive browser readback", async ({ page }) => {
+  test.setTimeout(90_000);
+  const identityBase = requiredEnv("PLAYWRIGHT_IDENTITY_API_BASE_URL").replace(/\/+$/, "");
+  const mailpitBase = requiredEnv("PLAYWRIGHT_MAILPIT_BASE_URL").replace(/\/+$/, "");
+  const controlToken = requiredEnv("PLAYWRIGHT_CONTROL_PANEL_SERVICE_TOKEN");
+  const bootstrapToken = requiredEnv("PLAYWRIGHT_IDENTITY_BOOTSTRAP_TOKEN");
+  const operator = await prepareOperator(identityBase, controlToken, bootstrapToken);
+  const independentOperator = await provisionIndependentOperator(identityBase, controlToken, operator.actorId);
+  const baseUrl = requiredEnv("PLAYWRIGHT_BASE_URL").replace(/\/+$/, "");
+  const browser = page.context().browser();
+  if (!browser) throw new Error("live Identity proof requires a browser instance for the independent operator fixture");
+  const independentContext = await browser.newContext();
+  const independentPage = await independentContext.newPage();
+  try {
+    await enableVirtualAuthenticator(independentPage);
+    await registerOperator(independentPage, independentOperator, baseUrl, mailpitBase);
+  } finally {
+    await independentContext.close();
+  }
+  await enableVirtualAuthenticator(page);
+  const firstRecoveryCredential = await registerOperator(page, operator, baseUrl, mailpitBase);
   const firstSession = await readBrowserSession(page);
   expect(firstSession.status).toBe(200);
   expect(firstSession.body.identity.subject).toBe(operator.actorId);
