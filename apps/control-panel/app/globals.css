@@ -3,7 +3,13 @@
 * { box-sizing: border-box; }
 html { min-height: 100%; background: var(--surface-warm); direction: rtl; }
 body { min-height: 100vh; margin: 0; background: var(--surface-warm); color: var(--color-primary); font-family: var(--font-family-arabic); }
+:where(*) { scrollbar-color: var(--border-strong) var(--surface-muted); scrollbar-width: auto; }
+:where(*)::-webkit-scrollbar { width: 12px; height: 12px; }
+:where(*)::-webkit-scrollbar-track { background: var(--surface-muted); }
+:where(*)::-webkit-scrollbar-thumb { border: 3px solid var(--surface-muted); border-radius: var(--radius-round); background: var(--border-strong); }
+:where(*)::-webkit-scrollbar-thumb:hover { background: var(--interactive-text); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+@media (forced-colors: active) { :where(*) { scrollbar-color: auto; } }

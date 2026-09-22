@@ -153,6 +153,12 @@ paths:
   /dsh/public/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content"
 
+  /dsh/public/discovery-content/events:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content~1events"
+
+  /dsh/public/discovery-content/{contentId}/target:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1public~1discovery-content~1{contentId}~1target"
+
   /dsh/operator/promotions:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1promotions"
 
@@ -161,6 +167,9 @@ paths:
 
   /dsh/operator/discovery-content:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1discovery-content"
+
+  /dsh/operator/discovery-content/analytics:
+    $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1discovery-content~1analytics"
 
   /dsh/operator/discovery-content/{contentId}/publication:
     $ref: "./paths/marketing.yaml#/paths/~1dsh~1operator~1discovery-content~1{contentId}~1publication"
@@ -406,6 +415,9 @@ paths:
 
   /dsh/field/joining-cases/{caseId}/correct-and-resubmit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1correct-and-resubmit"
+
+  /dsh/field/joining-cases/{caseId}/store-image:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1store-image"
 
   /dsh/fields/me/financial-summary:
     $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"
@@ -682,6 +694,18 @@ components:
       type: string
       enum: [field, control_panel]
 
+    StoreProfileImage:
+      type: object
+      required: [uri, role]
+      additionalProperties: false
+      properties:
+        uri:
+          type: string
+          format: uri
+        role:
+          type: string
+          const: primary
+
     JoiningCaseView:
       type: object
       required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, origin, state, financialProfileState, version, createdAt, updatedAt]
@@ -746,6 +770,9 @@ components:
           nullable: true
         store:
           $ref: "#/components/schemas/StoreView"
+          nullable: true
+        storeProfileImage:
+          $ref: "#/components/schemas/StoreProfileImage"
           nullable: true
         version:
           type: integer
@@ -933,6 +960,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CatalogStoreOffer"
+        storeProfileImage:
+          $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -2493,6 +2523,13 @@ components:
         primaryVerticalId:
           type: string
           nullable: true
+        distanceMeters:
+          type: integer
+          minimum: 0
+          nullable: true
+        storeProfileImage:
+          $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
         version:
           type: integer
           minimum: 1
@@ -3163,6 +3200,9 @@ components:
         storeName:
           type: string
           minLength: 1
+        storeProfileImage:
+          $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
         customerAddressText:
           type: string
           minLength: 1
@@ -3451,7 +3491,7 @@ components:
 
     NotificationKind:
       type: string
-      enum: [ORDER_CREATED, ORDER_ACCEPTED, ORDER_PREPARING, ORDER_READY, ORDER_REJECTED, ORDER_STATUS, CAPTAIN_OFFER, CAPTAIN_ASSIGNED, HANDOFF_CONFIRMED, PICKED_UP, DELIVERY_FAILED, DELIVERY_RECOVERED, DELIVERED, REASSIGNED]
+      enum: [ORDER_CREATED, ORDER_ACCEPTED, ORDER_PREPARING, ORDER_READY, ORDER_REJECTED, ORDER_STATUS, CAPTAIN_OFFER, CAPTAIN_ASSIGNED, HANDOFF_CONFIRMED, PICKED_UP, DELIVERY_FAILED, DELIVERY_RECOVERED, DELIVERED, REASSIGNED, FIELD_CASE_CREATED, FIELD_CASE_SUBMITTED, FIELD_CASE_NEEDS_CORRECTION, FIELD_CASE_APPROVED, FIELD_CASE_STATUS]
 
     Notification:
       type: object
@@ -3618,6 +3658,9 @@ components:
           type: string
         storeName:
           type: string
+        storeProfileImage:
+          $ref: "#/components/schemas/StoreProfileImage"
+          nullable: true
         pickupOrigin:
           $ref: "#/components/schemas/CaptainLocation"
         customerAddressText:
@@ -4731,6 +4774,74 @@ components:
           $ref: "#/components/schemas/DiscoveryContentView"
         idempotentReplay:
           type: boolean
+
+    DiscoveryContentEventType:
+      type: string
+      enum: [IMPRESSION, CLICK, CONVERSION]
+
+    DiscoveryContentEventRequest:
+      type: object
+      required: [clientEventId, contentId, eventType, clientSessionId]
+      additionalProperties: false
+      properties:
+        clientEventId:
+          type: string
+          minLength: 8
+          maxLength: 128
+        contentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        eventType:
+          $ref: "#/components/schemas/DiscoveryContentEventType"
+        clientSessionId:
+          type: string
+          minLength: 16
+          maxLength: 128
+        orderId:
+          type: string
+          maxLength: 128
+
+    DiscoveryContentTargetResolution:
+      type: object
+      required: [contentId, targetType, targetId, storeId, promotionId]
+      additionalProperties: false
+      properties:
+        contentId:
+          type: string
+        targetType:
+          $ref: "#/components/schemas/DiscoveryContentTargetType"
+        targetId:
+          type: string
+        storeId:
+          type: string
+          nullable: true
+        promotionId:
+          type: string
+          nullable: true
+
+    DiscoveryContentAnalytics:
+      type: object
+      required: [contentId, eventType, count]
+      additionalProperties: false
+      properties:
+        contentId:
+          type: string
+        eventType:
+          $ref: "#/components/schemas/DiscoveryContentEventType"
+        count:
+          type: integer
+          minimum: 0
+
+    DiscoveryContentAnalyticsListResponse:
+      type: object
+      required: [items]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiscoveryContentAnalytics"
 
     CreateDiscoveryContentRequest:
       type: object

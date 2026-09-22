@@ -40,6 +40,7 @@ function ClientHeader({ context, searchHref, styles }: { context: string; search
       </View>
       <View style={styles.headerActions}>
         <BthwaniIconButton icon="search" label="البحث عن متجر" onPress={() => router.push(searchHref)} size={sizing.controlSm} tone="soft" />
+        <BthwaniIconButton icon="notifications" label="الإشعارات" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" />
         <BthwaniIconButton icon="account" label="الحساب" onPress={() => router.push("/account" as Href)} size={sizing.controlSm} tone="soft" />
       </View>
     </View>
@@ -58,7 +59,7 @@ export function ClientScrollScreen({ children }: PropsWithChildren) {
 
 export function createClientTabOptions(theme: ReturnType<typeof resolveTheme>) {
   const styles = createStyles(theme);
-  const icons = { home: "home", orders: "orders", account: "account" } as const;
+  const icons = { home: "home", orders: "orders", wallet: "wallet", account: "account" } as const;
   return ({ route }: { route: { name: string } }) => ({
     headerShown: true,
     header: () => <SafeAreaView edges={["top"]} style={styles.headerSafeArea}><ClientHeader context="مساحة العميل" searchHref={"/home?focus=search" as Href} styles={styles} /></SafeAreaView>,

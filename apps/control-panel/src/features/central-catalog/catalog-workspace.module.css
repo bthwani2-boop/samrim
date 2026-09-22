@@ -16,6 +16,8 @@
 :global(.central-active-toggle) { display: flex; align-items: center; gap: 9px; margin: 2px 0 12px; color: var(--color-primary); font-size: 13px; font-weight: 700; }
 :global(.central-active-toggle input) { width: 18px; height: 18px; accent-color: var(--action-bg); }
 
+:global(.resize-none) { min-height: 120px; resize: none; }
+
 :global(.proposal-list) { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 :global(.proposal-row) { display: flex; width: 100%; min-height: 58px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-base); color: var(--color-primary); text-align: right; }
 :global(.proposal-row:hover), :global(.proposal-row.selected) { border-color: var(--focus-ring); background: var(--brand-structure-soft); }

@@ -28,6 +28,7 @@ type StoreRecord struct {
 	DeliveryOriginUpdatedAt *time.Time
 	CreatedAt               time.Time
 	UpdatedAt               time.Time
+	StoreProfileImage       *StoreProfileMediaRecord
 }
 
 func newID(prefix string) (string, error) {
@@ -68,6 +69,8 @@ type PublicStoreRecord struct {
 	PublishedAt       time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	StoreProfileImage *StoreProfileMediaRecord
+	DistanceMeters    *int
 }
 
 func HashStorePublicationRequest(storeID, requestedState string, expectedVersion int) string {
@@ -91,6 +94,10 @@ func ReadStore(ctx context.Context, db *sql.DB, storeID string) (StoreRecord, er
 	if err != nil {
 		return StoreRecord{}, fmt.Errorf("read canonical store: %w", err)
 	}
+	store.StoreProfileImage, err = ReadStoreProfileMedia(ctx, db, "", store.ID)
+	if err != nil {
+		return StoreRecord{}, err
+	}
 	return store, nil
 }
 
@@ -109,6 +116,10 @@ func ReadStoreOwnedByPartner(ctx context.Context, db *sql.DB, storeID, partnerAc
 	}
 	if err != nil {
 		return StoreRecord{}, fmt.Errorf("read owned canonical store: %w", err)
+	}
+	store.StoreProfileImage, err = ReadStoreProfileMedia(ctx, db, "", store.ID)
+	if err != nil {
+		return StoreRecord{}, err
 	}
 	return store, nil
 }
@@ -242,27 +253,41 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 }
 
 func ListPublishedStores(ctx context.Context, db *sql.DB, serviceCityIDs ...string) ([]PublicStoreRecord, error) {
-	if db == nil {
-		return nil, errors.New("DSH database is nil")
-	}
 	serviceCityID := ""
 	if len(serviceCityIDs) == 1 {
 		serviceCityID = strings.TrimSpace(serviceCityIDs[0])
+	}
+	return listPublishedStores(ctx, db, serviceCityID, nil, nil)
+}
+
+func ListPublishedStoresNear(ctx context.Context, db *sql.DB, serviceCityID string, latitude, longitude float64) ([]PublicStoreRecord, error) {
+	return listPublishedStores(ctx, db, strings.TrimSpace(serviceCityID), &latitude, &longitude)
+}
+
+func listPublishedStores(ctx context.Context, db *sql.DB, serviceCityID string, latitude, longitude *float64) ([]PublicStoreRecord, error) {
+	if db == nil {
+		return nil, errors.New("DSH database is nil")
 	}
 	if serviceCityID == "" {
 		return nil, ErrServiceCityNotFound
 	}
 	visibleOfferConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
+	distanceExpression := "NULL::double precision"
+	args := []any{serviceCityID}
+	if latitude != nil && longitude != nil {
+		distanceExpression = `CASE WHEN s.delivery_origin_latitude IS NULL OR s.delivery_origin_longitude IS NULL THEN NULL ELSE (6371000.0 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians($2)) * cos(radians(s.delivery_origin_latitude)) * cos(radians(s.delivery_origin_longitude) - radians($3)) + sin(radians($2)) * sin(radians(s.delivery_origin_latitude))))))::double precision END`
+		args = append(args, *latitude, *longitude)
+	}
 	rows, err := db.QueryContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version,
 		COALESCE(ratings.rating_average, 0), COALESCE(ratings.rating_count, 0),
-		s.publication_changed_at, s.created_at, s.updated_at,
+		s.publication_changed_at, s.created_at, s.updated_at, `+distanceExpression+`,
 		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
 		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
 		LEFT JOIN (SELECT store_id, AVG(rating)::double precision AS rating_average, COUNT(*)::int AS rating_count
 			FROM dsh.commerce_order_ratings GROUP BY store_id) ratings ON ratings.store_id=s.id
 		WHERE s.service_city_id=$1 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
 		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id WHERE o.store_id=s.id AND `+visibleOfferConditions+`)
-		ORDER BY s.name ASC, s.id ASC`, serviceCityID)
+		ORDER BY `+distanceExpression+` NULLS LAST, s.name ASC, s.id ASC`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list published stores: %w", err)
 	}
@@ -270,10 +295,19 @@ func ListPublishedStores(ctx context.Context, db *sql.DB, serviceCityIDs ...stri
 	for rows.Next() {
 		var store PublicStoreRecord
 		var city ServiceCityRecord
-		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.RatingAverage, &store.RatingCount, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt); err != nil {
+		var distance sql.NullFloat64
+		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.RatingAverage, &store.RatingCount, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &distance, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan published store: %w", err)
 		}
 		store.ServiceCity = &city
+		if distance.Valid {
+			value := int(distance.Float64)
+			store.DistanceMeters = &value
+		}
+		store.StoreProfileImage, err = ReadStoreProfileMedia(ctx, db, "", store.ID)
+		if err != nil {
+			return nil, err
+		}
 		stores = append(stores, store)
 	}
 	if err := rows.Err(); err != nil {
@@ -316,6 +350,10 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, service
 		return PublicStoreRecord{}, fmt.Errorf("read published store: %w", err)
 	}
 	store.ServiceCity = &city
+	store.StoreProfileImage, err = ReadStoreProfileMedia(ctx, db, "", store.ID)
+	if err != nil {
+		return PublicStoreRecord{}, err
+	}
 	return store, nil
 }
 

@@ -3,7 +3,7 @@ import { BthwaniButton, BthwaniStatusBadge, useAppearanceTheme } from "@bthwani/
 import { type CaptainAssignment, type CaptainDeliveryTask, type CashLiabilityItem, captainAssignmentStateLabel, captainHandoffStateLabel, captainTaskProgressLabel, formatMoney, orderStateLabel, paymentMethodLabel, paymentStateLabel } from "@bthwani/dsh";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Text, TextInput, View } from "react-native";
 
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { captainClient } from "./captain-client";
@@ -188,6 +188,7 @@ export function CaptainDeliveries() {
             <BthwaniStatusBadge icon={assignment.handoff.state === "completed" ? "success" : "store"} label={`التسليم من المتجر: ${handoffLabel}`} tone={assignment.handoff.state === "completed" ? "success" : "warning"} />
             {task ? (
               <View style={styles.task}>
+                {task.storeProfileImage?.uri ? <Image accessibilityLabel={`صورة متجر ${task.storeName}`} source={{ uri: task.storeProfileImage.uri }} style={{ borderRadius: 10, height: 100, width: "100%" }} resizeMode="cover" /> : null}
                 <Text style={styles.muted}>المتجر: {task.storeName}</Text>
                 <Text style={styles.muted}>عنوان العميل: {task.customerAddressText}</Text>
                 <Text style={styles.muted}>حالة الطلب: {orderStateLabel(task.orderState)}</Text>

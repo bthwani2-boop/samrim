@@ -54,6 +54,7 @@ type JoiningCaseRecord struct {
 	CorrectionReason        string
 	ReviewedBy              string
 	StoreID                 string
+	StoreProfileImage       *StoreProfileMediaRecord
 	Store                   *StoreRecord
 	Version                 int
 	CreatedAt               time.Time
@@ -507,6 +508,9 @@ func ReviewJoiningCase(ctx context.Context, db *sql.DB, caseID, decision, correc
 		if _, err := tx.ExecContext(ctx, "INSERT INTO dsh.stores(id,partner_actor_id,name,service_city_id,primary_vertical_id,delivery_origin_latitude,delivery_origin_longitude,delivery_origin_version,delivery_origin_updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,1,clock_timestamp())", storeID, current.Case.PartnerActorID, current.Case.FirstStoreName, current.Case.FirstStoreServiceCityID, current.Case.FirstStoreVerticalID, *current.Case.FirstStoreLatitude, *current.Case.FirstStoreLongitude); err != nil {
 			return JoiningCaseResult{}, fmt.Errorf("create canonical store: %w", err)
 		}
+		if err := AttachStoreProfileMediaToStoreTx(ctx, tx, caseID, storeID); err != nil {
+			return JoiningCaseResult{}, fmt.Errorf("attach canonical store profile image: %w", err)
+		}
 	}
 	state := decision
 	updated, err := updateJoiningCaseReviewStateTx(ctx, tx, current.Case, state, current.Case.PartnerActorID, actingActorID, correctionReason, storeID, commissionRateBps, settlementPeriod, expectedVersion)
@@ -551,6 +555,10 @@ func ReadJoiningCase(ctx context.Context, db *sql.DB, caseID string) (JoiningCas
 	if err != nil {
 		return JoiningCaseResult{}, fmt.Errorf("read joining case: %w", err)
 	}
+	caseRecord.StoreProfileImage, err = readStoreProfileMediaWithQuery(ctx, db, caseRecord.ID, caseRecord.StoreID)
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
 	return JoiningCaseResult{Case: caseRecord}, nil
 }
 
@@ -562,6 +570,10 @@ func ReadJoiningCaseForPartner(ctx context.Context, db *sql.DB, actorID string) 
 	if err != nil {
 		return JoiningCaseResult{}, err
 	}
+	caseRecord.StoreProfileImage, err = readStoreProfileMediaWithQuery(ctx, db, caseRecord.ID, caseRecord.StoreID)
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
 	return JoiningCaseResult{Case: caseRecord}, nil
 }
 
@@ -570,6 +582,10 @@ func ReadJoiningCaseForField(ctx context.Context, db *sql.DB, fieldActorID, case
 	if errors.Is(err, sql.ErrNoRows) {
 		return JoiningCaseResult{}, ErrJoiningCaseNotFound
 	}
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
+	caseRecord.StoreProfileImage, err = readStoreProfileMediaWithQuery(ctx, db, caseRecord.ID, caseRecord.StoreID)
 	if err != nil {
 		return JoiningCaseResult{}, err
 	}
@@ -640,6 +656,10 @@ func readJoiningCaseTx(ctx context.Context, tx *sql.Tx, caseID string) (JoiningC
 	if errors.Is(err, sql.ErrNoRows) {
 		return JoiningCaseResult{}, ErrJoiningCaseNotFound
 	}
+	if err != nil {
+		return JoiningCaseResult{}, err
+	}
+	record.StoreProfileImage, err = readStoreProfileMediaWithQuery(ctx, tx, record.ID, record.StoreID)
 	return JoiningCaseResult{Case: record}, err
 }
 

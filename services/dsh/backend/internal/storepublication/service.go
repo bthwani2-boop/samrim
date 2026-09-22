@@ -111,8 +111,14 @@ func (s *Service) ReadForOperator(ctx context.Context, storeID, actingActorID st
 	return store, readiness, err
 }
 
-func (s *Service) ListPublished(ctx context.Context, serviceCityID string) ([]postgres.PublicStoreRecord, error) {
-	stores, err := postgres.ListPublishedStores(ctx, s.db, serviceCityID)
+func (s *Service) ListPublished(ctx context.Context, serviceCityID string, latitude, longitude *float64) ([]postgres.PublicStoreRecord, error) {
+	var stores []postgres.PublicStoreRecord
+	var err error
+	if latitude != nil && longitude != nil {
+		stores, err = postgres.ListPublishedStoresNear(ctx, s.db, serviceCityID, *latitude, *longitude)
+	} else {
+		stores, err = postgres.ListPublishedStores(ctx, s.db, serviceCityID)
+	}
 	if err != nil {
 		return nil, err
 	}

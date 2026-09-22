@@ -83,7 +83,7 @@ func writeNotificationError(w http.ResponseWriter, err error) {
 	}
 	switch {
 	case errors.Is(err, notificationdomain.ErrSessionForbidden):
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active client, partner, or captain session is required")
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "an active client, partner, captain, or field session is required")
 	case errors.Is(err, postgres.ErrNotificationNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "notification was not found")
 	default:

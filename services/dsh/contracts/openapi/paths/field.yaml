@@ -492,3 +492,57 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
+
+  /dsh/field/joining-cases/{caseId}/store-image:
+    post:
+      operationId: uploadFieldJoiningCaseStoreImage
+      summary: Attach the canonical primary store image to a Field joining case
+      security:
+        - userBearer: []
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ExpectedVersionRequired"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Image attached and joining-case readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse"
+        "201":
+          description: Image attached and joining-case readback.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/JoiningCaseResponse"
+        "400":
+          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
+        "401":
+          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
+        "403":
+          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
+        "404":
+          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
+        "409":
+          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
+        "503":
+          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"

@@ -51,9 +51,9 @@ export function OperatorHome() {
             <Link className="button button-secondary home-area-link" href="/operations">فتح العمليات</Link>
           </section>
           <section className="access-card home-work-area" aria-labelledby="home-joining-title">
-            <div className="access-card-heading"><p className="eyebrow">الشركاء والمتاجر</p><h2 id="home-joining-title">طلبات الانضمام قيد المراجعة</h2><p className="muted">استأنف طلبًا من الطابور القانوني ثم اعرض المتجر والنشر من تفاصيل الحالة.</p></div>
+            <div className="access-card-heading"><p className="eyebrow">الشركاء</p><h2 id="home-joining-title">طلبات الانضمام قيد المراجعة</h2><p className="muted">استأنف طلبًا من الطابور القانوني ثم اعرض المتجر والنشر من تفاصيل الحالة.</p></div>
             {joiningCases.length === 0 ? <p className="empty-inline">لا توجد طلبات انضمام في حالة المراجعة الآن.</p> : <ul className="home-list">{joiningCases.slice(0, 4).map((item) => <li key={item.id}><Link href="/partners"><span><strong>{item.businessName}</strong><small>طلب شريك قيد المتابعة</small></span><strong>{joiningCaseStateLabel(item.state)}</strong></Link></li>)}</ul>}
-            <Link className="button button-secondary home-area-link" href="/partners">فتح الشركاء والمتاجر</Link>
+            <Link className="button button-secondary home-area-link" href="/partners">فتح الشركاء</Link>
           </section>
         </div>
       ) : null}

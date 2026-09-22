@@ -4,8 +4,6 @@ import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { logoutIdentity } from "../../bootstrap/identity";
 import { NotificationsInbox } from "../notifications/notifications-inbox";
-import { PartnerFinancialSummaryCard } from "./partner-financial-summary";
-import { PartnerPayoutCard } from "./partner-payout-card";
 
 export default function PartnerAccount() {
   const theme = useAppearanceTheme();
@@ -18,7 +16,7 @@ export default function PartnerAccount() {
     setNotice("");
     try { await logoutIdentity(); } catch { setNotice("تم تسجيل الخروج من هذا الجهاز، لكن تعذر تأكيد إبطال الجلسة على الخادم."); } finally { setBusy(false); }
   }
-  return <View style={styles.container} accessibilityLabel="حساب الشريك"><Text style={styles.eyebrow}>إدارة الحساب</Text><Text style={styles.title}>حساب الشريك</Text><Text style={styles.description}>تظل حالة المتجر والكتالوج والطلبات مرتبطة بصلاحيات الشريك الحالية.</Text><NotificationsInbox /><PartnerFinancialSummaryCard /><PartnerPayoutCard /><BthwaniSurface tone="base" style={styles.card}><Text style={styles.cardTitle}>جلسة التشغيل</Text><Text style={styles.description}>الجلسة الحالية مفعّلة لهذا الجهاز.</Text></BthwaniSurface><AppearancePicker /><BthwaniButton accessibilityLabel="تسجيل الخروج" busy={busy} label="تسجيل الخروج" onPress={() => void logout()} />{notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}</View>;
+  return <View style={styles.container} accessibilityLabel="حساب الشريك"><Text style={styles.eyebrow}>إدارة الحساب</Text><Text style={styles.title}>حساب الشريك</Text><Text style={styles.description}>تظل حالة المتجر والكتالوج والطلبات مرتبطة بصلاحيات الشريك الحالية.</Text><NotificationsInbox /><BthwaniSurface tone="base" style={styles.card}><Text style={styles.cardTitle}>جلسة التشغيل</Text><Text style={styles.description}>الجلسة الحالية مفعّلة لهذا الجهاز.</Text></BthwaniSurface><AppearancePicker /><BthwaniButton accessibilityLabel="تسجيل الخروج" busy={busy} label="تسجيل الخروج" onPress={() => void logout()} />{notice ? <Text accessibilityRole="alert" style={styles.notice}>{notice}</Text> : null}</View>;
 }
 
 function createStyles(theme: ReturnType<typeof resolveTheme>) {

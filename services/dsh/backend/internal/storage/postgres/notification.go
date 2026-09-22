@@ -105,7 +105,7 @@ func MarkNotificationRead(ctx context.Context, db *sql.DB, actorID, role, notifi
 
 func validNotificationID(notificationID string) bool {
 	parts := strings.SplitN(notificationID, ":", 2)
-	if len(parts) != 2 || (parts[0] != "order" && parts[0] != "captain") {
+	if len(parts) != 2 || (parts[0] != "order" && parts[0] != "captain" && parts[0] != "field") {
 		return false
 	}
 	value, err := strconv.ParseInt(parts[1], 10, 64)
@@ -132,6 +132,12 @@ func visibleNotificationEvents(role string) string {
 		FROM dsh.captain_audit audit
 		WHERE audit.captain_actor_id = $1
 		  AND audit.order_id IS NOT NULL`
+	const field = `
+		SELECT 'field:' || audit.id::text AS notification_id, audit.event_type, ''::text AS order_id,
+		       audit.to_state, audit.created_at
+		FROM dsh.joining_case_audit audit
+		JOIN dsh.joining_cases cases ON cases.id = audit.case_id
+		WHERE cases.originating_field_actor_id = $1`
 	switch role {
 	case "client":
 		return fmt.Sprintf(clientOrPartner, "WHERE orders.client_actor_id = $1", "WHERE orders.client_actor_id = $1")
@@ -139,6 +145,8 @@ func visibleNotificationEvents(role string) string {
 		return fmt.Sprintf(clientOrPartner, "JOIN dsh.stores stores ON stores.id = orders.store_id WHERE stores.partner_actor_id = $1", "JOIN dsh.stores stores ON stores.id = orders.store_id WHERE stores.partner_actor_id = $1")
 	case "captain":
 		return captain
+	case "field":
+		return field
 	default:
 		return ""
 	}

@@ -162,7 +162,7 @@ export function CatalogProposalReview() {
               <div><dt>الحالة</dt><dd>{catalogProductProposalStateLabel(selected.state)}</dd></div>
               {selected.correctionReason ? <div><dt>سبب التصحيح السابق</dt><dd>{selected.correctionReason}</dd></div> : null}
             </dl>
-            <label className="field-label" htmlFor="proposal-correction-reason">ملاحظة القرار أو سبب التصحيح<textarea id="proposal-correction-reason" value={reason} onChange={(event) => setReason(event.target.value)} disabled={Boolean(busy)} /></label>
+            <label className="field-label" htmlFor="proposal-correction-reason">ملاحظة القرار أو سبب التصحيح<textarea className="resize-none" id="proposal-correction-reason" value={reason} onChange={(event) => setReason(event.target.value)} disabled={Boolean(busy)} /></label>
             <div className="review-actions">
               <button type="button" className="button button-primary" disabled={Boolean(busy) || conflict} onClick={() => void review("approved")}>{busy === "approved" ? "جارٍ الاعتماد…" : "اعتماد"}</button>
               <button type="button" className="button button-secondary" disabled={Boolean(busy) || conflict} onClick={() => void review("needs_correction")}>{busy === "needs_correction" ? "جارٍ الإعادة…" : "إعادة للتصحيح"}</button>

@@ -28,6 +28,7 @@
 }
 @media (max-width: 900px) {
   :global(.central-catalog-grid) { grid-template-columns: 1fr; }
+  :global(.workspace-resource-grid) { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
   :global(.workspace-header) { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; }
@@ -47,7 +48,11 @@
   :global(.auth-context > p) { font-size: 15px; }
   :global(.session-summary) { grid-template-columns: 1fr; }
   :global(.access-card) { padding: 24px 20px; border-radius: 18px; }
-  :global(.workspace-actor-context) { display: none; }
+  :global(.workspace-actor-context) { display: grid; min-width: 0; gap: 2px; justify-items: start; text-align: start; }
+  :global(.workspace-breadcrumbs ol) { justify-content: flex-start; flex-wrap: nowrap; overflow: hidden; }
+  :global(.workspace-breadcrumbs li) { min-width: 0; }
+  :global(.workspace-breadcrumbs li:last-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :global(.actor-context) { font-size: 11px; }
   :global(.workspace-header) { grid-template-columns: auto 1fr auto; }
   :global(.admission-form) { grid-template-columns: 1fr; }
   :global(.admission-form .button) { width: 100%; }

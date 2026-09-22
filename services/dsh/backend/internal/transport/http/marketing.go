@@ -1,24 +1,35 @@
 package transporthttp
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
+	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
 type MarketingServer struct {
-	auth *auth.ServiceToken
-	db   *sql.DB
+	auth     *auth.ServiceToken
+	db       *sql.DB
+	identity *identityintegration.Client
+	media    media.Store
 }
 
 func NewMarketing(accessToken string, db *sql.DB) (*MarketingServer, error) {
+	return NewMarketingWithDependencies(nil, accessToken, db, nil)
+}
+
+func NewMarketingWithDependencies(identityClient *identityintegration.Client, accessToken string, db *sql.DB, mediaStore media.Store) (*MarketingServer, error) {
 	authorizer, err := auth.NewServiceToken(accessToken)
 	if err != nil {
 		return nil, err
@@ -26,16 +37,19 @@ func NewMarketing(accessToken string, db *sql.DB) (*MarketingServer, error) {
 	if db == nil {
 		return nil, errors.New("marketing database is required")
 	}
-	return &MarketingServer{auth: authorizer, db: db}, nil
+	return &MarketingServer{auth: authorizer, db: db, identity: identityClient, media: mediaStore}, nil
 }
 
 func (s *MarketingServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/public/promotions", s.listPublicPromotions)
 	mux.HandleFunc("GET /dsh/public/discovery-content", s.listPublicDiscoveryContent)
+	mux.HandleFunc("POST /dsh/public/discovery-content/events", s.recordPublicDiscoveryContentEvent)
+	mux.HandleFunc("GET /dsh/public/discovery-content/{contentId}/target", s.resolvePublicDiscoveryContentTarget)
 	mux.HandleFunc("GET /dsh/operator/promotions", s.listOperatorPromotions)
 	mux.HandleFunc("POST /dsh/operator/promotions", s.createOperatorPromotion)
 	mux.HandleFunc("POST /dsh/operator/promotions/{promotionId}/publication", s.setOperatorPromotionPublication)
 	mux.HandleFunc("GET /dsh/operator/discovery-content", s.listOperatorDiscoveryContent)
+	mux.HandleFunc("GET /dsh/operator/discovery-content/analytics", s.listOperatorDiscoveryContentAnalytics)
 	mux.HandleFunc("POST /dsh/operator/discovery-content", s.createOperatorDiscoveryContent)
 	mux.HandleFunc("POST /dsh/operator/discovery-content/{contentId}/publication", s.setOperatorDiscoveryContentPublication)
 }
@@ -64,6 +78,45 @@ func (s *MarketingServer) listPublicDiscoveryContent(w http.ResponseWriter, r *h
 		values = append(values, toDiscoveryContentView(item))
 	}
 	writeJSON(w, http.StatusOK, contract.DiscoveryContentListResponse{Items: values})
+}
+
+func (s *MarketingServer) recordPublicDiscoveryContentEvent(w http.ResponseWriter, r *http.Request) {
+	var input contract.DiscoveryContentEventRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	actorID := ""
+	if input.EventType == contract.DiscoveryContentEventType("CONVERSION") {
+		if s.identity == nil || bearerToken(r) == "" {
+			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "a client session is required for conversion attribution")
+			return
+		}
+		identity, err := s.identity.ReadSession(r.Context(), bearerToken(r))
+		if err != nil || string(identity.Role) != "client" {
+			writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "a client session is required for conversion attribution")
+			return
+		}
+		actorID = identity.Subject
+	}
+	if err := postgres.RecordDiscoveryContentEvent(r.Context(), s.db, postgres.DiscoveryContentEventInput{ID: "discovery-event_" + strings.TrimSpace(input.ClientEventID), ClientEventID: input.ClientEventID, ContentID: input.ContentID, EventType: string(input.EventType), ClientSessionID: input.ClientSessionID, ClientActorID: actorID, OrderID: input.OrderID}); err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *MarketingServer) resolvePublicDiscoveryContentTarget(w http.ResponseWriter, r *http.Request) {
+	serviceCityID := strings.TrimSpace(r.URL.Query().Get("serviceCityId"))
+	if serviceCityID == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "serviceCityId is required for target resolution")
+		return
+	}
+	item, err := postgres.ResolveDiscoveryContentTarget(r.Context(), s.db, r.PathValue("contentId"), serviceCityID)
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.DiscoveryContentTargetResolution{ContentID: item.ContentID, TargetType: contract.DiscoveryContentTargetType(item.TargetType), TargetID: item.TargetID, StoreID: item.StoreID, PromotionID: item.PromotionID})
 }
 
 func (s *MarketingServer) listOperatorPromotions(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +204,22 @@ func (s *MarketingServer) listOperatorDiscoveryContent(w http.ResponseWriter, r 
 	writeJSON(w, http.StatusOK, contract.DiscoveryContentListResponse{Items: values})
 }
 
+func (s *MarketingServer) listOperatorDiscoveryContentAnalytics(w http.ResponseWriter, r *http.Request) {
+	if !s.operatorAuthorized(w, r) {
+		return
+	}
+	items, err := postgres.ListDiscoveryContentAnalytics(r.Context(), s.db, strings.TrimSpace(r.URL.Query().Get("contentId")))
+	if err != nil {
+		writeMarketingError(w, err)
+		return
+	}
+	values := make([]contract.DiscoveryContentAnalytics, 0, len(items))
+	for _, item := range items {
+		values = append(values, contract.DiscoveryContentAnalytics{ContentID: item.ContentID, EventType: contract.DiscoveryContentEventType(item.EventType), Count: int(item.Count)})
+	}
+	writeJSON(w, http.StatusOK, contract.DiscoveryContentAnalyticsListResponse{Items: values})
+}
+
 func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, r *http.Request) {
 	if !s.operatorAuthorized(w, r) {
 		return
@@ -160,17 +229,104 @@ func (s *MarketingServer) createOperatorDiscoveryContent(w http.ResponseWriter, 
 		return
 	}
 	var input contract.CreateDiscoveryContentRequest
-	if !decodeJSON(w, r, &input) {
+	var uploadedObjectKey string
+	if strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
+		if s.media == nil {
+			writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+			return
+		}
+		parsed, ok := parseMarketingContentUpload(w, r)
+		if !ok {
+			return
+		}
+		input = parsed.input
+		digest := sha256Bytes(parsed.bytes)
+		objectKey, keyErr := media.KeyForMarketingUpload(input.ID, idempotency, digest, parsed.contentType)
+		if keyErr != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing image upload is invalid")
+			return
+		}
+		if err := s.media.Put(r.Context(), objectKey, bytes.NewReader(parsed.bytes), int64(len(parsed.bytes)), parsed.contentType); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "marketing media upload failed")
+			return
+		}
+		uploadedObjectKey = objectKey
+		input.MediaUri = s.media.PublicURL(objectKey)
+	} else if !decodeJSON(w, r, &input) {
 		return
 	}
 	item, replayed, err := postgres.CreateDiscoveryContent(r.Context(), s.db, postgres.DiscoveryContentInput{
 		ID: input.ID, Kind: string(input.Kind), TitleAr: input.TitleAr, BodyAr: input.BodyAr, MediaURI: input.MediaUri, TargetType: string(input.TargetType), TargetID: input.TargetID, ServiceCityID: input.ServiceCityID, StartsAt: input.StartsAt, EndsAt: input.EndsAt, Ordinal: input.Ordinal, CreatedByActorID: acting,
 	}, idempotency, postgres.HashMarketingFacts("discovery-content-create", input.ID, string(input.Kind), input.TitleAr, input.BodyAr, input.MediaUri, string(input.TargetType), input.TargetID, input.ServiceCityID, input.StartsAt.UTC().Format(time.RFC3339Nano), optionalTimeString(input.EndsAt), fmt.Sprint(input.Ordinal), correlation))
 	if err != nil {
+		if uploadedObjectKey != "" {
+			_ = s.media.Delete(r.Context(), uploadedObjectKey)
+		}
 		writeMarketingError(w, err)
 		return
 	}
 	writeJSON(w, responseStatus(replayed), contract.DiscoveryContentResponse{Content: toDiscoveryContentView(item), IdempotentReplay: replayed})
+}
+
+type marketingContentUpload struct {
+	input       contract.CreateDiscoveryContentRequest
+	bytes       []byte
+	contentType string
+}
+
+func parseMarketingContentUpload(w http.ResponseWriter, r *http.Request) (marketingContentUpload, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+1)
+	if err := r.ParseMultipartForm(media.MaxUploadBytes + 1); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid marketing image upload is required")
+		return marketingContentUpload{}, false
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil || header == nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
+		return marketingContentUpload{}, false
+	}
+	defer file.Close()
+	if header.Size < 1 || header.Size > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return marketingContentUpload{}, false
+	}
+	bytes, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
+	if err != nil || int64(len(bytes)) > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return marketingContentUpload{}, false
+	}
+	contentType, _, _, err := media.ValidateImageBytes(bytes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only valid JPEG and PNG images are accepted")
+		return marketingContentUpload{}, false
+	}
+	startsAt, err := time.Parse(time.RFC3339, strings.TrimSpace(r.FormValue("startsAt")))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "startsAt must be a valid date-time")
+		return marketingContentUpload{}, false
+	}
+	ordinal := 0
+	if raw := strings.TrimSpace(r.FormValue("ordinal")); raw != "" {
+		if _, scanErr := fmt.Sscan(raw, &ordinal); scanErr != nil || ordinal < 0 {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "ordinal must be a non-negative integer")
+			return marketingContentUpload{}, false
+		}
+	}
+	input := contract.CreateDiscoveryContentRequest{ID: strings.TrimSpace(r.FormValue("id")), Kind: contract.DiscoveryContentKind(strings.TrimSpace(r.FormValue("kind"))), TitleAr: strings.TrimSpace(r.FormValue("titleAr")), BodyAr: strings.TrimSpace(r.FormValue("bodyAr")), TargetType: contract.DiscoveryContentTargetType(strings.TrimSpace(r.FormValue("targetType"))), TargetID: strings.TrimSpace(r.FormValue("targetId")), ServiceCityID: strings.TrimSpace(r.FormValue("serviceCityId")), StartsAt: startsAt, Ordinal: ordinal}
+	if rawEnds := strings.TrimSpace(r.FormValue("endsAt")); rawEnds != "" {
+		endsAt, parseErr := time.Parse(time.RFC3339, rawEnds)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "endsAt must be a valid date-time")
+			return marketingContentUpload{}, false
+		}
+		input.EndsAt = &endsAt
+	}
+	return marketingContentUpload{input: input, bytes: bytes, contentType: contentType}, true
+}
+
+func sha256Bytes(value []byte) string {
+	digest := sha256.Sum256(value)
+	return fmt.Sprintf("%x", digest[:])
 }
 
 func (s *MarketingServer) setOperatorDiscoveryContentPublication(w http.ResponseWriter, r *http.Request) {
@@ -229,9 +385,9 @@ func optionalTimeString(value *time.Time) string {
 
 func writeMarketingError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, postgres.ErrPromotionInvalid), errors.Is(err, postgres.ErrDiscoveryContentInvalid):
+	case errors.Is(err, postgres.ErrPromotionInvalid), errors.Is(err, postgres.ErrDiscoveryContentInvalid), errors.Is(err, postgres.ErrDiscoveryContentEventInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "marketing input is invalid")
-	case errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound):
+	case errors.Is(err, postgres.ErrPromotionNotFound), errors.Is(err, postgres.ErrDiscoveryContentNotFound), errors.Is(err, postgres.ErrDiscoveryContentEventNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "marketing record was not found")
 	case errors.Is(err, postgres.ErrPromotionCodeConflict):
 		writeError(w, http.StatusConflict, "PROMOTION_CODE_EXISTS", "promotion code already exists")

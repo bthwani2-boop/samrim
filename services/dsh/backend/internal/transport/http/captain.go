@@ -273,7 +273,7 @@ func (s *CaptainServer) readDeliveryTask(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.CaptainDeliveryTaskResponse{Task: contract.CaptainDeliveryTask{
-		AssignmentID: task.AssignmentID, OrderReference: task.OrderReference, StoreID: task.StoreID, StoreName: task.StoreName,
+		AssignmentID: task.AssignmentID, OrderReference: task.OrderReference, StoreID: task.StoreID, StoreName: task.StoreName, StoreProfileImage: toStoreProfileImageURI(task.StoreProfileImageURI),
 		PickupOrigin: contract.CaptainLocation{Latitude: task.PickupLatitude, Longitude: task.PickupLongitude}, CustomerAddressText: task.CustomerAddressText,
 		CustomerDestination: contract.CaptainLocation{Latitude: task.DestinationLatitude, Longitude: task.DestinationLongitude}, OrderState: contract.OrderState(task.OrderState),
 		HandoffState: task.HandoffState, DeliveryState: task.DeliveryState, PaymentMethod: contract.PaymentMethod(task.PaymentMethod), PaymentState: contract.PaymentState(task.PaymentState), AmountDueMinor: int(task.AmountDueMinor), Currency: task.Currency,
@@ -508,7 +508,7 @@ func toCaptainAdmission(value postgres.CaptainAdmission) contract.CaptainAdmissi
 }
 
 func toCaptainOffer(value postgres.CaptainOffer) contract.CaptainOffer {
-	return contract.CaptainOffer{ID: value.ID, OrderID: value.OrderID, CaptainActorID: value.CaptainActorID, State: value.State, ExpiresAt: value.ExpiresAt, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, StoreName: value.StoreName, CustomerAddressText: value.CustomerAddressText, AmountDueMinor: int(value.AmountDueMinor), Currency: value.Currency, PaymentMethod: contract.PaymentMethod(value.PaymentMethod), PaymentState: contract.PaymentState(value.PaymentState)}
+	return contract.CaptainOffer{ID: value.ID, OrderID: value.OrderID, CaptainActorID: value.CaptainActorID, State: value.State, ExpiresAt: value.ExpiresAt, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, StoreName: value.StoreName, StoreProfileImage: toStoreProfileImageURI(value.StoreProfileImageURI), CustomerAddressText: value.CustomerAddressText, AmountDueMinor: int(value.AmountDueMinor), Currency: value.Currency, PaymentMethod: contract.PaymentMethod(value.PaymentMethod), PaymentState: contract.PaymentState(value.PaymentState)}
 }
 
 func toCaptainAssignment(value postgres.CaptainAssignment) contract.CaptainAssignment {

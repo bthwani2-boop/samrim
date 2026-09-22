@@ -35,6 +35,33 @@ paths:
         "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
         "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
 
+  /dsh/public/discovery-content/events:
+    post:
+      operationId: recordPublicDiscoveryContentEvent
+      summary: Record one idempotent discovery-content impression, click, or conversion
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentEventRequest" } } }
+      responses:
+        "204": { description: Event accepted or idempotently replayed. }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+
+  /dsh/public/discovery-content/{contentId}/target:
+    get:
+      operationId: resolvePublicDiscoveryContentTarget
+      summary: Resolve a published discovery target into a client-safe navigation destination
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ContentId" }
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ServiceCityIdRequired" }
+      responses:
+        "200":
+          description: Client-safe target resolution.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentTargetResolution" } } }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+
   /dsh/operator/promotions:
     get:
       operationId: listOperatorPromotions
@@ -141,3 +168,22 @@ paths:
         "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
         "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+
+  /dsh/operator/discovery-content/analytics:
+    get:
+      operationId: listOperatorDiscoveryContentAnalytics
+      summary: Read aggregated discovery-content impression, click, and conversion counts
+      security: [{ serviceBearer: [] }]
+      parameters:
+        - { $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired" }
+        - name: contentId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+      responses:
+        "200":
+          description: Operator-owned analytics readback.
+          content: { application/json: { schema: { $ref: "../dsh.openapi.yaml#/components/schemas/DiscoveryContentAnalyticsListResponse" } } }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

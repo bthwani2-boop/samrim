@@ -1,4 +1,4 @@
-import { type CartResponse, type CatalogStoreOffer, createDshMobileClient, type CommerceVertical, type DiscoveryContentListResponse, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
+import { type CartResponse, type CatalogStoreOffer, createDshMobileClient, type CommerceVertical, type DiscoveryContentEventRequest, type DiscoveryContentListResponse, type DiscoveryContentTargetResolution, type MultiStoreCheckoutRequest, type MultiStoreCheckoutResponse, type PromotionListResponse, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
@@ -11,8 +11,8 @@ function dshBaseUrl(): string {
 
 const client = () => createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () => Crypto.randomUUID() });
 
-export async function listPublishedStores(serviceCityID: string): Promise<ReadonlyArray<PublicStoreView>> {
-  return client().listPublishedStores(serviceCityID);
+export async function listPublishedStores(serviceCityID: string, location?: Readonly<{ latitude: number; longitude: number }>): Promise<ReadonlyArray<PublicStoreView>> {
+  return client().listPublishedStores(serviceCityID, location);
 }
 
 export async function listCatalogVerticals(): Promise<ReadonlyArray<CommerceVertical>> {
@@ -25,6 +25,15 @@ export async function listPublicPromotions(serviceCityID: string, storeID = ""):
 
 export async function listPublicDiscoveryContent(serviceCityID: string): Promise<DiscoveryContentListResponse> {
   return client().listPublicDiscoveryContent(serviceCityID);
+}
+
+export async function resolvePublicDiscoveryContentTarget(contentID: string, serviceCityID: string): Promise<DiscoveryContentTargetResolution> {
+  return client().resolvePublicDiscoveryContentTarget(contentID, serviceCityID);
+}
+
+export async function recordPublicDiscoveryContentEvent(input: DiscoveryContentEventRequest): Promise<void> {
+  const accessToken = input.eventType === "CONVERSION" ? await getUsableIdentityAccessToken() : "";
+  await client().recordPublicDiscoveryContentEvent(input, accessToken);
 }
 
 export async function listFavoriteStoreIDs(): Promise<ReadonlyArray<string>> {

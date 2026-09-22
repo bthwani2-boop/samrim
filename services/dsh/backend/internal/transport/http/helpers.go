@@ -123,8 +123,23 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 		DeliveryOrigin: deliveryOrigin,
 		CreatedAt:      store.CreatedAt, UpdatedAt: store.UpdatedAt,
 		Offers:               values,
+		StoreProfileImage:    toStoreProfileImage(store.StoreProfileImage),
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
+}
+
+func toStoreProfileImage(value *postgres.StoreProfileMediaRecord) *contract.StoreProfileImage {
+	if value == nil || strings.TrimSpace(value.URI) == "" {
+		return nil
+	}
+	return toStoreProfileImageURI(value.URI)
+}
+
+func toStoreProfileImageURI(uri string) *contract.StoreProfileImage {
+	if strings.TrimSpace(uri) == "" {
+		return nil
+	}
+	return &contract.StoreProfileImage{Uri: strings.TrimSpace(uri), Role: "primary"}
 }
 
 func nullableString(value string) string {

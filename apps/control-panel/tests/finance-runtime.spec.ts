@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 
 test("@live operator reads the real bounded COD cash-custody journey", async ({ page }) => {
   test.setTimeout(30_000);
-  await page.goto("/finance");
-  await expect(page.getByRole("heading", { name: "المالية" })).toBeVisible();
+  await page.goto("/finance/cash-custody");
+  await expect(page.getByRole("heading", { name: "حفظ النقد" })).toBeVisible();
   await expect(page.getByText("التزامات نقدية محصلة ضمن الإسقاط الحالي")).toBeVisible();
   await expect(page.getByText("طلبات التسوية والوجهات الرسمية تظهر في مساحة التسوية الموحدة أدناه.")).toBeVisible();
 
@@ -19,8 +19,8 @@ test("@live operator reads the real bounded COD cash-custody journey", async ({ 
 
 test("@live operator reads the WLT-owned delivery-fee policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
-  await page.goto("/finance");
-  await expect(page.getByRole("heading", { name: "رسوم التوصيل" })).toBeVisible();
+  await page.goto("/finance/delivery-fee-policy");
+  await expect(page.getByRole("heading", { name: "سياسة رسوم التوصيل" })).toBeVisible();
   await expect(page.getByText("تُحسب الرسوم خادميًا من المسافة، ومدينة الخدمة كمنطقة، ووحدات السلة.")).toBeVisible();
   await expect(page.getByLabel("المنطقة / مدينة الخدمة")).toBeVisible();
   await expect(page.getByLabel("الرسوم الأساسية (ريال)")).toBeEnabled();
@@ -37,7 +37,7 @@ test("@live operator reads the WLT-owned delivery-fee policy workspace", async (
 
 test("@live operator reads the WLT-managed unified beneficiary settlement workspace", async ({ page }) => {
   test.setTimeout(30_000);
-  await page.goto("/finance");
+  await page.goto("/finance/beneficiary-settlement");
   const workspace = page.getByRole("region", { name: "وجهة وتسوية المستفيد" });
   await expect(workspace.getByRole("heading", { name: "وجهة وتسوية المستفيد" })).toBeVisible();
   await expect(page.getByText("إدارة الوجهة الرسمية تتم من المالية فقط")).toBeVisible();
@@ -49,8 +49,8 @@ test("@live operator reads the WLT-managed unified beneficiary settlement worksp
 
 test("@live operator sees the WLT-managed Field commission policy workspace", async ({ page }) => {
   test.setTimeout(30_000);
-  await page.goto("/finance");
-  await expect(page.getByRole("heading", { name: "مكافأة الميداني" })).toBeVisible();
+  await page.goto("/finance/field-commission-policy");
+  await expect(page.getByRole("heading", { name: "سياسة مكافأة الميدان" })).toBeVisible();
   await expect(page.getByText("تُستحق المكافأة مرة واحدة عند ظهور المتجر في تطبيق العميل.")).toBeVisible();
   await expect(page.getByLabel("نطاق السياسة")).toBeVisible();
   await expect(page.getByLabel("المكافأة (ريال)")).toBeEnabled();

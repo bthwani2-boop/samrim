@@ -6,6 +6,7 @@ import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
+import { recordPendingDiscoveryConversion } from "../store-discovery/discovery-analytics";
 
 type CartState = { kind: "loading" } | { kind: "empty" } | { kind: "ready"; cart: Cart } | { kind: "error" };
 type QuoteState = { kind: "idle" } | { kind: "loading" } | { kind: "ready"; quote: CheckoutQuote } | { kind: "error" };
@@ -144,6 +145,7 @@ export function CartCheckout({ storeId, addresses, serviceableAddressId }: { sto
       const token = await getUsableIdentityAccessToken();
       const result = await client().checkoutCart(token, { cartId: state.cart.id, storeId, addressId: serviceableAddressId, fulfillmentMode: "BTHWANI_CAPTAIN", ...(promotionCode.trim() ? { promotionCode: promotionCode.trim().toUpperCase() } : {}) }, state.cart.version);
       setOrder(result.order);
+      void recordPendingDiscoveryConversion(result.order.id);
       setOrders((await client().listClientOrders(token, 20)).orders);
       setState({ kind: "empty" });
     } catch (cause) {

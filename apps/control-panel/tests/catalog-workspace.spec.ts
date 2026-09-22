@@ -18,10 +18,11 @@ test("catalog landing exposes separate resource workspaces", async ({ page }) =>
   await stubAuthenticatedSession(page);
   await page.goto("/catalog");
   await expect(page.getByRole("heading", { name: "الكتالوج", exact: true })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "موارد الكتالوج" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: "الكتالوج", exact: true })).toHaveAttribute("aria-current", "page");
   for (const label of ["المنتجات", "التصنيفات", "المجالات", "المقترحات", "الاستيراد"]) {
-    await expect(page.getByRole("link", { name: new RegExp(label) }).first()).toHaveAttribute("href", /\/catalog\//);
+    await expect(page.getByRole("navigation", { name: "تنقل مساحة المشغل" }).getByRole("link", { name: label, exact: true })).toHaveAttribute("href", /\/catalog\//);
   }
+  await expect(page.getByRole("navigation", { name: "موارد الكتالوج" })).toHaveCount(0);
   await expect(page.locator("#catalog-import-rows")).toHaveCount(0);
 });
 

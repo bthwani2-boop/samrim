@@ -129,7 +129,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	fieldServer, err := transporthttp.NewField(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	marketingServer, err := transporthttp.NewMarketing(os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database)
+	marketingServer, err := transporthttp.NewMarketingWithDependencies(identityClient, os.Getenv("CONTROL_PANEL_SERVICE_TOKEN"), database, mediaStore)
 	if err != nil {
 		log.Fatal(err)
 	}
