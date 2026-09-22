@@ -119,6 +119,9 @@ func message(eventType, role, orderID string) (string, string, string) {
 	case "dispatch_offer_rejected", "dispatch_offer_expired", "captain_offer_superseded_by_access":
 		return "CAPTAIN_OFFER", "تحديث عرض التوصيل", fmt.Sprintf("تحدّث عرض توصيل الطلب رقم %s.", orderRef)
 	case "captain_assignment_reassigned":
+		if role == "captain" {
+			return "CAPTAIN_OFFER", "طلب توصيل جديد", fmt.Sprintf("لديك عرض توصيل جديد للطلب رقم %s.", orderRef)
+		}
 		return "REASSIGNED", "إعادة إسناد التوصيل", fmt.Sprintf("تمت إعادة إسناد توصيل الطلب رقم %s.", orderRef)
 	case "store_handoff_confirmed":
 		return "HANDOFF_CONFIRMED", "تم تأكيد الاستلام من المتجر", fmt.Sprintf("تم تأكيد استلام الطلب رقم %s من المتجر.", orderRef)
