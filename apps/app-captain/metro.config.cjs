@@ -1,2 +1,2 @@
-const { getDefaultConfig } = require("expo/metro-config");
-module.exports = getDefaultConfig(__dirname);
+const { createSamrimMetroConfig } = require("../../tools/mobile/create-samrim-metro-config.cjs");
+module.exports = createSamrimMetroConfig(__dirname);

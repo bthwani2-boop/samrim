@@ -1,0 +1,18 @@
+:global(.finance-summary-grid) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+:global(.finance-summary-card) { display: grid; gap: 7px; padding: 18px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-base); }
+:global(.finance-summary-card strong) { color: var(--color-primary); font-size: clamp(22px, 3vw, 32px); }
+:global(.finance-summary-card span) { color: var(--text-muted); font-size: 13px; line-height: 1.7; }
+:global(.finance-boundary-note) { margin-top: 16px; padding: 16px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-muted); }
+:global(.finance-boundary-note p) { margin: 6px 0 0; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
+:global(.finance-toolbar) { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
+:global(.finance-toolbar h2) { margin: 0; font-size: 20px; }
+:global(.finance-table-wrap) { overflow-x: auto; margin-top: 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--surface-base); }
+:global(.finance-table) { width: 100%; min-width: 680px; border-collapse: collapse; text-align: right; }
+:global(.finance-table th), :global(.finance-table td) { padding: 15px 16px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
+:global(.finance-table thead th) { background: var(--surface-muted); color: var(--text-muted); font-size: 12px; font-weight: 800; white-space: nowrap; }
+:global(.finance-table tbody tr:last-child th), :global(.finance-table tbody tr:last-child td) { border-bottom: 0; }
+:global(.finance-table tbody th), :global(.finance-table tbody td) { color: var(--text-muted); font-size: 13px; }
+:global(.finance-table tbody th) { color: var(--color-primary); font-weight: 800; }
+@media (max-width: 700px) { :global(.finance-summary-grid) { grid-template-columns: 1fr; } :global(.finance-toolbar) { align-items: flex-start; flex-direction: column; } }
+:global(.form-grid) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
+@media (max-width: 700px) { :global(.form-grid) { grid-template-columns: 1fr; } }

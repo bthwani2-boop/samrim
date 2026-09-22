@@ -152,38 +152,3 @@ paths:
           $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
         "502":
           $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"
-    post:
-      operationId: setStoreDeliveryOrigin
-      summary: Capture or update the authenticated partner's Store delivery origin
-      security:
-        - userBearer: []
-      parameters:
-        - $ref: "../dsh.openapi.yaml#/components/parameters/StoreId"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
-        - $ref: "../dsh.openapi.yaml#/components/parameters/OriginVersionRequired"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "../dsh.openapi.yaml#/components/schemas/SetStoreDeliveryOriginRequest"
-      responses:
-        "200":
-          description: Canonical Store delivery-origin result or idempotent replay.
-          content:
-            application/json:
-              schema:
-                $ref: "../dsh.openapi.yaml#/components/schemas/StoreDeliveryOriginResponse"
-        "400":
-          $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput"
-        "401":
-          $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated"
-        "403":
-          $ref: "../dsh.openapi.yaml#/components/responses/Forbidden"
-        "404":
-          $ref: "../dsh.openapi.yaml#/components/responses/NotFound"
-        "409":
-          $ref: "../dsh.openapi.yaml#/components/responses/Conflict"
-        "502":
-          $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable"

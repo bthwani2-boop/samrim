@@ -44,7 +44,7 @@ export function JoiningCaseQueue() {
       </div>
       <div className="managed-status managed-status-info">
         <div className="button-row">
-          <Link className="button button-primary" href="/partners/new">إنشاء حالة انضمام</Link>
+          <Link className="button button-primary" href="/partners/new">إضافة شريك</Link>
           <Link className="button button-secondary" href="/partners/service-cities">إدارة مدن الخدمة</Link>
           <button type="button" className="button button-secondary" disabled={busy} onClick={() => void loadQueue()}>إعادة القراءة</button>
         </div>

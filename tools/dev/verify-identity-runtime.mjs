@@ -4,9 +4,15 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { captureMailpitMessageIds, readMailpitCode } from "./mailpit-challenge.mjs";
 
+const destructiveProofAuthorized = process.env.CI === "true" && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci";
+if (!destructiveProofAuthorized) {
+  console.error("IDENTITY_PROOF_REFUSED scope=developer-state reason=disposable-ci-required");
+  process.exit(1);
+}
+
 const root = path.resolve(import.meta.dirname, "../..");
 const requestedEnv = process.argv.find((arg) => arg.startsWith("--env-file="))?.slice("--env-file=".length);
-const envFile = path.resolve(root, requestedEnv || "infra/local/compose/.env");
+const envFile = path.resolve(root, requestedEnv || "infra/local/.env");
 const runtimeHost = process.argv.find((arg) => arg.startsWith("--host="))?.slice("--host=".length) || "127.0.0.1";
 const env = Object.fromEntries(fs.readFileSync(envFile, "utf8").split(/\r?\n/).filter((line) => line.trim() && !line.trim().startsWith("#")).map((line) => {
   const index = line.indexOf("=");
@@ -174,17 +180,21 @@ await expect("POST", "/auth/managed/activation/request", 403, { body: { phone: m
 const authOptions = await expect("POST", "/auth/operator/authentication/options", 201);
 assert(typeof authOptions.ceremonyId === "string" && authOptions.publicKey?.challenge, "operator passkey options are not server-owned");
 assert(!authOptions.accessToken && !authOptions.refreshToken, "passkey options created a session");
-const operatorEnrollment = await expect("POST", "/internal/operator-enrollment-tokens", 201, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: operator[1], role: "operator" } });
+const operatorProofPhone = phone();
+generatedPhones.add(operatorProofPhone);
+const operatorProof = await expect("POST", "/internal/actor-roles/provision", 201, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: operatorProofPhone, role: "operator" } });
+assert(operatorProof?.actorId && operatorProof?.role === "operator", "disposable operator proof fixture was not provisioned");
+const operatorEnrollment = await expect("POST", "/internal/operator-enrollment-tokens", 201, { token: controlToken, headers: { "X-Acting-Actor-ID": operatorActorID }, body: { phoneE164: operatorProofPhone, role: "operator" } });
 assert(/^[A-Za-z0-9_-]{24,256}$/.test(operatorEnrollment.code), "operator enrollment token is not high entropy");
-const operatorChallenge = await issue("/auth/operator/enrollment/request", { phone: operator[1], operatorEnrollmentToken: operatorEnrollment.code }, "operator_enroll", "operator");
-const enrollmentOptions = await expect("POST", "/auth/operator/enrollment/registration/options", 201, { body: { phone: operator[1], operatorEnrollmentToken: operatorEnrollment.code, verificationCode: operatorChallenge.code } });
+const operatorChallenge = await issue("/auth/operator/enrollment/request", { phone: operatorProofPhone, operatorEnrollmentToken: operatorEnrollment.code }, "operator_enroll", "operator");
+const enrollmentOptions = await expect("POST", "/auth/operator/enrollment/registration/options", 201, { body: { phone: operatorProofPhone, operatorEnrollmentToken: operatorEnrollment.code, verificationCode: operatorChallenge.code } });
 assert(typeof enrollmentOptions.ceremonyId === "string" && enrollmentOptions.publicKey?.challenge, "operator enrollment ceremony was not created");
 const invalidFinish = await request("POST", "/auth/operator/enrollment/registration/finish", { body: { ceremonyId: enrollmentOptions.ceremonyId, credential: {}, clientInstanceId: "runtime-invalid-passkey-instance-" + crypto.randomUUID() } });
 assert([400, 401].includes(invalidFinish.status), "invalid operator passkey credential was accepted");
 sql("UPDATE identity_webauthn_ceremonies SET expires_at=clock_timestamp()-interval '1 second' WHERE id='" + sqlLiteral(enrollmentOptions.ceremonyId) + "'");
 assert(sql("SELECT count(*) FROM identity_webauthn_ceremonies WHERE id='" + sqlLiteral(enrollmentOptions.ceremonyId) + "' AND expires_at < clock_timestamp()") === "1", "passkey ceremony expiry readback failed");
 await expect("POST", "/auth/operator/enrollment/registration/finish", 401, { body: { ceremonyId: enrollmentOptions.ceremonyId, credential: {}, clientInstanceId: "runtime-expired-passkey-instance-" + crypto.randomUUID() } });
-const recoveryWithoutCredential = await request("POST", "/auth/operator/recovery/request", { body: { phone: operator[1], recoveryCredential: "not-a-real-recovery-credential" } });
+const recoveryWithoutCredential = await request("POST", "/auth/operator/recovery/request", { body: { phone: operatorProofPhone, recoveryCredential: "not-a-real-recovery-credential" } });
 assert(recoveryWithoutCredential.status === 201, "operator recovery leaked whether an invalid recovery credential matched");
 assert(recoveryWithoutCredential.body?.challengeId && sql("SELECT admissible::text FROM identity_challenges WHERE id='" + sqlLiteral(recoveryWithoutCredential.body.challengeId) + "'") === "false", "invalid operator recovery credential became admissible");
 

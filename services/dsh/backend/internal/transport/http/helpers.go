@@ -113,10 +113,15 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 			values = append(values, toStoreOffer(offer))
 		}
 	}
+	var deliveryOrigin *contract.DeliveryOrigin
+	if store.DeliveryOriginLatitude != nil && store.DeliveryOriginLongitude != nil {
+		deliveryOrigin = &contract.DeliveryOrigin{Latitude: *store.DeliveryOriginLatitude, Longitude: *store.DeliveryOriginLongitude}
+	}
 	return contract.StoreView{
 		ID: store.ID, PartnerActorID: store.PartnerActorID, Name: store.Name, ServiceCityID: nullableString(store.ServiceCityID), PrimaryVerticalID: nullableString(store.PrimaryVerticalID), Version: store.Version,
 		PublicationState: contract.PublicationState(store.PublicationState), PublicationChangedAt: store.PublicationChangedAt,
-		CreatedAt: store.CreatedAt, UpdatedAt: store.UpdatedAt,
+		DeliveryOrigin: deliveryOrigin,
+		CreatedAt:      store.CreatedAt, UpdatedAt: store.UpdatedAt,
 		Offers:               values,
 		PublicationReadiness: toPublicationReadiness(readiness),
 	}
@@ -124,6 +129,21 @@ func toStoreView(store postgres.StoreRecord, readiness storepublication.Publicat
 
 func nullableString(value string) string {
 	return strings.TrimSpace(value)
+}
+
+func nullableStringPointer(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func nullableFloatValue(value *float64) float64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 func toPublicationReadiness(readiness storepublication.PublicationReadiness) contract.StorePublicationReadiness {

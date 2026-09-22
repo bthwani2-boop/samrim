@@ -1,0 +1,9 @@
+{
+  "name": "wlt-database",
+  "root": "services/wlt/database",
+  "projectType": "library",
+  "tags": [
+    "scope:wlt-database",
+    "type:service"
+  ]
+}

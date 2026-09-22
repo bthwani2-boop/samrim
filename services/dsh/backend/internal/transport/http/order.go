@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	orderdomain "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/order"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
@@ -20,12 +22,12 @@ type OrderServer struct {
 	service *orderdomain.Service
 }
 
-func NewOrder(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*OrderServer, error) {
+func NewOrder(identityClient *identityintegration.Client, accessToken string, db *sql.DB, payment *wlt.Client) (*OrderServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := orderdomain.New(identityClient, db)
+	service, err := orderdomain.New(identityClient, db, payment)
 	if err != nil {
 		return nil, err
 	}
@@ -35,8 +37,14 @@ func NewOrder(identityClient *identityintegration.Client, accessToken string, db
 func (s *OrderServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/orders", s.listClient)
 	mux.HandleFunc("GET /dsh/orders/{orderId}", s.read)
+	mux.HandleFunc("GET /dsh/orders/{orderId}/delivery-proof", s.readDeliveryProof)
+	mux.HandleFunc("GET /dsh/orders/{orderId}/rating", s.readRating)
+	mux.HandleFunc("POST /dsh/orders/{orderId}/rating", s.createRating)
+	mux.HandleFunc("GET /dsh/orders/{orderId}/tracking", s.readTracking)
+	mux.HandleFunc("POST /dsh/orders/{orderId}/cancel", s.cancel)
 	mux.HandleFunc("GET /dsh/operator/operations", s.listOperatorOperations)
 	mux.HandleFunc("GET /dsh/operator/operations/{orderId}", s.readOperatorOperation)
+	mux.HandleFunc("GET /dsh/operator/cash-custody", s.listOperatorCashCustody)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders", s.listStore)
 	mux.HandleFunc("GET /dsh/stores/{storeId}/orders/{orderId}", s.readStore)
 	mux.HandleFunc("POST /dsh/stores/{storeId}/orders/{orderId}/transition", s.transition)
@@ -97,6 +105,33 @@ func (s *OrderServer) readOperatorOperation(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, contract.OperatorOperationResponse{Operation: toOperatorOperation(operation)})
 }
 
+func (s *OrderServer) listOperatorCashCustody(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	actingActorID := strings.TrimSpace(r.Header.Get("X-Acting-Actor-ID"))
+	if actingActorID == "" || len(actingActorID) > 128 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "X-Acting-Actor-ID is required")
+		return
+	}
+	result, err := s.service.ListCashCustodyForOperator(r.Context(), actingActorID)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	items := make([]contract.CashLiabilityItem, 0, len(result.Items))
+	for _, item := range result.Items {
+		collectedAt, parseErr := time.Parse(time.RFC3339Nano, item.CollectedAt)
+		if parseErr != nil {
+			writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash liability timestamp is invalid")
+			return
+		}
+		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt})
+	}
+	writeJSON(w, http.StatusOK, contract.CashLiabilityResponse{Items: items, TotalAmountMinor: int(result.TotalAmountMinor)})
+}
+
 func toOperatorOperation(operation postgres.OperatorOperationRecord) contract.OperatorOperation {
 	var assignment *contract.OperatorAssignmentSummary
 	if operation.Assignment != nil {
@@ -140,6 +175,116 @@ func (s *OrderServer) read(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, contract.OrderResponse{Order: toOrder(item)})
+}
+
+func (s *OrderServer) readTracking(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	tracking, err := s.service.ReadTracking(r.Context(), bearerToken(r), r.PathValue("orderId"))
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	response := contract.OrderTrackingResponse{OrderID: tracking.OrderID, OrderState: contract.OrderState(tracking.OrderState), TrackingState: contract.OrderTrackingState(tracking.TrackingState)}
+	if tracking.AssignmentID != nil {
+		assignmentID := *tracking.AssignmentID
+		response.AssignmentID = &assignmentID
+	}
+	if tracking.CaptainLocation != nil {
+		location := toCaptainLocationSnapshot(*tracking.CaptainLocation)
+		response.CaptainLocation = &location
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *OrderServer) readDeliveryProof(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	proof, err := s.service.ReadClientDeliveryProof(r.Context(), bearerToken(r), r.PathValue("orderId"))
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	response := contract.DeliveryProofResponse{OrderID: proof.OrderID, State: proof.State, VerifiedAt: proof.VerifiedAt}
+	response.Code = proof.Code
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *OrderServer) readRating(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	rating, err := s.service.ReadClientOrderRating(r.Context(), bearerToken(r), r.PathValue("orderId"))
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.OrderRatingResponse{Rating: toOrderRating(rating), IdempotentReplay: false})
+}
+
+func (s *OrderServer) createRating(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	var input contract.CreateOrderRatingRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 || err != nil || expected < 1 || input.Rating < 1 || input.Rating > 5 || len([]rune(strings.TrimSpace(input.Review))) > 1000 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "rating, review, attribution, idempotency, and a positive expected version are required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "rating ownership comes from the canonical client session")
+		return
+	}
+	rating, replayed, err := s.service.CreateClientOrderRating(r.Context(), bearerToken(r), r.PathValue("orderId"), input.Rating, input.Review, expected, idempotency, correlation)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, contract.OrderRatingResponse{Rating: toOrderRating(rating), IdempotentReplay: replayed})
+}
+
+func (s *OrderServer) cancel(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "client session is required")
+		return
+	}
+	correlation := strings.TrimSpace(r.Header.Get("X-Correlation-ID"))
+	idempotency := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	expected, err := strconv.Atoi(strings.TrimSpace(r.Header.Get("X-Expected-Version")))
+	if len(correlation) < 8 || len(correlation) > 128 || len(idempotency) < 8 || len(idempotency) > 128 || err != nil || expected < 1 {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cancellation attribution, idempotency, and a positive expected version are required")
+		return
+	}
+	if r.Header.Get("X-Actor-ID") != "" || r.Header.Get("X-Acting-Actor-ID") != "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "cancellation ownership comes from the canonical client session")
+		return
+	}
+	item, replayed, err := s.service.CancelForClient(r.Context(), bearerToken(r), r.PathValue("orderId"), expected, idempotency, correlation)
+	if err != nil {
+		writeOrderError(w, err)
+		return
+	}
+	status := http.StatusCreated
+	if replayed {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, contract.OrderResponse{Order: toOrder(item), IdempotentReplay: replayed})
 }
 
 func (s *OrderServer) listStore(w http.ResponseWriter, r *http.Request) {
@@ -229,7 +374,7 @@ func orderLimit(w http.ResponseWriter, r *http.Request) (int, bool) {
 
 func validOperatorOrderState(state string) bool {
 	switch state {
-	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED":
+	case "CREATED", "PARTNER_ACCEPTED", "PREPARING", "READY_FOR_DISPATCH", "CAPTAIN_ASSIGNED", "IN_CUSTODY", "DELIVERED", "DELIVERY_FAILED", "REJECTED", "CANCELLED":
 		return true
 	default:
 		return false
@@ -261,7 +406,15 @@ func toOrder(item postgres.OrderRecord) contract.Order {
 		}
 		lines = append(lines, contract.OrderLine{ID: line.ID, OrderID: line.OrderID, StoreOfferID: line.StoreOfferID, VariantID: line.VariantID, ProductID: line.ProductID, ProductName: line.ProductName, VariantTitle: line.VariantTitle, MeasurementKind: contract.MeasurementKind(line.MeasurementKind), BaseUnit: contract.BaseUnit(line.BaseUnit), PricingBasis: line.PricingBasis, QuantityPolicy: line.QuantityPolicy, QuantityMinBaseUnits: int(line.QuantityMinBaseUnits), QuantityMaxBaseUnits: int(line.QuantityMaxBaseUnits), QuantityStepBaseUnits: int(line.QuantityStepBaseUnits), PricingUnitBaseUnits: int(line.PricingUnitBaseUnits), RequestedQuantityBaseUnits: int(line.RequestedQuantityBaseUnits), FinalQuantityBaseUnits: finalQuantity, ModifierAmountMinor: int(line.ModifierAmountMinor), UnitPriceMinor: int(line.UnitPriceMinor), LineAmountMinor: int(line.LineAmountMinor), Currency: line.Currency, SelectedModifierOptionIds: line.SelectedModifierOptionIDs, ModifierSnapshots: modifierSnapshots, AttributeSnapshots: attributeSnapshots, CreatedAt: line.CreatedAt})
 	}
-	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CartID: item.CartID, AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	paymentIntentID := ""
+	if item.PaymentIntentID != nil {
+		paymentIntentID = *item.PaymentIntentID
+	}
+	return contract.Order{ID: item.ID, ClientActorID: item.ClientActorID, StoreID: item.StoreID, CartID: item.CartID, FulfillmentMode: contract.FulfillmentMode(item.FulfillmentMode), AddressID: item.AddressID, AddressVersion: item.AddressVersion, AddressText: item.AddressText, AddressLatitude: item.AddressLatitude, AddressLongitude: item.AddressLongitude, ServiceCityID: item.ServiceCityID, ServiceabilityPolicyVersion: item.ServiceabilityPolicyVersion, ServiceabilityStatus: item.ServiceabilityStatus, ServiceabilityStoreVersion: item.ServiceabilityStoreVersion, ServiceabilityAddressVersion: item.ServiceabilityAddressVersion, State: contract.OrderState(item.State), TotalAmountMinor: int(item.TotalAmountMinor), Currency: item.Currency, PaymentMethod: contract.PaymentMethod(item.PaymentMethod), PaymentState: contract.PaymentState(item.PaymentState), PaymentIntentID: paymentIntentID, Version: item.Version, Lines: lines, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+
+func toOrderRating(item postgres.OrderRatingRecord) contract.OrderRating {
+	return contract.OrderRating{OrderID: item.OrderID, StoreID: item.StoreID, Rating: item.Rating, Review: item.Review, CreatedAt: item.CreatedAt}
 }
 
 func snapshotStringValue(value *string) string {
@@ -293,8 +446,22 @@ func writeOrderError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated session is not permitted for this Order")
 	case errors.Is(err, postgres.ErrOrderNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "order was not found")
+	case errors.Is(err, postgres.ErrOrderRatingNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "order rating was not found")
+	case errors.Is(err, postgres.ErrOrderRatingInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "order rating input is invalid")
+	case errors.Is(err, postgres.ErrOrderRatingNotEligible):
+		writeError(w, http.StatusConflict, "ORDER_RATING_NOT_ELIGIBLE", "an order can be rated only after delivery")
+	case errors.Is(err, postgres.ErrOrderRatingAlreadyExists):
+		writeError(w, http.StatusConflict, "ORDER_RATING_EXISTS", "this order already has a rating")
+	case errors.Is(err, postgres.ErrOrderRatingIdempotency):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different rating facts")
 	case errors.Is(err, postgres.ErrCheckoutEvidenceStale), errors.Is(err, postgres.ErrOrderVersionConflict), errors.Is(err, postgres.ErrOrderStateConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Order evidence, version, or lifecycle state is stale")
+	case errors.Is(err, postgres.ErrPaymentStateConflict):
+		writeError(w, http.StatusConflict, "PAYMENT_STATE_CONFLICT", "the order payment state is not actionable")
+	case errors.Is(err, orderdomain.ErrPaymentUnavailable):
+		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "the payment service is temporarily unavailable")
 	case errors.Is(err, postgres.ErrOrderTransitionConflict), errors.Is(err, postgres.ErrCheckoutIdempotencyConflict):
 		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different Order facts")
 	default:

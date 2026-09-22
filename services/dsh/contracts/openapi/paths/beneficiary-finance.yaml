@@ -1,0 +1,711 @@
+paths:
+  /dsh/me/payout-state:
+    get:
+      operationId: readOwnPayoutState
+      summary: Read the authenticated beneficiary payout readiness and masked destination
+      security:
+        - userBearer: []
+      responses:
+        "200":
+          description: Payout state derived by WLT for the authenticated partner, captain, or field actor.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/BeneficiaryPayoutStateResponse"
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/me/payout-intents:
+    post:
+      operationId: createOwnPayoutIntent
+      summary: Create a server-resolved payout intent for the authenticated beneficiary
+      security:
+        - userBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [amountMode]
+              properties:
+                amountMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
+                amountMinor: { type: integer, minimum: 1, nullable: true }
+      responses:
+        "201":
+          description: Payout intent held.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payout, idempotentReplay]
+                properties:
+                  payout: { $ref: "../dsh.openapi.yaml#/components/schemas/PayoutRequest" }
+                  idempotentReplay: { type: boolean }
+        "200":
+          description: Idempotent payout intent replay.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payout, idempotentReplay]
+                properties:
+                  payout: { $ref: "../dsh.openapi.yaml#/components/schemas/PayoutRequest" }
+                  idempotentReplay: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/{actorType}/{actorId}/payout-state:
+    get:
+      operationId: readOperatorPayoutState
+      summary: Read a partner, captain, or field payout state for Finance operations
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: actorType
+          in: path
+          required: true
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Payout state.
+          content:
+            application/json:
+              schema:
+                $ref: "../dsh.openapi.yaml#/components/schemas/BeneficiaryPayoutStateResponse"
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/{actorType}/{actorId}/official-wallet-destination:
+    get:
+      operationId: readOperatorOfficialWalletDestination
+      summary: Read a Finance-managed official-wallet destination
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: actorType
+          in: path
+          required: true
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Official-wallet destination.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destination]
+                properties:
+                  destination: { $ref: "../dsh.openapi.yaml#/components/schemas/OfficialWalletDestination" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+    post:
+      operationId: createOperatorOfficialWalletDestination
+      summary: Create a Finance-managed official-wallet destination candidate
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: actorType
+          in: path
+          required: true
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [providerKey, walletIdentifier, beneficiaryName, changeReason, verificationEvidenceReference, changeEvidenceReference]
+              properties:
+                providerKey: { type: string, minLength: 1, maxLength: 64 }
+                walletIdentifier: { type: string, minLength: 6, maxLength: 128 }
+                beneficiaryName: { type: string, minLength: 1, maxLength: 160 }
+                changeReason: { type: string, minLength: 1, maxLength: 512 }
+                verificationEvidenceReference: { type: string, minLength: 1, maxLength: 512 }
+                changeEvidenceReference: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "201":
+          description: Destination candidate created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destination, idempotentReplay]
+                properties:
+                  destination: { $ref: "../dsh.openapi.yaml#/components/schemas/OfficialWalletDestination" }
+                  idempotentReplay: { type: boolean }
+        "200":
+          description: Idempotent destination replay.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destination, idempotentReplay]
+                properties:
+                  destination: { $ref: "../dsh.openapi.yaml#/components/schemas/OfficialWalletDestination" }
+                  idempotentReplay: { type: boolean }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/verify:
+    post:
+      operationId: verifyOperatorOfficialWalletDestination
+      summary: Verify a Finance-managed official-wallet destination
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: actorType
+          in: path
+          required: true
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: destinationId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [evidenceReference]
+              properties:
+                evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "200":
+          description: Destination verified.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destination]
+                properties:
+                  destination: { $ref: "../dsh.openapi.yaml#/components/schemas/OfficialWalletDestination" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/activate:
+    post:
+      operationId: activateOperatorOfficialWalletDestination
+      summary: Activate a verified official-wallet destination for payout
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: actorType
+          in: path
+          required: true
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+        - name: destinationId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              maxProperties: 0
+      responses:
+        "200":
+          description: Destination activated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [destination]
+                properties:
+                  destination: { $ref: "../dsh.openapi.yaml#/components/schemas/OfficialWalletDestination" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/payout-requests:
+    get:
+      operationId: listOperatorPayoutRequests
+      summary: List payout requests for governed Finance settlement
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Server-calculated payout requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payouts]
+                properties:
+                  payouts:
+                    type: array
+                    items: { $ref: "../dsh.openapi.yaml#/components/schemas/PayoutRequest" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/payout-requests/{payoutId}:
+    get:
+      operationId: readOperatorPayoutRequest
+      summary: Read one governed payout request
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Payout request.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payout]
+                properties:
+                  payout: { $ref: "../dsh.openapi.yaml#/components/schemas/PayoutRequest" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "401": { $ref: "../dsh.openapi.yaml#/components/responses/Unauthenticated" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/payout-requests/{payoutId}/prepare:
+    post:
+      operationId: prepareOperatorPayout
+      summary: Prepare an immutable payout snapshot
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason, evidenceReference]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 512 }
+                evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "200":
+          description: Payout prepared.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payout]
+                properties:
+                  payout: { $ref: "../dsh.openapi.yaml#/components/schemas/PayoutRequest" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/payout-requests/{payoutId}/approve:
+    post:
+      operationId: approveOperatorPayout
+      summary: Independently approve a prepared payout
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "200":
+          description: Payout approved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payout]
+                properties:
+                  payout: { $ref: "../dsh.openapi.yaml#/components/schemas/PayoutRequest" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/payout-requests/{payoutId}/cancel:
+    post:
+      operationId: cancelOperatorPayout
+      summary: Release a held payout before batching
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "200":
+          description: Payout cancelled and hold released.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payout]
+                properties:
+                  payout: { $ref: "../dsh.openapi.yaml#/components/schemas/PayoutRequest" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/settlement-batches:
+    post:
+      operationId: createOperatorSettlementBatch
+      summary: Group approved payouts into a server-totaled settlement batch
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [payoutIds]
+              properties:
+                payoutIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "201":
+          description: Prepared settlement batch.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batch]
+                properties:
+                  batch: { $ref: "../dsh.openapi.yaml#/components/schemas/SettlementBatch" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/settlement-batches/{batchId}:
+    get:
+      operationId: readOperatorSettlementBatch
+      summary: Read a settlement batch control total and lifecycle state
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        "200":
+          description: Settlement batch.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batch]
+                properties:
+                  batch: { $ref: "../dsh.openapi.yaml#/components/schemas/SettlementBatch" }
+        "404": { $ref: "../dsh.openapi.yaml#/components/responses/NotFound" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/settlement-batches/{batchId}/approve:
+    post:
+      operationId: approveOperatorSettlementBatch
+      summary: Independently approve a prepared settlement batch
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "200":
+          description: Batch approved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batch]
+                properties:
+                  batch: { $ref: "../dsh.openapi.yaml#/components/schemas/SettlementBatch" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/settlement-batches/{batchId}/freeze:
+    post:
+      operationId: freezeOperatorSettlementBatch
+      summary: Freeze an approved settlement batch and calculate its hash
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "200":
+          description: Frozen settlement batch.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batch]
+                properties:
+                  batch: { $ref: "../dsh.openapi.yaml#/components/schemas/SettlementBatch" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/settlement-batches/{batchId}/transfers:
+    post:
+      operationId: recordOperatorManualTransfer
+      summary: Record external execution evidence without changing approved amount or destination
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [payoutId, externalTransferReference, evidenceReference]
+              properties:
+                payoutId: { type: string, minLength: 1, maxLength: 128 }
+                externalTransferReference: { type: string, minLength: 1, maxLength: 160 }
+                evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "201":
+          description: External transfer evidence recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [transfer]
+                properties:
+                  transfer: { $ref: "../dsh.openapi.yaml#/components/schemas/ManualTransferExecution" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/transfers/{transferId}/verify:
+    post:
+      operationId: verifyOperatorManualTransfer
+      summary: Independently verify recorded external transfer evidence
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: transferId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                evidenceReference: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: Transfer independently verified.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [transfer]
+                properties:
+                  transfer: { $ref: "../dsh.openapi.yaml#/components/schemas/ManualTransferExecution" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }
+
+  /dsh/operator/transfers/{transferId}/reconcile:
+    post:
+      operationId: reconcileOperatorManualTransfer
+      summary: Reconcile external statement evidence and finalize the WLT ledger posting
+      security:
+        - serviceBearer: []
+      parameters:
+        - $ref: "../dsh.openapi.yaml#/components/parameters/ActingActorIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/CorrelationIdRequired"
+        - $ref: "../dsh.openapi.yaml#/components/parameters/IdempotencyKeyRequired"
+        - name: transferId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [statementReference]
+              properties:
+                statementReference: { type: string, minLength: 1, maxLength: 512 }
+      responses:
+        "200":
+          description: Transfer reconciled and payout ledger-finalized.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [transfer]
+                properties:
+                  transfer: { $ref: "../dsh.openapi.yaml#/components/schemas/ManualTransferExecution" }
+        "400": { $ref: "../dsh.openapi.yaml#/components/responses/InvalidInput" }
+        "403": { $ref: "../dsh.openapi.yaml#/components/responses/Forbidden" }
+        "409": { $ref: "../dsh.openapi.yaml#/components/responses/Conflict" }
+        "502": { $ref: "../dsh.openapi.yaml#/components/responses/DependencyUnavailable" }

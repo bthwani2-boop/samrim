@@ -166,6 +166,7 @@ export class IdentitySessionManager {
   private readonly surface: IdentitySurface;
   private readonly key: string;
   private readonly createRefreshRequestId: () => string;
+  private readonly developmentSession: (() => Promise<TokenPair>) | undefined;
   private stateValue: IdentitySessionState = { kind: "signed_out", reason: "no_local_session" };
   private tokens: StoredTokens | null = null;
   private refreshInFlight: Promise<IdentitySessionState> | null = null;
@@ -179,6 +180,7 @@ export class IdentitySessionManager {
     surface: IdentitySurface,
     storageNamespace: string,
     createRefreshRequestId: () => string = defaultRefreshRequestId,
+    developmentSession?: () => Promise<TokenPair>,
   ) {
     this.client = client;
     this.storage = storage;
@@ -186,6 +188,7 @@ export class IdentitySessionManager {
     this.role = role;
     this.surface = surface;
     this.createRefreshRequestId = createRefreshRequestId;
+    this.developmentSession = developmentSession;
     if (identityRoleSurface(role) !== surface) throw new Error("IDENTITY_ROLE_SURFACE_MISMATCH");
     this.key = storageNamespace + ".identity.session.v1";
   }
@@ -225,6 +228,9 @@ export class IdentitySessionManager {
   }
 
   async restore(): Promise<IdentitySessionState> {
+    if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
+      return this.stateValue;
+    }
     this.transition({ kind: "restoring" });
 
     let raw: string | null;
@@ -244,7 +250,7 @@ export class IdentitySessionManager {
         }
       }
       this.tokens = null;
-      return this.signOut(raw === null ? "no_local_session" : "corrupt_local_session");
+      return this.restoreDevelopmentSession(raw === null ? "no_local_session" : "corrupt_local_session");
     }
 
     this.tokens = stored;
@@ -279,13 +285,16 @@ export class IdentitySessionManager {
   }
 
   async refresh(): Promise<IdentitySessionState> {
+    if (this.stateValue.kind === "signed_out" && (this.stateValue.reason === "explicit_logout" || this.stateValue.reason === "recovery")) {
+      return this.stateValue;
+    }
     let storedSession: StoredSession | null;
     try {
       storedSession = parseStoredSession(await this.readStorage());
     } catch (error) {
       return this.degraded(degradedReason(error));
     }
-    if (!storedSession) return this.signOut("no_local_session");
+    if (!storedSession) return this.restoreDevelopmentSession("no_local_session");
     this.tokens = storedSession;
     if (storedSession.pendingRefresh) return this.restorePendingRefresh(storedSession);
     return this.refreshStored(storedSession);
@@ -372,7 +381,7 @@ export class IdentitySessionManager {
       if (isRefreshStaleError(error)) {
         return this.reconcileRefreshConflict(stored);
       }
-      if (isIdentityUnauthenticated(error)) return this.signOut("terminal_invalidated");
+      if (isIdentityUnauthenticated(error)) return this.restoreDevelopmentSession("terminal_invalidated");
       return this.degraded(degradedReason(error));
     }
   }
@@ -433,6 +442,20 @@ export class IdentitySessionManager {
       return this.stateValue;
     } catch (error) {
       if (isIdentityUnauthenticated(error)) return this.degraded("refresh_conflict");
+      return this.degraded(degradedReason(error));
+    }
+  }
+
+  private async restoreDevelopmentSession(fallbackReason: IdentitySessionSignOutReason): Promise<IdentitySessionState> {
+    if (!this.developmentSession) return this.signOut(fallbackReason);
+    this.tokens = null;
+    await this.removeStorageBestEffort();
+    try {
+      return this.adopt(await this.developmentSession());
+    } catch (error) {
+      if (isIdentityClientError(error) && error.kind === "http" && (error.status === 403 || error.status === 404 || error.status === 409)) {
+        return this.signOut(fallbackReason);
+      }
       return this.degraded(degradedReason(error));
     }
   }

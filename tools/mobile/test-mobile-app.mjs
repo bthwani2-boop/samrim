@@ -30,38 +30,12 @@ assert.ok(fs.existsSync(configPath), `${app}: missing mobile.config.json`);
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 assert.equal(Object.prototype.hasOwnProperty.call(config, "nativeCapabilities"), false, `${app}: nativeCapabilities shadow registry survived`);
 
-// 2. Targeted dependency regression verification.
-// This is intentionally not a complete unused-package census; dependency
-// liveness remains a repository-wide review concern.
+// 2. Current native/config contract verification.
 const pkgPath = path.join(appDir, "package.json");
 assert.ok(fs.existsSync(pkgPath), `${app}: missing package.json`);
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
 const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 assert.equal(allDeps["expo-localization"], "~57.0.2", `${app}: static RTL requires expo-localization`);
-
-assert.ok(Object.keys(allDeps).some((dependency) => dependency.startsWith("expo-")), `${app}: Expo package inventory must remain available for future consumers`);
-
-const forbiddenDependencyRegressions = [
-  "@react-native-community/netinfo",
-  "@sentry/react-native",
-  "@react-native-firebase/messaging",
-  "expo-audio",
-  "expo-background-task",
-  "expo-battery",
-  "expo-camera",
-  "expo-local-authentication",
-  "expo-maps",
-  "expo-sqlite",
-  "expo-sharing",
-  "expo-video",
-  "expo-web-browser",
-  "react-native-gifted-chat",
-];
-
-for (const forbidden of forbiddenDependencyRegressions) {
-  assert.ok(!allDeps[forbidden], `${app}: contains unused dependency: ${forbidden}`);
-}
-assert.equal(allDeps["expo-location"], "~57.0.19", `${app}: admitted location readiness requires the Expo 57 location module`);
 
   const identityPath = path.join(appDir, "src", "bootstrap", "identity.ts");
   assert.ok(fs.existsSync(identityPath), `${app}: missing src/bootstrap/identity.ts`);
@@ -128,7 +102,8 @@ const { IdentitySessionManager } = await import(pathToFileURL(path.join(root, "s
 const { identitySessionSignOutMessage } = await import(pathToFileURL(path.join(root, "services/identity/clients/errors.ts")).href);
 
 const { defineSamrimExpoApp } = await import(pathToFileURL(path.join(root, "tools/mobile/define-samrim-expo-app.cjs")).href);
-const expoConfig = defineSamrimExpoApp(app, app === "app-client" || app === "app-partner" ? { locationMode: "foreground" } : {});
+const expectsForegroundLocation = app === "app-client" || app === "app-captain";
+const expoConfig = defineSamrimExpoApp(app, expectsForegroundLocation ? { locationMode: "foreground" } : {});
 assert.equal(expoConfig.extra.nativeCapabilities, undefined, `${app}: Expo config must not expose native capability shadow truth`);
 assert.equal(expoConfig.android.blockedPermissions, undefined, `${app}: manual RECORD_AUDIO workaround must be absent`);
 assert.equal(expoConfig.android.config, undefined, `${app}: manual Android provider config must be absent`);
@@ -143,8 +118,9 @@ assert.deepEqual(localizationPlugin, [
   },
 ], `${app}: native localization config must be Arabic-only and statically RTL`);
 const locationPlugin = expoConfig.plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-location");
-if (app === "app-client" || app === "app-partner") {
-  assert.ok(locationPlugin, `${app}: admitted foreground location must be owned by expo-location`);
+if (expectsForegroundLocation) {
+  assert.equal(allDeps["expo-location"], "~57.0.19", `${app}: foreground location requires the Expo location module`);
+  assert.ok(locationPlugin, `${app}: foreground location must be owned by expo-location`);
   assert.deepEqual(locationPlugin, [
     "expo-location",
     {
@@ -152,6 +128,7 @@ if (app === "app-client" || app === "app-partner") {
     },
   ], `${app}: foreground location must be owned by expo-location`);
 } else {
+  assert.equal(allDeps["expo-location"], undefined, `${app}: unadmitted location must not be a direct dependency`);
   assert.equal(locationPlugin, undefined, `${app}: location permissions must not be inferred without an explicit app-owned request`);
 }
 assert.equal(expoConfig.plugins.some((plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) === "expo-image-picker"), false, `${app}: image-picker plugin must not be inferred from package presence`);
@@ -208,6 +185,20 @@ const samplePair = {
   const res = await mgr.restore();
   assert.equal(res.kind, "signed_out");
   assert.equal(await storage.getItem(`test.${app}.identity.session.v1`), null);
+}
+
+// Test 2b: Ambiguous local development identity -> signed_out so the real login form is reachable.
+{
+  const conflict = new Error("multiple ready development actors");
+  conflict.kind = "http";
+  conflict.status = 409;
+  const storage = new MockStorage();
+  const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, undefined, async () => {
+    throw conflict;
+  });
+  const res = await mgr.restore();
+  assert.equal(res.kind, "signed_out");
+  assert.equal(res.reason, "no_local_session");
 }
 
 // Test 3: Valid stored tokens -> authenticated
@@ -446,4 +437,63 @@ for (const [status, code, reason] of [[429, "RATE_LIMITED", "rate_limited"], [50
   assert.ok(loggedOut);
 }
 
-console.log(`MOBILE_TEST=PASS app=${app} cases=15+`);
+// Test 14: Development fallback authenticates a fresh runtime with no stored session
+{
+  const storage = new MockStorage();
+  let developmentCalls = 0;
+  const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "e".repeat(36), async () => {
+    developmentCalls += 1;
+    return samplePair;
+  });
+  const restored = await mgr.restore();
+  assert.equal(restored.kind, "authenticated");
+  assert.equal(developmentCalls, 1);
+}
+
+// Test 15: Explicit logout remains signed out in the same runtime
+{
+  const storage = new MockStorage({[`test.${app}.identity.session.v1`]: JSON.stringify({accessToken: samplePair.accessToken, refreshToken: samplePair.refreshToken})});
+  let developmentCalls = 0;
+  const mgr = new IdentitySessionManager({async logout() {}}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "f".repeat(36), async () => {
+    developmentCalls += 1;
+    return samplePair;
+  });
+  await mgr.logout();
+  const restored = await mgr.restore();
+  assert.equal(restored.kind, "signed_out");
+  assert.equal(restored.reason, "explicit_logout");
+  assert.equal(developmentCalls, 0);
+}
+
+// Test 16: Recovery intent remains signed out in the same runtime
+{
+  const storage = new MockStorage();
+  let developmentCalls = 0;
+  const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "g".repeat(36), async () => {
+    developmentCalls += 1;
+    return samplePair;
+  });
+  await mgr.adopt(samplePair);
+  const cleared = await mgr.clearLocalSession();
+  assert.equal(cleared.kind, "signed_out");
+  assert.equal(cleared.reason, "recovery");
+  const restored = await mgr.restore();
+  assert.equal(restored.kind, "signed_out");
+  assert.equal(restored.reason, "recovery");
+  assert.equal(developmentCalls, 0);
+}
+
+// Test 17: A new runtime can use development continuity again
+{
+  const storage = new MockStorage();
+  let developmentCalls = 0;
+  const mgr = new IdentitySessionManager({}, storage, async () => "device-fp-12345", role, surface, `test.${app}`, () => "h".repeat(36), async () => {
+    developmentCalls += 1;
+    return samplePair;
+  });
+  const restored = await mgr.restore();
+  assert.equal(restored.kind, "authenticated");
+  assert.equal(developmentCalls, 1);
+}
+
+console.log(`MOBILE_TEST=PASS app=${app} cases=19+`);

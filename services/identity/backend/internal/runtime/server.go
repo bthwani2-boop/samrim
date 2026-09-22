@@ -96,7 +96,7 @@ func Run(_, _, defaultPort string) error {
 		}
 	}
 	actors := actor.New(db)
-	sessions := session.New(db, cfg.challengeSecret)
+	sessions := session.New(db, cfg.challengeSecret, cfg.runtimeEnvironment == "development" || cfg.runtimeEnvironment == "test")
 	challenges := challenge.New(db, actors, sessions, cfg.challengeSecret, cfg.delivery, cfg.providerBudget)
 	authenticationService := authentication.New(db, actors, sessions)
 	passkeys, err := passkey.New(db, sessions, challenges, passkey.Config{RPID: cfg.webauthnRPID, Origins: cfg.webauthnOrigins, RPName: "بثواني"})
@@ -112,7 +112,7 @@ func Run(_, _, defaultPort string) error {
 		}
 		return postgres.VerifyMigrationHistory(ctx, db, migrationRecords)
 	}
-	handler := identityhttp.New(actors, authenticationService, challenges, sessions, passkeys, identityhttp.Config{InternalServiceTokens: cfg.internalTokens, AllowedOrigins: cfg.allowedOrigins, AbuseIPSecret: cfg.abuseIPSecret, TrustedProxies: cfg.trustedProxies, Readiness: readiness})
+	handler := identityhttp.New(actors, authenticationService, challenges, sessions, passkeys, identityhttp.Config{InternalServiceTokens: cfg.internalTokens, AllowedOrigins: cfg.allowedOrigins, AbuseIPSecret: cfg.abuseIPSecret, TrustedProxies: cfg.trustedProxies, Readiness: readiness, Development: cfg.runtimeEnvironment == "development"})
 	server := &http.Server{Addr: net.JoinHostPort(cfg.listenHost, cfg.port), Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

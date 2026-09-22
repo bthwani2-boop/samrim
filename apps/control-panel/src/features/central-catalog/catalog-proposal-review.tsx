@@ -1,6 +1,6 @@
 "use client";
 
-import { catalogProductProposalStateLabel, type CatalogCategory, type CatalogProductProposal, type CommerceVertical } from "@bthwani/dsh";
+import { type CatalogCategory, type CatalogProductProposal, type CommerceVertical, catalogProductProposalStateLabel } from "@bthwani/dsh";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type ProposalDecision = "approved" | "needs_correction" | "rejected";
@@ -146,7 +146,7 @@ export function CatalogProposalReview() {
         <div className="access-card-heading">
           <p className="eyebrow">تفاصيل القرار</p>
           <h2 id="catalog-proposal-detail-title">{selected ? selected.proposedName : "اختر مقترحًا"}</h2>
-          <p className="muted">النسخة الحالية: {selected ? selected.version : "—"}. القرار محمي بإصدار المقترح ويُعاد قراءته بعد التنفيذ.</p>
+          <p className="muted">القرار محمي من التعارض تلقائيًا، وتُعاد قراءة الحالة الحالية بعد التنفيذ.</p>
         </div>
         {selected ? (
           <>
@@ -154,6 +154,7 @@ export function CatalogProposalReview() {
               <div><dt>الاسم المقترح</dt><dd>{selected.proposedName}</dd></div>
               <div><dt>العلامة</dt><dd>{selected.proposedBrand || "غير محددة"}</dd></div>
               <div><dt>النسخة</dt><dd>{selected.proposedVariantTitle}</dd></div>
+              <div><dt>النسخة الحالية: {selected.version}</dt></div>
               <div><dt>المجال</dt><dd>{vertical?.nameAr ?? "المجال غير متاح"}</dd></div>
               <div><dt>التصنيف</dt><dd>{category?.nameAr ?? "التصنيف غير متاح"}</dd></div>
               <div><dt>القياس</dt><dd>{measurementLabels[selected.proposedMeasurementKind]} · {unitLabels[selected.proposedBaseUnit]}</dd></div>

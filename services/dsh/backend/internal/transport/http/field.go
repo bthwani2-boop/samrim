@@ -43,6 +43,7 @@ func (s *FieldServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/field/joining-cases", s.listJoiningCases)
 	mux.HandleFunc("GET /dsh/field/joining-cases/{caseId}", s.readJoiningCase)
 	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/submit", s.submitJoiningCase)
+	mux.HandleFunc("POST /dsh/field/joining-cases/{caseId}/correct-and-resubmit", s.correctAndResubmitJoiningCase)
 }
 
 func (s *FieldServer) admit(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +151,7 @@ func (s *FieldServer) createJoiningCase(w http.ResponseWriter, r *http.Request) 
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateJoiningCase(r.Context(), bearerToken(r), idempotency, correlation, input.ContactPhoneE164, input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID)
+	result, err := s.service.CreateJoiningCase(r.Context(), bearerToken(r), idempotency, correlation, input.ContactPhoneE164, input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, input.FirstStoreLatitude, input.FirstStoreLongitude)
 	if err != nil {
 		writeFieldError(w, err)
 		return
@@ -175,7 +176,7 @@ func (s *FieldServer) listJoiningCases(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]contract.JoiningCaseSummary, 0, len(result.Cases))
 	for _, item := range result.Cases {
-		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
+		items = append(items, contract.JoiningCaseSummary{ID: item.ID, ContactPhoneE164: item.ContactPhoneE164, BusinessName: item.BusinessName, FirstStoreName: item.FirstStoreName, ServiceCityID: item.FirstStoreServiceCityID, FirstStoreVerticalID: item.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(item.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(item.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(item.Origin), State: contract.JoiningCaseState(item.State), CorrectionReason: item.CorrectionReason, Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt})
 	}
 	writeJSON(w, http.StatusOK, contract.JoiningCaseListResponse{Cases: items})
 }
@@ -206,6 +207,27 @@ func (s *FieldServer) submitJoiningCase(w http.ResponseWriter, r *http.Request) 
 	writeFieldCaseResult(w, http.StatusOK, result)
 }
 
+func (s *FieldServer) correctAndResubmitJoiningCase(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Field session is required")
+		return
+	}
+	correlation, idempotency, expected, ok := requiredPartnerCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.CorrectJoiningCaseRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.CorrectAndResubmitJoiningCase(r.Context(), bearerToken(r), r.PathValue("caseId"), input.BusinessName, input.FirstStoreName, input.ServiceCityID, input.FirstStoreVerticalID, input.FirstStoreLatitude, input.FirstStoreLongitude, expected, idempotency, correlation)
+	if err != nil {
+		writeFieldError(w, err)
+		return
+	}
+	writeFieldCaseResult(w, http.StatusOK, result)
+}
+
 func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) bool {
 	if s.auth.Authorized(r) {
 		return true
@@ -215,7 +237,9 @@ func (s *FieldServer) authorizedService(w http.ResponseWriter, r *http.Request) 
 }
 
 func writeFieldCaseResult(w http.ResponseWriter, status int, result postgres.JoiningCaseResult) {
-	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view := contract.JoiningCaseView{ID: result.Case.ID, ContactPhoneE164: result.Case.ContactPhoneE164, BusinessName: result.Case.BusinessName, FirstStoreName: result.Case.FirstStoreName, ServiceCityID: result.Case.FirstStoreServiceCityID, FirstStoreVerticalID: result.Case.FirstStoreVerticalID, FirstStoreLatitude: nullableFloatValue(result.Case.FirstStoreLatitude), FirstStoreLongitude: nullableFloatValue(result.Case.FirstStoreLongitude), Origin: contract.JoiningCaseOrigin(result.Case.Origin), State: contract.JoiningCaseState(result.Case.State), CorrectionReason: result.Case.CorrectionReason, Version: result.Case.Version, CreatedAt: result.Case.CreatedAt, UpdatedAt: result.Case.UpdatedAt}
+	view.PartnerActorID = result.Case.PartnerActorID
+	view.ReviewedBy = result.Case.ReviewedBy
 	writeJSON(w, status, contract.JoiningCaseResponse{Case: view, IdempotentReplay: result.Replayed})
 }
 

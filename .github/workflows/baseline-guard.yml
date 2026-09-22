@@ -55,6 +55,10 @@ jobs:
         with:
           node-version: 24.17.0
 
+      - name: Verify Nx Cloud CI access configuration
+        shell: bash
+        run: node tools/dev/verify-nx-cloud-ci.mjs
+
       - name: Install pinned pnpm
         shell: bash
         run: npm install --global pnpm@10.34.0
@@ -131,7 +135,7 @@ jobs:
 
       - name: Verify canonical Compose configuration
         shell: bash
-        run: docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml config --quiet
+        run: docker compose --project-name samrim-local --env-file infra/local/.env.example -f infra/local/compose/compose.yaml config --quiet
 
       - name: Verify tooling is non-mutating
         shell: bash
@@ -197,6 +201,11 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 24.17.0
+
+      - name: Verify Nx Cloud CI access configuration
+        if: steps.mobile.outputs.run == 'true'
+        shell: pwsh
+        run: node tools/dev/verify-nx-cloud-ci.mjs
 
       - name: Install pinned pnpm
         if: steps.mobile.outputs.run == 'true'

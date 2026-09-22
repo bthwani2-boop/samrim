@@ -10,6 +10,10 @@ The tooling may derive Expo/Metro behavior from those app-owned facts. It must n
 
 The repository-owned `mobile:prepare` and `mobile:build` commands are target-aware. They do not create a second capability registry or provider map.
 
+Development builds must not bake a localhost Metro target or app-specific development-server port into native config. The daily `pnpm client|partner|captain|field` command supplies the current launch URL through Expo CLI, while app-owned native configuration stays independent of the developer machine's Metro port.
+
+Each app keeps Expo's automatic resolver/watch-folder behavior but uses an app-scoped Metro cache namespace instead of SDK57's shared `%TEMP%\\metro-cache`, so a later Fast Refresh/request cannot reuse another app's route graph.
+
 Before claiming an existing Development Build remains compatible after a cutover, compare native characteristics and resolved native configuration. JavaScript/TypeScript/path-only changes are not by themselves permission to claim native equivalence.
 
 
@@ -19,4 +23,4 @@ Before claiming an existing Development Build remains compatible after a cutover
 
 Use `pnpm mobile:prepare -- --app app-client -Mode Eas` for authenticated target-scoped EAS fingerprint/build compatibility discovery. Use `-Mode InstallMatchingBuilds` only when downloading and installing a matching existing development build is the explicit device operation.
 
-Use `pnpm mobile:build -- --app app-captain` as the single remote Android development-build owner. It verifies the exact upstream candidate, app-owned EAS CLI/project binding, native fingerprint, and matching finished/pending builds before any submission. Reused-build output reports the current candidate separately from the reused build's actual source SHA. Local signing material is materialized temporarily and removed in a finally block.
+Use `pnpm mobile:build -- --app app-captain` as the single remote Android development-build owner. It verifies the exact upstream candidate, app-owned EAS CLI/project binding, native fingerprint, and matching finished/pending builds before any submission. Reused-build output reports the current candidate separately from the reused build's actual source SHA. Before materialization, both repository destinations must be absent; each file is owned from its create operation and removed on every later failure or normal exit. Pre-existing repository material is never overwritten.

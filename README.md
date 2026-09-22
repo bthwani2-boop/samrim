@@ -4,35 +4,30 @@ This repository is the canonical BThwani platform repository.
 
 ## Repository authority
 
-- `AGENTS.md` — sole repository-local agent operating law.
-- `REPOSITORY-STRUCTURE.md` — repository placement contract delegated by `AGENTS.md`.
-- `knowledge.sources.json` — exact immutable Governance/Docs binding.
+- AGENTS.md — sole repository-local agent execution/safety law.
+- REPOSITORY-STRUCTURE.md — repository placement contract delegated by AGENTS.md.
+- knowledge.sources.json — exact immutable Governance/Docs binding.
 - exact source/config/runtime/database/readback — authority for current executable state.
 
 Durable Governance and Docs remain in the separately pinned repository; do not duplicate them here.
 
 ## Development
 
-Bootstrap dependencies only when setup inputs changed or the workspace is not ready:
+Materialize dependencies only when setup inputs changed:
 
 ```text
 pnpm bootstrap
 ```
 
-Start the complete Docker-owned local integration stack:
+Prepare or reuse the canonical backend/state:
 
 ```text
-pnpm runtime:up
+pnpm dev
 ```
 
-Read the complete stack:
+pnpm dev owns backend readiness only and returns to the prompt. It reconciles the current Identity/DSH source through Docker build cache before declaring the backend ready, preserving reusable database state. It does not start Metro, Control, ADB or scrcpy.
 
-```text
-pnpm runtime:doctor
-pnpm runtime:status
-```
-
-Open one development surface without stopping other already-running surfaces:
+Start only the surface being developed:
 
 ```text
 pnpm client
@@ -42,16 +37,21 @@ pnpm field
 pnpm control
 ```
 
-Docker remains the sole LOCAL_INTEGRATION runtime owner for PostgreSQL, Mailpit, Identity, DSH, Control Panel and all four Metro servers. Device execution remains device-owned.
+Each command enters the owning app package and keeps Expo Metro or Next attached to that terminal with Fast Refresh/HMR. Mobile applications are opened manually. Use pnpm scr only when device transport/reverse mappings or scrcpy are needed.
 
-When baked backend source changes, rebuild only the invalidated service when a runtime proof requires current binaries:
+In local development, Identity first restores the persisted real session. If that reusable session is absent or terminally invalid, the development-only Identity route may issue a fresh role-scoped session only when exactly one existing enabled, security-enabled, authentication-ready actor/role has completed its required activation or enrollment; ambiguity fails closed with `409 CONFLICT` rather than selecting an actor. It never creates actors, roles or credentials and is not registered outside `BTHWANI_ENV=development`. Explicit logout or recovery remains signed out within that runtime instance, while a fresh runtime can resume development continuity. OTP, activation, Passkey and recovery remain product/security journeys and the development shortcut never substitutes for proving them.
+
+For an explicit real activation/authentication journey proof, start the affected surface with `EXPO_PUBLIC_BTHWANI_AUTH_JOURNEY_PROOF=1` for Mobile or `BTHWANI_AUTH_JOURNEY_PROOF=1` for Control. That flag disables only the development-session fallback; normal local development remains unchanged, and the canonical activation/login/recovery implementation remains the path under proof.
+
+Backend lifecycle remains explicit:
 
 ```text
-pnpm runtime:rebuild -- -Service identity
-pnpm runtime:rebuild -- -Service dsh
+pnpm runtime:up
+pnpm runtime:status
+pnpm runtime:down
 ```
 
-`pnpm runtime:up` starts every canonical Docker service but does not intentionally rebuild all existing images. On a fresh machine Compose may build missing images; after baked backend source changes use the targeted rebuild command above before behavior proof.
+From outside the repository, use pnpm --dir D:\samrim <command>. A child process cannot change the parent PowerShell working directory.
 
 ## Verification
 
@@ -63,41 +63,30 @@ For fast dirty-tree feedback, run the nearest Nx target directly when the projec
 pnpm exec nx run <project>:<target>
 ```
 
-When the change crosses projects or its cone is unclear, let Nx include committed, uncommitted, and untracked changes from the current commit:
+When the change crosses projects or its cone is unclear, keep local feedback to the normal code/build targets:
 
 ```text
-pnpm exec nx affected -t typecheck test build export-smoke vet --base=HEAD --outputStyle=dynamic-legacy
+pnpm exec nx affected -t typecheck test build vet --base=HEAD --outputStyle=dynamic-legacy
 ```
 
-This loop is for feedback during editing. Use `pnpm verify` only after the candidate is coherent and clean; use `pnpm exec nx run control-panel:e2e` only when the Docker-owned runtime is already ready, because that target is intrinsically uncached.
+Mobile export is a heavier bundling/deployability proof, so it is not part of the fast dirty-tree edit loop. The final exact-candidate verifier still runs export-smoke for affected Mobile projects after cheaper checks pass, preserving bundling/module-resolution proof without paying that cost on every intermediate edit.
 
-`pnpm verify` verifies the exact clean candidate against a supplied/derived Git base using repository invariants plus Nx affected targets. It is non-mutating and does not bootstrap dependencies or own Docker lifecycle.
+Use pnpm verify only after the candidate is coherent and clean. Coherent units may be committed locally while one authorized objective is in progress; do not safe-push every local commit by default. Do not run a separate final pnpm verify immediately before pnpm safe:push; one safe:push at objective closure owns the final verification of the complete unpushed delta and remote SHA confirmation. Runtime and user-facing behavior are proved separately only when the claim requires them. CI performs independent integration/promotion assurance.
 
-Runtime and user-facing behavior are proved separately only when the claim requires them.
-
-`pnpm safe:push`:
-
-1. reconciles the current branch with its remote;
-2. returns immediately when the exact SHA is already remote;
-3. performs one final affected exact-candidate verification;
-4. pushes only fast-forward/first-branch state;
-5. confirms the exact remote SHA.
-
-CI performs independent integration/promotion assurance. Heavy backend runtime CI is skipped when the change cannot affect backend runtime.
+The verifier prints per-step and total timings so future optimization is based on measured cost rather than guesswork.
 
 ## Secrets
 
-Never commit credentials, Firebase service files, signing files, real `.env` files, tokens or private keys. Ordinary pushes scan the current candidate and newly introduced commits; a scheduled/manual job performs the expensive full-history scan.
+Never commit credentials, Firebase service files, signing files, real .env files, tokens or private keys.
 
 ## Nx Cloud CI
 
-Create one read-only CI token and one read-write CI token in the Nx Cloud workspace Access Control settings. Keep the read-write token restricted to protected branches. The repository scripts never print or store token values:
+Create one read-only CI token and one read-write CI token in the Nx Cloud workspace Access Control settings. Keep the read-write token restricted to protected branches:
 
 ```text
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/setup-nx-cloud-github.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/setup-nx-cloud-github.ps1 -Apply
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/verify-nx-cloud-github.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dispatch-nx-cloud-ci.ps1 -Workflow control-panel-e2e.yml -Ref main -Wait
+pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/dispatch-nx-cloud-ci.ps1 -Workflow backend-integration.yml -Ref <branch> -Wait
 ```
-
-The setup script stores `NX_CLOUD_RO_TOKEN` as a repository secret and `NX_CLOUD_RW_TOKEN` in the `nx-cloud-protected` GitHub environment, restricted to the `main` deployment branch. The first command is a dry run; use `-Force` only when intentionally replacing an existing token. The dispatch script performs a read-only preflight and exits non-zero if the GitHub run fails. See the [Nx Cloud access-token guidance](https://nx.dev/docs/kb/access-tokens).

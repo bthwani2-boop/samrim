@@ -1,15 +1,19 @@
 package session
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/domain"
 )
 
 func TestCalculateSessionExpiriesKeepStrictOrderingNearAbsoluteExpiry(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
 	absolute := now.Add(10 * time.Minute)
-	access, refresh, ok := calculateSessionExpiries("client", now, absolute)
+	access, refresh, ok := calculateSessionExpiries("client", now, absolute, false)
 	if !ok {
 		t.Fatal("session expiry calculation unexpectedly failed with a usable absolute lifetime")
 	}
@@ -23,7 +27,7 @@ func TestCalculateSessionExpiriesKeepStrictOrderingNearAbsoluteExpiry(t *testing
 
 func TestCalculateSessionExpiriesUseConfiguredLifetimesWhenSafe(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
-	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(365*24*time.Hour))
+	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(365*24*time.Hour), false)
 	if !ok || access != now.Add(15*time.Minute) || refresh != now.Add(30*24*time.Hour) {
 		t.Fatalf("safe session expiries = %s/%s/%t, want 15m/30d/true", access, refresh, ok)
 	}
@@ -31,7 +35,7 @@ func TestCalculateSessionExpiriesUseConfiguredLifetimesWhenSafe(t *testing.T) {
 
 func TestCalculateSessionExpiriesFailClosedWithoutUsableAccessInterval(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
-	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(1500*time.Millisecond))
+	access, refresh, ok := calculateSessionExpiries("client", now, now.Add(1500*time.Millisecond), false)
 	if ok || !access.IsZero() || !refresh.IsZero() {
 		t.Fatalf("near-exhausted session lifetime was not rejected: access=%s refresh=%s ok=%t", access, refresh, ok)
 	}
@@ -39,26 +43,33 @@ func TestCalculateSessionExpiriesFailClosedWithoutUsableAccessInterval(t *testin
 
 func TestMobileSessionLifetimesAreRoleAware(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
-	mobileAbsolute := now.Add(sessionAbsoluteLifetime("client"))
+	mobileAbsolute := now.Add(sessionAbsoluteLifetime("client", false))
 	if mobileAbsolute != now.Add(365*24*time.Hour) {
 		t.Fatalf("mobile absolute lifetime = %s, want 365 days", mobileAbsolute.Sub(now))
 	}
-	if got := calculateRefreshExpiry("client", now, mobileAbsolute); got != now.Add(30*24*time.Hour) {
+	if got := calculateRefreshExpiry("client", now, mobileAbsolute, false); got != now.Add(30*24*time.Hour) {
 		t.Fatalf("mobile refresh lifetime = %s, want 30 days", got.Sub(now))
 	}
-	operatorAbsolute := now.Add(sessionAbsoluteLifetime("operator"))
+	operatorAbsolute := now.Add(sessionAbsoluteLifetime("operator", false))
 	if operatorAbsolute != now.Add(24*time.Hour) {
 		t.Fatalf("operator absolute lifetime = %s, want 24 hours", operatorAbsolute.Sub(now))
 	}
-	if got := calculateRefreshExpiry("operator", now, operatorAbsolute); got != now.Add(time.Hour) {
+	if got := calculateRefreshExpiry("operator", now, operatorAbsolute, false); got != now.Add(time.Hour) {
 		t.Fatalf("operator refresh lifetime = %s, want 1 hour", got.Sub(now))
+	}
+	developmentOperatorAbsolute := now.Add(sessionAbsoluteLifetime("operator", true))
+	if developmentOperatorAbsolute != now.Add(365*24*time.Hour) {
+		t.Fatalf("development operator absolute lifetime = %s, want 365 days", developmentOperatorAbsolute.Sub(now))
+	}
+	if got := calculateRefreshExpiry("operator", now, developmentOperatorAbsolute, true); got != now.Add(30*24*time.Hour) {
+		t.Fatalf("development operator refresh lifetime = %s, want 30 days", got.Sub(now))
 	}
 }
 
 func TestRefreshExpiryIsStrictlyBeforeAbsoluteExpiry(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
 	abs := now.Add(10 * time.Minute)
-	got := calculateRefreshExpiry("client", now, abs)
+	got := calculateRefreshExpiry("client", now, abs, false)
 	if got != abs.Add(-time.Second) || !got.Before(abs) {
 		t.Fatalf("refresh expiry = %s, want one second before absolute expiry %s", got, abs.Add(-time.Second))
 	}
@@ -96,5 +107,77 @@ func TestDerivedRefreshPairIsStablePerSessionGenerationAndInstance(t *testing.T)
 	}
 	if parts := strings.Split(first.RefreshToken, "."); len(parts) != 2 || parts[0] != "session-1" {
 		t.Fatalf("derived refresh token format = %q", first.RefreshToken)
+	}
+}
+
+func TestLegacyDevelopmentOperatorSessionCutoverIsNarrow(t *testing.T) {
+	createdAt := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+	legacyRefresh := createdAt.Add(time.Hour)
+	legacyAbsolute := createdAt.Add(24 * time.Hour)
+	if !shouldCutOverLegacyDevelopmentOperatorSession("operator", createdAt, legacyRefresh, legacyAbsolute, true) {
+		t.Fatal("legacy development operator session was not selected for one-time policy cutover")
+	}
+	if shouldCutOverLegacyDevelopmentOperatorSession("operator", createdAt, legacyRefresh, legacyAbsolute, false) {
+		t.Fatal("non-development operator session was selected for development policy cutover")
+	}
+	if shouldCutOverLegacyDevelopmentOperatorSession("client", createdAt, legacyRefresh, legacyAbsolute, true) {
+		t.Fatal("mobile role was selected for operator-only policy cutover")
+	}
+	if shouldCutOverLegacyDevelopmentOperatorSession("operator", createdAt, createdAt.Add(30*24*time.Hour), createdAt.Add(365*24*time.Hour), true) {
+		t.Fatal("already-current development operator session was selected for legacy cutover")
+	}
+}
+
+func TestCreateDevelopmentSessionRejectsNonDevelopmentBeforeDatabaseAccess(t *testing.T) {
+	service := &Service{development: false}
+	_, err := service.CreateDevelopment(context.Background(), "client", "development-client-instance")
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("CreateDevelopment() error = %v, want forbidden outside development", err)
+	}
+}
+
+func TestRoleSessionReadyRequiresCanonicalEnrollmentFacts(t *testing.T) {
+	ready := roleSessionReadiness{enabled: true, securityEnabled: true}
+	cases := []struct {
+		name      string
+		role      string
+		readiness roleSessionReadiness
+		want      bool
+	}{
+		{name: "client credential", role: "client", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, passwordCredential: true}, want: true},
+		{name: "client bare role", role: "client", readiness: ready, want: false},
+		{name: "partner activated credential", role: "partner", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "partner pending activation", role: "partner", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, passwordCredential: true}, want: false},
+		{name: "captain activated credential", role: "captain", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "field activated credential", role: "field", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passwordCredential: true}, want: true},
+		{name: "operator enrolled passkey", role: "operator", readiness: roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passkeyCredential: true}, want: true},
+		{name: "operator bootstrap only", role: "operator", readiness: roleSessionReadiness{enabled: true, securityEnabled: true}, want: false},
+		{name: "disabled role", role: "captain", readiness: roleSessionReadiness{securityEnabled: true, activated: true, passwordCredential: true}, want: false},
+		{name: "disabled security", role: "captain", readiness: roleSessionReadiness{enabled: true, activated: true, passwordCredential: true}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := roleSessionReady(tc.role, tc.readiness); got != tc.want {
+				t.Fatalf("roleSessionReady(%q) = %t, want %t", tc.role, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSelectDevelopmentSessionActorFailsClosedOnAmbiguity(t *testing.T) {
+	unready := roleSessionReadiness{enabled: true, securityEnabled: true, activated: true}
+	ready := roleSessionReadiness{enabled: true, securityEnabled: true, activated: true, passkeyCredential: true}
+
+	selected, err := selectDevelopmentSessionActor("operator", "", "act_unready", unready)
+	if err != nil || selected != "" {
+		t.Fatalf("unready candidate selected=%q err=%v, want empty selection without error", selected, err)
+	}
+	selected, err = selectDevelopmentSessionActor("operator", selected, "act_first", ready)
+	if err != nil || selected != "act_first" {
+		t.Fatalf("single ready candidate selected=%q err=%v, want act_first", selected, err)
+	}
+	_, err = selectDevelopmentSessionActor("operator", selected, "act_second", ready)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("second ready candidate error=%v, want conflict", err)
 	}
 }

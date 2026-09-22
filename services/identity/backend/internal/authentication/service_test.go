@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-func TestPasswordAcceptedForLoginRejectsValidLegacyLength(t *testing.T) {
+func TestPasswordAcceptedForLoginAcceptsStoredCredentialIndependentOfCurrentAdmissionPolicy(t *testing.T) {
 	legacyPassword := "Legacy-Password-9"
 	salt := []byte("legacy-salt-1234")
 	key := argon2.IDKey([]byte(legacyPassword), salt, 3, 64*1024, 2, 32)
@@ -22,7 +22,10 @@ func TestPasswordAcceptedForLoginRejectsValidLegacyLength(t *testing.T) {
 	if !identitysecurity.VerifyPassword(hash, legacyPassword) {
 		t.Fatal("test fixture did not produce a valid legacy password hash")
 	}
-	if passwordAcceptedForLogin(hash, legacyPassword) {
-		t.Fatal("legacy valid hash accepted a password outside the exact-eight policy")
+	if !passwordAcceptedForLogin(hash, legacyPassword) {
+		t.Fatal("stored valid credential was rejected by the current new-password admission policy")
+	}
+	if passwordAcceptedForLogin(hash, "definitely-wrong") {
+		t.Fatal("wrong password matched the stored credential")
 	}
 }

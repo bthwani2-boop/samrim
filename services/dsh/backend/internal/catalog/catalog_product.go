@@ -6,10 +6,12 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -21,6 +23,8 @@ var (
 	ErrCatalogProductNameInvalid       = errors.New("catalog Product name is invalid")
 	ErrCatalogProductIdentifierInvalid = errors.New("catalog Product identifier is invalid")
 	ErrCatalogProductImageInvalid      = errors.New("catalog Product image URL is invalid")
+	ErrCatalogMediaUploadInvalid       = errors.New("catalog Product media upload is invalid")
+	ErrCatalogMediaStorageUnavailable  = errors.New("catalog Product media storage is unavailable")
 	ErrCatalogProductScopeInvalid      = errors.New("catalog Product scope is invalid")
 	ErrCatalogProductVerticalInvalid   = errors.New("catalog Product vertical is invalid")
 	ErrCatalogVerticalInvalid          = errors.New("commerce vertical facts are invalid")
@@ -35,13 +39,18 @@ var verticalIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,127}$`)
 type Service struct {
 	identity *identityintegration.Client
 	db       *sql.DB
+	media    media.Store
 }
 
 func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
+	return NewWithMediaStore(identity, db, nil)
+}
+
+func NewWithMediaStore(identity *identityintegration.Client, db *sql.DB, mediaStore media.Store) (*Service, error) {
 	if identity == nil || db == nil {
 		return nil, errors.New("catalog configuration is invalid")
 	}
-	return &Service{identity: identity, db: db}, nil
+	return &Service{identity: identity, db: db, media: mediaStore}, nil
 }
 
 func (s *Service) ListProductsForPartner(ctx context.Context, accessToken, query, verticalID string, limit int, cursor string) (postgres.CatalogProductPage, error) {
@@ -211,6 +220,59 @@ func (s *Service) UpdateCatalogProduct(ctx context.Context, actingActorID, produ
 	return postgres.UpdateCatalogProduct(ctx, s.db, strings.TrimSpace(productID), normalized, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogProductUpdateRequest(productID, normalized, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
 }
 
+func (s *Service) ReplaceCatalogProductMedia(ctx context.Context, actingActorID, productID string, media []postgres.CatalogMediaInput, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductResult, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	normalized, err := normalizeCatalogMedia(media)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	productID = strings.TrimSpace(productID)
+	if productID == "" || expectedVersion < 1 {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogVersionConflict
+	}
+	result, err := postgres.ReplaceCatalogProductMedia(ctx, s.db, productID, normalized, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogMediaReplaceRequest(productID, normalized, expectedVersion), strings.TrimSpace(actingActorID), strings.TrimSpace(correlationID))
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if s.media != nil {
+		_ = s.ReconcileMediaStorage(ctx)
+	}
+	return result, nil
+}
+
+func (s *Service) ReplaceStoreScopedProductMedia(ctx context.Context, accessToken, storeID, productID string, media []postgres.CatalogMediaInput, expectedVersion int, idempotencyKey, correlationID string) (postgres.CatalogProductResult, error) {
+	actorID, err := s.requireStoreOwner(ctx, accessToken, storeID)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	productID = strings.TrimSpace(productID)
+	storeID = strings.TrimSpace(storeID)
+	current, err := postgres.ReadCatalogProduct(ctx, s.db, productID)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if current.Scope != "STORE_SCOPED" || current.StoreID != storeID {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogProductOwnership
+	}
+	normalized, err := normalizeCatalogMedia(media)
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if expectedVersion < 1 {
+		return postgres.CatalogProductResult{}, postgres.ErrCatalogVersionConflict
+	}
+	result, err := postgres.ReplaceCatalogProductMedia(ctx, s.db, productID, normalized, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashCatalogMediaReplaceRequest(productID, normalized, expectedVersion), actorID, strings.TrimSpace(correlationID))
+	if err != nil {
+		return postgres.CatalogProductResult{}, err
+	}
+	if s.media != nil {
+		_ = s.ReconcileMediaStorage(ctx)
+	}
+	return result, nil
+}
+
 func (s *Service) ReadCatalogProduct(ctx context.Context, actingActorID, productID string) (postgres.CatalogProductRecord, error) {
 	if err := s.requireOperator(ctx, actingActorID); err != nil {
 		return postgres.CatalogProductRecord{}, err
@@ -304,6 +366,49 @@ func normalizeCatalogProductUpdateInput(input postgres.CatalogProductUpdateInput
 		return postgres.CatalogProductUpdateInput{}, ErrCatalogProductScopeInvalid
 	}
 	return postgres.CatalogProductUpdateInput{VerticalID: verticalID, Scope: scope, StoreID: strings.TrimSpace(input.StoreID), CanonicalName: name, Brand: brand, Active: input.Active}, nil
+}
+
+func normalizeCatalogMedia(input []postgres.CatalogMediaInput) ([]postgres.CatalogMediaInput, error) {
+	if len(input) > 21 {
+		return nil, ErrCatalogProductImageInvalid
+	}
+	normalized := make([]postgres.CatalogMediaInput, 0, len(input))
+	ordinals := make(map[int]struct{}, len(input))
+	uris := make(map[string]struct{}, len(input))
+	primaryCount := 0
+	for _, item := range input {
+		uri := strings.TrimSpace(item.URI)
+		role := strings.ToLower(strings.TrimSpace(item.Role))
+		if (role != "primary" && role != "gallery") || item.Ordinal < 0 || item.Ordinal > 20 || uri == "" || len(uri) > 2048 {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		parsed, parseErr := url.ParseRequestURI(uri)
+		if parseErr != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || parsed.User != nil {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		if _, exists := ordinals[item.Ordinal]; exists {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		if _, exists := uris[uri]; exists {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		ordinals[item.Ordinal] = struct{}{}
+		uris[uri] = struct{}{}
+		if role == "primary" {
+			primaryCount++
+			if item.Ordinal != 0 {
+				return nil, ErrCatalogProductImageInvalid
+			}
+		} else if item.Ordinal == 0 {
+			return nil, ErrCatalogProductImageInvalid
+		}
+		normalized = append(normalized, postgres.CatalogMediaInput{URI: uri, Role: role, Ordinal: item.Ordinal})
+	}
+	if len(normalized) > 0 && primaryCount != 1 {
+		return nil, ErrCatalogProductImageInvalid
+	}
+	sort.Slice(normalized, func(left, right int) bool { return normalized[left].Ordinal < normalized[right].Ordinal })
+	return normalized, nil
 }
 
 func normalizeProductName(value string) (string, error) {

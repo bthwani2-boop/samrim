@@ -15,6 +15,7 @@ const runtime = createMobileIdentityRuntime({
   role,
   surface,
   namespace,
+  allowDevelopmentSessionFallback: process.env.EXPO_PUBLIC_BTHWANI_AUTH_JOURNEY_PROOF !== "1",
   secureStorage: {
     getItem: (key) => SecureStore.getItemAsync(key),
     setItem: (key, value) => SecureStore.setItemAsync(key, value),

@@ -1,6 +1,5 @@
+import { type CartResponse, type CatalogStoreOffer, createDshMobileClient, type CommerceVertical, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import * as Crypto from "expo-crypto";
-
-import { createDshMobileClient, type CartResponse, type CatalogStoreOffer, type PublicCatalogResponse, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import { getUsableIdentityAccessToken } from "../../bootstrap/identity";
 import { listOwnDeliveryAddresses } from "../location-core/delivery-address-client";
 
@@ -14,6 +13,21 @@ const client = () => createDshMobileClient(dshBaseUrl(), { cryptoRandomUUID: () 
 
 export async function listPublishedStores(serviceCityID: string): Promise<ReadonlyArray<PublicStoreView>> {
   return client().listPublishedStores(serviceCityID);
+}
+
+export async function listCatalogVerticals(): Promise<ReadonlyArray<CommerceVertical>> {
+  return client().listCatalogVerticals();
+}
+
+export async function listFavoriteStoreIDs(): Promise<ReadonlyArray<string>> {
+  const accessToken = await getUsableIdentityAccessToken();
+  return (await client().listClientFavoriteStores(accessToken)).storeIds;
+}
+
+export async function setFavoriteStore(storeID: string, isFavorite: boolean): Promise<boolean> {
+  const accessToken = await getUsableIdentityAccessToken();
+  const result = isFavorite ? await client().addClientFavoriteStore(accessToken, storeID) : await client().removeClientFavoriteStore(accessToken, storeID);
+  return result.isFavorite;
 }
 
 export async function readPublishedStore(storeID: string, serviceCityID: string): Promise<PublicStoreView> {

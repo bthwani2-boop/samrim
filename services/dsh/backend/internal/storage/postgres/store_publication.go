@@ -14,16 +14,20 @@ import (
 )
 
 type StoreRecord struct {
-	ID                   string
-	PartnerActorID       string
-	Name                 string
-	ServiceCityID        string
-	PrimaryVerticalID    string
-	Version              int
-	PublicationState     string
-	PublicationChangedAt *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	ID                      string
+	PartnerActorID          string
+	Name                    string
+	ServiceCityID           string
+	PrimaryVerticalID       string
+	Version                 int
+	PublicationState        string
+	PublicationChangedAt    *time.Time
+	DeliveryOriginLatitude  *float64
+	DeliveryOriginLongitude *float64
+	DeliveryOriginVersion   int
+	DeliveryOriginUpdatedAt *time.Time
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 func newID(prefix string) (string, error) {
@@ -59,6 +63,8 @@ type PublicStoreRecord struct {
 	ServiceCity       *ServiceCityRecord
 	PrimaryVerticalID string
 	Version           int
+	RatingAverage     float64
+	RatingCount       int
 	PublishedAt       time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -105,6 +111,18 @@ func ReadStoreOwnedByPartner(ctx context.Context, db *sql.DB, storeID, partnerAc
 		return StoreRecord{}, fmt.Errorf("read owned canonical store: %w", err)
 	}
 	return store, nil
+}
+
+func ReadStorePartnerActor(ctx context.Context, db *sql.DB, storeID string) (string, error) {
+	if db == nil || strings.TrimSpace(storeID) == "" {
+		return "", ErrStoreNotFound
+	}
+	var partnerActorID string
+	err := db.QueryRowContext(ctx, "SELECT partner_actor_id FROM dsh.stores WHERE id=$1", strings.TrimSpace(storeID)).Scan(&partnerActorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrStoreNotFound
+	}
+	return partnerActorID, err
 }
 
 func SetStorePublication(ctx context.Context, db *sql.DB, storeID, requestedState string, expectedVersion int, idempotencyKey, requestHash, actingActorID, correlationID string) (PublicationResult, error) {
@@ -193,7 +211,8 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 	updated, err := scanStore(tx.QueryRowContext(ctx, `UPDATE dsh.stores
 		SET publication_state=$2, publication_changed_at=clock_timestamp(), version=version+1, updated_at=clock_timestamp()
 		WHERE id=$1 AND version=$3
-		RETURNING id, partner_actor_id, name, service_city_id, primary_vertical_id, version, publication_state, publication_changed_at, created_at, updated_at`, storeID, requestedState, expectedVersion))
+		RETURNING id, partner_actor_id, name, service_city_id, primary_vertical_id, version, publication_state, publication_changed_at, created_at, updated_at,
+			delivery_origin_latitude, delivery_origin_longitude, delivery_origin_version, delivery_origin_updated_at`, storeID, requestedState, expectedVersion))
 	if err != nil {
 		return PublicationResult{}, fmt.Errorf("update canonical store publication: %w", err)
 	}
@@ -210,6 +229,11 @@ func setStorePublication(ctx context.Context, db *sql.DB, storeID, requestedStat
 		(event_type, idempotency_key, correlation_id, acting_actor_id, store_id, from_state, to_state, expected_version, result_version, request_hash, requested_state)
 		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, eventType, idempotencyKey, correlationID, actingActorID, storeID, store.PublicationState, updated.PublicationState, expectedVersion, updated.Version, requestHash, requestedState); err != nil {
 		return PublicationResult{}, fmt.Errorf("record store publication audit: %w", err)
+	}
+	if requestedState == "published" && store.PublicationState != "published" {
+		if err := enqueueFieldCommissionPublicationTx(ctx, tx, storeID, correlationID); err != nil {
+			return PublicationResult{}, fmt.Errorf("enqueue Field commission publication: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return PublicationResult{}, fmt.Errorf("commit store publication: %w", err)
@@ -229,9 +253,13 @@ func ListPublishedStores(ctx context.Context, db *sql.DB, serviceCityIDs ...stri
 		return nil, ErrServiceCityNotFound
 	}
 	visibleOfferConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
-	rows, err := db.QueryContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version, s.publication_changed_at, s.created_at, s.updated_at,
+	rows, err := db.QueryContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version,
+		COALESCE(ratings.rating_average, 0), COALESCE(ratings.rating_count, 0),
+		s.publication_changed_at, s.created_at, s.updated_at,
 		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
 		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
+		LEFT JOIN (SELECT store_id, AVG(rating)::double precision AS rating_average, COUNT(*)::int AS rating_count
+			FROM dsh.commerce_order_ratings GROUP BY store_id) ratings ON ratings.store_id=s.id
 		WHERE s.service_city_id=$1 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
 		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id WHERE o.store_id=s.id AND `+visibleOfferConditions+`)
 		ORDER BY s.name ASC, s.id ASC`, serviceCityID)
@@ -242,7 +270,7 @@ func ListPublishedStores(ctx context.Context, db *sql.DB, serviceCityIDs ...stri
 	for rows.Next() {
 		var store PublicStoreRecord
 		var city ServiceCityRecord
-		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt); err != nil {
+		if err := rows.Scan(&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.RatingAverage, &store.RatingCount, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan published store: %w", err)
 		}
 		store.ServiceCity = &city
@@ -271,12 +299,16 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, service
 	var store PublicStoreRecord
 	var city ServiceCityRecord
 	visibleOfferConditions := strings.Join(customerVisibleOfferConditions(), " AND ")
-	err := db.QueryRowContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version, s.publication_changed_at, s.created_at, s.updated_at,
+	err := db.QueryRowContext(ctx, `SELECT s.id, s.partner_actor_id, s.name, s.primary_vertical_id, s.version,
+		COALESCE(ratings.rating_average, 0), COALESCE(ratings.rating_count, 0),
+		s.publication_changed_at, s.created_at, s.updated_at,
 		sc.id, sc.display_name_ar, sc.active, sc.version, sc.created_at, sc.updated_at
 		FROM dsh.stores s JOIN dsh.service_cities sc ON sc.id=s.service_city_id
+		LEFT JOIN (SELECT store_id, AVG(rating)::double precision AS rating_average, COUNT(*)::int AS rating_count
+			FROM dsh.commerce_order_ratings GROUP BY store_id) ratings ON ratings.store_id=s.id
 		WHERE s.id=$1 AND s.service_city_id=$2 AND sc.active=true AND s.publication_state='published' AND s.publication_changed_at IS NOT NULL
 		AND EXISTS (SELECT 1 FROM dsh.catalog_store_offers o JOIN dsh.catalog_product_variants v ON v.id=o.variant_id JOIN dsh.catalog_products p ON p.id=v.product_id WHERE o.store_id=s.id AND `+visibleOfferConditions+`)`, strings.TrimSpace(storeID), serviceCityID).Scan(
-		&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt)
+		&store.ID, &store.PartnerActorID, &store.Name, &store.PrimaryVerticalID, &store.Version, &store.RatingAverage, &store.RatingCount, &store.PublishedAt, &store.CreatedAt, &store.UpdatedAt, &city.ID, &city.DisplayNameAr, &city.Active, &city.Version, &city.CreatedAt, &city.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PublicStoreRecord{}, ErrStoreNotFound
 	}
@@ -287,7 +319,7 @@ func ReadPublishedStore(ctx context.Context, db *sql.DB, storeID string, service
 	return store, nil
 }
 
-const storeSelect = `SELECT id, partner_actor_id, name, service_city_id, primary_vertical_id, version, publication_state, publication_changed_at, created_at, updated_at FROM dsh.stores`
+const storeSelect = `SELECT id, partner_actor_id, name, service_city_id, primary_vertical_id, version, publication_state, publication_changed_at, created_at, updated_at, delivery_origin_latitude, delivery_origin_longitude, delivery_origin_version, delivery_origin_updated_at FROM dsh.stores`
 
 type rowScanner interface {
 	Scan(dest ...any) error
@@ -297,7 +329,9 @@ func scanStore(row rowScanner) (StoreRecord, error) {
 	var store StoreRecord
 	var serviceCityID, primaryVerticalID sql.NullString
 	var publicationChangedAt sql.NullTime
-	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &serviceCityID, &primaryVerticalID, &store.Version, &store.PublicationState, &publicationChangedAt, &store.CreatedAt, &store.UpdatedAt); err != nil {
+	var deliveryOriginLatitude, deliveryOriginLongitude sql.NullFloat64
+	var deliveryOriginUpdatedAt sql.NullTime
+	if err := row.Scan(&store.ID, &store.PartnerActorID, &store.Name, &serviceCityID, &primaryVerticalID, &store.Version, &store.PublicationState, &publicationChangedAt, &store.CreatedAt, &store.UpdatedAt, &deliveryOriginLatitude, &deliveryOriginLongitude, &store.DeliveryOriginVersion, &deliveryOriginUpdatedAt); err != nil {
 		return StoreRecord{}, err
 	}
 	if serviceCityID.Valid {
@@ -308,6 +342,13 @@ func scanStore(row rowScanner) (StoreRecord, error) {
 	}
 	if publicationChangedAt.Valid {
 		store.PublicationChangedAt = &publicationChangedAt.Time
+	}
+	if deliveryOriginLatitude.Valid && deliveryOriginLongitude.Valid {
+		store.DeliveryOriginLatitude = &deliveryOriginLatitude.Float64
+		store.DeliveryOriginLongitude = &deliveryOriginLongitude.Float64
+	}
+	if deliveryOriginUpdatedAt.Valid {
+		store.DeliveryOriginUpdatedAt = &deliveryOriginUpdatedAt.Time
 	}
 	return store, nil
 }

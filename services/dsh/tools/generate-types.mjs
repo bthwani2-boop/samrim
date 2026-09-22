@@ -10,12 +10,16 @@ const pathModulePaths = [
   path.join(root, "services/dsh/contracts/openapi/paths/joining-cases.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/catalog.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/commerce.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/notifications.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/captain.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/field.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/store-publication.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/location-core.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/service-city.yaml"),
   path.join(root, "services/dsh/contracts/openapi/paths/serviceability.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/delivery-fee.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/partner-finance.yaml"),
+  path.join(root, "services/dsh/contracts/openapi/paths/beneficiary-finance.yaml"),
 ];
 const outputPath = path.join(root, "services/dsh/clients/generated/dsh-types.ts");
 const operationsOutputPath = path.join(root, "services/dsh/clients/generated/dsh-operations.ts");
@@ -312,36 +316,38 @@ function goFieldName(name) {
 
 function goPropertyType(lines, optional, context) {
   const nullable = valueAfter(lines, "nullable:", 10) === "true";
+  const pointer = valueAfter(lines, "x-go-pointer:", 10) === "true";
+  const pointerType = pointer;
   const ref = valueAfter(lines, "$ref:", 10);
   if (ref) return nullable ? "*" + refType(ref) : refType(ref);
 
   const constant = valueAfter(lines, "const:", 10);
-  if (constant !== null) return "string";
+  if (constant !== null) return pointerType ? "*string" : "string";
 
   const enumValue = valueAfter(lines, "enum:", 10);
-  if (enumValue) return "string";
+  if (enumValue) return pointerType ? "*string" : "string";
 
   const type = valueAfter(lines, "type:", 10);
   if (type === "string") {
     const format = valueAfter(lines, "format:", 10);
-    if (format === "date-time") return optional ? "*time.Time" : "time.Time";
-    return "string";
+    if (format === "date-time") return pointer || optional ? "*time.Time" : "time.Time";
+    return pointerType ? "*string" : "string";
   }
-  if (type === "integer") return "int";
-  if (type === "number") return "float64";
-  if (type === "boolean") return "bool";
-  if (type === "object") return "map[string]any";
+  if (type === "integer") return pointerType ? "*int" : "int";
+  if (type === "number") return pointerType ? "*float64" : "float64";
+  if (type === "boolean") return pointerType ? "*bool" : "bool";
+  if (type === "object") return pointerType ? "*map[string]any" : "map[string]any";
   if (type === "array") {
     const itemsIndex = lines.findIndex((line) => line === "          items:");
     if (itemsIndex < 0) throw new Error(context + " array is missing items");
     const itemLines = lines.slice(itemsIndex + 1);
     const itemRef = valueAfter(itemLines, "$ref:", 12);
-    if (itemRef) return "[]" + refType(itemRef);
+    if (itemRef) return pointerType ? "*[]" + refType(itemRef) : "[]" + refType(itemRef);
     const itemType = valueAfter(itemLines, "type:", 12);
-    if (itemType === "string") return "[]string";
-    if (itemType === "integer") return "[]int";
-    if (itemType === "number") return "[]float64";
-    if (itemType === "boolean") return "[]bool";
+    if (itemType === "string") return pointerType ? "*[]string" : "[]string";
+    if (itemType === "integer") return pointerType ? "*[]int" : "[]int";
+    if (itemType === "number") return pointerType ? "*[]float64" : "[]float64";
+    if (itemType === "boolean") return pointerType ? "*[]bool" : "[]bool";
   }
   throw new Error(context + " has unsupported Go property type " + JSON.stringify(type));
 }

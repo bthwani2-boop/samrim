@@ -1,13 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { createSamrimMetroConfig, getSamrimMetroCacheRoot } from "./create-samrim-metro-config.cjs";
+
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const appsRoot = path.join(repoRoot, "apps");
-const envExamplePath = path.join(repoRoot, "infra/local/compose/.env.example");
+const envExamplePath = path.join(repoRoot, "infra/local/.env.example");
 const rootPackagePath = path.join(repoRoot, "package.json");
-const runtimePath = path.join(repoRoot, "tools/dev/runtime.ps1");
-const appOpenerPath = path.join(repoRoot, "tools/dev/open-mobile-apps.ps1");
-const devicePolicyPath = path.join(repoRoot, "tools/dev/device-policy.psm1");
+const localRuntimePath = path.join(repoRoot, "tools/dev/dev.ps1");
+const metroOwnerPath = path.join(repoRoot, "tools/mobile/create-samrim-metro-config.cjs");
 const requiredStringFields = [
   "name",
   "slug",
@@ -54,9 +55,22 @@ if (apps.length === 0) {
   console.error("No mobile hosts discovered from apps/*/mobile.config.json");
   process.exit(1);
 }
-if (!fs.existsSync(runtimePath) || !fs.existsSync(appOpenerPath) || !fs.existsSync(devicePolicyPath)) {
-  console.error("Canonical runtime owner is missing: tools/dev/runtime.ps1");
+if (!fs.existsSync(localRuntimePath)) {
+  console.error("Canonical local runtime owner is missing: tools/dev/dev.ps1");
   process.exit(1);
+}
+if (!fs.existsSync(metroOwnerPath)) {
+  console.error("Canonical Metro cache owner is missing: tools/mobile/create-samrim-metro-config.cjs");
+  process.exit(1);
+}
+for (const retired of [
+  path.join(repoRoot, "tools/mobile/with-android-development-client.cjs"),
+  path.join(repoRoot, "tools/mobile/with-android-development-client.d.cts"),
+]) {
+  if (fs.existsSync(retired)) {
+    console.error(`Retired native Metro launch wrapper remains: ${path.relative(repoRoot, retired)}`);
+    process.exit(1);
+  }
 }
 
 const env = parseEnv(fs.readFileSync(envExamplePath, "utf8"));
@@ -69,6 +83,7 @@ const seen = {
   projectId: new Map(),
 };
 const seenPorts = new Map();
+const seenMetroCacheRoots = new Map();
 const servicePorts = new Set([
   requirePort(env, "SAMRIM_IDENTITY_PORT"),
   requirePort(env, "SAMRIM_DSH_PORT"),
@@ -78,13 +93,62 @@ let failed = false;
 for (const app of apps) {
   const appRoot = path.join(appsRoot, app);
   const configPath = path.join(appRoot, "mobile.config.json");
+  const appConfigPath = path.join(appRoot, "app.config.ts");
   const projectPath = path.join(appRoot, "project.json");
   const packagePath = path.join(appRoot, "package.json");
+  const metroConfigPath = path.join(appRoot, "metro.config.cjs");
 
-  if (!fs.existsSync(projectPath) || !fs.existsSync(packagePath)) {
-    console.error(`${app}: missing project.json or package.json`);
+  if (!fs.existsSync(appConfigPath) || !fs.existsSync(projectPath) || !fs.existsSync(packagePath) || !fs.existsSync(metroConfigPath)) {
+    console.error(`${app}: missing app.config.ts, project.json, package.json or metro.config.cjs`);
     failed = true;
     continue;
+  }
+
+  const metroSource = fs.readFileSync(metroConfigPath, "utf8");
+  if (!metroSource.includes('require("../../tools/mobile/create-samrim-metro-config.cjs")') || !metroSource.includes("createSamrimMetroConfig(__dirname)")) {
+    console.error(`${app}: Metro must use the canonical app-scoped cache owner`);
+    failed = true;
+  }
+  for (const forbidden of [
+    "watchFolders",
+    "resolver.nodeModulesPaths",
+    "resolver.extraNodeModules",
+    "resolver.disableHierarchicalLookup",
+    "EXPO_NO_METRO_WORKSPACE_ROOT",
+  ]) {
+    if (metroSource.includes(forbidden)) {
+      console.error(`${app}: manual Metro monorepo override must be absent: ${forbidden}`);
+      failed = true;
+    }
+  }
+
+  try {
+    const metroRuntimeConfig = createSamrimMetroConfig(appRoot);
+    if (!Array.isArray(metroRuntimeConfig.cacheStores) || metroRuntimeConfig.cacheStores.length !== 1) {
+      console.error(`${app}: canonical Metro config must expose exactly one cache store`);
+      failed = true;
+    }
+    const cacheRoot = getSamrimMetroCacheRoot(appRoot);
+    const previous = seenMetroCacheRoots.get(cacheRoot);
+    if (previous) {
+      console.error(`Metro cache collision: ${cacheRoot} used by ${previous} and ${app}`);
+      failed = true;
+    } else {
+      seenMetroCacheRoots.set(cacheRoot, app);
+    }
+    if (path.basename(cacheRoot) !== app) {
+      console.error(`${app}: Metro cache root is not app-scoped: ${cacheRoot}`);
+      failed = true;
+    }
+  } catch (error) {
+    console.error(`${app}: canonical Metro config failed: ${error.message}`);
+    failed = true;
+  }
+
+  const appConfigSource = fs.readFileSync(appConfigPath, "utf8");
+  if (appConfigSource.includes("with-android-development-client") || appConfigSource.includes("defaultLaunchURL") || appConfigSource.includes("developmentClient")) {
+    console.error(`${app}: native development-client launch target must not be app-config owned; Expo CLI owns the daily launch URL`);
+    failed = true;
   }
 
   const project = JSON.parse(fs.readFileSync(projectPath, "utf8"));
@@ -102,22 +166,20 @@ for (const app of apps) {
   }
 
   const rootCommandName = app.replace(/^app-/, "");
-  const expectedRootScript = `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/dev/open-mobile-apps.ps1 -App ${app}`;
+  const expectedRootScript = `pnpm --dir apps/${app} dev`;
   if (rootPackage.scripts?.[rootCommandName] !== expectedRootScript) {
-    console.error(`${app}: root command must route to the canonical app opener`);
+    console.error(`${app}: root alias must enter the app directory and run its owned dev command`);
     failed = true;
   }
 
   const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
-  for (const forbidden of ["start", "dev", "serve"]) {
-    if (pkg.scripts?.[forbidden] !== undefined) {
-      console.error(`${app}: package.json must not expose scripts.${forbidden}; use the root runtime command`);
-      failed = true;
-    }
+  if (pkg.scripts?.dev !== "node ../../tools/dev/start-surface.mjs") {
+    console.error(`${app}: package.json scripts.dev must use the shared direct surface launcher`);
+    failed = true;
   }
-  for (const [scriptName, command] of Object.entries(pkg.scripts ?? {})) {
-    if (typeof command === "string" && /\b(?:expo|react-native)\s+start\b/i.test(command)) {
-      console.error(`${app}: package script '${scriptName}' exposes a shadow Metro runtime path`);
+  for (const forbidden of ["start", "serve"]) {
+    if (pkg.scripts?.[forbidden] !== undefined) {
+      console.error(`${app}: package.json must not expose scripts.${forbidden}; scripts.dev is canonical`);
       failed = true;
     }
   }
@@ -170,9 +232,10 @@ for (const app of apps) {
   }
 }
 
-const toolingText = [runtimePath, appOpenerPath, devicePolicyPath]
-  .map((file) => fs.readFileSync(file, "utf8"))
-  .join("\n");
+const toolingText = [
+  fs.readFileSync(localRuntimePath, "utf8"),
+  fs.readFileSync(metroOwnerPath, "utf8"),
+].join("\n");
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -220,16 +283,13 @@ for (const entry of fs.readdirSync(appsRoot, { withFileTypes: true })) {
     }
   }
 }
-if (!toolingText.includes("device-policy.psm1")) {
-  console.error("mobile tooling must consume the canonical device policy owner");
-  failed = true;
-}
 if (failed) process.exit(1);
-console.log("MOBILE_RUNTIME_OWNER=tools/dev/runtime.ps1");
-console.log("MOBILE_APP_OPENER=tools/dev/open-mobile-apps.ps1");
-console.log("MOBILE_DEVICE_POLICY=tools/dev/device-policy.psm1");
-console.log("MOBILE_RUNTIME_ENTRYPOINTS=1_PER_APP");
-console.log("MOBILE_SHADOW_START_SCRIPTS=0");
+console.log("MOBILE_LOCAL_RUNTIME_OWNER=apps/*/package.json");
+console.log("MOBILE_RUNTIME_ENTRYPOINT=PACKAGE_DEV");
+console.log("MOBILE_ROOT_COMMANDS=DIRECTORY_ALIASES");
+console.log("MOBILE_SHARED_LAUNCHER=tools/dev/start-surface.mjs");
 console.log("MOBILE_SHADOW_NX_RUNTIME_TARGETS=0");
 console.log("MOBILE_METRO_PORT_AUTHORITY=CANONICAL_ENV");
+console.log("MOBILE_METRO_CACHE_OWNER=APP_SCOPED");
+console.log("MOBILE_MONOREPO_FAST_REFRESH=EXPO_AUTOCONFIG");
 console.log("MOBILE_CONFIG=PASS apps=" + apps.join(","));

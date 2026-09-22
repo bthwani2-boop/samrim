@@ -62,7 +62,7 @@ function buildPlugins(appKey, { locationMode }) {
       : "expo-splash-screen",
   );
 
-  if (locationMode) {
+  if (locationMode === "foreground") {
     const locationOptions = {
       locationWhenInUsePermission: PERMISSION_TEXT.locationWhenInUse,
     };
@@ -85,7 +85,7 @@ function buildPlugins(appKey, { locationMode }) {
 function defineSamrimExpoApp(appKey, options = {}) {
   const app = readMobileConfig(appKey);
   const locationMode = options.locationMode;
-  if (locationMode !== undefined && locationMode !== "foreground" && locationMode !== "background") {
+  if (locationMode !== undefined && locationMode !== "foreground") {
     throw new Error("Invalid locationMode for " + appKey + ": " + locationMode);
   }
   const adaptiveIcon = appAsset(appKey, "adaptive-icon.png");

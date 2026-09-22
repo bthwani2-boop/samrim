@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"regexp"
 	"strings"
 
@@ -139,7 +140,7 @@ func (s *Service) SetManagedRoleEnabled(ctx context.Context, actorID, operatorAc
 	return s.identity.SetRoleEnabledWithContext(ctx, actorID, "field", false, correlationID, strings.TrimSpace(reason), operatorActorID, expectedVersion)
 }
 
-func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotencyKey, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string) (postgres.JoiningCaseResult, error) {
+func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotencyKey, correlationID, phone, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64) (postgres.JoiningCaseResult, error) {
 	identity, err := s.requireEligibleField(ctx, accessToken)
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
@@ -149,7 +150,7 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	firstStoreName = strings.TrimSpace(firstStoreName)
 	serviceCityID = strings.TrimSpace(serviceCityID)
 	verticalID = strings.TrimSpace(verticalID)
-	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
+	if !phoneE164Pattern.MatchString(phone) || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || math.IsNaN(latitude) || math.IsInf(latitude, 0) || math.IsNaN(longitude) || math.IsInf(longitude, 0) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || strings.TrimSpace(idempotencyKey) == "" || len(strings.TrimSpace(correlationID)) < 8 {
 		return postgres.JoiningCaseResult{}, ErrInvalidInput
 	}
 	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
@@ -160,7 +161,7 @@ func (s *Service) CreateJoiningCase(ctx context.Context, accessToken, idempotenc
 	if err != nil || !vertical.Active {
 		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
 	}
-	return postgres.CreateJoiningCaseForField(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseFieldRequest(identity.Subject, phone, businessName, firstStoreName, serviceCityID, verticalID), identity.Subject, strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID)
+	return postgres.CreateJoiningCaseForField(ctx, s.db, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseFieldRequest(identity.Subject, phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude), identity.Subject, strings.TrimSpace(correlationID), phone, businessName, firstStoreName, serviceCityID, verticalID, latitude, longitude)
 }
 
 func (s *Service) ListJoiningCases(ctx context.Context, accessToken string, limit int) (postgres.JoiningCaseListResult, error) {
@@ -192,6 +193,9 @@ func (s *Service) SubmitJoiningCase(ctx context.Context, accessToken, caseID str
 	if err != nil {
 		return postgres.JoiningCaseResult{}, err
 	}
+	if current.Case.Origin != "field" {
+		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
+	}
 	if current.Case.State != "draft" {
 		if current.Case.PartnerActorID == "" {
 			return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
@@ -209,6 +213,37 @@ func (s *Service) SubmitJoiningCase(ctx context.Context, accessToken, caseID str
 		return postgres.JoiningCaseResult{}, joiningcase.ErrPartnerIdentityUnavailable
 	}
 	return postgres.SubmitJoiningCase(ctx, s.db, caseID, actorRole.ActorID, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseSubmit(caseID, actorRole.ActorID, expectedVersion), identity.Subject, strings.TrimSpace(correlationID))
+}
+
+func (s *Service) CorrectAndResubmitJoiningCase(ctx context.Context, accessToken, caseID, businessName, firstStoreName, serviceCityID, verticalID string, latitude, longitude float64, expectedVersion int, idempotencyKey, correlationID string) (postgres.JoiningCaseResult, error) {
+	identity, err := s.requireEligibleField(ctx, accessToken)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	caseID = strings.TrimSpace(caseID)
+	businessName = strings.TrimSpace(businessName)
+	firstStoreName = strings.TrimSpace(firstStoreName)
+	serviceCityID = strings.TrimSpace(serviceCityID)
+	verticalID = strings.TrimSpace(verticalID)
+	if caseID == "" || len(businessName) < 2 || len(businessName) > 160 || len(firstStoreName) < 2 || len(firstStoreName) > 160 || serviceCityID == "" || verticalID == "" || expectedVersion < 1 || !validMutation(idempotencyKey, correlationID, identity.Subject) || !validCoordinates(latitude, longitude) {
+		return postgres.JoiningCaseResult{}, ErrInvalidInput
+	}
+	current, err := postgres.ReadJoiningCaseForField(ctx, s.db, identity.Subject, caseID)
+	if err != nil {
+		return postgres.JoiningCaseResult{}, err
+	}
+	if current.Case.Origin != "field" {
+		return postgres.JoiningCaseResult{}, postgres.ErrJoiningCaseState
+	}
+	city, err := postgres.ReadServiceCity(ctx, s.db, serviceCityID)
+	if err != nil || !city.Active {
+		return postgres.JoiningCaseResult{}, joiningcase.ErrServiceCityUnavailable
+	}
+	vertical, err := postgres.ReadCommerceVertical(ctx, s.db, verticalID)
+	if err != nil || !vertical.Active {
+		return postgres.JoiningCaseResult{}, postgres.ErrCatalogVerticalNotFound
+	}
+	return postgres.CorrectAndResubmitJoiningCaseForField(ctx, s.db, caseID, identity.Subject, businessName, firstStoreName, expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashJoiningCaseCorrectAndResubmit(caseID, identity.Subject, businessName, firstStoreName, expectedVersion, serviceCityID, verticalID, latitude, longitude), strings.TrimSpace(correlationID), serviceCityID, verticalID, latitude, longitude)
 }
 
 func (s *Service) requireField(ctx context.Context, accessToken string) (identityclient.ActorIdentity, error) {
@@ -250,4 +285,8 @@ func (s *Service) requireOperator(ctx context.Context, actorID string) error {
 
 func validMutation(idempotencyKey, correlationID, actingActorID string) bool {
 	return len(strings.TrimSpace(idempotencyKey)) >= 8 && len(strings.TrimSpace(idempotencyKey)) <= 128 && len(strings.TrimSpace(correlationID)) >= 8 && len(strings.TrimSpace(correlationID)) <= 128 && strings.TrimSpace(actingActorID) != ""
+}
+
+func validCoordinates(latitude, longitude float64) bool {
+	return !math.IsNaN(latitude) && !math.IsInf(latitude, 0) && !math.IsNaN(longitude) && !math.IsInf(longitude, 0) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180
 }

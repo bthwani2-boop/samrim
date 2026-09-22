@@ -1,4 +1,5 @@
 declare const process: { env: Record<string, string | undefined> };
+declare const __DEV__: boolean;
 
 import type { IdentityClient } from "./client";
 import { createIdentityClient } from "./client";
@@ -11,6 +12,13 @@ export type MobileIdentityRuntimeConfig = {
   role: ActorType;
   surface: IdentitySurface;
   namespace: string;
+  /**
+   * Keeps ordinary local development ceremony-free while allowing an
+   * explicit activation-proof run to exercise the real auth surface.
+   * Production never exposes the development-session route because the
+   * __DEV__ boundary below remains mandatory.
+   */
+  allowDevelopmentSessionFallback?: boolean;
   secureStorage: {
     getItem(key: string): Promise<string | null>;
     setItem(key: string, value: string): Promise<void>;
@@ -69,6 +77,9 @@ export function createMobileIdentityRuntime(config: MobileIdentityRuntimeConfig)
       config.surface,
       config.namespace,
       config.cryptoRandomUUID,
+      __DEV__ && config.allowDevelopmentSessionFallback !== false
+        ? async () => identityClient().developmentSession(config.role, await clientInstanceId())
+        : undefined,
     );
     return sessionValue;
   }

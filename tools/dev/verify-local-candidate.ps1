@@ -22,10 +22,19 @@ function Invoke-Git([string[]]$Arguments) {
 function Run-Step([string]$Name, [scriptblock]$Action) {
     Write-Host ''
     Write-Host "=== $Name ==="
-    $global:LASTEXITCODE = 0
-    & $Action
-    if ($LASTEXITCODE -ne 0) { Fail "$Name failed with exit code $LASTEXITCODE" }
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $global:LASTEXITCODE = 0
+        & $Action
+        if ($LASTEXITCODE -ne 0) { Fail "$Name failed with exit code $LASTEXITCODE" }
+    }
+    finally {
+        $clock.Stop()
+        Write-Host ("VERIFY_STEP_MS name={0} ms={1}" -f ($Name -replace '\s+','_'), $clock.ElapsedMilliseconds)
+    }
 }
+
+$verifyClock = [Diagnostics.Stopwatch]::StartNew()
 
 Push-Location $Repo
 try {
@@ -87,26 +96,22 @@ try {
         Run-Step 'Nx project tags' { node tools/dev/verify-nx-project-tags.mjs }
     }
 
-    if (Changed-Matches '^(AGENTS\.md|REPOSITORY-STRUCTURE\.md|CLAUDE\.md|GEMINI\.md|\.github/copilot-instructions\.md|\.github/pull_request_template\.md|\.github/workflows/pr-policy\.yml|knowledge\.sources\.json|package\.json|tools/dev/(verify-local-candidate\.ps1|safe-push\.ps1|runtime\.(?:ps1|psm1)|verify-agent-knowledge-contract\.mjs|verify-repository-structure\.mjs))$') {
+    if (Changed-Matches '^(AGENTS\.md|REPOSITORY-STRUCTURE\.md|CLAUDE\.md|GEMINI\.md|\.github/copilot-instructions\.md|\.github/pull_request_template\.md|\.github/workflows/pr-policy\.yml|knowledge\.sources\.json|package\.json|tools/dev/(verify-local-candidate\.ps1|safe-push\.ps1|verify-agent-knowledge-contract\.mjs|verify-repository-structure\.mjs))$') {
         Run-Step 'Agent execution contract' { node tools/dev/verify-agent-knowledge-contract.mjs }
     }
 
-    if (Changed-Matches '^(AGENTS\.md|knowledge\.sources\.json|README\.md|CONTRIBUTING\.md|SECURITY\.md|tools/README\.md|\.github/pull_request_template\.md|\.github/workflows/pr-policy\.yml|tools/dev/(knowledge-|query-knowledge|verify-(knowledge|doc|agent)))') {
+    if (Changed-Matches '^(AGENTS\.md|knowledge\.sources\.json|package\.json|README\.md|CONTRIBUTING\.md|SECURITY\.md|tools/README\.md|infra/local/compose/README\.md|\.github/pull_request_template\.md|\.github/workflows/pr-policy\.yml|tools/dev/(knowledge-|query-knowledge|verify-(knowledge|doc|agent)))') {
         Run-Step 'Knowledge invariants' { node tools/dev/verify-knowledge-system.mjs }
         Run-Step 'Knowledge references' { node tools/dev/verify-knowledge-references.mjs }
         Run-Step 'Docs command parity' { node tools/dev/verify-doc-command-parity.mjs }
         Run-Step 'Docs configuration parity' { node tools/dev/verify-doc-config-parity.mjs }
     }
 
-    if (Changed-Matches '^(infra/local/compose/|tools/dev/(runtime\.ps1|runtime\.psm1|open-mobile-apps\.ps1|scrcpy\.ps1)|package\.json$)') {
+    if (Changed-Matches '^(infra/local/(?:compose/|\.env\.example$)|tools/dev/(dev\.ps1|start-surface\.mjs|verify-local-runtime-ownership\.mjs|run-playwright-live\.mjs|verify-identity-runtime\.mjs)|tools/mobile/(?:prepare-local-development\.ps1|build-development\.ps1)|package\.json|apps/(?:app-(?:client|partner|captain|field)|control-panel)/package\.json)$') {
         Run-Step 'Runtime ownership' { node tools/dev/verify-local-runtime-ownership.mjs }
         Run-Step 'Canonical compose config' {
-            docker compose --project-name samrim-local --env-file infra/local/compose/.env.example -f infra/local/compose/compose.yaml config --quiet
+            docker compose --project-name samrim-local --env-file infra/local/.env.example -f infra/local/compose/compose.yaml config --quiet
         }
-    }
-
-    if (Changed-Matches '^(package\.json|tools/dev/(local-world\.mjs|verify-local-world\.mjs|verify-local-candidate\.ps1)|services/dsh/backend/internal/joiningcase/service\.go)$') {
-        Run-Step 'Local world contract' { node tools/dev/verify-local-world.mjs }
     }
 
     if (Changed-Matches '^apps/app-(client|partner|captain|field)/(mobile\.config\.json|app\.config\.ts|eas\.json|fingerprint\.config\.js|package\.json)$|^tools/mobile/verify-mobile-config\.mjs$') {
@@ -144,10 +149,18 @@ try {
 
     if ($changed.Count -gt 0) {
         Run-Step 'Affected workspace targets' {
-        pnpm exec nx affected -t typecheck test build export-smoke vet --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
+            pnpm exec nx affected -t typecheck test build vet --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
         }
     } else {
         Write-Host 'AFFECTED_WORKSPACE_TARGETS=SKIPPED reason=no_changes'
+    }
+
+    if ($changed.Count -gt 0) {
+        Run-Step 'Affected mobile export smoke' {
+            pnpm exec nx affected -t export-smoke --base=$BaseSha --head=$head --outputStyle=stream --parallel=1
+        }
+    } else {
+        Write-Host 'AFFECTED_MOBILE_EXPORT_SMOKE=SKIPPED reason=no_changes'
     }
 
     $endHead = ((Invoke-Git @('rev-parse','HEAD')) -join '').Trim()
@@ -158,5 +171,7 @@ try {
     Write-Host "VERIFY=PASS base=$BaseSha head=$head"
 }
 finally {
+    $verifyClock.Stop()
+    Write-Host "VERIFY_TOTAL_MS=$($verifyClock.ElapsedMilliseconds)"
     Pop-Location
 }

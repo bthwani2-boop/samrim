@@ -51,6 +51,18 @@ paths:
   /dsh/catalog/products/{productId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}"
 
+  /dsh/catalog/products/{productId}/media:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1media"
+
+  /dsh/catalog/products/{productId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1media~1upload"
+
+  /dsh/stores/{storeId}/products/{productId}/media/upload:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products~1{productId}~1media~1upload"
+
+  /dsh/stores/{storeId}/products/{productId}/media:
+    $ref: "./paths/catalog.yaml#/paths/~1dsh~1stores~1{storeId}~1products~1{productId}~1media"
+
   /dsh/catalog/products/{productId}/attributes/{attributeId}:
     $ref: "./paths/catalog.yaml#/paths/~1dsh~1catalog~1products~1{productId}~1attributes~1{attributeId}"
 
@@ -156,8 +168,17 @@ paths:
   /dsh/serviceability:
     $ref: "./paths/serviceability.yaml#/paths/~1dsh~1serviceability"
 
+  /dsh/client/favorite-stores:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1client~1favorite-stores"
+
+  /dsh/client/favorite-stores/{storeId}:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1client~1favorite-stores~1{storeId}"
+
   /dsh/cart:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart"
+
+  /dsh/cart/quote:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart~1quote"
 
   /dsh/cart/lines:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1cart~1lines"
@@ -174,11 +195,84 @@ paths:
   /dsh/orders/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}"
 
+  /dsh/orders/{orderId}/delivery-proof:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1delivery-proof"
+
+  /dsh/orders/{orderId}/rating:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1rating"
+
+  /dsh/orders/{orderId}/tracking:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1tracking"
+
+  /dsh/orders/{orderId}/cancel:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1orders~1{orderId}~1cancel"
+
+  /dsh/notifications:
+    $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications"
+
+  /dsh/notifications/{notificationId}/read:
+    $ref: "./paths/notifications.yaml#/paths/~1dsh~1notifications~1{notificationId}~1read"
+
   /dsh/operator/operations:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations"
 
   /dsh/operator/operations/{orderId}:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1operations~1{orderId}"
+
+  /dsh/operator/cash-custody:
+    $ref: "./paths/commerce.yaml#/paths/~1dsh~1operator~1cash-custody"
+
+  /dsh/operator/delivery-fee-policy:
+    $ref: "./paths/delivery-fee.yaml#/paths/~1dsh~1operator~1delivery-fee-policy"
+
+  /dsh/partners/me/financial-summary:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1partners~1me~1financial-summary"
+
+  /dsh/operator/partners/{partnerActorId}/financial-summary:
+    $ref: "./paths/partner-finance.yaml#/paths/~1dsh~1operator~1partners~1{partnerActorId}~1financial-summary"
+
+  /dsh/me/payout-state:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-state"
+
+  /dsh/me/payout-intents:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1me~1payout-intents"
+
+  /dsh/operator/{actorType}/{actorId}/payout-state:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1{actorType}~1{actorId}~1payout-state"
+
+  /dsh/operator/{actorType}/{actorId}/official-wallet-destination:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1{actorType}~1{actorId}~1official-wallet-destination"
+
+  /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/verify:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1{actorType}~1{actorId}~1official-wallet-destination~1{destinationId}~1verify"
+
+  /dsh/operator/{actorType}/{actorId}/official-wallet-destination/{destinationId}/activate:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1{actorType}~1{actorId}~1official-wallet-destination~1{destinationId}~1activate"
+
+  /dsh/operator/payout-requests:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests"
+  /dsh/operator/payout-requests/{payoutId}:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}"
+  /dsh/operator/payout-requests/{payoutId}/prepare:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}~1prepare"
+  /dsh/operator/payout-requests/{payoutId}/approve:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}~1approve"
+  /dsh/operator/payout-requests/{payoutId}/cancel:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1payout-requests~1{payoutId}~1cancel"
+  /dsh/operator/settlement-batches:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches"
+  /dsh/operator/settlement-batches/{batchId}:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}"
+  /dsh/operator/settlement-batches/{batchId}/approve:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}~1approve"
+  /dsh/operator/settlement-batches/{batchId}/freeze:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}~1freeze"
+  /dsh/operator/settlement-batches/{batchId}/transfers:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1settlement-batches~1{batchId}~1transfers"
+  /dsh/operator/transfers/{transferId}/verify:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1transfers~1{transferId}~1verify"
+  /dsh/operator/transfers/{transferId}/reconcile:
+    $ref: "./paths/beneficiary-finance.yaml#/paths/~1dsh~1operator~1transfers~1{transferId}~1reconcile"
 
   /dsh/stores/{storeId}/orders:
     $ref: "./paths/commerce.yaml#/paths/~1dsh~1stores~1{storeId}~1orders"
@@ -212,9 +306,16 @@ paths:
 
   /dsh/captains/me/assignments:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments"
+  /dsh/captains/me/cash-liability:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1cash-liability"
+  /dsh/captains/me/cash-liability/{paymentIntentId}/remit:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1cash-liability~1{paymentIntentId}~1remit"
 
   /dsh/captains/me/assignments/{assignmentId}/delivery-task:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1delivery-task"
+
+  /dsh/captains/me/assignments/{assignmentId}/location:
+    $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1location"
 
   /dsh/captains/me/assignments/{assignmentId}/pickup:
     $ref: "./paths/captain.yaml#/paths/~1dsh~1captains~1me~1assignments~1{assignmentId}~1pickup"
@@ -266,6 +367,21 @@ paths:
 
   /dsh/field/joining-cases/{caseId}/submit:
     $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1submit"
+
+  /dsh/field/joining-cases/{caseId}/correct-and-resubmit:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1field~1joining-cases~1{caseId}~1correct-and-resubmit"
+
+  /dsh/fields/me/financial-summary:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1fields~1me~1financial-summary"
+
+  /dsh/operator/fields/{fieldActorId}/financial-summary:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1fields~1{fieldActorId}~1financial-summary"
+
+  /dsh/operator/field-commission-policies:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-commission-policies"
+
+  /dsh/operator/field-commission-policies/{policyId}:
+    $ref: "./paths/field.yaml#/paths/~1dsh~1operator~1field-commission-policies~1{policyId}"
 
 components:
   securitySchemes:
@@ -332,13 +448,6 @@ components:
         minimum: 1
 
     CartExpectedVersionRequired:
-      name: X-Expected-Version
-      in: header
-      required: true
-      schema:
-        type: integer
-        minimum: 0
-    OriginVersionRequired:
       name: X-Expected-Version
       in: header
       required: true
@@ -482,7 +591,7 @@ components:
 
     CreateJoiningCaseRequest:
       type: object
-      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId]
+      required: [contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude]
       additionalProperties: false
       properties:
         contactPhoneE164:
@@ -502,14 +611,26 @@ components:
         firstStoreVerticalId:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreLatitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        firstStoreLongitude:
+          type: number
+          minimum: -180
+          maximum: 180
 
     JoiningCaseState:
       type: string
       enum: [draft, submitted, needs_correction, approved]
 
+    JoiningCaseOrigin:
+      type: string
+      enum: [field, control_panel]
+
     JoiningCaseView:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, origin, state, financialProfileState, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -528,11 +649,41 @@ components:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreLatitude:
+          type: number
+          nullable: true
+          minimum: -90
+          maximum: 90
+        firstStoreLongitude:
+          type: number
+          nullable: true
+          minimum: -180
+          maximum: 180
+        origin:
+          $ref: "#/components/schemas/JoiningCaseOrigin"
         partnerActorId:
           type: string
           nullable: true
         state:
           $ref: "#/components/schemas/JoiningCaseState"
+        commissionRateBps:
+          type: integer
+          nullable: true
+          x-go-pointer: true
+          minimum: 0
+          maximum: 10000
+        settlementPeriod:
+          type: string
+          nullable: true
+          x-go-pointer: true
+          enum: [DAILY, WEEKLY, MONTHLY]
+        financialProfileId:
+          type: string
+          nullable: true
+          x-go-pointer: true
+        financialProfileState:
+          type: string
+          enum: [REQUIRED, PENDING_BINDING, ACTIVE, FAILED]
         correctionReason:
           type: string
           nullable: true
@@ -564,7 +715,7 @@ components:
 
     JoiningCaseSummary:
       type: object
-      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, state, version, createdAt, updatedAt]
+      required: [id, contactPhoneE164, businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude, origin, state, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -583,6 +734,18 @@ components:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreLatitude:
+          type: number
+          nullable: true
+          minimum: -90
+          maximum: 90
+        firstStoreLongitude:
+          type: number
+          nullable: true
+          minimum: -180
+          maximum: 180
+        origin:
+          $ref: "#/components/schemas/JoiningCaseOrigin"
         partnerActorId:
           type: string
           nullable: true
@@ -618,7 +781,7 @@ components:
 
     CorrectJoiningCaseRequest:
       type: object
-      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId]
+      required: [businessName, firstStoreName, serviceCityId, firstStoreVerticalId, firstStoreLatitude, firstStoreLongitude]
       additionalProperties: false
       properties:
         businessName:
@@ -635,6 +798,14 @@ components:
         firstStoreVerticalId:
           type: string
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        firstStoreLatitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        firstStoreLongitude:
+          type: number
+          minimum: -180
+          maximum: 180
 
     ReviewJoiningCaseRequest:
       type: object
@@ -648,6 +819,17 @@ components:
           type: string
           nullable: true
           maxLength: 500
+        commissionRateBps:
+          type: integer
+          nullable: true
+          x-go-pointer: true
+          minimum: 0
+          maximum: 10000
+        settlementPeriod:
+          type: string
+          nullable: true
+          x-go-pointer: true
+          enum: [DAILY, WEEKLY, MONTHLY]
 
     StorePublicationReadiness:
       type: object
@@ -658,11 +840,11 @@ components:
           type: boolean
         blockedReason:
           type: string
-          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, SERVICE_CITY_NOT_ELIGIBLE, CATALOG_NOT_READY]
+          enum: [PARTNER_IDENTITY_NOT_ELIGIBLE, FINANCIAL_PROFILE_NOT_READY, SERVICE_CITY_NOT_ELIGIBLE, CATALOG_NOT_READY]
 
     StoreView:
       type: object
-      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, version, publicationState, publicationReadiness, offers, createdAt, updatedAt]
+      required: [id, partnerActorId, name, serviceCityId, primaryVerticalId, deliveryOrigin, version, publicationState, publicationReadiness, offers, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -679,6 +861,9 @@ components:
           type: string
           nullable: true
           pattern: '^[a-z0-9][a-z0-9_-]{1,127}$'
+        deliveryOrigin:
+          $ref: "#/components/schemas/DeliveryOrigin"
+          nullable: true
         version:
           type: integer
           minimum: 1
@@ -838,20 +1023,6 @@ components:
         nextCursor:
           type: string
           maxLength: 512
-
-    SetStoreDeliveryOriginRequest:
-      type: object
-      required: [latitude, longitude]
-      additionalProperties: false
-      properties:
-        latitude:
-          type: number
-          minimum: -90
-          maximum: 90
-        longitude:
-          type: number
-          minimum: -180
-          maximum: 180
 
     StoreDeliveryOriginResponse:
       type: object
@@ -1298,6 +1469,29 @@ components:
         active:
           type: boolean
 
+    ReplaceCatalogProductMediaRequest:
+      type: object
+      required: [media]
+      additionalProperties: false
+      properties:
+        media:
+          type: array
+          maxItems: 21
+          items:
+            $ref: "#/components/schemas/CatalogMedia"
+
+    UploadCatalogProductMediaRequest:
+      type: object
+      required: [role, file]
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum: [primary, gallery]
+        file:
+          type: string
+          format: binary
+
     CatalogProductResponse:
       type: object
       required: [product, idempotentReplay]
@@ -1713,7 +1907,7 @@ components:
 
     CatalogStoreOffer:
       type: object
-      required: [offerId, storeId, variantId, productId, productName, measurementKind, baseUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, availability, publicationState, modifierGroups, version, createdAt, updatedAt]
+      required: [offerId, storeId, variantId, productId, productName, measurementKind, baseUnit, productActive, variantActive, priceMinor, currency, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, inventoryOnHandBaseUnits, inventoryReservedBaseUnits, availability, publicationState, media, modifierGroups, version, createdAt, updatedAt]
       additionalProperties: false
       properties:
         offerId:
@@ -1766,11 +1960,21 @@ components:
           minimum: 1
         inventoryPolicy:
           type: string
-          const: AVAILABILITY_ONLY
+          enum: [AVAILABILITY_ONLY, QUANTITY_ON_HAND]
+        inventoryOnHandBaseUnits:
+          type: integer
+          minimum: 0
+        inventoryReservedBaseUnits:
+          type: integer
+          minimum: 0
         availability:
           type: boolean
         publicationState:
           $ref: "#/components/schemas/StoreOfferPublicationState"
+        media:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogMedia"
         modifierGroups:
           type: array
           items:
@@ -1929,7 +2133,7 @@ components:
 
     CreateStoreOfferRequest:
       type: object
-      required: [variantId, priceMinor, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits]
+      required: [variantId, priceMinor, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, inventoryOnHandBaseUnits]
       additionalProperties: false
       properties:
         variantId:
@@ -1957,10 +2161,16 @@ components:
         pricingUnitBaseUnits:
           type: integer
           minimum: 1
+        inventoryPolicy:
+          type: string
+          enum: [AVAILABILITY_ONLY, QUANTITY_ON_HAND]
+        inventoryOnHandBaseUnits:
+          type: integer
+          minimum: 0
 
     UpdateStoreOfferRequest:
       type: object
-      required: [priceMinor, availability, publicationState, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits]
+      required: [priceMinor, availability, publicationState, quantityPolicy, quantityMinBaseUnits, quantityMaxBaseUnits, quantityStepBaseUnits, pricingBasis, pricingUnitBaseUnits, inventoryPolicy, inventoryOnHandBaseUnits]
       additionalProperties: false
       properties:
         priceMinor:
@@ -1988,6 +2198,12 @@ components:
         pricingUnitBaseUnits:
           type: integer
           minimum: 1
+        inventoryPolicy:
+          type: string
+          enum: [AVAILABILITY_ONLY, QUANTITY_ON_HAND]
+        inventoryOnHandBaseUnits:
+          type: integer
+          minimum: 0
 
     CatalogStoreOfferResponse:
       type: object
@@ -2187,9 +2403,31 @@ components:
           type: string
           format: date-time
 
+    FavoriteStoreResponse:
+      type: object
+      required: [storeId, isFavorite, idempotentReplay]
+      additionalProperties: false
+      properties:
+        storeId:
+          type: string
+        isFavorite:
+          type: boolean
+        idempotentReplay:
+          type: boolean
+
+    FavoriteStoreListResponse:
+      type: object
+      required: [storeIds]
+      additionalProperties: false
+      properties:
+        storeIds:
+          type: array
+          items:
+            type: string
+
     PublicStoreView:
       type: object
-      required: [id, name, serviceCity, primaryVerticalId, version, publishedAt, createdAt, updatedAt]
+      required: [id, name, serviceCity, primaryVerticalId, version, ratingAverage, ratingCount, publishedAt, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2204,6 +2442,14 @@ components:
         version:
           type: integer
           minimum: 1
+        ratingAverage:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 5
+        ratingCount:
+          type: integer
+          minimum: 0
         publishedAt:
           type: string
           format: date-time
@@ -2522,7 +2768,7 @@ components:
 
     CheckoutRequest:
       type: object
-      required: [cartId, storeId, addressId]
+      required: [cartId, storeId, addressId, fulfillmentMode]
       additionalProperties: false
       properties:
         cartId:
@@ -2537,6 +2783,56 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        fulfillmentMode:
+          $ref: "#/components/schemas/FulfillmentMode"
+
+    CheckoutQuote:
+      type: object
+      required: [cartId, storeId, addressId, fulfillmentMode, cartVersion, subtotalMinor, deliveryFeeMinor, totalAmountMinor, currency, deliveryPolicyVersion, serviceCityId, quotedAt]
+      additionalProperties: false
+      properties:
+        cartId:
+          type: string
+        storeId:
+          type: string
+        addressId:
+          type: string
+        fulfillmentMode:
+          $ref: "#/components/schemas/FulfillmentMode"
+        cartVersion:
+          type: integer
+          minimum: 1
+        subtotalMinor:
+          type: integer
+          minimum: 1
+        deliveryFeeMinor:
+          type: integer
+          minimum: 0
+        totalAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        deliveryPolicyVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        serviceCityId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        quotedAt:
+          type: string
+          format: date-time
+
+    CheckoutQuoteResponse:
+      type: object
+      required: [quote]
+      additionalProperties: false
+      properties:
+        quote:
+          $ref: "#/components/schemas/CheckoutQuote"
 
     CaptainAdmissionRequest:
       type: object
@@ -2635,7 +2931,7 @@ components:
 
     CaptainOffer:
       type: object
-      required: [id, orderId, captainActorId, state, expiresAt, version, createdAt, updatedAt]
+      required: [id, orderId, captainActorId, state, expiresAt, version, createdAt, updatedAt, storeName, customerAddressText, amountDueMinor, currency, paymentMethod, paymentState]
       additionalProperties: false
       properties:
         id:
@@ -2659,6 +2955,22 @@ components:
         updatedAt:
           type: string
           format: date-time
+        storeName:
+          type: string
+          minLength: 1
+        customerAddressText:
+          type: string
+          minLength: 1
+        amountDueMinor:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: YER
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        paymentState:
+          $ref: "#/components/schemas/PaymentState"
 
     CaptainOfferListResponse:
       type: object
@@ -2764,6 +3076,96 @@ components:
           items:
             $ref: "#/components/schemas/CaptainAssignment"
 
+    CashLiabilityItem:
+      type: object
+      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt]
+      additionalProperties: false
+      properties:
+        paymentIntentId:
+          type: string
+        externalReference:
+          type: string
+        captainActorId:
+          type: string
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        paymentVersion:
+          type: integer
+          minimum: 1
+        collectedAt:
+          type: string
+          format: date-time
+
+    CashLiabilityResponse:
+      type: object
+      required: [items, totalAmountMinor]
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CashLiabilityItem"
+        totalAmountMinor:
+          type: integer
+          format: int64
+          minimum: 0
+
+    CaptainCashRemittanceRequest:
+      type: object
+      required: [amountMinor, remittanceReference]
+      additionalProperties: false
+      properties:
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+        remittanceReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    CaptainCashRemittance:
+      type: object
+      required: [id, paymentIntentId, captainActorId, amountMinor, currency, remittanceReference, state, createdAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        paymentIntentId:
+          type: string
+        captainActorId:
+          type: string
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        remittanceReference:
+          type: string
+        state:
+          type: string
+          const: REMITTED
+        createdAt:
+          type: string
+          format: date-time
+
+    CaptainCashRemittanceResponse:
+      type: object
+      required: [cashRemittance, idempotentReplay]
+      additionalProperties: false
+      properties:
+        cashRemittance:
+          $ref: "#/components/schemas/CaptainCashRemittance"
+        idempotentReplay:
+          type: boolean
+
     CaptainLocation:
       type: object
       required: [latitude, longitude]
@@ -2778,9 +3180,125 @@ components:
           minimum: -180
           maximum: 180
 
+    CaptainLocationUpdateRequest:
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    CaptainLocationSnapshot:
+      type: object
+      required: [latitude, longitude, updatedAt]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        updatedAt:
+          type: string
+          format: date-time
+
+    CaptainLocationResponse:
+      type: object
+      required: [location, idempotentReplay]
+      additionalProperties: false
+      properties:
+        location:
+          $ref: "#/components/schemas/CaptainLocationSnapshot"
+        idempotentReplay:
+          type: boolean
+
+    OrderTrackingState:
+      type: string
+      enum: [NOT_ASSIGNED, AWAITING_LOCATION, LIVE, COMPLETED]
+
+    OrderTrackingResponse:
+      type: object
+      required: [orderId, orderState, trackingState, assignmentId, captainLocation]
+      additionalProperties: false
+      properties:
+        orderId:
+          type: string
+        orderState:
+          $ref: "#/components/schemas/OrderState"
+        trackingState:
+          $ref: "#/components/schemas/OrderTrackingState"
+        assignmentId:
+          type: string
+          nullable: true
+          x-go-pointer: true
+        captainLocation:
+          $ref: "#/components/schemas/CaptainLocationSnapshot"
+          nullable: true
+
+    NotificationKind:
+      type: string
+      enum: [ORDER_CREATED, ORDER_ACCEPTED, ORDER_PREPARING, ORDER_READY, ORDER_REJECTED, ORDER_STATUS, CAPTAIN_OFFER, CAPTAIN_ASSIGNED, HANDOFF_CONFIRMED, PICKED_UP, DELIVERY_FAILED, DELIVERY_RECOVERED, DELIVERED, REASSIGNED]
+
+    Notification:
+      type: object
+      required: [id, kind, title, body, orderId, createdAt, readAt]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/NotificationKind"
+        title:
+          type: string
+        body:
+          type: string
+        orderId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+          x-go-pointer: true
+
+    NotificationListResponse:
+      type: object
+      required: [notifications, unreadCount]
+      additionalProperties: false
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        unreadCount:
+          type: integer
+          minimum: 0
+
+    NotificationReadResponse:
+      type: object
+      required: [notificationId, readAt]
+      additionalProperties: false
+      properties:
+        notificationId:
+          type: string
+        readAt:
+          type: string
+          format: date-time
+
     CaptainDeliveryTask:
       type: object
-      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, orderState, handoffState, deliveryState]
+      required: [assignmentId, orderReference, storeId, storeName, pickupOrigin, customerAddressText, customerDestination, orderState, handoffState, deliveryState, paymentMethod, paymentState, amountDueMinor, currency]
       additionalProperties: false
       properties:
         assignmentId:
@@ -2805,6 +3323,16 @@ components:
         deliveryState:
           type: string
           enum: [assigned, in_custody, delivered, delivery_failed]
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        paymentState:
+          $ref: "#/components/schemas/PaymentState"
+        amountDueMinor:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          const: YER
 
     CaptainDeliveryTaskResponse:
       type: object
@@ -2845,6 +3373,85 @@ components:
         result:
           type: string
           enum: [delivered, delivery_failed]
+        collectedAmountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Required for a delivered cash-on-delivery assignment; must equal the order amount.
+        deliveryProofCode:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: Required when result is delivered; the customer reads this code from the client application.
+
+    DeliveryProofResponse:
+      type: object
+      required: [orderId, state]
+      additionalProperties: false
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        state:
+          type: string
+          enum: [PENDING, VERIFIED]
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          nullable: true
+          description: Present only while the proof is pending; never returned after verification.
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateOrderRatingRequest:
+      type: object
+      required: [rating]
+      additionalProperties: false
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        review:
+          type: string
+          maxLength: 1000
+          default: ''
+
+    OrderRating:
+      type: object
+      required: [orderId, storeId, rating, review, createdAt]
+      additionalProperties: false
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        storeId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        review:
+          type: string
+          maxLength: 1000
+        createdAt:
+          type: string
+          format: date-time
+
+    OrderRatingResponse:
+      type: object
+      required: [rating, idempotentReplay]
+      additionalProperties: false
+      properties:
+        rating:
+          $ref: "#/components/schemas/OrderRating"
+        idempotentReplay:
+          type: boolean
 
     ManagedRoleMutationRequest:
       type: object
@@ -2859,7 +3466,7 @@ components:
 
     OrderState:
       type: string
-      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, CAPTAIN_ASSIGNED, IN_CUSTODY, DELIVERED, DELIVERY_FAILED, REJECTED]
+      enum: [CREATED, PARTNER_ACCEPTED, PREPARING, READY_FOR_DISPATCH, CAPTAIN_ASSIGNED, IN_CUSTODY, DELIVERED, DELIVERY_FAILED, REJECTED, CANCELLED]
 
     OrderLineModifierSnapshot:
       type: object
@@ -2983,9 +3590,452 @@ components:
           type: string
           format: date-time
 
+    PaymentMethod:
+      type: string
+      enum: [CASH_ON_DELIVERY]
+
+    PaymentState:
+      type: string
+      enum: [NOT_LINKED, REQUIRES_COLLECTION, COLLECTED, CANCELLED]
+
+    CreateDeliveryFeePolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor]
+      properties:
+        serviceCityId:
+          type: string
+          maxLength: 128
+        baseFeeMinor:
+          type: integer
+          minimum: 0
+        distanceUnitMeters:
+          type: integer
+          minimum: 1
+        distanceRateMinor:
+          type: integer
+          minimum: 0
+        orderSizeUnitBaseUnits:
+          type: integer
+          minimum: 1
+        orderSizeRateMinor:
+          type: integer
+          minimum: 0
+        zoneSurchargeMinor:
+          type: integer
+          minimum: 0
+        roundingUnitMinor:
+          type: integer
+          const: 50
+
+    DeliveryFeePolicy:
+      type: object
+      additionalProperties: false
+      required: [id, serviceCityId, policyVersion, state, baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor, version, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+        serviceCityId:
+          type: string
+          maxLength: 128
+        policyVersion:
+          type: string
+        state:
+          type: string
+          enum: [ACTIVE, RETIRED]
+        baseFeeMinor:
+          type: integer
+          minimum: 0
+        distanceUnitMeters:
+          type: integer
+          minimum: 1
+        distanceRateMinor:
+          type: integer
+          minimum: 0
+        orderSizeUnitBaseUnits:
+          type: integer
+          minimum: 1
+        orderSizeRateMinor:
+          type: integer
+          minimum: 0
+        zoneSurchargeMinor:
+          type: integer
+          minimum: 0
+        roundingUnitMinor:
+          type: integer
+          const: 50
+        version:
+          type: integer
+          minimum: 1
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        retiredAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    DeliveryFeePolicyResponse:
+      type: object
+      additionalProperties: false
+      required: [policy, idempotentReplay]
+      properties:
+        policy:
+          $ref: "#/components/schemas/DeliveryFeePolicy"
+        idempotentReplay:
+          type: boolean
+
+    PartnerFinancialSummary:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, currency, earnedMinor, commissionMinor, orderCount, settlementPeriod, profileState, profileVersion, lastEarningAt]
+      properties:
+        partnerActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+          minimum: 0
+        commissionMinor:
+          type: integer
+          minimum: 0
+        orderCount:
+          type: integer
+          minimum: 0
+        settlementPeriod:
+          type: string
+          enum: [DAILY, WEEKLY, MONTHLY]
+        profileState:
+          type: string
+          enum: [ACTIVE]
+        profileVersion:
+          type: integer
+          minimum: 1
+        lastEarningAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PartnerFinancialSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/PartnerFinancialSummary"
+
+    FieldCommissionPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, scopeType, scopeId, rewardMinor, roundingUnitMinor, state, version, createdBy, createdAt, retiredAt]
+      properties:
+        id:
+          type: string
+        scopeType:
+          type: string
+          enum: [DEFAULT, VERTICAL, STORE]
+        scopeId:
+          type: string
+        rewardMinor:
+          type: integer
+          minimum: 50
+        roundingUnitMinor:
+          type: integer
+          const: 50
+        state:
+          type: string
+          enum: [ACTIVE, RETIRED]
+        version:
+          type: integer
+          minimum: 1
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        retiredAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FieldFinancialSummary:
+      type: object
+      additionalProperties: false
+      required: [fieldActorId, currency, earnedMinor, commissionMinor, storeCount, lastEarningAt]
+      properties:
+        fieldActorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        earnedMinor:
+          type: integer
+          minimum: 0
+        commissionMinor:
+          type: integer
+          minimum: 0
+        storeCount:
+          type: integer
+          minimum: 0
+        lastEarningAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FieldFinancialSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary:
+          $ref: "#/components/schemas/FieldFinancialSummary"
+
+    OfficialWalletDestination:
+      type: object
+      additionalProperties: false
+      required: [id, actorType, actorId, providerKey, walletIdentifierMasked, beneficiaryName, verificationStatus, status, version, changeReason, submittedBy, submittedAt, verifiedBy, verifiedAt, approvedBy, approvedAt, verificationEvidenceReference, changeEvidenceReference, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        actorType:
+          type: string
+          enum: [partner, captain, field]
+        actorId:
+          type: string
+        providerKey:
+          type: string
+        walletIdentifierMasked:
+          type: string
+        beneficiaryName:
+          type: string
+        verificationStatus:
+          type: string
+          enum: [PENDING_VERIFICATION, VERIFIED, REJECTED]
+        status:
+          type: string
+          enum: [CANDIDATE, PENDING_APPROVAL, ACTIVE_FOR_PAYOUT, SUSPENDED, RETIRED]
+        version:
+          type: integer
+          minimum: 1
+        changeReason:
+          type: string
+        submittedBy:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        verifiedBy:
+          type: string
+          nullable: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        approvedBy:
+          type: string
+          nullable: true
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        verificationEvidenceReference:
+          type: string
+        changeEvidenceReference:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PayoutRequest:
+      type: object
+      additionalProperties: false
+      required: [id, actorType, actorId, amountMode, requestedAmountMinor, resolvedAmountMinor, currency, destinationId, destinationVersion, status, policyVersion, createdAt]
+      properties:
+        id:
+          type: string
+        actorType:
+          type: string
+          enum: [partner, captain, field]
+        actorId:
+          type: string
+        amountMode:
+          type: string
+          enum: [FULL_AVAILABLE, SPECIFIED]
+        requestedAmountMinor:
+          type: integer
+          minimum: 1
+          nullable: true
+        resolvedAmountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        destinationId:
+          type: string
+        destinationVersion:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [HELD, CANCELLED, PREPARED, APPROVED, FROZEN, EXECUTED, COMPLETED, EXCEPTION]
+        policyVersion:
+          type: string
+        ledgerTransactionId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    SettlementBatch:
+      type: object
+      additionalProperties: false
+      required: [id, providerKey, currency, status, rowCount, totalAmountMinor, createdBy, createdAt, approvedBy, approvedAt, frozenBy, frozenAt, batchHash]
+      properties:
+        id:
+          type: string
+        providerKey:
+          type: string
+        currency:
+          type: string
+          const: YER
+        status:
+          type: string
+          enum: [DRAFT, PREPARED, APPROVED, FROZEN, EXECUTION_IN_PROGRESS, AWAITING_VERIFICATION, AWAITING_RECONCILIATION, COMPLETED, CANCELLED, EXCEPTION]
+        rowCount:
+          type: integer
+          minimum: 1
+        totalAmountMinor:
+          type: integer
+          minimum: 1
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        approvedBy:
+          type: string
+          nullable: true
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        frozenBy:
+          type: string
+          nullable: true
+        frozenAt:
+          type: string
+          format: date-time
+          nullable: true
+        batchHash:
+          type: string
+          nullable: true
+
+    ManualTransferExecution:
+      type: object
+      additionalProperties: false
+      required: [id, batchId, payoutId, approvedSnapshotHash, executedBy, executedAt, providerKey, externalTransferReference, amountMinor, currency, destinationId, destinationVersion, evidenceReference, executionStatus, verifiedBy, verifiedAt, statementReference, reconciledBy, reconciledAt]
+      properties:
+        id:
+          type: string
+        batchId:
+          type: string
+        payoutId:
+          type: string
+        approvedSnapshotHash:
+          type: string
+        executedBy:
+          type: string
+        executedAt:
+          type: string
+          format: date-time
+        providerKey:
+          type: string
+        externalTransferReference:
+          type: string
+        amountMinor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: YER
+        destinationId:
+          type: string
+        destinationVersion:
+          type: integer
+          minimum: 1
+        evidenceReference:
+          type: string
+        executionStatus:
+          type: string
+          enum: [EXECUTED, VERIFIED, RECONCILED]
+        verifiedBy:
+          type: string
+          nullable: true
+        verifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        statementReference:
+          type: string
+          nullable: true
+        reconciledBy:
+          type: string
+          nullable: true
+        reconciledAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    BeneficiaryPayoutState:
+      type: object
+      additionalProperties: false
+      required: [actorType, actorId, currency, eligibleAvailableMinor, heldMinor, destination, latestPayout]
+      properties:
+        actorType:
+          type: string
+          enum: [partner, captain, field]
+        actorId:
+          type: string
+        currency:
+          type: string
+          const: YER
+        eligibleAvailableMinor:
+          type: integer
+          minimum: 0
+        heldMinor:
+          type: integer
+          minimum: 0
+        destination:
+          $ref: "#/components/schemas/OfficialWalletDestination"
+          nullable: true
+        latestPayout:
+          $ref: "#/components/schemas/PayoutRequest"
+          nullable: true
+
+    BeneficiaryPayoutStateResponse:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state:
+          $ref: "#/components/schemas/BeneficiaryPayoutState"
+
+    FulfillmentMode:
+      type: string
+      enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP]
+
     Order:
       type: object
-      required: [id, clientActorId, storeId, cartId, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, totalAmountMinor, currency, version, lines, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -2996,6 +4046,8 @@ components:
           type: string
         cartId:
           type: string
+        fulfillmentMode:
+          $ref: "#/components/schemas/FulfillmentMode"
         addressId:
           type: string
         addressVersion:
@@ -3033,6 +4085,13 @@ components:
         currency:
           type: string
           const: YER
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        paymentState:
+          $ref: "#/components/schemas/PaymentState"
+        paymentIntentId:
+          type: string
+          nullable: true
         version:
           type: integer
           minimum: 1

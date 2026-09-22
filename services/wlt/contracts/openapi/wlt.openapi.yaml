@@ -1,0 +1,1433 @@
+openapi: 3.1.0
+info:
+  title: Samrim WLT Internal Payment API
+  version: 0.1.0
+  description: Canonical internal payment-intent and cash-collection boundary.
+servers:
+  - url: http://localhost:18083
+paths:
+  /wlt/v1/payment-intents:
+    post:
+      operationId: createPaymentIntent
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePaymentIntentRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+        '200':
+          description: Idempotent replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/payment-intents/{intentId}:
+    get:
+      operationId: readPaymentIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IntentId' }
+      responses:
+        '200':
+          description: Payment intent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/payment-intents/{intentId}/collect:
+    post:
+      operationId: collectPaymentIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IntentId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CollectPaymentIntentRequest' }
+      responses:
+        '200':
+          description: Collected payment intent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/payment-intents/{intentId}/cancel:
+    post:
+      operationId: cancelPaymentIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IntentId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelPaymentIntentRequest' }
+      responses:
+        '200':
+          description: Cancelled payment intent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentIntentResponse' }
+  /wlt/v1/captains/{captainActorId}/cash-liability:
+    get:
+      operationId: listCaptainCashLiability
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/CaptainActorId' }
+      responses:
+        '200':
+          description: Unremitted cash collected by the Captain
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashLiabilityResponse' }
+  /wlt/v1/operator/cash-liability:
+    get:
+      operationId: listOperatorCashLiability
+      security: [{ serviceToken: [] }]
+      responses:
+        '200':
+          description: Bounded read of unremitted COD cash collected by Captains
+          content:
+            application/json:
+               schema: { $ref: '#/components/schemas/CashLiabilityResponse' }
+  /wlt/v1/captains/{captainActorId}/wallet-state:
+    get:
+      operationId: readCaptainWalletState
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/CaptainActorId' }
+      responses:
+        '200':
+          description: Canonical Captain internal wallet projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainWalletStateResponse' }
+  /wlt/v1/operator/captains/{captainActorId}/opening-funding:
+    post:
+      operationId: createCaptainOpeningFunding
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/CaptainActorId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptainOpeningFundingRequest' }
+      responses:
+        '201':
+          description: Operator-governed opening funding posted to the WLT ledger.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainWalletFundingResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainWalletFundingResponse' }
+  /wlt/v1/captain-cod-reservations:
+    post:
+      operationId: reserveCaptainCOD
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptainCODReservationRequest' }
+      responses:
+        '201':
+          description: Order-specific COD exposure reserved atomically.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainCODReservationResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainCODReservationResponse' }
+  /wlt/v1/captain-cod-reservations/{orderId}/release:
+    post:
+      operationId: releaseCaptainCOD
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptainCODTransitionRequest' }
+      responses:
+        '200':
+          description: COD reservation released.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainCODReservationResponse' }
+  /wlt/v1/captain-cod-reservations/{orderId}/finalize:
+    post:
+      operationId: finalizeCaptainCOD
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptainCODTransitionRequest' }
+      responses:
+        '200':
+          description: COD reservation converted to the final ledger debit.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptainCODReservationResponse' }
+  /wlt/v1/payment-intents/{intentId}/remit:
+    post:
+      operationId: remitCashForPaymentIntent
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/IntentId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RemitCashRequest' }
+      responses:
+        '200':
+          description: Cash remittance recorded or idempotently replayed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CashRemittanceResponse' }
+  /wlt/v1/delivery-quotes:
+    post:
+      operationId: quoteDeliveryFee
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryFeeQuoteRequest' }
+      responses:
+        '200':
+          description: Server-derived delivery fee quote.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryFeeQuoteResponse' }
+  /wlt/v1/operator/delivery-fee-policies:
+    get:
+      operationId: readDeliveryFeePolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: serviceCityId
+          in: query
+          required: false
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200':
+          description: Active delivery fee policy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
+    post:
+      operationId: createDeliveryFeePolicy
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDeliveryFeePolicyRequest' }
+      responses:
+        '201':
+          description: New immutable policy activated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryFeePolicyResponse' }
+  /wlt/v1/partner-financial-profiles:
+    post:
+      operationId: preparePartnerFinancialProfile
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreparePartnerFinancialProfileRequest' }
+      responses:
+        '201':
+          description: Prepared financial profile awaiting DSH binding.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
+  /wlt/v1/partner-financial-profiles/{profileId}:
+    get:
+      operationId: readPartnerFinancialProfile
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ProfileId' }
+      responses:
+        '200':
+          description: Partner financial profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
+  /wlt/v1/partner-financial-profiles/{profileId}/activate:
+    post:
+      operationId: activatePartnerFinancialProfile
+      security: [{ serviceToken: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/ProfileId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+      responses:
+        '200':
+          description: Activated financial profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialProfileResponse' }
+  /wlt/v1/partner-order-earnings/finalize:
+    post:
+      operationId: finalizePartnerOrderEarning
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FinalizePartnerOrderEarningRequest' }
+      responses:
+        '201':
+          description: Partner earning finalized.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerOrderEarningResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerOrderEarningResponse' }
+  /wlt/v1/partners/{partnerActorId}/financial-summary:
+    get:
+      operationId: readPartnerFinancialSummary
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: partnerActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Partner financial summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartnerFinancialSummaryResponse' }
+  /wlt/v1/operator/field-commission-policies:
+    post:
+      operationId: createFieldCommissionPolicy
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateFieldCommissionPolicyRequest' }
+      responses:
+        '201':
+          description: Field commission policy created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldCommissionPolicyResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldCommissionPolicyResponse' }
+  /wlt/v1/field-commission-policies/{policyId}:
+    get:
+      operationId: readFieldCommissionPolicy
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: policyId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Field commission policy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldCommissionPolicyResponse' }
+  /wlt/v1/field-commission-earnings/finalize:
+    post:
+      operationId: finalizeFieldCommission
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FinalizeFieldCommissionRequest' }
+      responses:
+        '201':
+          description: Field earning finalized.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldCommissionEarningResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldCommissionEarningResponse' }
+  /wlt/v1/fields/{fieldActorId}/financial-summary:
+    get:
+      operationId: readFieldFinancialSummary
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: fieldActorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Field financial summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FieldFinancialSummaryResponse' }
+  /wlt/v1/operator/official-wallet-destinations:
+    post:
+      operationId: createOfficialWalletDestination
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOfficialWalletDestinationRequest' }
+      responses:
+        '201':
+          description: Official wallet destination submitted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialWalletDestinationResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialWalletDestinationResponse' }
+  /wlt/v1/operator/official-wallet-destinations/{destinationId}/verify:
+    post:
+      operationId: verifyOfficialWalletDestination
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: destinationId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransitionOfficialWalletDestinationRequest' }
+      responses:
+        '200':
+          description: Destination verification recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialWalletDestinationResponse' }
+  /wlt/v1/operator/official-wallet-destinations/{destinationId}/activate:
+    post:
+      operationId: activateOfficialWalletDestination
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: destinationId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+      responses:
+        '200':
+          description: Destination activated for payout.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialWalletDestinationResponse' }
+  /wlt/v1/official-wallet-destinations/{actorType}/{actorId}:
+    get:
+      operationId: readOfficialWalletDestination
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: actorType
+          in: path
+          required: true
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Active/current official wallet destination.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OfficialWalletDestinationResponse' }
+  /wlt/v1/payout-intents:
+    post:
+      operationId: createPayoutIntent
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayoutIntentRequest' }
+      responses:
+        '201':
+          description: Payout intent created and held.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutRequestResponse' }
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutRequestResponse' }
+  /wlt/v1/payout-state/{actorType}/{actorId}:
+    get:
+      operationId: readPayoutState
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: actorType
+          in: path
+          required: true
+          schema: { type: string, enum: [partner, captain, field] }
+        - name: actorId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Beneficiary payout state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutStateResponse' }
+  /wlt/v1/operator/payout-requests:
+    get:
+      operationId: listPayoutRequests
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Operator payout queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutListResponse' }
+  /wlt/v1/operator/payout-requests/{payoutId}:
+    get:
+      operationId: readOperatorPayoutRequest
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Operator payout request readback.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutRequestResponse' }
+  /wlt/v1/operator/payout-requests/{payoutId}/prepare:
+    post:
+      operationId: preparePayout
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+      responses:
+        '200':
+          description: Payout prepared.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutRequestResponse' }
+  /wlt/v1/operator/payout-requests/{payoutId}/approve:
+    post:
+      operationId: approvePayout
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+      responses:
+        '200':
+          description: Payout independently approved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutRequestResponse' }
+  /wlt/v1/operator/payout-requests/{payoutId}/cancel:
+    post:
+      operationId: cancelPayout
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: payoutId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+      responses:
+        '200':
+          description: Payout cancelled and hold released.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PayoutRequestResponse' }
+  /wlt/v1/operator/settlement-batches:
+    post:
+      operationId: createSettlementBatch
+      security: [{ serviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettlementBatchCreateRequest' }
+      responses:
+        '201':
+          description: Settlement batch created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementBatchResponse' }
+  /wlt/v1/operator/settlement-batches/{batchId}:
+    get:
+      operationId: readSettlementBatch
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Settlement batch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementBatchResponse' }
+  /wlt/v1/operator/settlement-batches/{batchId}/approve:
+    post:
+      operationId: approveSettlementBatch
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+      responses:
+        '200':
+          description: Settlement batch approved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementBatchResponse' }
+  /wlt/v1/operator/settlement-batches/{batchId}/freeze:
+    post:
+      operationId: freezeSettlementBatch
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayoutActionRequest' }
+      responses:
+        '200':
+          description: Settlement batch frozen for execution.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettlementBatchResponse' }
+  /wlt/v1/operator/settlement-batches/{batchId}/transfers:
+    post:
+      operationId: recordManualTransfer
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransferRecordRequest' }
+      responses:
+        '201':
+          description: Manual transfer execution recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransferResponse' }
+  /wlt/v1/operator/transfers/{transferId}/verify:
+    post:
+      operationId: verifyManualTransfer
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: transferId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransferVerifyRequest' }
+      responses:
+        '200':
+          description: Transfer evidence verified.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransferResponse' }
+  /wlt/v1/operator/transfers/{transferId}/reconcile:
+    post:
+      operationId: reconcileManualTransfer
+      security: [{ serviceToken: [] }]
+      parameters:
+        - name: transferId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransferReconcileRequest' }
+      responses:
+        '200':
+          description: Transfer reconciled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TransferResponse' }
+
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+  parameters:
+    IntentId:
+      name: intentId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    CaptainActorId:
+      name: captainActorId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    ProfileId:
+      name: profileId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+  schemas:
+    FinalizePartnerOrderEarningRequest:
+      type: object
+      additionalProperties: false
+      required: [orderId, paymentIntentId, partnerActorId, captainActorId]
+      properties:
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        paymentIntentId: { type: string, minLength: 1, maxLength: 128 }
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        captainActorId: { type: string, minLength: 1, maxLength: 128 }
+    PartnerOrderEarning:
+      type: object
+      additionalProperties: false
+      required: [orderId, paymentIntentId, partnerActorId, captainActorId, currency, grossProductMinor, deliveryFeeMinor, commissionMinor, partnerNetMinor, profileId, profileVersion, policyVersion, ledgerTransactionId, createdAt]
+      properties:
+        orderId: { type: string }
+        paymentIntentId: { type: string }
+        partnerActorId: { type: string }
+        captainActorId: { type: string }
+        currency: { type: string, const: YER }
+        grossProductMinor: { type: integer, minimum: 0 }
+        deliveryFeeMinor: { type: integer, minimum: 0 }
+        commissionMinor: { type: integer, minimum: 0 }
+        partnerNetMinor: { type: integer, minimum: 0 }
+        profileId: { type: string }
+        profileVersion: { type: integer, minimum: 1 }
+        policyVersion: { type: string }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    PartnerOrderEarningResponse:
+      type: object
+      additionalProperties: false
+      required: [earning, idempotentReplay]
+      properties:
+        earning: { $ref: '#/components/schemas/PartnerOrderEarning' }
+        idempotentReplay: { type: boolean }
+    PartnerFinancialSummary:
+      type: object
+      additionalProperties: false
+      required: [partnerActorId, currency, earnedMinor, commissionMinor, orderCount, settlementPeriod, profileState, profileVersion]
+      properties:
+        partnerActorId: { type: string }
+        currency: { type: string, const: YER }
+        earnedMinor: { type: integer }
+        commissionMinor: { type: integer, minimum: 0 }
+        orderCount: { type: integer, minimum: 0 }
+        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+        profileState: { type: string }
+        profileVersion: { type: integer, minimum: 1 }
+        lastEarningAt: { type: string, format: date-time, nullable: true }
+    PartnerFinancialSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary: { $ref: '#/components/schemas/PartnerFinancialSummary' }
+    CreateFieldCommissionPolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [scopeType, rewardMinor, roundingUnitMinor]
+      properties:
+        scopeType: { type: string, enum: [DEFAULT, VERTICAL, STORE] }
+        scopeId: { type: string, maxLength: 128 }
+        rewardMinor: { type: integer, minimum: 0 }
+        roundingUnitMinor: { type: integer, minimum: 1 }
+    FieldCommissionPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, scopeType, scopeId, rewardMinor, roundingUnitMinor, state, version, createdBy, createdAt]
+      properties:
+        id: { type: string }
+        scopeType: { type: string, enum: [DEFAULT, VERTICAL, STORE] }
+        scopeId: { type: string }
+        rewardMinor: { type: integer, minimum: 0 }
+        roundingUnitMinor: { type: integer, minimum: 1 }
+        state: { type: string }
+        version: { type: integer, minimum: 1 }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        retiredAt: { type: string, format: date-time, nullable: true }
+    FieldCommissionPolicyResponse:
+      type: object
+      additionalProperties: false
+      required: [policy]
+      properties:
+        policy: { $ref: '#/components/schemas/FieldCommissionPolicy' }
+        idempotentReplay: { type: boolean }
+    FinalizeFieldCommissionRequest:
+      type: object
+      additionalProperties: false
+      required: [storeId, fieldActorId, verticalId]
+      properties:
+        storeId: { type: string, minLength: 1, maxLength: 128 }
+        fieldActorId: { type: string, minLength: 1, maxLength: 128 }
+        verticalId: { type: string, minLength: 1, maxLength: 128 }
+    FieldCommissionEarning:
+      type: object
+      additionalProperties: false
+      required: [storeId, fieldActorId, verticalId, policyId, policyVersion, rewardMinor, currency, ledgerTransactionId, createdAt]
+      properties:
+        storeId: { type: string }
+        fieldActorId: { type: string }
+        verticalId: { type: string }
+        policyId: { type: string }
+        policyVersion: { type: integer, minimum: 1 }
+        rewardMinor: { type: integer, minimum: 0 }
+        currency: { type: string, const: YER }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    FieldCommissionEarningResponse:
+      type: object
+      additionalProperties: false
+      required: [earning, idempotentReplay]
+      properties:
+        earning: { $ref: '#/components/schemas/FieldCommissionEarning' }
+        idempotentReplay: { type: boolean }
+    FieldFinancialSummary:
+      type: object
+      additionalProperties: false
+      required: [fieldActorId, currency, earnedMinor, commissionMinor, storeCount]
+      properties:
+        fieldActorId: { type: string }
+        currency: { type: string, const: YER }
+        earnedMinor: { type: integer }
+        commissionMinor: { type: integer }
+        storeCount: { type: integer, minimum: 0 }
+        lastEarningAt: { type: string, format: date-time, nullable: true }
+    FieldFinancialSummaryResponse:
+      type: object
+      additionalProperties: false
+      required: [summary]
+      properties:
+        summary: { $ref: '#/components/schemas/FieldFinancialSummary' }
+    CreateOfficialWalletDestinationRequest:
+      type: object
+      additionalProperties: false
+      required: [actorType, actorId, providerKey, walletIdentifier, beneficiaryName, changeReason, verificationEvidenceReference, changeEvidenceReference]
+      properties:
+        actorType: { type: string, enum: [partner, captain, field] }
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        providerKey: { type: string, minLength: 1, maxLength: 128 }
+        walletIdentifier: { type: string, minLength: 1, maxLength: 256 }
+        beneficiaryName: { type: string, minLength: 1, maxLength: 256 }
+        changeReason: { type: string, minLength: 1, maxLength: 512 }
+        verificationEvidenceReference: { type: string, maxLength: 512 }
+        changeEvidenceReference: { type: string, maxLength: 512 }
+    TransitionOfficialWalletDestinationRequest:
+      type: object
+      additionalProperties: false
+      required: [evidenceReference]
+      properties:
+        evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+    OfficialWalletDestination:
+      type: object
+      additionalProperties: false
+      required: [id, actorType, actorId, providerKey, walletIdentifierMasked, beneficiaryName, verificationStatus, status, version, changeReason, submittedBy, submittedAt, verificationEvidenceReference, changeEvidenceReference, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        actorType: { type: string, enum: [partner, captain, field] }
+        actorId: { type: string }
+        providerKey: { type: string }
+        walletIdentifierMasked: { type: string }
+        beneficiaryName: { type: string }
+        verificationStatus: { type: string }
+        status: { type: string }
+        version: { type: integer, minimum: 1 }
+        changeReason: { type: string }
+        submittedBy: { type: string }
+        submittedAt: { type: string, format: date-time }
+        verifiedBy: { type: string, nullable: true }
+        verifiedAt: { type: string, format: date-time, nullable: true }
+        approvedBy: { type: string, nullable: true }
+        approvedAt: { type: string, format: date-time, nullable: true }
+        verificationEvidenceReference: { type: string }
+        changeEvidenceReference: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    OfficialWalletDestinationResponse:
+      type: object
+      additionalProperties: false
+      required: [destination]
+      properties:
+        destination: { $ref: '#/components/schemas/OfficialWalletDestination' }
+        idempotentReplay: { type: boolean }
+    PayoutIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [actorType, actorId, amountMode]
+      properties:
+        actorType: { type: string, enum: [partner, captain, field] }
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        amountMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
+        amountMinor: { type: integer, minimum: 1, nullable: true }
+    PayoutRequest:
+      type: object
+      additionalProperties: false
+      required: [id, actorType, actorId, amountMode, resolvedAmountMinor, currency, destinationId, destinationVersion, status, policyVersion, createdAt]
+      properties:
+        id: { type: string }
+        actorType: { type: string, enum: [partner, captain, field] }
+        actorId: { type: string }
+        amountMode: { type: string, enum: [FULL_AVAILABLE, SPECIFIED] }
+        requestedAmountMinor: { type: integer, minimum: 1, nullable: true }
+        resolvedAmountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        destinationId: { type: string }
+        destinationVersion: { type: integer, minimum: 1 }
+        status: { type: string }
+        policyVersion: { type: string }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    PayoutRequestResponse:
+      type: object
+      additionalProperties: false
+      required: [payout]
+      properties:
+        payout: { $ref: '#/components/schemas/PayoutRequest' }
+        idempotentReplay: { type: boolean }
+    PayoutState:
+      type: object
+      additionalProperties: false
+      required: [actorType, actorId, currency, eligibleAvailableMinor, heldMinor]
+      properties:
+        actorType: { type: string, enum: [partner, captain, field] }
+        actorId: { type: string }
+        currency: { type: string, const: YER }
+        eligibleAvailableMinor: { type: integer }
+        heldMinor: { type: integer, minimum: 0 }
+        destination:
+          allOf:
+            - { $ref: '#/components/schemas/OfficialWalletDestination' }
+          nullable: true
+        latestPayout:
+          allOf:
+            - { $ref: '#/components/schemas/PayoutRequest' }
+          nullable: true
+    PayoutStateResponse:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { $ref: '#/components/schemas/PayoutState' }
+    PayoutListResponse:
+      type: object
+      additionalProperties: false
+      required: [payouts]
+      properties:
+        payouts:
+          type: array
+          items: { $ref: '#/components/schemas/PayoutRequest' }
+    PayoutActionRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 512 }
+        evidenceReference: { type: string, maxLength: 512 }
+    SettlementBatchCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [payoutIds]
+      properties:
+        payoutIds:
+          type: array
+          minItems: 1
+          items: { type: string, minLength: 1, maxLength: 128 }
+    SettlementBatch:
+      type: object
+      additionalProperties: false
+      required: [id, providerKey, currency, status, rowCount, totalAmountMinor, createdBy, createdAt]
+      properties:
+        id: { type: string }
+        providerKey: { type: string }
+        currency: { type: string, const: YER }
+        status: { type: string }
+        rowCount: { type: integer, minimum: 1 }
+        totalAmountMinor: { type: integer, minimum: 1 }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        approvedBy: { type: string, nullable: true }
+        approvedAt: { type: string, format: date-time, nullable: true }
+        frozenBy: { type: string, nullable: true }
+        frozenAt: { type: string, format: date-time, nullable: true }
+        batchHash: { type: string }
+    SettlementBatchResponse:
+      type: object
+      additionalProperties: false
+      required: [batch]
+      properties:
+        batch: { $ref: '#/components/schemas/SettlementBatch' }
+    TransferRecordRequest:
+      type: object
+      additionalProperties: false
+      required: [payoutId, externalTransferReference, evidenceReference]
+      properties:
+        payoutId: { type: string, minLength: 1, maxLength: 128 }
+        externalTransferReference: { type: string, minLength: 1, maxLength: 256 }
+        evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+    TransferVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [evidenceReference]
+      properties:
+        evidenceReference: { type: string, minLength: 1, maxLength: 512 }
+    TransferReconcileRequest:
+      type: object
+      additionalProperties: false
+      required: [statementReference]
+      properties:
+        statementReference: { type: string, minLength: 1, maxLength: 512 }
+    ManualTransferExecution:
+      type: object
+      additionalProperties: false
+      required: [id, batchId, payoutId, approvedSnapshotHash, executedBy, executedAt, providerKey, externalTransferReference, amountMinor, currency, destinationId, destinationVersion, evidenceReference, executionStatus]
+      properties:
+        id: { type: string }
+        batchId: { type: string }
+        payoutId: { type: string }
+        approvedSnapshotHash: { type: string }
+        executedBy: { type: string }
+        executedAt: { type: string, format: date-time }
+        providerKey: { type: string }
+        externalTransferReference: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        destinationId: { type: string }
+        destinationVersion: { type: integer, minimum: 1 }
+        evidenceReference: { type: string }
+        executionStatus: { type: string }
+        verifiedBy: { type: string, nullable: true }
+        verifiedAt: { type: string, format: date-time, nullable: true }
+        statementReference: { type: string, nullable: true }
+        reconciledBy: { type: string, nullable: true }
+        reconciledAt: { type: string, format: date-time, nullable: true }
+    TransferResponse:
+      type: object
+      additionalProperties: false
+      required: [transfer]
+      properties:
+        transfer: { $ref: '#/components/schemas/ManualTransferExecution' }
+    CreatePaymentIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [externalReference, payerActorId, amountMinor, currency, method]
+      properties:
+        externalReference: { type: string, minLength: 1, maxLength: 128 }
+        payerActorId: { type: string, minLength: 1, maxLength: 128 }
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        method: { type: string, const: CASH_ON_DELIVERY }
+        customerPaymentAllocation: { $ref: '#/components/schemas/CustomerPaymentAllocationInput' }
+    CollectPaymentIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [collectedAmountMinor, collectedByActorId]
+      properties:
+        collectedAmountMinor: { type: integer, minimum: 1 }
+        collectedByActorId: { type: string, minLength: 1, maxLength: 128 }
+        collectionReference: { type: string, maxLength: 128 }
+    CancelPaymentIntentRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 256 }
+    PaymentIntent:
+      type: object
+      additionalProperties: false
+      required: [id, externalReference, payerActorId, amountMinor, currency, method, state, version, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        externalReference: { type: string }
+        payerActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        method: { type: string, const: CASH_ON_DELIVERY }
+        state: { type: string, enum: [REQUIRES_COLLECTION, COLLECTED, CANCELLED] }
+        version: { type: integer, minimum: 1 }
+        collectedAmountMinor: { type: integer, nullable: true }
+        collectedByActorId: { type: string, nullable: true }
+        collectionReference: { type: string, nullable: true }
+        collectedAt: { type: string, format: date-time, nullable: true }
+        cancellationReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        customerPaymentAllocation: { $ref: '#/components/schemas/CustomerPaymentAllocation' }
+    CustomerPaymentAllocationInput:
+      type: object
+      additionalProperties: false
+      required: [orderId, currency, subtotalMinor, deliveryFeeMinor, discountMinor, internalBalanceAmountMinor, cashAmountMinor, customerPayableMinor, policyVersion]
+      properties:
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        currency: { type: string, const: YER }
+        subtotalMinor: { type: integer, minimum: 0 }
+        deliveryFeeMinor: { type: integer, minimum: 0 }
+        discountMinor: { type: integer, minimum: 0 }
+        internalBalanceAmountMinor: { type: integer, minimum: 0 }
+        cashAmountMinor: { type: integer, minimum: 0 }
+        customerPayableMinor: { type: integer, minimum: 1 }
+        policyVersion: { type: string, minLength: 1, maxLength: 128 }
+    CustomerPaymentAllocation:
+      allOf:
+        - $ref: '#/components/schemas/CustomerPaymentAllocationInput'
+        - type: object
+          required: [id, paymentIntentId, createdAt]
+          properties:
+            id: { type: string }
+            paymentIntentId: { type: string }
+            createdAt: { type: string, format: date-time }
+    PaymentIntentResponse:
+      type: object
+      additionalProperties: false
+      required: [paymentIntent, idempotentReplay]
+      properties:
+        paymentIntent: { $ref: '#/components/schemas/PaymentIntent' }
+        idempotentReplay: { type: boolean }
+    RemitCashRequest:
+      type: object
+      additionalProperties: false
+      required: [captainActorId, amountMinor, remittanceReference]
+      properties:
+        captainActorId: { type: string, minLength: 1, maxLength: 128 }
+        amountMinor: { type: integer, minimum: 1 }
+        remittanceReference: { type: string, minLength: 1, maxLength: 128 }
+    CashLiabilityItem:
+      type: object
+      additionalProperties: false
+      required: [paymentIntentId, externalReference, captainActorId, amountMinor, currency, paymentVersion, collectedAt]
+      properties:
+        paymentIntentId: { type: string }
+        externalReference: { type: string }
+        captainActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        paymentVersion: { type: integer, minimum: 1 }
+        collectedAt: { type: string, format: date-time }
+    CashLiabilityResponse:
+      type: object
+      additionalProperties: false
+      required: [items, totalAmountMinor]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CashLiabilityItem' }
+        totalAmountMinor: { type: integer, minimum: 0 }
+    CashRemittance:
+      type: object
+      additionalProperties: false
+      required: [id, paymentIntentId, captainActorId, amountMinor, currency, remittanceReference, state, createdAt]
+      properties:
+        id: { type: string }
+        paymentIntentId: { type: string }
+        captainActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        remittanceReference: { type: string }
+        state: { type: string, const: REMITTED }
+        createdAt: { type: string, format: date-time }
+    CashRemittanceResponse:
+      type: object
+      additionalProperties: false
+      required: [cashRemittance, idempotentReplay]
+      properties:
+        cashRemittance: { $ref: '#/components/schemas/CashRemittance' }
+        idempotentReplay: { type: boolean }
+    CaptainOpeningFundingRequest:
+      type: object
+      additionalProperties: false
+      required: [amountMinor, fundingReason, evidenceReference]
+      properties:
+        amountMinor: { type: integer, minimum: 1 }
+        fundingReason: { type: string, minLength: 1, maxLength: 256 }
+        evidenceReference: { type: string, minLength: 1, maxLength: 256 }
+    CaptainWalletFunding:
+      type: object
+      additionalProperties: false
+      required: [id, captainActorId, amountMinor, currency, fundingReason, evidenceReference, createdBy, ledgerTransactionId, createdAt]
+      properties:
+        id: { type: string }
+        captainActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        fundingReason: { type: string }
+        evidenceReference: { type: string }
+        createdBy: { type: string }
+        ledgerTransactionId: { type: string }
+        createdAt: { type: string, format: date-time }
+    CaptainWalletFundingResponse:
+      type: object
+      additionalProperties: false
+      required: [funding, idempotentReplay]
+      properties:
+        funding: { $ref: '#/components/schemas/CaptainWalletFunding' }
+        idempotentReplay: { type: boolean }
+    CaptainWalletState:
+      type: object
+      additionalProperties: false
+      required: [captainActorId, currency, ledgerBalanceMinor, heldMinor, availableMinor]
+      properties:
+        captainActorId: { type: string }
+        currency: { type: string, const: YER }
+        ledgerBalanceMinor: { type: integer, minimum: 0 }
+        heldMinor: { type: integer, minimum: 0 }
+        availableMinor: { type: integer, minimum: 0 }
+    CaptainWalletStateResponse:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { $ref: '#/components/schemas/CaptainWalletState' }
+    CaptainCODReservationRequest:
+      type: object
+      additionalProperties: false
+      required: [orderId, paymentIntentId, captainActorId]
+      properties:
+        orderId: { type: string, minLength: 1, maxLength: 128 }
+        paymentIntentId: { type: string, minLength: 1, maxLength: 128 }
+        captainActorId: { type: string, minLength: 1, maxLength: 128 }
+    CaptainCODTransitionRequest:
+      type: object
+      additionalProperties: false
+      required: [paymentIntentId, captainActorId]
+      properties:
+        paymentIntentId: { type: string, minLength: 1, maxLength: 128 }
+        captainActorId: { type: string, minLength: 1, maxLength: 128 }
+    CaptainCODReservation:
+      type: object
+      additionalProperties: false
+      required: [id, orderId, paymentIntentId, captainActorId, amountMinor, currency, state, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        paymentIntentId: { type: string }
+        captainActorId: { type: string }
+        amountMinor: { type: integer, minimum: 1 }
+        currency: { type: string, const: YER }
+        state: { type: string, enum: [ACTIVE, RELEASED, FINALIZED, REMITTED] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        releasedAt: { type: string, format: date-time, nullable: true }
+        finalizedAt: { type: string, format: date-time, nullable: true }
+        remittedAt: { type: string, format: date-time, nullable: true }
+    CaptainCODReservationResponse:
+      type: object
+      additionalProperties: false
+      required: [reservation, idempotentReplay]
+      properties:
+        reservation: { $ref: '#/components/schemas/CaptainCODReservation' }
+        idempotentReplay: { type: boolean }
+    PreparePartnerFinancialProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [joiningCaseId, partnerActorId, origin, commissionRateBps, settlementPeriod]
+      properties:
+        joiningCaseId: { type: string, minLength: 1, maxLength: 128 }
+        partnerActorId: { type: string, minLength: 1, maxLength: 128 }
+        origin: { type: string, enum: [field, control_panel] }
+        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+    PartnerFinancialProfile:
+      type: object
+      additionalProperties: false
+      required: [id, joiningCaseId, partnerActorId, origin, commissionRateBps, settlementPeriod, roundingUnitMinor, state, version, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        joiningCaseId: { type: string }
+        partnerActorId: { type: string }
+        origin: { type: string, enum: [field, control_panel] }
+        commissionRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        settlementPeriod: { type: string, enum: [DAILY, WEEKLY, MONTHLY] }
+        roundingUnitMinor: { type: integer, const: 50 }
+        state: { type: string, enum: [PENDING_BINDING, ACTIVE] }
+        version: { type: integer, minimum: 1 }
+        activatedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PartnerFinancialProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [profile, idempotentReplay]
+      properties:
+        profile: { $ref: '#/components/schemas/PartnerFinancialProfile' }
+        idempotentReplay: { type: boolean }
+    DeliveryFeeQuoteRequest:
+      type: object
+      additionalProperties: false
+      required: [serviceCityId, originLatitude, originLongitude, destinationLatitude, destinationLongitude, orderSizeBaseUnits]
+      properties:
+        serviceCityId: { type: string, maxLength: 128 }
+        originLatitude: { type: number, minimum: -90, maximum: 90 }
+        originLongitude: { type: number, minimum: -180, maximum: 180 }
+        destinationLatitude: { type: number, minimum: -90, maximum: 90 }
+        destinationLongitude: { type: number, minimum: -180, maximum: 180 }
+        orderSizeBaseUnits: { type: integer, minimum: 1 }
+    DeliveryFeeQuote:
+      type: object
+      additionalProperties: false
+      required: [feeMinor, policyVersion, serviceCityId, distanceMeters, distanceUnits, orderSizeBaseUnits, orderSizeUnits, roundingUnitMinor]
+      properties:
+        feeMinor: { type: integer, minimum: 0 }
+        policyVersion: { type: string }
+        serviceCityId: { type: string }
+        distanceMeters: { type: integer, minimum: 0 }
+        distanceUnits: { type: integer, minimum: 1 }
+        orderSizeBaseUnits: { type: integer, minimum: 1 }
+        orderSizeUnits: { type: integer, minimum: 1 }
+        roundingUnitMinor: { type: integer, const: 50 }
+    DeliveryFeeQuoteResponse:
+      type: object
+      additionalProperties: false
+      required: [quote]
+      properties:
+        quote: { $ref: '#/components/schemas/DeliveryFeeQuote' }
+    CreateDeliveryFeePolicyRequest:
+      type: object
+      additionalProperties: false
+      required: [baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor]
+      properties:
+        serviceCityId: { type: string, maxLength: 128 }
+        baseFeeMinor: { type: integer, minimum: 0 }
+        distanceUnitMeters: { type: integer, minimum: 1 }
+        distanceRateMinor: { type: integer, minimum: 0 }
+        orderSizeUnitBaseUnits: { type: integer, minimum: 1 }
+        orderSizeRateMinor: { type: integer, minimum: 0 }
+        zoneSurchargeMinor: { type: integer, minimum: 0 }
+        roundingUnitMinor: { type: integer, const: 50 }
+    DeliveryFeePolicy:
+      type: object
+      additionalProperties: false
+      required: [id, serviceCityId, policyVersion, state, baseFeeMinor, distanceUnitMeters, distanceRateMinor, orderSizeUnitBaseUnits, orderSizeRateMinor, zoneSurchargeMinor, roundingUnitMinor, version, createdBy, createdAt]
+      properties:
+        id: { type: string }
+        serviceCityId: { type: string }
+        policyVersion: { type: string }
+        state: { type: string, enum: [ACTIVE, RETIRED] }
+        baseFeeMinor: { type: integer, minimum: 0 }
+        distanceUnitMeters: { type: integer, minimum: 1 }
+        distanceRateMinor: { type: integer, minimum: 0 }
+        orderSizeUnitBaseUnits: { type: integer, minimum: 1 }
+        orderSizeRateMinor: { type: integer, minimum: 0 }
+        zoneSurchargeMinor: { type: integer, minimum: 0 }
+        roundingUnitMinor: { type: integer, const: 50 }
+        version: { type: integer, minimum: 1 }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        retiredAt: { type: string, format: date-time, nullable: true }
+    DeliveryFeePolicyResponse:
+      type: object
+      additionalProperties: false
+      required: [policy, idempotentReplay]
+      properties:
+        policy: { $ref: '#/components/schemas/DeliveryFeePolicy' }
+        idempotentReplay: { type: boolean }

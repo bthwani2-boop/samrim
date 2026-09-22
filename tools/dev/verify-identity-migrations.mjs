@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const defaultEnvPath = path.join(root, "infra/local/compose/.env");
+const defaultEnvPath = path.join(root, "infra/local/.env");
 const envArg = process.argv.find((arg) => arg.startsWith("--env-file="));
 const envPath = envArg ? path.resolve(root, envArg.slice("--env-file=".length)) : defaultEnvPath;
 const canonicalProject = "samrim-local";

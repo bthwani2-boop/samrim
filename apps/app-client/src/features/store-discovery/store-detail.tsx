@@ -1,12 +1,12 @@
 import { borders, elevation, radius, type resolveTheme, sizing, spacing, toAsciiDigits, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
 import { formatMoney, type PublicCatalogResponse, type PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { currentIdentityState } from "../../bootstrap/identity";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { addCatalogOfferToCart, readPublicStoreCatalog, readPublishedStore } from "./store-discovery-client";
+import { addCatalogOfferToCart, listFavoriteStoreIDs, readPublicStoreCatalog, readPublishedStore, setFavoriteStore } from "./store-discovery-client";
 
 type DetailState =
   | { kind: "loading" }
@@ -30,6 +30,8 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const catalogRequestID = useRef(0);
   const [error, setError] = useState("");
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const mutationBusy = Boolean(busyOfferId);
 
   const load = useCallback(async () => {
@@ -47,7 +49,16 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     setState({ kind: "loading" });
     try {
       const [store, catalog] = await Promise.all([readPublishedStore(storeId, selectedCityID), readPublicStoreCatalog(storeId, selectedCityID, "", "", 20)]);
+      let favorite = false;
+      if (currentIdentityState().kind === "authenticated") {
+        try {
+          favorite = (await listFavoriteStoreIDs()).includes(storeId);
+        } catch {
+          favorite = false;
+        }
+      }
       if (requestID !== catalogRequestID.current) return;
+      setIsFavorite(favorite);
       setState({ kind: "ready", store, catalog });
     } catch {
       if (requestID !== catalogRequestID.current) return;
@@ -153,13 +164,32 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
     }
   }
 
+  async function toggleFavorite() {
+    if (favoriteBusy) return;
+    if (currentIdentityState().kind !== "authenticated") {
+      router.replace(`/?returnTo=/store/${encodeURIComponent(storeId)}` as Href);
+      return;
+    }
+    setFavoriteBusy(true);
+    setError("");
+    try {
+      setIsFavorite(await setFavoriteStore(storeId, !isFavorite));
+    } catch {
+      setError("تعذر تحديث المفضلة. أعد المحاولة.");
+    } finally {
+      setFavoriteBusy(false);
+    }
+  }
+
   const renderOffer = (offer: PublicCatalogResponse["offers"][number]) => {
     const selectedOptions = selectedModifierOptionIds[offer.offerId] ?? [];
     const quantity = quantities[offer.offerId] ?? String(offer.quantityMinBaseUnits);
     const busy = busyOfferId === offer.offerId;
     const modifierError = validateModifierSelection(offer, selectedOptions);
+    const primaryMedia = offer.media.find((media) => media.role === "primary") ?? offer.media[0];
     return (
       <BthwaniSurface key={offer.offerId} tone="base" style={styles.item}>
+        {primaryMedia ? <Image accessibilityLabel={`صورة ${offer.productName}`} source={{ uri: primaryMedia.uri }} resizeMode="cover" style={styles.productImage} /> : <View accessibilityLabel={`لا توجد صورة لـ ${offer.productName}`} style={styles.productImagePlaceholder}><BthwaniIcon name="store" color={theme.colorMuted} size={sizing.iconLg} /></View>}
         <View style={styles.itemHeader}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{offer.productName}</Text><Text style={styles.muted}>{offer.measurementKind === "DISCRETE" ? "بالقطعة" : offer.baseUnit === "GRAM" ? "بالغرام" : "بالمليلتر"}</Text></View><Text style={styles.itemPrice}>{formatMoney(offer.priceMinor, offer.currency)}</Text></View>
         <Text style={styles.quantityHint}>الكمية: {formatQuantity(offer.baseUnit, offer.quantityMinBaseUnits)}–{formatQuantity(offer.baseUnit, offer.quantityMaxBaseUnits)} · الخطوة {formatQuantity(offer.baseUnit, offer.quantityStepBaseUnits)}</Text>
         <TextInput accessibilityLabel={`كمية ${offer.productName}`} editable={!mutationBusy} keyboardType="number-pad" onChangeText={(value) => setQuantities((current) => ({ ...current, [offer.offerId]: toAsciiDigits(value).replace(/[^0-9]/g, "") }))} value={quantity} style={[styles.quantityInput, mutationBusy && styles.disabledInput]} />
@@ -190,7 +220,14 @@ export default function ClientStoreDetail({ storeId }: { storeId: string }) {
       <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى المتاجر" onPress={() => router.back()} style={styles.backButton}><BthwaniIcon name="back" color={theme.interactiveText} size={sizing.iconMd} /><Text style={styles.back}>المتاجر المتاحة</Text></Pressable>
       <BthwaniSurface tone="raised" style={styles.merchantHero}>
         <View style={styles.merchantIcon}><BthwaniIcon name="store" color={theme.onAction} size={sizing.iconXl} /></View>
-        <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متاح للطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{state.store.serviceCity.displayNameAr} · كتالوج منشور</Text></View>
+        <View style={styles.merchantCopy}><Text style={styles.eyebrow}>متاح للطلب</Text><Text style={styles.title}>{state.store.name}</Text><Text style={styles.muted}>{state.store.serviceCity.displayNameAr} · كتالوج منشور</Text><Text accessibilityLabel="تقييم المتجر" style={styles.rating}>{state.store.ratingCount > 0 ? `★ ${state.store.ratingAverage.toFixed(1)} من 5 · ${state.store.ratingCount} تقييم` : "لا توجد تقييمات بعد"}</Text></View>
+        <BthwaniIconButton
+          disabled={favoriteBusy}
+          icon="favorite"
+          label={isFavorite ? "إزالة المتجر من المفضلة" : "إضافة المتجر إلى المفضلة"}
+          onPress={() => void toggleFavorite()}
+          tone={isFavorite ? "primary" : "soft"}
+        />
         <BthwaniIcon name="success" color={theme.success} size={sizing.iconLg} />
       </BthwaniSurface>
       <BthwaniSectionHeader title="استكشف المنتجات" subtitle={`${state.catalog.offers.length} منتج معروض${catalogRefreshing ? " · جارٍ التحديث…" : ""}`} />
@@ -252,6 +289,7 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     merchantHero: { alignItems: "center", borderRadius: radius.xl, flexDirection: "row", gap: spacing[3], padding: spacing[4], ...elevation.raised },
     merchantIcon: { alignItems: "center", backgroundColor: theme.actionBackground, borderRadius: radius.lg, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
     merchantCopy: { flex: 1, gap: spacing[1] },
+    rating: { ...typography.bodySm, color: theme.warning },
     sectionChips: { gap: spacing[2], paddingVertical: spacing[1] },
     searchField: { width: "100%" },
     searchActions: { flexDirection: "row", gap: spacing[2] },
@@ -260,6 +298,8 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     sectionTitle: { ...typography.bodyStrong, color: theme.color },
     section: { backgroundColor: theme.surfaceRaised, borderColor: theme.borderColor, borderRadius: radius.sm, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
     item: { borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, gap: spacing[2], padding: spacing[3] },
+    productImage: { backgroundColor: theme.surface, borderRadius: radius.md, height: 172, width: "100%" },
+    productImagePlaceholder: { alignItems: "center", backgroundColor: theme.surface, borderRadius: radius.md, height: 172, justifyContent: "center", width: "100%" },
     itemHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing[3], justifyContent: "space-between" },
     itemCopy: { flex: 1, gap: spacing[1] },
     itemTitle: { ...typography.bodyStrong, color: theme.color },

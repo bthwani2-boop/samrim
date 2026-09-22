@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/auth"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/captain"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -20,12 +22,12 @@ type CaptainServer struct {
 	service *captain.Service
 }
 
-func NewCaptain(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*CaptainServer, error) {
+func NewCaptain(identityClient *identityintegration.Client, accessToken string, db *sql.DB, payment *wlt.Client) (*CaptainServer, error) {
 	authorizer, err := auth.NewServiceToken(strings.TrimSpace(accessToken))
 	if err != nil {
 		return nil, err
 	}
-	service, err := captain.New(identityClient, db)
+	service, err := captain.New(identityClient, db, payment)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +43,10 @@ func (s *CaptainServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/captains/me/offers", s.listOffers)
 	mux.HandleFunc("POST /dsh/captains/me/offers/{offerId}/respond", s.respondToOffer)
 	mux.HandleFunc("GET /dsh/captains/me/assignments", s.listAssignments)
+	mux.HandleFunc("GET /dsh/captains/me/cash-liability", s.readCashLiability)
+	mux.HandleFunc("POST /dsh/captains/me/cash-liability/{paymentIntentId}/remit", s.remitCash)
 	mux.HandleFunc("GET /dsh/captains/me/assignments/{assignmentId}/delivery-task", s.readDeliveryTask)
+	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/location", s.updateLocation)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/pickup", s.pickup)
 	mux.HandleFunc("POST /dsh/captains/me/assignments/{assignmentId}/complete", s.complete)
 	mux.HandleFunc("POST /dsh/captains/assignments/{assignmentId}/recover", s.recover)
@@ -209,6 +214,54 @@ func (s *CaptainServer) listAssignments(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, contract.CaptainAssignmentListResponse{Assignments: items})
 }
 
+func (s *CaptainServer) readCashLiability(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
+		return
+	}
+	liability, err := s.service.ReadCashLiability(r.Context(), bearerToken(r))
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	items := make([]contract.CashLiabilityItem, 0, len(liability.Items))
+	for _, item := range liability.Items {
+		collectedAt, parseErr := time.Parse(time.RFC3339Nano, item.CollectedAt)
+		if parseErr != nil {
+			writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash liability timestamp is invalid")
+			return
+		}
+		items = append(items, contract.CashLiabilityItem{PaymentIntentID: item.PaymentIntentID, ExternalReference: item.ExternalReference, CaptainActorID: item.CaptainActorID, AmountMinor: int(item.AmountMinor), Currency: item.Currency, PaymentVersion: item.PaymentVersion, CollectedAt: collectedAt})
+	}
+	writeJSON(w, http.StatusOK, contract.CashLiabilityResponse{Items: items, TotalAmountMinor: int(liability.TotalAmountMinor)})
+}
+
+func (s *CaptainServer) remitCash(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
+		return
+	}
+	_, correlation, idempotency, expected, ok := captainHeaders(w, r, true)
+	if !ok {
+		return
+	}
+	var input contract.CaptainCashRemittanceRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	remittance, replayed, err := s.service.RemitCash(r.Context(), bearerToken(r), r.PathValue("paymentIntentId"), int64(input.AmountMinor), input.RemittanceReference, expected, idempotency, correlation)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	createdAt, parseErr := time.Parse(time.RFC3339Nano, remittance.CreatedAt)
+	if parseErr != nil {
+		writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash remittance timestamp is invalid")
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainCashRemittanceResponse{CashRemittance: contract.CaptainCashRemittance{ID: remittance.ID, PaymentIntentID: remittance.PaymentIntentID, CaptainActorID: remittance.CaptainActorID, AmountMinor: int(remittance.AmountMinor), Currency: remittance.Currency, RemittanceReference: remittance.RemittanceReference, State: remittance.State, CreatedAt: createdAt}, IdempotentReplay: replayed})
+}
+
 func (s *CaptainServer) readDeliveryTask(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
@@ -223,7 +276,7 @@ func (s *CaptainServer) readDeliveryTask(w http.ResponseWriter, r *http.Request)
 		AssignmentID: task.AssignmentID, OrderReference: task.OrderReference, StoreID: task.StoreID, StoreName: task.StoreName,
 		PickupOrigin: contract.CaptainLocation{Latitude: task.PickupLatitude, Longitude: task.PickupLongitude}, CustomerAddressText: task.CustomerAddressText,
 		CustomerDestination: contract.CaptainLocation{Latitude: task.DestinationLatitude, Longitude: task.DestinationLongitude}, OrderState: contract.OrderState(task.OrderState),
-		HandoffState: task.HandoffState, DeliveryState: task.DeliveryState,
+		HandoffState: task.HandoffState, DeliveryState: task.DeliveryState, PaymentMethod: contract.PaymentMethod(task.PaymentMethod), PaymentState: contract.PaymentState(task.PaymentState), AmountDueMinor: int(task.AmountDueMinor), Currency: task.Currency,
 	}})
 }
 
@@ -244,6 +297,31 @@ func (s *CaptainServer) pickup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, contract.CaptainAssignmentResponse{Assignment: toCaptainAssignment(assignment), IdempotentReplay: replayed})
 }
 
+func (s *CaptainServer) updateLocation(w http.ResponseWriter, r *http.Request) {
+	if bearerToken(r) == "" {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
+		return
+	}
+	_, correlation, idempotency, _, ok := captainHeaders(w, r, false)
+	if !ok {
+		return
+	}
+	if idempotency == "" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "Idempotency-Key is required")
+		return
+	}
+	var input contract.CaptainLocationUpdateRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := s.service.UpdateLocation(r.Context(), bearerToken(r), r.PathValue("assignmentId"), input.Latitude, input.Longitude, idempotency, correlation)
+	if err != nil {
+		writeCaptainError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CaptainLocationResponse{Location: toCaptainLocationSnapshot(result.Location), IdempotentReplay: result.Replayed})
+}
+
 func (s *CaptainServer) complete(w http.ResponseWriter, r *http.Request) {
 	if bearerToken(r) == "" {
 		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Captain session is required")
@@ -257,7 +335,7 @@ func (s *CaptainServer) complete(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	assignment, replayed, err := s.service.Complete(r.Context(), bearerToken(r), r.PathValue("assignmentId"), input.Result, expected, idempotency, correlation)
+	assignment, replayed, err := s.service.Complete(r.Context(), bearerToken(r), r.PathValue("assignmentId"), input.Result, int64(input.CollectedAmountMinor), input.DeliveryProofCode, expected, idempotency, correlation)
 	if err != nil {
 		writeCaptainError(w, err)
 		return
@@ -430,11 +508,15 @@ func toCaptainAdmission(value postgres.CaptainAdmission) contract.CaptainAdmissi
 }
 
 func toCaptainOffer(value postgres.CaptainOffer) contract.CaptainOffer {
-	return contract.CaptainOffer{ID: value.ID, OrderID: value.OrderID, CaptainActorID: value.CaptainActorID, State: value.State, ExpiresAt: value.ExpiresAt, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return contract.CaptainOffer{ID: value.ID, OrderID: value.OrderID, CaptainActorID: value.CaptainActorID, State: value.State, ExpiresAt: value.ExpiresAt, Version: value.Version, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, StoreName: value.StoreName, CustomerAddressText: value.CustomerAddressText, AmountDueMinor: int(value.AmountDueMinor), Currency: value.Currency, PaymentMethod: contract.PaymentMethod(value.PaymentMethod), PaymentState: contract.PaymentState(value.PaymentState)}
 }
 
 func toCaptainAssignment(value postgres.CaptainAssignment) contract.CaptainAssignment {
 	return contract.CaptainAssignment{ID: value.ID, OrderID: value.OrderID, CaptainActorID: value.CaptainActorID, AcceptedOfferID: value.AcceptedOfferID, State: value.State, Version: value.Version, CustodyStartedAt: value.CustodyStartedAt, TerminalResult: value.TerminalResult, TerminalAt: value.TerminalAt, Handoff: contract.CaptainHandoff{AssignmentID: value.Handoff.AssignmentID, OrderID: value.Handoff.OrderID, StoreID: value.Handoff.StoreID, State: value.Handoff.State, Version: value.Handoff.Version, StoreConfirmedAt: value.Handoff.StoreConfirmedAt, CaptainPickedUpAt: value.Handoff.CaptainPickedUpAt}, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+}
+
+func toCaptainLocationSnapshot(value postgres.CaptainLocationSnapshot) contract.CaptainLocationSnapshot {
+	return contract.CaptainLocationSnapshot{Latitude: value.Latitude, Longitude: value.Longitude, UpdatedAt: value.UpdatedAt}
 }
 
 func toCaptainOfferResponse(value postgres.CaptainOfferResult) contract.CaptainOfferResponse {
@@ -454,9 +536,35 @@ func writeCaptainError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "the authenticated actor is not permitted for this Captain operation")
 	case errors.Is(err, postgres.ErrCaptainAdmissionNotFound), errors.Is(err, postgres.ErrCaptainOfferNotFound), errors.Is(err, postgres.ErrCaptainAssignmentNotFound), errors.Is(err, postgres.ErrCaptainDeliveryTaskNotFound), errors.Is(err, postgres.ErrOrderNotFound):
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain operational resource was not found")
+	case errors.Is(err, postgres.ErrCaptainLocationNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Captain location assignment was not found")
 	case errors.Is(err, postgres.ErrCaptainAdmissionExists), errors.Is(err, postgres.ErrCaptainAdmissionConflict), errors.Is(err, postgres.ErrCaptainOperationConflict), errors.Is(err, postgres.ErrCaptainDispatchConflict), errors.Is(err, postgres.ErrCaptainOfferConflict), errors.Is(err, postgres.ErrCaptainAssignmentConflict), errors.Is(err, postgres.ErrCaptainCustodyConflict), errors.Is(err, postgres.ErrCaptainTerminalConflict), errors.Is(err, postgres.ErrCaptainDeliveryTaskInvalid), errors.Is(err, captain.ErrManagedRoleNotEligible), errors.Is(err, captain.ErrManagedRoleVersionConflict), errors.Is(err, postgres.ErrCaptainNoAvailable), errors.Is(err, postgres.ErrCaptainOfferExpired), errors.Is(err, postgres.ErrCaptainOfferForbidden), errors.Is(err, postgres.ErrCaptainNotEligible), errors.Is(err, postgres.ErrCaptainVersionConflict):
 		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain operational state or eligibility is stale or not actionable")
+	case errors.Is(err, postgres.ErrDeliveryProofInvalid):
+		writeError(w, http.StatusConflict, "DELIVERY_PROOF_INVALID", "the customer delivery code is missing or incorrect; the delivery was not finalized")
+	case errors.Is(err, captain.ErrLocationStateConflict):
+		writeError(w, http.StatusConflict, "VERSION_OR_STATE_CONFLICT", "Captain location is only available while the assignment is in custody")
+	case errors.Is(err, captain.ErrLocationIdempotencyConflict):
+		writeError(w, http.StatusConflict, "IDEMPOTENCY_CONFLICT", "Idempotency-Key was already used with different location facts")
+	case errors.Is(err, postgres.ErrPaymentStateConflict):
+		writeError(w, http.StatusConflict, "PAYMENT_STATE_CONFLICT", "the order payment state is not actionable")
+	case errors.Is(err, captain.ErrCollectionAmountMismatch):
+		writeError(w, http.StatusConflict, "AMOUNT_MISMATCH", "the collected amount must equal the order amount")
+	case errors.Is(err, captain.ErrPaymentUnavailable):
+		writeError(w, http.StatusBadGateway, "WLT_PAYMENT_UNAVAILABLE", "cash collection is temporarily unavailable; the delivery was not finalized")
 	default:
+		var wltErr *wlt.Error
+		if errors.As(err, &wltErr) {
+			switch wltErr.Code {
+			case "INVALID_INPUT", "AMOUNT_MISMATCH":
+				writeError(w, http.StatusBadRequest, wltErr.Code, wltErr.Message)
+			case "CASH_ALREADY_REMITTED", "IDEMPOTENCY_CONFLICT", "VERSION_CONFLICT", "STATE_CONFLICT":
+				writeError(w, http.StatusConflict, wltErr.Code, wltErr.Message)
+			default:
+				writeError(w, http.StatusBadGateway, "WLT_CASH_UNAVAILABLE", "cash remittance is temporarily unavailable")
+			}
+			return
+		}
 		var identityErr *identityclient.Error
 		if errors.As(err, &identityErr) {
 			writeIdentityError(w, err)

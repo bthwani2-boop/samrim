@@ -19,40 +19,22 @@ Do not add a repository-wide wrapper when a current owner or standard tool alrea
 
 ## Execution model
 
-```text
-AGENTS.md
-→ exact Git state
-→ affected project graph
-→ claim-specific evidence
-→ one final safe push
-→ independent CI integration proof
-```
+`pnpm verify` is the exact local affected-candidate static/workspace entrypoint. `pnpm safe:push` owns final candidate verification and exact remote SHA confirmation.
 
-`pnpm verify` is the exact local affected-candidate static/workspace entrypoint. It does not install dependencies and does not start/stop Docker.
-
-`pnpm safe:push` resolves the correct branch delta, runs the canonical verifier once, pushes safely, and confirms the exact remote SHA. An already-pushed exact SHA is a no-op.
-
-Docker runtime lifecycle remains separate:
+Local runtime has deliberately split ownership:
 
 ```text
-pnpm runtime:up
-pnpm runtime:doctor
-pnpm runtime:status
+tools/dev/dev.ps1              → backend lifecycle + ADB/scrcpy only
+apps/*/package.json scripts.dev → each surface's direct foreground development process
+tools/dev/start-surface.mjs     → shared env loader + direct Expo/Next exec
 ```
 
-These three commands intentionally address the complete canonical Docker stack. Surface commands may start only their causal runtime subset and never stop unrelated running surfaces.
+The fastest path is package-local: run `pnpm dev` inside `apps/app-client`, `apps/app-partner`, `apps/app-captain`, `apps/app-field`, or `apps/control-panel`. Root `pnpm client|partner|captain|field|control` commands are convenience aliases that enter the matching package directory. No targeted surface command routes through `dev.ps1`, and `dev.ps1` no longer owns Metro/Next ports, process reuse, stale-process cleanup or foreground surface startup.
+
+Mobile Expo remains local/offline, app-scoped, IPv4-first and development-client based. Fast Refresh continues through the package-local Metro process. `pnpm scr` separately owns device transport and reverse mappings: USB is preferred, TCP/IP is fallback only, and no intentional concurrent USB+TCP host connection is retained. `runtime:down` remains the explicit complete-session cleanup boundary.
 
 ## Tool admission
 
-Before adding a tool, wrapper, registry, manifest, cache or guard:
+Before adding a tool, wrapper, registry, manifest, cache or guard: prove a current material problem, prefer an existing owner, keep one lifecycle owner, and delete the mechanism when its current benefit disappears.
 
-1. prove a current material problem;
-2. prove an existing mechanism cannot solve it more simply;
-3. identify one lifecycle owner;
-4. keep deterministic inputs/outputs;
-5. add CI only for a materially distinct claim;
-6. define when the mechanism can be deleted.
-
-If the same outcome survives with less code, fewer states, fewer commands or fewer layers, use the simpler design.
-
-Pinned Governance/Docs materializes on demand through `tools/dev/knowledge-source.mjs`. `query-knowledge.mjs` is available for decision-relevant source inspection; do not enumerate knowledge without a material question.
+Pinned Governance/Docs materializes on demand through `tools/dev/knowledge-source.mjs`.

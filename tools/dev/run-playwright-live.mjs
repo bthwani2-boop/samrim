@@ -1,5 +1,11 @@
 import { spawnSync } from "node:child_process";
 
+const destructiveProofAuthorized = process.env.CI === "true" && process.env.BTHWANI_IDENTITY_PROOF_SCOPE === "disposable-ci";
+if (!destructiveProofAuthorized) {
+  console.error("IDENTITY_PROOF_REFUSED scope=developer-state reason=disposable-ci-required");
+  process.exit(1);
+}
+
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const result = spawnSync(
   pnpm,

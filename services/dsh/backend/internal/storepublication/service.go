@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	wltintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -17,6 +18,7 @@ var (
 	ErrPublicationReadinessBlocked   = errors.New("store publication readiness is blocked")
 	ErrPartnerIdentityUnavailable    = errors.New("partner Identity eligibility is unavailable")
 	PartnerIdentityNotEligibleReason = "PARTNER_IDENTITY_NOT_ELIGIBLE"
+	FinancialProfileNotReadyReason   = "FINANCIAL_PROFILE_NOT_READY"
 	ServiceCityNotEligibleReason     = "SERVICE_CITY_NOT_ELIGIBLE"
 	CatalogNotReadyReason            = "CATALOG_NOT_READY"
 )
@@ -29,13 +31,33 @@ type PublicationReadiness struct {
 type Service struct {
 	identity *identityintegration.Client
 	db       *sql.DB
+	wlt      *wltintegration.Client
 }
 
-func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
-	if identity == nil || db == nil {
+func New(identity *identityintegration.Client, db *sql.DB, wlt *wltintegration.Client) (*Service, error) {
+	if identity == nil || db == nil || wlt == nil {
 		return nil, errors.New("store publication configuration is invalid")
 	}
-	return &Service{identity: identity, db: db}, nil
+	return &Service{identity: identity, db: db, wlt: wlt}, nil
+}
+
+func (s *Service) ReconcileFieldCommissions(ctx context.Context) error {
+	items, err := postgres.ListPendingFieldCommissionPublications(ctx, s.db, 100)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if _, _, finalizeErr := s.wlt.FinalizeFieldCommission(ctx, item.StoreID, item.FieldActorID, item.VerticalID, item.IdempotencyKey, item.CorrelationID); finalizeErr != nil {
+			if markErr := postgres.MarkFieldCommissionPublicationFailure(ctx, s.db, item.ID, finalizeErr.Error()); markErr != nil {
+				return markErr
+			}
+			continue
+		}
+		if err := postgres.MarkFieldCommissionPublicationPosted(ctx, s.db, item.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) Publish(ctx context.Context, storeID, requestedState string, expectedVersion int, idempotencyKey, actingActorID, correlationID string) (postgres.PublicationResult, PublicationReadiness, error) {
@@ -159,7 +181,18 @@ func (s *Service) ReadinessForPartner(ctx context.Context, partnerActorID string
 		}
 		return PublicationReadiness{}, fmt.Errorf("%w: %w", ErrPartnerIdentityUnavailable, err)
 	}
-	return evaluatePartnerReadiness(partner), nil
+	readiness := evaluatePartnerReadiness(partner)
+	if !readiness.Ready {
+		return readiness, nil
+	}
+	financialProfileActive, err := postgres.HasActiveFinancialProfileForPartner(ctx, s.db, partnerActorID)
+	if err != nil {
+		return PublicationReadiness{}, fmt.Errorf("read partner financial profile readiness: %w", err)
+	}
+	if !financialProfileActive {
+		return blockedReadiness(FinancialProfileNotReadyReason), nil
+	}
+	return readiness, nil
 }
 
 func blockedReadiness(reason string) PublicationReadiness {

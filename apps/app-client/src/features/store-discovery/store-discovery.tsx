@@ -1,15 +1,15 @@
 import { borders, elevation, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
-import { BthwaniButton, BthwaniIcon, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { PublicStoreView } from "@bthwani/dsh";
+import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniIconButton, BthwaniSearchField, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
+import type { CommerceVertical, PublicStoreView } from "@bthwani/dsh";
 import { type Href, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, type TextInput, View } from "react-native";
 import { useServiceCityScope } from "../service-city/service-city-scope";
-import { listPublishedStores } from "./store-discovery-client";
+import { listCatalogVerticals, listFavoriteStoreIDs, listPublishedStores, setFavoriteStore } from "./store-discovery-client";
 
 type DiscoveryState =
   | { kind: "loading" }
-  | { kind: "ready"; stores: ReadonlyArray<PublicStoreView> }
+  | { kind: "ready"; stores: ReadonlyArray<PublicStoreView>; favoriteStoreIDs: ReadonlyArray<string> }
   | { kind: "empty" }
   | { kind: "error" };
 
@@ -19,7 +19,12 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
   const theme = useAppearanceTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<DiscoveryState>({ kind: "loading" });
+  const [verticals, setVerticals] = useState<ReadonlyArray<CommerceVertical>>([]);
   const [query, setQuery] = useState("");
+  const [favoriteFilter, setFavoriteFilter] = useState(false);
+  const [selectedVerticalID, setSelectedVerticalID] = useState("");
+  const [favoriteBusyStoreID, setFavoriteBusyStoreID] = useState("");
+  const [favoriteError, setFavoriteError] = useState("");
   const searchInputRef = useRef<TextInput>(null);
   const shouldAutoFocusSearch = autoFocusSearch && state.kind !== "loading";
 
@@ -27,17 +32,34 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
+    setFavoriteError("");
     try {
       if (!selectedCityID) {
         setState({ kind: "empty" });
         return;
       }
       const stores = await listPublishedStores(selectedCityID);
-      setState(stores.length ? { kind: "ready", stores } : { kind: "empty" });
+      let availableVerticals: ReadonlyArray<CommerceVertical> = [];
+      try {
+        availableVerticals = (await listCatalogVerticals()).filter((vertical) => vertical.active);
+      } catch {
+        // Store discovery remains usable if the optional filter registry is unavailable.
+      }
+      setVerticals(availableVerticals);
+      setSelectedVerticalID("");
+      let favoriteStoreIDs: ReadonlyArray<string> = [];
+      if (isAuthenticated) {
+        try {
+          favoriteStoreIDs = await listFavoriteStoreIDs();
+        } catch {
+          setFavoriteError("تعذر تحديث قائمة المفضلة. يمكنك متابعة تصفح المتاجر.");
+        }
+      }
+      setState(stores.length ? { kind: "ready", stores, favoriteStoreIDs } : { kind: "empty" });
     } catch {
       setState({ kind: "error" });
     }
-  }, [selectedCityID]);
+  }, [isAuthenticated, selectedCityID]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -49,12 +71,41 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
 
   const filteredStores = useMemo(() => {
     if (state.kind !== "ready") return [];
+    const stores = state.stores.filter((store) => (!favoriteFilter || state.favoriteStoreIDs.includes(store.id)) && (!selectedVerticalID || store.primaryVerticalId === selectedVerticalID));
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    if (!normalizedQuery) return state.stores;
-    return state.stores.filter((store) => store.name.toLocaleLowerCase().includes(normalizedQuery));
-  }, [query, state]);
+    if (!normalizedQuery) return stores;
+    return stores.filter((store) => store.name.toLocaleLowerCase().includes(normalizedQuery));
+  }, [favoriteFilter, query, selectedVerticalID, state]);
+
+  const visibleVerticals = useMemo(() => {
+    if (state.kind !== "ready") return [];
+    return verticals.filter((vertical) => state.stores.some((store) => store.primaryVerticalId === vertical.id));
+  }, [state, verticals]);
 
   const searchField = <BthwaniSearchField accessibilityLabel="البحث في المتاجر" inputRef={searchInputRef} onChangeText={setQuery} onClear={() => setQuery("")} placeholder="ابحث باسم المتجر" value={query} />;
+
+  async function toggleFavorite(storeID: string) {
+    if (!isAuthenticated) {
+      onRequireAuthentication?.();
+      return;
+    }
+    if (favoriteBusyStoreID || state.kind !== "ready") return;
+    const isFavorite = state.favoriteStoreIDs.includes(storeID);
+    setFavoriteBusyStoreID(storeID);
+    setFavoriteError("");
+    try {
+      const nextValue = await setFavoriteStore(storeID, !isFavorite);
+      setState((current) => {
+        if (current.kind !== "ready") return current;
+        const nextIDs = current.favoriteStoreIDs.filter((id) => id !== storeID);
+        return { ...current, favoriteStoreIDs: nextValue ? [...nextIDs, storeID] : nextIDs };
+      });
+    } catch {
+      setFavoriteError("تعذر تحديث المفضلة. أعد المحاولة.");
+    } finally {
+      setFavoriteBusyStoreID("");
+    }
+  }
 
   if (state.kind === "loading") {
     return (
@@ -87,30 +138,62 @@ export default function StoreDiscovery({ isAuthenticated = true, onRequireAuthen
       </BthwaniSurface>
 
       {searchField}
+      <View style={styles.filterRow}>
+        <BthwaniChip label="كل المتاجر" selected={!favoriteFilter} onPress={() => setFavoriteFilter(false)} />
+        <BthwaniChip
+          icon="favorite"
+          label="المفضلة"
+          selected={favoriteFilter}
+          onPress={() => {
+            if (!isAuthenticated) {
+              onRequireAuthentication?.();
+              return;
+            }
+            setFavoriteFilter(true);
+          }}
+        />
+      </View>
+      {visibleVerticals.length ? <View accessibilityLabel="تصفية حسب المجال التجاري" style={styles.filterRow}><BthwaniChip label="كل المجالات" selected={!selectedVerticalID} onPress={() => setSelectedVerticalID("")} />{visibleVerticals.map((vertical) => <BthwaniChip key={vertical.id} label={vertical.nameAr} selected={selectedVerticalID === vertical.id} onPress={() => setSelectedVerticalID(vertical.id)} />)}</View> : null}
+      {favoriteError ? <Text accessibilityRole="alert" style={styles.error}>{favoriteError}</Text> : null}
 
       <BthwaniSectionHeader title={`متاجر في ${cityName}`} subtitle={`${filteredStores.length} متجر متاح للطلب`} />
       {filteredStores.length === 0 ? (
         <BthwaniSurface tone="inset" style={styles.noResults}>
           <BthwaniIcon name="search" color={theme.colorMuted} size={sizing.iconXl} />
-          <Text style={styles.cardTitle}>لا توجد نتائج بهذا الاسم</Text>
-          <Text style={styles.muted}>جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر.</Text>
-          <BthwaniButton label="مسح البحث" onPress={() => setQuery("")} variant="quiet" />
+          <Text style={styles.cardTitle}>{query.trim() ? "لا توجد نتائج بهذا الاسم" : selectedVerticalID ? "لا توجد متاجر ضمن هذا المجال" : "لا توجد متاجر مطابقة"}</Text>
+          <Text style={styles.muted}>{query.trim() ? "جرّب اسمًا أقصر أو امسح البحث لعرض كل المتاجر." : "غيّر المجال أو أزل الفلاتر لعرض المتاجر المتاحة."}</Text>
+          {query.trim() ? <BthwaniButton label="مسح البحث" onPress={() => setQuery("")} variant="quiet" /> : null}
         </BthwaniSurface>
       ) : (
         <View style={styles.list}>
-          {filteredStores.map((store) => (
-            <Pressable
-              key={store.id}
-              accessibilityRole="button"
-              accessibilityLabel={`فتح متجر ${store.name}`}
-              onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)}
-              style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}
-            >
-              <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>
-              <View style={styles.storeCopy}><Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text><Text style={styles.storeMeta}>{store.serviceCity.displayNameAr} · متاح للطلب</Text><Text style={styles.storeHint}>افتح الكتالوج واستكشف المنتجات</Text></View>
-              <BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} />
-            </Pressable>
-          ))}
+          {filteredStores.map((store) => {
+            const isFavorite = state.favoriteStoreIDs.includes(store.id);
+            return (
+              <Pressable
+                key={store.id}
+                accessibilityRole="button"
+                accessibilityLabel={`فتح متجر ${store.name}`}
+                onPress={() => router.push(`/store/${encodeURIComponent(store.id)}` as Href)}
+                style={({ pressed }) => [styles.storeCard, pressed && styles.pressed]}
+              >
+                <View style={styles.storeIcon}><BthwaniIcon name="store" color={theme.interactiveText} size={sizing.iconLg} /></View>
+                <View style={styles.storeCopy}><Text style={styles.storeTitle} numberOfLines={2}>{store.name}</Text><Text style={styles.storeMeta}>{store.serviceCity.displayNameAr} · متاح للطلب</Text><Text style={styles.storeRating}>{store.ratingCount > 0 ? `★ ${store.ratingAverage.toFixed(1)} (${store.ratingCount})` : "لا توجد تقييمات بعد"}</Text><Text style={styles.storeHint}>افتح الكتالوج واستكشف المنتجات</Text></View>
+                <View style={styles.storeActions}>
+                  <BthwaniIconButton
+                    disabled={Boolean(favoriteBusyStoreID)}
+                    icon="favorite"
+                    label={isFavorite ? `إزالة ${store.name} من المفضلة` : `إضافة ${store.name} إلى المفضلة`}
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      void toggleFavorite(store.id);
+                    }}
+                    tone={isFavorite ? "primary" : "soft"}
+                  />
+                  <BthwaniIcon name="forward" color={theme.colorMuted} size={sizing.iconMd} />
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
       )}
     </View>
@@ -127,11 +210,14 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     heroTitle: { ...typography.titleLg, color: theme.color },
     heroText: { ...typography.bodySm, color: theme.colorMuted },
     list: { gap: spacing[3] },
+    filterRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing[2] },
     storeCard: { alignItems: "center", backgroundColor: theme.surface, borderColor: theme.borderColor, borderRadius: radius.lg, borderWidth: borders.hairline, flexDirection: "row", gap: spacing[3], minHeight: 100, padding: spacing[3], ...elevation.raised },
+    storeActions: { alignItems: "center", flexDirection: "row", gap: spacing[1] },
     storeIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.md, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
     storeCopy: { flex: 1, gap: spacing[1] },
     storeTitle: { ...typography.titleSm, color: theme.color },
     storeMeta: { ...typography.bodySm, color: theme.interactiveText },
+    storeRating: { ...typography.bodySm, color: theme.warning },
     storeHint: { ...typography.caption, color: theme.colorMuted },
     pressed: { opacity: opacity.subtle },
     noResults: { alignItems: "center", borderRadius: radius.lg, gap: spacing[2], padding: spacing[5] },
@@ -143,5 +229,6 @@ function createStyles(theme: ReturnType<typeof resolveTheme>) {
     emptyIcon: { alignItems: "center", backgroundColor: theme.actionSoft, borderRadius: radius.round, height: sizing.avatarLg, justifyContent: "center", width: sizing.avatarLg },
     title: { ...typography.titleLg, color: theme.color, textAlign: "center" },
     muted: { ...typography.bodySm, color: theme.colorMuted, textAlign: "center" },
+    error: { ...typography.bodySm, color: theme.danger },
   });
 }

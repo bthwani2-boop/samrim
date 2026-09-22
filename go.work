@@ -4,4 +4,5 @@ use (
 	./services/dsh/backend
 	./services/identity/backend
 	./services/identity/clients/go
+	./services/wlt/backend
 )

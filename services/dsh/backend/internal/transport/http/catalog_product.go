@@ -1,8 +1,10 @@
 package transporthttp
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/catalog"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/contract"
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/media"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 	identityclient "github.com/bthwani2-boop/samrim/services/identity/clients/go"
 )
@@ -18,10 +21,22 @@ import (
 type CatalogServer struct {
 	service *catalog.Service
 	auth    *auth.ServiceToken
+	media   media.Store
+}
+
+func (s *CatalogServer) ReconcileMediaStorage(ctx context.Context) error {
+	if s.media == nil {
+		return nil
+	}
+	return s.service.ReconcileMediaStorage(ctx)
 }
 
 func NewCatalog(identityClient *identityintegration.Client, accessToken string, db *sql.DB) (*CatalogServer, error) {
-	service, err := catalog.New(identityClient, db)
+	return NewCatalogWithMediaStore(identityClient, accessToken, db, nil)
+}
+
+func NewCatalogWithMediaStore(identityClient *identityintegration.Client, accessToken string, db *sql.DB, mediaStore media.Store) (*CatalogServer, error) {
+	service, err := catalog.NewWithMediaStore(identityClient, db, mediaStore)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +44,7 @@ func NewCatalog(identityClient *identityintegration.Client, accessToken string, 
 	if err != nil {
 		return nil, err
 	}
-	return &CatalogServer{service: service, auth: authorizer}, nil
+	return &CatalogServer{service: service, auth: authorizer, media: mediaStore}, nil
 }
 
 func (s *CatalogServer) Register(mux *http.ServeMux) {
@@ -42,6 +57,11 @@ func (s *CatalogServer) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dsh/catalog/products", s.listProducts)
 	mux.HandleFunc("POST /dsh/catalog/products", s.createProduct)
 	mux.HandleFunc("PATCH /dsh/catalog/products/{productId}", s.updateProduct)
+	mux.HandleFunc("PUT /dsh/catalog/products/{productId}/media", s.replaceProductMedia)
+	mux.HandleFunc("POST /dsh/catalog/products/{productId}/media/upload", s.uploadProductMedia)
+	mux.HandleFunc("PUT /dsh/stores/{storeId}/products/{productId}/media", s.replaceStoreProductMedia)
+	mux.HandleFunc("POST /dsh/stores/{storeId}/products/{productId}/media/upload", s.uploadStoreProductMedia)
+	mux.HandleFunc("GET /dsh/catalog/media/{key...}", s.readProductMedia)
 	mux.HandleFunc("PUT /dsh/catalog/products/{productId}/attributes/{attributeId}", s.upsertProductAttribute)
 	mux.HandleFunc("POST /dsh/catalog/products/{productId}/variants", s.createVariant)
 	mux.HandleFunc("PATCH /dsh/catalog/variants/{variantId}", s.updateVariant)
@@ -226,6 +246,163 @@ func (s *CatalogServer) updateProduct(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
 }
 
+func (s *CatalogServer) replaceProductMedia(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	var input contract.ReplaceCatalogProductMediaRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	media := make([]postgres.CatalogMediaInput, 0, len(input.Media))
+	for _, item := range input.Media {
+		media = append(media, postgres.CatalogMediaInput{URI: item.Uri, Role: item.Role, Ordinal: item.Ordinal})
+	}
+	result, err := s.service.ReplaceCatalogProductMedia(r.Context(), acting, r.PathValue("productId"), media, expected, idempotency, correlation)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
+}
+
+func (s *CatalogServer) uploadProductMedia(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Authorized(r) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "service authentication is required")
+		return
+	}
+	acting, correlation, idempotency, expected, ok := requiredVersionedCaseHeaders(w, r)
+	if !ok {
+		return
+	}
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	upload, ok := parseCatalogMediaUpload(w, r)
+	if !ok {
+		return
+	}
+	result, err := s.service.UploadCatalogProductMedia(r.Context(), acting, catalog.CatalogMediaUploadInput{ProductID: r.PathValue("productId"), Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes})
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, responseStatus(result.Replayed), contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
+}
+
+func (s *CatalogServer) uploadStoreProductMedia(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, expected, ok := requiredPartnerOfferHeaders(w, r, true)
+	if !ok {
+		return
+	}
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	upload, ok := parseCatalogMediaUpload(w, r)
+	if !ok {
+		return
+	}
+	result, err := s.service.UploadStoreScopedProductMedia(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), catalog.CatalogMediaUploadInput{Role: upload.role, IdempotencyKey: idempotency, CorrelationID: correlation, ExpectedVersion: expected, ContentType: upload.contentType, Bytes: upload.bytes})
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, responseStatus(result.Replayed), contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
+}
+
+func (s *CatalogServer) replaceStoreProductMedia(w http.ResponseWriter, r *http.Request) {
+	correlation, idempotency, expected, ok := requiredPartnerOfferHeaders(w, r, true)
+	if !ok {
+		return
+	}
+	var input contract.ReplaceCatalogProductMediaRequest
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	media := make([]postgres.CatalogMediaInput, 0, len(input.Media))
+	for _, item := range input.Media {
+		media = append(media, postgres.CatalogMediaInput{URI: item.Uri, Role: item.Role, Ordinal: item.Ordinal})
+	}
+	result, err := s.service.ReplaceStoreScopedProductMedia(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("productId"), media, expected, idempotency, correlation)
+	if err != nil {
+		writeCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, contract.CatalogProductResponse{Product: toCatalogProduct(result.Product), IdempotentReplay: result.Replayed})
+}
+
+type catalogMediaUpload struct {
+	role        string
+	contentType string
+	bytes       []byte
+}
+
+func parseCatalogMediaUpload(w http.ResponseWriter, r *http.Request) (catalogMediaUpload, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, media.MaxUploadBytes+1)
+	if err := r.ParseMultipartForm(media.MaxUploadBytes + 1); err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a valid image upload is required")
+		return catalogMediaUpload{}, false
+	}
+	role := strings.TrimSpace(r.FormValue("role"))
+	file, header, err := r.FormFile("file")
+	if err != nil || header == nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "a file field is required")
+		return catalogMediaUpload{}, false
+	}
+	defer file.Close()
+	if header.Size < 1 || header.Size > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return catalogMediaUpload{}, false
+	}
+	bytes, err := io.ReadAll(io.LimitReader(file, media.MaxUploadBytes+1))
+	if err != nil || int64(len(bytes)) > media.MaxUploadBytes {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "image size must not exceed 10 MiB")
+		return catalogMediaUpload{}, false
+	}
+	contentType, _, _, err := media.ValidateImageBytes(bytes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "only valid JPEG and PNG images are accepted")
+		return catalogMediaUpload{}, false
+	}
+	return catalogMediaUpload{role: role, contentType: contentType, bytes: bytes}, true
+}
+
+func (s *CatalogServer) readProductMedia(w http.ResponseWriter, r *http.Request) {
+	if s.media == nil {
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	key := strings.TrimSpace(r.PathValue("key"))
+	if err := media.ValidateObjectKey(key); err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "media object was not found")
+		return
+	}
+	object, err := s.media.Get(r.Context(), key)
+	if errors.Is(err, media.ErrObjectNotFound) {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "media object was not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
+		return
+	}
+	defer object.Close()
+	w.Header().Set("Content-Type", object.Info.ContentType)
+	w.Header().Set("Content-Length", strconv.FormatInt(object.Info.Size, 10))
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if object.Info.ETag != "" {
+		w.Header().Set("ETag", object.Info.ETag)
+	}
+	_, _ = io.Copy(w, object)
+}
+
 func (s *CatalogServer) updateStoreScopedProduct(w http.ResponseWriter, r *http.Request) {
 	correlation, idempotency, expected, ok := requiredPartnerOfferHeaders(w, r, true)
 	if !ok {
@@ -264,7 +441,7 @@ func (s *CatalogServer) createOffer(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.CreateStoreOffer(r.Context(), bearerToken(r), r.PathValue("storeId"), input.VariantID, int64(input.PriceMinor), input.QuantityPolicy, int64(input.QuantityMinBaseUnits), int64(input.QuantityMaxBaseUnits), int64(input.QuantityStepBaseUnits), input.PricingBasis, int64(input.PricingUnitBaseUnits), idempotency, correlation)
+	result, err := s.service.CreateStoreOffer(r.Context(), bearerToken(r), r.PathValue("storeId"), input.VariantID, int64(input.PriceMinor), input.QuantityPolicy, int64(input.QuantityMinBaseUnits), int64(input.QuantityMaxBaseUnits), int64(input.QuantityStepBaseUnits), input.PricingBasis, int64(input.PricingUnitBaseUnits), input.InventoryPolicy, int64(input.InventoryOnHandBaseUnits), idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -280,7 +457,7 @@ func (s *CatalogServer) updateOffer(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := s.service.UpdateStoreOffer(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("offerId"), int64(input.PriceMinor), input.Availability, string(input.PublicationState), input.QuantityPolicy, int64(input.QuantityMinBaseUnits), int64(input.QuantityMaxBaseUnits), int64(input.QuantityStepBaseUnits), input.PricingBasis, int64(input.PricingUnitBaseUnits), expected, idempotency, correlation)
+	result, err := s.service.UpdateStoreOffer(r.Context(), bearerToken(r), r.PathValue("storeId"), r.PathValue("offerId"), int64(input.PriceMinor), input.Availability, string(input.PublicationState), input.QuantityPolicy, int64(input.QuantityMinBaseUnits), int64(input.QuantityMaxBaseUnits), int64(input.QuantityStepBaseUnits), input.PricingBasis, int64(input.PricingUnitBaseUnits), input.InventoryPolicy, int64(input.InventoryOnHandBaseUnits), expected, idempotency, correlation)
 	if err != nil {
 		writeCatalogError(w, err)
 		return
@@ -374,12 +551,22 @@ func writeCatalogError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "DUPLICATE_IDENTIFIER", "identifier is already assigned to another Variant")
 	case errors.Is(err, postgres.ErrCatalogIdentifierInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog identifier facts are invalid")
+	case errors.Is(err, postgres.ErrCatalogMediaInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product media facts are invalid")
+	case errors.Is(err, catalog.ErrCatalogMediaUploadInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog Product image upload is invalid")
+	case errors.Is(err, catalog.ErrCatalogMediaStorageUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "MEDIA_STORAGE_UNAVAILABLE", "media storage is unavailable")
 	case errors.Is(err, postgres.ErrCatalogOfferAlreadyExists):
 		writeError(w, http.StatusConflict, "OFFER_EXISTS", "StoreOffer already exists for this Variant")
 	case errors.Is(err, postgres.ErrCatalogOfferProductDisabled):
 		writeError(w, http.StatusConflict, "PRODUCT_NOT_ELIGIBLE", "Product/Variant/vertical is not eligible for this StoreOffer")
 	case errors.Is(err, postgres.ErrCatalogOfferQuantityInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog quantity or measurement policy is invalid")
+	case errors.Is(err, postgres.ErrCatalogInventoryInvalid):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "catalog inventory facts are invalid")
+	case errors.Is(err, postgres.ErrCatalogInventoryReserved):
+		writeError(w, http.StatusConflict, "INVENTORY_RESERVED", "active inventory reservations must be settled before changing inventory mode")
 	case errors.Is(err, postgres.ErrCatalogProductOwnership):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "catalog Product ownership is invalid")
 	case errors.Is(err, postgres.ErrCatalogProposalInvalid), errors.Is(err, postgres.ErrCatalogProposalReview):

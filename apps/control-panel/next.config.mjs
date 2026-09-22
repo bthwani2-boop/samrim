@@ -1,6 +1,5 @@
 /** @type {import("next").NextConfig} */
 const nextConfig = {
-  allowedDevOrigins: ["127.0.0.1"],
   transpilePackages: ["@bthwani/identity", "@bthwani/design-system"],
   poweredByHeader: false,
   // The development overlay injects inline styles that violate the application CSP.

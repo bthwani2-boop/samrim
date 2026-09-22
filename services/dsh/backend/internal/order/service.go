@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	identityintegration "github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/identity"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/integrations/wlt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storage/postgres"
 )
 
@@ -15,18 +16,20 @@ var (
 	ErrPartnerSessionForbidden = errors.New("an active app-partner session is required")
 	ErrStoreOwnershipForbidden = errors.New("partner does not own this Store")
 	ErrOperatorNotActive       = errors.New("operator is not active")
+	ErrPaymentUnavailable      = errors.New("payment operation is unavailable")
 )
 
 type Service struct {
 	identity *identityintegration.Client
 	db       *sql.DB
+	payment  *wlt.Client
 }
 
-func New(identity *identityintegration.Client, db *sql.DB) (*Service, error) {
-	if identity == nil || db == nil {
+func New(identity *identityintegration.Client, db *sql.DB, payment *wlt.Client) (*Service, error) {
+	if identity == nil || db == nil || payment == nil {
 		return nil, errors.New("order configuration is invalid")
 	}
-	return &Service{identity: identity, db: db}, nil
+	return &Service{identity: identity, db: db, payment: payment}, nil
 }
 
 func (s *Service) Read(ctx context.Context, accessToken, orderID string) (postgres.OrderRecord, error) {
@@ -57,12 +60,59 @@ func (s *Service) Read(ctx context.Context, accessToken, orderID string) (postgr
 	}
 }
 
+func (s *Service) ReadTracking(ctx context.Context, accessToken, orderID string) (postgres.ClientOrderTracking, error) {
+	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.ClientOrderTracking{}, err
+	}
+	return postgres.ReadClientOrderTracking(ctx, s.db, orderID, identity)
+}
+
+func (s *Service) ReadClientDeliveryProof(ctx context.Context, accessToken, orderID string) (postgres.DeliveryProofRecord, error) {
+	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.DeliveryProofRecord{}, err
+	}
+	return postgres.ReadClientDeliveryProof(ctx, s.db, orderID, identity)
+}
+
+func (s *Service) ReadClientOrderRating(ctx context.Context, accessToken, orderID string) (postgres.OrderRatingRecord, error) {
+	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.OrderRatingRecord{}, err
+	}
+	return postgres.ReadClientOrderRating(ctx, s.db, orderID, identity)
+}
+
+func (s *Service) CreateClientOrderRating(ctx context.Context, accessToken, orderID string, rating int, review string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRatingRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.OrderRatingRecord{}, false, err
+	}
+	requestHash := postgres.HashOrderRatingRequest(orderID, rating, review, expectedVersion)
+	return postgres.CreateClientOrderRating(ctx, s.db, orderID, identity, rating, review, expectedVersion, idempotencyKey, requestHash, correlationID)
+}
+
 func (s *Service) ListForClient(ctx context.Context, accessToken string, limit int) ([]postgres.OrderRecord, error) {
 	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
 	if err != nil {
 		return nil, err
 	}
 	return postgres.ListOrdersForClient(ctx, s.db, identity, "", limit)
+}
+
+func (s *Service) CancelForClient(ctx context.Context, accessToken, orderID string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
+	identity, err := s.requireSession(ctx, accessToken, "client", "app-client")
+	if err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	if expectedVersion < 1 || strings.TrimSpace(orderID) == "" {
+		return postgres.OrderRecord{}, false, postgres.ErrOrderTransitionInvalid
+	}
+	if _, err := postgres.ReadOrderForClient(ctx, s.db, orderID, identity); err != nil {
+		return postgres.OrderRecord{}, false, err
+	}
+	return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "CANCELLED", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, "CANCELLED", expectedVersion), identity, strings.TrimSpace(correlationID), "client_cancelled")
 }
 
 func (s *Service) ListForPartner(ctx context.Context, accessToken, storeID string, limit int) ([]postgres.OrderRecord, error) {
@@ -90,6 +140,13 @@ func (s *Service) ReadForOperator(ctx context.Context, orderID, actingActorID st
 	return postgres.ReadOperatorOperation(ctx, s.db, orderID)
 }
 
+func (s *Service) ListCashCustodyForOperator(ctx context.Context, actingActorID string) (wlt.CashLiabilityResponse, error) {
+	if err := s.requireOperator(ctx, actingActorID); err != nil {
+		return wlt.CashLiabilityResponse{}, err
+	}
+	return s.payment.ListOperatorCashLiability(ctx)
+}
+
 func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID, orderID, state string, expectedVersion int, idempotencyKey, correlationID string) (postgres.OrderRecord, bool, error) {
 	identity, err := s.requireSession(ctx, accessToken, "partner", "app-partner")
 	if err != nil {
@@ -105,7 +162,11 @@ func (s *Service) TransitionForPartner(ctx context.Context, accessToken, storeID
 	if current.StoreID != strings.TrimSpace(storeID) {
 		return postgres.OrderRecord{}, false, ErrStoreOwnershipForbidden
 	}
-	return postgres.TransitionOrder(ctx, s.db, orderID, strings.TrimSpace(state), expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
+	state = strings.TrimSpace(state)
+	if state == "REJECTED" {
+		return postgres.TransitionOrderWithPaymentCancellation(ctx, s.db, orderID, "REJECTED", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID), "partner_rejected")
+	}
+	return postgres.TransitionOrder(ctx, s.db, orderID, state, "", expectedVersion, strings.TrimSpace(idempotencyKey), postgres.HashOrderTransition(orderID, state, expectedVersion), identity, strings.TrimSpace(correlationID))
 }
 
 func (s *Service) requireSession(ctx context.Context, accessToken, role, surface string) (string, error) {

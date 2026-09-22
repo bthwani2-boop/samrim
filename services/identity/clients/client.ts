@@ -1,33 +1,33 @@
+import { identityOperationPaths } from "./generated/identity-operations";
 import type {
   ActorIdentity,
+  ActorRoleSearchPage,
+  ActorRoleView,
+  ActorType,
   Challenge,
   ClientCredentialProofRequest,
   ClientRecoveryProofRequest,
+  ManagedActivationRequest,
+  ManagedChallengeRequest,
+  ManagedPasswordLoginRequest,
+  OperatorEnrollmentRequest,
   OperatorEnrollmentToken,
   OperatorEnrollmentTokenIssueRequest,
-  ManagedActivationRequest,
-  RecoveryResult,
-  ManagedPasswordLoginRequest,
-  ManagedChallengeRequest,
-  OperatorEnrollmentRequest,
-  OperatorPasskeyRegistrationOptionsRequest,
-  OperatorPasskeyRegistrationFinishRequest,
   OperatorPasskeyAuthenticationFinishRequest,
-  OperatorRecoveryRequest,
-  OperatorPasskeyRecoveryRegistrationOptionsRequest,
   OperatorPasskeyRecoveryFinishRequest,
+  OperatorPasskeyRecoveryRegistrationOptionsRequest,
+  OperatorPasskeyRegistrationFinishRequest,
+  OperatorPasskeyRegistrationOptionsRequest,
   OperatorPasskeyRegistrationResponse,
+  OperatorRecoveryRequest,
   PasskeyOptions,
   PasswordLoginRequest,
   PhoneRequest,
   ProvisionActorRoleRequest,
-  ActorRoleView,
-  ActorRoleSearchPage,
-  ActorType,
+  RecoveryResult,
   RefreshRequest,
   TokenPair,
 } from "./generated/identity-types";
-import { identityOperationPaths } from "./generated/identity-operations";
 
 export type IdentityClientError =
   | Readonly<{ kind: "http"; status: number; code: string; message: string }>
@@ -53,6 +53,7 @@ export type IdentityClient = Readonly<{
   beginOperatorRecoveryPasskeyRegistration(request: OperatorPasskeyRecoveryRegistrationOptionsRequest): Promise<PasskeyOptions>;
   finishOperatorRecoveryPasskeyRegistration(request: OperatorPasskeyRecoveryFinishRequest): Promise<OperatorPasskeyRegistrationResponse>;
   refresh(request: RefreshRequest): Promise<TokenPair>;
+  developmentSession(role: ActorType, clientInstanceId: string): Promise<TokenPair>;
   session(accessToken: string): Promise<ActorIdentity>;
   logout(accessToken: string): Promise<void>;
 }>;
@@ -76,7 +77,8 @@ export type IdentityInternalClient = Readonly<{
 }>;
 
 function normalizeBaseUrl(raw: string): string {
-  const value = raw.trim().replace(/\/+$/, "");
+  let value = raw.trim();
+  while (value.endsWith("/")) value = value.slice(0, -1);
   if (!/^https?:\/\//i.test(value) && !value.startsWith("/")) throw new Error("IDENTITY_BASE_URL_INVALID");
   return value;
 }
@@ -159,6 +161,7 @@ export function createIdentityClient(rawBaseUrl: string, timeoutMs = 8_000): Ide
     beginOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.beginOperatorRecoveryPasskeyRegistration.method, body }),
     finishOperatorRecoveryPasskeyRegistration: (body) => request(identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.path, { method: identityOperationPaths.finishOperatorRecoveryPasskeyRegistration.method, body }),
     refresh: (body) => request(identityOperationPaths.refreshSession.path, { method: identityOperationPaths.refreshSession.method, body }),
+    developmentSession: (role, clientInstanceId) => request(identityOperationPaths.createDevelopmentSession.path, { method: identityOperationPaths.createDevelopmentSession.method, body: { role, clientInstanceId } }),
     session: (accessToken) => request(identityOperationPaths.readCurrentSession.path, { method: identityOperationPaths.readCurrentSession.method, token: accessToken }),
     logout: (accessToken) => request(identityOperationPaths.logoutSession.path, { method: identityOperationPaths.logoutSession.method, token: accessToken }),
   };
