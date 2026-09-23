@@ -87,8 +87,8 @@ function OperatorProfile({ identity, active }: Readonly<{ identity: ActorIdentit
           </svg>
         </span>
         <div className="operator-profile-copy">
-          <p className="operator-profile-title">{identity.role === "operator" ? "مشغّل المنصة" : "حساب معتمد"}</p>
-          <p>حساب لوحة التحكم</p>
+          <p className="operator-profile-title">{identity.role === "operator" ? "حساب المشغّل" : "حساب معتمد"}</p>
+          <p>لوحة التحكم</p>
         </div>
       </div>
       <p className="operator-profile-status">جلسة نشطة</p>
