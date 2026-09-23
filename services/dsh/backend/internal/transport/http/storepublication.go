@@ -253,7 +253,7 @@ func logStorePublicationFailure(correlationID string, err error) {
 	for errors.Unwrap(cause) != nil {
 		cause = errors.Unwrap(cause)
 	}
-	log.Printf("store publication internal failure correlation_id=%q cause_type=%T", correlationID, cause)
+	log.Printf("store publication internal failure correlation_id=%q cause_type=%T cause=%q", correlationID, cause, cause.Error())
 }
 
 func writeStorePublicationError(w http.ResponseWriter, err error) {
