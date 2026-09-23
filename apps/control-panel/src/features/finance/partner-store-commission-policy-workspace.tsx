@@ -108,7 +108,7 @@ export function PartnerStoreCommissionPolicyWorkspace() {
     </div>
     {policies.length > 0 ? <>
       <p className="muted">النسب المحمّلة تخص المتجر: {loadedStoreId}</p>
-      <div className="form-grid" role="group" aria-label="نسب العمولة حسب وضع التنفيذ">
+      <fieldset className="form-grid"><legend className="visually-hidden">نسب العمولة حسب وضع التنفيذ</legend>
         {modes.map(({ key, label }) => {
           const policy = policies.find((item) => item.fulfillmentMode === key);
           if (!policy) return null;
@@ -120,7 +120,7 @@ export function PartnerStoreCommissionPolicyWorkspace() {
             <button className="button button-primary" type="button" onClick={() => void save(key)} disabled={busyMode !== null || Array.from(reason.trim()).length < 8 || loadedStoreId !== storeId.trim()}>{busyMode === key ? "جارٍ حفظ النسبة…" : `حفظ نسبة ${label}`}</button>
           </div>;
         })}
-      </div>
+      </fieldset>
       <label className="field-label" htmlFor="partner-store-commission-reason">سبب التغيير (إلزامي، 8 إلى 500 حرف)<textarea id="partner-store-commission-reason" value={reason} onChange={(event) => setReason(event.target.value)} minLength={8} maxLength={500} rows={3} disabled={busyMode !== null} placeholder="اشرح سبب تعديل هذه النسبة" /></label>
     </> : null}
     {error ? <p className="validation-error" role="alert">{error}</p> : null}
