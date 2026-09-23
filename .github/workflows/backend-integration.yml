@@ -38,8 +38,11 @@ jobs:
             base="${PR_BASE_SHA}"
           elif [[ -n "${PUSH_BEFORE_SHA}" && "${PUSH_BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]]; then
             base="${PUSH_BEFORE_SHA}"
-          else
+          elif [[ "${GITHUB_REF_NAME}" == "main" ]]; then
             base="$(git rev-parse HEAD^)"
+          else
+            git show-ref --verify --quiet refs/remotes/origin/main || { echo "origin/main is required to scope a manual branch run"; exit 1; }
+            base="$(git merge-base origin/main HEAD)"
           fi
           changed="$(git diff --name-only "${base}" HEAD)"
           if grep -Eq '^(services/(identity|dsh)/(backend|database|clients/go|contracts)/|services/wlt/|infra/local/(compose/|\.env\.example$)|tools/dev/(mailpit-challenge|run-playwright-live|verify-(identity-migrations|identity-runtime|dsh-baseline|dsh-runtime-core))\.mjs$|apps/control-panel/(package\.json|playwright\.config\.ts|playwright\.global-setup\.ts|tests/(00-live-identity|finance-runtime|zz-dsh-operator)\.spec\.ts|tests/live-identity-proof-helpers\.ts)$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|go\.work$|go\.work\.sum$|\.github/workflows/backend-integration\.yml$)' <<<"${changed}"; then

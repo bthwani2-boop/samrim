@@ -848,7 +848,15 @@ if (verticalFieldCommissionPolicyRead.status !== 200 || verticalFieldCommissionP
 console.log("DSH_FIELD_COMMISSION_POLICY=PASS");
 const publishA = await request(dshBase, "POST", `/dsh/stores/${first.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-a-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
 const publishB = await request(dshBase, "POST", `/dsh/stores/${second.storeID}/publication`, { token: dshToken, headers: serviceHeaders(actingOperatorID, `store-b-publish-${suffix}`, crypto.randomUUID(), 1), body: { state: "published" } });
-if (publishA.status !== 200 || publishB.status !== 200) fail("Store publication failed after catalog readiness", JSON.stringify({ publishA, publishB }));
+if (publishA.status !== 200 || publishB.status !== 200) {
+  const publicationReadback = {
+    storeA: sql(`SELECT publication_state || ':' || version::text FROM dsh.stores WHERE id='${sqlLiteral(first.storeID)}'`),
+    storeB: sql(`SELECT publication_state || ':' || version::text FROM dsh.stores WHERE id='${sqlLiteral(second.storeID)}'`),
+    publicationRecords: sql(`SELECT (SELECT count(*) FROM dsh.store_publication_idempotency WHERE idempotency_key='store-a-publish-${sqlLiteral(suffix)}') || ':' || (SELECT count(*) FROM dsh.store_publication_audit WHERE idempotency_key='store-a-publish-${sqlLiteral(suffix)}') || '|' || (SELECT count(*) FROM dsh.store_publication_idempotency WHERE idempotency_key='store-b-publish-${sqlLiteral(suffix)}') || ':' || (SELECT count(*) FROM dsh.store_publication_audit WHERE idempotency_key='store-b-publish-${sqlLiteral(suffix)}')`),
+    fieldCommissionOutbox: sql(`SELECT count(*) FROM dsh.field_commission_publication_outbox WHERE store_id IN ('${sqlLiteral(first.storeID)}','${sqlLiteral(second.storeID)}')`),
+  };
+  fail("Store publication failed after catalog readiness", JSON.stringify({ publishA, publishB, publicationReadback }));
+}
 const fieldSummaryDeadline = Date.now() + 95_000;
 let fieldFinancialSummary = null;
 while (Date.now() < fieldSummaryDeadline) {
