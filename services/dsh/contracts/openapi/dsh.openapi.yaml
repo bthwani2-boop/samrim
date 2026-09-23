@@ -4565,7 +4565,7 @@ components:
 
     Order:
       type: object
-      required: [id, clientActorId, storeId, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, subtotalAmountMinor, discountMinor, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
+      required: [id, clientActorId, storeId, storeName, pickupLocation, cartId, fulfillmentMode, addressId, addressVersion, addressText, addressLatitude, addressLongitude, serviceCityId, serviceabilityPolicyVersion, serviceabilityStatus, serviceabilityStoreVersion, serviceabilityAddressVersion, state, subtotalAmountMinor, discountMinor, totalAmountMinor, currency, paymentMethod, paymentState, paymentIntentId, version, lines, createdAt, updatedAt]
       additionalProperties: false
       properties:
         id:
@@ -4574,6 +4574,11 @@ components:
           type: string
         storeId:
           type: string
+        storeName:
+          type: string
+        pickupLocation:
+          $ref: "#/components/schemas/OrderPickupLocation"
+          nullable: true
         cartId:
           type: string
         fulfillmentMode:
@@ -4647,6 +4652,20 @@ components:
         updatedAt:
           type: string
           format: date-time
+
+    OrderPickupLocation:
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: false
+      properties:
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
 
     OrderResponse:
       type: object

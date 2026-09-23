@@ -1,6 +1,6 @@
 import { borders, opacity, radius, type resolveTheme, sizing, spacing, typography } from "@bthwani/design-system";
 import { BthwaniButton, BthwaniChip, BthwaniIcon, BthwaniSectionHeader, BthwaniSkeleton, BthwaniSurface, useAppearanceTheme } from "@bthwani/design-system/native";
-import type { DeliveryAddress, FulfillmentMode, PublicStoreView, ServiceabilityResponse } from "@bthwani/dsh";
+import { availableCustomerFulfillmentModes, defaultCustomerFulfillmentMode, type CustomerFulfillmentMode, type DeliveryAddress, type PublicStoreView, type ServiceabilityResponse } from "@bthwani/dsh";
 import { type Href, Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -28,7 +28,7 @@ export default function ClientCartScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [state, setState] = useState<CartScreenState>({ kind: "loading" });
   const [serviceability, setServiceability] = useState<ServiceabilityState>({ kind: "idle" });
-  const [fulfillmentMode, setFulfillmentMode] = useState<FulfillmentMode>("BTHWANI_CAPTAIN");
+  const [fulfillmentMode, setFulfillmentMode] = useState<CustomerFulfillmentMode>("BTHWANI_CAPTAIN");
 
   const load = useCallback(async () => {
     if (!storeId.trim() || !selectedCityID) {
@@ -43,7 +43,7 @@ export default function ClientCartScreen() {
         listOwnDeliveryAddresses(),
       ]);
       setState({ kind: "ready", store, addresses: addressResponse.addresses });
-      setFulfillmentMode(store.fulfillmentModes.includes("BTHWANI_CAPTAIN") ? "BTHWANI_CAPTAIN" : "CUSTOMER_PICKUP");
+      setFulfillmentMode(defaultCustomerFulfillmentMode(store.fulfillmentModes) ?? "BTHWANI_CAPTAIN");
     } catch {
       setState({ kind: "error" });
     }
@@ -69,6 +69,8 @@ export default function ClientCartScreen() {
     return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={styles.title}>تعذر تجهيز السلة</Text><Text style={styles.muted}>تحقق من الاتصال أو أهلية المتجر ثم أعد المحاولة.</Text><BthwaniButton label="إعادة المحاولة" onPress={() => void load()} /><BthwaniButton label="العودة إلى المتجر" onPress={() => router.back()} variant="secondary" /></View>;
   }
 
+  const availableFulfillmentModes = availableCustomerFulfillmentModes(state.store.fulfillmentModes);
+  if (availableFulfillmentModes.length === 0) return <View style={styles.state}><BthwaniIcon name="warning" color={theme.warning} size={sizing.iconXl} /><Text style={styles.title}>لا تتوفر طريقة استلام مدعومة لهذا المتجر</Text><Text style={styles.muted}>اختر متجرًا آخر؛ خيارات هذا المتجر لا تسمح حاليًا بإتمام طلب العميل.</Text><BthwaniButton label="العودة إلى المتجر" onPress={() => router.push(`/store/${encodeURIComponent(state.store.id)}` as Href)} variant="secondary" /></View>;
   const serviceableAddressId = fulfillmentMode === "BTHWANI_CAPTAIN" && serviceability.kind === "ready" && serviceability.result.status === "SERVICEABLE" ? serviceability.addressId : undefined;
   return (
     <View style={styles.container} accessibilityLabel={`السلة وإتمام الطلب من ${state.store.name}`}>
@@ -79,7 +81,7 @@ export default function ClientCartScreen() {
       </BthwaniSurface>
       <BthwaniSectionHeader title="طريقة الاستلام" subtitle="اختر من الخيارات التي يدعمها هذا المتجر." />
       <View style={styles.addressCard} accessibilityLabel="خيارات استلام الطلب">
-        {state.store.fulfillmentModes.map((mode) => <BthwaniChip key={mode} label={mode === "CUSTOMER_PICKUP" ? "الاستلام من المتجر" : "توصيل بثواني"} onPress={() => setFulfillmentMode(mode)} selected={fulfillmentMode === mode} />)}
+        {availableFulfillmentModes.map((mode) => <BthwaniChip key={mode} label={mode === "CUSTOMER_PICKUP" ? "الاستلام من المتجر" : "توصيل بثواني"} onPress={() => setFulfillmentMode(mode)} selected={fulfillmentMode === mode} />)}
       </View>
       {fulfillmentMode === "BTHWANI_CAPTAIN" ? <>
         <BthwaniSectionHeader title="عنوان التوصيل" subtitle="يعيد الخادم التحقق من الأهلية عند الإتمام." />

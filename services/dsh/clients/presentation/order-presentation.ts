@@ -26,8 +26,19 @@ export function formatMoney(amount: number, currency: Order["currency"]): string
   return `${new Intl.NumberFormat(arabicTextLatinNumbersLocale, { maximumFractionDigits: 0 }).format(amount)} ${currencyLabel}`;
 }
 
+export type CustomerFulfillmentMode = Extract<FulfillmentMode, "BTHWANI_CAPTAIN" | "CUSTOMER_PICKUP">;
+
+export function availableCustomerFulfillmentModes(modes: ReadonlyArray<FulfillmentMode>): CustomerFulfillmentMode[] {
+  return modes.filter((mode): mode is CustomerFulfillmentMode => mode === "BTHWANI_CAPTAIN" || mode === "CUSTOMER_PICKUP");
+}
+
+export function defaultCustomerFulfillmentMode(modes: ReadonlyArray<FulfillmentMode>): CustomerFulfillmentMode | null {
+  const available = availableCustomerFulfillmentModes(modes);
+  return available.includes("BTHWANI_CAPTAIN") ? "BTHWANI_CAPTAIN" : available.includes("CUSTOMER_PICKUP") ? "CUSTOMER_PICKUP" : null;
+}
+
 export function fulfillmentModeLabel(mode: FulfillmentMode): string {
-  return mode === "CUSTOMER_PICKUP" ? "الاستلام من المتجر" : "توصيل بثواني";
+  return mode === "CUSTOMER_PICKUP" ? "الاستلام من المتجر" : mode === "BTHWANI_CAPTAIN" ? "توصيل بثواني" : "توصيل المتجر";
 }
 
 export function paymentMethodLabel(method: PaymentMethod): string {

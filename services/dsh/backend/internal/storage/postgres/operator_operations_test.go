@@ -67,9 +67,29 @@ func TestOperatorOperationsCursorPagination(t *testing.T) {
 		if _, err := postgres.ListOrdersForOperator(ctx, db, "READY_FOR_DISPATCH", 2, "not-a-cursor"); !errors.Is(err, postgres.ErrOperatorOperationInvalidCursor) {
 			t.Fatalf("expected malformed cursor rejection, got %v", err)
 		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.stores SET fulfillment_modes=ARRAY['CUSTOMER_PICKUP']::text[],delivery_origin_latitude=15.369445,delivery_origin_longitude=44.191006,delivery_origin_version=1,delivery_origin_updated_at=clock_timestamp() WHERE id=$1`, "store_operator_ops"); err != nil {
+			t.Fatalf("set pickup-capable store location: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, `UPDATE dsh.commerce_orders SET fulfillment_mode='CUSTOMER_PICKUP',address_id=NULL,address_version=NULL,address_text=NULL,address_latitude=NULL,address_longitude=NULL,serviceability_policy_version=NULL,serviceability_status=NULL,serviceability_address_version=NULL,state='READY_FOR_PICKUP',payment_method='CASH_AT_STORE',payment_intent_id='intent_operator_ops',payment_state='REQUIRES_COLLECTION',version=version+1 WHERE id=$1`, "operator_order_02"); err != nil {
+			t.Fatalf("convert fixture to a cash-at-store pickup order: %v", err)
+		}
+		clientOrders, err := postgres.ListOrdersForClient(ctx, db, "client_operator_ops", "", 50)
+		if err != nil {
+			t.Fatalf("list client orders with store pickup details: %v", err)
+		}
+		var pickupOrder *postgres.OrderRecord
+		for index := range clientOrders {
+			if clientOrders[index].ID == "operator_order_02" {
+				pickupOrder = &clientOrders[index]
+				break
+			}
+		}
+		if pickupOrder == nil || pickupOrder.StoreName != "متجر العمليات" || pickupOrder.PickupLocation == nil || pickupOrder.PickupLocation.Latitude != 15.369445 || pickupOrder.PickupLocation.Longitude != 44.191006 {
+			t.Fatalf("client pickup order is missing the store name or current location: %+v", pickupOrder)
+		}
 		detail, err := postgres.ReadOperatorOperation(ctx, db, "operator_order_02")
-		if err != nil || detail.StoreName != "متجر العمليات" || detail.Order.AddressText != "عنوان التشغيل" || detail.Order.ServiceCityID != "sanaa_operator_ops" {
-			t.Fatalf("operator detail read model is incomplete: %+v err=%v", detail, err)
+		if err != nil || detail.StoreName != "متجر العمليات" || detail.Order.StoreName != "متجر العمليات" || detail.Order.PickupLocation == nil || detail.Order.PickupLocation.Latitude != 15.369445 || detail.Order.PickupLocation.Longitude != 44.191006 {
+			t.Fatalf("operator detail read model is missing store pickup details: %+v err=%v", detail, err)
 		}
 	})
 }

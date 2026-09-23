@@ -144,6 +144,8 @@ type OrderRecord struct {
 	ID                           string
 	ClientActorID                string
 	StoreID                      string
+	StoreName                    string
+	PickupLocation               *OrderPickupLocationRecord
 	CartID                       string
 	FulfillmentMode              string
 	AddressID                    string
@@ -170,6 +172,11 @@ type OrderRecord struct {
 	Lines                        []OrderLineRecord
 	CreatedAt                    time.Time
 	UpdatedAt                    time.Time
+}
+
+type OrderPickupLocationRecord struct {
+	Latitude  float64
+	Longitude float64
 }
 
 type DeliveryProofRecord struct {
@@ -231,19 +238,19 @@ func HashOrderTransition(orderID, state string, expectedVersion int) string {
 }
 
 func ReadOrder(ctx context.Context, db *sql.DB, orderID string) (OrderRecord, error) {
-	return readOrder(ctx, db, "id=$1", strings.TrimSpace(orderID))
+	return readOrder(ctx, db, "o.id=$1", strings.TrimSpace(orderID))
 }
 
 func ReadOrderForClient(ctx context.Context, db *sql.DB, orderID, clientActorID string) (OrderRecord, error) {
-	return readOrder(ctx, db, "id=$1 AND client_actor_id=$2", strings.TrimSpace(orderID), strings.TrimSpace(clientActorID))
+	return readOrder(ctx, db, "o.id=$1 AND o.client_actor_id=$2", strings.TrimSpace(orderID), strings.TrimSpace(clientActorID))
 }
 
 func ListOrdersForClient(ctx context.Context, db *sql.DB, clientActorID, state string, limit int) ([]OrderRecord, error) {
-	return listOrders(ctx, db, "client_actor_id=$1", []any{strings.TrimSpace(clientActorID)}, state, limit)
+	return listOrders(ctx, db, "o.client_actor_id=$1", []any{strings.TrimSpace(clientActorID)}, state, limit)
 }
 
 func ListOrdersForStore(ctx context.Context, db *sql.DB, storeID, state string, limit int) ([]OrderRecord, error) {
-	return listOrders(ctx, db, "store_id=$1", []any{strings.TrimSpace(storeID)}, state, limit)
+	return listOrders(ctx, db, "o.store_id=$1", []any{strings.TrimSpace(storeID)}, state, limit)
 }
 
 var (
@@ -319,11 +326,7 @@ func ReadOperatorOperation(ctx context.Context, db *sql.DB, orderID string) (Ope
 	if err != nil {
 		return OperatorOperationRecord{}, err
 	}
-	var storeName string
-	if err := db.QueryRowContext(ctx, "SELECT name FROM dsh.stores WHERE id=$1", order.StoreID).Scan(&storeName); err != nil {
-		return OperatorOperationRecord{}, err
-	}
-	operation := OperatorOperationRecord{Order: order, StoreName: storeName}
+	operation := OperatorOperationRecord{Order: order, StoreName: order.StoreName}
 	assignment, assignmentErr := ReadCaptainAssignmentForOrder(ctx, db, order.ID)
 	if assignmentErr == nil {
 		operation.Assignment = &assignment
@@ -350,17 +353,31 @@ func decodeOperatorOperationsCursor(raw, state string) (operatorOperationsCursor
 	return cursor, nil
 }
 
-const orderSelectColumns = `id,client_actor_id,store_id,cart_id,fulfillment_mode,COALESCE(address_id,''),COALESCE(address_version,0),COALESCE(address_text,''),COALESCE(address_latitude,0),COALESCE(address_longitude,0),service_city_id,COALESCE(serviceability_policy_version,''),COALESCE(serviceability_status,''),serviceability_store_version,COALESCE(serviceability_address_version,0),state,subtotal_amount_minor,discount_minor,promotion_id,promotion_code,total_amount_minor,currency,payment_intent_id,payment_method,payment_state,version,created_at,updated_at`
+const orderSelectColumns = `o.id,o.client_actor_id,o.store_id,o.cart_id,o.fulfillment_mode,COALESCE(o.address_id,''),COALESCE(o.address_version,0),COALESCE(o.address_text,''),COALESCE(o.address_latitude,0),COALESCE(o.address_longitude,0),o.service_city_id,COALESCE(o.serviceability_policy_version,''),COALESCE(o.serviceability_status,''),o.serviceability_store_version,COALESCE(o.serviceability_address_version,0),o.state,o.subtotal_amount_minor,o.discount_minor,o.promotion_id,o.promotion_code,o.total_amount_minor,o.currency,o.payment_intent_id,o.payment_method,o.payment_state,o.version,o.created_at,o.updated_at`
+const orderSelectColumnsWithStore = orderSelectColumns + `,s.name,CASE WHEN o.fulfillment_mode='CUSTOMER_PICKUP' THEN s.delivery_origin_latitude END,CASE WHEN o.fulfillment_mode='CUSTOMER_PICKUP' THEN s.delivery_origin_longitude END`
 
 func scanOrder(row rowScanner) (OrderRecord, error) {
+	return scanOrderColumns(row, false)
+}
+
+func scanOrderWithStore(row rowScanner) (OrderRecord, error) {
+	return scanOrderColumns(row, true)
+}
+
+func scanOrderColumns(row rowScanner, includeStore bool) (OrderRecord, error) {
 	var order OrderRecord
 	var paymentIntentID, promotionID, promotionCode sql.NullString
-	if err := row.Scan(
+	var pickupLatitude, pickupLongitude sql.NullFloat64
+	destinations := []any{
 		&order.ID, &order.ClientActorID, &order.StoreID, &order.CartID, &order.FulfillmentMode, &order.AddressID, &order.AddressVersion, &order.AddressText,
 		&order.AddressLatitude, &order.AddressLongitude, &order.ServiceCityID, &order.ServiceabilityPolicyVersion, &order.ServiceabilityStatus,
 		&order.ServiceabilityStoreVersion, &order.ServiceabilityAddressVersion, &order.State, &order.SubtotalAmountMinor, &order.DiscountMinor, &promotionID, &promotionCode, &order.TotalAmountMinor, &order.Currency,
 		&paymentIntentID, &order.PaymentMethod, &order.PaymentState, &order.Version, &order.CreatedAt, &order.UpdatedAt,
-	); err != nil {
+	}
+	if includeStore {
+		destinations = append(destinations, &order.StoreName, &pickupLatitude, &pickupLongitude)
+	}
+	if err := row.Scan(destinations...); err != nil {
 		return OrderRecord{}, err
 	}
 	if promotionID.Valid {
@@ -373,11 +390,19 @@ func scanOrder(row rowScanner) (OrderRecord, error) {
 		value := paymentIntentID.String
 		order.PaymentIntentID = &value
 	}
+	if includeStore {
+		if pickupLatitude.Valid != pickupLongitude.Valid {
+			return OrderRecord{}, errors.New("pickup location coordinates are incomplete")
+		}
+		if pickupLatitude.Valid {
+			order.PickupLocation = &OrderPickupLocationRecord{Latitude: pickupLatitude.Float64, Longitude: pickupLongitude.Float64}
+		}
+	}
 	return order, nil
 }
 
 func readOrder(ctx context.Context, source rowQueryer, where string, args ...any) (OrderRecord, error) {
-	order, err := scanOrder(source.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM dsh.commerce_orders WHERE "+where, args...))
+	order, err := scanOrderWithStore(source.QueryRowContext(ctx, "SELECT "+orderSelectColumnsWithStore+" FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE "+where, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrderRecord{}, ErrOrderNotFound
 	}
@@ -397,16 +422,16 @@ func listOrders(ctx context.Context, db *sql.DB, where string, args []any, state
 	}
 	if strings.TrimSpace(state) != "" {
 		args = append(args, strings.TrimSpace(state))
-		where += " AND state=$" + strconv.Itoa(len(args))
+		where += " AND o.state=$" + strconv.Itoa(len(args))
 	}
 	args = append(args, limit)
-	rows, err := db.QueryContext(ctx, "SELECT "+orderSelectColumns+" FROM dsh.commerce_orders WHERE "+where+" ORDER BY created_at DESC,id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
+	rows, err := db.QueryContext(ctx, "SELECT "+orderSelectColumnsWithStore+" FROM dsh.commerce_orders o JOIN dsh.stores s ON s.id=o.store_id WHERE "+where+" ORDER BY o.created_at DESC,o.id DESC LIMIT $"+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return nil, err
 	}
 	items := make([]OrderRecord, 0)
 	for rows.Next() {
-		order, scanErr := scanOrder(rows)
+		order, scanErr := scanOrderWithStore(rows)
 		if scanErr != nil {
 			_ = rows.Close()
 			return nil, scanErr
@@ -543,7 +568,7 @@ func CreateOrderFromCart(ctx context.Context, db *sql.DB, input CheckoutInput) (
 		if storedHash != input.RequestHash || cartID != input.CartID {
 			return OrderRecord{}, false, ErrCheckoutIdempotencyConflict
 		}
-		order, readErr := readOrder(ctx, tx, "id=$1", orderID)
+		order, readErr := readOrder(ctx, tx, "o.id=$1", orderID)
 		if readErr != nil {
 			return OrderRecord{}, false, readErr
 		}
@@ -822,7 +847,7 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 		if storedHash != requestHash || storedOrderID != orderID || storedState != requestedState {
 			return OrderRecord{}, false, ErrOrderTransitionConflict
 		}
-		order, readErr := readOrder(ctx, tx, "id=$1", orderID)
+		order, readErr := readOrder(ctx, tx, "o.id=$1", orderID)
 		if readErr != nil {
 			return OrderRecord{}, false, readErr
 		}
@@ -834,7 +859,7 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 	if !errors.Is(err, sql.ErrNoRows) {
 		return OrderRecord{}, false, err
 	}
-	current, err := scanOrder(tx.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID))
+	current, err := scanOrder(tx.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM dsh.commerce_orders o WHERE o.id=$1 FOR UPDATE OF o", orderID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrderRecord{}, false, ErrOrderNotFound
 	}
@@ -864,7 +889,7 @@ func transitionOrder(ctx context.Context, db *sql.DB, orderID, requestedState st
 			return OrderRecord{}, false, err
 		}
 	}
-	result, err := scanOrder(tx.QueryRowContext(ctx, "UPDATE dsh.commerce_orders SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$3 RETURNING "+orderSelectColumns, orderID, requestedState, expectedVersion))
+	result, err := scanOrder(tx.QueryRowContext(ctx, "UPDATE dsh.commerce_orders AS o SET state=$2,version=version+1,updated_at=clock_timestamp() WHERE o.id=$1 AND o.version=$3 RETURNING "+orderSelectColumns, orderID, requestedState, expectedVersion))
 	if err != nil {
 		return OrderRecord{}, false, err
 	}
@@ -915,7 +940,7 @@ func CompleteStorePickup(ctx context.Context, db *sql.DB, orderID, code string, 
 		if storedHash != requestHash || storedOrderID != orderID || storedState != "PICKED_UP" {
 			return OrderRecord{}, false, ErrOrderTransitionConflict
 		}
-		order, readErr := readOrder(ctx, tx, "id=$1", orderID)
+		order, readErr := readOrder(ctx, tx, "o.id=$1", orderID)
 		if readErr != nil {
 			return OrderRecord{}, false, readErr
 		}
@@ -927,7 +952,7 @@ func CompleteStorePickup(ctx context.Context, db *sql.DB, orderID, code string, 
 	if !errors.Is(err, sql.ErrNoRows) {
 		return OrderRecord{}, false, err
 	}
-	current, err := scanOrder(tx.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM dsh.commerce_orders WHERE id=$1 FOR UPDATE", orderID))
+	current, err := scanOrder(tx.QueryRowContext(ctx, "SELECT "+orderSelectColumns+" FROM dsh.commerce_orders o WHERE o.id=$1 FOR UPDATE OF o", orderID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return OrderRecord{}, false, ErrOrderNotFound
 	}
@@ -961,7 +986,7 @@ func CompleteStorePickup(ctx context.Context, db *sql.DB, orderID, code string, 
 	if _, err := tx.ExecContext(ctx, `UPDATE dsh.commerce_order_delivery_proofs SET state='VERIFIED',verified_by=$2,verified_at=clock_timestamp(),updated_at=clock_timestamp() WHERE order_id=$1 AND state='PENDING'`, orderID, actingPartnerActorID); err != nil {
 		return OrderRecord{}, false, err
 	}
-	result, err := scanOrder(tx.QueryRowContext(ctx, "UPDATE dsh.commerce_orders SET state='PICKED_UP',version=version+1,updated_at=clock_timestamp() WHERE id=$1 AND version=$2 RETURNING "+orderSelectColumns, orderID, expectedVersion))
+	result, err := scanOrder(tx.QueryRowContext(ctx, "UPDATE dsh.commerce_orders AS o SET state='PICKED_UP',version=version+1,updated_at=clock_timestamp() WHERE o.id=$1 AND o.version=$2 RETURNING "+orderSelectColumns, orderID, expectedVersion))
 	if err != nil {
 		return OrderRecord{}, false, err
 	}
