@@ -53,20 +53,19 @@ func TestClientKeepsRequestOnAuthorizedIdentityOrigin(t *testing.T) {
 	}
 }
 
-
 func TestAuthorizeReenrollmentCarriesVersionedOperatorContext(t *testing.T) {
 	requests := make(chan map[string]string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests <- map[string]string{
-			"method":              r.Method,
-			"path":                r.URL.Path,
-			"authorization":       r.Header.Get("Authorization"),
-			"correlation":         r.Header.Get("X-Correlation-ID"),
-			"operator":            r.Header.Get("X-Acting-Actor-ID"),
-			"reason":              r.Header.Get("X-Reason"),
-			"roleVersion":         r.Header.Get("X-Expected-Version"),
-			"actorVersion":        r.Header.Get("X-Expected-Actor-Version"),
-			"legacyActorHeader":   r.Header.Get("X-Actor-ID"),
+			"method":            r.Method,
+			"path":              r.URL.Path,
+			"authorization":     r.Header.Get("Authorization"),
+			"correlation":       r.Header.Get("X-Correlation-ID"),
+			"operator":          r.Header.Get("X-Acting-Actor-ID"),
+			"reason":            r.Header.Get("X-Reason"),
+			"roleVersion":       r.Header.Get("X-Expected-Version"),
+			"actorVersion":      r.Header.Get("X-Expected-Actor-Version"),
+			"legacyActorHeader": r.Header.Get("X-Actor-ID"),
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
