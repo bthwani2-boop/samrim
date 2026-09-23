@@ -155,6 +155,16 @@ func message(eventType, role, orderID string) (string, string, string) {
 		return "ORDER_ACCEPTED", "تم قبول الطلب", fmt.Sprintf("تم قبول الطلب رقم %s من المتجر.", orderRef)
 	case "order_preparing":
 		return "ORDER_PREPARING", "بدأ تجهيز الطلب", fmt.Sprintf("بدأ المتجر تجهيز الطلب رقم %s.", orderRef)
+	case "order_ready_for_pickup":
+		if role == "partner" {
+			return "ORDER_READY_FOR_PICKUP", "الطلب جاهز ليستلمه العميل", fmt.Sprintf("الطلب رقم %s جاهز ليستلمه العميل من متجرك.", orderRef)
+		}
+		return "ORDER_READY_FOR_PICKUP", "طلبك جاهز للاستلام", fmt.Sprintf("الطلب رقم %s جاهز للاستلام من المتجر.", orderRef)
+	case "order_picked_up":
+		if role == "partner" {
+			return "ORDER_PICKED_UP", "استلم العميل الطلب", fmt.Sprintf("استلم العميل الطلب رقم %s من متجرك.", orderRef)
+		}
+		return "ORDER_PICKED_UP", "تم استلام طلبك", fmt.Sprintf("تم استلام الطلب رقم %s من المتجر.", orderRef)
 	case "order_ready_for_dispatch":
 		return "ORDER_READY", "الطلب جاهز للتوصيل", fmt.Sprintf("الطلب رقم %s جاهز لاستلام الكابتن.", orderRef)
 	case "order_rejected":
