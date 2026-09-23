@@ -483,10 +483,11 @@ func (c *Client) CreateForOrderWithMethod(ctx context.Context, orderID, external
 	return response.PaymentIntent, response.IdempotentReplay, err
 }
 
-type PartnerStorePickupCommission struct {
+type PartnerStoreCashCommission struct {
 	OrderID             string `json:"orderId"`
 	PaymentIntentID     string `json:"paymentIntentId"`
 	PartnerActorID      string `json:"partnerActorId"`
+	FulfillmentMode     string `json:"fulfillmentMode"`
 	Currency            string `json:"currency"`
 	GrossProductMinor   int64  `json:"grossProductMinor"`
 	CommissionMinor     int64  `json:"commissionMinor"`
@@ -510,9 +511,9 @@ type PartnerCommissionRemittance struct {
 	CreatedAt           string `json:"createdAt"`
 }
 
-type partnerStorePickupCommissionResponse struct {
-	Commission       PartnerStorePickupCommission `json:"commission"`
-	IdempotentReplay bool                         `json:"idempotentReplay"`
+type partnerStoreCashCommissionResponse struct {
+	Commission       PartnerStoreCashCommission `json:"commission"`
+	IdempotentReplay bool                       `json:"idempotentReplay"`
 }
 
 type partnerCommissionRemittanceResponse struct {
@@ -698,10 +699,10 @@ func (c *Client) FinalizePartnerOrderEarning(ctx context.Context, orderID, payme
 	return response.Earning, response.IdempotentReplay, err
 }
 
-func (c *Client) FinalizePartnerStorePickupCommission(ctx context.Context, orderID, paymentIntentID, partnerActorID, idempotencyKey, correlationID string) (PartnerStorePickupCommission, bool, error) {
-	body := map[string]any{"orderId": strings.TrimSpace(orderID), "paymentIntentId": strings.TrimSpace(paymentIntentID), "partnerActorId": strings.TrimSpace(partnerActorID)}
-	var response partnerStorePickupCommissionResponse
-	err := c.request(ctx, http.MethodPost, "/wlt/v1/partner-store-pickup-commissions/finalize", body, idempotencyKey, correlationID, 0, &response)
+func (c *Client) FinalizePartnerStoreCashCommission(ctx context.Context, orderID, paymentIntentID, partnerActorID, fulfillmentMode, idempotencyKey, correlationID string) (PartnerStoreCashCommission, bool, error) {
+	body := map[string]any{"orderId": strings.TrimSpace(orderID), "paymentIntentId": strings.TrimSpace(paymentIntentID), "partnerActorId": strings.TrimSpace(partnerActorID), "fulfillmentMode": strings.TrimSpace(fulfillmentMode)}
+	var response partnerStoreCashCommissionResponse
+	err := c.request(ctx, http.MethodPost, "/wlt/v1/partner-store-cash-commissions/finalize", body, idempotencyKey, correlationID, 0, &response)
 	return response.Commission, response.IdempotentReplay, err
 }
 

@@ -272,7 +272,7 @@ func ReadPartnerFinancialSummary(ctx context.Context, db *sql.DB, partnerActorID
 	}
 	var result PartnerFinancialSummaryRecord
 	result.PartnerActorID, result.Currency = partnerActorID, "YER"
-	err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(e.amount_minor) FILTER (WHERE e.direction='CREDIT'),0),COALESCE((SELECT SUM(commission_minor) FROM wlt.partner_order_earnings WHERE partner_actor_id=$1),0)+COALESCE((SELECT SUM(commission_minor) FROM wlt.partner_store_pickup_commissions WHERE partner_actor_id=$1),0),COUNT(DISTINCT t.source_id),MAX(e.created_at) FROM wlt.ledger_entries e JOIN wlt.ledger_transactions t ON t.id=e.transaction_id WHERE e.account_code='PARTNER_WALLET' AND e.actor_id=$1`, partnerActorID).Scan(&result.EarnedMinor, &result.CommissionMinor, &result.OrderCount, &result.LastEarningAt)
+	err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(e.amount_minor) FILTER (WHERE e.direction='CREDIT'),0),COALESCE((SELECT SUM(commission_minor) FROM wlt.partner_order_earnings WHERE partner_actor_id=$1),0)+COALESCE((SELECT SUM(commission_minor) FROM wlt.partner_store_cash_commissions WHERE partner_actor_id=$1),0),COUNT(DISTINCT t.source_id),MAX(e.created_at) FROM wlt.ledger_entries e JOIN wlt.ledger_transactions t ON t.id=e.transaction_id WHERE e.account_code='PARTNER_WALLET' AND e.actor_id=$1`, partnerActorID).Scan(&result.EarnedMinor, &result.CommissionMinor, &result.OrderCount, &result.LastEarningAt)
 	if err != nil {
 		return PartnerFinancialSummaryRecord{}, err
 	}

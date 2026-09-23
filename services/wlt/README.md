@@ -5,7 +5,7 @@ WLT is Samrim's canonical owner for payment intent and collection state.
 WLT owns cash-on-delivery and cash-at-store payment collection. It provides an
 internal, service-token protected API, append-only payment intent events,
 idempotent mutations, optimistic version checks, schema readback, and separate
-financial treatment for Captain COD custody and Partner store-pickup commission
+financial treatment for Captain COD custody and Partner store-collected cash commission
 receivables. Store proceeds remain with the Partner; the platform commission is
 offset against later eligible Partner earnings or settled by a verified direct
 Partner remittance.
@@ -25,7 +25,7 @@ Endpoints:
 - `GET /wlt/v1/captains/{captainActorId}/cash-liability`
 - `GET /wlt/v1/operator/cash-liability`
 - `POST /wlt/v1/payment-intents/{intentId}/remit`
-- `POST /wlt/v1/partner-store-pickup-commissions/finalize`
+- `POST /wlt/v1/partner-store-cash-commissions/finalize`
 - `POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances`
 
 Health and readiness are available under `/wlt/health` and `/wlt/readiness`.

@@ -12,26 +12,28 @@ import (
 )
 
 var (
-	ErrPartnerPickupCommissionInvalid = errors.New("partner store pickup commission input is invalid")
-	ErrPartnerPickupCommissionExists  = errors.New("partner store pickup commission already exists")
-	ErrPartnerPickupCommissionState   = errors.New("store pickup payment is not collected by this partner")
-	ErrPartnerCommissionReceivable    = errors.New("partner commission receivable is unavailable")
-	ErrPartnerRemittanceInvalid       = errors.New("partner commission remittance input is invalid")
-	ErrPartnerRemittanceOverpayment   = errors.New("partner commission remittance exceeds the outstanding receivable")
+	ErrPartnerCashCommissionInvalid = errors.New("partner store cash commission input is invalid")
+	ErrPartnerCashCommissionExists  = errors.New("partner store cash commission already exists")
+	ErrPartnerCashCommissionState   = errors.New("store cash payment is not collected by this partner")
+	ErrPartnerCommissionReceivable  = errors.New("partner commission receivable is unavailable")
+	ErrPartnerRemittanceInvalid     = errors.New("partner commission remittance input is invalid")
+	ErrPartnerRemittanceOverpayment = errors.New("partner commission remittance exceeds the outstanding receivable")
 )
 
-type PartnerStorePickupCommissionInput struct {
+type PartnerStoreCashCommissionInput struct {
 	OrderID         string
 	PaymentIntentID string
 	PartnerActorID  string
+	FulfillmentMode string
 	IdempotencyKey  string
 	CorrelationID   string
 }
 
-type PartnerStorePickupCommissionRecord struct {
+type PartnerStoreCashCommissionRecord struct {
 	OrderID             string
 	PaymentIntentID     string
 	PartnerActorID      string
+	FulfillmentMode     string
 	Currency            string
 	GrossProductMinor   int64
 	CommissionMinor     int64
@@ -65,54 +67,60 @@ type PartnerCommissionRemittanceRecord struct {
 	CreatedAt           time.Time
 }
 
-func HashPartnerStorePickupCommission(input PartnerStorePickupCommissionInput) string {
-	return hashFacts("partner-store-pickup-commission", strings.TrimSpace(input.OrderID), strings.TrimSpace(input.PaymentIntentID), strings.TrimSpace(input.PartnerActorID))
+func HashPartnerStoreCashCommission(input PartnerStoreCashCommissionInput) string {
+	if strings.TrimSpace(input.FulfillmentMode) == "CUSTOMER_PICKUP" {
+		// Preserve the pre-generalization request hash so pending pickup handoffs
+		// remain idempotent across the storage/API cutover.
+		return hashFacts("partner-store-pickup-commission", strings.TrimSpace(input.OrderID), strings.TrimSpace(input.PaymentIntentID), strings.TrimSpace(input.PartnerActorID))
+	}
+	return hashFacts("partner-store-cash-commission", strings.TrimSpace(input.OrderID), strings.TrimSpace(input.PaymentIntentID), strings.TrimSpace(input.PartnerActorID), strings.TrimSpace(input.FulfillmentMode))
 }
 
-func RecordPartnerStorePickupCommission(ctx context.Context, db *sql.DB, input PartnerStorePickupCommissionInput) (PartnerStorePickupCommissionRecord, bool, error) {
+func RecordPartnerStoreCashCommission(ctx context.Context, db *sql.DB, input PartnerStoreCashCommissionInput) (PartnerStoreCashCommissionRecord, bool, error) {
 	input.OrderID = strings.TrimSpace(input.OrderID)
 	input.PaymentIntentID = strings.TrimSpace(input.PaymentIntentID)
 	input.PartnerActorID = strings.TrimSpace(input.PartnerActorID)
+	input.FulfillmentMode = strings.TrimSpace(input.FulfillmentMode)
 	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
 	input.CorrelationID = strings.TrimSpace(input.CorrelationID)
-	if db == nil || input.OrderID == "" || input.PaymentIntentID == "" || input.PartnerActorID == "" || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
-		return PartnerStorePickupCommissionRecord{}, false, ErrPartnerPickupCommissionInvalid
+	if db == nil || input.OrderID == "" || input.PaymentIntentID == "" || input.PartnerActorID == "" || !isPartnerStoreCashCommissionMode(input.FulfillmentMode) || len(input.IdempotencyKey) < 8 || len(input.IdempotencyKey) > 128 || len(input.CorrelationID) < 8 || len(input.CorrelationID) > 128 {
+		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionInvalid
 	}
-	requestHash := HashPartnerStorePickupCommission(input)
+	requestHash := HashPartnerStoreCashCommission(input)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return PartnerStorePickupCommissionRecord{}, false, err
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:partner-store-pickup:"+input.OrderID); err != nil {
-		return PartnerStorePickupCommissionRecord{}, false, err
+	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:partner-store-cash:"+input.OrderID); err != nil {
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", "wlt:partner-commission-balance:"+input.PartnerActorID); err != nil {
-		return PartnerStorePickupCommissionRecord{}, false, err
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 	var existingHash, existingOrder string
-	err = tx.QueryRowContext(ctx, "SELECT request_hash,order_id FROM wlt.partner_store_pickup_commissions WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey).Scan(&existingHash, &existingOrder)
+	err = tx.QueryRowContext(ctx, "SELECT request_hash,order_id FROM wlt.partner_store_cash_commissions WHERE idempotency_key=$1 FOR UPDATE", input.IdempotencyKey).Scan(&existingHash, &existingOrder)
 	if err == nil {
 		if existingHash != requestHash || existingOrder != input.OrderID {
-			return PartnerStorePickupCommissionRecord{}, false, ErrIdempotencyConflict
+			return PartnerStoreCashCommissionRecord{}, false, ErrIdempotencyConflict
 		}
-		item, readErr := readPartnerStorePickupCommission(ctx, tx, input.OrderID)
+		item, readErr := readPartnerStoreCashCommission(ctx, tx, input.OrderID)
 		if readErr != nil {
-			return PartnerStorePickupCommissionRecord{}, false, readErr
+			return PartnerStoreCashCommissionRecord{}, false, readErr
 		}
 		if err := tx.Commit(); err != nil {
-			return PartnerStorePickupCommissionRecord{}, false, err
+			return PartnerStoreCashCommissionRecord{}, false, err
 		}
 		return item, true, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return PartnerStorePickupCommissionRecord{}, false, err
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 	var existingID string
-	if err := tx.QueryRowContext(ctx, "SELECT order_id FROM wlt.partner_store_pickup_commissions WHERE order_id=$1 OR payment_intent_id=$2 FOR UPDATE", input.OrderID, input.PaymentIntentID).Scan(&existingID); err == nil {
-		return PartnerStorePickupCommissionRecord{}, false, ErrPartnerPickupCommissionExists
+	if err := tx.QueryRowContext(ctx, "SELECT order_id FROM wlt.partner_store_cash_commissions WHERE order_id=$1 OR payment_intent_id=$2 FOR UPDATE", input.OrderID, input.PaymentIntentID).Scan(&existingID); err == nil {
+		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionExists
 	} else if !errors.Is(err, sql.ErrNoRows) {
-		return PartnerStorePickupCommissionRecord{}, false, err
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 
 	var paymentState, method, currency, allocationCurrency, allocationPolicy string
@@ -125,79 +133,83 @@ func RecordPartnerStorePickupCommission(ctx context.Context, db *sql.DB, input P
 		WHERE p.id=$1 FOR UPDATE OF p,a`, input.PaymentIntentID).Scan(&paymentState, &method, &paymentAmount, &currency, &collectedBy,
 		&allocation.ID, &allocation.OrderID, &allocation.PaymentIntentID, &allocationCurrency, &allocation.SubtotalMinor, &allocation.DeliveryFeeMinor, &allocation.DiscountMinor, &allocation.InternalBalanceAmountMinor, &allocation.CashAmountMinor, &allocation.CustomerPayableMinor, &allocationPolicy, &allocation.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return PartnerStorePickupCommissionRecord{}, false, ErrCustomerPaymentAllocationNotFound
+		return PartnerStoreCashCommissionRecord{}, false, ErrCustomerPaymentAllocationNotFound
 	}
 	if err != nil {
-		return PartnerStorePickupCommissionRecord{}, false, err
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 	if paymentState != domain.StateCollected || method != domain.MethodCashAtStore || !collectedBy.Valid || collectedBy.String != input.PartnerActorID || allocation.OrderID != input.OrderID || allocationCurrency != currency || paymentAmount != allocation.CustomerPayableMinor || allocation.DeliveryFeeMinor != 0 || allocation.InternalBalanceAmountMinor != 0 || allocation.CashAmountMinor != allocation.CustomerPayableMinor || allocation.CustomerPayableMinor != allocation.SubtotalMinor-allocation.DiscountMinor {
-		return PartnerStorePickupCommissionRecord{}, false, ErrPartnerPickupCommissionState
+		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionState
 	}
 	chargeableProduct := allocation.SubtotalMinor - allocation.DiscountMinor
 	if chargeableProduct < 0 {
-		return PartnerStorePickupCommissionRecord{}, false, ErrPartnerPickupCommissionInvalid
+		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerCashCommissionInvalid
 	}
 	var profileID, settlementPeriod, profileState string
 	var commissionRateBps, profileVersion int
 	var roundingUnit int64
 	err = tx.QueryRowContext(ctx, `SELECT id,commission_rate_bps,settlement_period,rounding_unit_minor,state,version FROM wlt.partner_financial_profiles WHERE partner_actor_id=$1 AND state='ACTIVE' FOR SHARE`, input.PartnerActorID).Scan(&profileID, &commissionRateBps, &settlementPeriod, &roundingUnit, &profileState, &profileVersion)
 	if errors.Is(err, sql.ErrNoRows) {
-		return PartnerStorePickupCommissionRecord{}, false, ErrPartnerEarningProfile
+		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerEarningProfile
 	}
 	if err != nil {
-		return PartnerStorePickupCommissionRecord{}, false, err
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 	if profileState != domain.ProfileActive || roundingUnit != 50 {
-		return PartnerStorePickupCommissionRecord{}, false, ErrPartnerEarningProfile
+		return PartnerStoreCashCommissionRecord{}, false, ErrPartnerEarningProfile
 	}
 	commission, err := roundedCommission(chargeableProduct, commissionRateBps, roundingUnit)
 	if err != nil {
-		return PartnerStorePickupCommissionRecord{}, false, err
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 
 	var ledgerTransactionID *string
 	if commission > 0 {
 		transactionID, idErr := newID("ledger")
 		if idErr != nil {
-			return PartnerStorePickupCommissionRecord{}, false, idErr
+			return PartnerStoreCashCommissionRecord{}, false, idErr
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'PARTNER_STORE_PICKUP_COMMISSION_ASSESSED','STORE_PICKUP_COMMISSION',$2,$3,$4,$5,$6)`, transactionID, input.OrderID, currency, "ledger-"+input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
-			return PartnerStorePickupCommissionRecord{}, false, err
+		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_transactions(id,transaction_type,source_type,source_id,currency,idempotency_key,request_hash,correlation_id) VALUES($1,'PARTNER_STORE_CASH_COMMISSION_ASSESSED','PARTNER_STORE_CASH_COMMISSION',$2,$3,$4,$5,$6)`, transactionID, input.OrderID, currency, "ledger-"+input.IdempotencyKey, requestHash, input.CorrelationID); err != nil {
+			return PartnerStoreCashCommissionRecord{}, false, err
 		}
 		partnerActorType, partnerActorID := "partner", input.PartnerActorID
 		if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.ledger_entries(transaction_id,line_sequence,account_class,account_code,actor_type,actor_id,direction,amount_minor,currency) VALUES($1,1,'asset','PARTNER_COMMISSION_RECEIVABLE',$2,$3,'DEBIT',$4,$5),($1,2,'income','PLATFORM_COMMISSION_INCOME',NULL,NULL,'CREDIT',$4,$5)`, transactionID, partnerActorType, partnerActorID, commission, currency); err != nil {
-			return PartnerStorePickupCommissionRecord{}, false, err
+			return PartnerStoreCashCommissionRecord{}, false, err
 		}
 		ledgerTransactionID = &transactionID
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_store_pickup_commissions(order_id,payment_intent_id,partner_actor_id,currency,gross_product_minor,commission_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, currency, chargeableProduct, commission, profileID, profileVersion, fmt.Sprintf("partner-store-pickup-commission-v1;profile=%s;settlement=%s", profileID, settlementPeriod), ledgerTransactionID, input.IdempotencyKey, requestHash); err != nil {
-		return PartnerStorePickupCommissionRecord{}, false, err
+	if _, err := tx.ExecContext(ctx, `INSERT INTO wlt.partner_store_cash_commissions(order_id,payment_intent_id,partner_actor_id,fulfillment_mode,currency,gross_product_minor,commission_minor,profile_id,profile_version,policy_version,ledger_transaction_id,idempotency_key,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, input.OrderID, input.PaymentIntentID, input.PartnerActorID, input.FulfillmentMode, currency, chargeableProduct, commission, profileID, profileVersion, fmt.Sprintf("partner-store-cash-commission-v1;mode=%s;profile=%s;settlement=%s", input.FulfillmentMode, profileID, settlementPeriod), ledgerTransactionID, input.IdempotencyKey, requestHash); err != nil {
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
-		return PartnerStorePickupCommissionRecord{}, false, err
+		return PartnerStoreCashCommissionRecord{}, false, err
 	}
-	item, err := ReadPartnerStorePickupCommission(ctx, db, input.OrderID)
+	item, err := ReadPartnerStoreCashCommission(ctx, db, input.OrderID)
 	return item, false, err
 }
 
-func ReadPartnerStorePickupCommission(ctx context.Context, db *sql.DB, orderID string) (PartnerStorePickupCommissionRecord, error) {
-	if db == nil || strings.TrimSpace(orderID) == "" {
-		return PartnerStorePickupCommissionRecord{}, ErrPartnerPickupCommissionInvalid
-	}
-	return readPartnerStorePickupCommission(ctx, db, strings.TrimSpace(orderID))
+func isPartnerStoreCashCommissionMode(mode string) bool {
+	return mode == "CUSTOMER_PICKUP" || mode == "PARTNER_CAPTAIN"
 }
 
-func readPartnerStorePickupCommission(ctx context.Context, source interface {
+func ReadPartnerStoreCashCommission(ctx context.Context, db *sql.DB, orderID string) (PartnerStoreCashCommissionRecord, error) {
+	if db == nil || strings.TrimSpace(orderID) == "" {
+		return PartnerStoreCashCommissionRecord{}, ErrPartnerCashCommissionInvalid
+	}
+	return readPartnerStoreCashCommission(ctx, db, strings.TrimSpace(orderID))
+}
+
+func readPartnerStoreCashCommission(ctx context.Context, source interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, orderID string) (PartnerStorePickupCommissionRecord, error) {
-	var item PartnerStorePickupCommissionRecord
+}, orderID string) (PartnerStoreCashCommissionRecord, error) {
+	var item PartnerStoreCashCommissionRecord
 	var ledgerTransactionID sql.NullString
-	err := source.QueryRowContext(ctx, `SELECT order_id,payment_intent_id,partner_actor_id,currency,gross_product_minor,commission_minor,profile_id,profile_version,policy_version,ledger_transaction_id,created_at FROM wlt.partner_store_pickup_commissions WHERE order_id=$1`, orderID).Scan(&item.OrderID, &item.PaymentIntentID, &item.PartnerActorID, &item.Currency, &item.GrossProductMinor, &item.CommissionMinor, &item.ProfileID, &item.ProfileVersion, &item.PolicyVersion, &ledgerTransactionID, &item.CreatedAt)
+	err := source.QueryRowContext(ctx, `SELECT order_id,payment_intent_id,partner_actor_id,fulfillment_mode,currency,gross_product_minor,commission_minor,profile_id,profile_version,policy_version,ledger_transaction_id,created_at FROM wlt.partner_store_cash_commissions WHERE order_id=$1`, orderID).Scan(&item.OrderID, &item.PaymentIntentID, &item.PartnerActorID, &item.FulfillmentMode, &item.Currency, &item.GrossProductMinor, &item.CommissionMinor, &item.ProfileID, &item.ProfileVersion, &item.PolicyVersion, &ledgerTransactionID, &item.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return PartnerStorePickupCommissionRecord{}, ErrPartnerEarningNotFound
+		return PartnerStoreCashCommissionRecord{}, ErrPartnerEarningNotFound
 	}
 	if err != nil {
-		return PartnerStorePickupCommissionRecord{}, err
+		return PartnerStoreCashCommissionRecord{}, err
 	}
 	if ledgerTransactionID.Valid {
 		item.LedgerTransactionID = ledgerTransactionID.String

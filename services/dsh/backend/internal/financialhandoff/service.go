@@ -66,7 +66,7 @@ func (s *Service) apply(ctx context.Context, item postgres.FinancialHandoffOutbo
 		if intent.State != "COLLECTED" || intent.Method != wltintegration.MethodCashAtStore || intent.CollectedByActorID == nil || *intent.CollectedByActorID != item.PartnerActorID {
 			return errors.New("WLT store pickup collection does not match the Partner cash collection")
 		}
-		if _, _, err := s.wlt.FinalizePartnerStorePickupCommission(ctx, item.OrderID, item.PaymentIntentID, item.PartnerActorID, wltintegration.DerivedIdempotencyKey("store-pickup-commission", item.OrderID), item.CorrelationID); err != nil {
+		if _, _, err := s.wlt.FinalizePartnerStoreCashCommission(ctx, item.OrderID, item.PaymentIntentID, item.PartnerActorID, "CUSTOMER_PICKUP", wltintegration.DerivedIdempotencyKey("store-pickup-commission", item.OrderID), item.CorrelationID); err != nil {
 			return fmt.Errorf("recognize Partner store pickup commission: %w", err)
 		}
 		return nil

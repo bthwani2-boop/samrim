@@ -52,7 +52,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /wlt/v1/partner-financial-profiles/{profileId}", s.readPartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-financial-profiles/{profileId}/activate", s.activatePartnerFinancialProfile)
 	mux.HandleFunc("POST /wlt/v1/partner-order-earnings/finalize", s.finalizePartnerOrderEarning)
-	mux.HandleFunc("POST /wlt/v1/partner-store-pickup-commissions/finalize", s.finalizePartnerStorePickupCommission)
+	mux.HandleFunc("POST /wlt/v1/partner-store-cash-commissions/finalize", s.finalizePartnerStoreCashCommission)
 	mux.HandleFunc("POST /wlt/v1/operator/partners/{partnerActorId}/commission-remittances", s.recordPartnerCommissionRemittance)
 	mux.HandleFunc("GET /wlt/v1/partners/{partnerActorId}/financial-summary", s.readPartnerFinancialSummary)
 	mux.HandleFunc("POST /wlt/v1/operator/field-commission-policies", s.createFieldCommissionPolicy)
@@ -147,10 +147,11 @@ type finalizePartnerOrderEarningRequest struct {
 	CaptainActorID  string `json:"captainActorId"`
 }
 
-type finalizePartnerStorePickupCommissionRequest struct {
+type finalizePartnerStoreCashCommissionRequest struct {
 	OrderID         string `json:"orderId"`
 	PaymentIntentID string `json:"paymentIntentId"`
 	PartnerActorID  string `json:"partnerActorId"`
+	FulfillmentMode string `json:"fulfillmentMode"`
 }
 
 type partnerCommissionRemittanceRequest struct {
@@ -249,15 +250,16 @@ type partnerOrderEarningResponse struct {
 	IdempotentReplay bool                    `json:"idempotentReplay"`
 }
 
-type partnerStorePickupCommissionResponse struct {
-	Commission       partnerStorePickupCommissionJSON `json:"commission"`
-	IdempotentReplay bool                             `json:"idempotentReplay"`
+type partnerStoreCashCommissionResponse struct {
+	Commission       partnerStoreCashCommissionJSON `json:"commission"`
+	IdempotentReplay bool                           `json:"idempotentReplay"`
 }
 
-type partnerStorePickupCommissionJSON struct {
+type partnerStoreCashCommissionJSON struct {
 	OrderID             string `json:"orderId"`
 	PaymentIntentID     string `json:"paymentIntentId"`
 	PartnerActorID      string `json:"partnerActorId"`
+	FulfillmentMode     string `json:"fulfillmentMode"`
 	Currency            string `json:"currency"`
 	GrossProductMinor   int64  `json:"grossProductMinor"`
 	CommissionMinor     int64  `json:"commissionMinor"`
@@ -801,7 +803,7 @@ func (s *Server) finalizePartnerOrderEarning(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, status, partnerOrderEarningResponse{Earning: toPartnerOrderEarning(result), IdempotentReplay: replayed})
 }
 
-func (s *Server) finalizePartnerStorePickupCommission(w http.ResponseWriter, r *http.Request) {
+func (s *Server) finalizePartnerStoreCashCommission(w http.ResponseWriter, r *http.Request) {
 	if !s.authorize(w, r) {
 		return
 	}
@@ -809,20 +811,20 @@ func (s *Server) finalizePartnerStorePickupCommission(w http.ResponseWriter, r *
 	if !ok {
 		return
 	}
-	var input finalizePartnerStorePickupCommissionRequest
+	var input finalizePartnerStoreCashCommissionRequest
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, replayed, err := postgres.RecordPartnerStorePickupCommission(r.Context(), s.db, postgres.PartnerStorePickupCommissionInput{OrderID: input.OrderID, PaymentIntentID: input.PaymentIntentID, PartnerActorID: input.PartnerActorID, IdempotencyKey: idempotency, CorrelationID: correlation})
+	result, replayed, err := postgres.RecordPartnerStoreCashCommission(r.Context(), s.db, postgres.PartnerStoreCashCommissionInput{OrderID: input.OrderID, PaymentIntentID: input.PaymentIntentID, PartnerActorID: input.PartnerActorID, FulfillmentMode: input.FulfillmentMode, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
-		writePartnerPickupCommissionError(w, err)
+		writePartnerCashCommissionError(w, err)
 		return
 	}
 	status := http.StatusCreated
 	if replayed {
 		status = http.StatusOK
 	}
-	writeJSON(w, status, partnerStorePickupCommissionResponse{Commission: toPartnerStorePickupCommission(result), IdempotentReplay: replayed})
+	writeJSON(w, status, partnerStoreCashCommissionResponse{Commission: toPartnerStoreCashCommission(result), IdempotentReplay: replayed})
 }
 
 func (s *Server) recordPartnerCommissionRemittance(w http.ResponseWriter, r *http.Request) {
@@ -844,7 +846,7 @@ func (s *Server) recordPartnerCommissionRemittance(w http.ResponseWriter, r *htt
 	}
 	result, replayed, err := postgres.RecordPartnerCommissionRemittance(r.Context(), s.db, postgres.PartnerCommissionRemittanceInput{PartnerActorID: r.PathValue("partnerActorId"), AmountMinor: input.AmountMinor, RemittanceReference: input.RemittanceReference, EvidenceReference: input.EvidenceReference, VerifiedBy: acting, IdempotencyKey: idempotency, CorrelationID: correlation})
 	if err != nil {
-		writePartnerPickupCommissionError(w, err)
+		writePartnerCashCommissionError(w, err)
 		return
 	}
 	status := http.StatusCreated
@@ -1309,22 +1311,22 @@ func toPartnerFinancialSummary(item postgres.PartnerFinancialSummaryRecord) part
 	return result
 }
 
-func toPartnerStorePickupCommission(item postgres.PartnerStorePickupCommissionRecord) partnerStorePickupCommissionJSON {
-	return partnerStorePickupCommissionJSON{OrderID: item.OrderID, PaymentIntentID: item.PaymentIntentID, PartnerActorID: item.PartnerActorID, Currency: item.Currency, GrossProductMinor: item.GrossProductMinor, CommissionMinor: item.CommissionMinor, ProfileID: item.ProfileID, ProfileVersion: item.ProfileVersion, PolicyVersion: item.PolicyVersion, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
+func toPartnerStoreCashCommission(item postgres.PartnerStoreCashCommissionRecord) partnerStoreCashCommissionJSON {
+	return partnerStoreCashCommissionJSON{OrderID: item.OrderID, PaymentIntentID: item.PaymentIntentID, PartnerActorID: item.PartnerActorID, FulfillmentMode: item.FulfillmentMode, Currency: item.Currency, GrossProductMinor: item.GrossProductMinor, CommissionMinor: item.CommissionMinor, ProfileID: item.ProfileID, ProfileVersion: item.ProfileVersion, PolicyVersion: item.PolicyVersion, LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
 func toPartnerCommissionRemittance(item postgres.PartnerCommissionRemittanceRecord) partnerCommissionRemittanceJSON {
 	return partnerCommissionRemittanceJSON{ID: item.ID, PartnerActorID: item.PartnerActorID, AmountMinor: item.AmountMinor, Currency: item.Currency, RemittanceReference: item.RemittanceReference, EvidenceReference: item.EvidenceReference, VerifiedBy: item.VerifiedBy, VerifiedAt: item.VerifiedAt.UTC().Format(time.RFC3339Nano), LedgerTransactionID: item.LedgerTransactionID, CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano)}
 }
 
-func writePartnerPickupCommissionError(w http.ResponseWriter, err error) {
+func writePartnerCashCommissionError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, postgres.ErrPartnerPickupCommissionInvalid), errors.Is(err, postgres.ErrPartnerRemittanceInvalid):
+	case errors.Is(err, postgres.ErrPartnerCashCommissionInvalid), errors.Is(err, postgres.ErrPartnerRemittanceInvalid):
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "partner commission receivable facts are invalid")
-	case errors.Is(err, postgres.ErrPartnerPickupCommissionState):
-		writeError(w, http.StatusConflict, "STORE_PICKUP_PAYMENT_INVALID", "store pickup payment is not collected by the specified Partner")
-	case errors.Is(err, postgres.ErrPartnerPickupCommissionExists):
-		writeError(w, http.StatusConflict, "COMMISSION_EXISTS", "the store pickup commission is already recorded")
+	case errors.Is(err, postgres.ErrPartnerCashCommissionState):
+		writeError(w, http.StatusConflict, "STORE_CASH_PAYMENT_INVALID", "store cash payment is not collected by the specified Partner")
+	case errors.Is(err, postgres.ErrPartnerCashCommissionExists):
+		writeError(w, http.StatusConflict, "COMMISSION_EXISTS", "the store cash commission is already recorded")
 	case errors.Is(err, postgres.ErrPartnerRemittanceOverpayment):
 		writeError(w, http.StatusConflict, "REMITTANCE_EXCEEDS_RECEIVABLE", "remittance exceeds the outstanding Partner commission receivable")
 	case errors.Is(err, postgres.ErrPartnerEarningProfile):
@@ -1334,7 +1336,7 @@ func writePartnerPickupCommissionError(w http.ResponseWriter, err error) {
 	case errors.Is(err, postgres.ErrLedgerUnbalanced):
 		writeError(w, http.StatusConflict, "LEDGER_UNBALANCED", "the derived ledger transaction is not balanced")
 	default:
-		log.Printf("WLT Partner pickup commission persistence error: %T %v", err, err)
+		log.Printf("WLT Partner store cash commission persistence error: %T %v", err, err)
 		writeError(w, http.StatusBadGateway, "WLT_STORAGE_UNAVAILABLE", "WLT Partner commission persistence is unavailable")
 	}
 }
