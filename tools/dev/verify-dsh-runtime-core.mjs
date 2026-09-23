@@ -1079,11 +1079,11 @@ if (multiCancel.status !== 201 || multiCancel.body?.checkout?.state !== "CANCELL
 console.log("DSH_MULTI_STORE_CHECKOUT=PASS");
 
 const pickupStoreOrigin = await request(dshBase, "GET", "/dsh/stores/" + encodeURIComponent(second.storeID) + "/delivery-origin", { token: second.accessToken });
-const pickupCartCreate = await request(dshBase, "POST", "/dsh/cart/lines", { token: client.accessToken, headers: partnerHeaders("pickup-cart-" + suffix, 0), body: { storeId: second.storeID, storeOfferId: offerBID, quantityBaseUnits: 1, selectedModifierOptionIds: [] } });
-if (pickupStoreOrigin.status !== 200 || !pickupStoreOrigin.body?.origin || pickupCartCreate.status !== 201 || pickupCartCreate.body?.cart?.version !== 1 || pickupCartCreate.body?.cart?.storeId !== second.storeID) fail("customer pickup origin or cart fixture failed", JSON.stringify({ pickupStoreOrigin, pickupCartCreate }));
-const pickupCartID = String(pickupCartCreate.body.cart.id);
+const pickupCartRead = await request(dshBase, "GET", "/dsh/cart?storeId=" + encodeURIComponent(second.storeID), { token: client.accessToken });
+if (pickupStoreOrigin.status !== 200 || !pickupStoreOrigin.body?.origin || pickupCartRead.status !== 200 || pickupCartRead.body?.cart?.id !== multiCartBID || pickupCartRead.body?.cart?.storeId !== second.storeID || !pickupCartRead.body?.cart?.lines?.some((line) => line.storeOfferId === offerBID)) fail("customer pickup origin or failed-delivery cart recovery fixture failed", JSON.stringify({ pickupStoreOrigin, pickupCartRead }));
+const pickupCartID = String(pickupCartRead.body.cart.id);
 cartIDs.add(pickupCartID);
-const pickupCartVersion = pickupCartCreate.body.cart.version;
+const pickupCartVersion = pickupCartRead.body.cart.version;
 const pickupQuote = await request(dshBase, "POST", "/dsh/cart/quote", { token: client.accessToken, headers: { "X-Expected-Version": String(pickupCartVersion) }, body: { cartId: pickupCartID, storeId: second.storeID, fulfillmentMode: "CUSTOMER_PICKUP" } });
 if (pickupQuote.status !== 200 || pickupQuote.body?.quote?.fulfillmentMode !== "CUSTOMER_PICKUP" || pickupQuote.body.quote.subtotalMinor !== 1500 || pickupQuote.body.quote.deliveryFeeMinor !== 0 || pickupQuote.body.quote.totalAmountMinor !== 1500 || pickupQuote.body.quote.currency !== "YER") fail("pickup quote charged a delivery fee or diverged from the store product total", JSON.stringify(pickupQuote));
 const pickupCheckoutKey = "pickup-checkout-" + suffix;
