@@ -843,6 +843,21 @@ test("identity service failure is exposed as an alert with a recovery action", a
   await expect(page.getByRole("button", { name: "إعادة المحاولة" })).toBeVisible();
 });
 
+test("development operator readiness conflict returns to passkey access", async ({ page }) => {
+  await page.route("**/api/auth/session**", async (route) => {
+    await route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "CONFLICT" } }),
+    });
+  });
+  await page.goto("/");
+
+  await expect(page.getByRole("heading", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("حساب المشغل غير جاهز لإنشاء جلسة آمنة");
+  await expect(page.getByRole("button", { name: "الدخول بمفتاح المرور" })).toBeVisible();
+});
+
 test("operator recovery distinguishes recovery credential from phone proof", async ({ page }) => {
   await stubSession(page, 401);
   await page.route("**/api/auth/operator/recovery/request", async (route) => {

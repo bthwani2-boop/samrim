@@ -35,6 +35,13 @@ export function SessionProvider({ children }: Readonly<{ children: ReactNode }>)
         return;
       }
       if (!response.ok) {
+        const body = response.status === 409
+          ? (await response.clone().json().catch(() => null)) as { error?: { code?: unknown } } | null
+          : null;
+        if (body?.error?.code === "CONFLICT") {
+          setState({ kind: "signed_out", notice: "حساب المشغل غير جاهز لإنشاء جلسة آمنة. استخدم مفتاح المرور إن كان مفعّلًا، أو أكمل التفعيل أو الاسترداد المصرّح به." });
+          return;
+        }
         setState({ kind: "unavailable", message: await responseMessage(response) });
         return;
       }
