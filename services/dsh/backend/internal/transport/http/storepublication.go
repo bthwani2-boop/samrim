@@ -71,7 +71,7 @@ func (s *StorePublicationServer) publish(w http.ResponseWriter, r *http.Request)
 	}
 	result, readiness, err := s.service.Publish(r.Context(), r.PathValue("storeId"), string(input.State), expectedVersion, idempotency, acting, correlation)
 	if err != nil {
-		logStorePublicationDatabaseFailure(correlation, err)
+		logStorePublicationFailure(correlation, err)
 		writeStorePublicationError(w, err)
 		return
 	}
@@ -228,12 +228,32 @@ func requiredPublicationHeaders(w http.ResponseWriter, r *http.Request) (string,
 	return acting, correlation, idempotency, expectedVersion, true
 }
 
-func logStorePublicationDatabaseFailure(correlationID string, err error) {
-	var databaseErr *pq.Error
-	if !errors.As(err, &databaseErr) {
+func logStorePublicationFailure(correlationID string, err error) {
+	switch {
+	case errors.Is(err, storepublication.ErrOperatorNotActive),
+		errors.Is(err, storepublication.ErrPublicationReadinessBlocked),
+		errors.Is(err, storepublication.ErrPartnerIdentityUnavailable),
+		errors.Is(err, postgres.ErrStoreNotFound),
+		errors.Is(err, postgres.ErrServiceCityNotFound),
+		errors.Is(err, postgres.ErrPublicationIdempotencyConflict),
+		errors.Is(err, postgres.ErrPublicationVersionConflict),
+		errors.Is(err, postgres.ErrInvalidPublicationState):
 		return
 	}
-	log.Printf("store publication persistence failure correlation_id=%q sqlstate=%q schema=%q table=%q column=%q constraint=%q", correlationID, string(databaseErr.Code), databaseErr.Schema, databaseErr.Table, databaseErr.Column, databaseErr.Constraint)
+	var identityErr *identityclient.Error
+	if errors.As(err, &identityErr) {
+		return
+	}
+	var databaseErr *pq.Error
+	if errors.As(err, &databaseErr) {
+		log.Printf("store publication persistence failure correlation_id=%q sqlstate=%q schema=%q table=%q column=%q constraint=%q", correlationID, string(databaseErr.Code), databaseErr.Schema, databaseErr.Table, databaseErr.Column, databaseErr.Constraint)
+		return
+	}
+	cause := err
+	for errors.Unwrap(cause) != nil {
+		cause = errors.Unwrap(cause)
+	}
+	log.Printf("store publication internal failure correlation_id=%q cause_type=%T", correlationID, cause)
 }
 
 func writeStorePublicationError(w http.ResponseWriter, err error) {
