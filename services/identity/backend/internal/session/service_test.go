@@ -91,10 +91,17 @@ func TestWithinRefreshRaceGraceAcceptsRecentHistoryOnly(t *testing.T) {
 func TestDerivedRefreshPairIsStablePerSessionGenerationAndInstance(t *testing.T) {
 	service := &Service{refreshSecret: []byte("01234567890123456789012345678901")}
 	expires := time.Date(2026, time.January, 1, 12, 15, 0, 0, time.UTC)
-	first := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-1", 2, expires)
-	retry := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-1", 2, expires)
-	next := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-1", 3, expires)
-	otherDevice := service.derivedRefreshPair("session-1", "actor-1", "client", "device-hash-2", 2, expires)
+	derivePair := func(deviceHash string, version int) domain.TokenPair {
+		pair, err := service.derivedRefreshPair(context.Background(), nil, "session-1", "actor-1", "client", deviceHash, version, expires)
+		if err != nil {
+			t.Fatalf("derive refresh pair: %v", err)
+		}
+		return pair
+	}
+	first := derivePair("device-hash-1", 2)
+	retry := derivePair("device-hash-1", 2)
+	next := derivePair("device-hash-1", 3)
+	otherDevice := derivePair("device-hash-2", 2)
 
 	if first.AccessToken != retry.AccessToken || first.RefreshToken != retry.RefreshToken {
 		t.Fatal("reconciliation did not reproduce the same token pair")
